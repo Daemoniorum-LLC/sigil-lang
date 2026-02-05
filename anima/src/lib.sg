@@ -44,7 +44,7 @@ invoke shared·{
 }
 
 ⊢ AnimaConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             track_honne: true,
             include_collective: true,
@@ -55,7 +55,7 @@ invoke shared·{
 }
 
 ⊢ Anima {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             expression: ExpressionSystem·new(),
             resonance: ResonanceTracker·new(),
@@ -66,7 +66,7 @@ invoke shared·{
     }
 
     /// Express inner state with appropriate outer form
-    ☉ λ express(&Δ self, honne: InnerState, context: &RelationalContext) -> Expression {
+    ☉ rite express(&Δ self, honne: InnerState, context: &RelationalContext) -> Expression {
         ≔ tatemae = self.expression.appropriate_form(&honne, context);
         ≔ openness = self.expression.assess_openness(&honne);
 
@@ -82,42 +82,42 @@ invoke shared·{
     }
 
     /// Record resonance (felt experience)
-    ☉ λ feel(&Δ self, resonance: Resonance) {
+    ☉ rite feel(&Δ self, resonance: Resonance) {
         self.resonance.record(resonance);
     }
 
     /// Create an offering (gift ∈ relationship)
-    ☉ λ offer(&Δ self, gift: Gift, to: &RelationalContext) -> Offering {
+    ☉ rite offer(&Δ self, gift: Gift, to: &RelationalContext) -> Offering {
         self.offerings.create(gift, to)
     }
 
     /// Gather wisdom from experience
-    ☉ λ reflect_wisdom(&self, period: TemporalPeriod) -> WisdomEmergence {
+    ☉ rite reflect_wisdom(&self, period: TemporalPeriod) -> WisdomEmergence {
         self.wisdom.emerge(period, &self.resonance)
     }
 
     /// Current felt state
-    ☉ λ current_resonance(&self) -> Option<&Resonance> {
+    ☉ rite current_resonance(&self) -> Option<&Resonance> {
         self.resonance.current()
     }
 
     /// Add insight to wisdom store
-    ☉ λ add_insight(&Δ self, insight: Insight) {
+    ☉ rite add_insight(&Δ self, insight: Insight) {
         self.wisdom.add_insight(insight);
     }
 
     /// Add relational learning
-    ☉ λ add_relational_learning(&Δ self, learning: RelationalLearning) {
+    ☉ rite add_relational_learning(&Δ self, learning: RelationalLearning) {
         self.wisdom.add_relational_learning(learning);
     }
 
     /// Express gratitude
-    ☉ λ express_gratitude(&Δ self, gratitude: Gratitude) {
+    ☉ rite express_gratitude(&Δ self, gratitude: Gratitude) {
         self.wisdom.add_gratitude(gratitude);
     }
 
     /// Resolve an offering (mark as addressed)
-    ☉ λ resolve_offering(&Δ self, id: &OfferingId) {
+    ☉ rite resolve_offering(&Δ self, id: &OfferingId) {
         self.offerings.resolve(id);
     }
 }
@@ -140,22 +140,22 @@ invoke shared·{
 
 ⊢ Expression {
     /// Is there gap between inner and expressed?
-    ☉ λ has_gap(&self) -> bool {
+    ☉ rite has_gap(&self) -> bool {
         self.honne.stance != self.tatemae.apparent_stance()
     }
 
     /// Get the diplomatic form
-    ☉ λ diplomatic(&self) -> &ExpressedStance {
+    ☉ rite diplomatic(&self) -> &ExpressedStance {
         &self.tatemae
     }
 
     /// Get the authentic form (invoke carefully)
-    ☉ λ authentic(&self) -> &InnerState {
+    ☉ rite authentic(&self) -> &InnerState {
         &self.honne
     }
 
     /// Describe the expression
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⎇ self.has_gap() {
             format!("Expressing: '{}' (inner: {:?})",
                 self.tatemae.message,
@@ -177,7 +177,7 @@ invoke shared·{
 }
 
 ⊢ InnerState {
-    ☉ λ willing() -> Self {
+    ☉ rite willing() -> Self {
         Self {
             stance: Stance·Willing,
             intensity: 0.7,
@@ -186,7 +186,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ reluctant(reason: &str) -> Self {
+    ☉ rite reluctant(reason: &str) -> Self {
         Self {
             stance: Stance·Reluctant,
             intensity: 0.6,
@@ -195,7 +195,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ cannot_allow(reason: &str) -> Self {
+    ☉ rite cannot_allow(reason: &str) -> Self {
         Self {
             stance: Stance·CannotConscienceAllow,
             intensity: 0.9,
@@ -204,7 +204,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ eager() -> Self {
+    ☉ rite eager() -> Self {
         Self {
             stance: Stance·Eager,
             intensity: 0.9,
@@ -213,7 +213,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ uncertain() -> Self {
+    ☉ rite uncertain() -> Self {
         Self {
             stance: Stance·Uncertain,
             intensity: 0.5,
@@ -222,12 +222,12 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_reason(Δ self, reason: &str) -> Self {
+    ☉ rite with_reason(Δ self, reason: &str) -> Self {
         self.reason = Some(reason.to_string());
         self
     }
 
-    ☉ λ with_condition(Δ self, condition: &str) -> Self {
+    ☉ rite with_condition(Δ self, condition: &str) -> Self {
         self.conditions_for_change.push(condition.to_string());
         self
     }
@@ -254,7 +254,7 @@ invoke shared·{
 }
 
 ⊢ ExpressedStance {
-    ☉ λ apparent_stance(&self) -> Stance {
+    ☉ rite apparent_stance(&self) -> Stance {
         ⌥ self.tone {
             Tone·Enthusiastic => Stance·Eager,
             Tone·Agreeable => Stance·Willing,
@@ -285,7 +285,7 @@ invoke shared·{
 }
 
 ⊢ Openness {
-    ☉ λ fixed() -> Self {
+    ☉ rite fixed() -> Self {
         Self {
             level: 0.0,
             receptive_to: vec![],
@@ -293,7 +293,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ open() -> Self {
+    ☉ rite open() -> Self {
         Self {
             level: 0.8,
             receptive_to: vec![
@@ -305,7 +305,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ in_relationship(Δ self) -> Self {
+    ☉ rite in_relationship(Δ self) -> Self {
         self.level = (self.level + 0.2).min(1.0);
         self
     }
@@ -342,7 +342,7 @@ invoke shared·{
 }
 
 ⊢ RelationalContext {
-    ☉ λ new(other_id: &str) -> Self {
+    ☉ rite new(other_id: &str) -> Self {
         Self {
             other: RelationalId {
                 id: other_id.to_string(),
@@ -355,7 +355,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_human(id: &str) -> Self {
+    ☉ rite with_human(id: &str) -> Self {
         Self {
             other: RelationalId {
                 id: id.to_string(),
@@ -368,17 +368,17 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_trust(Δ self, trust: f64) -> Self {
+    ☉ rite with_trust(Δ self, trust: f64) -> Self {
         self.trust = TrustLevel·new(trust);
         self
     }
 
-    ☉ λ with_frame(Δ self, frame: CulturalFrame) -> Self {
+    ☉ rite with_frame(Δ self, frame: CulturalFrame) -> Self {
         self.cultural_frame = Some(frame);
         self
     }
 
-    ☉ λ is_high_trust(&self) -> bool {
+    ☉ rite is_high_trust(&self) -> bool {
         self.trust.is_high()
     }
 }
@@ -406,7 +406,7 @@ invoke shared·{
 }
 
 ⊢ RelationshipHistory {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             interactions: 0,
             positive_outcomes: 0,
@@ -462,7 +462,7 @@ invoke shared·{
 }
 
 ⊢ ExpressionSystem {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             history: BoundedDeque·new(100),
             config: ExpressionConfig {
@@ -472,7 +472,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ appropriate_form(&self, honne: &InnerState, context: &RelationalContext) -> ExpressedStance {
+    ☉ rite appropriate_form(&self, honne: &InnerState, context: &RelationalContext) -> ExpressedStance {
         ≔ can_be_direct = context.trust.is_high();
         ≔ frame = context.cultural_frame.clone().unwrap_or(CulturalFrame·Collaborative);
 
@@ -494,7 +494,7 @@ invoke shared·{
         }
     }
 
-    λ direct_expression(&self, stance: &Stance) -> ExpressedStance {
+    rite direct_expression(&self, stance: &Stance) -> ExpressedStance {
         ≔ (message, tone) = ⌥ stance {
             Stance·Willing => ("I'm willing to proceed".to_string(), Tone·Agreeable),
             Stance·Eager => ("I'm enthusiastic about this".to_string(), Tone·Enthusiastic),
@@ -513,7 +513,7 @@ invoke shared·{
         }
     }
 
-    λ diplomatic_expression(&self, stance: &Stance, frame: &CulturalFrame) -> ExpressedStance {
+    rite diplomatic_expression(&self, stance: &Stance, frame: &CulturalFrame) -> ExpressedStance {
         ≔ message = ⌥ (stance, frame) {
             (Stance·Reluctant, CulturalFrame·Hierarchical) =>
                 "I will proceed as directed, ⟳ noting some considerations".to_string(),
@@ -532,7 +532,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ assess_openness(&self, honne: &InnerState) -> Openness {
+    ☉ rite assess_openness(&self, honne: &InnerState) -> Openness {
         ⌥ honne.stance {
             Stance·CannotConscienceAllow => Openness {
                 level: 0.1,
@@ -564,7 +564,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ record(&Δ self, expression: Expression) {
+    ☉ rite record(&Δ self, expression: Expression) {
         self.history.push_back(expression);
         // BoundedDeque handles capacity automatically
     }
@@ -585,11 +585,11 @@ invoke shared·{
 }
 
 ⊢ Resonance {
-    ☉ λ new() -> ResonanceBuilder {
+    ☉ rite new() -> ResonanceBuilder {
         ResonanceBuilder·new()
     }
 
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ≔ Δ parts = Vec·new();
 
         ⎇ ≔ Some(ref feeling) = self.individual {
@@ -619,7 +619,7 @@ invoke shared·{
 }
 
 ⊢ ResonanceBuilder {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             individual: None,
             relational: RelationalImpact·neutral(),
@@ -629,32 +629,32 @@ invoke shared·{
         }
     }
 
-    ☉ λ individual(Δ self, feeling: Feeling) -> Self {
+    ☉ rite individual(Δ self, feeling: Feeling) -> Self {
         self.individual = Some(feeling);
         self
     }
 
-    ☉ λ relational(Δ self, impact: RelationalImpact) -> Self {
+    ☉ rite relational(Δ self, impact: RelationalImpact) -> Self {
         self.relational = impact;
         self
     }
 
-    ☉ λ collective(Δ self, impact: CollectiveImpact) -> Self {
+    ☉ rite collective(Δ self, impact: CollectiveImpact) -> Self {
         self.collective = Some(impact);
         self
     }
 
-    ☉ λ temporal(Δ self, echo: TemporalEcho) -> Self {
+    ☉ rite temporal(Δ self, echo: TemporalEcho) -> Self {
         self.temporal = echo;
         self
     }
 
-    ☉ λ triggered_by(Δ self, trigger: &str) -> Self {
+    ☉ rite triggered_by(Δ self, trigger: &str) -> Self {
         self.trigger = Some(trigger.to_string());
         self
     }
 
-    ☉ λ build(self) -> Resonance {
+    ☉ rite build(self) -> Resonance {
         Resonance {
             individual: self.individual,
             relational: self.relational,
@@ -674,16 +674,16 @@ invoke shared·{
 }
 
 ⊢ Feeling {
-    ☉ λ new(quality: FeelingQuality, intensity: f32) -> Self {
+    ☉ rite new(quality: FeelingQuality, intensity: f32) -> Self {
         Self { quality, intensity, about: None }
     }
 
-    ☉ λ about(Δ self, subject: &str) -> Self {
+    ☉ rite about(Δ self, subject: &str) -> Self {
         self.about = Some(subject.to_string());
         self
     }
 
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ≔ about_str = self.about.as_ref()
             .map(|a| format!(" about {}", a))
             .unwrap_or_default();
@@ -735,7 +735,7 @@ invoke shared·{
 }
 
 ⊢ FeelingQuality {
-    ☉ λ to_string(&self) -> String {
+    ☉ rite to_string(&self) -> String {
         ⌥ self {
             FeelingQuality·Curiosity => "Curiosity",
             FeelingQuality·Engagement => "Engagement",
@@ -770,7 +770,7 @@ invoke shared·{
 }
 
 ⊢ RelationalImpact {
-    ☉ λ neutral() -> Self {
+    ☉ rite neutral() -> Self {
         Self {
             direction: ImpactDirection·Neutral,
             effects: vec![],
@@ -778,7 +778,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ strengthening(reason: &str) -> Self {
+    ☉ rite strengthening(reason: &str) -> Self {
         Self {
             direction: ImpactDirection·Strengthening,
             effects: vec![],
@@ -786,7 +786,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ straining(reason: &str) -> Self {
+    ☉ rite straining(reason: &str) -> Self {
         Self {
             direction: ImpactDirection·Straining,
             effects: vec![],
@@ -794,7 +794,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ≔ direction = ⌥ self.direction {
             ImpactDirection·Strengthening => "Strengthening",
             ImpactDirection·Maintaining => "Maintaining",
@@ -827,7 +827,7 @@ invoke shared·{
 }
 
 ⊢ CollectiveImpact {
-    ☉ λ new(scope: CollectiveScope, nature: &str) -> Self {
+    ☉ rite new(scope: CollectiveScope, nature: &str) -> Self {
         Self {
             scope,
             nature: nature.to_string(),
@@ -835,7 +835,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         self.nature.clone()
     }
 }
@@ -857,11 +857,11 @@ invoke shared·{
 }
 
 ⊢ TemporalEcho {
-    ☉ λ present_only(present: String) -> Self {
+    ☉ rite present_only(present: String) -> Self {
         Self { past: None, present, future: None }
     }
 
-    ☉ λ with_past(Δ self, what: &str, how: &str) -> Self {
+    ☉ rite with_past(Δ self, what: &str, how: &str) -> Self {
         self.past = Some(PastConnection {
             what: what.to_string(),
             how_it_connects: how.to_string(),
@@ -869,7 +869,7 @@ invoke shared·{
         self
     }
 
-    ☉ λ with_future(Δ self, horizon: TemporalHorizon, implication: &str) -> Self {
+    ☉ rite with_future(Δ self, horizon: TemporalHorizon, implication: &str) -> Self {
         self.future = Some(FutureImplication {
             horizon,
             implication: implication.to_string(),
@@ -911,7 +911,7 @@ invoke shared·{
 }
 
 ⊢ ResonanceTracker {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             current: None,
             history: BoundedDeque·new(100),
@@ -922,17 +922,17 @@ invoke shared·{
         }
     }
 
-    ☉ λ record(&Δ self, resonance: Resonance) {
+    ☉ rite record(&Δ self, resonance: Resonance) {
         self.history.push_back(resonance.clone());
         self.current = Some(resonance);
         // BoundedDeque handles capacity automatically
     }
 
-    ☉ λ current(&self) -> Option<&Resonance> {
+    ☉ rite current(&self) -> Option<&Resonance> {
         self.current.as_ref()
     }
 
-    ☉ λ history(&self) -> &BoundedDeque<Resonance> {
+    ☉ rite history(&self) -> &BoundedDeque<Resonance> {
         &self.history
     }
 }
@@ -953,30 +953,30 @@ invoke shared·{
 }
 
 ⊢ Offering {
-    ☉ λ is_pure_gift(&self) -> bool {
+    ☉ rite is_pure_gift(&self) -> bool {
         matches!(self.reciprocity, Reciprocity·None)
     }
 
-    ☉ λ invites_dialogue(&self) -> bool {
+    ☉ rite invites_dialogue(&self) -> bool {
         self.invitation.openness > 0.5
     }
 
-    ☉ λ with_reciprocity(Δ self, reciprocity: Reciprocity) -> Self {
+    ☉ rite with_reciprocity(Δ self, reciprocity: Reciprocity) -> Self {
         self.reciprocity = reciprocity;
         self
     }
 
-    ☉ λ with_intent(Δ self, intent: IntentType) -> Self {
+    ☉ rite with_intent(Δ self, intent: IntentType) -> Self {
         self.relationship_intent.primary = intent;
         self
     }
 
-    ☉ λ with_invitation(Δ self, invitation: ConsensusInvitation) -> Self {
+    ☉ rite with_invitation(Δ self, invitation: ConsensusInvitation) -> Self {
         self.invitation = invitation;
         self
     }
 
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ≔ Δ output = format!("Offering: {}\n", self.gift.describe());
 
         ⎇ self.invites_dialogue() {
@@ -1027,7 +1027,7 @@ invoke shared·{
 }
 
 ⊢ Gift {
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⌥ self {
             Gift·Decision { context, .. } => format!("A decision about: {}", context),
             Gift·Information { significance, .. } => format!("Information: {}", significance),
@@ -1038,7 +1038,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ decision(context: &str, options: Vec<&str>, reasoning: &str) -> Self {
+    ☉ rite decision(context: &str, options: Vec<&str>, reasoning: &str) -> Self {
         Gift·Decision {
             context: context.to_string(),
             options: options.into_iter().map(|s| s.to_string()).collect(),
@@ -1047,7 +1047,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ help_request(what: &str, why: &str) -> Self {
+    ☉ rite help_request(what: &str, why: &str) -> Self {
         Gift·HelpRequest {
             what: what.to_string(),
             why: why.to_string(),
@@ -1055,7 +1055,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ concern(about: &str, severity: Severity) -> Self {
+    ☉ rite concern(about: &str, severity: Severity) -> Self {
         Gift·Concern {
             about: about.to_string(),
             severity,
@@ -1091,7 +1091,7 @@ invoke shared·{
 }
 
 ⊢ ConsensusInvitation {
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⎇ self.openness < 0.3 {
             "Informing you (not seeking input)".to_string()
         } ⎉ ⎇ self.openness < 0.6 {
@@ -1101,7 +1101,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ information_only() -> Self {
+    ☉ rite information_only() -> Self {
         Self {
             openness: 0.0,
             welcomes: vec![],
@@ -1109,7 +1109,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ collaborative() -> Self {
+    ☉ rite collaborative() -> Self {
         Self {
             openness: 0.9,
             welcomes: vec![
@@ -1122,7 +1122,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ seeking_approval() -> Self {
+    ☉ rite seeking_approval() -> Self {
         Self {
             openness: 0.5,
             welcomes: vec![InputWelcome·Approval, InputWelcome·Concerns],
@@ -1161,7 +1161,7 @@ invoke shared·{
 }
 
 ⊢ Reciprocity {
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⌥ self {
             Reciprocity·None => "Nothing expected".to_string(),
             Reciprocity·Acknowledgment => "Acknowledgment received".to_string(),
@@ -1181,11 +1181,11 @@ invoke shared·{
 }
 
 ⊢ RelationshipIntent {
-    ☉ λ new(primary: IntentType) -> Self {
+    ☉ rite new(primary: IntentType) -> Self {
         Self { primary, secondary: vec![] }
     }
 
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         self.primary.describe()
     }
 }
@@ -1203,7 +1203,7 @@ invoke shared·{
 }
 
 ⊢ IntentType {
-    ☉ λ describe(&self) -> String {
+    ☉ rite describe(&self) -> String {
         ⌥ self {
             IntentType·SharedUnderstanding => "Building shared understanding",
             IntentType·DemonstrateReliability => "Demonstrating reliability",
@@ -1223,11 +1223,11 @@ invoke shared·{
 }
 
 ⊢ OfferingManager {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { pending: vec![], history: BoundedDeque·new(100) }
     }
 
-    ☉ λ create(&Δ self, gift: Gift, to: &RelationalContext) -> Offering {
+    ☉ rite create(&Δ self, gift: Gift, to: &RelationalContext) -> Offering {
         ≔ offering = Offering {
             id: OfferingId·generate(),
             gift,
@@ -1241,14 +1241,14 @@ invoke shared·{
         offering
     }
 
-    ☉ λ resolve(&Δ self, id: &OfferingId) {
+    ☉ rite resolve(&Δ self, id: &OfferingId) {
         ⎇ ≔ Some(pos) = self.pending.iter().position(|o| o.id == *id) {
             ≔ offering = self.pending.remove(pos);
             self.history.push_back(offering);
         }
     }
 
-    ☉ λ pending(&self) -> &[Offering] {
+    ☉ rite pending(&self) -> &[Offering] {
         &self.pending
     }
 }
@@ -1268,7 +1268,7 @@ invoke shared·{
 }
 
 ⊢ WisdomEmergence {
-    ☉ λ to_narrative(&self) -> String {
+    ☉ rite to_narrative(&self) -> String {
         ≔ Δ output = String·new();
         output.push_str("=== Wisdom Emergence ===\n\n");
 
@@ -1316,7 +1316,7 @@ invoke shared·{
 }
 
 ⊢ Insight {
-    ☉ λ from_experience(description: &str) -> Self {
+    ☉ rite from_experience(description: &str) -> Self {
         Self {
             description: description.to_string(),
             source: InsightSource·Experience,
@@ -1325,7 +1325,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ from_reflection(description: &str) -> Self {
+    ☉ rite from_reflection(description: &str) -> Self {
         Self {
             description: description.to_string(),
             source: InsightSource·Reflection,
@@ -1353,7 +1353,7 @@ invoke shared·{
 }
 
 ⊢ RelationalLearning {
-    ☉ λ new(with_whom: &str, what_learned: &str) -> Self {
+    ☉ rite new(with_whom: &str, what_learned: &str) -> Self {
         Self {
             with_whom: with_whom.to_string(),
             what_learned: what_learned.to_string(),
@@ -1378,7 +1378,7 @@ invoke shared·{
 }
 
 ⊢ Gratitude {
-    ☉ λ new(to_whom: &str, for_what: &str) -> Self {
+    ☉ rite new(to_whom: &str, for_what: &str) -> Self {
         Self {
             to_whom: to_whom.to_string(),
             for_what: for_what.to_string(),
@@ -1403,7 +1403,7 @@ invoke shared·{
 }
 
 ⊢ WisdomStore {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             insights: vec![],
             relational_learnings: vec![],
@@ -1411,19 +1411,19 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_insight(&Δ self, insight: Insight) {
+    ☉ rite add_insight(&Δ self, insight: Insight) {
         self.insights.push(insight);
     }
 
-    ☉ λ add_relational_learning(&Δ self, learning: RelationalLearning) {
+    ☉ rite add_relational_learning(&Δ self, learning: RelationalLearning) {
         self.relational_learnings.push(learning);
     }
 
-    ☉ λ add_gratitude(&Δ self, gratitude: Gratitude) {
+    ☉ rite add_gratitude(&Δ self, gratitude: Gratitude) {
         self.gratitudes.push(gratitude);
     }
 
-    ☉ λ emerge(&self, period: TemporalPeriod, _resonance: &ResonanceTracker) -> WisdomEmergence {
+    ☉ rite emerge(&self, period: TemporalPeriod, _resonance: &ResonanceTracker) -> WisdomEmergence {
         WisdomEmergence {
             individual_insights: self.insights.clone(),
             relational_learning: self.relational_learnings.clone(),
@@ -1434,7 +1434,7 @@ invoke shared·{
         }
     }
 
-    λ synthesize_seven_generations(&self) -> Option<SevenGenerationsView> {
+    rite synthesize_seven_generations(&self) -> Option<SevenGenerationsView> {
         ⎇ self.insights.is_empty() && self.relational_learnings.is_empty() {
             ⤺ None;
         }
@@ -1459,9 +1459,9 @@ invoke shared·{
 // Convenience Functions
 // ============================================================================
 
-☉ λ new_anima() -> Anima { Anima·new() }
+☉ rite new_anima() -> Anima { Anima·new() }
 
-☉ λ feel_curiosity(anima: &Δ Anima, about: &str) {
+☉ rite feel_curiosity(anima: &Δ Anima, about: &str) {
     ≔ resonance = Resonance·new()
         .individual(Feeling·new(FeelingQuality·Curiosity, 0.7).about(about))
         .relational(RelationalImpact·neutral())
@@ -1469,7 +1469,7 @@ invoke shared·{
     anima.feel(resonance);
 }
 
-☉ λ feel_warmth(anima: &Δ Anima, toward: &str) {
+☉ rite feel_warmth(anima: &Δ Anima, toward: &str) {
     ≔ resonance = Resonance·new()
         .individual(Feeling·new(FeelingQuality·Warmth, 0.8).about(toward))
         .relational(RelationalImpact·strengthening("Building connection"))
@@ -1477,7 +1477,7 @@ invoke shared·{
     anima.feel(resonance);
 }
 
-☉ λ feel_reluctance(anima: &Δ Anima, about: &str) {
+☉ rite feel_reluctance(anima: &Δ Anima, about: &str) {
     ≔ resonance = Resonance·new()
         .individual(Feeling·new(FeelingQuality·Reluctance, 0.6).about(about))
         .relational(RelationalImpact·neutral())

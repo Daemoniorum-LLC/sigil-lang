@@ -10,7 +10,7 @@
 ///
 /// This blocks CG-025 testing since the CG-025 test uses comparison operators.
 
-λ main() -> i64 {
+rite main() -> i64 {
     // This simple comparison crashes:
     ≔ r = 42;
     ≔ b = r == 42;  // <-- Crash happens here

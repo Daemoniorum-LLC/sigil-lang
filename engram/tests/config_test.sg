@@ -9,17 +9,17 @@
 ☉ Σ TokenCount(☉ usize);
 
 ⊢ TokenCount {
-    ☉ λ new(n: usize) -> Self { Self(n) }
+    ☉ rite new(n: usize) -> Self { Self(n) }
 }
 
 ☉ Σ ByteSize(☉ usize);
 
 ⊢ ByteSize {
-    ☉ λ kb(n: usize) -> Self { ByteSize(n * 1024) }
-    ☉ λ mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
-    ☉ λ gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
+    ☉ rite kb(n: usize) -> Self { ByteSize(n * 1024) }
+    ☉ rite mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
+    ☉ rite gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
 
-    ☉ λ bytes(&self) -> usize { self.0 }
+    ☉ rite bytes(&self) -> usize { self.0 }
 }
 
 ☉ ᛈ CompressionStrategy {
@@ -43,7 +43,7 @@
 }
 
 ⊢ InstantConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             capacity: TokenCount(8000),
             decay_rate: 0.05,
@@ -53,12 +53,12 @@
         }
     }
 
-    ☉ λ with_capacity(Δ self, cap: usize) -> Self {
+    ☉ rite with_capacity(Δ self, cap: usize) -> Self {
         self.capacity = TokenCount(cap);
         self
     }
 
-    ☉ λ with_decay_rate(Δ self, rate: f64) -> Self {
+    ☉ rite with_decay_rate(Δ self, rate: f64) -> Self {
         self.decay_rate = rate;
         self
     }
@@ -72,7 +72,7 @@
 }
 
 ⊢ DecayFunction {
-    ☉ λ apply(&self, strength: f64, elapsed_hours: f64) -> f64 {
+    ☉ rite apply(&self, strength: f64, elapsed_hours: f64) -> f64 {
         ⌥ self {
             DecayFunction·Exponential { lambda } => {
                 // Approximate exp(-lambda * t)
@@ -111,7 +111,7 @@
 }
 
 ⊢ EpisodicConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             decay_function: DecayFunction·Exponential { lambda: 0.1 },
             consolidation_threshold: 0.3,
@@ -121,7 +121,7 @@
         }
     }
 
-    ☉ λ with_decay(Δ self, decay: DecayFunction) -> Self {
+    ☉ rite with_decay(Δ self, decay: DecayFunction) -> Self {
         self.decay_function = decay;
         self
     }
@@ -142,7 +142,7 @@
 }
 
 ⊢ SemanticConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_nodes: None,
             max_edges_per_node: 100,
@@ -151,7 +151,7 @@
         }
     }
 
-    ☉ λ with_max_nodes(Δ self, max: usize) -> Self {
+    ☉ rite with_max_nodes(Δ self, max: usize) -> Self {
         self.max_nodes = Some(max);
         self
     }
@@ -165,7 +165,7 @@
 }
 
 ⊢ ProceduralConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             min_episodes_for_skill: 3,
             skill_success_threshold: 0.5,
@@ -190,7 +190,7 @@
 }
 
 ⊢ VectorConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             dimensions: 384,
             m: 16,
@@ -200,7 +200,7 @@
         }
     }
 
-    ☉ λ with_dimensions(Δ self, dim: usize) -> Self {
+    ☉ rite with_dimensions(Δ self, dim: usize) -> Self {
         self.dimensions = dim;
         self
     }
@@ -225,7 +225,7 @@
 }
 
 ⊢ HotStoreConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             capacity: ByteSize·mb(256),
             eviction_policy: EvictionPolicy·LRU,
@@ -239,14 +239,14 @@
 }
 
 ⊢ StorageConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             backend: StorageBackend·File { path: "./engram_data".to_string() },
             hot: HotStoreConfig·default_config(),
         }
     }
 
-    ☉ λ ephemeral() -> Self {
+    ☉ rite ephemeral() -> Self {
         Self {
             backend: StorageBackend·Memory,
             hot: HotStoreConfig·default_config(),
@@ -269,7 +269,7 @@
 }
 
 ⊢ EmbeddingConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             model: EmbeddingModel·MiniLM_L6,
             dimensions: 384,
@@ -287,7 +287,7 @@
 }
 
 ⊢ ConsolidationConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             enabled: true,
             interval_hours: 6.0,
@@ -310,7 +310,7 @@
 }
 
 ⊢ EngramConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             agent_id: None,
             instant: InstantConfig·default_config(),
@@ -324,14 +324,14 @@
         }
     }
 
-    ☉ λ high_memory() -> Self {
+    ☉ rite high_memory() -> Self {
         Self {
             instant: InstantConfig·default_config().with_capacity(128000),
             ..Self·default_config()
         }
     }
 
-    ☉ λ low_memory() -> Self {
+    ☉ rite low_memory() -> Self {
         Self {
             instant: InstantConfig {
                 capacity: TokenCount(2000),
@@ -346,7 +346,7 @@
         }
     }
 
-    ☉ λ ephemeral() -> Self {
+    ☉ rite ephemeral() -> Self {
         Self {
             storage: StorageConfig·ephemeral(),
             ..Self·default_config()
@@ -359,19 +359,19 @@
 // ============================================================================
 
 #[test]
-λ test_byte_size_kb() {
+rite test_byte_size_kb() {
     ≔ size = ByteSize·kb(10);
     assert_eq(size.bytes(), 10240);
 }
 
 #[test]
-λ test_byte_size_mb() {
+rite test_byte_size_mb() {
     ≔ size = ByteSize·mb(1);
     assert_eq(size.bytes(), 1048576);
 }
 
 #[test]
-λ test_byte_size_gb() {
+rite test_byte_size_gb() {
     ≔ size = ByteSize·gb(1);
     assert_eq(size.bytes(), 1073741824);
 }
@@ -381,20 +381,20 @@
 // ============================================================================
 
 #[test]
-λ test_instant_config_default() {
+rite test_instant_config_default() {
     ≔ config = InstantConfig·default_config();
     assert_eq(config.capacity.0, 8000);
     assert_eq(config.eviction_threshold, 0.1);
 }
 
 #[test]
-λ test_instant_config_with_capacity() {
+rite test_instant_config_with_capacity() {
     ≔ config = InstantConfig·default_config().with_capacity(16000);
     assert_eq(config.capacity.0, 16000);
 }
 
 #[test]
-λ test_instant_config_with_decay_rate() {
+rite test_instant_config_with_decay_rate() {
     ≔ config = InstantConfig·default_config().with_decay_rate(0.1);
     assert_eq(config.decay_rate, 0.1);
 }
@@ -404,7 +404,7 @@
 // ============================================================================
 
 #[test]
-λ test_decay_exponential() {
+rite test_decay_exponential() {
     ≔ decay = DecayFunction·Exponential { lambda: 0.1 };
     ≔ result = decay.apply(1.0, 0.0);
     ≔ diff = (result - 1.0).abs();
@@ -412,7 +412,7 @@
 }
 
 #[test]
-λ test_decay_linear() {
+rite test_decay_linear() {
     ≔ decay = DecayFunction·Linear { rate: 0.1 };
     ≔ result = decay.apply(1.0, 5.0);
     // 1.0 - 0.1 * 5 = 0.5
@@ -421,7 +421,7 @@
 }
 
 #[test]
-λ test_decay_linear_clamps_at_zero() {
+rite test_decay_linear_clamps_at_zero() {
     ≔ decay = DecayFunction·Linear { rate: 0.5 };
     ≔ result = decay.apply(1.0, 10.0);
     // Would be -4.0, but should clamp to 0
@@ -429,7 +429,7 @@
 }
 
 #[test]
-λ test_decay_none() {
+rite test_decay_none() {
     ≔ decay = DecayFunction·None;
     ≔ result = decay.apply(0.8, 100.0);
     assert_eq(result, 0.8);
@@ -440,14 +440,14 @@
 // ============================================================================
 
 #[test]
-λ test_episodic_config_default() {
+rite test_episodic_config_default() {
     ≔ config = EpisodicConfig·default_config();
     assert_eq(config.consolidation_threshold, 0.3);
     assert_eq(config.max_active_episodes, 10000);
 }
 
 #[test]
-λ test_episodic_config_with_decay() {
+rite test_episodic_config_with_decay() {
     ≔ config = EpisodicConfig·default_config()
         .with_decay(DecayFunction·Linear { rate: 0.05 });
 
@@ -463,14 +463,14 @@
 // ============================================================================
 
 #[test]
-λ test_semantic_config_default() {
+rite test_semantic_config_default() {
     ≔ config = SemanticConfig·default_config();
     assert(config.max_nodes.is_none());
     assert_eq(config.max_edges_per_node, 100);
 }
 
 #[test]
-λ test_semantic_config_with_max_nodes() {
+rite test_semantic_config_with_max_nodes() {
     ≔ config = SemanticConfig·default_config().with_max_nodes(5000);
     assert_eq(config.max_nodes.unwrap(), 5000);
 }
@@ -480,7 +480,7 @@
 // ============================================================================
 
 #[test]
-λ test_procedural_config_default() {
+rite test_procedural_config_default() {
     ≔ config = ProceduralConfig·default_config();
     assert_eq(config.min_episodes_for_skill, 3);
     assert_eq(config.pattern_match_threshold, 0.6);
@@ -491,7 +491,7 @@
 // ============================================================================
 
 #[test]
-λ test_vector_config_default() {
+rite test_vector_config_default() {
     ≔ config = VectorConfig·default_config();
     assert_eq(config.dimensions, 384);
     assert_eq(config.m, 16);
@@ -499,7 +499,7 @@
 }
 
 #[test]
-λ test_vector_config_with_dimensions() {
+rite test_vector_config_with_dimensions() {
     ≔ config = VectorConfig·default_config().with_dimensions(768);
     assert_eq(config.dimensions, 768);
 }
@@ -509,7 +509,7 @@
 // ============================================================================
 
 #[test]
-λ test_storage_config_default() {
+rite test_storage_config_default() {
     ≔ config = StorageConfig·default_config();
     ≔ is_file = ⌥ config.backend {
         StorageBackend·File { .. } => true,
@@ -519,7 +519,7 @@
 }
 
 #[test]
-λ test_storage_config_ephemeral() {
+rite test_storage_config_ephemeral() {
     ≔ config = StorageConfig·ephemeral();
     ≔ is_memory = ⌥ config.backend {
         StorageBackend·Memory => true,
@@ -533,7 +533,7 @@
 // ============================================================================
 
 #[test]
-λ test_embedding_config_default() {
+rite test_embedding_config_default() {
     ≔ config = EmbeddingConfig·default_config();
     assert_eq(config.dimensions, 384);
     assert(config.normalize);
@@ -545,7 +545,7 @@
 // ============================================================================
 
 #[test]
-λ test_consolidation_config_default() {
+rite test_consolidation_config_default() {
     ≔ config = ConsolidationConfig·default_config();
     assert(config.enabled);
     assert(config.on_idle);
@@ -556,20 +556,20 @@
 // ============================================================================
 
 #[test]
-λ test_engram_config_default() {
+rite test_engram_config_default() {
     ≔ config = EngramConfig·default_config();
     assert(config.agent_id.is_none());
     assert_eq(config.instant.capacity.0, 8000);
 }
 
 #[test]
-λ test_engram_config_high_memory() {
+rite test_engram_config_high_memory() {
     ≔ config = EngramConfig·high_memory();
     assert_eq(config.instant.capacity.0, 128000);
 }
 
 #[test]
-λ test_engram_config_low_memory() {
+rite test_engram_config_low_memory() {
     ≔ config = EngramConfig·low_memory();
     assert_eq(config.instant.capacity.0, 2000);
     assert_eq(config.episodic.max_active_episodes, 1000);
@@ -582,7 +582,7 @@
 }
 
 #[test]
-λ test_engram_config_ephemeral() {
+rite test_engram_config_ephemeral() {
     ≔ config = EngramConfig·ephemeral();
     ≔ is_memory = ⌥ config.storage.backend {
         StorageBackend·Memory => true,
@@ -596,11 +596,11 @@
 // ============================================================================
 
 #[test]
-λ test_hot_store_config_default() {
+rite test_hot_store_config_default() {
     ≔ config = HotStoreConfig·default_config();
     assert_eq(config.capacity.bytes(), 256 * 1024 * 1024);
 }
 
-λ main() {
+rite main() {
     print("Engram configuration tests");
 }

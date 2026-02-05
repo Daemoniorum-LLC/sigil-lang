@@ -9,12 +9,12 @@
 //! - Π (product) - product aggregation
 //! - α (first) - first element
 //! - ω (last) - last element
-//! - λ (lambda) - anonymous function
+//! - rite (lambda) - anonymous function
 //! - δ (distinct) - unique elements
 //! - γ (group) - group by
 
 /// Test transform (τ) morpheme
-☉ λ test_transform() -> !bool {
+☉ rite test_transform() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Double each number
@@ -30,7 +30,7 @@
 }
 
 /// Test filter (φ) morpheme
-☉ λ test_filter() -> !bool {
+☉ rite test_filter() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Keep only even numbers
@@ -46,7 +46,7 @@
 }
 
 /// Test sort (σ) morpheme
-☉ λ test_sort() -> !bool {
+☉ rite test_sort() -> !bool {
     ≔ numbers: ![i32] = [5, 2, 8, 1, 9, 3];
 
     // Default sort (ascending)
@@ -62,7 +62,7 @@
 }
 
 /// Test reduce (ρ) morpheme
-☉ λ test_reduce() -> !bool {
+☉ rite test_reduce() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Sum via reduce
@@ -81,7 +81,7 @@
 }
 
 /// Test sum (Σ) morpheme
-☉ λ test_sum() -> !bool {
+☉ rite test_sum() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Direct sum
@@ -96,7 +96,7 @@
 }
 
 /// Test product (Π) morpheme
-☉ λ test_product() -> !bool {
+☉ rite test_product() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // Direct product
@@ -107,7 +107,7 @@
 }
 
 /// Test first (α) and last (ω) morphemes
-☉ λ test_first_last() -> !bool {
+☉ rite test_first_last() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 3, 4, 5];
 
     // First element
@@ -130,7 +130,7 @@
 }
 
 /// Test distinct (δ) morpheme
-☉ λ test_distinct() -> !bool {
+☉ rite test_distinct() -> !bool {
     ≔ numbers: ![i32] = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4];
 
     // Unique values
@@ -141,7 +141,7 @@
 }
 
 /// Test complex pipe chains
-☉ λ test_complex_chains() -> !bool {
+☉ rite test_complex_chains() -> !bool {
     ≔ data: ![i32] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
     // Filter evens, square them, sort descending, take sum
@@ -162,7 +162,7 @@
     ☉ age: !i32,
 }
 
-☉ λ test_struct_pipes() -> !bool {
+☉ rite test_struct_pipes() -> !bool {
     ≔ people: ![Person] = [
         Person { name: "Alice", age: 30 },
         Person { name: "Bob", age: 25 },
@@ -188,7 +188,7 @@
 }
 
 /// Test incorporation syntax
-☉ λ test_incorporation() -> !bool {
+☉ rite test_incorporation() -> !bool {
     // Incorporation combines operations: file·open·read
     // This is polysynthetic: the incorporated form is a unit
 
@@ -199,7 +199,7 @@
 }
 
 /// Main entry point
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     assert(test_transform(), "test_transform failed");
     assert(test_filter(), "test_filter failed");
     assert(test_sort(), "test_sort failed");

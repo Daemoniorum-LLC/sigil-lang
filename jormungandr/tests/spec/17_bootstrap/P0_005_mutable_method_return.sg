@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print Hello World
 
-λ main() {
+rite main() {
     ≔ Δ s: !String = "Hello";
     s.push_str(" World");
     println(s);

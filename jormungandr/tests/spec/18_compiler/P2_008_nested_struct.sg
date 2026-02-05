@@ -14,7 +14,7 @@
     l2: Level2,
 }
 
-λ main() {
+rite main() {
     ≔ obj = Level1 {
         l2: Level2 {
             l3: Level3 {

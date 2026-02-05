@@ -3,11 +3,11 @@
 // Priority: P0 - Bootstrap Critical
 
 Θ HasName {
-    λ name(&self) -> String;
+    rite name(&self) -> String;
 }
 
 Θ HasValue {
-    λ value(&self) -> i32;
+    rite value(&self) -> i32;
 }
 
 Σ Item {
@@ -16,18 +16,18 @@
 }
 
 ⊢ HasName ∀ Item {
-    λ name(&self) -> String {
+    rite name(&self) -> String {
         ⤺ self.n.clone();
     }
 }
 
 ⊢ HasValue ∀ Item {
-    λ value(&self) -> i32 {
+    rite value(&self) -> i32 {
         ⤺ self.v;
     }
 }
 
-λ main() {
+rite main() {
     ≔ item = Item { n: "test".to_string(), v: 42 };
     println(item.name());
     println(item.value());

@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 4.3 Arc
 // Priority: P1 - Production Ready
 
-λ main() {
+rite main() {
     ≔ arc1: Arc<i32> = Arc·new(42);
 
     // Clone creates new reference

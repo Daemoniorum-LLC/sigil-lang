@@ -15,7 +15,7 @@ invoke gnosis·{
 }
 
 ⊢ CodingAssistant {
-    λ new() -> Self {
+    rite new() -> Self {
         ≔ Δ gnosis = Gnosis·new();
 
         // Define skills the agent will develop
@@ -58,11 +58,11 @@ invoke gnosis·{
         }
     }
 
-    λ set_human(&Δ self, human_id: &str) {
+    rite set_human(&Δ self, human_id: &str) {
         self.human_id = HumanId { id: human_id.to_string() };
     }
 
-    λ help_with_bug(&Δ self, bug_description: &str, success: bool, quality: f32) {
+    rite help_with_bug(&Δ self, bug_description: &str, success: bool, quality: f32) {
         // Record the experience
         ≔ context = Context·new("debugging")
             .with_domain("rust")
@@ -81,7 +81,7 @@ invoke gnosis·{
         self.gnosis.experience(Experience·new(context, action, outcome));
     }
 
-    λ refactor_code(&Δ self, improvement_type: &str, quality: f32) {
+    rite refactor_code(&Δ self, improvement_type: &str, quality: f32) {
         ≔ context = Context·new("refactoring")
             .with_domain("rust")
             .with_human(self.human_id.clone());
@@ -95,7 +95,7 @@ invoke gnosis·{
         self.gnosis.experience(Experience·new(context, action, outcome));
     }
 
-    λ explain_concept(&Δ self, concept: &str, understood: bool) {
+    rite explain_concept(&Δ self, concept: &str, understood: bool) {
         ≔ context = Context·new("teaching")
             .with_domain("programming_concepts")
             .with_human(self.human_id.clone());
@@ -113,7 +113,7 @@ invoke gnosis·{
         self.gnosis.experience(Experience·new(context, action, outcome));
     }
 
-    λ receive_feedback(&Δ self, feedback_type: FeedbackType) {
+    rite receive_feedback(&Δ self, feedback_type: FeedbackType) {
         ≔ context = Context·new("interaction")
             .with_human(self.human_id.clone());
 
@@ -126,12 +126,12 @@ invoke gnosis·{
         self.gnosis.learn_from_feedback(feedback);
     }
 
-    λ get_communication_style(&self) -> CommunicationStyle {
+    rite get_communication_style(&self) -> CommunicationStyle {
         // Get style adapted to this human's preferences
         self.gnosis.adapted_style(&self.human_id)
     }
 
-    λ adapt_to_domain(&Δ self, domain: &str) {
+    rite adapt_to_domain(&Δ self, domain: &str) {
         ≔ knowledge = DomainKnowledge·new()
             .with_term("borrow checker", "Rust's compile-time memory safety enforcement")
             .with_term("ownership", "Rust's memory management model")
@@ -141,7 +141,7 @@ invoke gnosis·{
         self.gnosis.adapt_to_domain(domain, knowledge);
     }
 
-    λ show_skill_progress(&self) {
+    rite show_skill_progress(&self) {
         println!("=== Skill Progress ===\n");
 
         ∀ skill ∈ self.gnosis.all_skills() {
@@ -155,17 +155,17 @@ invoke gnosis·{
         }
     }
 
-    λ daily_reflection(&self) {
+    rite daily_reflection(&self) {
         ≔ reflection = self.gnosis.reflect(ReflectionPeriod·Daily);
         println!("{}", reflection.to_summary());
     }
 
-    λ weekly_reflection(&self) {
+    rite weekly_reflection(&self) {
         ≔ reflection = self.gnosis.reflect(ReflectionPeriod·Weekly);
         println!("{}", reflection.to_summary());
     }
 
-    λ suggest_approach(&self, task_type: &str) {
+    rite suggest_approach(&self, task_type: &str) {
         ≔ context = Context·new(task_type);
         ≔ suggestions = self.gnosis.suggest_approach(&context);
 
@@ -182,7 +182,7 @@ invoke gnosis·{
     }
 }
 
-λ main() {
+rite main() {
     ≔ Δ assistant = CodingAssistant·new();
 
     // Set the human we're working with

@@ -2,7 +2,7 @@
 // This tests the native runtime synchronization primitives
 // Priority: P1
 
-λ main() {
+rite main() {
     // Initialize mutex (simulated as i64 ∈ interpreter)
     ≔ mutex = 0;
 

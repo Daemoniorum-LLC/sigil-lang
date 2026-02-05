@@ -8,7 +8,7 @@
     y: !i32
 }
 
-λ main() {
+rite main() {
     // Test that derive(Default) is recognized
     println("derive recognized");
 }

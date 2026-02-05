@@ -32,11 +32,11 @@
 //! invoke basilica·prelude·*;
 //!
 //! #[route(GET, "/")]
-//! λ hello() -> Response<String!> {
+//! rite hello() -> Response<String!> {
 //!     Response·ok("Hello, Basilica!"!)
 //! }
 //!
-//! λ main() {
+//! rite main() {
 //!     Nave·new()
 //!         .route(routes![hello])
 //!         .listen("0.0.0.0:8080")

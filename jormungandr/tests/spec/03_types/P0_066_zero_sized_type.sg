@@ -10,11 +10,11 @@
 
 ☉ Σ Marker;
 
-λ process(_m: Marker) -> !i32 {
+rite process(_m: Marker) -> !i32 {
     42
 }
 
-λ main() {
+rite main() {
     ≔ m: Marker = Marker;
     println(process(m));
 }

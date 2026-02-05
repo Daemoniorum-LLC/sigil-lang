@@ -12,7 +12,7 @@ macro add_ten {
     $__pipe + 10
 }
 
-λ main() {
+rite main() {
     // Test 1: Macro with argument
     ≔ y = double_it!(5);
     println!("double_it!(5) = {}", y);  // Should be 10

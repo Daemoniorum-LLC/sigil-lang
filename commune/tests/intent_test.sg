@@ -8,7 +8,7 @@
 }
 
 ⊢ Urgency {
-    ☉ λ priority(&self) -> !u32 {
+    ☉ rite priority(&self) -> !u32 {
         ⌥ self {
             Urgency·Critical => 100,
             Urgency·High => 75,
@@ -17,7 +17,7 @@
         }
     }
 
-    ☉ λ is_urgent(&self) -> !bool {
+    ☉ rite is_urgent(&self) -> !bool {
         ⌥ self {
             Urgency·Critical => true,
             Urgency·High => true,
@@ -34,7 +34,7 @@
 }
 
 ⊢ Importance {
-    ☉ λ weight(&self) -> !f32 {
+    ☉ rite weight(&self) -> !f32 {
         ⌥ self {
             Importance·Critical => 1.0,
             Importance·High => 0.75,
@@ -53,7 +53,7 @@
 }
 
 ⊢ TaskStatus {
-    ☉ λ is_active(&self) -> !bool {
+    ☉ rite is_active(&self) -> !bool {
         ⌥ self {
             TaskStatus·Pending => true,
             TaskStatus·InProgress => true,
@@ -61,7 +61,7 @@
         }
     }
 
-    ☉ λ is_terminal(&self) -> !bool {
+    ☉ rite is_terminal(&self) -> !bool {
         ⌥ self {
             TaskStatus·Completed => true,
             TaskStatus·Failed => true,
@@ -70,7 +70,7 @@
         }
     }
 
-    ☉ λ is_success(&self) -> !bool {
+    ☉ rite is_success(&self) -> !bool {
         ⌥ self {
             TaskStatus·Completed => true,
             _ => false,
@@ -86,14 +86,14 @@
 }
 
 ⊢ VoteValue {
-    ☉ λ is_positive(&self) -> !bool {
+    ☉ rite is_positive(&self) -> !bool {
         ⌥ self {
             VoteValue·Approve => true,
             _ => false,
         }
     }
 
-    ☉ λ is_negative(&self) -> !bool {
+    ☉ rite is_negative(&self) -> !bool {
         ⌥ self {
             VoteValue·Reject => true,
             VoteValue·Block => true,
@@ -101,14 +101,14 @@
         }
     }
 
-    ☉ λ is_blocking(&self) -> !bool {
+    ☉ rite is_blocking(&self) -> !bool {
         ⌥ self {
             VoteValue·Block => true,
             _ => false,
         }
     }
 
-    ☉ λ score(&self) -> !i32 {
+    ☉ rite score(&self) -> !i32 {
         ⌥ self {
             VoteValue·Approve => 1,
             VoteValue·Reject => -1,
@@ -126,7 +126,7 @@
 }
 
 ⊢ Priority {
-    ☉ λ value(&self) -> !u32 {
+    ☉ rite value(&self) -> !u32 {
         ⌥ self {
             Priority·Critical => 4,
             Priority·High => 3,
@@ -135,7 +135,7 @@
         }
     }
 
-    ☉ λ is_high(&self) -> !bool {
+    ☉ rite is_high(&self) -> !bool {
         ⌥ self {
             Priority·Critical => true,
             Priority·High => true,
@@ -150,15 +150,15 @@
 }
 
 ⊢ IntentInfo {
-    ☉ λ query() -> Self {
+    ☉ rite query() -> Self {
         IntentInfo { expects_response: true, timeout_secs: 30 }
     }
 
-    ☉ λ inform() -> Self {
+    ☉ rite inform() -> Self {
         IntentInfo { expects_response: false, timeout_secs: 0 }
     }
 
-    ☉ λ request(urgency: Urgency) -> Self {
+    ☉ rite request(urgency: Urgency) -> Self {
         ≔ timeout = ⌥ urgency {
             Urgency·Critical => 10,
             Urgency·High => 30,
@@ -174,48 +174,48 @@
 // ============================================================================
 
 #[test]
-λ test_urgency_priority_critical() {
+rite test_urgency_priority_critical() {
     ≔ u = Urgency·Critical;
     assert(u.priority() == 100);
     assert(u.is_urgent());
 }
 
 #[test]
-λ test_urgency_priority_high() {
+rite test_urgency_priority_high() {
     ≔ u = Urgency·High;
     assert(u.priority() == 75);
     assert(u.is_urgent());
 }
 
 #[test]
-λ test_urgency_priority_normal() {
+rite test_urgency_priority_normal() {
     ≔ u = Urgency·Normal;
     assert(u.priority() == 50);
     assert(!u.is_urgent());
 }
 
 #[test]
-λ test_importance_weight() {
+rite test_importance_weight() {
     ≔ i = Importance·Critical;
     assert(i.weight() == 1.0);
 }
 
 #[test]
-λ test_task_status_pending() {
+rite test_task_status_pending() {
     ≔ s = TaskStatus·Pending;
     assert(s.is_active());
     assert(!s.is_terminal());
 }
 
 #[test]
-λ test_task_status_in_progress() {
+rite test_task_status_in_progress() {
     ≔ s = TaskStatus·InProgress;
     assert(s.is_active());
     assert(!s.is_terminal());
 }
 
 #[test]
-λ test_task_status_completed() {
+rite test_task_status_completed() {
     ≔ s = TaskStatus·Completed;
     assert(!s.is_active());
     assert(s.is_terminal());
@@ -223,14 +223,14 @@
 }
 
 #[test]
-λ test_task_status_failed() {
+rite test_task_status_failed() {
     ≔ s = TaskStatus·Failed;
     assert(s.is_terminal());
     assert(!s.is_success());
 }
 
 #[test]
-λ test_vote_approve() {
+rite test_vote_approve() {
     ≔ v = VoteValue·Approve;
     assert(v.is_positive());
     assert(!v.is_negative());
@@ -238,7 +238,7 @@
 }
 
 #[test]
-λ test_vote_reject() {
+rite test_vote_reject() {
     ≔ v = VoteValue·Reject;
     assert(!v.is_positive());
     assert(v.is_negative());
@@ -246,14 +246,14 @@
 }
 
 #[test]
-λ test_vote_block() {
+rite test_vote_block() {
     ≔ v = VoteValue·Block;
     assert(v.is_blocking());
     assert(v.score() == -10);
 }
 
 #[test]
-λ test_vote_abstain() {
+rite test_vote_abstain() {
     ≔ v = VoteValue·Abstain;
     assert(!v.is_positive());
     assert(!v.is_negative());
@@ -261,7 +261,7 @@
 }
 
 #[test]
-λ test_priority_values() {
+rite test_priority_values() {
     ≔ c = Priority·Critical;
     ≔ h = Priority·High;
     assert(c.value() == 4);
@@ -269,33 +269,33 @@
 }
 
 #[test]
-λ test_priority_is_high() {
+rite test_priority_is_high() {
     assert(Priority·Critical.is_high());
     assert(Priority·High.is_high());
     assert(!Priority·Normal.is_high());
 }
 
 #[test]
-λ test_intent_info_query() {
+rite test_intent_info_query() {
     ≔ info = IntentInfo·query();
     assert(info.expects_response);
     assert(info.timeout_secs == 30);
 }
 
 #[test]
-λ test_intent_info_inform() {
+rite test_intent_info_inform() {
     ≔ info = IntentInfo·inform();
     assert(!info.expects_response);
 }
 
 #[test]
-λ test_intent_info_request() {
+rite test_intent_info_request() {
     ≔ critical = IntentInfo·request(Urgency·Critical);
     ≔ normal = IntentInfo·request(Urgency·Normal);
     assert(critical.timeout_secs == 10);
     assert(normal.timeout_secs == 300);
 }
 
-λ main() {
+rite main() {
     println("Commune intent tests - 17 tests");
 }

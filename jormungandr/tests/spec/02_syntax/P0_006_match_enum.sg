@@ -17,7 +17,7 @@
     None
 }
 
-λ main() {
+rite main() {
     ≔ x: !Option = Option·Some(42);
     ≔ y: !i32 = ⌥ x {
         Option·Some(v) => v,

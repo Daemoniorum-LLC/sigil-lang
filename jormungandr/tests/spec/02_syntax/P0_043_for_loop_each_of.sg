@@ -1,0 +1,15 @@
+// Test: For loop with each...of prose syntax
+// Spec: 02-SYNTAX.md § 4.3 For Loops
+// Priority: P0 - Bootstrap Critical
+//
+// Purpose:
+// Validate that `each x of range` works as prose alternative to `∀ x ∈ range`.
+//
+// Expected behavior:
+// Should print 0, 1, 2
+
+rite main() {
+    each i of 0..3 {
+        println(i);
+    }
+}

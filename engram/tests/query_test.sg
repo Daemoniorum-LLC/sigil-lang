@@ -16,7 +16,7 @@
 }
 
 ⊢ Comparator {
-    ☉ λ compare(&self, a: f64, b: f64) -> bool {
+    ☉ rite compare(&self, a: f64, b: f64) -> bool {
         ⌥ self {
             Comparator·Eq => (a - b).abs() < 0.0001,
             Comparator·Ne => (a - b).abs() >= 0.0001,
@@ -35,19 +35,19 @@
 }
 
 ⊢ TimePoint {
-    ☉ λ now() -> Self { TimePoint·Now }
+    ☉ rite now() -> Self { TimePoint·Now }
 
-    ☉ λ absolute(ts: u64) -> Self { TimePoint·Absolute(ts) }
+    ☉ rite absolute(ts: u64) -> Self { TimePoint·Absolute(ts) }
 
-    ☉ λ ago(secs: u64) -> Self {
+    ☉ rite ago(secs: u64) -> Self {
         TimePoint·Relative { amount_secs: secs, is_ago: true }
     }
 
-    ☉ λ from_now(secs: u64) -> Self {
+    ☉ rite from_now(secs: u64) -> Self {
         TimePoint·Relative { amount_secs: secs, is_ago: false }
     }
 
-    ☉ λ to_timestamp(&self, current_time: u64) -> u64 {
+    ☉ rite to_timestamp(&self, current_time: u64) -> u64 {
         ⌥ self {
             TimePoint·Now => current_time,
             TimePoint·Absolute(t) => *t,
@@ -68,11 +68,11 @@
 }
 
 ⊢ TimeRange {
-    ☉ λ new(start: u64, end: u64) -> Self {
+    ☉ rite new(start: u64, end: u64) -> Self {
         Self { start, end }
     }
 
-    ☉ λ contains(&self, ts: u64) -> bool {
+    ☉ rite contains(&self, ts: u64) -> bool {
         ts >= self.start && ts <= self.end
     }
 }
@@ -86,7 +86,7 @@
 }
 
 ⊢ TemporalConstraint {
-    ☉ λ matches(&self, ts: u64, current_time: u64) -> bool {
+    ☉ rite matches(&self, ts: u64, current_time: u64) -> bool {
         ⌥ self {
             TemporalConstraint·During(range) => range.contains(ts),
             TemporalConstraint·Before(point) => ts < point.to_timestamp(current_time),
@@ -113,7 +113,7 @@
 }
 
 ⊢ Clone ∀ MemorySource {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             MemorySource·Instant => MemorySource·Instant,
             MemorySource·Episodic => MemorySource·Episodic,
@@ -124,7 +124,7 @@
 }
 
 ⊢ PartialEq ∀ MemorySource {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         ⌥ (self, other) {
             (MemorySource·Instant, MemorySource·Instant) => true,
             (MemorySource·Episodic, MemorySource·Episodic) => true,
@@ -151,7 +151,7 @@
 }
 
 ⊢ Filter {
-    ☉ λ matches(&self, memory: &Memory) -> bool {
+    ☉ rite matches(&self, memory: &Memory) -> bool {
         ⌥ self {
             Filter·Confidence { op, value } => op.compare(memory.confidence, *value),
             Filter·Source(source) => memory.source == *source,
@@ -179,7 +179,7 @@
 }
 
 ⊢ Query {
-    ☉ λ new(text: &str) -> Self {
+    ☉ rite new(text: &str) -> Self {
         Self {
             text: Some(text.to_string()),
             entity: None,
@@ -192,7 +192,7 @@
         }
     }
 
-    ☉ λ entity(label: &str) -> Self {
+    ☉ rite entity(label: &str) -> Self {
         Self {
             text: None,
             entity: Some(label.to_string()),
@@ -205,71 +205,71 @@
         }
     }
 
-    ☉ λ filter(Δ self, f: Filter) -> Self {
+    ☉ rite filter(Δ self, f: Filter) -> Self {
         self.filters.push(f);
         self
     }
 
-    ☉ λ where_confidence(self, op: Comparator, value: f64) -> Self {
+    ☉ rite where_confidence(self, op: Comparator, value: f64) -> Self {
         self.filter(Filter·Confidence { op, value })
     }
 
-    ☉ λ where_source(self, source: MemorySource) -> Self {
+    ☉ rite where_source(self, source: MemorySource) -> Self {
         self.filter(Filter·Source(source))
     }
 
-    ☉ λ during(Δ self, range: TimeRange) -> Self {
+    ☉ rite during(Δ self, range: TimeRange) -> Self {
         self.temporal = Some(TemporalConstraint·During(range));
         self
     }
 
-    ☉ λ before(Δ self, point: TimePoint) -> Self {
+    ☉ rite before(Δ self, point: TimePoint) -> Self {
         self.temporal = Some(TemporalConstraint·Before(point));
         self
     }
 
-    ☉ λ after(Δ self, point: TimePoint) -> Self {
+    ☉ rite after(Δ self, point: TimePoint) -> Self {
         self.temporal = Some(TemporalConstraint·After(point));
         self
     }
 
-    ☉ λ limit(Δ self, n: usize) -> Self {
+    ☉ rite limit(Δ self, n: usize) -> Self {
         self.limit = n;
         self
     }
 
-    ☉ λ offset(Δ self, n: usize) -> Self {
+    ☉ rite offset(Δ self, n: usize) -> Self {
         self.offset = n;
         self
     }
 
-    ☉ λ top(self, n: usize) -> Self {
+    ☉ rite top(self, n: usize) -> Self {
         self.limit(n)
     }
 
-    ☉ λ with_gap_analysis(Δ self) -> Self {
+    ☉ rite with_gap_analysis(Δ self) -> Self {
         self.include_gaps = true;
         self
     }
 
-    ☉ λ hint(Δ self, h: QueryHint) -> Self {
+    ☉ rite hint(Δ self, h: QueryHint) -> Self {
         self.hints.push(h);
         self
     }
 
-    ☉ λ text(&self) -> String {
+    ☉ rite text(&self) -> String {
         self.text.clone().unwrap_or_default()
     }
 
-    ☉ λ get_limit(&self) -> usize {
+    ☉ rite get_limit(&self) -> usize {
         self.limit
     }
 
-    ☉ λ has_temporal(&self) -> bool {
+    ☉ rite has_temporal(&self) -> bool {
         self.temporal.is_some()
     }
 
-    ☉ λ apply_filters(&self, memories: &Vec<Memory>) -> Vec<&Memory> {
+    ☉ rite apply_filters(&self, memories: &Vec<Memory>) -> Vec<&Memory> {
         memories.iter()
             .filter(|m| self.filters.iter().all(|f| f.matches(m)))
             .collect()
@@ -284,7 +284,7 @@
 }
 
 ⊢ ConfidenceDistribution {
-    ☉ λ from_values(values: &Vec<f64>) -> Self {
+    ☉ rite from_values(values: &Vec<f64>) -> Self {
         ⎇ values.is_empty() {
             ⤺ Self { min: 0.0, max: 0.0, mean: 0.0, median: 0.0 };
         }
@@ -324,7 +324,7 @@
 }
 
 ⊢ RecallResult {
-    ☉ λ empty() -> Self {
+    ☉ rite empty() -> Self {
         Self {
             memories: Vec·new(),
             total_found: 0,
@@ -334,15 +334,15 @@
         }
     }
 
-    ☉ λ is_empty(&self) -> bool {
+    ☉ rite is_empty(&self) -> bool {
         self.memories.is_empty()
     }
 
-    ☉ λ has_gaps(&self) -> bool {
+    ☉ rite has_gaps(&self) -> bool {
         !self.gaps.is_empty()
     }
 
-    ☉ λ high_confidence(&self) -> Vec<&Memory> {
+    ☉ rite high_confidence(&self) -> Vec<&Memory> {
         self.memories.iter().filter(|m| m.confidence > 0.8).collect()
     }
 }
@@ -352,39 +352,39 @@
 // ============================================================================
 
 #[test]
-λ test_query_new() {
+rite test_query_new() {
     ≔ q = Query·new("find information about AI");
     assert_eq(q.text(), "find information about AI");
     assert_eq(q.get_limit(), 10);
 }
 
 #[test]
-λ test_query_entity() {
+rite test_query_entity() {
     ≔ q = Query·entity("Python");
     assert(q.text().is_empty());
     assert(!q.include_gaps);
 }
 
 #[test]
-λ test_query_with_limit() {
+rite test_query_with_limit() {
     ≔ q = Query·new("test").limit(5);
     assert_eq(q.get_limit(), 5);
 }
 
 #[test]
-λ test_query_with_offset() {
+rite test_query_with_offset() {
     ≔ q = Query·new("test").offset(10);
     assert_eq(q.offset, 10);
 }
 
 #[test]
-λ test_query_top_alias() {
+rite test_query_top_alias() {
     ≔ q = Query·new("test").top(3);
     assert_eq(q.get_limit(), 3);
 }
 
 #[test]
-λ test_query_with_gap_analysis() {
+rite test_query_with_gap_analysis() {
     ≔ q = Query·new("test").with_gap_analysis();
     assert(q.include_gaps);
 }
@@ -394,35 +394,35 @@
 // ============================================================================
 
 #[test]
-λ test_comparator_eq() {
+rite test_comparator_eq() {
     ≔ cmp = Comparator·Eq;
     assert(cmp.compare(0.5, 0.5));
     assert(!cmp.compare(0.5, 0.6));
 }
 
 #[test]
-λ test_comparator_ne() {
+rite test_comparator_ne() {
     ≔ cmp = Comparator·Ne;
     assert(cmp.compare(0.5, 0.6));
     assert(!cmp.compare(0.5, 0.5));
 }
 
 #[test]
-λ test_comparator_gt() {
+rite test_comparator_gt() {
     ≔ cmp = Comparator·Gt;
     assert(cmp.compare(0.6, 0.5));
     assert(!cmp.compare(0.5, 0.6));
 }
 
 #[test]
-λ test_comparator_lt() {
+rite test_comparator_lt() {
     ≔ cmp = Comparator·Lt;
     assert(cmp.compare(0.4, 0.5));
     assert(!cmp.compare(0.6, 0.5));
 }
 
 #[test]
-λ test_comparator_gte() {
+rite test_comparator_gte() {
     ≔ cmp = Comparator·Gte;
     assert(cmp.compare(0.5, 0.5));
     assert(cmp.compare(0.6, 0.5));
@@ -430,7 +430,7 @@
 }
 
 #[test]
-λ test_comparator_lte() {
+rite test_comparator_lte() {
     ≔ cmp = Comparator·Lte;
     assert(cmp.compare(0.5, 0.5));
     assert(cmp.compare(0.4, 0.5));
@@ -442,7 +442,7 @@
 // ============================================================================
 
 #[test]
-λ test_filter_confidence() {
+rite test_filter_confidence() {
     ≔ filter = Filter·Confidence { op: Comparator·Gt, value: 0.7 };
     ≔ high = Memory {
         id: "1".to_string(), content: "test".to_string(),
@@ -460,7 +460,7 @@
 }
 
 #[test]
-λ test_filter_source() {
+rite test_filter_source() {
     ≔ filter = Filter·Source(MemorySource·Episodic);
     ≔ episodic = Memory {
         id: "1".to_string(), content: "test".to_string(),
@@ -478,7 +478,7 @@
 }
 
 #[test]
-λ test_filter_min_relevance() {
+rite test_filter_min_relevance() {
     ≔ filter = Filter·MinRelevance(0.6);
     ≔ high = Memory {
         id: "1".to_string(), content: "test".to_string(),
@@ -496,7 +496,7 @@
 }
 
 #[test]
-λ test_query_apply_filters() {
+rite test_query_apply_filters() {
     ≔ q = Query·new("test")
         .where_confidence(Comparator·Gte, 0.7);
 
@@ -522,7 +522,7 @@
 // ============================================================================
 
 #[test]
-λ test_time_range() {
+rite test_time_range() {
     ≔ range = TimeRange·new(100, 200);
     assert(range.contains(150));
     assert(range.contains(100));
@@ -532,56 +532,56 @@
 }
 
 #[test]
-λ test_time_point_now() {
+rite test_time_point_now() {
     ≔ point = TimePoint·now();
     ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 1000);
 }
 
 #[test]
-λ test_time_point_absolute() {
+rite test_time_point_absolute() {
     ≔ point = TimePoint·absolute(500);
     ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 500);
 }
 
 #[test]
-λ test_time_point_ago() {
+rite test_time_point_ago() {
     ≔ point = TimePoint·ago(100);
     ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 900);
 }
 
 #[test]
-λ test_time_point_from_now() {
+rite test_time_point_from_now() {
     ≔ point = TimePoint·from_now(100);
     ≔ ts = point.to_timestamp(1000);
     assert_eq(ts, 1100);
 }
 
 #[test]
-λ test_temporal_during() {
+rite test_temporal_during() {
     ≔ constraint = TemporalConstraint·During(TimeRange·new(100, 200));
     assert(constraint.matches(150, 1000));
     assert(!constraint.matches(50, 1000));
 }
 
 #[test]
-λ test_temporal_before() {
+rite test_temporal_before() {
     ≔ constraint = TemporalConstraint·Before(TimePoint·absolute(500));
     assert(constraint.matches(400, 1000));
     assert(!constraint.matches(600, 1000));
 }
 
 #[test]
-λ test_temporal_after() {
+rite test_temporal_after() {
     ≔ constraint = TemporalConstraint·After(TimePoint·absolute(500));
     assert(constraint.matches(600, 1000));
     assert(!constraint.matches(400, 1000));
 }
 
 #[test]
-λ test_temporal_between() {
+rite test_temporal_between() {
     ≔ constraint = TemporalConstraint·Between(
         TimePoint·absolute(100),
         TimePoint·absolute(300)
@@ -591,7 +591,7 @@
 }
 
 #[test]
-λ test_query_has_temporal() {
+rite test_query_has_temporal() {
     ≔ q1 = Query·new("test");
     ≔ q2 = Query·new("test").before(TimePoint·now());
 
@@ -604,7 +604,7 @@
 // ============================================================================
 
 #[test]
-λ test_query_with_hints() {
+rite test_query_with_hints() {
     ≔ q = Query·new("test")
         .hint(QueryHint·MaxCandidates(100))
         .hint(QueryHint·Approximate(true))
@@ -618,14 +618,14 @@
 // ============================================================================
 
 #[test]
-λ test_confidence_distribution_empty() {
+rite test_confidence_distribution_empty() {
     ≔ dist = ConfidenceDistribution·from_values(&Vec·new());
     assert_eq(dist.min, 0.0);
     assert_eq(dist.max, 0.0);
 }
 
 #[test]
-λ test_confidence_distribution_single() {
+rite test_confidence_distribution_single() {
     ≔ dist = ConfidenceDistribution·from_values(&vec![0.5]);
     assert_eq(dist.min, 0.5);
     assert_eq(dist.max, 0.5);
@@ -633,7 +633,7 @@
 }
 
 #[test]
-λ test_confidence_distribution_multiple() {
+rite test_confidence_distribution_multiple() {
     ≔ dist = ConfidenceDistribution·from_values(&vec![0.2, 0.4, 0.6, 0.8]);
     assert_eq(dist.min, 0.2);
     assert_eq(dist.max, 0.8);
@@ -646,14 +646,14 @@
 // ============================================================================
 
 #[test]
-λ test_recall_result_empty() {
+rite test_recall_result_empty() {
     ≔ result = RecallResult·empty();
     assert(result.is_empty());
     assert_eq(result.total_found, 0);
 }
 
 #[test]
-λ test_recall_result_has_gaps() {
+rite test_recall_result_has_gaps() {
     ≔ Δ result = RecallResult·empty();
     assert(!result.has_gaps());
 
@@ -665,7 +665,7 @@
 }
 
 #[test]
-λ test_recall_result_high_confidence() {
+rite test_recall_result_high_confidence() {
     ≔ Δ result = RecallResult·empty();
     result.memories.push(Memory {
         id: "1".to_string(), content: "high".to_string(),
@@ -683,6 +683,6 @@
     assert_eq(high[0].content, "high");
 }
 
-λ main() {
+rite main() {
     print("Engram query system tests");
 }

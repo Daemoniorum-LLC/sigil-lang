@@ -1,6 +1,6 @@
 //! Syscall Layer Tests - Tests getpid, mmap, munmap
 
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ Δ failures: i64 = 0;
 
     // Test 1: getpid syscall (should ⤺ positive PID)

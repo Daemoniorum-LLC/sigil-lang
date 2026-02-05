@@ -2,6 +2,6 @@
 //
 // Run: sigil run examples/00_hello.sg
 
-λ main() {
+rite main() {
     println("Hello, Sigil!");
 }

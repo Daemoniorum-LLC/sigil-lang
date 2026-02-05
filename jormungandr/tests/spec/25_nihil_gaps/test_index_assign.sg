@@ -1,0 +1,87 @@
+// Test: Mutable index assignment (arr[i] = val)
+// Spec: 09-STDLIB.md — IndexMut trait
+// Priority: P1 - Required for Nihil ML framework (7 test files blocked)
+//
+// Purpose:
+// Validates that mutable arrays/vectors support index assignment.
+// The interpreter currently errors with "Invalid index assignment target".
+// This is an implementation bug — IndexMut is specced in the stdlib.
+//
+// Expected behavior:
+// arr[i] = val modifies the element at index i in place.
+
+// Note: local variable index assignment (arr[i] = val) already works.
+// The Nihil failure is specifically when the target is a struct field:
+//   self.data[idx] = value;  →  "Invalid index assignment target"
+
+☉ Σ Storage {
+    data: Vec<f64>,
+}
+
+⊢ Storage {
+    ☉ rite new(size: usize) -> Self {
+        ≔ Δ data = Vec·new();
+        ∀ _ ∈ 0..size {
+            data.push(0.0);
+        }
+        Storage { data }
+    }
+
+    ☉ rite get(&self, idx: usize) -> f64 {
+        self.data[idx]
+    }
+
+    ☉ rite set(&Δ self, idx: usize, value: f64) {
+        self.data[idx] = value;
+    }
+
+    ☉ rite len(&self) -> usize {
+        self.data.len()
+    }
+}
+
+rite test_struct_field_index_assign() {
+    ≔ Δ s = Storage·new(3);
+    s.set(0, 10.0);
+    s.set(1, 20.0);
+    s.set(2, 30.0);
+    assert_eq(s.get(0), 10.0);
+    assert_eq(s.get(1), 20.0);
+    assert_eq(s.get(2), 30.0);
+    println("  PASS: test_struct_field_index_assign");
+}
+
+rite test_local_index_assign() {
+    // This case already works — included for regression
+    ≔ Δ arr = [0, 0, 0];
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+    assert_eq(arr[0], 10);
+    assert_eq(arr[1], 20);
+    assert_eq(arr[2], 30);
+    println("  PASS: test_local_index_assign");
+}
+
+rite test_loop_fill_via_struct() {
+    // Common Nihil pattern: fill storage in a loop
+    ≔ Δ s = Storage·new(5);
+    ∀ i ∈ 0..5 {
+        s.set(i, (i * i) as f64);
+    }
+    assert_eq(s.get(0), 0.0);
+    assert_eq(s.get(1), 1.0);
+    assert_eq(s.get(2), 4.0);
+    assert_eq(s.get(3), 9.0);
+    assert_eq(s.get(4), 16.0);
+    println("  PASS: test_loop_fill_via_struct");
+}
+
+☉ rite main() -> !i32 {
+    println("=== Bug Fix: Index Assignment ===");
+    test_struct_field_index_assign();
+    test_local_index_assign();
+    test_loop_fill_via_struct();
+    println("All index assignment tests passed!");
+    ⤺ 0;
+}

@@ -4,7 +4,7 @@
 // Tests: ⊗ ∀ ⊗
 // Expected: Program compiles and runs, printing 0, 1, 2 then "escaped"
 
-λ main() {
+rite main() {
     ≔ Δ i = 0;
 
     ∞ {

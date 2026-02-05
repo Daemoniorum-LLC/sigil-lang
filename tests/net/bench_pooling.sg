@@ -17,7 +17,7 @@ const PROT_WRITE: i64 = 2;
 const MAP_PRIVATE: i64 = 2;
 const MAP_ANONYMOUS: i64 = 32;
 
-λ syscall1(num: i64, arg1: i64) -> i64 {
+rite syscall1(num: i64, arg1: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") arg1,
@@ -26,7 +26,7 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") arg1, in("rsi") arg2,
@@ -35,7 +35,7 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") arg1, in("rsi") arg2, in("rdx") arg3,
@@ -44,7 +44,7 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ syscall6(num: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
+rite syscall6(num: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall", inout("rax") num => ret, in("rdi") a1, in("rsi") a2, in("rdx") a3,
@@ -53,13 +53,13 @@ const MAP_ANONYMOUS: i64 = 32;
     ret
 }
 
-λ alloc_mem(size: i64) -> i64 {
+rite alloc_mem(size: i64) -> i64 {
     syscall6(SYS_MMAP, 0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
 }
 
-λ free_mem(ptr: i64, size: i64) { syscall2(SYS_MUNMAP, ptr, size); }
+rite free_mem(ptr: i64, size: i64) { syscall2(SYS_MUNMAP, ptr, size); }
 
-λ mem_set(dst: i64, val: i8, len: i64) {
+rite mem_set(dst: i64, val: i8, len: i64) {
     ≔ i: i64 = 0;
     ⟳ i < len {
         unsafe { asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") val, options(nostack)); }
@@ -67,7 +67,7 @@ const MAP_ANONYMOUS: i64 = 32;
     }
 }
 
-λ get_time_ns() -> i64 {
+rite get_time_ns() -> i64 {
     ≔ ts = alloc_mem(16);
     syscall2(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC, ts);
     ≔ secs: i64 = 0;
@@ -80,9 +80,9 @@ const MAP_ANONYMOUS: i64 = 32;
     secs * 1000000000 + nsecs
 }
 
-λ write_stdout(s: i64, len: i64) { syscall3(SYS_WRITE, 1, s, len); }
+rite write_stdout(s: i64, len: i64) { syscall3(SYS_WRITE, 1, s, len); }
 
-λ print_int(n: i64) {
+rite print_int(n: i64) {
     ≔ buf = alloc_mem(32);
     ≔ num = n;
     ≔ idx: i64 = 30;
@@ -101,7 +101,7 @@ const MAP_ANONYMOUS: i64 = 32;
     free_mem(buf, 32);
 }
 
-λ print_msg(chars: i64, len: i64) {
+rite print_msg(chars: i64, len: i64) {
     ≔ buf = alloc_mem(len + 1);
     ≔ i: i64 = 0;
     ⟳ i < len {
@@ -114,10 +114,10 @@ const MAP_ANONYMOUS: i64 = 32;
     free_mem(buf, len + 1);
 }
 
-λ socket_create() -> i64 { syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0) }
-λ socket_close(fd: i64) { syscall1(SYS_CLOSE, fd); }
+rite socket_create() -> i64 { syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0) }
+rite socket_close(fd: i64) { syscall1(SYS_CLOSE, fd); }
 
-λ socket_connect(fd: i64, ip_packed: i64, port: i64) -> i64 {
+rite socket_connect(fd: i64, ip_packed: i64, port: i64) -> i64 {
     ≔ addr_buf = alloc_mem(32);
     mem_set(addr_buf, 0, 16);
     unsafe { asm!("mov word ptr [rdi], 2", in("rdi") addr_buf, options(nostack)); }
@@ -133,7 +133,7 @@ const MAP_ANONYMOUS: i64 = 32;
     result
 }
 
-λ do_tls_handshake(fd: i64, hostname: i64) -> i64 {
+rite do_tls_handshake(fd: i64, hostname: i64) -> i64 {
     sigil_tls_init();
     ≔ ctx = sigil_tls_ctx_new();
     ≔ ssl = sigil_tls_new(ctx);
@@ -144,13 +144,13 @@ const MAP_ANONYMOUS: i64 = 32;
     ⎇ result == 1 { ssl } ⎉ { 0 }
 }
 
-λ tls_shutdown_and_free(ssl: i64, ctx: i64) {
+rite tls_shutdown_and_free(ssl: i64, ctx: i64) {
     sigil_tls_shutdown(ssl);
     sigil_tls_free(ssl);
     sigil_tls_ctx_free(ctx);
 }
 
-λ main() -> i64 {
+rite main() -> i64 {
     // Header
     ≔ header = alloc_mem(64);
     ≔ h: [i8; 30] = [61, 61, 61, 32, 80, 111, 111, 108, 105, 110, 103, 32, 66, 101, 110, 99, 104, 109, 97, 114, 107, 32, 61, 61, 61, 10, 0, 0, 0, 0];

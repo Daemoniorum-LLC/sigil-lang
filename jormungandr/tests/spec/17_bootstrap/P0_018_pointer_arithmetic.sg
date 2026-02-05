@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 99 (second array element)
 
-λ main() {
+rite main() {
     ≔ arr: ![i32; 3] = [42, 99, 13];
     unsafe {
         ≔ ptr: *!i32 = &arr[1];

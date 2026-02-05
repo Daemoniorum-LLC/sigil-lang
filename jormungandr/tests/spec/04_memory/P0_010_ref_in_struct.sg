@@ -12,7 +12,7 @@
     inner: &!i32
 }
 
-λ main() {
+rite main() {
     ≔ val: !i32 = 42;
     ≔ w: !Wrapper = Wrapper { inner: &val };
     println(*w.inner);

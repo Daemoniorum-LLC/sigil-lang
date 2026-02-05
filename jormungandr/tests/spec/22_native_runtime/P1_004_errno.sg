@@ -16,7 +16,7 @@
     EINVAL = 22,
 }
 
-λ errno_message(code: i64) -> String {
+rite errno_message(code: i64) -> String {
     ⎇ code == 1 {
         ⤺ "Operation not permitted";
     } ⎉ ⎇ code == 2 {
@@ -28,7 +28,7 @@
     }
 }
 
-λ main() {
+rite main() {
     // Test 1: Errno from code
     ≔ eperm_code = 1;
     assert_eq!(eperm_code, 1);

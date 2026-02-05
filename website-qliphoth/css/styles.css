@@ -34,6 +34,8 @@
   --reported-bg: rgba(107, 155, 209, 0.12);
   --paradox: #D47171;          /* 5.0:1 - brighter red */
   --paradox-bg: rgba(212, 113, 113, 0.12);
+  --predicted: #C98FDB;        /* 5.0:1 - purple for AI/ML */
+  --predicted-bg: rgba(201, 143, 219, 0.12);
 
   /* Code colors */
   --code-bg: #030305;
@@ -653,6 +655,11 @@ body:has(.announcement-banner) [id] {
   color: var(--paradox);
 }
 
+.ev-predicted {
+  background: var(--predicted-bg);
+  color: var(--predicted);
+}
+
 .ev-large {
   width: 2.5rem;
   height: 2.5rem;
@@ -784,6 +791,7 @@ body:has(.announcement-banner) [id] {
 /* Inline evidence markers in code */
 .ev-known { color: var(--known); font-weight: bold; }
 .ev-uncertain { color: var(--uncertain); font-weight: bold; }
+.ev-predicted { color: var(--predicted); font-weight: bold; }
 .ev-reported { color: var(--reported); font-weight: bold; }
 .ev-paradox { color: var(--paradox); font-weight: bold; }
 

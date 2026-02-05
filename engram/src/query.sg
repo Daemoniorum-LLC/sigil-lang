@@ -43,7 +43,7 @@ invoke engram·procedural·SkillMatch
 
 ⊢ Query {
     /// Create a new semantic query
-    ☉ λ new(text: &str) -> Self {
+    ☉ rite new(text: &str) -> Self {
         Self {
             text: Some(text.to_string()),
             entity: None,
@@ -58,7 +58,7 @@ invoke engram·procedural·SkillMatch
     }
 
     /// Create an entity-based query
-    ☉ λ entity(label: &str) -> Self {
+    ☉ rite entity(label: &str) -> Self {
         Self {
             text: None,
             entity: Some(label.to_string()),
@@ -77,70 +77,70 @@ invoke engram·procedural·SkillMatch
     // ========================================================================
 
     /// Add a filter
-    ☉ λ where_(Δ self, filter: Filter) -> Self {
+    ☉ rite where_(Δ self, filter: Filter) -> Self {
         self.filters.push(filter)
         self
     }
 
     /// Filter by confidence
-    ☉ λ where_confidence(self, op: Comparator, value: f64) -> Self {
+    ☉ rite where_confidence(self, op: Comparator, value: f64) -> Self {
         self.where_(Filter·Confidence { op, value })
     }
 
     /// Filter by epistemic status
-    ☉ λ where_epistemic(self, check: EpistemicCheck) -> Self {
+    ☉ rite where_epistemic(self, check: EpistemicCheck) -> Self {
         self.where_(Filter·Epistemic(check))
     }
 
     /// Add temporal constraint
-    ☉ λ during(Δ self, range: TimeRange) -> Self {
+    ☉ rite during(Δ self, range: TimeRange) -> Self {
         self.temporal = Some(TemporalConstraint·During(range))
         self
     }
 
     /// Before a time point
-    ☉ λ before(Δ self, point: TimePoint) -> Self {
+    ☉ rite before(Δ self, point: TimePoint) -> Self {
         self.temporal = Some(TemporalConstraint·Before(point))
         self
     }
 
     /// After a time point
-    ☉ λ after(Δ self, point: TimePoint) -> Self {
+    ☉ rite after(Δ self, point: TimePoint) -> Self {
         self.temporal = Some(TemporalConstraint·After(point))
         self
     }
 
     /// Set result limit
-    ☉ λ limit(Δ self, n: usize) -> Self {
+    ☉ rite limit(Δ self, n: usize) -> Self {
         self.limit = n
         self
     }
 
     /// Set result offset
-    ☉ λ offset(Δ self, n: usize) -> Self {
+    ☉ rite offset(Δ self, n: usize) -> Self {
         self.offset = n
         self
     }
 
     /// Alias ∀ limit
-    ☉ λ top(self, n: usize) -> Self {
+    ☉ rite top(self, n: usize) -> Self {
         self.limit(n)
     }
 
     /// Enable gap analysis
-    ☉ λ with_gap_analysis(Δ self) -> Self {
+    ☉ rite with_gap_analysis(Δ self) -> Self {
         self.include_gaps = true
         self
     }
 
     /// Add a query hint
-    ☉ λ hint(Δ self, hint: QueryHint) -> Self {
+    ☉ rite hint(Δ self, hint: QueryHint) -> Self {
         self.hints.push(hint)
         self
     }
 
     /// Set context ∀ skill matching
-    ☉ λ with_context(Δ self, context: Context) -> Self {
+    ☉ rite with_context(Δ self, context: Context) -> Self {
         self.context = Some(context)
         self
     }
@@ -149,35 +149,35 @@ invoke engram·procedural·SkillMatch
     // Accessors
     // ========================================================================
 
-    ☉ λ text() -> String {
+    ☉ rite text() -> String {
         self.text.clone().unwrap_or_default()
     }
 
-    ☉ λ limit() -> usize {
+    ☉ rite limit() -> usize {
         self.limit
     }
 
-    ☉ λ context() -> Context {
+    ☉ rite context() -> Context {
         self.context.clone().unwrap_or_else(|| Context·new())
     }
 
-    ☉ λ has_temporal() -> bool {
+    ☉ rite has_temporal() -> bool {
         self.temporal.is_some()
     }
 
-    ☉ λ temporal_bounds() -> Option<(Instant, Instant)> {
+    ☉ rite temporal_bounds() -> Option<(Instant, Instant)> {
         self.temporal.as_ref().map(|t| t.to_bounds())
     }
 }
 
 ⊢ From<&str> ∀ Query {
-    λ from(s: &str) -> Self {
+    rite from(s: &str) -> Self {
         Query·new(s)
     }
 }
 
 ⊢ From<String> ∀ Query {
-    λ from(s: String) -> Self {
+    rite from(s: String) -> Self {
         Query·new(&s)
     }
 }
@@ -210,12 +210,12 @@ invoke engram·procedural·SkillMatch
     /// Custom predicate
     Custom {
         name: String,
-        predicate: λ(&Memory) -> bool,
+        predicate: rite(&Memory) -> bool,
     },
 }
 
 ⊢ Filter {
-    ☉ λ matches(memory: &Memory) -> bool {
+    ☉ rite matches(memory: &Memory) -> bool {
         ⌥ self {
             Filter·Confidence { op, value } => {
                 op.compare(memory.confidence, *value)
@@ -247,7 +247,7 @@ invoke engram·procedural·SkillMatch
 }
 
 ⊢ Comparator {
-    ☉ λ compare(a: f64, b: f64) -> bool {
+    ☉ rite compare(a: f64, b: f64) -> bool {
         ⌥ self {
             Comparator·Eq => (a - b).abs() < 0.0001,
             Comparator·Ne => (a - b).abs() >= 0.0001,
@@ -269,7 +269,7 @@ invoke engram·procedural·SkillMatch
 }
 
 ⊢ EpistemicCheck {
-    ☉ λ matches(epistemic: &Epistemic) -> bool {
+    ☉ rite matches(epistemic: &Epistemic) -> bool {
         ⌥ self {
             EpistemicCheck·IsObserved => epistemic.is_observed!(),
             EpistemicCheck·IsReported => epistemic.is_reported~(),
@@ -294,7 +294,7 @@ invoke engram·procedural·SkillMatch
 }
 
 ⊢ TemporalConstraint {
-    ☉ λ to_bounds() -> (Instant, Instant) {
+    ☉ rite to_bounds() -> (Instant, Instant) {
         ⌥ self {
             TemporalConstraint·During(range) => range.to_bounds(),
             TemporalConstraint·Before(point) => (Instant·EPOCH, point.to_instant()),
@@ -311,7 +311,7 @@ invoke engram·procedural·SkillMatch
 }
 
 ⊢ TimePoint {
-    ☉ λ to_instant() -> Instant {
+    ☉ rite to_instant() -> Instant {
         ⌥ self {
             TimePoint·Now => Instant·now(),
             TimePoint·Absolute(t) => t,
@@ -382,21 +382,21 @@ invoke engram·procedural·SkillMatch
 }
 
 ⊢ RecallResult {
-    ☉ λ is_empty() -> bool {
+    ☉ rite is_empty() -> bool {
         self.memories.is_empty()
     }
 
-    ☉ λ has_gaps() -> bool {
+    ☉ rite has_gaps() -> bool {
         !self.gaps.is_empty()
     }
 
-    ☉ λ high_confidence() -> Vec<&Memory> {
+    ☉ rite high_confidence() -> Vec<&Memory> {
         self.memories.iter()
             .filter(|m| m.confidence > 0.8)
             .collect()
     }
 
-    ☉ λ by_source(source: MemorySource) -> Vec<&Memory> {
+    ☉ rite by_source(source: MemorySource) -> Vec<&Memory> {
         self.memories.iter()
             .filter(|m| std·mem·discriminant(&m.source) == std·mem·discriminant(&source))
             .collect()

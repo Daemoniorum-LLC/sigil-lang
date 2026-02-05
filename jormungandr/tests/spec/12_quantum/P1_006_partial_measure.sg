@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 5.1 Measurement Operations
 // Priority: P1 - Core Feature
 
-λ main() {
+rite main() {
     // Create 3-qubit register
     ≔ reg: QRegister<3> = QRegister·new(3);
 

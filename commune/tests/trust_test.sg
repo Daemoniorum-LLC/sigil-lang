@@ -7,7 +7,7 @@
 }
 
 ⊢ TrustFlags {
-    ☉ λ default_flags() -> Self {
+    ☉ rite default_flags() -> Self {
         TrustFlags {
             verified: false,
             blocked: false,
@@ -15,7 +15,7 @@
         }
     }
 
-    ☉ λ verified() -> Self {
+    ☉ rite verified() -> Self {
         TrustFlags {
             verified: true,
             blocked: false,
@@ -23,7 +23,7 @@
         }
     }
 
-    ☉ λ system_agent() -> Self {
+    ☉ rite system_agent() -> Self {
         TrustFlags {
             verified: true,
             blocked: false,
@@ -31,7 +31,7 @@
         }
     }
 
-    ☉ λ blocked_agent() -> Self {
+    ☉ rite blocked_agent() -> Self {
         TrustFlags {
             verified: false,
             blocked: true,
@@ -39,7 +39,7 @@
         }
     }
 
-    ☉ λ is_trusted(&self) -> !bool {
+    ☉ rite is_trusted(&self) -> !bool {
         !self.blocked && (self.verified || self.system)
     }
 }
@@ -50,20 +50,20 @@
 }
 
 ⊢ AccuracyMetrics {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         AccuracyMetrics { total: 0, correct: 0 }
     }
 
-    ☉ λ record_correct(&Δ self) {
+    ☉ rite record_correct(&Δ self) {
         self.total = self.total + 1;
         self.correct = self.correct + 1;
     }
 
-    ☉ λ record_incorrect(&Δ self) {
+    ☉ rite record_incorrect(&Δ self) {
         self.total = self.total + 1;
     }
 
-    ☉ λ score(&self) -> !f32 {
+    ☉ rite score(&self) -> !f32 {
         ⎇ self.total == 0 {
             1.0
         } ⎉ {
@@ -71,7 +71,7 @@
         }
     }
 
-    ☉ λ is_reliable(&self) -> !bool {
+    ☉ rite is_reliable(&self) -> !bool {
         self.score() >= 0.8
     }
 }
@@ -83,21 +83,21 @@
 }
 
 ⊢ TrustLevel {
-    ☉ λ new(base: !f32) -> Self {
+    ☉ rite new(base: !f32) -> Self {
         TrustLevel { base, bonus: 0.0, penalty: 0.0 }
     }
 
-    ☉ λ with_bonus(Δ self, bonus: !f32) -> Self {
+    ☉ rite with_bonus(Δ self, bonus: !f32) -> Self {
         self.bonus = bonus;
         self
     }
 
-    ☉ λ with_penalty(Δ self, penalty: !f32) -> Self {
+    ☉ rite with_penalty(Δ self, penalty: !f32) -> Self {
         self.penalty = penalty;
         self
     }
 
-    ☉ λ effective(&self) -> !f32 {
+    ☉ rite effective(&self) -> !f32 {
         ≔ raw = self.base + self.bonus - self.penalty;
         ⎇ raw < 0.0 {
             0.0
@@ -108,7 +108,7 @@
         }
     }
 
-    ☉ λ meets_threshold(&self, threshold: !f32) -> !bool {
+    ☉ rite meets_threshold(&self, threshold: !f32) -> !bool {
         self.effective() >= threshold
     }
 }
@@ -121,7 +121,7 @@
 }
 
 ⊢ TrustProfile {
-    ☉ λ new(default_trust: !f32) -> Self {
+    ☉ rite new(default_trust: !f32) -> Self {
         TrustProfile {
             base_trust: default_trust,
             accuracy: AccuracyMetrics·new(),
@@ -130,7 +130,7 @@
         }
     }
 
-    ☉ λ verified(trust: !f32) -> Self {
+    ☉ rite verified(trust: !f32) -> Self {
         TrustProfile {
             base_trust: trust,
             accuracy: AccuracyMetrics·new(),
@@ -139,7 +139,7 @@
         }
     }
 
-    ☉ λ system() -> Self {
+    ☉ rite system() -> Self {
         TrustProfile {
             base_trust: 1.0,
             accuracy: AccuracyMetrics·new(),
@@ -148,14 +148,14 @@
         }
     }
 
-    ☉ λ add_vouch(&Δ self, strength: !f32) {
+    ☉ rite add_vouch(&Δ self, strength: !f32) {
         self.vouch_bonus = self.vouch_bonus + strength;
         ⎇ self.vouch_bonus > 0.2 {
             self.vouch_bonus = 0.2;
         }
     }
 
-    ☉ λ effective_trust(&self) -> !f32 {
+    ☉ rite effective_trust(&self) -> !f32 {
         ⎇ self.flags.blocked {
             ⤺ 0.0;
         }
@@ -168,7 +168,7 @@
         }
     }
 
-    ☉ λ can_vouch(&self) -> !bool {
+    ☉ rite can_vouch(&self) -> !bool {
         self.effective_trust() >= 0.7
     }
 }
@@ -178,7 +178,7 @@
 // ============================================================================
 
 #[test]
-λ test_trust_flags_default() {
+rite test_trust_flags_default() {
     ≔ flags = TrustFlags·default_flags();
     assert(!flags.verified);
     assert(!flags.blocked);
@@ -186,34 +186,34 @@
 }
 
 #[test]
-λ test_trust_flags_verified() {
+rite test_trust_flags_verified() {
     ≔ flags = TrustFlags·verified();
     assert(flags.verified);
     assert(flags.is_trusted());
 }
 
 #[test]
-λ test_trust_flags_system() {
+rite test_trust_flags_system() {
     ≔ flags = TrustFlags·system_agent();
     assert(flags.system);
     assert(flags.is_trusted());
 }
 
 #[test]
-λ test_trust_flags_blocked() {
+rite test_trust_flags_blocked() {
     ≔ flags = TrustFlags·blocked_agent();
     assert(flags.blocked);
     assert(!flags.is_trusted());
 }
 
 #[test]
-λ test_accuracy_empty() {
+rite test_accuracy_empty() {
     ≔ acc = AccuracyMetrics·new();
     assert(acc.score() == 1.0);
 }
 
 #[test]
-λ test_accuracy_perfect() {
+rite test_accuracy_perfect() {
     ≔ Δ acc = AccuracyMetrics·new();
     acc.record_correct();
     acc.record_correct();
@@ -223,7 +223,7 @@
 }
 
 #[test]
-λ test_accuracy_mixed() {
+rite test_accuracy_mixed() {
     ≔ Δ acc = AccuracyMetrics·new();
     acc.record_correct();
     acc.record_incorrect();
@@ -232,63 +232,63 @@
 }
 
 #[test]
-λ test_trust_level_base() {
+rite test_trust_level_base() {
     ≔ level = TrustLevel·new(0.5);
     assert(level.effective() == 0.5);
 }
 
 #[test]
-λ test_trust_level_with_bonus() {
+rite test_trust_level_with_bonus() {
     ≔ level = TrustLevel·new(0.5).with_bonus(0.2);
     assert(level.effective() == 0.7);
 }
 
 #[test]
-λ test_trust_level_with_penalty() {
+rite test_trust_level_with_penalty() {
     ≔ level = TrustLevel·new(0.5).with_penalty(0.3);
     assert(level.effective() == 0.2);
 }
 
 #[test]
-λ test_trust_level_clamped_high() {
+rite test_trust_level_clamped_high() {
     ≔ level = TrustLevel·new(0.9).with_bonus(0.3);
     assert(level.effective() == 1.0);
 }
 
 #[test]
-λ test_trust_level_clamped_low() {
+rite test_trust_level_clamped_low() {
     ≔ level = TrustLevel·new(0.2).with_penalty(0.5);
     assert(level.effective() == 0.0);
 }
 
 #[test]
-λ test_trust_level_threshold() {
+rite test_trust_level_threshold() {
     ≔ level = TrustLevel·new(0.8);
     assert(level.meets_threshold(0.7));
     assert(!level.meets_threshold(0.9));
 }
 
 #[test]
-λ test_trust_profile_new() {
+rite test_trust_profile_new() {
     ≔ profile = TrustProfile·new(0.5);
     assert(profile.base_trust == 0.5);
 }
 
 #[test]
-λ test_trust_profile_verified() {
+rite test_trust_profile_verified() {
     ≔ profile = TrustProfile·verified(0.9);
     assert(profile.flags.verified);
 }
 
 #[test]
-λ test_trust_profile_system() {
+rite test_trust_profile_system() {
     ≔ profile = TrustProfile·system();
     assert(profile.effective_trust() == 1.0);
     assert(profile.can_vouch());
 }
 
 #[test]
-λ test_trust_profile_vouch() {
+rite test_trust_profile_vouch() {
     ≔ Δ profile = TrustProfile·new(0.7);
     profile.add_vouch(0.1);
     profile.add_vouch(0.1);
@@ -296,12 +296,12 @@
 }
 
 #[test]
-λ test_trust_profile_vouch_cap() {
+rite test_trust_profile_vouch_cap() {
     ≔ Δ profile = TrustProfile·new(0.5);
     profile.add_vouch(0.3);
     assert(profile.vouch_bonus == 0.2);
 }
 
-λ main() {
+rite main() {
     println("Commune trust tests - 18 tests");
 }

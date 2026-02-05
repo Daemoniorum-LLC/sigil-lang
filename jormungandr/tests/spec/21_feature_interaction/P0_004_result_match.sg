@@ -2,7 +2,7 @@
 // Spec: Feature Interaction - Result + Match
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ ok_val: Result<i32, String> = Ok(100);
     ≔ result = ⌥ ok_val {
         Ok(x) => x,

@@ -2,7 +2,7 @@
 // This tests bind, listen, accept syscalls
 // Priority: P1
 
-λ main() {
+rite main() {
     // Test: Create a server socket
     ≔ sock = Sys·socket(AF_INET(), SOCK_STREAM(), 0);
 

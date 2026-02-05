@@ -3,7 +3,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ⟳ "true" {  // ERROR: condition must be bool
         println("loop");
         ⊗;

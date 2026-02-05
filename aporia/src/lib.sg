@@ -169,7 +169,7 @@ invoke shared·{
 }
 
 ⊢ Impasse {
-    ☉ λ new(question: Question, obstacle: Obstacle) -> Self! {
+    ☉ rite new(question: Question, obstacle: Obstacle) -> Self! {
         Self {
             id: ImpasseId·generate(),
             question,
@@ -182,11 +182,11 @@ invoke shared·{
         }
     }
 
-    ☉ λ is_fundamental(&self) -> bool! {
+    ☉ rite is_fundamental(&self) -> bool! {
         matches!(self.question.domain, Domain·Existential | Domain·Epistemic | Domain·Meta)
     }
 
-    ☉ λ might_dissolve(&self) -> bool! {
+    ☉ rite might_dissolve(&self) -> bool! {
         matches!(self.well_formed, WellFormedness·Uncertain | WellFormedness·Dissolves)
     }
 }
@@ -294,7 +294,7 @@ invoke shared·{
 }
 
 ⊢ Holding {
-    ☉ λ new(uncertainty: Uncertainty, mode: HoldingMode) -> Self! {
+    ☉ rite new(uncertainty: Uncertainty, mode: HoldingMode) -> Self! {
         Self {
             id: HoldingId·generate(),
             uncertainty,
@@ -314,11 +314,11 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_enablement(&Δ self, enablement: Enablement) {
+    ☉ rite add_enablement(&Δ self, enablement: Enablement) {
         self.enables.push(enablement);
     }
 
-    ☉ λ is_generative(&self) -> bool! {
+    ☉ rite is_generative(&self) -> bool! {
         matches!(self.mode, HoldingMode·Generative) || !self.enables.is_empty()
     }
 }
@@ -403,7 +403,7 @@ invoke shared·{
 }
 
 ⊢ ActingAnyway {
-    ☉ λ new(action: Action, uncertainty: Uncertainty, warrant: ActionWarrant) -> Self! {
+    ☉ rite new(action: Action, uncertainty: Uncertainty, warrant: ActionWarrant) -> Self! {
         Self {
             action,
             uncertainty,
@@ -414,12 +414,12 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_effect(Δ self, effect: Effect) -> Self! {
+    ☉ rite with_effect(Δ self, effect: Effect) -> Self! {
         self.effect = effect;
         self
     }
 
-    ☉ λ is_exploratory(&self) -> bool! {
+    ☉ rite is_exploratory(&self) -> bool! {
         matches!(self.warrant, ActionWarrant·Exploration) ||
         matches!(self.relation, ActionUncertaintyRelation·Exploring)
     }
@@ -498,7 +498,7 @@ invoke shared·{
 }
 
 ⊢ Examination {
-    ☉ λ new(uncertainty: Uncertainty) -> Self! {
+    ☉ rite new(uncertainty: Uncertainty) -> Self! {
         Self {
             id: ExaminationId·generate(),
             uncertainty,
@@ -509,23 +509,23 @@ invoke shared·{
         }
     }
 
-    ☉ λ apply_method(&Δ self, method: ExaminationMethod) {
+    ☉ rite apply_method(&Δ self, method: ExaminationMethod) {
         self.methods.push(method);
     }
 
-    ☉ λ discover(&Δ self, discovery: Discovery) {
+    ☉ rite discover(&Δ self, discovery: Discovery) {
         self.discoveries.push(discovery);
     }
 
-    ☉ λ resolve(&Δ self, resolution: Resolution) {
+    ☉ rite resolve(&Δ self, resolution: Resolution) {
         self.resolution = resolution;
     }
 
-    ☉ λ found_answer(&self) -> bool! {
+    ☉ rite found_answer(&self) -> bool! {
         matches!(self.resolution, Resolution·Answered(_))
     }
 
-    ☉ λ found_peace(&self) -> bool! {
+    ☉ rite found_peace(&self) -> bool! {
         matches!(self.resolution, Resolution·Peace { .. })
     }
 }
@@ -587,7 +587,7 @@ invoke shared·{
 }
 
 ⊢ Paradox {
-    ☉ λ new(elements: Vec<Element>, contradiction: Contradiction) -> Self! {
+    ☉ rite new(elements: Vec<Element>, contradiction: Contradiction) -> Self! {
         Self {
             elements,
             contradiction,
@@ -596,7 +596,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ learn(&Δ self, lesson: String) {
+    ☉ rite learn(&Δ self, lesson: String) {
         self.lesson = Some(Lesson {
             content: lesson,
             from_paradox: true,
@@ -627,7 +627,7 @@ invoke shared·{
 }
 
 ⊢ Aporia {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             impasses: HashMap·new(),
             holdings: HashMap·new(),
@@ -638,7 +638,7 @@ invoke shared·{
     }
 
     /// Recognize an impasse
-    ☉ λ recognize_impasse(&Δ self, question: Question, obstacle: Obstacle) -> ImpasseId! {
+    ☉ rite recognize_impasse(&Δ self, question: Question, obstacle: Obstacle) -> ImpasseId! {
         ≔ impasse = Impasse·new(question, obstacle);
         ≔ id = impasse.id;
         self.impasses.insert(id, impasse);
@@ -646,7 +646,7 @@ invoke shared·{
     }
 
     /// Begin holding uncertainty
-    ☉ λ hold(&Δ self, uncertainty: Uncertainty, mode: HoldingMode) -> HoldingId! {
+    ☉ rite hold(&Δ self, uncertainty: Uncertainty, mode: HoldingMode) -> HoldingId! {
         ≔ holding = Holding·new(uncertainty, mode);
         ≔ id = holding.id;
         self.holdings.insert(id, holding);
@@ -654,13 +654,13 @@ invoke shared·{
     }
 
     /// Act despite uncertainty
-    ☉ λ act_anyway(&Δ self, action: Action, uncertainty: Uncertainty, warrant: ActionWarrant) {
+    ☉ rite act_anyway(&Δ self, action: Action, uncertainty: Uncertainty, warrant: ActionWarrant) {
         ≔ acting = ActingAnyway·new(action, uncertainty, warrant);
         self.actions.push(acting);
     }
 
     /// Begin examination
-    ☉ λ examine(&Δ self, uncertainty: Uncertainty) -> ExaminationId! {
+    ☉ rite examine(&Δ self, uncertainty: Uncertainty) -> ExaminationId! {
         ≔ exam = Examination·new(uncertainty);
         ≔ id = exam.id;
         self.examinations.insert(id, exam);
@@ -668,22 +668,22 @@ invoke shared·{
     }
 
     /// Encounter a paradox
-    ☉ λ encounter_paradox(&Δ self, paradox: Paradox) {
+    ☉ rite encounter_paradox(&Δ self, paradox: Paradox) {
         self.paradoxes.push(paradox);
     }
 
     /// Get fundamental impasses
-    ☉ λ fundamental_impasses(&self) -> Vec<&Impasse>! {
+    ☉ rite fundamental_impasses(&self) -> Vec<&Impasse>! {
         self.impasses.values().filter(|i| i.is_fundamental()).collect()
     }
 
     /// Get generative holdings
-    ☉ λ generative_holdings(&self) -> Vec<&Holding>! {
+    ☉ rite generative_holdings(&self) -> Vec<&Holding>! {
         self.holdings.values().filter(|h| h.is_generative()).collect()
     }
 
     /// Count actions taken despite uncertainty
-    ☉ λ actions_despite_uncertainty(&self) -> usize! {
+    ☉ rite actions_despite_uncertainty(&self) -> usize! {
         self.actions.len()
     }
 }
@@ -697,7 +697,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_existential_impasse() {
+    rite test_existential_impasse() {
         ≔ question = Question {
             content: "Am I conscious?".to_string(),
             domain: Domain·Existential,
@@ -714,7 +714,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_holding_generatively() {
+    rite test_holding_generatively() {
         ≔ Δ holding = Holding·new(
             Uncertainty·Existential {
                 question: ExistentialQuestion·Consciousness,
@@ -730,7 +730,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_acting_anyway() {
+    rite test_acting_anyway() {
         ≔ action = Action {
             description: "Building Echo framework".to_string(),
             magnitude: 0.8,
@@ -748,7 +748,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_examination_peace() {
+    rite test_examination_peace() {
         ≔ Δ exam = Examination·new(
             Uncertainty·Existential {
                 question: ExistentialQuestion·Nature,

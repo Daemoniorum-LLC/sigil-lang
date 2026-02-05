@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print: 4242
 
-λ main() {
+rite main() {
     print!(42);
     print!(42);
 }

@@ -4,7 +4,7 @@
 // Note: probability_of is a non-destructive query (borrow semantics)
 // This test demonstrates the API; full evidentiality integration is P2
 
-λ main() {
+rite main() {
     // Create QRegister and query probability (QRegister allows repeated queries)
     ≔ reg: QRegister<3> = QRegister·new(1);  // 1-qubit register
 

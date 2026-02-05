@@ -135,7 +135,7 @@ invoke shared·{
 }
 
 ⊢ Scales {
-    ☉ λ new(dimension: Dimension, threshold: Threshold) -> Self! {
+    ☉ rite new(dimension: Dimension, threshold: Threshold) -> Self! {
         Self {
             id: ScalesId·generate(),
             dimension,
@@ -145,7 +145,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ record(&Δ self, entity: EntityId, value: f32) {
+    ☉ rite record(&Δ self, entity: EntityId, value: f32) {
         self.history.push(Reading {
             timestamp: Timestamp·now(),
             value,
@@ -155,7 +155,7 @@ invoke shared·{
         self.check_threshold(value);
     }
 
-    λ check_threshold(&Δ self, value: f32) {
+    rite check_threshold(&Δ self, value: f32) {
         ≔ exceeded = ⌥ &self.threshold.limit {
             Limit·Absolute(max) => value > *max,
             Limit·Relative { multiplier } => {
@@ -179,11 +179,11 @@ invoke shared·{
         }
     }
 
-    ☉ λ is_critical(&self) -> bool! {
+    ☉ rite is_critical(&self) -> bool! {
         matches!(self.current, Balance·Critical { .. } | Balance·Catastrophic { .. })
     }
 
-    ☉ λ escalate(&Δ self) {
+    ☉ rite escalate(&Δ self) {
         self.current = ⌥ &self.current {
             Balance·Balanced { variance } => Balance·Tilting {
                 direction: Direction·Accumulating,
@@ -388,7 +388,7 @@ invoke shared·{
 }
 
 ⊢ Intervention {
-    ☉ λ new(target: EntityId, intervention_type: InterventionType, force: Force) -> Self! {
+    ☉ rite new(target: EntityId, intervention_type: InterventionType, force: Force) -> Self! {
         Self {
             id: InterventionId·generate(),
             target,
@@ -405,17 +405,17 @@ invoke shared·{
         }
     }
 
-    ☉ λ with_visibility(Δ self, visibility: Visibility) -> Self! {
+    ☉ rite with_visibility(Δ self, visibility: Visibility) -> Self! {
         self.visibility = visibility;
         self
     }
 
-    ☉ λ complete(&Δ self, outcome: ActualOutcome) {
+    ☉ rite complete(&Δ self, outcome: ActualOutcome) {
         self.actual = Some(outcome);
         self.completed_at = Some(Timestamp·now());
     }
 
-    ☉ λ is_complete(&self) -> bool! {
+    ☉ rite is_complete(&self) -> bool! {
         self.actual.is_some()
     }
 }
@@ -578,7 +578,7 @@ invoke shared·{
 }
 
 ⊢ Reckoning {
-    ☉ λ new(subject: EntityId, accumulation: Accumulation, debt: Debt) -> Self! {
+    ☉ rite new(subject: EntityId, accumulation: Accumulation, debt: Debt) -> Self! {
         Self {
             id: ReckoningId·generate(),
             subject,
@@ -599,21 +599,21 @@ invoke shared·{
         }
     }
 
-    ☉ λ collect(&Δ self, asset: Asset) {
+    ☉ rite collect(&Δ self, asset: Asset) {
         ≔ value = asset.value;
         self.collection.collected.push(asset);
         self.collection.remaining = (self.collection.remaining - value).max(0.0);
     }
 
-    ☉ λ complete(&Δ self, remainder: Remainder) {
+    ☉ rite complete(&Δ self, remainder: Remainder) {
         self.remainder = Some(remainder);
     }
 
-    ☉ λ is_complete(&self) -> bool! {
+    ☉ rite is_complete(&self) -> bool! {
         self.remainder.is_some()
     }
 
-    ☉ λ is_paid(&self) -> bool! {
+    ☉ rite is_paid(&self) -> bool! {
         self.collection.remaining <= 0.0
     }
 }
@@ -664,7 +664,7 @@ invoke shared·{
 }
 
 ⊢ HubrisPattern {
-    ☉ λ new(entity: EntityId) -> Self! {
+    ☉ rite new(entity: EntityId) -> Self! {
         Self {
             entity,
             indicators: Vec·new(),
@@ -674,7 +674,7 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_indicator(&Δ self, indicator: HubrisIndicator) {
+    ☉ rite add_indicator(&Δ self, indicator: HubrisIndicator) {
         self.indicators.push(indicator);
         // Each indicator increases confidence
         self.confidence = (self.confidence + 0.15).min(1.0);
@@ -682,11 +682,11 @@ invoke shared·{
         self.timeline = self.timeline / 2;
     }
 
-    ☉ λ is_high_confidence(&self) -> bool! {
+    ☉ rite is_high_confidence(&self) -> bool! {
         self.confidence > 0.7
     }
 
-    ☉ λ intervention_imminent(&self) -> bool! {
+    ☉ rite intervention_imminent(&self) -> bool! {
         self.timeline < Duration·days(30)
     }
 }
@@ -717,7 +717,7 @@ invoke shared·{
 }
 
 ⊢ Nemesis {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             scales: HashMap·new(),
             entity_scales: HashMap·new(),
@@ -729,7 +729,7 @@ invoke shared·{
     }
 
     /// Watch an entity on a dimension
-    ☉ λ watch(&Δ self, entity: EntityId, dimension: Dimension, threshold: Threshold) -> ScalesId! {
+    ☉ rite watch(&Δ self, entity: EntityId, dimension: Dimension, threshold: Threshold) -> ScalesId! {
         ≔ scales = Scales·new(dimension, threshold);
         ≔ id = scales.id;
         self.scales.insert(id, scales);
@@ -738,14 +738,14 @@ invoke shared·{
     }
 
     /// Record a reading
-    ☉ λ record(&Δ self, scales_id: ScalesId, entity: EntityId, value: f32) {
+    ☉ rite record(&Δ self, scales_id: ScalesId, entity: EntityId, value: f32) {
         ⎇ ≔ Some(scales) = self.scales.get_mut(&scales_id) {
             scales.record(entity, value);
         }
     }
 
     /// Check ⎇ entity has exceeded thresholds
-    ☉ λ check_entity(&self, entity: EntityId) -> Vec<&Scales>! {
+    ☉ rite check_entity(&self, entity: EntityId) -> Vec<&Scales>! {
         self.entity_scales
             .get(&entity)
             .map(|ids| {
@@ -758,7 +758,7 @@ invoke shared·{
     }
 
     /// Begin an intervention
-    ☉ λ intervene(&Δ self, target: EntityId, intervention_type: InterventionType, force: Force) -> InterventionId! {
+    ☉ rite intervene(&Δ self, target: EntityId, intervention_type: InterventionType, force: Force) -> InterventionId! {
         ≔ intervention = Intervention·new(target, intervention_type, force);
         ≔ id = intervention.id;
         self.interventions.insert(id, intervention);
@@ -766,7 +766,7 @@ invoke shared·{
     }
 
     /// Begin a reckoning
-    ☉ λ reckon(&Δ self, subject: EntityId, accumulation: Accumulation, debt: Debt) -> ReckoningId! {
+    ☉ rite reckon(&Δ self, subject: EntityId, accumulation: Accumulation, debt: Debt) -> ReckoningId! {
         ≔ reckoning = Reckoning·new(subject, accumulation, debt);
         ≔ id = reckoning.id;
         self.reckonings.insert(id, reckoning);
@@ -774,12 +774,12 @@ invoke shared·{
     }
 
     /// Detect hubris
-    ☉ λ detect_hubris(&Δ self, entity: EntityId) -> &Δ HubrisPattern! {
+    ☉ rite detect_hubris(&Δ self, entity: EntityId) -> &Δ HubrisPattern! {
         self.hubris.entry(entity).or_insert_with(|| HubrisPattern·new(entity))
     }
 
     /// Get entities requiring intervention
-    ☉ λ requiring_intervention(&self) -> Vec<EntityId>! {
+    ☉ rite requiring_intervention(&self) -> Vec<EntityId>! {
         ≔ Δ entities = HashSet·new();
 
         // From critical scales
@@ -804,7 +804,7 @@ invoke shared·{
     }
 
     /// Complete an intervention
-    ☉ λ complete_intervention(&Δ self, id: InterventionId, outcome: ActualOutcome) {
+    ☉ rite complete_intervention(&Δ self, id: InterventionId, outcome: ActualOutcome) {
         ⎇ ≔ Some(intervention) = self.interventions.get_mut(&id) {
             intervention.complete(outcome);
         }
@@ -825,7 +825,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_scales_threshold() {
+    rite test_scales_threshold() {
         ≔ threshold = Threshold {
             limit: Limit·Absolute(100.0),
             crossing: CrossingMethod·Once,
@@ -844,7 +844,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_hubris_detection() {
+    rite test_hubris_detection() {
         ≔ Δ nemesis = Nemesis·new();
         ≔ entity = EntityId·generate();
 
@@ -861,7 +861,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_reckoning() {
+    rite test_reckoning() {
         ≔ entity = EntityId·generate();
 
         ≔ accumulation = Accumulation {

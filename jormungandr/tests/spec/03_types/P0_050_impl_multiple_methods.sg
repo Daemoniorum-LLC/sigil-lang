@@ -13,16 +13,16 @@
 }
 
 ⊢ Value {
-    ☉ λ get(self) -> !i32 {
+    ☉ rite get(self) -> !i32 {
         self.x
     }
 
-    ☉ λ add(self, y: !i32) -> !i32 {
+    ☉ rite add(self, y: !i32) -> !i32 {
         self.x + y
     }
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value { x: 42 };
     println(v.add(10));
 }

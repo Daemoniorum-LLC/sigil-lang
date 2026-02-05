@@ -9,7 +9,7 @@
 // Should compile and print "Hello from Greeter"
 
 ☉ Θ Greeter {
-    λ greet(&this) → !String;
+    rite greet(&this) → !String;
 }
 
 ☉ Σ Person {
@@ -17,12 +17,12 @@
 }
 
 ⊢ Person : Greeter {
-    λ greet(&this) → !String {
+    rite greet(&this) → !String {
         "Hello from Greeter"
     }
 }
 
-λ main() {
+rite main() {
     ≔ p: !Person = Person { name: "Alice" };
     println(p.greet());
 }

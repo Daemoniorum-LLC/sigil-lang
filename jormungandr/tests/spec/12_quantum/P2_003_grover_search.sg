@@ -2,7 +2,7 @@
 // Spec: 12-QUANTUM.md § 7.1 Grover's Search
 // Priority: P2 - Advanced Feature
 
-λ main() {
+rite main() {
     // Search ∀ item 3 ∈ a 4-item database (2 qubits)
     // Oracle marks |11⟩ (binary 3)
     ≔ target = 3;

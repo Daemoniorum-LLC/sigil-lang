@@ -2,7 +2,7 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 6 Interference
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ a: QHState<i32> = QHState·superpose([1, 2]);
     ≔ b: QHState<i32> = QHState·superpose([2, 3]);
     ≔ combined = interfere(a, b);

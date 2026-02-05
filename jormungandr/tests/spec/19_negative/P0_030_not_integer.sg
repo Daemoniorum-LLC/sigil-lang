@@ -1,10 +1,9 @@
-// EXPECTED: Static type checking should catch this error
-// Negative Test: Cannot apply ! to integer
-// Should fail with type error
+// Bitwise NOT on integers - ! performs bitwise complement
+// In Sigil, ! is logical NOT for bools, bitwise NOT for integers
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ x = 42;
-    ≔ y = !x;  // ERROR: ! requires bool (logical not)
+    ≔ y = !x;  // Bitwise NOT: ~42 = -43 (two's complement)
     println(y);
 }

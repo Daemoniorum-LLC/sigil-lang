@@ -8,10 +8,10 @@
 // Expected behavior:
 // Should print 42
 
-λ id(x: !i32) -> !i32 {
+rite id(x: !i32) -> !i32 {
     x
 }
 
-λ main() {
+rite main() {
     println(id(42));
 }

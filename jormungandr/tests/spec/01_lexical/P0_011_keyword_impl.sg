@@ -3,8 +3,8 @@
 // Priority: P0
 
 ☉ Σ Val { x: !i32 }
-⊢ Val { ☉ λ get(&self) -> !i32 { self.x } }
+⊢ Val { ☉ rite get(&self) -> !i32 { self.x } }
 
-λ main() {
+rite main() {
     println(Val { x: 42 }.get());
 }

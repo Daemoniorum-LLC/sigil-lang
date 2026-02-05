@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 2.3 Channel Buffering
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     ≔ ch = channel_new();
 
     // Send multiple values

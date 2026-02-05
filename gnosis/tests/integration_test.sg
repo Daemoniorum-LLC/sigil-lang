@@ -10,45 +10,45 @@ invoke std·collections·HashMap;
 
 ☉ Σ Duration { nanos: u64 }
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    ☉ λ as_nanos(&self) -> u64 { self.nanos }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite as_nanos(&self) -> u64 { self.nanos }
 }
 ⊢ Copy ∀ Duration {}
-⊢ Clone ∀ Duration { λ clone(&self) -> Self { *self } }
+⊢ Clone ∀ Duration { rite clone(&self) -> Self { *self } }
 
 ☉ Σ Timestamp { ☉ nanos: u64 }
 ⊢ Timestamp {
-    ☉ λ now() -> Self { Self { nanos: 10_000_000_000 } }
-    ☉ λ from_nanos(n: u64) -> Self { Self { nanos: n } }
+    ☉ rite now() -> Self { Self { nanos: 10_000_000_000 } }
+    ☉ rite from_nanos(n: u64) -> Self { Self { nanos: n } }
 }
 ⊢ PartialOrd ∀ Timestamp {
-    λ partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+    rite partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
         self.nanos.partial_cmp(&other.nanos)
     }
 }
 ⊢ PartialEq ∀ Timestamp {
-    λ eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
+    rite eq(&self, other: &Self) -> bool { self.nanos == other.nanos }
 }
 
 ☉ Σ ExperienceId { id: String }
-⊢ ExperienceId { ☉ λ generate() -> Self { Self { id: "exp".to_string() } } }
-⊢ Clone ∀ ExperienceId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ ExperienceId { ☉ rite generate() -> Self { Self { id: "exp".to_string() } } }
+⊢ Clone ∀ ExperienceId { rite clone(&self) -> Self { Self { id: self.id.clone() } } }
 
 ☉ Σ HumanId { id: String }
-⊢ HumanId { ☉ λ new(id: &str) -> Self { Self { id: id.to_string() } } }
-⊢ Clone ∀ HumanId { λ clone(&self) -> Self { Self { id: self.id.clone() } } }
-⊢ PartialEq ∀ HumanId { λ eq(&self, other: &Self) -> bool { self.id == other.id } }
+⊢ HumanId { ☉ rite new(id: &str) -> Self { Self { id: id.to_string() } } }
+⊢ Clone ∀ HumanId { rite clone(&self) -> Self { Self { id: self.id.clone() } } }
+⊢ PartialEq ∀ HumanId { rite eq(&self, other: &Self) -> bool { self.id == other.id } }
 ⊢ Eq ∀ HumanId {}
 ⊢ std·hash·Hash ∀ HumanId {
-    λ hash<H: std·hash·Hasher>(&self, state: &Δ H) { self.id.hash(state); }
+    rite hash<H: std·hash·Hasher>(&self, state: &Δ H) { self.id.hash(state); }
 }
 
 ☉ Σ Confidence { value: f64 }
 ⊢ Confidence {
-    ☉ λ new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
-    ☉ λ zero() -> Self { Self { value: 0.0 } }
-    ☉ λ value(&self) -> f64 { self.value }
+    ☉ rite new(v: f64) -> Self { Self { value: v.clamp(0.0, 1.0) } }
+    ☉ rite zero() -> Self { Self { value: 0.0 } }
+    ☉ rite value(&self) -> f64 { self.value }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -61,7 +61,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillLevel {
-    ☉ λ from_proficiency(p: f32) -> Self {
+    ☉ rite from_proficiency(p: f32) -> Self {
         ⎇ p >= 0.9 { SkillLevel·Expert }
         ⎉ ⎇ p >= 0.7 { SkillLevel·Proficient }
         ⎉ ⎇ p >= 0.5 { SkillLevel·Competent }
@@ -78,21 +78,21 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Context {
-    ☉ λ new(task_type: &str) -> Self {
+    ☉ rite new(task_type: &str) -> Self {
         Self { task_type: task_type.to_string(), domain: None, human_id: None }
     }
 
-    ☉ λ with_domain(Δ self, domain: &str) -> Self {
+    ☉ rite with_domain(Δ self, domain: &str) -> Self {
         self.domain = Some(domain.to_string());
         self
     }
 
-    ☉ λ with_human(Δ self, human: HumanId) -> Self {
+    ☉ rite with_human(Δ self, human: HumanId) -> Self {
         self.human_id = Some(human);
         self
     }
 
-    ☉ λ similar_to(&self, other: &Context) -> bool {
+    ☉ rite similar_to(&self, other: &Context) -> bool {
         self.task_type == other.task_type
     }
 }
@@ -104,11 +104,11 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Action {
-    ☉ λ new(approach: &str) -> Self {
+    ☉ rite new(approach: &str) -> Self {
         Self { approach: approach.to_string(), skills: vec![] }
     }
 
-    ☉ λ with_skill(Δ self, skill: &str) -> Self {
+    ☉ rite with_skill(Δ self, skill: &str) -> Self {
         self.skills.push(skill.to_string());
         self
     }
@@ -122,11 +122,11 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ExperienceOutcome {
-    ☉ λ success(quality: f32) -> Self {
+    ☉ rite success(quality: f32) -> Self {
         Self { success: true, quality: quality.clamp(0.0, 1.0), unexpected: false }
     }
 
-    ☉ λ failure() -> Self {
+    ☉ rite failure() -> Self {
         Self { success: false, quality: 0.0, unexpected: false }
     }
 }
@@ -141,7 +141,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Experience {
-    ☉ λ new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
+    ☉ rite new(context: Context, action: Action, outcome: ExperienceOutcome) -> Self {
         Self {
             id: ExperienceId·generate(),
             context,
@@ -151,7 +151,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ skills_exercised(&self) -> Option<Vec<String>> {
+    ☉ rite skills_exercised(&self) -> Option<Vec<String>> {
         ⎇ self.action.skills.is_empty() { None }
         ⎉ { Some(self.action.skills.clone()) }
     }
@@ -164,10 +164,10 @@ invoke std·collections·HashMap;
 }
 
 ⊢ CommunicationStyle {
-    ☉ λ default_style() -> Self { Self { verbosity: 0.0, formality: 0.0 } }
-    ☉ λ is_concise(&self) -> bool { self.verbosity < -0.3 }
-    ☉ λ is_verbose(&self) -> bool { self.verbosity > 0.3 }
-    ☉ λ is_formal(&self) -> bool { self.formality > 0.3 }
+    ☉ rite default_style() -> Self { Self { verbosity: 0.0, formality: 0.0 } }
+    ☉ rite is_concise(&self) -> bool { self.verbosity < -0.3 }
+    ☉ rite is_verbose(&self) -> bool { self.verbosity > 0.3 }
+    ☉ rite is_formal(&self) -> bool { self.formality > 0.3 }
 }
 
 #[derive(Clone)]
@@ -187,7 +187,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Feedback {
-    ☉ λ from_human(human: HumanId, ctx: Context, feedback_type: FeedbackType) -> Self {
+    ☉ rite from_human(human: HumanId, ctx: Context, feedback_type: FeedbackType) -> Self {
         Self { human_id: Some(human), context: ctx, feedback_type }
     }
 }
@@ -200,7 +200,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ SkillProfile {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             level: SkillLevel·Novice,
@@ -209,7 +209,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ record_exercise(&Δ self, quality: f32) {
+    ☉ rite record_exercise(&Δ self, quality: f32) {
         self.experience_count += 1;
         ≔ alpha = 0.1;
         self.proficiency = self.proficiency * (1.0 - alpha) + quality * alpha;
@@ -224,7 +224,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ GnosisConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_experiences: 1000,
             pattern_threshold: 3,
@@ -243,7 +243,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Gnosis {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             config: GnosisConfig·default_config(),
             experiences: vec![],
@@ -253,7 +253,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_config(config: GnosisConfig) -> Self {
+    ☉ rite with_config(config: GnosisConfig) -> Self {
         Self {
             config,
             experiences: vec![],
@@ -264,7 +264,7 @@ invoke std·collections·HashMap;
     }
 
     // Experience recording
-    ☉ λ experience(&Δ self, exp: Experience) {
+    ☉ rite experience(&Δ self, exp: Experience) {
         // Update skills
         ⎇ ≔ Some(skills) = exp.skills_exercised() {
             ∀ skill_name ∈ skills {
@@ -296,7 +296,7 @@ invoke std·collections·HashMap;
     }
 
     // Feedback processing
-    ☉ λ learn_from_feedback(&Δ self, feedback: Feedback) {
+    ☉ rite learn_from_feedback(&Δ self, feedback: Feedback) {
         ⎇ ≔ Some(human_id) = feedback.human_id {
             ≔ style = self.human_styles.entry(human_id)
                 .or_insert_with(CommunicationStyle·default_style);
@@ -317,43 +317,43 @@ invoke std·collections·HashMap;
     }
 
     // Skill queries
-    ☉ λ skill(&self, name: &str) -> Option<&SkillProfile> {
+    ☉ rite skill(&self, name: &str) -> Option<&SkillProfile> {
         self.skills.get(name)
     }
 
-    ☉ λ define_skill(&Δ self, name: &str) {
+    ☉ rite define_skill(&Δ self, name: &str) {
         self.skills.entry(name.to_string())
             .or_insert_with(|| SkillProfile·new(name));
     }
 
-    ☉ λ skill_count(&self) -> usize {
+    ☉ rite skill_count(&self) -> usize {
         self.skills.len()
     }
 
     // Adaptation queries
-    ☉ λ adapted_style(&self, human_id: &HumanId) -> CommunicationStyle {
+    ☉ rite adapted_style(&self, human_id: &HumanId) -> CommunicationStyle {
         self.human_styles.get(human_id)
             .cloned()
             .unwrap_or_else(CommunicationStyle·default_style)
     }
 
     // Pattern queries
-    ☉ λ suggest_approach(&self, context: &Context) -> Option<(String, f32)> {
+    ☉ rite suggest_approach(&self, context: &Context) -> Option<(String, f32)> {
         self.patterns.iter()
             .filter(|(ctx, _, _)| ctx.similar_to(context))
             .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap())
             .map(|(_, approach, rate)| (approach.clone(), *rate))
     }
 
-    ☉ λ experience_count(&self) -> usize {
+    ☉ rite experience_count(&self) -> usize {
         self.experiences.len()
     }
 
-    ☉ λ pattern_count(&self) -> usize {
+    ☉ rite pattern_count(&self) -> usize {
         self.patterns.len()
     }
 
-    ☉ λ human_profile_count(&self) -> usize {
+    ☉ rite human_profile_count(&self) -> usize {
         self.human_styles.len()
     }
 }
@@ -363,7 +363,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_gnosis_record_experience() {
+rite test_gnosis_record_experience() {
     ≔ Δ gnosis = Gnosis·new();
     gnosis.experience(Experience·new(
         Context·new("coding"),
@@ -374,7 +374,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_skill_from_experience() {
+rite test_gnosis_skill_from_experience() {
     ≔ Δ gnosis = Gnosis·new();
     gnosis.experience(Experience·new(
         Context·new("coding"),
@@ -387,7 +387,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_multiple_skills() {
+rite test_gnosis_multiple_skills() {
     ≔ Δ gnosis = Gnosis·new();
     gnosis.experience(Experience·new(
         Context·new("refactoring"),
@@ -400,7 +400,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_skill_progression() {
+rite test_gnosis_skill_progression() {
     ≔ Δ gnosis = Gnosis·new();
     gnosis.define_skill("python");
 
@@ -422,7 +422,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_gnosis_learn_from_feedback_verbosity() {
+rite test_gnosis_learn_from_feedback_verbosity() {
     ≔ Δ gnosis = Gnosis·new();
     ≔ human = HumanId·new("alice");
 
@@ -437,7 +437,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_learn_from_feedback_detail() {
+rite test_gnosis_learn_from_feedback_detail() {
     ≔ Δ gnosis = Gnosis·new();
     ≔ human = HumanId·new("bob");
 
@@ -452,7 +452,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_learn_from_feedback_formality() {
+rite test_gnosis_learn_from_feedback_formality() {
     ≔ Δ gnosis = Gnosis·new();
     ≔ human = HumanId·new("charlie");
 
@@ -467,7 +467,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_accumulated_feedback() {
+rite test_gnosis_accumulated_feedback() {
     ≔ Δ gnosis = Gnosis·new();
     ≔ human = HumanId·new("dave");
 
@@ -488,7 +488,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_gnosis_pattern_detection() {
+rite test_gnosis_pattern_detection() {
     ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
         max_experiences: 100,
         pattern_threshold: 2,
@@ -510,7 +510,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_suggest_approach() {
+rite test_gnosis_suggest_approach() {
     ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
         max_experiences: 100,
         pattern_threshold: 2,
@@ -536,7 +536,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_no_pattern_insufficient_data() {
+rite test_gnosis_no_pattern_insufficient_data() {
     ≔ Δ gnosis = Gnosis·new();  // default threshold is 3
 
     gnosis.experience(Experience·new(
@@ -554,7 +554,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_gnosis_experience_capacity() {
+rite test_gnosis_experience_capacity() {
     ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
         max_experiences: 5,
         pattern_threshold: 3,
@@ -577,7 +577,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_gnosis_complete_workflow() {
+rite test_gnosis_complete_workflow() {
     ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
         max_experiences: 1000,
         pattern_threshold: 2,
@@ -626,7 +626,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_multi_human_adaptation() {
+rite test_gnosis_multi_human_adaptation() {
     ≔ Δ gnosis = Gnosis·new();
 
     ≔ alice = HumanId·new("alice");
@@ -653,7 +653,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_skill_transfer() {
+rite test_gnosis_skill_transfer() {
     ≔ Δ gnosis = Gnosis·new();
 
     // Practice rust a lot
@@ -671,7 +671,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_gnosis_failure_learning() {
+rite test_gnosis_failure_learning() {
     ≔ Δ gnosis = Gnosis·with_config(GnosisConfig {
         max_experiences: 100,
         pattern_threshold: 2,
@@ -696,6 +696,6 @@ invoke std·collections·HashMap;
     }
 }
 
-λ main() {
+rite main() {
     print("Gnosis integration tests");
 }

@@ -231,6 +231,8 @@ pub struct Function {
     pub params: Vec<String>,
     pub body: Expr,
     pub closure: Rc<RefCell<Environment>>,
+    /// Generic type parameter names (e.g., ["T", "U"] for fn foo<T, U>())
+    pub generic_params: Vec<String>,
 }
 
 /// Built-in function type
@@ -1249,6 +1251,8 @@ pub struct Interpreter {
     pub current_module: Option<String>,
     /// Current Self type (when inside an impl block)
     pub current_self_type: Option<String>,
+    /// Generic type parameter bindings (e.g., T -> "F16" during dtype_info·<F16>() call)
+    pub generic_type_bindings: HashMap<String, String>,
     /// Current source directory for resolving relative module paths
     pub current_source_dir: Option<String>,
     /// Loaded crates registry (crate_name -> true if loaded)
@@ -1304,6 +1308,12 @@ pub struct Interpreter {
     pub crate_name: Option<String>,
     /// Alias for current crate (e.g., "tome" for tome commands)
     pub crate_alias: Option<String>,
+    /// Maps type name → const generic parameter names
+    /// e.g., "Shape1" → ["N"], "Shape2" → ["M", "N"]
+    pub const_generic_params: HashMap<String, Vec<String>>,
+    /// Deferred associated constants for const-generic impl blocks
+    /// Maps "TypeName·ConstName" → unevaluated AST expression
+    pub const_generic_deferred_consts: HashMap<String, crate::ast::Expr>,
 }
 
 /// Type definition for structs/enums
@@ -1329,6 +1339,7 @@ impl Interpreter {
             program_args: None,
             current_module: None,
             current_self_type: None,
+            generic_type_bindings: HashMap::new(),
             current_source_dir: None,
             loaded_crates: HashSet::new(),
             loading_crates: HashSet::new(),
@@ -1355,6 +1366,8 @@ impl Interpreter {
             crate_modules: HashSet::new(),
             crate_name: None,
             crate_alias: None,
+            const_generic_params: HashMap::new(),
+            const_generic_deferred_consts: HashMap::new(),
         };
 
         // Register built-in functions
@@ -2269,9 +2282,11 @@ impl Interpreter {
         });
 
         // ============================================================
-        // Tree-sitter parsing built-ins
+        // Tree-sitter parsing built-ins (native-only: requires tree-sitter C FFI)
         // ============================================================
 
+        #[cfg(feature = "native")]
+        {
         // TreeSitterParser::new - create a tree-sitter parser for a language
         self.define_builtin("TreeSitterParser·new", Some(1), |_, args| {
             use crate::tree_sitter_support::{TSLanguage, TSParser};
@@ -2441,6 +2456,7 @@ impl Interpreter {
 
             Ok(Value::Array(Rc::new(RefCell::new(languages))))
         });
+        } // end #[cfg(feature = "native")] tree-sitter block
 
         // tree_sitter_node_text - extract text from a syntax node using the source
         self.define_builtin("tree_sitter_node_text", Some(2), |_, args| {
@@ -2643,8 +2659,13 @@ impl Interpreter {
         if source.is_empty() || offset >= source.len() {
             return 1; // Default if no source or out of bounds
         }
+        // Snap to nearest char boundary to avoid panicking on multi-byte UTF-8
+        let mut safe_offset = offset;
+        while safe_offset > 0 && !source.is_char_boundary(safe_offset) {
+            safe_offset -= 1;
+        }
         // Count newlines up to offset
-        let line_count = source[..offset].matches('\n').count() + 1;
+        let line_count = source[..safe_offset].matches('\n').count() + 1;
         line_count as i64
     }
 
@@ -2949,6 +2970,18 @@ impl Interpreter {
                     _ => return Ok(Value::Null), // Can't handle complex types
                 };
 
+                // Extract const generic param names from impl block generics
+                let const_params: Vec<String> = impl_block.generics.as_ref()
+                    .map(|g| g.params.iter().filter_map(|p| match p {
+                        crate::ast::GenericParam::Const { name, .. } => Some(name.name.clone()),
+                        _ => None,
+                    }).collect())
+                    .unwrap_or_default();
+
+                if !const_params.is_empty() {
+                    self.const_generic_params.insert(type_name.clone(), const_params.clone());
+                }
+
                 // Check if this is `impl Drop for X` - register for automatic drop calls
                 if let Some(trait_path) = &impl_block.trait_ {
                     let trait_name = trait_path
@@ -2962,23 +2995,99 @@ impl Interpreter {
                     }
                 }
 
-                // Register each method with qualified name TypeName·method
+                // Register each method/const with qualified name TypeName·method
                 for impl_item in &impl_block.items {
-                    if let ImplItem::Function(func) = impl_item {
-                        let fn_value = self.create_function(func)?;
-                        let qualified_name = format!("{}·{}", type_name, func.name.name);
-                        // Debug: track Lexer method registration
-                        if type_name == "Lexer" && func.name.name.contains("keyword") {
-                            crate::sigil_debug!("DEBUG registering: {}", qualified_name);
-                        }
-                        self.globals
-                            .borrow_mut()
-                            .define(qualified_name.clone(), fn_value.clone());
+                    match impl_item {
+                        ImplItem::Function(func) => {
+                            let fn_value = self.create_function(func)?;
+                            let qualified_name = format!("{}·{}", type_name, func.name.name);
+                            // Debug: track Lexer method registration
+                            if type_name == "Lexer" && func.name.name.contains("keyword") {
+                                crate::sigil_debug!("DEBUG registering: {}", qualified_name);
+                            }
+                            self.globals
+                                .borrow_mut()
+                                .define(qualified_name.clone(), fn_value.clone());
 
-                        // Also register with module prefix if in a module context
-                        if let Some(ref module) = self.current_module {
-                            let fully_qualified = format!("{}·{}", module, qualified_name);
-                            self.globals.borrow_mut().define(fully_qualified, fn_value);
+                            // Also register with module prefix if in a module context
+                            if let Some(ref module) = self.current_module {
+                                let fully_qualified = format!("{}·{}", module, qualified_name);
+                                self.globals.borrow_mut().define(fully_qualified, fn_value);
+                            }
+                        }
+                        ImplItem::Const(c) => {
+                            if const_params.is_empty() {
+                                // No const generics: evaluate normally
+                                let value = self.evaluate(&c.value)?;
+                                let qualified_name = format!("{}·{}", type_name, c.name.name);
+                                self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+
+                                if let Some(ref module) = self.current_module {
+                                    let fully_qualified = format!("{}·{}", module, qualified_name);
+                                    self.globals.borrow_mut().define(fully_qualified, value);
+                                }
+                            } else {
+                                // Try to evaluate; defer if it references a const param
+                                match self.evaluate(&c.value) {
+                                    Ok(value) => {
+                                        let qualified_name = format!("{}·{}", type_name, c.name.name);
+                                        self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+
+                                        if let Some(ref module) = self.current_module {
+                                            let fully_qualified = format!("{}·{}", module, qualified_name);
+                                            self.globals.borrow_mut().define(fully_qualified, value);
+                                        }
+                                    }
+                                    Err(e) if const_params.iter().any(|p| e.message.contains(p)) => {
+                                        // Deferred: depends on const generic params
+                                        let key = format!("{}·{}", type_name, c.name.name);
+                                        self.const_generic_deferred_consts.insert(key, c.value.clone());
+                                    }
+                                    Err(e) => return Err(e),
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                // If this is a trait impl, register default methods from the trait
+                // that aren't overridden by the impl block (e.g., `size()` from `DType`)
+                if let Some(trait_path) = &impl_block.trait_ {
+                    let t_name = trait_path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("·");
+
+                    // Collect names of methods explicitly provided in the impl block
+                    let impl_method_names: std::collections::HashSet<String> = impl_block
+                        .items
+                        .iter()
+                        .filter_map(|item| match item {
+                            ImplItem::Function(f) => Some(f.name.name.clone()),
+                            _ => None,
+                        })
+                        .collect();
+
+                    // Find the trait definition and register unoverridden default methods
+                    if let Some(trait_def) = self.trait_defs.iter().find(|td| td.name.name == t_name).cloned() {
+                        for trait_item in &trait_def.items {
+                            if let crate::ast::TraitItem::Function(f) = trait_item {
+                                if f.body.is_some() && !impl_method_names.contains(&f.name.name) {
+                                    let fn_value = self.create_function(f)?;
+                                    let qualified_name = format!("{}·{}", type_name, f.name.name);
+                                    self.globals
+                                        .borrow_mut()
+                                        .define(qualified_name.clone(), fn_value.clone());
+
+                                    if let Some(ref module) = self.current_module {
+                                        let fully_qualified = format!("{}·{}", module, qualified_name);
+                                        self.globals.borrow_mut().define(fully_qualified, fn_value);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -3603,11 +3712,27 @@ impl Interpreter {
             .map(|b| Expr::Block(b.clone()))
             .unwrap_or(Expr::Literal(Literal::Bool(false)));
 
+        // Extract generic type parameter names (e.g., T, U from fn foo<T: Trait, U>())
+        let generic_params = func
+            .generics
+            .as_ref()
+            .map(|g| {
+                g.params
+                    .iter()
+                    .filter_map(|p| match p {
+                        crate::ast::GenericParam::Type { name, .. } => Some(name.name.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Ok(Value::Function(Rc::new(Function {
             name: Some(func.name.name.clone()),
             params,
             body,
             closure: self.environment.clone(),
+            generic_params,
         })))
     }
 
@@ -4020,8 +4145,9 @@ impl Interpreter {
                     // Check if variable exists (to distinguish from first assignment vs reassignment)
                     if in_env || in_globals {
                         return Err(RuntimeError::new(format!(
-                            "cannot assign to immutable variable '{}'",
-                            name
+                            "cannot assign to immutable variable '{}'. \
+                            Hint: Use `≔ Δ {} = ...` or `vary {} = ...` to declare mutable variables",
+                            name, name, name
                         )));
                     }
                 }
@@ -4064,7 +4190,32 @@ impl Interpreter {
                         }
                     }
                 }
-                Err(RuntimeError::new("Invalid index assignment target"))
+
+                // Handle complex index targets (e.g., self.data[idx], x.field[idx])
+                // Evaluate the expression to get the array value. Since Value::Array
+                // uses Rc<RefCell<Vec<Value>>>, modifying through the shared reference
+                // updates the original struct field in place.
+                let target = self.evaluate(expr)?;
+                // Unwrap Ref if needed to get the inner array
+                let target = match &target {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                match target {
+                    Value::Array(arr) => {
+                        let mut borrowed = arr.borrow_mut();
+                        if idx < borrowed.len() {
+                            borrowed[idx] = val.clone();
+                            return Ok(val);
+                        }
+                        Err(RuntimeError::new(format!(
+                            "Index {} out of bounds for array of length {}",
+                            idx,
+                            borrowed.len()
+                        )))
+                    }
+                    _ => Err(RuntimeError::new("Invalid index assignment target")),
+                }
             }
             Expr::Field { expr, field } => {
                 // Field assignment: struct.field = value
@@ -4300,7 +4451,19 @@ impl Interpreter {
             let full_name = path
                 .segments
                 .iter()
-                .map(|s| s.ident.name.as_str())
+                .map(|s| {
+                    // Resolve Self to concrete type name inside trait/impl methods
+                    if s.ident.name == "Self" {
+                        if let Some(ref self_type) = self.current_self_type {
+                            return self_type.clone();
+                        }
+                    }
+                    // Resolve generic type parameters (e.g., T -> F16 during dtype_info·<F16>())
+                    if let Some(concrete) = self.generic_type_bindings.get(&s.ident.name) {
+                        return concrete.clone();
+                    }
+                    s.ident.name.clone()
+                })
                 .collect::<Vec<_>>()
                 .join("·");
 
@@ -4671,8 +4834,24 @@ impl Interpreter {
                         Ok(Value::Array(Rc::new(RefCell::new(result))))
                     }
                 }
-                BinOp::Eq => Ok(Value::Bool(Rc::ptr_eq(&a, &b))),
-                BinOp::Ne => Ok(Value::Bool(!Rc::ptr_eq(&a, &b))),
+                BinOp::Eq => {
+                    let arr_a = a.borrow();
+                    let arr_b = b.borrow();
+                    let equal = arr_a.len() == arr_b.len()
+                        && arr_a.iter().zip(arr_b.iter()).all(|(x, y)| {
+                            self.values_equal(x, y)
+                        });
+                    Ok(Value::Bool(equal))
+                }
+                BinOp::Ne => {
+                    let arr_a = a.borrow();
+                    let arr_b = b.borrow();
+                    let equal = arr_a.len() == arr_b.len()
+                        && arr_a.iter().zip(arr_b.iter()).all(|(x, y)| {
+                            self.values_equal(x, y)
+                        });
+                    Ok(Value::Bool(!equal))
+                }
                 _ => Err(RuntimeError::new("Invalid array operation")),
             },
             // Null equality
@@ -5130,8 +5309,8 @@ impl Interpreter {
             BinOp::Div => Value::Float(a / b),
             BinOp::Rem => Value::Float(a % b),
             BinOp::Pow => Value::Float(a.powf(b)),
-            BinOp::Eq => Value::Bool((a - b).abs() < f64::EPSILON),
-            BinOp::Ne => Value::Bool((a - b).abs() >= f64::EPSILON),
+            BinOp::Eq => Value::Bool(a == b),
+            BinOp::Ne => Value::Bool(a != b),
             BinOp::Lt => Value::Bool(a < b),
             BinOp::Le => Value::Bool(a <= b),
             BinOp::Gt => Value::Bool(a > b),
@@ -5746,6 +5925,15 @@ impl Interpreter {
                 }
                 // Sequential::new([layers]) - container for layers
                 ["Sequential", "new"] => {
+                    // Check for user-defined Sequential·new first
+                    let user_ctor = self.globals.borrow().get("Sequential·new").map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_ctor {
+                        let mut evaluated_args = Vec::new();
+                        for arg in args {
+                            evaluated_args.push(self.evaluate(arg)?);
+                        }
+                        return self.call_function(&func, evaluated_args);
+                    }
                     if args.len() == 1 {
                         let layers = self.evaluate(&args[0])?;
                         let mut fields = HashMap::new();
@@ -5857,8 +6045,119 @@ impl Interpreter {
             self.current_self_type = Some(type_name);
         }
 
+        // Extract turbofish type arguments from the call expression's path segments
+        // e.g., dtype_info·<F16>() → type_args = ["F16"]
+        let turbofish_type_args: Vec<String> = if let Expr::Path(path) = func_expr {
+            path.segments
+                .iter()
+                .filter_map(|seg| seg.generics.as_ref())
+                .flat_map(|generics| {
+                    generics.iter().filter_map(|ty| {
+                        if let crate::ast::TypeExpr::Path(tp) = ty {
+                            Some(
+                                tp.segments
+                                    .iter()
+                                    .map(|s| s.ident.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join("·"),
+                            )
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        // Extract turbofish CONST generic values from the call expression's path segments
+        // e.g., FixedVec·<5>·new() → const_args = [("N", 5)] using const_generic_params
+        let turbofish_const_bindings: Vec<(String, Value)> = if let Expr::Path(path) = func_expr {
+            let mut bindings = Vec::new();
+            for seg in &path.segments {
+                if let Some(generics) = &seg.generics {
+                    if let Some(param_names) = self.const_generic_params.get(seg.ident.name.as_str()).cloned() {
+                        let mut idx = 0;
+                        for generic in generics {
+                            if idx >= param_names.len() { break; }
+                            let val = match generic {
+                                crate::ast::TypeExpr::ConstExpr(expr) => {
+                                    if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = expr.as_ref() {
+                                        value.parse::<i64>().ok()
+                                    } else { None }
+                                }
+                                crate::ast::TypeExpr::Path(inner_path) => {
+                                    if let Some(inner_seg) = inner_path.segments.first() {
+                                        inner_seg.ident.name.parse::<i64>().ok()
+                                    } else { None }
+                                }
+                                _ => None,
+                            };
+                            if let Some(v) = val {
+                                bindings.push((param_names[idx].clone(), Value::Int(v)));
+                                idx += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            bindings
+        } else {
+            Vec::new()
+        };
+
+        // Save and bind generic type parameters from turbofish (restore after call)
+        let old_generic_bindings = self.generic_type_bindings.clone();
+        if !turbofish_type_args.is_empty() {
+            if let Value::Function(ref f) = func {
+                for (param_name, concrete_type) in
+                    f.generic_params.iter().zip(turbofish_type_args.iter())
+                {
+                    self.generic_type_bindings
+                        .insert(param_name.clone(), concrete_type.clone());
+                }
+            }
+        }
+
+        // If turbofish has const generic bindings, also set type_context.struct_generics
+        // so that struct literals inside constructors (e.g., FixedVec { data: v }) get
+        // the const generic hidden fields injected
+        let prev_struct_generics = self.type_context.struct_generics.borrow().clone();
+        if !turbofish_const_bindings.is_empty() {
+            if let Expr::Path(path) = func_expr {
+                if let Some(seg) = path.segments.first() {
+                    let type_name = seg.ident.name.clone();
+                    let const_values: Vec<i64> = turbofish_const_bindings.iter()
+                        .filter_map(|(_, v)| if let Value::Int(n) = v { Some(*n) } else { None })
+                        .collect();
+                    if !const_values.is_empty() {
+                        *self.type_context.struct_generics.borrow_mut() = Some((type_name, const_values));
+                    }
+                }
+            }
+        }
+
         let result = match func {
             Value::Function(f) => {
+                // Wrap with const generic bindings from turbofish if present
+                let f = if turbofish_const_bindings.is_empty() {
+                    f
+                } else {
+                    let wrapper_env = Rc::new(RefCell::new(
+                        Environment::with_parent(f.closure.clone())
+                    ));
+                    for (name, value) in &turbofish_const_bindings {
+                        wrapper_env.borrow_mut().define(name.clone(), value.clone());
+                    }
+                    Rc::new(Function {
+                        name: f.name.clone(),
+                        params: f.params.clone(),
+                        body: f.body.clone(),
+                        closure: wrapper_env,
+                        generic_params: f.generic_params.clone(),
+                    })
+                };
                 // Reorder arguments based on named parameters
                 let arg_values = Self::reorder_named_args(&f.params, arg_entries)?;
                 self.call_function(&f, arg_values)
@@ -5877,6 +6176,27 @@ impl Interpreter {
                     fields: Rc::new(RefCell::new(HashMap::new())),
                 })
             }
+            // Auto-deref Value::Ref wrapping a function/closure (e.g., &rite(f64)->f64)
+            Value::Ref(r) => {
+                let inner = r.borrow().clone();
+                match inner {
+                    Value::Function(f) => {
+                        let arg_values = Self::reorder_named_args(&f.params, arg_entries)?;
+                        self.call_function(&f, arg_values)
+                    }
+                    Value::BuiltIn(b) => {
+                        let arg_values: Vec<Value> = arg_entries.into_iter().map(|(_, v)| v).collect();
+                        self.call_builtin(&b, arg_values)
+                    }
+                    _ => {
+                        crate::sigil_debug!(
+                            "DEBUG Cannot call non-function (deref'd Ref): {:?}",
+                            inner
+                        );
+                        Err(RuntimeError::new("Cannot call non-function"))
+                    }
+                }
+            }
             _ => {
                 crate::sigil_debug!(
                     "DEBUG Cannot call non-function: {:?}, expr: {:?}",
@@ -5894,8 +6214,10 @@ impl Interpreter {
             let _ = self.environment.borrow_mut().set(&var_name, current_value);
         }
 
-        // Restore old Self type
+        // Restore old Self type, generic type bindings, and struct generics context
         self.current_self_type = old_self_type;
+        self.generic_type_bindings = old_generic_bindings;
+        *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
 
         result
     }
@@ -6586,9 +6908,49 @@ impl Interpreter {
         None
     }
 
+    /// Create a wrapper Function with const generic values pre-bound in its closure.
+    /// Extracts `__const_X__` hidden fields from struct fields and injects them into
+    /// a new closure environment that wraps the original function's closure.
+    fn wrap_with_const_generics(
+        func: &Rc<Function>,
+        fields: &Rc<RefCell<HashMap<String, Value>>>,
+    ) -> Rc<Function> {
+        let const_bindings: Vec<(String, Value)> = fields.borrow()
+            .iter()
+            .filter_map(|(k, v)| {
+                if k.starts_with("__const_") && k.ends_with("__") {
+                    let param_name = k.strip_prefix("__const_")
+                        .and_then(|s| s.strip_suffix("__"));
+                    param_name.map(|name| (name.to_string(), v.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if const_bindings.is_empty() {
+            return func.clone();
+        }
+
+        // Create wrapper with const generics pre-bound in closure
+        let wrapper_env = Rc::new(RefCell::new(
+            Environment::with_parent(func.closure.clone())
+        ));
+        for (name, value) in &const_bindings {
+            wrapper_env.borrow_mut().define(name.clone(), value.clone());
+        }
+        Rc::new(Function {
+            name: func.name.clone(),
+            params: func.params.clone(),
+            body: func.body.clone(),
+            closure: wrapper_env,
+            generic_params: func.generic_params.clone(),
+        })
+    }
+
     fn bind_pattern(&mut self, pattern: &Pattern, value: Value) -> Result<(), RuntimeError> {
         match pattern {
-            Pattern::Ident { name, mutable, .. } => {
+            Pattern::Ident { name, mutable, evidentiality } => {
                 // Don't bind "_" - it's a wildcard in identifier form
                 if name.name != "_" {
                     // Debug: trace path binding
@@ -6599,9 +6961,18 @@ impl Interpreter {
                     if *mutable {
                         self.mutable_vars.borrow_mut().insert(name.name.clone());
                     }
+                    // If pattern has evidentiality, bind the inner value (evidence already matched)
+                    let bound_value = if evidentiality.is_some() {
+                        match value {
+                            Value::Evidential { value: inner, .. } => *inner,
+                            other => other,
+                        }
+                    } else {
+                        value
+                    };
                     self.environment
                         .borrow_mut()
-                        .define(name.name.clone(), value);
+                        .define(name.name.clone(), bound_value);
                 }
                 Ok(())
             }
@@ -6861,6 +7232,22 @@ impl Interpreter {
                 // No pattern matched - this shouldn't happen if pattern_matches returned true earlier
                 Err(RuntimeError::new("Or pattern didn't match any alternative"))
             }
+            Pattern::RefBinding { name, .. } => {
+                // Rust's `ref` pattern is not supported in Sigil
+                Err(RuntimeError::new(format!(
+                    "Rust's `ref {}` pattern is not supported in Sigil. \
+                    Variables bind by value. Use `≔ {} = &expr` for explicit references",
+                    name.name, name.name
+                )))
+            }
+            Pattern::Ref { pattern: inner, .. } => {
+                // &var pattern: strip one level of reference and bind the inner pattern
+                let unwrapped = match &value {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                self.bind_pattern(inner, unwrapped)
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported pattern: {:?}",
                 pattern
@@ -6986,7 +7373,25 @@ impl Interpreter {
     }
 
     fn pattern_matches(&mut self, pattern: &Pattern, value: &Value) -> Result<bool, RuntimeError> {
-        // Unwrap evidential/affective/ref wrappers from value
+        // Evidence-level pattern matching: dispatch on evidence before unwrapping
+        if let Pattern::Ident { evidentiality: Some(ev), .. } = pattern {
+            return match (ev, value) {
+                // Evidential value — check level matches
+                (Evidentiality::Known, Value::Evidential { evidence: Evidence::Known, .. }) => Ok(true),
+                (Evidentiality::Uncertain, Value::Evidential { evidence: Evidence::Uncertain, .. }) => Ok(true),
+                (Evidentiality::Reported, Value::Evidential { evidence: Evidence::Reported, .. }) => Ok(true),
+                (Evidentiality::Predicted, Value::Evidential { evidence: Evidence::Predicted, .. }) => Ok(true),
+                (Evidentiality::Paradox, Value::Evidential { evidence: Evidence::Paradox, .. }) => Ok(true),
+                // Known pattern also matches bare (non-evidential) values — bare values are implicitly known
+                (Evidentiality::Known, v) if !matches!(v, Value::Evidential { .. } | Value::Null) => Ok(true),
+                // Uncertain pattern (?v) matches any non-null value (bare or evidential with compatible level)
+                // This handles the case: ≔ x: i32? = 42; ⌥ x { ?v => ..., null => ... }
+                (Evidentiality::Uncertain, v) if !matches!(v, Value::Null) => Ok(true),
+                _ => Ok(false),
+            };
+        }
+
+        // Non-evidence patterns: unwrap evidential/affective/ref wrappers as before
         let value = Self::unwrap_all(value);
 
         // Debug string pattern matching
@@ -6998,29 +7403,6 @@ impl Interpreter {
 
         match (pattern, &value) {
             (Pattern::Wildcard, _) => Ok(true),
-            // Pattern::Ident with evidentiality - ?g matches Some/non-null, !g matches Known values
-            (
-                Pattern::Ident {
-                    evidentiality: Some(Evidentiality::Uncertain),
-                    name,
-                    ..
-                },
-                val,
-            ) => {
-                // ?g pattern should match non-null values (i.e., Option::Some)
-                let matches = match val {
-                    Value::Null => false,
-                    Value::Variant { variant_name, .. } if variant_name == "None" => false,
-                    _ => true,
-                };
-                crate::sigil_debug!(
-                    "DEBUG pattern_matches ?{}: value={} => {}",
-                    name.name,
-                    self.format_value(val),
-                    matches
-                );
-                Ok(matches)
-            }
             (Pattern::Ident { .. }, _) => Ok(true),
             (Pattern::Literal(lit), val) => {
                 let lit_val = self.eval_literal(lit)?;
@@ -7263,6 +7645,14 @@ impl Interpreter {
             // Literal matching against string or char
             (Pattern::Literal(Literal::String(s)), Value::String(vs)) => Ok(s == vs.as_str()),
             (Pattern::Literal(Literal::Char(c)), Value::Char(vc)) => Ok(c == vc),
+            // Ref pattern: &var matches references (strip one level)
+            (Pattern::Ref { pattern: inner, .. }, val) => {
+                let unwrapped = match val {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                self.pattern_matches(inner, &unwrapped)
+            }
             _ => Ok(false),
         }
     }
@@ -8033,9 +8423,8 @@ impl Interpreter {
                 }
             }
             (Value::Array(arr), "reverse") => {
-                let mut v = arr.borrow().clone();
-                v.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(v))))
+                arr.borrow_mut().reverse();
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "↓")
             | (Value::Array(arr), "skip")
@@ -8073,6 +8462,145 @@ impl Interpreter {
                 let target = &arg_values[0];
                 let found = arr.borrow().iter().any(|v| self.values_equal(v, target));
                 Ok(Value::Bool(found))
+            }
+            (Value::Array(arr), "position") => {
+                // position(predicate) -> Option<usize>
+                // Returns the index of the first element matching the predicate
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("position expects 1 argument (closure)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        for (i, val) in arr.borrow().iter().enumerate() {
+                            let result = self.call_function(f, vec![val.clone()])?;
+                            if matches!(result, Value::Bool(true)) {
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![Value::Int(i as i64)])),
+                                });
+                            }
+                        }
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "None".to_string(),
+                            fields: None,
+                        })
+                    }
+                    _ => Err(RuntimeError::new("position expects closure argument")),
+                }
+            }
+            (Value::Array(arr), "remove") => {
+                // remove(index) -> Value
+                // Removes and returns the element at the given index
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("remove expects 1 argument (index)"));
+                }
+                let index = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("remove() index must be integer")),
+                };
+                let mut borrowed = arr.borrow_mut();
+                if index >= borrowed.len() {
+                    return Err(RuntimeError::new(format!(
+                        "remove index {} out of bounds for array of length {}",
+                        index,
+                        borrowed.len()
+                    )));
+                }
+                Ok(borrowed.remove(index))
+            }
+            (Value::Array(arr), "insert") => {
+                // insert(index, value) -> ()
+                // Inserts an element at the given index
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("insert expects 2 arguments (index, value)"));
+                }
+                let index = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("insert() index must be integer")),
+                };
+                let mut borrowed = arr.borrow_mut();
+                if index > borrowed.len() {
+                    return Err(RuntimeError::new(format!(
+                        "insert index {} out of bounds for array of length {}",
+                        index,
+                        borrowed.len()
+                    )));
+                }
+                borrowed.insert(index, arg_values[1].clone());
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "index_of") => {
+                // index_of(element) -> i64
+                // Returns index of first matching element, or -1
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("index_of expects 1 argument"));
+                }
+                let target = &arg_values[0];
+                let idx = arr.borrow().iter().position(|v| self.values_equal(v, target));
+                match idx {
+                    Some(i) => Ok(Value::Int(i as i64)),
+                    None => Ok(Value::Int(-1)),
+                }
+            }
+            (Value::Array(arr), "swap") => {
+                // swap(i, j) -> ()
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("swap expects 2 arguments"));
+                }
+                let i = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("swap indices must be integers")),
+                };
+                let j = match &arg_values[1] {
+                    Value::Int(j) => *j as usize,
+                    _ => return Err(RuntimeError::new("swap indices must be integers")),
+                };
+                let mut borrowed = arr.borrow_mut();
+                if i >= borrowed.len() || j >= borrowed.len() {
+                    return Err(RuntimeError::new("swap index out of bounds"));
+                }
+                borrowed.swap(i, j);
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "truncate") => {
+                // truncate(len) -> ()
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("truncate expects 1 argument"));
+                }
+                let len = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("truncate length must be integer")),
+                };
+                arr.borrow_mut().truncate(len);
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "retain") => {
+                // retain(predicate) -> ()
+                // Keeps only elements for which the predicate returns true
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("retain expects 1 argument (closure)"));
+                }
+                match &arg_values[0] {
+                    Value::Function(f) => {
+                        let kept: Vec<Value> = arr.borrow().iter().filter(|val| {
+                            matches!(self.call_function(f, vec![(*val).clone()]), Ok(Value::Bool(true)))
+                        }).cloned().collect();
+                        *arr.borrow_mut() = kept;
+                        Ok(Value::Null)
+                    }
+                    _ => Err(RuntimeError::new("retain expects closure argument")),
+                }
+            }
+            (Value::Array(arr), "dedup") => {
+                // dedup() -> () - removes consecutive duplicate elements
+                let mut borrowed = arr.borrow_mut();
+                borrowed.dedup_by(|a, b| {
+                    // Use simple equality check
+                    format!("{}", a) == format!("{}", b)
+                });
+                Ok(Value::Null)
             }
             // Tuple methods
             (Value::Tuple(t), "to_string") | (Value::Tuple(t), "string") => {
@@ -8887,9 +9415,8 @@ impl Interpreter {
             | (Value::Array(arr), "reverse") => {
                 // ⟲() -> reversed sequence
                 // Symbolic: rotation/reversal arrow
-                let mut v = arr.borrow().clone();
-                v.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(v))))
+                arr.borrow_mut().reverse();
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "⧢")
             | (Value::Array(arr), "shuffled")
@@ -9377,6 +9904,7 @@ impl Interpreter {
                         .map(|v| v.clone());
                     if let Some(func) = func {
                         if let Value::Function(f) = func {
+                            let f = Self::wrap_with_const_generics(&f, fields);
                             // Set current Self type for Self { ... } resolution
                             let old_self_type = self.current_self_type.take();
                             self.current_self_type = Some(name.clone());
@@ -9430,6 +9958,7 @@ impl Interpreter {
                                         .map(|v| v.clone());
                                     if let Some(func) = func {
                                         if let Value::Function(f) = func {
+                                            let f = Self::wrap_with_const_generics(&f, fields);
                                             // Set current Self type for Self { ... } resolution
                                             let old_self_type = self.current_self_type.take();
                                             self.current_self_type = Some(type_name.clone());
@@ -9689,9 +10218,8 @@ impl Interpreter {
                             return Ok(Value::Array(arr.clone()));
                         }
                         "reverse" => {
-                            let mut v = arr.borrow().clone();
-                            v.reverse();
-                            return Ok(Value::Array(Rc::new(RefCell::new(v))));
+                            arr.borrow_mut().reverse();
+                            return Ok(Value::Array(arr.clone()));
                         }
                         "skip" => {
                             let n = match arg_values.first() {
@@ -9953,10 +10481,29 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                Err(RuntimeError::new(format!(
-                    "Cannot call method {} on Ref to non-struct",
-                    method.name
-                )))
+                // Fallback: auto-deref and dispatch method on inner value.
+                // This handles &Array, &Float, &Int, etc.
+                {
+                    static DEREF_CTR: std::sync::atomic::AtomicUsize =
+                        std::sync::atomic::AtomicUsize::new(0);
+                    let id = DEREF_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let inner_name = format!("__ref_deref_{}", id);
+                    self.environment.borrow_mut().define(inner_name.clone(), inner.clone());
+                    let deref_expr = Expr::Path(TypePath {
+                        segments: vec![PathSegment {
+                            ident: Ident {
+                                name: inner_name.clone(),
+                                span: Default::default(),
+                                evidentiality: None,
+                                affect: None,
+                            },
+                            generics: None,
+                        }],
+                    });
+                    let result = self.eval_method_call(&deref_expr, method, args);
+                    let _ = self.environment.borrow_mut().set(&inner_name, Value::Null);
+                    result
+                }
             }
             // Try struct method lookup: StructName·method
             (Value::Struct { name, fields }, _) => {
@@ -10219,6 +10766,84 @@ impl Interpreter {
                         _ => {}
                     }
                 }
+                // OnceLock methods - get_or_init(), get(), set()
+                if name == "OnceLock" {
+                    match method.name.as_str() {
+                        "get_or_init" => {
+                            // get_or_init(init_fn) - initialize on first access, return value
+                            let is_initialized = {
+                                let borrowed = fields.borrow();
+                                matches!(borrowed.get("initialized"), Some(Value::Bool(true)))
+                            };
+                            if is_initialized {
+                                let borrowed = fields.borrow();
+                                return Ok(borrowed.get("value").cloned().unwrap_or(Value::Null));
+                            }
+                            // Not initialized yet - call the init function
+                            let init_val = if !arg_values.is_empty() {
+                                match &arg_values[0] {
+                                    Value::Function(f) => self.call_function(f, vec![])?,
+                                    Value::BuiltIn(b) => (b.func)(self, vec![])?,
+                                    // If not callable, use as direct value
+                                    other => other.clone(),
+                                }
+                            } else {
+                                Value::Null
+                            };
+                            // Store the initialized value
+                            {
+                                let mut borrowed = fields.borrow_mut();
+                                borrowed.insert("initialized".to_string(), Value::Bool(true));
+                                borrowed.insert("value".to_string(), init_val.clone());
+                            }
+                            return Ok(init_val);
+                        }
+                        "get" => {
+                            // get() - returns Option<&T>
+                            let borrowed = fields.borrow();
+                            if matches!(borrowed.get("initialized"), Some(Value::Bool(true))) {
+                                let val = borrowed.get("value").cloned().unwrap_or(Value::Null);
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![val])),
+                                });
+                            }
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                        "set" => {
+                            // set(value) - initialize if not already, returns Ok(()) or Err(value)
+                            let is_initialized = {
+                                let borrowed = fields.borrow();
+                                matches!(borrowed.get("initialized"), Some(Value::Bool(true)))
+                            };
+                            if is_initialized {
+                                let err_val = if !arg_values.is_empty() { arg_values[0].clone() } else { Value::Null };
+                                return Ok(Value::Variant {
+                                    enum_name: "Result".to_string(),
+                                    variant_name: "Err".to_string(),
+                                    fields: Some(Rc::new(vec![err_val])),
+                                });
+                            }
+                            let val = if !arg_values.is_empty() { arg_values[0].clone() } else { Value::Null };
+                            {
+                                let mut borrowed = fields.borrow_mut();
+                                borrowed.insert("initialized".to_string(), Value::Bool(true));
+                                borrowed.insert("value".to_string(), val);
+                            }
+                            return Ok(Value::Variant {
+                                enum_name: "Result".to_string(),
+                                variant_name: "Ok".to_string(),
+                                fields: Some(Rc::new(vec![Value::Null])),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
                 // Barrier methods - wait() synchronization
                 if name == "Barrier" {
                     match method.name.as_str() {
@@ -10474,6 +11099,16 @@ impl Interpreter {
                     }
                 }
                 if method.name == "to_string" {
+                    // Check for user-defined to_string() method first
+                    let user_method_name = format!("{}·to_string", name);
+                    let user_fn = self.globals.borrow().get(&user_method_name).map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_fn {
+                        let self_val = Value::Struct {
+                            name: name.clone(),
+                            fields: fields.clone(),
+                        };
+                        return self.call_function(&func, vec![self_val]);
+                    }
                     // Generic to_string for structs - returns a debug representation
                     let field_str = fields
                         .borrow()
@@ -11384,7 +12019,36 @@ impl Interpreter {
                     }
                 }
 
-                // ReLU forward method
+                // Check for user-defined method before hardcoded struct handlers
+                // This ensures user impls take priority over stdlib defaults
+                {
+                    let user_method_name = format!("{}·{}", name, method.name);
+                    let user_fn = self.globals.borrow().get(&user_method_name).map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_fn {
+                        let func = Self::wrap_with_const_generics(&func, fields);
+                        let old_self_type = self.current_self_type.take();
+                        self.current_self_type = Some(name.clone());
+
+                        // Reorder named args to match function params (skip first param which is self)
+                        let reordered = if func.params.len() > 1 {
+                            Self::reorder_named_args(&func.params[1..].to_vec(), arg_entries.clone())?
+                        } else {
+                            arg_values.clone()
+                        };
+                        let self_val = Value::Struct {
+                            name: name.clone(),
+                            fields: fields.clone(),
+                        };
+                        let mut all_args = vec![self_val];
+                        all_args.extend(reordered);
+                        let result = self.call_function(&func, all_args);
+
+                        self.current_self_type = old_self_type;
+                        return result;
+                    }
+                }
+
+                // ReLU forward method (stdlib fallback)
                 if name == "ReLU" && method.name == "forward" {
                     if let Some(input) = arg_values.first() {
                         // Apply ReLU: max(0, x) for each element
@@ -11695,6 +12359,7 @@ impl Interpreter {
                     .map(|v| v.clone());
                 if let Some(func) = func {
                     if let Value::Function(f) = func {
+                        let f = Self::wrap_with_const_generics(&f, fields);
                         // Set current Self type for Self { ... } resolution
                         let old_self_type = self.current_self_type.take();
                         self.current_self_type = Some(name.clone());
@@ -11747,6 +12412,7 @@ impl Interpreter {
                                     .map(|v| v.clone());
                                 if let Some(func) = func {
                                     if let Value::Function(f) = func {
+                                        let f = Self::wrap_with_const_generics(&f, fields);
                                         // Set current Self type for Self { ... } resolution
                                         let old_self_type = self.current_self_type.take();
                                         self.current_self_type = Some(type_name.clone());
@@ -12254,8 +12920,193 @@ impl Interpreter {
             (Value::Float(n), "to_string") | (Value::Float(n), "string") => {
                 Ok(Value::String(Rc::new(n.to_string())))
             }
-            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
             (Value::Float(n), "to_int") | (Value::Float(n), "int") => Ok(Value::Int(*n as i64)),
+            // Float math methods (numeric primitive instance methods)
+            (Value::Float(n), "abs") => Ok(Value::Float(n.abs())),
+            (Value::Float(n), "exp") => Ok(Value::Float(n.exp())),
+            (Value::Float(n), "exp2") => Ok(Value::Float(n.exp2())),
+            (Value::Float(n), "ln") => Ok(Value::Float(n.ln())),
+            (Value::Float(n), "log2") => Ok(Value::Float(n.log2())),
+            (Value::Float(n), "log10") => Ok(Value::Float(n.log10())),
+            (Value::Float(n), "sqrt") => Ok(Value::Float(n.sqrt())),
+            (Value::Float(n), "cbrt") => Ok(Value::Float(n.cbrt())),
+            (Value::Float(n), "sin") => Ok(Value::Float(n.sin())),
+            (Value::Float(n), "cos") => Ok(Value::Float(n.cos())),
+            (Value::Float(n), "tan") => Ok(Value::Float(n.tan())),
+            (Value::Float(n), "asin") => Ok(Value::Float(n.asin())),
+            (Value::Float(n), "acos") => Ok(Value::Float(n.acos())),
+            (Value::Float(n), "atan") => Ok(Value::Float(n.atan())),
+            (Value::Float(n), "sinh") => Ok(Value::Float(n.sinh())),
+            (Value::Float(n), "cosh") => Ok(Value::Float(n.cosh())),
+            (Value::Float(n), "tanh") => Ok(Value::Float(n.tanh())),
+            (Value::Float(n), "asinh") => Ok(Value::Float(n.asinh())),
+            (Value::Float(n), "acosh") => Ok(Value::Float(n.acosh())),
+            (Value::Float(n), "atanh") => Ok(Value::Float(n.atanh())),
+            (Value::Float(n), "floor") => Ok(Value::Float(n.floor())),
+            (Value::Float(n), "ceil") => Ok(Value::Float(n.ceil())),
+            (Value::Float(n), "round") => Ok(Value::Float(n.round())),
+            (Value::Float(n), "trunc") => Ok(Value::Float(n.trunc())),
+            (Value::Float(n), "fract") => Ok(Value::Float(n.fract())),
+            (Value::Float(n), "signum") => Ok(Value::Float(n.signum())),
+            (Value::Float(n), "is_nan") => Ok(Value::Bool(n.is_nan())),
+            (Value::Float(n), "is_infinite") => Ok(Value::Bool(n.is_infinite())),
+            (Value::Float(n), "is_finite") => Ok(Value::Bool(n.is_finite())),
+            (Value::Float(n), "is_normal") => Ok(Value::Bool(n.is_normal())),
+            (Value::Float(n), "to_bits") => Ok(Value::Int(n.to_bits() as i64)),
+            (Value::Float(n), "powf") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("powf requires 1 argument"));
+                }
+                let exp = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("powf argument must be numeric")),
+                };
+                Ok(Value::Float(n.powf(exp)))
+            }
+            (Value::Float(n), "powi") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("powi requires 1 argument"));
+                }
+                let exp = match &arg_values[0] {
+                    Value::Int(i) => *i as i32,
+                    Value::Float(f) => *f as i32,
+                    _ => return Err(RuntimeError::new("powi argument must be integer")),
+                };
+                Ok(Value::Float(n.powi(exp)))
+            }
+            (Value::Float(n), "atan2") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("atan2 requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("atan2 argument must be numeric")),
+                };
+                Ok(Value::Float(n.atan2(other)))
+            }
+            (Value::Float(n), "copysign") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("copysign requires 1 argument"));
+                }
+                let sign = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("copysign argument must be numeric")),
+                };
+                Ok(Value::Float(n.copysign(sign)))
+            }
+            (Value::Float(n), "mul_add") => {
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("mul_add requires 2 arguments"));
+                }
+                let a = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("mul_add arguments must be numeric")),
+                };
+                let b = match &arg_values[1] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("mul_add arguments must be numeric")),
+                };
+                Ok(Value::Float(n.mul_add(a, b)))
+            }
+            (Value::Float(n), "max") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("max requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("max argument must be numeric")),
+                };
+                Ok(Value::Float(n.max(other)))
+            }
+            (Value::Float(n), "min") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("min requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("min argument must be numeric")),
+                };
+                Ok(Value::Float(n.min(other)))
+            }
+            (Value::Float(n), "clamp") => {
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("clamp requires 2 arguments"));
+                }
+                let min_val = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("clamp arguments must be numeric")),
+                };
+                let max_val = match &arg_values[1] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("clamp arguments must be numeric")),
+                };
+                Ok(Value::Float(n.clamp(min_val, max_val)))
+            }
+            (Value::Float(n), "log") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("log requires 1 argument (base)"));
+                }
+                let base = match &arg_values[0] {
+                    Value::Float(f) => *f,
+                    Value::Int(i) => *i as f64,
+                    _ => return Err(RuntimeError::new("log argument must be numeric")),
+                };
+                Ok(Value::Float(n.log(base)))
+            }
+            // Integer math methods
+            (Value::Int(n), "pow") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("pow requires 1 argument"));
+                }
+                let exp = match &arg_values[0] {
+                    Value::Int(i) => *i as u32,
+                    _ => return Err(RuntimeError::new("pow argument must be integer")),
+                };
+                Ok(Value::Int(n.pow(exp)))
+            }
+            (Value::Int(n), "max") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("max requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("max argument must be integer")),
+                };
+                Ok(Value::Int(std::cmp::max(*n, other)))
+            }
+            (Value::Int(n), "min") => {
+                if arg_values.is_empty() {
+                    return Err(RuntimeError::new("min requires 1 argument"));
+                }
+                let other = match &arg_values[0] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("min argument must be integer")),
+                };
+                Ok(Value::Int(std::cmp::min(*n, other)))
+            }
+            (Value::Int(n), "clamp") => {
+                if arg_values.len() < 2 {
+                    return Err(RuntimeError::new("clamp requires 2 arguments"));
+                }
+                let min_val = match &arg_values[0] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("clamp arguments must be integer")),
+                };
+                let max_val = match &arg_values[1] {
+                    Value::Int(i) => *i,
+                    _ => return Err(RuntimeError::new("clamp arguments must be integer")),
+                };
+                Ok(Value::Int((*n).max(min_val).min(max_val)))
+            }
             // Bool methods
             (Value::Bool(b), "to_string") | (Value::Bool(b), "string") => {
                 Ok(Value::String(Rc::new(b.to_string())))
@@ -12490,9 +13341,8 @@ impl Interpreter {
                 .cloned()
                 .ok_or_else(|| RuntimeError::new("empty array")),
             (Value::Array(arr), "reverse") | (Value::Array(arr), "rev") => {
-                let mut v = arr.borrow().clone();
-                v.reverse();
-                Ok(Value::Array(Rc::new(RefCell::new(v))))
+                arr.borrow_mut().reverse();
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "join") => {
                 let sep = args
@@ -12732,6 +13582,34 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("Sort requires array")),
                 }
             }
+            PipeOp::SortBy(body) => {
+                // σ{a, b => b - a} - sort with custom comparator closure
+                match value {
+                    Value::Array(arr) => {
+                        let mut v = arr.borrow().clone();
+                        let (params, inner_body) = match body.as_ref() {
+                            Expr::Closure { params, body, .. } => (params, body.as_ref()),
+                            _ => return Err(RuntimeError::new("SortBy requires closure")),
+                        };
+                        // Bubble sort: can't use Rust's sort_by with &mut self borrow
+                        let n = v.len();
+                        for i in 0..n {
+                            for j in 0..n.saturating_sub(1).saturating_sub(i) {
+                                if params.len() >= 2 {
+                                    self.bind_pattern(&params[0].pattern, v[j].clone())?;
+                                    self.bind_pattern(&params[1].pattern, v[j + 1].clone())?;
+                                }
+                                let cmp = self.evaluate(inner_body)?;
+                                if matches!(&cmp, Value::Int(n) if *n > 0) {
+                                    v.swap(j, j + 1);
+                                }
+                            }
+                        }
+                        Ok(Value::Array(Rc::new(RefCell::new(v))))
+                    }
+                    _ => Err(RuntimeError::new("SortBy requires array")),
+                }
+            }
             PipeOp::Reduce(body) => {
                 // ρ{f} - reduce collection
                 match value {
@@ -12751,6 +13629,28 @@ impl Interpreter {
                         Ok(acc)
                     }
                     _ => Err(RuntimeError::new("Reduce requires array")),
+                }
+            }
+            PipeOp::ReduceWithInit(init_expr, closure) => {
+                // ρ{0, acc, x => acc + x} - reduce with initial value
+                match value {
+                    Value::Array(arr) => {
+                        let items: Vec<Value> = arr.borrow().clone();
+                        let mut acc = self.evaluate(init_expr)?;
+                        let (params, inner_body) = match closure.as_ref() {
+                            Expr::Closure { params, body, .. } => (params, body.as_ref()),
+                            _ => return Err(RuntimeError::new("ReduceWithInit requires closure")),
+                        };
+                        for item in items.iter() {
+                            if params.len() >= 2 {
+                                self.bind_pattern(&params[0].pattern, acc)?;
+                                self.bind_pattern(&params[1].pattern, item.clone())?;
+                            }
+                            acc = self.evaluate(inner_body)?;
+                        }
+                        Ok(acc)
+                    }
+                    _ => Err(RuntimeError::new("ReduceWithInit requires array")),
                 }
             }
             PipeOp::ReduceSum => {
@@ -12958,9 +13858,8 @@ impl Interpreter {
                     },
                     "reverse" => match value {
                         Value::Array(arr) => {
-                            let mut v = arr.borrow().clone();
-                            v.reverse();
-                            Ok(Value::Array(Rc::new(RefCell::new(v))))
+                            arr.borrow_mut().reverse();
+                            Ok(Value::Array(arr.clone()))
                         }
                         _ => Err(RuntimeError::new("reverse requires array")),
                     },
@@ -16478,10 +17377,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let param_names: Vec<String> = params
             .iter()
-            .map(|p| match &p.pattern {
-                Pattern::Ident { name, .. } => name.name.clone(),
-                _ => "_".to_string(),
-            })
+            .map(|p| Self::extract_param_name(&p.pattern))
             .collect();
 
         Ok(Value::Function(Rc::new(Function {
@@ -16489,6 +17385,7 @@ impl Interpreter {
             params: param_names,
             body: body.clone(),
             closure: self.environment.clone(),
+            generic_params: Vec::new(),
         })))
     }
 
@@ -16610,6 +17507,70 @@ impl Interpreter {
             }
         }
 
+        // Inject const generic values as hidden fields from path generics
+        // e.g., Shape1<3> {} → __const_N__ = 3
+        if let Some(segment) = path.segments.first() {
+            if let Some(generics) = &segment.generics {
+                let base_name = &segment.ident.name;
+                if let Some(param_names) = self.const_generic_params.get(base_name.as_str()).cloned() {
+                    let mut idx = 0;
+                    for generic in generics {
+                        if idx >= param_names.len() { break; }
+                        let val = match generic {
+                            crate::ast::TypeExpr::ConstExpr(expr) => {
+                                if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = expr.as_ref() {
+                                    value.parse::<i64>().ok()
+                                } else { None }
+                            }
+                            crate::ast::TypeExpr::Path(inner_path) => {
+                                if let Some(inner_seg) = inner_path.segments.first() {
+                                    inner_seg.ident.name.parse::<i64>().ok()
+                                } else { None }
+                            }
+                            _ => None,
+                        };
+                        if let Some(v) = val {
+                            field_values.insert(
+                                format!("__const_{}__", param_names[idx]),
+                                Value::Int(v),
+                            );
+                            idx += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also inject from type_context.struct_generics (type annotation path)
+        if let Some((ctx_name, ctx_values)) = self.type_context.struct_generics.borrow().clone() {
+            if ctx_name == name {
+                if let Some(param_names) = self.const_generic_params.get(&name).cloned() {
+                    for (param_name, value) in param_names.iter().zip(ctx_values.iter()) {
+                        let key = format!("__const_{}__", param_name);
+                        if !field_values.contains_key(&key) {
+                            field_values.insert(key, Value::Int(*value));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also inject from current scope: if the struct type has const generic params,
+        // check if those param names are defined as variables in the current environment.
+        // This handles constructors like FixedVec·<5>·new() where N=5 is in scope.
+        if let Some(param_names) = self.const_generic_params.get(&name).cloned() {
+            for param_name in &param_names {
+                let key = format!("__const_{}__", param_name);
+                if !field_values.contains_key(&key) {
+                    if let Some(val) = self.environment.borrow().get(param_name) {
+                        if let Value::Int(_) = &val {
+                            field_values.insert(key, val);
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(Value::Struct {
             name,
             fields: Rc::new(RefCell::new(field_values)),
@@ -16710,26 +17671,62 @@ impl Interpreter {
     fn eval_evidential(&mut self, expr: &Expr, ev: &Evidentiality) -> Result<Value, RuntimeError> {
         let value = self.evaluate(expr)?;
 
-        // For Known (!) evidentiality - this is an "unwrap" or "assert known" operation
-        // If the value is null, return null (propagate nulls for graceful handling)
-        // If the value is already evidential, unwrap it
-        // Otherwise, return the value as-is (it's implicitly known)
-        if *ev == Evidentiality::Known {
-            return match value {
-                Value::Null => Ok(Value::Null), // Null propagates
-                Value::Evidential { value: inner, .. } => Ok(*inner), // Unwrap evidential
-                other => Ok(other),             // Non-null, non-evidential returns as-is
+        // When ? (Uncertain) is applied to Result or Option, act as try operator:
+        // - Result::Ok(v) / Option::Some(v) → return v (unwrap)
+        // - Result::Err(e) / Option::None / null → early return from function
+        if matches!(ev, Evidentiality::Uncertain) {
+            // Strip existing evidential wrapper first
+            let unwrapped = match &value {
+                Value::Evidential { value: inner, .. } => inner.as_ref().clone(),
+                other => other.clone(),
             };
+            match &unwrapped {
+                Value::Variant { enum_name, variant_name, fields, .. }
+                    if (enum_name == "Result" || enum_name == "Option")
+                        && (variant_name == "Ok" || variant_name == "Some") =>
+                {
+                    // Unwrap Ok(v) or Some(v) → v
+                    let inner_val = fields.as_ref()
+                        .and_then(|f| f.first().cloned())
+                        .unwrap_or(Value::Null);
+                    return Ok(inner_val);
+                }
+                Value::Variant { enum_name, variant_name, .. }
+                    if (enum_name == "Result" && variant_name == "Err")
+                        || (enum_name == "Option" && variant_name == "None") =>
+                {
+                    // Early return with the error/none value
+                    self.return_value = Some(unwrapped);
+                    return Err(RuntimeError::new("return"));
+                }
+                Value::Null => {
+                    self.return_value = Some(Value::Null);
+                    return Err(RuntimeError::new("return"));
+                }
+                _ => {}
+            }
         }
 
+        // All evidentiality markers wrap the value with the corresponding evidence level.
+        // If the value is already evidential, re-wrap with the new evidence level.
+        // Null propagates as-is (no evidence on null).
+        if let Value::Null = &value {
+            return Ok(Value::Null);
+        }
+
+        let inner = match value {
+            Value::Evidential { value: inner, .. } => *inner, // Strip existing evidence before re-wrapping
+            other => other,
+        };
+
         let evidence = match ev {
-            Evidentiality::Known => Evidence::Known, // Won't reach here
+            Evidentiality::Known => Evidence::Known,
             Evidentiality::Uncertain | Evidentiality::Predicted => Evidence::Uncertain,
             Evidentiality::Reported => Evidence::Reported,
             Evidentiality::Paradox => Evidence::Paradox,
         };
         Ok(Value::Evidential {
-            value: Box::new(value),
+            value: Box::new(inner),
             evidence,
         })
     }
@@ -16817,7 +17814,7 @@ impl Interpreter {
         }
 
         // Parse and evaluate the expanded expression
-        let expr_source = format!("λ __macro_expand__() {{ {} }}", expanded);
+        let expr_source = format!("rite __macro_expand__() {{ {} }}", expanded);
         let mut parser = crate::Parser::new(&expr_source);
         match parser.parse_file() {
             Ok(file) => {
@@ -17276,9 +18273,46 @@ impl Interpreter {
 
     /// Evaluate vec! macro
     fn eval_vec_macro(&mut self, tokens: &str) -> Result<Value, RuntimeError> {
+        // Check for fill syntax: vec![value; count]
+        // Find ';' at depth 0
+        let mut depth = 0;
+        let mut semicolon_pos = None;
+        for (i, c) in tokens.chars().enumerate() {
+            match c {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                ';' if depth == 0 => {
+                    semicolon_pos = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(pos) = semicolon_pos {
+            // Fill syntax: vec![value; count]
+            let value_str = tokens[..pos].trim();
+            let count_str = tokens[pos + 1..].trim();
+
+            let mut parser = crate::parser::Parser::new(value_str);
+            let value_expr = parser.parse_expr().map_err(|e| RuntimeError::new(format!("vec! fill value parse error: {}", e)))?;
+            let value = self.evaluate(&value_expr)?;
+
+            let mut parser = crate::parser::Parser::new(count_str);
+            let count_expr = parser.parse_expr().map_err(|e| RuntimeError::new(format!("vec! fill count parse error: {}", e)))?;
+            let count_val = self.evaluate(&count_expr)?;
+            let count = match count_val {
+                Value::Int(n) => n as usize,
+                _ => return Err(RuntimeError::new(format!("vec! fill count must be integer, got {:?}", count_val))),
+            };
+
+            let elements: Vec<Value> = (0..count).map(|_| value.clone()).collect();
+            return Ok(Value::Array(Rc::new(RefCell::new(elements))));
+        }
+
         // Parse comma-separated elements
         let mut elements = Vec::new();
-        let mut depth = 0;
+        depth = 0;
         let mut current = String::new();
 
         for c in tokens.chars() {

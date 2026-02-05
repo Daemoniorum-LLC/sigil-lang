@@ -16,12 +16,12 @@
 }
 
 ⊢ Drop ∀ Value {
-    λ drop(Δ self) {
+    rite drop(Δ self) {
         println("dropped");
     }
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value { x: 42 };
     println(v.x);
 }

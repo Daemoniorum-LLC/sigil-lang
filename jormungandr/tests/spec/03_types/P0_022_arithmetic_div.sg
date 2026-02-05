@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print 21 (42 / 2)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     ≔ y: !i32 = 2;
     ≔ z: !i32 = x / y;

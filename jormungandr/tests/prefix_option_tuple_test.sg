@@ -10,13 +10,13 @@
     end: u64,
 }
 
-λ maybe_get_tuple() -> ?(Token, Span) {
+rite maybe_get_tuple() -> ?(Token, Span) {
     ≔ token = Token { value: 42 };
     ≔ span = Span { start: 0, end: 10 };
     (token, span)  // Does this auto-wrap?
 }
 
-λ main() {
+rite main() {
     ⌥ maybe_get_tuple() {
         ?(t, s) => println(t.value),
         null => println(0),

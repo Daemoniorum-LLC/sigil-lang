@@ -1,0 +1,23 @@
+// TDD Test: Basic const generic on unit struct
+// A unit struct with a single const generic param, and a method that returns it.
+
+☉ sigil Foo<◆ N: usize>;
+
+⊢<◆ N: usize> Foo<N> {
+    rite get_n(&this) → usize {
+        N
+    }
+}
+
+☉ rite main() → !i32 {
+    // Construct unit struct with const generic value via struct literal
+    ≔ f = Foo<5> {};
+    assert_eq(f.get_n(), 5);
+
+    // Different instantiation
+    ≔ g = Foo<10> {};
+    assert_eq(g.get_n(), 10);
+
+    println("const_generic_basic: PASS");
+    ⤺ 0;
+}

@@ -6,7 +6,7 @@ extern "C" {
     static errno: c_int;
 }
 
-λ main() {
+rite main() {
     // Just verify extern statics can be declared
     println(1);
 }

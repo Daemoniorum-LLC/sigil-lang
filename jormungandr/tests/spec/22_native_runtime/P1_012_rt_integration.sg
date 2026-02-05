@@ -4,11 +4,11 @@
 //
 // This test exercises all interpreter components together.
 
-λ fabs(x: f64) -> f64 {
+rite fabs(x: f64) -> f64 {
     ⎇ x < 0.0 { -x } ⎉ { x }
 }
 
-λ main() {
+rite main() {
     // Phase A: Syscalls (simulated with byte operations)
     println("=== Phase A: Syscalls ===");
 

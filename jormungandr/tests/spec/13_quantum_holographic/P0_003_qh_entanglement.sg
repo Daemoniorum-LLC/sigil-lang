@@ -2,7 +2,7 @@
 // Spec: 13-QUANTUM-HOLOGRAPHIC.md § 3 Entanglement
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ (a, b) = entangle_holograms(
         Hologram·encode(42),
         Hologram·encode(42),

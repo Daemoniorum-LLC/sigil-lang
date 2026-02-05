@@ -1,0 +1,31 @@
+// Regression test: Float ==/ != for NaN and Infinity (IEEE 754)
+// NaN != NaN must be true; NaN == NaN must be false
+// inf == inf must be true; -inf == -inf must be true
+
+☉ rite main() -> !i32 {
+    ≔ nan = 0.0 / 0.0;
+    ≔ inf = 1.0 / 0.0;
+    ≔ neg_inf = -1.0 / 0.0;
+
+    // NaN comparisons (IEEE 754: NaN is unordered)
+    assert_eq(nan != nan, true);
+    assert_eq(nan == nan, false);
+    assert_eq(nan == 0.0, false);
+    assert_eq(nan != 0.0, true);
+
+    // Infinity comparisons
+    assert_eq(inf == inf, true);
+    assert_eq(neg_inf == neg_inf, true);
+    assert_eq(inf != neg_inf, true);
+    assert_eq(inf > 0.0, true);
+    assert_eq(neg_inf < 0.0, true);
+
+    // is_nan idiom: x != x
+    ≔ x = nan;
+    assert_eq(x != x, true);
+
+    // is_infinite idiom
+    assert_eq(inf == inf, true);
+
+    ⤺ 0;
+}

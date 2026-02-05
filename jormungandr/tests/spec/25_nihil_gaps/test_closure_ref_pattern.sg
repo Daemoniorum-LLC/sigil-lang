@@ -1,0 +1,21 @@
+// Regression test: Closure ref pattern destructuring (Bug 5.5)
+// Closures with |&x| parameters should bind x to the dereferenced value.
+
+☉ rite main() -> !i32 {
+    // Test 1: Ref pattern in position() closure
+    ≔ items = vec![10, 20, 30];
+    ≔ pos = items.iter().position(|&x| x == 20);
+    assert_eq(pos.unwrap(), 1);
+
+    // Test 2: Ref pattern in retain() closure
+    ≔ Δ nums = vec![1, 2, 3, 4, 5];
+    nums.retain(|&x| x > 2);
+    assert_eq(nums.len(), 3);
+
+    // Test 3: Non-ref pattern still works
+    ≔ items2 = vec![5, 10, 15];
+    ≔ pos2 = items2.iter().position(|x| x == 10);
+    assert_eq(pos2.unwrap(), 1);
+
+    ⤺ 0;
+}

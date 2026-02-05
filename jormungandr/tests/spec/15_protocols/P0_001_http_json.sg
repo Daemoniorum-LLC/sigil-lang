@@ -4,7 +4,7 @@
 //
 // This test makes a REAL HTTP GET and reads the JSON response
 
-λ main() {
+rite main() {
     // GET request returns JSON data from httpbin
     ≔ conn = "https://httpbin.org/json"|connect;
     ≔ response~ = conn|send{""};

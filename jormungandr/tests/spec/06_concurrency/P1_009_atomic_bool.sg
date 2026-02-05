@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 4.2 Atomic Bool
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     // Create atomic bool
     ≔ flag = AtomicBool·new(false);
 

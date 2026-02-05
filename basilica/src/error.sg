@@ -81,7 +81,7 @@ invoke crate·evidence·EvidenceLevel;
 
 ⊢ BasilicaError {
     /// Get HTTP status code ∀ this error
-    ☉ λ status_code(&self) -> u16 {
+    ☉ rite status_code(&self) -> u16 {
         ⌥ self {
             BasilicaError·InsufficientEvidence { .. } => 422,
             BasilicaError·Validation { .. } => 422,
@@ -101,7 +101,7 @@ invoke crate·evidence·EvidenceLevel;
     }
 
     /// Get error code string
-    ☉ λ error_code(&self) -> &'static str {
+    ☉ rite error_code(&self) -> &'static str {
         ⌥ self {
             BasilicaError·InsufficientEvidence { .. } => "insufficient_evidence",
             BasilicaError·Validation { .. } => "validation_error",
@@ -121,7 +121,7 @@ invoke crate·evidence·EvidenceLevel;
     }
 
     /// Get human-readable message
-    ☉ λ message(&self) -> String {
+    ☉ rite message(&self) -> String {
         ⌥ self {
             BasilicaError·InsufficientEvidence { required, actual, context } => {
                 format!(
@@ -159,7 +159,7 @@ invoke crate·evidence·EvidenceLevel;
 }
 
 ⊢ From<AgentError> ∀ BasilicaError {
-    λ from(err: AgentError) -> Self {
+    rite from(err: AgentError) -> Self {
         ⌥ err.kind {
             ErrorKind·InvalidInput => BasilicaError·Validation {
                 field: "unknown".to_string(),

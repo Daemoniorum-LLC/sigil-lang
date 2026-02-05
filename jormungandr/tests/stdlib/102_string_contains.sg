@@ -1,5 +1,5 @@
 // Test: String contains method
-λ main() {
+rite main() {
     ≔ s: !String = "Hello, World!";
 
     ⎇ s.contains("World") {

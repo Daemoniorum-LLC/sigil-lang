@@ -5,11 +5,11 @@
 }
 
 ⊢ StepId {
-    ☉ λ new(value: !u64) -> Self {
+    ☉ rite new(value: !u64) -> Self {
         StepId { value }
     }
 
-    ☉ λ to_short(&self) -> !u64 {
+    ☉ rite to_short(&self) -> !u64 {
         self.value % 256
     }
 }
@@ -31,7 +31,7 @@
 }
 
 ⊢ ReasoningStep {
-    ☉ λ observation(id: !u64, desc_len: !usize) -> Self {
+    ☉ rite observation(id: !u64, desc_len: !usize) -> Self {
         ReasoningStep {
             id: StepId·new(id),
             step_type: StepType·Observation,
@@ -41,7 +41,7 @@
         }
     }
 
-    ☉ λ inference(id: !u64, desc_len: !usize, reasoning_len: !usize) -> Self {
+    ☉ rite inference(id: !u64, desc_len: !usize, reasoning_len: !usize) -> Self {
         ReasoningStep {
             id: StepId·new(id),
             step_type: StepType·Inference,
@@ -51,7 +51,7 @@
         }
     }
 
-    ☉ λ decision(id: !u64, desc_len: !usize, confidence: !f32) -> Self {
+    ☉ rite decision(id: !u64, desc_len: !usize, confidence: !f32) -> Self {
         ReasoningStep {
             id: StepId·new(id),
             step_type: StepType·Decision,
@@ -61,7 +61,7 @@
         }
     }
 
-    ☉ λ with_confidence(Δ self, confidence: !f32) -> Self {
+    ☉ rite with_confidence(Δ self, confidence: !f32) -> Self {
         self.confidence = confidence;
         self
     }
@@ -73,20 +73,20 @@
 }
 
 ⊢ ReasoningChain {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         ReasoningChain { step_count: 0, total_confidence: 0.0 }
     }
 
-    ☉ λ add_step(&Δ self, confidence: !f32) {
+    ☉ rite add_step(&Δ self, confidence: !f32) {
         self.step_count = self.step_count + 1;
         self.total_confidence = self.total_confidence + confidence;
     }
 
-    ☉ λ is_empty(&self) -> !bool {
+    ☉ rite is_empty(&self) -> !bool {
         self.step_count == 0
     }
 
-    ☉ λ average_confidence(&self) -> !f32 {
+    ☉ rite average_confidence(&self) -> !f32 {
         ⎇ self.step_count == 0 {
             0.0
         } ⎉ {
@@ -94,7 +94,7 @@
         }
     }
 
-    ☉ λ is_well_supported(&self) -> !bool {
+    ☉ rite is_well_supported(&self) -> !bool {
         self.step_count >= 2 && self.average_confidence() >= 0.7
     }
 }
@@ -105,15 +105,15 @@
 }
 
 ⊢ Factor {
-    ☉ λ positive(weight: !f32) -> Self {
+    ☉ rite positive(weight: !f32) -> Self {
         Factor { weight, is_positive: true }
     }
 
-    ☉ λ negative(weight: !f32) -> Self {
+    ☉ rite negative(weight: !f32) -> Self {
         Factor { weight, is_positive: false }
     }
 
-    ☉ λ contribution(&self) -> !f32 {
+    ☉ rite contribution(&self) -> !f32 {
         ⎇ self.is_positive {
             self.weight
         } ⎉ {
@@ -129,29 +129,29 @@
 }
 
 ⊢ FactorSet {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         FactorSet { positive_sum: 0.0, negative_sum: 0.0, count: 0 }
     }
 
-    ☉ λ add_positive(&Δ self, weight: !f32) {
+    ☉ rite add_positive(&Δ self, weight: !f32) {
         self.positive_sum = self.positive_sum + weight;
         self.count = self.count + 1;
     }
 
-    ☉ λ add_negative(&Δ self, weight: !f32) {
+    ☉ rite add_negative(&Δ self, weight: !f32) {
         self.negative_sum = self.negative_sum + weight;
         self.count = self.count + 1;
     }
 
-    ☉ λ net_score(&self) -> !f32 {
+    ☉ rite net_score(&self) -> !f32 {
         self.positive_sum - self.negative_sum
     }
 
-    ☉ λ is_positive(&self) -> !bool {
+    ☉ rite is_positive(&self) -> !bool {
         self.net_score() > 0.0
     }
 
-    ☉ λ balance_ratio(&self) -> !f32 {
+    ☉ rite balance_ratio(&self) -> !f32 {
         ≔ total = self.positive_sum + self.negative_sum;
         ⎇ total == 0.0 {
             0.5
@@ -166,51 +166,51 @@
 // ============================================================================
 
 #[test]
-λ test_step_id_creation() {
+rite test_step_id_creation() {
     ≔ id = StepId·new(12345);
     assert(id.value == 12345);
 }
 
 #[test]
-λ test_step_id_short() {
+rite test_step_id_short() {
     ≔ id = StepId·new(300);
     assert(id.to_short() == 44);
 }
 
 #[test]
-λ test_reasoning_step_observation() {
+rite test_reasoning_step_observation() {
     ≔ step = ReasoningStep·observation(1, 20);
     assert(step.confidence == 0.95);
 }
 
 #[test]
-λ test_reasoning_step_inference() {
+rite test_reasoning_step_inference() {
     ≔ step = ReasoningStep·inference(2, 30, 50);
     assert(step.confidence == 0.7);
     assert(step.reasoning_len == 50);
 }
 
 #[test]
-λ test_reasoning_step_decision() {
+rite test_reasoning_step_decision() {
     ≔ step = ReasoningStep·decision(3, 25, 0.85);
     assert(step.confidence == 0.85);
 }
 
 #[test]
-λ test_reasoning_step_with_confidence() {
+rite test_reasoning_step_with_confidence() {
     ≔ step = ReasoningStep·observation(1, 10).with_confidence(0.8);
     assert(step.confidence == 0.8);
 }
 
 #[test]
-λ test_reasoning_chain_empty() {
+rite test_reasoning_chain_empty() {
     ≔ chain = ReasoningChain·new();
     assert(chain.is_empty());
     assert(chain.average_confidence() == 0.0);
 }
 
 #[test]
-λ test_reasoning_chain_add_step() {
+rite test_reasoning_chain_add_step() {
     ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.9);
     assert(!chain.is_empty());
@@ -218,7 +218,7 @@
 }
 
 #[test]
-λ test_reasoning_chain_average() {
+rite test_reasoning_chain_average() {
     ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.8);
     chain.add_step(0.6);
@@ -226,7 +226,7 @@
 }
 
 #[test]
-λ test_reasoning_chain_well_supported() {
+rite test_reasoning_chain_well_supported() {
     ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.8);
     chain.add_step(0.8);
@@ -234,14 +234,14 @@
 }
 
 #[test]
-λ test_reasoning_chain_not_well_supported_few_steps() {
+rite test_reasoning_chain_not_well_supported_few_steps() {
     ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.9);
     assert(!chain.is_well_supported());
 }
 
 #[test]
-λ test_reasoning_chain_not_well_supported_low_confidence() {
+rite test_reasoning_chain_not_well_supported_low_confidence() {
     ≔ Δ chain = ReasoningChain·new();
     chain.add_step(0.5);
     chain.add_step(0.5);
@@ -249,26 +249,26 @@
 }
 
 #[test]
-λ test_factor_positive() {
+rite test_factor_positive() {
     ≔ f = Factor·positive(0.8);
     assert(f.contribution() == 0.8);
 }
 
 #[test]
-λ test_factor_negative() {
+rite test_factor_negative() {
     ≔ f = Factor·negative(0.3);
     assert(f.contribution() == -0.3);
 }
 
 #[test]
-λ test_factor_set_empty() {
+rite test_factor_set_empty() {
     ≔ fs = FactorSet·new();
     assert(fs.net_score() == 0.0);
     assert(fs.balance_ratio() == 0.5);
 }
 
 #[test]
-λ test_factor_set_positive() {
+rite test_factor_set_positive() {
     ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.8);
     fs.add_positive(0.6);
@@ -277,7 +277,7 @@
 }
 
 #[test]
-λ test_factor_set_mixed() {
+rite test_factor_set_mixed() {
     ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.7);
     fs.add_negative(0.3);
@@ -286,7 +286,7 @@
 }
 
 #[test]
-λ test_factor_set_negative_dominant() {
+rite test_factor_set_negative_dominant() {
     ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.2);
     fs.add_negative(0.8);
@@ -294,7 +294,7 @@
 }
 
 #[test]
-λ test_factor_set_balance_ratio() {
+rite test_factor_set_balance_ratio() {
     ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.6);
     fs.add_negative(0.4);
@@ -302,7 +302,7 @@
 }
 
 #[test]
-λ test_factor_set_count() {
+rite test_factor_set_count() {
     ≔ Δ fs = FactorSet·new();
     fs.add_positive(0.5);
     fs.add_positive(0.5);
@@ -310,6 +310,6 @@
     assert(fs.count == 3);
 }
 
-λ main() {
+rite main() {
     println("Oracle reasoning tests - 20 tests");
 }

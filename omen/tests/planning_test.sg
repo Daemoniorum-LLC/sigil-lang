@@ -13,58 +13,58 @@ invoke std·collections·HashMap;
 ☉ Σ GoalId { bytes: [u8; 16] }
 ☉ Σ RiskId { bytes: [u8; 16] }
 
-λ uuid_v7() -> [u8; 16] { [0u8; 16] }
+rite uuid_v7() -> [u8; 16] { [0u8; 16] }
 
 ⊢ PlanId {
-    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+    ☉ rite new() -> Self { Self { bytes: uuid_v7() } }
 }
 
 ⊢ StepId {
-    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+    ☉ rite new() -> Self { Self { bytes: uuid_v7() } }
 }
 
 ⊢ GoalId {
-    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+    ☉ rite new() -> Self { Self { bytes: uuid_v7() } }
 }
 
 ⊢ RiskId {
-    ☉ λ new() -> Self { Self { bytes: uuid_v7() } }
+    ☉ rite new() -> Self { Self { bytes: uuid_v7() } }
 }
 
 ⊢ Clone ∀ PlanId {
-    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+    rite clone(&self) -> Self { Self { bytes: self.bytes } }
 }
 
 ⊢ Clone ∀ StepId {
-    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+    rite clone(&self) -> Self { Self { bytes: self.bytes } }
 }
 
 ⊢ Clone ∀ GoalId {
-    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+    rite clone(&self) -> Self { Self { bytes: self.bytes } }
 }
 
 ⊢ Clone ∀ RiskId {
-    λ clone(&self) -> Self { Self { bytes: self.bytes } }
+    rite clone(&self) -> Self { Self { bytes: self.bytes } }
 }
 
 ☉ Σ Duration { nanos: u64 }
 
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    ☉ λ as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ rite minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
 }
 
 ⊢ Copy ∀ Duration {}
 ⊢ Clone ∀ Duration {
-    λ clone(&self) -> Self { *self }
+    rite clone(&self) -> Self { *self }
 }
 
 ⊢ std·ops·Add ∀ Duration {
     type Output = Self;
-    λ add(self, other: Self) -> Self {
+    rite add(self, other: Self) -> Self {
         Self { nanos: self.nanos + other.nanos }
     }
 }
@@ -75,31 +75,31 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Effect {
-    ☉ λ certain(description: &str) -> Self {
+    ☉ rite certain(description: &str) -> Self {
         Self {
             description: description.to_string(),
             probability: 1.0,
         }
     }
 
-    ☉ λ probable(description: &str, probability: f32) -> Self {
+    ☉ rite probable(description: &str, probability: f32) -> Self {
         Self {
             description: description.to_string(),
             probability: probability.clamp(0.0, 1.0),
         }
     }
 
-    ☉ λ unlikely(description: &str) -> Self {
+    ☉ rite unlikely(description: &str) -> Self {
         Self·probable(description, 0.2)
     }
 
-    ☉ λ is_likely(&self) -> bool {
+    ☉ rite is_likely(&self) -> bool {
         self.probability >= 0.5
     }
 }
 
 ⊢ Clone ∀ Effect {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             description: self.description.clone(),
             probability: self.probability,
@@ -115,7 +115,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ResourceCost {
-    ☉ λ zero() -> Self {
+    ☉ rite zero() -> Self {
         Self {
             time: Duration·zero(),
             compute: 0.0,
@@ -124,7 +124,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ time_only(duration: Duration) -> Self {
+    ☉ rite time_only(duration: Duration) -> Self {
         Self {
             time: duration,
             compute: 0.0,
@@ -133,30 +133,30 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_compute(Δ self, compute: f32) -> Self {
+    ☉ rite with_compute(Δ self, compute: f32) -> Self {
         self.compute = compute;
         self
     }
 
-    ☉ λ with_api_calls(Δ self, calls: u32) -> Self {
+    ☉ rite with_api_calls(Δ self, calls: u32) -> Self {
         self.api_calls = calls;
         self
     }
 
-    ☉ λ with_custom(Δ self, name: &str, value: f32) -> Self {
+    ☉ rite with_custom(Δ self, name: &str, value: f32) -> Self {
         self.custom.insert(name.to_string(), value);
         self
     }
 
-    ☉ λ total_time_secs(&self) -> u64 {
+    ☉ rite total_time_secs(&self) -> u64 {
         self.time.as_secs()
     }
 
-    ☉ λ is_free(&self) -> bool {
+    ☉ rite is_free(&self) -> bool {
         self.time.nanos == 0 && self.compute == 0.0 && self.api_calls == 0
     }
 
-    ☉ λ add(&self, other: &ResourceCost) -> Self {
+    ☉ rite add(&self, other: &ResourceCost) -> Self {
         ≔ Δ custom = self.custom.clone();
         ∀ (k, v) ∈ &other.custom {
             *custom.entry(k.clone()).or_insert(0.0) += v;
@@ -171,11 +171,11 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Default ∀ ResourceCost {
-    λ default() -> Self { Self·zero() }
+    rite default() -> Self { Self·zero() }
 }
 
 ⊢ Clone ∀ ResourceCost {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             time: self.time,
             compute: self.compute,
@@ -195,7 +195,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Action {
-    ☉ λ new(name: &str) -> Self {
+    ☉ rite new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             params: HashMap·new(),
@@ -206,46 +206,46 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_param(Δ self, key: &str, value: &str) -> Self {
+    ☉ rite with_param(Δ self, key: &str, value: &str) -> Self {
         self.params.insert(key.to_string(), value.to_string());
         self
     }
 
-    ☉ λ with_effect(Δ self, effect: Effect) -> Self {
+    ☉ rite with_effect(Δ self, effect: Effect) -> Self {
         self.effects.push(effect);
         self
     }
 
-    ☉ λ with_success_rate(Δ self, rate: f32) -> Self {
+    ☉ rite with_success_rate(Δ self, rate: f32) -> Self {
         self.success_rate = rate.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_duration(Δ self, duration: Duration) -> Self {
+    ☉ rite with_duration(Δ self, duration: Duration) -> Self {
         self.expected_duration = duration;
         self
     }
 
-    ☉ λ with_cost(Δ self, cost: ResourceCost) -> Self {
+    ☉ rite with_cost(Δ self, cost: ResourceCost) -> Self {
         self.expected_cost = cost;
         self
     }
 
-    ☉ λ name(&self) -> &str {
+    ☉ rite name(&self) -> &str {
         &self.name
     }
 
-    ☉ λ is_reliable(&self) -> bool {
+    ☉ rite is_reliable(&self) -> bool {
         self.success_rate >= 0.8
     }
 
-    ☉ λ expected_effects(&self) -> Vec<&Effect> {
+    ☉ rite expected_effects(&self) -> Vec<&Effect> {
         self.effects.iter().filter(|e| e.is_likely()).collect()
     }
 }
 
 ⊢ Clone ∀ Action {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             name: self.name.clone(),
             params: self.params.clone(),
@@ -267,7 +267,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ PlanStep {
-    ☉ λ from_action(action: Action) -> Self {
+    ☉ rite from_action(action: Action) -> Self {
         Self {
             id: StepId·new(),
             confidence: action.success_rate,
@@ -278,21 +278,21 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_confidence(Δ self, confidence: f32) -> Self {
+    ☉ rite with_confidence(Δ self, confidence: f32) -> Self {
         self.confidence = confidence.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_contingency(Δ self, plan: PlanId) -> Self {
+    ☉ rite with_contingency(Δ self, plan: PlanId) -> Self {
         self.contingency = Some(plan);
         self
     }
 
-    ☉ λ is_risky(&self) -> bool {
+    ☉ rite is_risky(&self) -> bool {
         self.confidence < 0.7
     }
 
-    ☉ λ has_contingency(&self) -> bool {
+    ☉ rite has_contingency(&self) -> bool {
         self.contingency.is_some()
     }
 }
@@ -305,14 +305,14 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Impact {
-    ☉ λ is_catastrophic(&self) -> bool {
+    ☉ rite is_catastrophic(&self) -> bool {
         ⌥ self {
             Impact·PlanFailure => true,
             _ => false,
         }
     }
 
-    ☉ λ severity(&self) -> f32 {
+    ☉ rite severity(&self) -> f32 {
         ⌥ self {
             Impact·PlanFailure => 1.0,
             Impact·PartialSuccess { degree } => 1.0 - degree,
@@ -329,7 +329,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Mitigation {
-    ☉ λ new(description: &str, effectiveness: f32) -> Self {
+    ☉ rite new(description: &str, effectiveness: f32) -> Self {
         Self {
             description: description.to_string(),
             effectiveness: effectiveness.clamp(0.0, 1.0),
@@ -337,12 +337,12 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_cost(Δ self, cost: ResourceCost) -> Self {
+    ☉ rite with_cost(Δ self, cost: ResourceCost) -> Self {
         self.cost = cost;
         self
     }
 
-    ☉ λ is_effective(&self) -> bool {
+    ☉ rite is_effective(&self) -> bool {
         self.effectiveness >= 0.5
     }
 }
@@ -357,7 +357,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Risk {
-    ☉ λ new(description: &str, probability: f32, impact: Impact) -> Self {
+    ☉ rite new(description: &str, probability: f32, impact: Impact) -> Self {
         Self {
             id: RiskId·new(),
             description: description.to_string(),
@@ -368,29 +368,29 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_affected_step(Δ self, step: StepId) -> Self {
+    ☉ rite with_affected_step(Δ self, step: StepId) -> Self {
         self.affected_steps.push(step);
         self
     }
 
-    ☉ λ with_mitigation(Δ self, mitigation: Mitigation) -> Self {
+    ☉ rite with_mitigation(Δ self, mitigation: Mitigation) -> Self {
         self.mitigations.push(mitigation);
         self
     }
 
-    ☉ λ expected_impact(&self) -> f32 {
+    ☉ rite expected_impact(&self) -> f32 {
         self.probability * self.impact.severity()
     }
 
-    ☉ λ is_high_risk(&self) -> bool {
+    ☉ rite is_high_risk(&self) -> bool {
         self.expected_impact() >= 0.5
     }
 
-    ☉ λ is_mitigated(&self) -> bool {
+    ☉ rite is_mitigated(&self) -> bool {
         self.mitigations.iter().any(|m| m.is_effective())
     }
 
-    ☉ λ residual_risk(&self) -> f32 {
+    ☉ rite residual_risk(&self) -> f32 {
         ⎇ ≔ Some(best) = self.mitigations.iter()
             .max_by(|a, b| a.effectiveness.partial_cmp(&b.effectiveness).unwrap())
         {
@@ -412,7 +412,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ Plan {
-    ☉ λ new(goal: GoalId) -> Self {
+    ☉ rite new(goal: GoalId) -> Self {
         Self {
             id: PlanId·new(),
             goal,
@@ -424,32 +424,32 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ with_step(Δ self, step: PlanStep) -> Self {
+    ☉ rite with_step(Δ self, step: PlanStep) -> Self {
         self.expected_cost = self.expected_cost.add(&step.cost);
         self.success_probability *= step.confidence;
         self.steps.push(step);
         self
     }
 
-    ☉ λ with_strategy(Δ self, strategy: &str) -> Self {
+    ☉ rite with_strategy(Δ self, strategy: &str) -> Self {
         self.strategy = strategy.to_string();
         self
     }
 
-    ☉ λ with_risk(Δ self, risk: Risk) -> Self {
+    ☉ rite with_risk(Δ self, risk: Risk) -> Self {
         self.risks.push(risk);
         self
     }
 
-    ☉ λ step_count(&self) -> usize {
+    ☉ rite step_count(&self) -> usize {
         self.steps.len()
     }
 
-    ☉ λ is_empty(&self) -> bool {
+    ☉ rite is_empty(&self) -> bool {
         self.steps.is_empty()
     }
 
-    ☉ λ total_duration(&self) -> Duration {
+    ☉ rite total_duration(&self) -> Duration {
         ≔ Δ total = Duration·zero();
         ∀ step ∈ &self.steps {
             total = total + step.duration;
@@ -457,19 +457,19 @@ invoke std·collections·HashMap;
         total
     }
 
-    ☉ λ risky_steps(&self) -> Vec<&PlanStep> {
+    ☉ rite risky_steps(&self) -> Vec<&PlanStep> {
         self.steps.iter().filter(|s| s.is_risky()).collect()
     }
 
-    ☉ λ is_viable(&self) -> bool {
+    ☉ rite is_viable(&self) -> bool {
         self.success_probability >= 0.5
     }
 
-    ☉ λ high_risks(&self) -> Vec<&Risk> {
+    ☉ rite high_risks(&self) -> Vec<&Risk> {
         self.risks.iter().filter(|r| r.is_high_risk()).collect()
     }
 
-    ☉ λ recalculate_probability(&Δ self) {
+    ☉ rite recalculate_probability(&Δ self) {
         self.success_probability = 1.0;
         ∀ step ∈ &self.steps {
             self.success_probability *= step.confidence;
@@ -483,26 +483,26 @@ invoke std·collections·HashMap;
 }
 
 ⊢ ActionLibrary {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             actions: HashMap·new(),
             success_counts: HashMap·new(),
         }
     }
 
-    ☉ λ register(&Δ self, action: Action) {
+    ☉ rite register(&Δ self, action: Action) {
         self.actions.insert(action.name.clone(), action);
     }
 
-    ☉ λ get(&self, name: &str) -> Option<&Action> {
+    ☉ rite get(&self, name: &str) -> Option<&Action> {
         self.actions.get(name)
     }
 
-    ☉ λ count(&self) -> usize {
+    ☉ rite count(&self) -> usize {
         self.actions.len()
     }
 
-    ☉ λ update_success_rate(&Δ self, name: &str, succeeded: bool) {
+    ☉ rite update_success_rate(&Δ self, name: &str, succeeded: bool) {
         ≔ counts = self.success_counts.entry(name.to_string())
             .or_insert((0, 0));
 
@@ -516,7 +516,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ λ success_rate(&self, name: &str) -> Option<f32> {
+    ☉ rite success_rate(&self, name: &str) -> Option<f32> {
         self.success_counts.get(name).map(|(s, t)| *s as f32 / *t as f32)
     }
 }
@@ -526,34 +526,34 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_effect_certain() {
+rite test_effect_certain() {
     ≔ e = Effect·certain("file created");
     assert_eq(e.probability, 1.0);
     assert(e.is_likely());
 }
 
 #[test]
-λ test_effect_probable() {
+rite test_effect_probable() {
     ≔ e = Effect·probable("might succeed", 0.7);
     assert_eq(e.probability, 0.7);
     assert(e.is_likely());
 }
 
 #[test]
-λ test_effect_unlikely() {
+rite test_effect_unlikely() {
     ≔ e = Effect·unlikely("rare event");
     assert_eq(e.probability, 0.2);
     assert(!e.is_likely());
 }
 
 #[test]
-λ test_effect_probability_clamped() {
+rite test_effect_probability_clamped() {
     ≔ e = Effect·probable("test", 1.5);
     assert_eq(e.probability, 1.0);
 }
 
 #[test]
-λ test_effect_clone() {
+rite test_effect_clone() {
     ≔ e1 = Effect·certain("test");
     ≔ e2 = e1.clone();
     assert_eq(e1.probability, e2.probability);
@@ -564,38 +564,38 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_resource_cost_zero() {
+rite test_resource_cost_zero() {
     ≔ c = ResourceCost·zero();
     assert(c.is_free());
 }
 
 #[test]
-λ test_resource_cost_time_only() {
+rite test_resource_cost_time_only() {
     ≔ c = ResourceCost·time_only(Duration·minutes(5));
     assert(!c.is_free());
     assert_eq(c.total_time_secs(), 300);
 }
 
 #[test]
-λ test_resource_cost_with_compute() {
+rite test_resource_cost_with_compute() {
     ≔ c = ResourceCost·zero().with_compute(50.0);
     assert_eq(c.compute, 50.0);
 }
 
 #[test]
-λ test_resource_cost_with_api_calls() {
+rite test_resource_cost_with_api_calls() {
     ≔ c = ResourceCost·zero().with_api_calls(10);
     assert_eq(c.api_calls, 10);
 }
 
 #[test]
-λ test_resource_cost_with_custom() {
+rite test_resource_cost_with_custom() {
     ≔ c = ResourceCost·zero().with_custom("tokens", 1000.0);
     assert_eq(*c.custom.get("tokens").unwrap(), 1000.0);
 }
 
 #[test]
-λ test_resource_cost_add() {
+rite test_resource_cost_add() {
     ≔ c1 = ResourceCost·time_only(Duration·seconds(60))
         .with_api_calls(5);
     ≔ c2 = ResourceCost·time_only(Duration·seconds(30))
@@ -606,7 +606,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_resource_cost_clone() {
+rite test_resource_cost_clone() {
     ≔ c1 = ResourceCost·time_only(Duration·minutes(1));
     ≔ c2 = c1.clone();
     assert_eq(c1.total_time_secs(), c2.total_time_secs());
@@ -617,53 +617,53 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_action_new() {
+rite test_action_new() {
     ≔ a = Action·new("fetch_data");
     assert_eq(a.name(), "fetch_data");
     assert_eq(a.success_rate, 0.9);
 }
 
 #[test]
-λ test_action_with_param() {
+rite test_action_with_param() {
     ≔ a = Action·new("query")
         .with_param("table", "users");
     assert_eq(*a.params.get("table").unwrap(), "users");
 }
 
 #[test]
-λ test_action_with_effect() {
+rite test_action_with_effect() {
     ≔ a = Action·new("write")
         .with_effect(Effect·certain("file written"));
     assert_eq(a.effects.len(), 1);
 }
 
 #[test]
-λ test_action_with_success_rate() {
+rite test_action_with_success_rate() {
     ≔ a = Action·new("risky").with_success_rate(0.5);
     assert_eq(a.success_rate, 0.5);
 }
 
 #[test]
-λ test_action_success_rate_clamped() {
+rite test_action_success_rate_clamped() {
     ≔ a = Action·new("test").with_success_rate(1.5);
     assert_eq(a.success_rate, 1.0);
 }
 
 #[test]
-λ test_action_with_duration() {
+rite test_action_with_duration() {
     ≔ a = Action·new("slow").with_duration(Duration·hours(1));
     assert_eq(a.expected_duration.as_secs(), 3600);
 }
 
 #[test]
-λ test_action_with_cost() {
+rite test_action_with_cost() {
     ≔ a = Action·new("expensive")
         .with_cost(ResourceCost·time_only(Duration·minutes(5)));
     assert_eq(a.expected_cost.total_time_secs(), 300);
 }
 
 #[test]
-λ test_action_is_reliable() {
+rite test_action_is_reliable() {
     ≔ reliable = Action·new("solid").with_success_rate(0.9);
     ≔ unreliable = Action·new("flaky").with_success_rate(0.5);
     assert(reliable.is_reliable());
@@ -671,7 +671,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_action_expected_effects() {
+rite test_action_expected_effects() {
     ≔ a = Action·new("mixed")
         .with_effect(Effect·certain("main effect"))
         .with_effect(Effect·unlikely("side effect"));
@@ -680,7 +680,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_action_clone() {
+rite test_action_clone() {
     ≔ a1 = Action·new("test");
     ≔ a2 = a1.clone();
     assert_eq(a1.name, a2.name);
@@ -691,21 +691,21 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_plan_step_from_action() {
+rite test_plan_step_from_action() {
     ≔ action = Action·new("do_thing").with_success_rate(0.8);
     ≔ step = PlanStep·from_action(action);
     assert_eq(step.confidence, 0.8);
 }
 
 #[test]
-λ test_plan_step_with_confidence() {
+rite test_plan_step_with_confidence() {
     ≔ step = PlanStep·from_action(Action·new("test"))
         .with_confidence(0.6);
     assert_eq(step.confidence, 0.6);
 }
 
 #[test]
-λ test_plan_step_with_contingency() {
+rite test_plan_step_with_contingency() {
     ≔ contingency = PlanId·new();
     ≔ step = PlanStep·from_action(Action·new("risky"))
         .with_contingency(contingency);
@@ -713,7 +713,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_step_is_risky() {
+rite test_plan_step_is_risky() {
     ≔ risky = PlanStep·from_action(Action·new("test"))
         .with_confidence(0.5);
     ≔ safe = PlanStep·from_action(Action·new("test"))
@@ -723,7 +723,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_step_no_contingency() {
+rite test_plan_step_no_contingency() {
     ≔ step = PlanStep·from_action(Action·new("test"));
     assert(!step.has_contingency());
 }
@@ -733,28 +733,28 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_impact_plan_failure_catastrophic() {
+rite test_impact_plan_failure_catastrophic() {
     ≔ impact = Impact·PlanFailure;
     assert(impact.is_catastrophic());
     assert_eq(impact.severity(), 1.0);
 }
 
 #[test]
-λ test_impact_partial_success() {
+rite test_impact_partial_success() {
     ≔ impact = Impact·PartialSuccess { degree: 0.7 };
     assert(!impact.is_catastrophic());
     assert_eq(impact.severity(), 0.3);
 }
 
 #[test]
-λ test_impact_increased_cost() {
+rite test_impact_increased_cost() {
     ≔ impact = Impact·IncreasedCost { factor: 1.5 };
     assert(!impact.is_catastrophic());
     assert_eq(impact.severity(), 0.5);
 }
 
 #[test]
-λ test_impact_delay() {
+rite test_impact_delay() {
     ≔ impact = Impact·Delay { duration: Duration·hours(1) };
     assert(!impact.is_catastrophic());
 }
@@ -764,21 +764,21 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_mitigation_new() {
+rite test_mitigation_new() {
     ≔ m = Mitigation·new("retry logic", 0.8);
     assert_eq(m.effectiveness, 0.8);
     assert(m.is_effective());
 }
 
 #[test]
-λ test_mitigation_with_cost() {
+rite test_mitigation_with_cost() {
     ≔ m = Mitigation·new("backup", 0.9)
         .with_cost(ResourceCost·time_only(Duration·minutes(10)));
     assert_eq(m.cost.total_time_secs(), 600);
 }
 
 #[test]
-λ test_mitigation_not_effective() {
+rite test_mitigation_not_effective() {
     ≔ m = Mitigation·new("weak fix", 0.3);
     assert(!m.is_effective());
 }
@@ -788,13 +788,13 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_risk_new() {
+rite test_risk_new() {
     ≔ r = Risk·new("network failure", 0.2, Impact·PlanFailure);
     assert_eq(r.probability, 0.2);
 }
 
 #[test]
-λ test_risk_with_affected_step() {
+rite test_risk_with_affected_step() {
     ≔ step_id = StepId·new();
     ≔ r = Risk·new("test", 0.3, Impact·PlanFailure)
         .with_affected_step(step_id);
@@ -802,20 +802,20 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_risk_with_mitigation() {
+rite test_risk_with_mitigation() {
     ≔ r = Risk·new("test", 0.5, Impact·PlanFailure)
         .with_mitigation(Mitigation·new("retry", 0.7));
     assert_eq(r.mitigations.len(), 1);
 }
 
 #[test]
-λ test_risk_expected_impact() {
+rite test_risk_expected_impact() {
     ≔ r = Risk·new("test", 0.5, Impact·PlanFailure);
     assert_eq(r.expected_impact(), 0.5);
 }
 
 #[test]
-λ test_risk_is_high_risk() {
+rite test_risk_is_high_risk() {
     ≔ high = Risk·new("bad", 0.8, Impact·PlanFailure);
     ≔ low = Risk·new("minor", 0.1, Impact·Delay { duration: Duration·minutes(5) });
     assert(high.is_high_risk());
@@ -823,7 +823,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_risk_is_mitigated() {
+rite test_risk_is_mitigated() {
     ≔ mitigated = Risk·new("test", 0.5, Impact·PlanFailure)
         .with_mitigation(Mitigation·new("fix", 0.8));
     ≔ unmitigated = Risk·new("test", 0.5, Impact·PlanFailure);
@@ -832,7 +832,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_risk_residual_risk() {
+rite test_risk_residual_risk() {
     ≔ r = Risk·new("test", 0.5, Impact·PlanFailure)
         .with_mitigation(Mitigation·new("fix", 0.5));
     // expected_impact = 0.5, effectiveness = 0.5
@@ -845,7 +845,7 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_plan_new() {
+rite test_plan_new() {
     ≔ goal = GoalId·new();
     ≔ plan = Plan·new(goal);
     assert(plan.is_empty());
@@ -853,28 +853,28 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_with_step() {
+rite test_plan_with_step() {
     ≔ plan = Plan·new(GoalId·new())
         .with_step(PlanStep·from_action(Action·new("step1")));
     assert_eq(plan.step_count(), 1);
 }
 
 #[test]
-λ test_plan_with_strategy() {
+rite test_plan_with_strategy() {
     ≔ plan = Plan·new(GoalId·new())
         .with_strategy("HTN");
     assert_eq(plan.strategy, "HTN");
 }
 
 #[test]
-λ test_plan_with_risk() {
+rite test_plan_with_risk() {
     ≔ plan = Plan·new(GoalId·new())
         .with_risk(Risk·new("test", 0.3, Impact·PlanFailure));
     assert_eq(plan.risks.len(), 1);
 }
 
 #[test]
-λ test_plan_success_probability_computed() {
+rite test_plan_success_probability_computed() {
     ≔ plan = Plan·new(GoalId·new())
         .with_step(PlanStep·from_action(Action·new("s1")).with_confidence(0.9))
         .with_step(PlanStep·from_action(Action·new("s2")).with_confidence(0.9));
@@ -884,7 +884,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_total_duration() {
+rite test_plan_total_duration() {
     ≔ plan = Plan·new(GoalId·new())
         .with_step(PlanStep·from_action(Action·new("s1").with_duration(Duration·seconds(30))))
         .with_step(PlanStep·from_action(Action·new("s2").with_duration(Duration·seconds(30))));
@@ -892,7 +892,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_risky_steps() {
+rite test_plan_risky_steps() {
     ≔ plan = Plan·new(GoalId·new())
         .with_step(PlanStep·from_action(Action·new("safe")).with_confidence(0.9))
         .with_step(PlanStep·from_action(Action·new("risky")).with_confidence(0.5));
@@ -900,7 +900,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_is_viable() {
+rite test_plan_is_viable() {
     ≔ viable = Plan·new(GoalId·new())
         .with_step(PlanStep·from_action(Action·new("s")).with_confidence(0.9));
     ≔ not_viable = Plan·new(GoalId·new())
@@ -910,7 +910,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_high_risks() {
+rite test_plan_high_risks() {
     ≔ plan = Plan·new(GoalId·new())
         .with_risk(Risk·new("high", 0.8, Impact·PlanFailure))
         .with_risk(Risk·new("low", 0.1, Impact·Delay { duration: Duration·minutes(5) }));
@@ -918,7 +918,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_plan_recalculate_probability() {
+rite test_plan_recalculate_probability() {
     ≔ Δ plan = Plan·new(GoalId·new())
         .with_step(PlanStep·from_action(Action·new("s")).with_confidence(0.8));
     plan.steps[0].confidence = 0.5;
@@ -931,20 +931,20 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 #[test]
-λ test_action_library_new() {
+rite test_action_library_new() {
     ≔ lib = ActionLibrary·new();
     assert_eq(lib.count(), 0);
 }
 
 #[test]
-λ test_action_library_register() {
+rite test_action_library_register() {
     ≔ Δ lib = ActionLibrary·new();
     lib.register(Action·new("fetch"));
     assert_eq(lib.count(), 1);
 }
 
 #[test]
-λ test_action_library_get() {
+rite test_action_library_get() {
     ≔ Δ lib = ActionLibrary·new();
     lib.register(Action·new("process"));
     ≔ a = lib.get("process");
@@ -952,14 +952,14 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_action_library_get_missing() {
+rite test_action_library_get_missing() {
     ≔ lib = ActionLibrary·new();
     ≔ a = lib.get("nonexistent");
     assert(a.is_none());
 }
 
 #[test]
-λ test_action_library_update_success_rate() {
+rite test_action_library_update_success_rate() {
     ≔ Δ lib = ActionLibrary·new();
     lib.register(Action·new("test"));
     lib.update_success_rate("test", true);
@@ -969,7 +969,7 @@ invoke std·collections·HashMap;
 }
 
 #[test]
-λ test_action_library_success_rate_tracking() {
+rite test_action_library_success_rate_tracking() {
     ≔ Δ lib = ActionLibrary·new();
     lib.register(Action·new("tracked"));
     lib.update_success_rate("tracked", true);
@@ -982,6 +982,6 @@ invoke std·collections·HashMap;
     assert(diff < 0.01);
 }
 
-λ main() {
+rite main() {
     print("Omen planning tests");
 }

@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 52 (42 + 10)
 
-λ main() {
+rite main() {
     ≔ add_ten = |x: !i32| -> !i32 { x + 10 };
     println(add_ten(42));
 }

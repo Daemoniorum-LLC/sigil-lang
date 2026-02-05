@@ -4,7 +4,7 @@
 //
 // This test verifies print functions work correctly.
 
-λ main() {
+rite main() {
     // Test 1: Print string
     println("Hello World");
     println("print_ok");

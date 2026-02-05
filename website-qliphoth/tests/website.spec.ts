@@ -63,7 +63,7 @@ test.describe('Sigil Website E2E Tests', () => {
       await page.goto(BASE_URL);
       await expect(page.locator('#status')).toContainText('Rendered', { timeout: 10000 });
 
-      await expect(page.locator('.version-badge')).toContainText('0.3');
+      await expect(page.locator('.version-badge')).toContainText('0.4');
     });
   });
 

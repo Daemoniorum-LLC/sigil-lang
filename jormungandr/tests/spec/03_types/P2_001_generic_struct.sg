@@ -7,7 +7,7 @@
     second: T,
 }
 
-λ main() {
+rite main() {
     ≔ p: Pair<i32> = Pair { first: 10, second: 20 };
     println(p.first);
     println(p.second);

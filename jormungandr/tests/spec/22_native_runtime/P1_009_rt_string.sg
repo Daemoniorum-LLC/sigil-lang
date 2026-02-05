@@ -5,7 +5,7 @@
 // This test verifies string operations work correctly.
 // Restructured ∀ interpreter mode where strings are immutable.
 
-λ main() {
+rite main() {
     // Test 1: Create empty String
     ≔ s1 = "";
     assert_eq!(s1.len(), 0);

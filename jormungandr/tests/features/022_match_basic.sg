@@ -5,7 +5,7 @@
     Stopped
 }
 
-λ describe(s: !Status) -> !String {
+rite describe(s: !Status) -> !String {
     ⌥ s {
         Status·Active => "running",
         Status·Paused => "paused",
@@ -13,7 +13,7 @@
     }
 }
 
-λ main() {
+rite main() {
     ≔ s: !Status = Status·Active;
     println(describe(s));
 }

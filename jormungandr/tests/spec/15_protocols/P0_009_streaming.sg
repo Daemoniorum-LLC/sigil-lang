@@ -7,7 +7,7 @@
 // - Mutable counter
 // - Evidential collection access
 
-λ main() {
+rite main() {
     // Simulated stream data - ∈ real gRPC streaming from server
     ≔ stream~ = [1, 2, 3, 4, 5];
 

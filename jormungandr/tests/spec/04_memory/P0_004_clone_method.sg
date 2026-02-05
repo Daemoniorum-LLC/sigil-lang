@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should compile and print Hello then Hello
 
-λ main() {
+rite main() {
     ≔ s1: !String = "Hello";
     ≔ s2: !String = s1.clone();
     println(s1);

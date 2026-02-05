@@ -12,27 +12,27 @@ invoke stdlib·net·socket·IpAddr;
 // Test Helpers
 // ============================================================================
 
-λ test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
+rite test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
     ⎇ actual != expected {
         panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, expected, actual));
     }
 }
 
-λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+rite test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
     ⌥ result {
         Result·Ok(v) => v,
         Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
     }
 }
 
-λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+rite test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
     ⌥ result {
         Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
         Result·Err(e) => e,
     }
 }
 
-λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+rite test_assert_true(cond: bool, test_id: &str, msg: &str) {
     ⎇ !cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
@@ -42,7 +42,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-001: test_dns_header_encode
 // ============================================================================
 
-λ test_dns_header_encode() -> bool {
+rite test_dns_header_encode() -> bool {
     print("  [DNS-001] DNS header encode... ");
 
     ≔ header = DnsHeader·new_query(0x1234);
@@ -71,7 +71,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-002: test_dns_header_decode
 // ============================================================================
 
-λ test_dns_header_decode() -> bool {
+rite test_dns_header_decode() -> bool {
     print("  [DNS-002] DNS header decode... ");
 
     // Create a response header
@@ -100,7 +100,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-003: test_dns_question_encode
 // ============================================================================
 
-λ test_dns_question_encode() -> bool {
+rite test_dns_question_encode() -> bool {
     print("  [DNS-003] DNS question encode... ");
 
     ≔ Δ buf: [u8; 64] = [0; 64];
@@ -126,7 +126,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-004: test_dns_name_encode
 // ============================================================================
 
-λ test_dns_name_encode() -> bool {
+rite test_dns_name_encode() -> bool {
     print("  [DNS-004] DNS name encode... ");
 
     ≔ Δ buf: [u8; 64] = [0; 64];
@@ -150,7 +150,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-005: test_dns_name_decode
 // ============================================================================
 
-λ test_dns_name_decode() -> bool {
+rite test_dns_name_decode() -> bool {
     print("  [DNS-005] DNS name decode... ");
 
     // Create encoded name: "example.com"
@@ -173,7 +173,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-006: test_dns_name_compression
 // ============================================================================
 
-λ test_dns_name_compression() -> bool {
+rite test_dns_name_compression() -> bool {
     print("  [DNS-006] DNS name compression... ");
 
     // Create packet with compression pointer
@@ -210,7 +210,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-007: test_dns_answer_decode_a
 // ============================================================================
 
-λ test_dns_answer_decode_a() -> bool {
+rite test_dns_answer_decode_a() -> bool {
     print("  [DNS-007] DNS A record decode... ");
 
     // This would test the full response parsing
@@ -224,7 +224,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-008: test_dns_answer_decode_aaaa
 // ============================================================================
 
-λ test_dns_answer_decode_aaaa() -> bool {
+rite test_dns_answer_decode_aaaa() -> bool {
     print("  [DNS-008] DNS AAAA record decode... ");
 
     // This would test IPv6 address extraction
@@ -236,7 +236,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-009: test_dns_packet_id_random
 // ============================================================================
 
-λ test_dns_packet_id_random() -> bool {
+rite test_dns_packet_id_random() -> bool {
     print("  [DNS-009] DNS packet ID incrementing... ");
 
     // Create resolver and check IDs increment
@@ -253,7 +253,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-010: test_dns_response_truncated
 // ============================================================================
 
-λ test_dns_response_truncated() -> bool {
+rite test_dns_response_truncated() -> bool {
     print("  [DNS-010] DNS truncated response... ");
 
     // Create header with TC flag set
@@ -277,7 +277,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-011: test_resolver_system
 // ============================================================================
 
-λ test_resolver_system() -> bool {
+rite test_resolver_system() -> bool {
     print("  [DNS-011] DnsResolver system... ");
 
     ≔ resolver = test_assert_ok(DnsResolver·system(), "DNS-011", "create system resolver");
@@ -293,7 +293,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-012: test_resolver_custom
 // ============================================================================
 
-λ test_resolver_custom() -> bool {
+rite test_resolver_custom() -> bool {
     print("  [DNS-012] DnsResolver custom... ");
 
     ≔ resolver = test_assert_ok(
@@ -313,7 +313,7 @@ invoke stdlib·net·socket·IpAddr;
 // (Network test - may be skipped ∈ CI)
 // ============================================================================
 
-λ test_resolve_a_google() -> bool {
+rite test_resolve_a_google() -> bool {
     print("  [DNS-013] Resolve google.com A... ");
 
     ≔ Δ resolver = test_assert_ok(DnsResolver·system(), "DNS-013", "create resolver");
@@ -340,7 +340,7 @@ invoke stdlib·net·socket·IpAddr;
 // (Network test)
 // ============================================================================
 
-λ test_resolve_aaaa_google() -> bool {
+rite test_resolve_aaaa_google() -> bool {
     print("  [DNS-014] Resolve google.com AAAA... ");
 
     ≔ Δ resolver = test_assert_ok(DnsResolver·system(), "DNS-014", "create resolver");
@@ -365,7 +365,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-015: test_resolve_nonexistent
 // ============================================================================
 
-λ test_resolve_nonexistent() -> bool {
+rite test_resolve_nonexistent() -> bool {
     print("  [DNS-015] Resolve nonexistent.invalid... ");
 
     ≔ Δ resolver = test_assert_ok(DnsResolver·system(), "DNS-015", "create resolver");
@@ -393,7 +393,7 @@ invoke stdlib·net·socket·IpAddr;
 // DNS-016: test_resolve_timeout
 // ============================================================================
 
-λ test_resolve_timeout() -> bool {
+rite test_resolve_timeout() -> bool {
     print("  [DNS-016] DNS timeout... ");
 
     // Use an unreachable server
@@ -426,7 +426,7 @@ invoke stdlib·net·socket·IpAddr;
 // (Cache not implemented yet)
 // ============================================================================
 
-λ test_resolve_caches_result() -> bool {
+rite test_resolve_caches_result() -> bool {
     print("  [DNS-017] DNS caching... ");
 
     // Caching not implemented yet
@@ -438,7 +438,7 @@ invoke stdlib·net·socket·IpAddr;
 // Main Test Runner
 // ============================================================================
 
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     println("===========================================");
     println("DNS Layer Tests");
     println("TDD Red Phase - Tests should FAIL");

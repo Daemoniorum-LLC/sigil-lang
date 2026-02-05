@@ -1,6 +1,7 @@
 //! Sigil CLI - Parse, check, and run Sigil source files.
 
 use sigil_parser::lower::lower_source_file;
+#[cfg(feature = "lsp")]
 use sigil_parser::lsp::start_lsp;
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
@@ -71,7 +72,8 @@ fn main() -> ExitCode {
         eprintln!("  init            Initialize a Sigil project in current directory");
         eprintln!("  test            Run tests in the current project");
         eprintln!("  build           Build the current project");
-        eprintln!("  migrate <file>  Convert Rust syntax to native Sigil (--dry-run, --backup)");
+        eprintln!("  migrate <file|dir>  Convert Rust syntax to native Sigil");
+        eprintln!("                      Options: --dry-run, --backup, --workspace");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -410,7 +412,13 @@ fn main() -> ExitCode {
             lex_file(&args[2])
         }
         "repl" => repl(),
+        #[cfg(feature = "lsp")]
         "lsp" => start_lsp(),
+        #[cfg(not(feature = "lsp"))]
+        "lsp" => {
+            eprintln!("Error: LSP support not enabled. Rebuild with --features lsp");
+            ExitCode::from(1)
+        }
         "new" => {
             if args.len() < 3 {
                 eprintln!("Error: missing project name");
@@ -423,20 +431,32 @@ fn main() -> ExitCode {
         "test" => run_tests(),
         "build" => build_project(),
         "migrate" => {
-            if args.len() < 3 {
-                eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil migrate <file.sg> [--dry-run] [--backup] [--evidentiality]");
+            let dry_run = args.iter().any(|a| a == "--dry-run");
+            let backup = args.iter().any(|a| a == "--backup");
+            let evidentiality = args.iter().any(|a| a == "--evidentiality");
+            let workspace = args.iter().any(|a| a == "--workspace");
+
+            if workspace {
+                // Migrate entire workspace from Sigil.toml
+                migrate_workspace(dry_run, backup, evidentiality)
+            } else if args.len() < 3 || args[2].starts_with('-') {
+                eprintln!("Usage: sigil migrate <file|directory> [options]");
+                eprintln!("       sigil migrate --workspace [options]");
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  --dry-run        Show changes without applying");
                 eprintln!("  --backup         Create .bak backup before modifying");
                 eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
+                eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
                 return ExitCode::from(1);
+            } else {
+                let path = std::path::Path::new(&args[2]);
+                if path.is_dir() {
+                    migrate_directory(&args[2], dry_run, backup, evidentiality)
+                } else {
+                    migrate_file(&args[2], dry_run, backup, evidentiality)
+                }
             }
-            let dry_run = args.iter().any(|a| a == "--dry-run");
-            let backup = args.iter().any(|a| a == "--backup");
-            let evidentiality = args.iter().any(|a| a == "--evidentiality");
-            migrate_file(&args[2], dry_run, backup, evidentiality)
         }
         _ => {
             // Treat as file if it ends with .sigil or .sg
@@ -2137,16 +2157,6 @@ fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode 
         }
     }
 
-    fn ev_to_badge(ev: &Evidentiality) -> &'static str {
-        match ev {
-            Evidentiality::Known => "✓",
-            Evidentiality::Reported => "○",
-            Evidentiality::Uncertain => "?",
-            Evidentiality::Predicted => "◊",
-            Evidentiality::Paradox => "‽",
-        }
-    }
-
     fn type_expr_to_string(ty: &sigil_parser::ast::TypeExpr) -> String {
         use sigil_parser::ast::TypeExpr;
         match ty {
@@ -2480,7 +2490,7 @@ mod colors {
 
     // Semantic colors for Sigil
     pub const KEYWORD: &str = "\x1b[38;5;198m"; // Magenta/pink for keywords
-    pub const MORPHEME: &str = "\x1b[38;5;51m"; // Cyan for morphemes (τ, φ, σ, ρ, λ)
+    pub const MORPHEME: &str = "\x1b[38;5;51m"; // Cyan for morphemes (τ, φ, σ, ρ, Λ)
     pub const EVIDENCE: &str = "\x1b[38;5;214m"; // Orange for evidentiality (!, ?, ~, ‽)
     pub const STRING: &str = "\x1b[38;5;114m"; // Green for strings
     pub const NUMBER: &str = "\x1b[38;5;141m"; // Purple for numbers
@@ -2527,7 +2537,8 @@ impl SigilHighlighter {
             | Token::SelfLower
             | Token::SelfUpper
             | Token::True
-            | Token::False => colors::KEYWORD,
+            | Token::False
+            | Token::LambdaExpr => colors::KEYWORD,
 
             // Morphemes (polysynthetic operators) - including new access morphemes
             Token::Tau
@@ -2562,11 +2573,9 @@ impl SigilHighlighter {
             Token::Bang | Token::Question | Token::Tilde | Token::Interrobang => colors::EVIDENCE,
 
             // Special symbols
-            Token::Async
-            | Token::Circle
+            Token::Circle
             | Token::Empty
-            | Token::Infinity
-            | Token::MiddleDot => colors::SPECIAL,
+            | Token::Infinity => colors::SPECIAL,
 
             // Strings and chars
             Token::StringLit(_) | Token::CharLit(_) => colors::STRING,
@@ -3026,7 +3035,7 @@ description = ""
 [evidentiality]
 # Require explicit evidence markers on function boundaries
 strict = false
-# Default evidence level for unmarked external data
+# Default evidence level ∀ unmarked external data
 external_default = "reported"
 
 [dependencies]
@@ -3051,7 +3060,7 @@ fn default_main(name: &str) -> String {
 // Run with: sigil run src/main.sigil
 // Or: sigil build && ./{name}
 
-fn main() {{
+rite main() {{
     print("Hello from {name}!");
 
     // Sigil's evidentiality system tracks data provenance:
@@ -3064,8 +3073,8 @@ fn main() {{
     // τ (tau) = transform/map
     // φ (phi) = filter
     // σ (sigma) = sort
-    let data = [1, 2, 3, 4, 5];
-    let result = data
+    ≔ data = [1, 2, 3, 4, 5];
+    ≔ result = data
         |τ{{_ * 2}}
         |φ{{_ > 5}}
         |σ;
@@ -3073,7 +3082,7 @@ fn main() {{
     print("Processed: ");
     print(result);
 
-    return 0;
+    ⤺ 0;
 }}
 "#
     )
@@ -3081,20 +3090,20 @@ fn main() {{
 
 /// Default test file for a new project
 fn default_test() -> String {
-    r#"// Tests for the project
+    r#"// Tests ∀ the project
 //
 // Run with: sigil test
 
 #[test]
-fn test_example() {
-    let result = 2 + 2;
+rite test_example() {
+    ≔ result = 2 + 2;
     assert_eq(result, 4);
 }
 
 #[test]
-fn test_morpheme_pipeline() {
-    let data = [1, 2, 3];
-    let doubled = data|τ{_ * 2};
+rite test_morpheme_pipeline() {
+    ≔ data = [1, 2, 3];
+    ≔ doubled = data|τ{_ * 2};
     assert_eq(doubled, [2, 4, 6]);
 }
 "#
@@ -3259,15 +3268,10 @@ fn init_project() -> ExitCode {
 }
 
 /// Run tests in the current project
-fn run_tests() -> ExitCode {
-    use std::path::Path;
-
-    // Find test files in tests/ directory
-    let tests_dir = Path::new("tests");
-    let mut test_files = Vec::new();
-
-    if tests_dir.exists() {
-        if let Ok(entries) = fs::read_dir(tests_dir) {
+fn collect_test_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    if dir.exists() {
+        if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path
@@ -3275,35 +3279,24 @@ fn run_tests() -> ExitCode {
                     .map(|e| e == "sigil" || e == "sg")
                     .unwrap_or(false)
                 {
-                    test_files.push(path);
+                    files.push(path);
                 }
             }
         }
     }
+    files.sort();
+    files
+}
 
-    if test_files.is_empty() {
-        println!("No test files found in tests/");
-        println!();
-        println!("Create a test file:");
-        println!("  tests/test_main.sigil");
-        println!();
-        println!("With test functions:");
-        println!("  #[test]");
-        println!("  fn test_something() {{");
-        println!("      assert_eq(1 + 1, 2);");
-        println!("  }}");
-        return ExitCode::SUCCESS;
-    }
-
-    println!("Running tests...");
-    println!();
-
+fn run_test_files(
+    test_files: &[std::path::PathBuf],
+    label: Option<&str>,
+) -> (usize, usize, usize) {
     let mut total_tests = 0;
     let mut passed_tests = 0;
     let mut failed_tests = 0;
 
-    for test_file in &test_files {
-        // Parse file
+    for test_file in test_files {
         let source = match fs::read_to_string(test_file) {
             Ok(s) => s,
             Err(e) => {
@@ -3354,57 +3347,216 @@ fn run_tests() -> ExitCode {
             continue;
         }
 
-        // Count test functions and run the file
-        let mut file_tests = 0;
+        // Collect test function names
+        let mut test_fn_names: Vec<String> = Vec::new();
         for item in &ast.items {
             if let sigil_parser::ast::Item::Function(func) = &item.node {
-                // Check the test flag in FunctionAttrs
                 if func.attrs.test {
-                    file_tests += 1;
+                    test_fn_names.push(func.name.name.clone());
                 }
             }
         }
 
-        if file_tests > 0 {
-            // Execute the test file
+        if !test_fn_names.is_empty() {
             let mut interpreter = Interpreter::new();
             register_stdlib(&mut interpreter);
 
-            match interpreter.execute(&ast) {
+            // Register all definitions (structs, impls, functions) without calling main
+            match interpreter.execute_definitions(&ast) {
                 Ok(_) => {
-                    println!(
-                        "  {}✓{} {} ({} tests)",
-                        colors::GREEN,
-                        colors::RESET,
-                        test_file.file_stem().unwrap_or_default().to_string_lossy(),
-                        file_tests
-                    );
-                    passed_tests += file_tests;
+                    // Now invoke each #[test] function individually
+                    let mut file_passed = 0;
+                    let mut file_failed = 0;
+                    let mut fail_messages: Vec<(String, String)> = Vec::new();
+
+                    for test_name in &test_fn_names {
+                        match interpreter.call_function_by_name(test_name, vec![]) {
+                            Ok(_) => {
+                                file_passed += 1;
+                            }
+                            Err(e) => {
+                                file_failed += 1;
+                                fail_messages.push((test_name.clone(), e.to_string()));
+                            }
+                        }
+                    }
+
+                    let file_label = test_file.file_stem().unwrap_or_default().to_string_lossy();
+                    if file_failed == 0 {
+                        println!(
+                            "  {}✓{} {} ({} tests)",
+                            colors::GREEN,
+                            colors::RESET,
+                            file_label,
+                            file_passed
+                        );
+                    } else {
+                        println!(
+                            "  {}✗{} {} ({} passed, {} failed)",
+                            colors::ERROR,
+                            colors::RESET,
+                            file_label,
+                            file_passed,
+                            file_failed
+                        );
+                        for (name, msg) in &fail_messages {
+                            println!("      {} - {}", name, msg);
+                        }
+                    }
+                    passed_tests += file_passed;
+                    failed_tests += file_failed;
+                    total_tests += file_passed + file_failed;
                 }
                 Err(e) => {
+                    // File-level registration error (e.g., impl block fails)
                     println!(
-                        "  {}✗{} {} - runtime error: {}",
+                        "  {}✗{} {} - registration error: {}",
                         colors::ERROR,
                         colors::RESET,
                         test_file.file_stem().unwrap_or_default().to_string_lossy(),
                         e
                     );
-                    failed_tests += file_tests;
+                    failed_tests += test_fn_names.len();
+                    total_tests += test_fn_names.len();
                 }
             }
-            total_tests += file_tests;
         }
     }
 
+    (total_tests, passed_tests, failed_tests)
+}
+
+fn run_tests() -> ExitCode {
+    use std::path::Path;
+
+    // Check for workspace: if Sigil.toml exists, run workspace-level tests
+    let manifest_path = Path::new("Sigil.toml");
+    let manifest_alt = Path::new("sigil.toml");
+
+    if manifest_path.exists() || manifest_alt.exists() {
+        return run_tests_workspace();
+    }
+
+    // Single-project mode: find test files in tests/ directory
+    let test_files = collect_test_files(Path::new("tests"));
+
+    if test_files.is_empty() {
+        println!("No test files found in tests/");
+        println!();
+        println!("Create a test file:");
+        println!("  tests/test_main.sigil");
+        println!();
+        println!("With test functions:");
+        println!("  #[test]");
+        println!("  fn test_something() {{");
+        println!("      assert_eq(1 + 1, 2);");
+        println!("  }}");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Running tests...");
     println!();
-    if total_tests == 0 {
+
+    let (total_tests, passed_tests, failed_tests) = run_test_files(&test_files, None);
+
+    println!();
+    print_test_summary(total_tests, passed_tests, failed_tests)
+}
+
+fn run_tests_workspace() -> ExitCode {
+    use std::path::Path;
+
+    // Parse Sigil.toml
+    let manifest_content = match fs::read_to_string("Sigil.toml")
+        .or_else(|_| fs::read_to_string("sigil.toml"))
+    {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let manifest: toml::Value = match manifest_content.parse() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error parsing Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let project_name = manifest
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("unnamed");
+
+    let members: Vec<String> = manifest
+        .get("workspace")
+        .and_then(|w| w.get("members"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    println!("Testing workspace: {}", project_name);
+    println!();
+
+    let mut grand_total = 0;
+    let mut grand_passed = 0;
+    let mut grand_failed = 0;
+    let mut crates_tested = 0;
+    let mut crates_failed = 0;
+
+    for member in &members {
+        let tests_dir = Path::new(member).join("tests");
+        let test_files = collect_test_files(&tests_dir);
+
+        if test_files.is_empty() {
+            continue;
+        }
+
+        let crate_name = Path::new(member)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+
+        println!("  {} {}", crate_name, "─".repeat(40 - crate_name.len().min(39)));
+
+        let (total, passed, failed) = run_test_files(&test_files, Some(&crate_name));
+
+        grand_total += total;
+        grand_passed += passed;
+        grand_failed += failed;
+        crates_tested += 1;
+        if failed > 0 {
+            crates_failed += 1;
+        }
+        println!();
+    }
+
+    // Print workspace summary
+    println!("═══════════════════════════════════════════════");
+    println!(
+        "Workspace: {} crates tested, {} total tests",
+        crates_tested, grand_total
+    );
+    print_test_summary(grand_total, grand_passed, grand_failed)
+}
+
+fn print_test_summary(total: usize, passed: usize, failed: usize) -> ExitCode {
+    if total == 0 {
         println!("No test functions found (functions with #[test] attribute)");
         ExitCode::SUCCESS
-    } else if failed_tests == 0 {
+    } else if failed == 0 {
         println!(
             "{}All {} tests passed!{}",
             colors::GREEN,
-            total_tests,
+            total,
             colors::RESET
         );
         ExitCode::SUCCESS
@@ -3412,8 +3564,8 @@ fn run_tests() -> ExitCode {
         println!(
             "{}{} passed, {} failed{}",
             colors::ERROR,
-            passed_tests,
-            failed_tests,
+            passed,
+            failed,
             colors::RESET
         );
         ExitCode::from(1)
@@ -3517,10 +3669,207 @@ fn build_project() -> ExitCode {
     }
 }
 
+/// Recursively collect all .sg and .sigil files from a directory.
+fn collect_migrate_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+
+    fn visit_dir(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dir(&path, files);
+                } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                    // Skip backup files
+                    if !path.to_string_lossy().ends_with(".bak") {
+                        files.push(path);
+                    }
+                }
+            }
+        }
+    }
+
+    visit_dir(dir, &mut files);
+    files.sort();
+    files
+}
+
+/// Migrate all .sg/.sigil files in a directory (recursive).
+fn migrate_directory(dir_path: &str, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+    let path = std::path::Path::new(dir_path);
+    if !path.exists() {
+        eprintln!("Error: directory '{}' does not exist", dir_path);
+        return ExitCode::from(1);
+    }
+
+    let files = collect_migrate_files(path);
+    if files.is_empty() {
+        eprintln!("No .sg or .sigil files found in '{}'", dir_path);
+        return ExitCode::from(1);
+    }
+
+    println!("Migrating {} files in '{}'...", files.len(), dir_path);
+    println!();
+
+    let mut total_files_changed = 0;
+    let mut errors = 0;
+
+    for file in &files {
+        let file_str = file.to_string_lossy();
+        // Read file to count changes before calling migrate_file
+        if let Ok(source) = fs::read_to_string(file) {
+            // Quick check: does this file have any Rust syntax?
+            let has_rust = source.contains("pub ") || source.contains("fn ") || source.contains("let ")
+                || source.contains("struct ") || source.contains("impl ") || source.contains("trait ")
+                || source.contains("enum ") || source.contains("match ") || source.contains("::");
+            if !has_rust && !evidentiality {
+                continue; // Skip already-native files silently
+            }
+        }
+
+        let result = migrate_file(&file_str, dry_run, backup, evidentiality);
+        if result == ExitCode::SUCCESS {
+            total_files_changed += 1;
+        } else {
+            errors += 1;
+        }
+    }
+
+    println!();
+    println!("=== Migration Summary ===");
+    println!("  Files scanned: {}", files.len());
+    println!("  Files migrated: {}", total_files_changed);
+    if errors > 0 {
+        println!("  Errors: {}", errors);
+    }
+
+    if errors > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
+}
+
+/// Migrate all files in a workspace (reads Sigil.toml).
+fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+    use toml::Value as TomlValue;
+
+    // Look for Sigil.toml
+    let manifest_content = match fs::read_to_string("Sigil.toml")
+        .or_else(|_| fs::read_to_string("sigil.toml"))
+    {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("Error: No Sigil.toml found in current directory");
+            eprintln!("Run this command from a Sigil workspace root, or use:");
+            eprintln!("  sigil migrate <directory>");
+            return ExitCode::from(1);
+        }
+    };
+
+    let manifest: TomlValue = match manifest_content.parse() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Error parsing Sigil.toml: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let project_name = manifest
+        .get("project")
+        .and_then(|p| p.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or("unnamed");
+
+    // Get workspace members
+    let members: Vec<String> = manifest
+        .get("workspace")
+        .and_then(|w| w.get("members"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if members.is_empty() {
+        eprintln!("Error: No workspace members found in Sigil.toml");
+        return ExitCode::from(1);
+    }
+
+    println!("Migrating workspace '{}' ({} members)...", project_name, members.len());
+    println!();
+
+    // Collect all files from all workspace members
+    let mut all_files = Vec::new();
+    for member in &members {
+        let member_path = std::path::Path::new(member);
+        if member_path.exists() {
+            let files = collect_migrate_files(member_path);
+            all_files.extend(files);
+        } else {
+            eprintln!("  Warning: workspace member '{}' not found, skipping", member);
+        }
+    }
+
+    // Also check for top-level src/ and examples/
+    for extra_dir in &["src", "examples"] {
+        let extra_path = std::path::Path::new(extra_dir);
+        if extra_path.exists() {
+            all_files.extend(collect_migrate_files(extra_path));
+        }
+    }
+
+    if all_files.is_empty() {
+        println!("No .sg or .sigil files found in workspace members");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Found {} files across {} workspace members", all_files.len(), members.len());
+    println!();
+
+    let mut files_migrated = 0;
+    let mut files_skipped = 0;
+    let mut errors = 0;
+
+    for file in &all_files {
+        let file_str = file.to_string_lossy();
+        // Quick check for Rust syntax
+        if let Ok(source) = fs::read_to_string(file) {
+            let has_rust = source.contains("pub ") || source.contains("fn ") || source.contains("let ")
+                || source.contains("struct ") || source.contains("impl ") || source.contains("trait ")
+                || source.contains("enum ") || source.contains("match ") || source.contains("::");
+            if !has_rust && !evidentiality {
+                files_skipped += 1;
+                continue;
+            }
+        }
+
+        let result = migrate_file(&file_str, dry_run, backup, evidentiality);
+        if result == ExitCode::SUCCESS {
+            files_migrated += 1;
+        } else {
+            errors += 1;
+        }
+    }
+
+    println!();
+    println!("=== Workspace Migration Summary ===");
+    println!("  Workspace: {}", project_name);
+    println!("  Files scanned: {}", all_files.len());
+    println!("  Files migrated: {}", files_migrated);
+    if files_skipped > 0 {
+        println!("  Files already native: {}", files_skipped);
+    }
+    if errors > 0 {
+        println!("  Errors: {}", errors);
+    }
+
+    if errors > 0 { ExitCode::from(1) } else { ExitCode::SUCCESS }
+}
+
 /// Migrate a file from Rust syntax to native Sigil syntax.
 ///
 /// Converts deprecated Rust keywords to their Sigil equivalents:
-/// - fn → λ (lambda)
+/// - fn → rite (function declaration)
 /// - let → ≔ (definition)
 /// - mut → Δ (delta/mutable)
 /// - struct → Σ (sigma)
@@ -3568,7 +3917,7 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
     // Format: (keyword, replacement, suffixes_to_match)
     let keyword_replacements: &[(&str, &str, &[&str])] = &[
         ("&mut", "&Δ", &[" ", "\t", "("]),
-        ("fn", "λ", &[" ", "("]),
+        ("fn", "rite", &[" ", "("]),
         ("let", "≔", &[" ", "\t"]),
         ("mut", "Δ", &[" ", ","]),
         ("struct", "Σ", &[" "]),
@@ -3798,7 +4147,7 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
     println!();
     if changes > 0 {
         println!("Converted Rust syntax to native Sigil:");
-        println!("  λ (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
+        println!("  rite (fn), ≔ (let), Δ (mut), Σ (struct), ⊢ (impl)");
         println!("  Θ (trait), ᛈ (enum), ☉ (pub), · (::)");
         println!("  ⎇/⎉ (if/else), ⌥ (match), ⟳ (while), ∀/∈ (for/in)");
         println!("  ⤺ (return), ⊗ (break), ↻ (continue)");
@@ -4051,7 +4400,7 @@ fn print_help() {
         colors::RESET
     );
     println!(
-        "  {}τ{} transform  {}φ{} filter  {}σ{} sort  {}ρ{} reduce  {}λ{} lambda",
+        "  {}τ{} transform  {}φ{} filter  {}σ{} sort  {}ρ{} reduce  {}Λ{} lambda",
         colors::MORPHEME,
         colors::RESET,
         colors::MORPHEME,
@@ -4120,7 +4469,7 @@ fn print_symbols() {
         colors::RESET
     );
     println!(
-        "  {}λ{}/{}Λ{}  lambda          λ x -> x + 1",
+        "  {}λ{}/{}Λ{}  lambda/closure   λ(x) {{ x + 1 }}",
         colors::MORPHEME,
         colors::RESET,
         colors::MORPHEME,

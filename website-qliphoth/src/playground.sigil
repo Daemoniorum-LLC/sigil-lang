@@ -230,7 +230,8 @@ rite output_panel() → i64 {
     ≔ preview_content = div_with_class("preview-content");
     set_attr(preview_content, "id", "preview-content");
     ≔ placeholder = div_with_class("preview-placeholder");
-    append_child(placeholder, para("Click 'Run' to see output", ""));
+    append_child(placeholder, para("Visual preview requires Qliphoth runtime", ""));
+    append_child(placeholder, para("Coming in v0.5.0", "placeholder-hint"));
     append_child(preview_content, placeholder);
     append_child(preview_section, preview_content);
     append_child(panel, preview_section);

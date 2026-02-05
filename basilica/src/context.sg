@@ -32,7 +32,7 @@ invoke crate·service·{ServiceRegistry, Engram, Covenant, Oracle};
 
 ⊢<'a> Context<'a> {
     /// Create a new context
-    ☉ λ new(
+    ☉ rite new(
         request_id: [u8; 16],
         memory: Option<&'a Engram>,
         covenant: Option<&'a Covenant>,
@@ -51,38 +51,38 @@ invoke crate·service·{ServiceRegistry, Engram, Covenant, Oracle};
     }
 
     /// Get shared memory
-    ☉ λ memory(&self) -> Option<&Engram> {
+    ☉ rite memory(&self) -> Option<&Engram> {
         self.memory
     }
 
     /// Get shared covenant
-    ☉ λ covenant(&self) -> Option<&Covenant> {
+    ☉ rite covenant(&self) -> Option<&Covenant> {
         self.covenant
     }
 
     /// Get shared oracle
-    ☉ λ oracle(&self) -> Option<&Oracle> {
+    ☉ rite oracle(&self) -> Option<&Oracle> {
         self.oracle
     }
 
     /// Get a service by type
-    ☉ λ service<S: crate·service·Service + 'static>(&self) -> Option<&S> {
+    ☉ rite service<S: crate·service·Service + 'static>(&self) -> Option<&S> {
         ≔ name = std·any·type_name·<S>();
         self.services.get(name)
     }
 
     /// Get evidence context
-    ☉ λ evidence(&self) -> &EvidenceContext {
+    ☉ rite evidence(&self) -> &EvidenceContext {
         &self.evidence
     }
 
     /// Get mutable evidence context
-    ☉ λ evidence_mut(&Δ self) -> &Δ EvidenceContext {
+    ☉ rite evidence_mut(&Δ self) -> &Δ EvidenceContext {
         &Δ self.evidence
     }
 
     /// Get request duration so far
-    ☉ λ elapsed(&self) -> shared·Duration {
+    ☉ rite elapsed(&self) -> shared·Duration {
         self.started_at.elapsed()
     }
 }

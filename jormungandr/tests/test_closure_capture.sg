@@ -2,7 +2,7 @@
 //! This test verifies that closures properly capture variables from their enclosing scope.
 
 /// Test that a closure captures a variable from outer scope
-☉ λ test_closure_captures_outer_variable() -> !i32 {
+☉ rite test_closure_captures_outer_variable() -> !i32 {
     ≔ multiplier = 10;
 
     // This closure should capture 'multiplier'
@@ -19,7 +19,7 @@
 }
 
 /// Test that pipe transforms capture outer variables
-☉ λ test_pipe_captures_outer_variable() -> !i32 {
+☉ rite test_pipe_captures_outer_variable() -> !i32 {
     ≔ offset = 100;
 
     // The transform closure should capture 'offset'
@@ -35,7 +35,7 @@
 }
 
 /// Test nested closures with multiple captures
-☉ λ test_nested_closure_captures() -> !i32 {
+☉ rite test_nested_closure_captures() -> !i32 {
     ≔ a = 1;
     ≔ b = 2;
 
@@ -55,7 +55,7 @@
     }
 }
 
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     ≔ t1 = test_closure_captures_outer_variable();
     ⎇ t1 != 0 {
         eprintln!("test_closure_captures_outer_variable failed");

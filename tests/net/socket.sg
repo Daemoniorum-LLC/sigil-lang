@@ -51,7 +51,7 @@ const EINPROGRESS: i64 = -115;
 // Raw Syscall Wrappers (same as linux_x86_64.sg)
 // ============================================================================
 
-λ syscall1(num: i64, arg1: i64) -> i64 {
+rite syscall1(num: i64, arg1: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -64,7 +64,7 @@ const EINPROGRESS: i64 = -115;
     ret
 }
 
-λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -78,7 +78,7 @@ const EINPROGRESS: i64 = -115;
     ret
 }
 
-λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -93,7 +93,7 @@ const EINPROGRESS: i64 = -115;
     ret
 }
 
-λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+rite syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -110,7 +110,7 @@ const EINPROGRESS: i64 = -115;
     ret
 }
 
-λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -141,7 +141,7 @@ const ERR_SYSCALL: i64 = 4;
 const ERR_ADDRESS_IN_USE: i64 = 5;
 
 // Convert syscall errno to our error code
-λ errno_to_error(errno: i64) -> i64 {
+rite errno_to_error(errno: i64) -> i64 {
     ⎇ errno == ECONNREFUSED {
         ERR_CONNECTION_REFUSED
     } ⎉ ⎇ errno == EAGAIN {
@@ -172,7 +172,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 // Parse an IPv4 address string like "192.168.1.1" into 4 octets
 // Returns packed octets ∈ lower 32 bits (octet0 | octet1<<8 | octet2<<16 | octet3<<24)
 // Returns -1 on error
-λ parse_ipv4_addr(s: i64, len: i64) -> i64 {
+rite parse_ipv4_addr(s: i64, len: i64) -> i64 {
     // s is pointer to string, len is length
     // Parse format: "a.b.c.d"
     ≔ octet0: i64 = 0;
@@ -233,7 +233,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 
 // Parse port number from string
 // Returns -1 on error
-λ parse_port(s: i64, len: i64) -> i64 {
+rite parse_port(s: i64, len: i64) -> i64 {
     ≔ port: i64 = 0;
     ≔ i: i64 = 0;
     ≔ byte: i64 = 0;
@@ -263,7 +263,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 
 // Find position of character ∈ string
 // Returns -1 ⎇ not found
-λ find_char(s: i64, len: i64, ch: i64) -> i64 {
+rite find_char(s: i64, len: i64, ch: i64) -> i64 {
     ≔ i: i64 = 0;
     ≔ byte: i64 = 0;
     ⟳ i < len {
@@ -283,7 +283,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Find last position of character ∈ string
-λ find_char_last(s: i64, len: i64, ch: i64) -> i64 {
+rite find_char_last(s: i64, len: i64, ch: i64) -> i64 {
     ≔ i: i64 = len - 1;
     ≔ byte: i64 = 0;
     ⟳ i >= 0 {
@@ -310,7 +310,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 // Create sockaddr_in from IPv4 octets and port
 // Buffer must be at least 16 bytes
 // Returns length of sockaddr (16 ∀ IPv4)
-λ sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
+rite sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     // Clear buffer first
     ≔ i: i64 = 0;
     ⟳ i < 16 {
@@ -359,7 +359,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Get port from sockaddr_in (network to host byte order)
-λ sockaddr_in_get_port(buf: i64) -> i64 {
+rite sockaddr_in_get_port(buf: i64) -> i64 {
     ≔ port_hi: i64 = 0;
     ≔ port_lo: i64 = 0;
     unsafe {
@@ -379,7 +379,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 
 // Get IPv4 address octets from sockaddr_in
 // Returns packed octets (native order ∀ display)
-λ sockaddr_in_get_addr(buf: i64) -> i64 {
+rite sockaddr_in_get_addr(buf: i64) -> i64 {
     ≔ addr: i64 = 0;
     unsafe {
         ≔ ptr4 = buf + 4;
@@ -397,55 +397,55 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 
 // Create a TCP socket
 // Returns fd on success, negative errno on error
-λ tcp_socket_create() -> i64 {
+rite tcp_socket_create() -> i64 {
     syscall3(SYS_SOCKET, AF_INET, SOCK_STREAM, 0)
 }
 
 // Connect to address
-λ tcp_socket_connect(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
+rite tcp_socket_connect(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
     syscall3(SYS_CONNECT, fd, sockaddr, sockaddr_len)
 }
 
 // Bind to address
-λ tcp_socket_bind(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
+rite tcp_socket_bind(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
     syscall3(SYS_BIND, fd, sockaddr, sockaddr_len)
 }
 
 // Listen ∀ connections
-λ tcp_socket_listen(fd: i64, backlog: i64) -> i64 {
+rite tcp_socket_listen(fd: i64, backlog: i64) -> i64 {
     syscall2(SYS_LISTEN, fd, backlog)
 }
 
 // Accept connection
 // addr_buf and addr_len are pointers
-λ tcp_socket_accept(fd: i64, addr_buf: i64, addr_len: i64) -> i64 {
+rite tcp_socket_accept(fd: i64, addr_buf: i64, addr_len: i64) -> i64 {
     syscall3(SYS_ACCEPT, fd, addr_buf, addr_len)
 }
 
 // Read from socket
-λ tcp_socket_read(fd: i64, buf: i64, count: i64) -> i64 {
+rite tcp_socket_read(fd: i64, buf: i64, count: i64) -> i64 {
     syscall3(SYS_READ, fd, buf, count)
 }
 
 // Write to socket
-λ tcp_socket_write(fd: i64, buf: i64, count: i64) -> i64 {
+rite tcp_socket_write(fd: i64, buf: i64, count: i64) -> i64 {
     syscall3(SYS_WRITE, fd, buf, count)
 }
 
 // Close socket
-λ tcp_socket_close(fd: i64) -> i64 {
+rite tcp_socket_close(fd: i64) -> i64 {
     syscall1(SYS_CLOSE, fd)
 }
 
 // Set socket option (SO_REUSEADDR)
 // Note: Requires passing pointer to value, not implemented yet
-λ tcp_socket_set_reuseaddr(fd: i64) -> i64 {
+rite tcp_socket_set_reuseaddr(fd: i64) -> i64 {
     // Skip ∀ now - would need stack pointer access
     0
 }
 
 // Set non-blocking mode
-λ tcp_socket_set_nonblocking(fd: i64, nonblock: i64) -> i64 {
+rite tcp_socket_set_nonblocking(fd: i64, nonblock: i64) -> i64 {
     ≔ flags = syscall3(SYS_FCNTL, fd, F_GETFL, 0);
     ⎇ flags < 0 {
         ⤺ flags;
@@ -462,7 +462,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Get local address
-λ tcp_socket_getsockname(fd: i64, addr_buf: i64, addr_len_ptr: i64) -> i64 {
+rite tcp_socket_getsockname(fd: i64, addr_buf: i64, addr_len_ptr: i64) -> i64 {
     syscall3(SYS_GETSOCKNAME, fd, addr_buf, addr_len_ptr)
 }
 
@@ -470,23 +470,23 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 // UdpSocket - Low-level UDP socket operations
 // ============================================================================
 
-λ udp_socket_create() -> i64 {
+rite udp_socket_create() -> i64 {
     syscall3(SYS_SOCKET, AF_INET, SOCK_DGRAM, 0)
 }
 
-λ udp_socket_bind(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
+rite udp_socket_bind(fd: i64, sockaddr: i64, sockaddr_len: i64) -> i64 {
     syscall3(SYS_BIND, fd, sockaddr, sockaddr_len)
 }
 
-λ udp_socket_sendto(fd: i64, buf: i64, len: i64, flags: i64, dest_addr: i64, addrlen: i64) -> i64 {
+rite udp_socket_sendto(fd: i64, buf: i64, len: i64, flags: i64, dest_addr: i64, addrlen: i64) -> i64 {
     syscall6(SYS_SENDTO, fd, buf, len, flags, dest_addr, addrlen)
 }
 
-λ udp_socket_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, src_addr: i64, addrlen_ptr: i64) -> i64 {
+rite udp_socket_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, src_addr: i64, addrlen_ptr: i64) -> i64 {
     syscall6(SYS_RECVFROM, fd, buf, len, flags, src_addr, addrlen_ptr)
 }
 
-λ udp_socket_close(fd: i64) -> i64 {
+rite udp_socket_close(fd: i64) -> i64 {
     syscall1(SYS_CLOSE, fd)
 }
 
@@ -495,7 +495,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 // ============================================================================
 
 // Test 1: Parse IPv4 address
-λ test_parse_ipv4() -> i64 {
+rite test_parse_ipv4() -> i64 {
     // Test string "127.0.0.1" - we'll invoke inline assembly to get string pointer
     // For testing, invoke a hardcoded equivalent
 
@@ -547,7 +547,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Test 2: Create and close TCP socket
-λ test_tcp_create_close() -> i64 {
+rite test_tcp_create_close() -> i64 {
     ≔ fd = tcp_socket_create();
     ⎇ fd < 0 {
         ⤺ 1;  // Failed to create
@@ -562,7 +562,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Test 3: TCP connect to localhost (should fail with connection refused)
-λ test_tcp_connect_refused() -> i64 {
+rite test_tcp_connect_refused() -> i64 {
     ≔ fd = tcp_socket_create();
     ⎇ fd < 0 {
         ⤺ 1;
@@ -600,7 +600,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Test 4: UDP socket create, bind, close
-λ test_udp_bind() -> i64 {
+rite test_udp_bind() -> i64 {
     ≔ fd = udp_socket_create();
     ⎇ fd < 0 {
         ⤺ 1;
@@ -634,7 +634,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Test 5: UDP loopback send/receive
-λ test_udp_loopback() -> i64 {
+rite test_udp_loopback() -> i64 {
     // Create two UDP sockets
     ≔ fd1 = udp_socket_create();
     ⎇ fd1 < 0 {
@@ -741,7 +741,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 }
 
 // Test 6: TcpListener bind and accept (non-blocking)
-λ test_tcp_listener() -> i64 {
+rite test_tcp_listener() -> i64 {
     ≔ fd = tcp_socket_create();
     ⎇ fd < 0 {
         ⤺ 1;
@@ -811,7 +811,7 @@ const ERR_ADDRESS_IN_USE: i64 = 5;
 // Main - Run all tests
 // ============================================================================
 
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ failed: i64 = 0;
 
     // Test 1: IPv4 parsing

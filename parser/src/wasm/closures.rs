@@ -643,53 +643,10 @@ impl WasmCompiler {
                     _ => name,
                 };
 
-                // Handle cross-module calls to hooks, signals, runtime modules
-                // These are compiled as stubs that compile arguments and return a dummy value
-                let is_cross_module_stub = name.starts_with("hooks_")
-                    || name.starts_with("signals_")
-                    || name.starts_with("runtime_")
-                    || name.starts_with("component_")
-                    || name.starts_with("vdom_")
-                    || name.starts_with("VNode_")
-                    || name.starts_with("HookState_")
-                    || name.starts_with("Effect_")
-                    // Standard library type methods
-                    || name.starts_with("TypeId_")
-                    || name.starts_with("Any_")
-                    || name.starts_with("Box_")
-                    || name.starts_with("Rc_")
-                    || name.starts_with("Arc_")
-                    || name.starts_with("RefCell_")
-                    || name.starts_with("Cell_")
-                    || name.starts_with("Vec_")
-                    || name.starts_with("HashMap_")
-                    || name.starts_with("HashSet_")
-                    || name.starts_with("VecDeque_")
-                    || name.starts_with("Option_")
-                    || name.starts_with("Result_")
-                    || name.starts_with("ComponentInstance_")
-                    || name.starts_with("Patch_")
-                    || name.starts_with("AttrValue_")
-                    // Generic type method calls (C::default(), T::new(), etc.)
-                    // Single uppercase letter followed by underscore is typically a generic
-                    || (name.len() >= 3 && name.chars().next().unwrap().is_ascii_uppercase()
-                        && name.chars().nth(1) == Some('_'));
-                if is_cross_module_stub {
-                    // Compile all arguments
-                    for arg in args {
-                        self.compile_expr(arg)?;
-                    }
-                    // Return the last argument value or 0 if no args
-                    // Most hook/signal functions return their first argument
-                    if args.is_empty() {
-                        let func = self.current_function_mut()
-                            .ok_or_else(|| WasmError::internal("not in function context"))?;
-                        func.push(Instruction::I64Const(0));
-                    }
-                    return Ok(());
-                }
-
-                // Check for import function first to get parameter types
+                // Check for import function first to get parameter types.
+                // This MUST come before the cross-module stub handler so that
+                // real imports (e.g. vdom_create_vnode) are compiled as actual
+                // calls instead of being treated as identity stubs.
                 if let Some(func_idx) = self.imports.get_func(mapped_name) {
                     // Get parameter and return types before compilation
                     let param_types: Vec<ValType> = self
@@ -730,6 +687,59 @@ impl WasmCompiler {
                         }
                     }
 
+                    return Ok(());
+                }
+
+                // Handle cross-module calls to hooks, signals, runtime modules
+                // These are compiled as stubs that compile arguments and return a dummy value.
+                // This is a FALLBACK for unresolved cross-module references — the import
+                // lookup above handles any name that has a real import registered.
+                let is_cross_module_stub = name.starts_with("hooks_")
+                    || name.starts_with("signals_")
+                    || name.starts_with("runtime_")
+                    || name.starts_with("component_")
+                    || name.starts_with("vdom_")
+                    || name.starts_with("VNode_")
+                    || name.starts_with("HookState_")
+                    || name.starts_with("Effect_")
+                    // Standard library type methods
+                    || name.starts_with("TypeId_")
+                    || name.starts_with("Any_")
+                    || name.starts_with("Box_")
+                    || name.starts_with("Rc_")
+                    || name.starts_with("Arc_")
+                    || name.starts_with("RefCell_")
+                    || name.starts_with("Cell_")
+                    || name.starts_with("Vec_")
+                    || name.starts_with("HashMap_")
+                    || name.starts_with("HashSet_")
+                    || name.starts_with("VecDeque_")
+                    || name.starts_with("Option_")
+                    || name.starts_with("Result_")
+                    || name.starts_with("ComponentInstance_")
+                    || name.starts_with("Patch_")
+                    || name.starts_with("AttrValue_")
+                    // Generic type method calls (C::default(), T::new(), etc.)
+                    // Single uppercase letter followed by underscore is typically a generic
+                    || (name.len() >= 3 && name.chars().next().unwrap().is_ascii_uppercase()
+                        && name.chars().nth(1) == Some('_'));
+                if is_cross_module_stub {
+                    // Compile all arguments (for side effects), then leave
+                    // exactly one i64 value on the stack as a dummy return.
+                    for arg in args {
+                        self.compile_expr(arg)?;
+                    }
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    if args.is_empty() {
+                        // No args — push a zero as dummy return
+                        func.push(Instruction::I64Const(0));
+                    } else {
+                        // Drop all but the first argument value
+                        for _ in 1..args.len() {
+                            func.push(Instruction::Drop);
+                        }
+                    }
                     return Ok(());
                 }
 

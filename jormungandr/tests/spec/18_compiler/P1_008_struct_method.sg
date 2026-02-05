@@ -7,16 +7,16 @@
 }
 
 ⊢ Counter {
-    λ get(&self) -> !i32 {
+    rite get(&self) -> !i32 {
         self.value
     }
 
-    λ increment(&Δ self) {
+    rite increment(&Δ self) {
         self.value = self.value + 1;
     }
 }
 
-λ main() {
+rite main() {
     ≔ Δ c = Counter { value: 0 };
     println(c.get());
 

@@ -13,7 +13,7 @@
     Empty
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value·Number(42);
     ⌥ v {
         Value·Number(x) => println(x),

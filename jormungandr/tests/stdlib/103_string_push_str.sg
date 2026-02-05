@@ -1,5 +1,5 @@
 // Test: String push_str method
-λ main() {
+rite main() {
     ≔ Δ s: !String = "Hello";
     s.push_str(", ");
     s.push_str("World");

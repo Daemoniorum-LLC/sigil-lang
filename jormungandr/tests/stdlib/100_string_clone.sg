@@ -1,5 +1,5 @@
 // Test: String clone method
-λ main() {
+rite main() {
     ≔ s1: !String = "Hello";
     ≔ s2: !String = s1.clone();
     println(s2);

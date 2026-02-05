@@ -7,31 +7,31 @@
 }
 
 ⊢ Vector {
-    ☉ λ new(x: !f32, y: !f32, z: !f32) -> Self {
+    ☉ rite new(x: !f32, y: !f32, z: !f32) -> Self {
         Vector { x, y, z }
     }
 
-    ☉ λ zero() -> Self {
+    ☉ rite zero() -> Self {
         Vector { x: 0.0, y: 0.0, z: 0.0 }
     }
 
-    ☉ λ one() -> Self {
+    ☉ rite one() -> Self {
         Vector { x: 1.0, y: 1.0, z: 1.0 }
     }
 
-    ☉ λ magnitude_squared(&self) -> !f32 {
+    ☉ rite magnitude_squared(&self) -> !f32 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
 
-    ☉ λ is_zero(&self) -> !bool {
+    ☉ rite is_zero(&self) -> !bool {
         self.magnitude_squared() == 0.0
     }
 
-    ☉ λ dot(&self, other: &Vector) -> !f32 {
+    ☉ rite dot(&self, other: &Vector) -> !f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    ☉ λ distance_squared(&self, other: &Vector) -> !f32 {
+    ☉ rite distance_squared(&self, other: &Vector) -> !f32 {
         ≔ dx = self.x - other.x;
         ≔ dy = self.y - other.y;
         ≔ dz = self.z - other.z;
@@ -46,7 +46,7 @@
 }
 
 ⊢ SwarmConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         SwarmConfig {
             max_members: 100,
             max_velocity: 1.0,
@@ -54,7 +54,7 @@
         }
     }
 
-    ☉ λ small_swarm() -> Self {
+    ☉ rite small_swarm() -> Self {
         SwarmConfig {
             max_members: 10,
             max_velocity: 2.0,
@@ -62,7 +62,7 @@
         }
     }
 
-    ☉ λ large_swarm() -> Self {
+    ☉ rite large_swarm() -> Self {
         SwarmConfig {
             max_members: 1000,
             max_velocity: 0.5,
@@ -79,7 +79,7 @@
 }
 
 ⊢ SwarmStats {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         SwarmStats {
             member_count: 0,
             active_count: 0,
@@ -88,22 +88,22 @@
         }
     }
 
-    ☉ λ add_member(&Δ self, active: !bool) {
+    ☉ rite add_member(&Δ self, active: !bool) {
         self.member_count = self.member_count + 1;
         ⎇ active {
             self.active_count = self.active_count + 1;
         }
     }
 
-    ☉ λ add_goal(&Δ self) {
+    ☉ rite add_goal(&Δ self) {
         self.goal_count = self.goal_count + 1;
     }
 
-    ☉ λ add_discovery(&Δ self) {
+    ☉ rite add_discovery(&Δ self) {
         self.discovery_count = self.discovery_count + 1;
     }
 
-    ☉ λ activity_ratio(&self) -> !f32 {
+    ☉ rite activity_ratio(&self) -> !f32 {
         ⎇ self.member_count == 0 {
             0.0
         } ⎉ {
@@ -121,7 +121,7 @@
 }
 
 ⊢ BehaviorType {
-    ☉ λ default_weight(&self) -> !f32 {
+    ☉ rite default_weight(&self) -> !f32 {
         ⌥ self {
             BehaviorType·Separation => 1.5,
             BehaviorType·Alignment => 1.0,
@@ -131,7 +131,7 @@
         }
     }
 
-    ☉ λ is_repulsive(&self) -> !bool {
+    ☉ rite is_repulsive(&self) -> !bool {
         ⌥ self {
             BehaviorType·Separation => true,
             BehaviorType·Avoidance => true,
@@ -147,22 +147,22 @@
 }
 
 ⊢ BehaviorRule {
-    ☉ λ new(behavior: BehaviorType) -> Self {
+    ☉ rite new(behavior: BehaviorType) -> Self {
         ≔ weight = behavior.default_weight();
         BehaviorRule { behavior, weight, active: true }
     }
 
-    ☉ λ with_weight(Δ self, weight: !f32) -> Self {
+    ☉ rite with_weight(Δ self, weight: !f32) -> Self {
         self.weight = weight;
         self
     }
 
-    ☉ λ disabled(Δ self) -> Self {
+    ☉ rite disabled(Δ self) -> Self {
         self.active = false;
         self
     }
 
-    ☉ λ effective_weight(&self) -> !f32 {
+    ☉ rite effective_weight(&self) -> !f32 {
         ⎇ self.active {
             self.weight
         } ⎉ {
@@ -180,7 +180,7 @@
 }
 
 ⊢ SwarmGoal {
-    ☉ λ new(priority: !f32, x: !f32, y: !f32, z: !f32) -> Self {
+    ☉ rite new(priority: !f32, x: !f32, y: !f32, z: !f32) -> Self {
         SwarmGoal {
             priority,
             target_x: x,
@@ -190,11 +190,11 @@
         }
     }
 
-    ☉ λ mark_achieved(&Δ self) {
+    ☉ rite mark_achieved(&Δ self) {
         self.achieved = true;
     }
 
-    ☉ λ distance_to(&self, x: !f32, y: !f32, z: !f32) -> !f32 {
+    ☉ rite distance_to(&self, x: !f32, y: !f32, z: !f32) -> !f32 {
         ≔ dx = self.target_x - x;
         ≔ dy = self.target_y - y;
         ≔ dz = self.target_z - z;
@@ -207,7 +207,7 @@
 // ============================================================================
 
 #[test]
-λ test_vector_zero() {
+rite test_vector_zero() {
     ≔ v = Vector·zero();
     assert(v.x == 0.0);
     assert(v.y == 0.0);
@@ -216,20 +216,20 @@
 }
 
 #[test]
-λ test_vector_one() {
+rite test_vector_one() {
     ≔ v = Vector·one();
     assert(v.x == 1.0);
     assert(!v.is_zero());
 }
 
 #[test]
-λ test_vector_magnitude_squared() {
+rite test_vector_magnitude_squared() {
     ≔ v = Vector·new(3.0, 4.0, 0.0);
     assert(v.magnitude_squared() == 25.0);
 }
 
 #[test]
-λ test_vector_dot() {
+rite test_vector_dot() {
     ≔ a = Vector·new(1.0, 2.0, 3.0);
     ≔ b = Vector·new(4.0, 5.0, 6.0);
     // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32
@@ -237,41 +237,41 @@
 }
 
 #[test]
-λ test_vector_distance_squared() {
+rite test_vector_distance_squared() {
     ≔ a = Vector·zero();
     ≔ b = Vector·new(3.0, 4.0, 0.0);
     assert(a.distance_squared(&b) == 25.0);
 }
 
 #[test]
-λ test_swarm_config_default() {
+rite test_swarm_config_default() {
     ≔ cfg = SwarmConfig·default_config();
     assert(cfg.max_members == 100);
     assert(cfg.max_velocity == 1.0);
 }
 
 #[test]
-λ test_swarm_config_small() {
+rite test_swarm_config_small() {
     ≔ cfg = SwarmConfig·small_swarm();
     assert(cfg.max_members == 10);
     assert(cfg.max_velocity == 2.0);
 }
 
 #[test]
-λ test_swarm_config_large() {
+rite test_swarm_config_large() {
     ≔ cfg = SwarmConfig·large_swarm();
     assert(cfg.max_members == 1000);
 }
 
 #[test]
-λ test_swarm_stats_new() {
+rite test_swarm_stats_new() {
     ≔ stats = SwarmStats·new();
     assert(stats.member_count == 0);
     assert(stats.activity_ratio() == 0.0);
 }
 
 #[test]
-λ test_swarm_stats_add_member() {
+rite test_swarm_stats_add_member() {
     ≔ Δ stats = SwarmStats·new();
     stats.add_member(true);
     stats.add_member(false);
@@ -280,7 +280,7 @@
 }
 
 #[test]
-λ test_swarm_stats_activity_ratio() {
+rite test_swarm_stats_activity_ratio() {
     ≔ Δ stats = SwarmStats·new();
     stats.add_member(true);
     stats.add_member(true);
@@ -290,67 +290,67 @@
 }
 
 #[test]
-λ test_behavior_type_separation() {
+rite test_behavior_type_separation() {
     ≔ b = BehaviorType·Separation;
     assert(b.default_weight() == 1.5);
     assert(b.is_repulsive());
 }
 
 #[test]
-λ test_behavior_type_cohesion() {
+rite test_behavior_type_cohesion() {
     ≔ b = BehaviorType·Cohesion;
     assert(b.default_weight() == 1.0);
     assert(!b.is_repulsive());
 }
 
 #[test]
-λ test_behavior_type_avoidance() {
+rite test_behavior_type_avoidance() {
     ≔ b = BehaviorType·Avoidance;
     assert(b.default_weight() == 3.0);
     assert(b.is_repulsive());
 }
 
 #[test]
-λ test_behavior_rule_new() {
+rite test_behavior_rule_new() {
     ≔ rule = BehaviorRule·new(BehaviorType·GoalSeeking);
     assert(rule.weight == 2.0);
     assert(rule.active);
 }
 
 #[test]
-λ test_behavior_rule_with_weight() {
+rite test_behavior_rule_with_weight() {
     ≔ rule = BehaviorRule·new(BehaviorType·Alignment).with_weight(5.0);
     assert(rule.weight == 5.0);
 }
 
 #[test]
-λ test_behavior_rule_disabled() {
+rite test_behavior_rule_disabled() {
     ≔ rule = BehaviorRule·new(BehaviorType·Separation).disabled();
     assert(!rule.active);
     assert(rule.effective_weight() == 0.0);
 }
 
 #[test]
-λ test_swarm_goal_new() {
+rite test_swarm_goal_new() {
     ≔ goal = SwarmGoal·new(0.8, 10.0, 20.0, 30.0);
     assert(goal.priority == 0.8);
     assert(!goal.achieved);
 }
 
 #[test]
-λ test_swarm_goal_achieved() {
+rite test_swarm_goal_achieved() {
     ≔ Δ goal = SwarmGoal·new(0.5, 0.0, 0.0, 0.0);
     goal.mark_achieved();
     assert(goal.achieved);
 }
 
 #[test]
-λ test_swarm_goal_distance() {
+rite test_swarm_goal_distance() {
     ≔ goal = SwarmGoal·new(1.0, 3.0, 4.0, 0.0);
     ≔ dist = goal.distance_to(0.0, 0.0, 0.0);
     assert(dist == 25.0);
 }
 
-λ main() {
+rite main() {
     println("Commune swarm tests - 20 tests");
 }

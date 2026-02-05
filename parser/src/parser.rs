@@ -32,7 +32,7 @@ pub enum ParseError {
 /// Maps deprecated Rust keywords to their Sigil equivalents
 fn rust_to_sigil(keyword: &str) -> &'static str {
     match keyword {
-        "fn" => "λ (lambda)",
+        "fn" => "rite (function declaration)",
         "let" => "≔ (definition)",
         "mut" => "Δ (delta/mutable)",
         "const" => "◆ (diamond/const)",
@@ -806,6 +806,21 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn is_eof(&self) -> bool {
         self.current.is_none()
+    }
+
+    /// Strip float type suffix (f16, f32, f64, f128) from a literal string.
+    /// Handles both `2.0f64` and `2.0_f64` forms.
+    /// Returns (numeric_value, optional_suffix).
+    fn strip_float_suffix(s: &str) -> (String, Option<String>) {
+        for suffix in &["f128", "f64", "f32", "f16"] {
+            if s.ends_with(suffix) {
+                let before = &s[..s.len() - suffix.len()];
+                // Strip optional underscore separator (e.g., 2.0_f64 -> 2.0)
+                let value = before.strip_suffix('_').unwrap_or(before).to_string();
+                return (value, Some(suffix.to_string()));
+            }
+        }
+        (s.to_string(), None)
     }
 
     pub(crate) fn expect(&mut self, expected: Token) -> ParseResult<Span> {
@@ -2578,7 +2593,8 @@ impl<'a> Parser<'a> {
             Token::Alpha => "α".to_string(),
             Token::Omega => "ω".to_string(),
             Token::Mu => "μ".to_string(),
-            Token::Lambda => "λ".to_string(),
+            Token::Lambda => "Λ".to_string(),
+            Token::LambdaExpr => "λ".to_string(),
             Token::Pi => "Π".to_string(),
             Token::Delta => "δ".to_string(),
             Token::Epsilon => "ε".to_string(),
@@ -4542,11 +4558,17 @@ impl<'a> Parser<'a> {
                     evidentiality: Evidentiality::Paradox,
                 })
             }
-            // Move closure: move |params| body or move || body
+            // Move closure: move |params| body or move λ(params) { body }
             Some(Token::Move) => {
                 self.advance();
-                self.parse_pipe_closure_with_move(true)
+                if self.check(&Token::LambdaExpr) {
+                    self.parse_lambda_closure(true)
+                } else {
+                    self.parse_pipe_closure_with_move(true)
+                }
             }
+            // Lambda closure expression: λ(params) [→ RetType] { body }
+            Some(Token::LambdaExpr) => self.parse_lambda_closure(false),
             // Pipe-style closure: |params| body or || body
             Some(Token::Pipe) | Some(Token::OrOr) => self.parse_pipe_closure_with_move(false),
             _ => self.parse_postfix_expr(),
@@ -4600,6 +4622,51 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parse a lambda closure expression: λ(params) [→ RetType] { body }
+    /// Produces the same Expr::Closure as pipe closures, so no interpreter changes needed.
+    fn parse_lambda_closure(&mut self, is_move: bool) -> ParseResult<Expr> {
+        self.expect(Token::LambdaExpr)?; // consume λ
+
+        // Parse parameter list: λ(params)
+        self.expect(Token::LParen)?;
+        let mut params = Vec::new();
+        if !self.check(&Token::RParen) {
+            loop {
+                let pattern = self.parse_pattern()?;
+                let ty = if self.consume_if(&Token::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                params.push(ClosureParam { pattern, ty });
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+                if self.check(&Token::RParen) {
+                    break;
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+
+        // Optional return type: → RetType
+        let return_type = if self.consume_if(&Token::Arrow) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        // Body must be a block: { ... }
+        let body = self.parse_block_or_closure()?;
+
+        Ok(Expr::Closure {
+            params,
+            return_type,
+            body: Box::new(body),
+            is_move,
+        })
+    }
+
     /// Parse macro tokens: collects all tokens inside matching delimiters
     fn parse_macro_tokens(&mut self) -> ParseResult<String> {
         // Determine delimiter type
@@ -4630,6 +4697,16 @@ impl<'a> Parser<'a> {
 
             // Collect token text (approximate - this is a simplified approach)
             if let Some((token, span)) = &self.current {
+                // Skip comment tokens inside macro invocations
+                if matches!(token, Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) {
+                    self.advance();
+                    continue;
+                }
+                // Also skip doc comments inside macros
+                if token.is_doc_comment() {
+                    self.advance();
+                    continue;
+                }
                 // Get the source slice for this token
                 let token_str = match token {
                     Token::Ident(s) => s.clone(),
@@ -4718,7 +4795,8 @@ impl<'a> Parser<'a> {
                     Token::Rho => "ρ".to_string(),       // Reduce morpheme
                     Token::Sigma => "σ".to_string(),     // Filter morpheme
                     Token::Delta => "δ".to_string(),     // Dual morpheme
-                    Token::Lambda => "λ".to_string(),    // Lambda alternative
+                    Token::Lambda => "Λ".to_string(),    // Lambda morpheme (uppercase)
+                    Token::LambdaExpr => "λ".to_string(), // Lambda closure expression
                     Token::Pi => "π".to_string(),        // Parallel morpheme
                     Token::Phi => "φ".to_string(),       // Phi combinator
                     Token::Zeta => "ζ".to_string(),      // Zeta combinator
@@ -4922,7 +5000,6 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Question) => {
                     // Check if this is Type? { ... } struct literal with evidentiality
-                    // vs expr? try operator
                     if self.peek_next() == Some(&Token::LBrace) && !self.is_in_condition() {
                         if let Expr::Path(ref path) = expr {
                             let path = path.clone();
@@ -4934,9 +5011,15 @@ impl<'a> Parser<'a> {
                             continue;
                         }
                     }
-                    // Not a struct literal - treat as try operator
-                    self.advance();
-                    expr = Expr::Try(Box::new(expr));
+                    // Evidentiality marker: expr? wraps value as uncertain
+                    if let Some(ev) = self.parse_evidentiality_opt() {
+                        expr = Expr::Evidential {
+                            expr: Box::new(expr),
+                            evidentiality: ev,
+                        };
+                    } else {
+                        break;
+                    }
                 }
                 // Cast expression: expr as Type  OR  expr → Type
                 Some(Token::As) | Some(Token::Arrow) => {
@@ -4952,8 +5035,10 @@ impl<'a> Parser<'a> {
                     if let Expr::Path(path) = &expr {
                         let peeked = self.peek_next();
                         // Peek at next token to see if it's a macro delimiter
+                        // In condition context, don't treat !{ as macro — the { is the if-body block
                         let is_macro = match peeked {
-                            Some(Token::LParen) | Some(Token::LBracket) | Some(Token::LBrace) => true,
+                            Some(Token::LParen) | Some(Token::LBracket) => true,
+                            Some(Token::LBrace) => !self.is_in_condition(),
                             _ => false,
                         };
                         if is_macro {
@@ -5197,10 +5282,8 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(s)) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Float {
-                    value: s,
-                    suffix: None,
-                }))
+                let (value, suffix) = Self::strip_float_suffix(&s);
+                Ok(Expr::Literal(Literal::Float { value, suffix }))
             }
             Some(Token::StringLit(s)) => {
                 self.advance();
@@ -5360,7 +5443,7 @@ impl<'a> Parser<'a> {
                 // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
+                self.expect(Token::ElementOf)?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -5429,7 +5512,7 @@ impl<'a> Parser<'a> {
                     Some(Token::ForAll) | Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
+                        self.expect(Token::ElementOf)?;
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -5475,7 +5558,7 @@ impl<'a> Parser<'a> {
             Some(Token::ForAll) | Some(Token::ForAll) => {
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect_one_of(&[Token::ElementOf, Token::ElementOf])?;
+                self.expect(Token::ElementOf)?;
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -6339,6 +6422,8 @@ impl<'a> Parser<'a> {
                 | Token::GradeUp | Token::GradeDown | Token::Rotate
                 | Token::Iota | Token::ForAll | Token::Exists
                 | Token::Pi | Token::Async => true,
+                // Lambda closure expression: λ(params) { body }
+                Token::LambdaExpr => true,
                 // Closure syntax |x| or || (lookahead for closure parameter list)
                 Token::Pipe => true,
                 Token::OrOr => true,  // Empty closure ||
@@ -6549,7 +6634,7 @@ impl<'a> Parser<'a> {
                 Ok(PipeOp::Filter(Box::new(body)))
             }
             Some(Token::Sigma) => {
-                // Σ can be either sort morpheme OR a function call like Σ(dim: -1)
+                // σ can be sort morpheme, function call like Σ(dim: -1), or custom comparator σ{a, b => ...}
                 if self.peek_next() == Some(&Token::LParen) {
                     // Parse Σ as a function call: Σ(args)
                     let name = Ident {
@@ -6568,6 +6653,18 @@ impl<'a> Parser<'a> {
                         })),
                         args,
                     })))
+                } else if self.peek_next() == Some(&Token::LBrace) {
+                    // Custom comparator: σ{a, b => b - a}
+                    self.advance(); // consume σ
+                    self.advance(); // consume {
+                    self.skip_comments();
+                    let body = if self.looks_like_morpheme_closure() {
+                        self.parse_morpheme_closure()?
+                    } else {
+                        self.parse_expr()?
+                    };
+                    self.expect(Token::RBrace)?;
+                    Ok(PipeOp::SortBy(Box::new(body)))
                 } else {
                     self.advance();
                     let field = if self.consume_if(&Token::Dot) {
@@ -6627,17 +6724,23 @@ impl<'a> Parser<'a> {
                         }
                     }
                     Some(Token::LBrace) => {
-                        // General reduce with closure: ρ{(acc, x) => ...}
+                        // General reduce: ρ{(acc, x) => ...} or ρ{init, acc, x => acc + x}
                         self.advance();
                         self.skip_comments();
-                        // Check for closure pattern: ρ{x => expr} or ρ{(a, b) => expr}
-                        let body = if self.looks_like_morpheme_closure() {
-                            self.parse_morpheme_closure()?
+                        if self.looks_like_morpheme_closure() {
+                            // Direct closure: ρ{acc => expr} or ρ{(acc, x) => acc + x}
+                            let body = self.parse_morpheme_closure()?;
+                            self.expect(Token::RBrace)?;
+                            Ok(PipeOp::Reduce(Box::new(body)))
                         } else {
-                            self.parse_expr()?
-                        };
-                        self.expect(Token::RBrace)?;
-                        Ok(PipeOp::Reduce(Box::new(body)))
+                            // Init value + closure: ρ{0, acc, x => acc + x}
+                            let init = self.parse_expr()?;
+                            self.expect(Token::Comma)?;
+                            self.skip_comments();
+                            let closure = self.parse_morpheme_closure()?;
+                            self.expect(Token::RBrace)?;
+                            Ok(PipeOp::ReduceWithInit(Box::new(init), Box::new(closure)))
+                        }
                     }
                     _ => Err(ParseError::Custom(
                         "expected reduction variant (+, *, ++, &, |, _name) or {body} after ρ"
@@ -6710,6 +6813,11 @@ impl<'a> Parser<'a> {
             Some(Token::Xi) => {
                 self.advance();
                 Ok(PipeOp::Next)
+            }
+            // Distinct/unique morpheme: δ - remove duplicates
+            Some(Token::Delta) => {
+                self.advance();
+                Ok(PipeOp::Unique)
             }
             // Parallel morpheme: ∥τ{f} or parallel τ{f} - wraps another operation
             Some(Token::Parallel) => {
@@ -7369,6 +7477,9 @@ impl<'a> Parser<'a> {
             // Check next token - could be => directly or evidentiality marker first
             match self.peek_next() {
                 Some(Token::FatArrow) => return true,
+                // Multi-param closure: a, b => expr or a, b, c => expr
+                // In morpheme context {}, comma-separated idents before => is always a closure
+                Some(Token::Comma) => return true,
                 // Evidentiality markers: ident~ =>, ident◊ =>, ident‽ =>
                 Some(Token::Tilde) | Some(Token::Lozenge) | Some(Token::Interrobang) => {
                     // Check if => follows the evidentiality marker
@@ -7408,10 +7519,11 @@ impl<'a> Parser<'a> {
         false
     }
 
-    /// Parse a morpheme closure: x => expr or (a, b) => expr or &x => expr
+    /// Parse a morpheme closure: x => expr, (a, b) => expr, &x => expr, or a, b => expr
     /// For morphemes, (a, b) is a SINGLE tuple parameter pattern, not multiple parameters
+    /// Multi-param: a, b => expr creates multiple ClosureParam entries
     fn parse_morpheme_closure(&mut self) -> ParseResult<Expr> {
-        let pattern = if self.check(&Token::LParen) {
+        let params = if self.check(&Token::LParen) {
             // Tuple pattern: (a, b) => expr - treated as single parameter with tuple pattern
             self.advance();
             let mut patterns = Vec::new();
@@ -7424,22 +7536,39 @@ impl<'a> Parser<'a> {
             }
             self.expect(Token::RParen)?;
             // Create a single tuple pattern
-            Pattern::Tuple(patterns)
+            vec![ClosureParam { pattern: Pattern::Tuple(patterns), ty: None }]
         } else if self.check(&Token::Amp) {
             // Reference pattern: &x => expr or &mut x => expr
-            self.parse_pattern()?
+            vec![ClosureParam { pattern: self.parse_pattern()?, ty: None }]
         } else if self.check(&Token::Underscore) {
             // Wildcard pattern: _ => expr
             self.advance();
-            Pattern::Wildcard
+            vec![ClosureParam { pattern: Pattern::Wildcard, ty: None }]
         } else {
-            // Simple pattern: x => expr
+            // Simple pattern: x => expr or multi-param: a, b => expr
             let name = self.parse_ident()?;
-            Pattern::Ident {
-                mutable: false,
-                name,
-                evidentiality: None,
+            let first = ClosureParam {
+                pattern: Pattern::Ident {
+                    mutable: false,
+                    name,
+                    evidentiality: None,
+                },
+                ty: None,
+            };
+            let mut params = vec![first];
+            // Check for multi-param: a, b => expr
+            while self.consume_if(&Token::Comma) {
+                let name = self.parse_ident()?;
+                params.push(ClosureParam {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name,
+                        evidentiality: None,
+                    },
+                    ty: None,
+                });
             }
+            params
         };
         // Accept either => or | as the arrow (for closure-style syntax)
         if !self.consume_if(&Token::FatArrow) {
@@ -7482,14 +7611,14 @@ impl<'a> Parser<'a> {
                         if stmts.is_empty() {
                             // Single expression, no block needed
                             return Ok(Expr::Closure {
-                                params: vec![ClosureParam { pattern, ty: None }],
+                                params: params.clone(),
                                 return_type: None,
                                 body: Box::new(expr),
                                 is_move: false,
                             });
                         }
                         return Ok(Expr::Closure {
-                            params: vec![ClosureParam { pattern, ty: None }],
+                            params: params.clone(),
                             return_type: None,
                             body: Box::new(Expr::Block(Block {
                                 stmts,
@@ -7508,7 +7637,7 @@ impl<'a> Parser<'a> {
             Expr::Block(Block { stmts, expr: None })
         };
         Ok(Expr::Closure {
-            params: vec![ClosureParam { pattern, ty: None }],
+            params,
             return_type: None,
             body: Box::new(body),
             is_move: false,
@@ -8538,10 +8667,8 @@ impl<'a> Parser<'a> {
             }
             Some(Token::FloatLit(s)) => {
                 self.advance();
-                Ok(Literal::Float {
-                    value: s,
-                    suffix: None,
-                })
+                let (value, suffix) = Self::strip_float_suffix(&s);
+                Ok(Literal::Float { value, suffix })
             }
             Some(Token::StringLit(s)) => {
                 self.advance();
@@ -8759,7 +8886,12 @@ impl<'a> Parser<'a> {
             // Other contextual keywords
             Token::Ref => Some("ref"),
             Token::Null => Some("null"),
-            Token::Fn => Some("rite"),  // Allow 'rite' as identifier (Sigil prose alternative to fn)
+            Token::Fn => Some("rite"),  // Allow 'rite' as identifier (canonical function keyword)
+            Token::LambdaExpr => Some("λ"),  // Allow 'λ' as identifier in certain contexts
+            // Substructural type keywords - usable as identifiers in field/variable contexts
+            Token::Linear => Some("linear"),
+            Token::Affine => Some("affine"),
+            Token::Relevant => Some("relevant"),
             _ => None,
         }
     }
@@ -9482,7 +9614,7 @@ mod tests {
     #[test]
     fn test_parse_function() {
         // Simple function with semicolon-terminated statement
-        let source = "fn hello(name: str) -> str { return name; }";
+        let source = "rite hello(name: str) -> str { ⤺ name; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9490,7 +9622,7 @@ mod tests {
 
     #[test]
     fn test_parse_pipe_chain() {
-        let source = "fn main() { let result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
+        let source = "rite main() { ≔ result = data|τ{_ * 2}|φ{_ > 0}|σ; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9498,7 +9630,7 @@ mod tests {
 
     #[test]
     fn test_parse_async_function() {
-        let source = "async fn fetch(url: str) -> Response~ { return client·get(url)|await; }";
+        let source = "async rite fetch(url: str) -> Response~ { ⤺ client·get(url)|await; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9518,7 +9650,7 @@ mod tests {
         let source = r#"
             actor Counter {
                 state: i64 = 0
-                on Increment(n: i64) { return self.state + n; }
+                on Increment(n: i64) { ⤺ self.state + n; }
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9528,7 +9660,7 @@ mod tests {
 
     #[test]
     fn test_parse_number_bases() {
-        let source = "fn bases() { let a = 42; let b = 0b101010; let c = 0x2A; let d = 0v22; }";
+        let source = "rite bases() { ≔ a = 42; ≔ b = 0b101010; ≔ c = 0x2A; ≔ d = 0v22; }";
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
@@ -9537,11 +9669,12 @@ mod tests {
     #[test]
     fn test_parse_labeled_loops() {
         // Test labeled loop with break
+        // Note: ⊗ (Tensor) is the native Sigil break keyword
         let source = r#"
-            fn test() {
+            rite test() {
                 'outer: loop {
-                    'inner: while true {
-                        break 'outer;
+                    'inner: ⟳ true {
+                        ⊗ 'outer;
                     }
                 }
             }
@@ -9551,11 +9684,12 @@ mod tests {
         assert_eq!(file.items.len(), 1);
 
         // Test labeled for with continue
+        // Note: ↻ (CycleArrow) is the native Sigil continue keyword
         let source2 = r#"
-            fn test2() {
-                'rows: for i in 0..10 {
-                    'cols: for j in 0..10 {
-                        if j == 5 { continue 'rows; }
+            rite test2() {
+                'rows: ∀ i ∈ 0..10 {
+                    'cols: ∀ j ∈ 0..10 {
+                        ⎇ j == 5 { ↻ 'rows; }
                     }
                 }
             }
@@ -9568,10 +9702,10 @@ mod tests {
     #[test]
     fn test_parse_inline_asm() {
         let source = r#"
-            fn outb(port: u16, value: u8) {
+            rite outb(port: u16, value: u8) {
                 asm!("out dx, al",
-                    in("dx") port,
-                    in("al") value,
+                    ∈("dx") port,
+                    ∈("al") value,
                     options(nostack));
             }
         "#;
@@ -9589,13 +9723,13 @@ mod tests {
     #[test]
     fn test_parse_inline_asm_with_outputs() {
         let source = r#"
-            fn inb(port: u16) -> u8 {
-                let result: u8 = 0;
-                asm!("in al, dx",
+            rite inb(port: u16) -> u8 {
+                ≔ result: u8 = 0;
+                asm!("∈ al, dx",
                     out("al") result,
-                    in("dx") port,
+                    ∈("dx") port,
                     options(nostack, nomem));
-                return result;
+                ⤺ result;
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9606,8 +9740,8 @@ mod tests {
     #[test]
     fn test_parse_volatile_read() {
         let source = r#"
-            fn read_mmio(addr: *mut u32) -> u32 {
-                return volatile read<u32>(addr);
+            rite read_mmio(addr: *Δ u32) -> u32 {
+                ⤺ volatile read<u32>(addr);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9618,7 +9752,7 @@ mod tests {
     #[test]
     fn test_parse_volatile_write() {
         let source = r#"
-            fn write_mmio(addr: *mut u32, value: u32) {
+            rite write_mmio(addr: *Δ u32, value: u32) {
                 volatile write<u32>(addr, value);
             }
         "#;
@@ -9630,7 +9764,7 @@ mod tests {
     #[test]
     fn test_parse_naked_function() {
         let source = r#"
-            naked fn interrupt_handler() {
+            naked rite interrupt_handler() {
                 asm!("push rax; push rbx; call handler_impl; pop rbx; pop rax; iretq",
                     options(nostack));
             }
@@ -9681,7 +9815,7 @@ mod tests {
             #![no_std]
             #![no_main]
 
-            fn kernel_main() -> ! {
+            rite kernel_main() -> ! {
                 loop {}
             }
         "#;
@@ -9698,7 +9832,7 @@ mod tests {
         let source = r#"
             #![feature(asm, naked_functions)]
 
-            fn main() -> i64 { 0 }
+            rite main() -> i64 { 0 }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9717,7 +9851,7 @@ mod tests {
             #![no_std]
             #![target(arch = "x86_64", os = "none")]
 
-            fn kernel_main() { }
+            rite kernel_main() { }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9738,7 +9872,7 @@ mod tests {
             #![no_std]
 
             #[panic_handler]
-            fn panic(info: *const PanicInfo) -> ! {
+            rite panic(info: *const PanicInfo) -> ! {
                 loop {}
             }
         "#;
@@ -9764,7 +9898,7 @@ mod tests {
 
             #[entry]
             #[no_mangle]
-            fn _start() -> ! {
+            rite _start() -> ! {
                 loop {}
             }
         "#;
@@ -9784,7 +9918,7 @@ mod tests {
     fn test_parse_link_section() {
         let source = r#"
             #[link_section = ".text.boot"]
-            fn boot_code() { }
+            rite boot_code() { }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9806,7 +9940,7 @@ mod tests {
             #![base_address = 0x100000]
             #![stack_size = 0x4000]
 
-            fn kernel_main() { }
+            rite kernel_main() { }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9827,7 +9961,7 @@ mod tests {
         let source = r#"
             #[interrupt(32)]
             #[naked]
-            fn timer_handler() {
+            rite timer_handler() {
                 asm!("iretq", options(nostack));
             }
         "#;
@@ -9846,13 +9980,13 @@ mod tests {
     fn test_parse_inline_attributes() {
         let source = r#"
             #[inline]
-            fn fast() -> i64 { 0 }
+            rite fast() -> i64 { 0 }
 
             #[inline(always)]
-            fn very_fast() -> i64 { 0 }
+            rite very_fast() -> i64 { 0 }
 
             #[inline(never)]
-            fn never_inline() -> i64 { 0 }
+            rite never_inline() -> i64 { 0 }
         "#;
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
@@ -9873,8 +10007,8 @@ mod tests {
     #[test]
     fn test_parse_simd_type() {
         let source = r#"
-            fn vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.add(a, b);
+            rite vec_add(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
+                ⤺ simd.add(a, b);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9900,8 +10034,8 @@ mod tests {
     #[test]
     fn test_parse_simd_literal() {
         let source = r#"
-            fn make_vec() -> simd<f32, 4> {
-                return simd[1.0, 2.0, 3.0, 4.0];
+            rite make_vec() -> simd<f32, 4> {
+                ⤺ simd[1.0, 2.0, 3.0, 4.0];
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9912,9 +10046,9 @@ mod tests {
     #[test]
     fn test_parse_simd_intrinsics() {
         let source = r#"
-            fn dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
-                let prod = simd.mul(a, b);
-                return simd.hadd(prod);
+            rite dot_product(a: simd<f32, 4>, b: simd<f32, 4>) -> f32 {
+                ≔ prod = simd.mul(a, b);
+                ⤺ simd.hadd(prod);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9925,8 +10059,8 @@ mod tests {
     #[test]
     fn test_parse_simd_shuffle() {
         let source = r#"
-            fn interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
-                return simd.shuffle(a, b, [0, 4, 1, 5]);
+            rite interleave(a: simd<f32, 4>, b: simd<f32, 4>) -> simd<f32, 4> {
+                ⤺ simd.shuffle(a, b, [0, 4, 1, 5]);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9963,8 +10097,8 @@ mod tests {
     #[test]
     fn test_parse_atomic_operations() {
         let source = r#"
-            fn increment(ptr: *mut i64) -> i64 {
-                return atomic.fetch_add(ptr, 1, SeqCst);
+            rite increment(ptr: *Δ i64) -> i64 {
+                ⤺ atomic.fetch_add(ptr, 1, SeqCst);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9975,9 +10109,9 @@ mod tests {
     #[test]
     fn test_parse_atomic_compare_exchange() {
         let source = r#"
-            fn cas(ptr: *mut i64, expected: i64, new: i64) -> bool {
-                let result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
-                return result;
+            rite cas(ptr: *Δ i64, expected: i64, new: i64) -> bool {
+                ≔ result = atomic.compare_exchange(ptr, expected, new, AcqRel, Relaxed);
+                ⤺ result;
             }
         "#;
         let mut parser = Parser::new(source);
@@ -9988,7 +10122,7 @@ mod tests {
     #[test]
     fn test_parse_atomic_fence() {
         let source = r#"
-            fn memory_barrier() {
+            rite memory_barrier() {
                 atomic.fence(SeqCst);
             }
         "#;
@@ -10043,11 +10177,11 @@ mod tests {
     #[test]
     fn test_parse_allocator_trait() {
         let source = r#"
-            trait Allocator {
+            Θ Allocator {
                 type Error;
 
-                fn allocate(size: usize, align: usize) -> *mut u8;
-                fn deallocate(ptr: *mut u8, size: usize, align: usize);
+                rite allocate(size: usize, align: usize) -> *Δ u8;
+                rite deallocate(ptr: *Δ u8, size: usize, align: usize);
             }
         "#;
         let mut parser = Parser::new(source);
@@ -10066,11 +10200,11 @@ mod tests {
     #[test]
     fn test_parse_where_clause() {
         let source = r#"
-            fn alloc_array<T, A>(allocator: &mut A, count: usize) -> *mut T
+            rite alloc_array<T, A>(allocator: &Δ A, count: usize) -> *Δ T
             where
                 A: Allocator,
             {
-                return allocator.allocate(count, 8);
+                ⤺ allocator.allocate(count, 8);
             }
         "#;
         let mut parser = Parser::new(source);

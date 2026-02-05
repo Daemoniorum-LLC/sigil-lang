@@ -10,13 +10,13 @@
 }
 
 ⊢ Transaction {
-    λ new(id: i32, amount: f64, category: String, timestamp: i64) → This {
+    rite new(id: i32, amount: f64, category: String, timestamp: i64) → This {
         Transaction { id, amount, category, timestamp }
     }
 }
 
 // Sample data generator
-λ sample_transactions() → [Transaction] {
+rite sample_transactions() → [Transaction] {
     [
         Transaction·new(1, 150.00, "groceries".to_string(), 1706000000),
         Transaction·new(2, 50.00, "transport".to_string(), 1706001000),
@@ -30,7 +30,7 @@
 }
 
 // Pipeline operations
-λ filter_by_category(transactions: &[Transaction], category: &str) → [Transaction] {
+rite filter_by_category(transactions: &[Transaction], category: &str) → [Transaction] {
     transactions
         .iter()
         .filter(|t| t.category == category)
@@ -38,20 +38,20 @@
         .collect()
 }
 
-λ total_amount(transactions: &[Transaction]) → f64 {
+rite total_amount(transactions: &[Transaction]) → f64 {
     transactions
         .iter()
         .map(|t| t.amount)
         .fold(0.0, |acc, x| acc + x)
 }
 
-λ average_amount(transactions: &[Transaction]) → f64 {
+rite average_amount(transactions: &[Transaction]) → f64 {
     ≔ total = total_amount(transactions);
     ≔ count = transactions.len() as f64;
     if count > 0.0 { total / count } else { 0.0 }
 }
 
-λ top_transactions(transactions: &[Transaction], n: usize) → [Transaction] {
+rite top_transactions(transactions: &[Transaction], n: usize) → [Transaction] {
     ≔ sorted! = transactions.to_vec();
     sorted.sort_by(|a, b| b.amount.partial_cmp(&a.amount).unwrap());
     sorted.into_iter().take(n).collect()
@@ -65,7 +65,7 @@
     average: f64,
 }
 
-λ summarize_by_category(transactions: &[Transaction]) → [CategorySummary] {
+rite summarize_by_category(transactions: &[Transaction]) → [CategorySummary] {
     ≔ categories! = HashMap·new();
 
     // Group by category
@@ -87,7 +87,7 @@
         .collect()
 }
 
-λ main() {
+rite main() {
     ≔ transactions = sample_transactions();
 
     println("=== Transaction Analysis ===\n");

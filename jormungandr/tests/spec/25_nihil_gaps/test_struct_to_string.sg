@@ -1,0 +1,21 @@
+// Regression test: User-defined to_string() on structs
+// User impl should take priority over builtin Debug-like formatting
+
+☉ Σ DeviceId {
+    index: usize,
+    device_type: String,
+}
+
+⊢ DeviceId {
+    ☉ rite to_string(&self) -> String {
+        format("{}:{}", self.device_type, self.index)
+    }
+}
+
+☉ rite main() -> !i32 {
+    ≔ d = DeviceId { index: 0, device_type: "cpu".to_string() };
+    ≔ s = d.to_string();
+    assert_eq(s, "cpu:0");
+
+    ⤺ 0;
+}

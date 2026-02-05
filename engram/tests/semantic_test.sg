@@ -9,37 +9,37 @@
 ☉ Σ NodeId(usize);
 
 ⊢ NodeId {
-    λ new(id: usize) -> Self { Self(id) }
+    rite new(id: usize) -> Self { Self(id) }
 }
 
 ⊢ PartialEq ∀ NodeId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
 ⊢ Clone ∀ NodeId {
-    λ clone(&self) -> Self { NodeId(self.0) }
+    rite clone(&self) -> Self { NodeId(self.0) }
 }
 
 ⊢ Hash ∀ NodeId {
-    λ hash(&self) -> usize { self.0 }
+    rite hash(&self) -> usize { self.0 }
 }
 
 ☉ Σ EdgeId(usize);
 
 ⊢ EdgeId {
-    λ new(id: usize) -> Self { Self(id) }
+    rite new(id: usize) -> Self { Self(id) }
 }
 
 ⊢ PartialEq ∀ EdgeId {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
 }
 
 ⊢ Clone ∀ EdgeId {
-    λ clone(&self) -> Self { EdgeId(self.0) }
+    rite clone(&self) -> Self { EdgeId(self.0) }
 }
 
 ☉ ᛈ NodeType {
@@ -52,7 +52,7 @@
 }
 
 ⊢ Clone ∀ NodeType {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             NodeType·Concept => NodeType·Concept,
             NodeType·Entity => NodeType·Entity,
@@ -65,7 +65,7 @@
 }
 
 ⊢ PartialEq ∀ NodeType {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         ⌥ (self, other) {
             (NodeType·Concept, NodeType·Concept) => true,
             (NodeType·Entity, NodeType·Entity) => true,
@@ -91,7 +91,7 @@
 }
 
 ⊢ Clone ∀ Relation {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Relation·IsA => Relation·IsA,
             Relation·HasProperty => Relation·HasProperty,
@@ -107,7 +107,7 @@
 }
 
 ⊢ PartialEq ∀ Relation {
-    λ eq(&self, other: &Self) -> bool {
+    rite eq(&self, other: &Self) -> bool {
         ⌥ (self, other) {
             (Relation·IsA, Relation·IsA) => true,
             (Relation·HasProperty, Relation·HasProperty) => true,
@@ -132,7 +132,7 @@
 }
 
 ⊢ Clone ∀ Epistemic {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             Epistemic·Unknown => Epistemic·Unknown,
             Epistemic·Axiomatic => Epistemic·Axiomatic,
@@ -144,7 +144,7 @@
 }
 
 ⊢ Epistemic {
-    ☉ λ strength(&self) -> f64 {
+    ☉ rite strength(&self) -> f64 {
         ⌥ self {
             Epistemic·Unknown => 0.1,
             Epistemic·Axiomatic => 1.0,
@@ -166,7 +166,7 @@
 }
 
 ⊢ Node {
-    ☉ λ new(id: usize, label: &str, node_type: NodeType) -> Self {
+    ☉ rite new(id: usize, label: &str, node_type: NodeType) -> Self {
         Self {
             id: NodeId·new(id),
             node_type,
@@ -178,23 +178,23 @@
         }
     }
 
-    ☉ λ with_confidence(Δ self, conf: f64) -> Self {
+    ☉ rite with_confidence(Δ self, conf: f64) -> Self {
         self.confidence = conf;
         self
     }
 
-    ☉ λ with_epistemic(Δ self, ep: Epistemic) -> Self {
+    ☉ rite with_epistemic(Δ self, ep: Epistemic) -> Self {
         self.epistemic = ep;
         self
     }
 
-    ☉ λ add_alias(&Δ self, alias: &str) {
+    ☉ rite add_alias(&Δ self, alias: &str) {
         self.aliases.push(alias.to_string());
     }
 }
 
 ⊢ Clone ∀ Node {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Node {
             id: self.id.clone(),
             node_type: self.node_type.clone(),
@@ -218,7 +218,7 @@
 }
 
 ⊢ Edge {
-    ☉ λ new(id: usize, source: NodeId, target: NodeId, relation: Relation) -> Self {
+    ☉ rite new(id: usize, source: NodeId, target: NodeId, relation: Relation) -> Self {
         Self {
             id: EdgeId·new(id),
             source,
@@ -238,7 +238,7 @@
 }
 
 ⊢ Claim {
-    ☉ λ new(relation: Relation, object: &str) -> Self {
+    ☉ rite new(relation: Relation, object: &str) -> Self {
         Self {
             relation,
             object: object.to_string(),
@@ -246,7 +246,7 @@
         }
     }
 
-    ☉ λ with_type(Δ self, node_type: NodeType) -> Self {
+    ☉ rite with_type(Δ self, node_type: NodeType) -> Self {
         self.object_type = Some(node_type);
         self
     }
@@ -261,7 +261,7 @@
 }
 
 ⊢ Fact {
-    ☉ λ new(subject: &str) -> Self {
+    ☉ rite new(subject: &str) -> Self {
         Self {
             subject: subject.to_string(),
             subject_type: None,
@@ -271,29 +271,29 @@
         }
     }
 
-    ☉ λ with_type(Δ self, node_type: NodeType) -> Self {
+    ☉ rite with_type(Δ self, node_type: NodeType) -> Self {
         self.subject_type = Some(node_type);
         self
     }
 
-    ☉ λ claim(Δ self, relation: Relation, object: &str) -> Self {
+    ☉ rite claim(Δ self, relation: Relation, object: &str) -> Self {
         self.claims.push(Claim·new(relation, object));
         self
     }
 
-    ☉ λ observed(Δ self) -> Self {
+    ☉ rite observed(Δ self) -> Self {
         self.epistemic = Epistemic·Observed { observer: "self".to_string() };
         self.confidence = 0.95;
         self
     }
 
-    ☉ λ reported(Δ self, source: &str) -> Self {
+    ☉ rite reported(Δ self, source: &str) -> Self {
         self.epistemic = Epistemic·Reported { source: source.to_string() };
         self.confidence = 0.6;
         self
     }
 
-    ☉ λ significance(&self) -> f64 {
+    ☉ rite significance(&self) -> f64 {
         self.confidence * self.epistemic.strength()
     }
 }
@@ -321,11 +321,11 @@
 }
 
 ⊢ GraphPath {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self { steps: Vec·new() }
     }
 
-    ☉ λ follow(Δ self, relation: Relation) -> Self {
+    ☉ rite follow(Δ self, relation: Relation) -> Self {
         self.steps.push(PathStep {
             relation,
             direction: Direction·Outgoing,
@@ -333,7 +333,7 @@
         self
     }
 
-    ☉ λ follow_incoming(Δ self, relation: Relation) -> Self {
+    ☉ rite follow_incoming(Δ self, relation: Relation) -> Self {
         self.steps.push(PathStep {
             relation,
             direction: Direction·Incoming,
@@ -348,7 +348,7 @@
 }
 
 ⊢ SemanticConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_nodes: Some(10000),
             default_confidence: 0.5,
@@ -365,7 +365,7 @@
 }
 
 ⊢ SemanticMemory {
-    ☉ λ new(config: SemanticConfig) -> Self {
+    ☉ rite new(config: SemanticConfig) -> Self {
         Self {
             nodes: Vec·new(),
             edges: Vec·new(),
@@ -375,31 +375,31 @@
         }
     }
 
-    ☉ λ default_memory() -> Self {
+    ☉ rite default_memory() -> Self {
         Self·new(SemanticConfig·default_config())
     }
 
-    ☉ λ node_count(&self) -> usize {
+    ☉ rite node_count(&self) -> usize {
         self.nodes.len()
     }
 
-    ☉ λ edge_count(&self) -> usize {
+    ☉ rite edge_count(&self) -> usize {
         self.edges.len()
     }
 
-    ☉ λ get_node(&self, id: &NodeId) -> Option<&Node> {
+    ☉ rite get_node(&self, id: &NodeId) -> Option<&Node> {
         self.nodes.iter().find(|n| n.id == *id)
     }
 
-    ☉ λ get_node_by_label(&self, label: &str) -> Option<&Node> {
+    ☉ rite get_node_by_label(&self, label: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.label == label)
     }
 
-    ☉ λ get_edge(&self, id: &EdgeId) -> Option<&Edge> {
+    ☉ rite get_edge(&self, id: &EdgeId) -> Option<&Edge> {
         self.edges.iter().find(|e| e.id == *id)
     }
 
-    ☉ λ add_node(&Δ self, label: &str, node_type: NodeType) -> NodeId {
+    ☉ rite add_node(&Δ self, label: &str, node_type: NodeType) -> NodeId {
         // Check ⎇ exists
         ∀ node ∈ &self.nodes {
             ⎇ node.label == label {
@@ -415,7 +415,7 @@
         NodeId·new(id)
     }
 
-    ☉ λ add_edge(&Δ self, source: NodeId, target: NodeId, relation: Relation) -> EdgeId {
+    ☉ rite add_edge(&Δ self, source: NodeId, target: NodeId, relation: Relation) -> EdgeId {
         ≔ id = self.next_edge_id;
         self.next_edge_id = self.next_edge_id + 1;
 
@@ -424,7 +424,7 @@
         EdgeId·new(id)
     }
 
-    ☉ λ learn(&Δ self, fact: Fact) -> Vec<NodeId> {
+    ☉ rite learn(&Δ self, fact: Fact) -> Vec<NodeId> {
         ≔ Δ created = Vec·new();
 
         // Get or create subject
@@ -453,7 +453,7 @@
         created
     }
 
-    ☉ λ query(&self, text: &str, limit: usize) -> Vec<QueryResult> {
+    ☉ rite query(&self, text: &str, limit: usize) -> Vec<QueryResult> {
         ≔ query_lower = text.to_lowercase();
         ≔ query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -506,7 +506,7 @@
         result
     }
 
-    ☉ λ neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
+    ☉ rite neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
         ≔ Δ result = Vec·new();
         ∀ edge ∈ &self.edges {
             ⎇ edge.source == *node_id {
@@ -522,7 +522,7 @@
         result
     }
 
-    ☉ λ incoming_neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
+    ☉ rite incoming_neighbors(&self, node_id: &NodeId, relation: Option<Relation>) -> Vec<NodeId> {
         ≔ Δ result = Vec·new();
         ∀ edge ∈ &self.edges {
             ⎇ edge.target == *node_id {
@@ -538,7 +538,7 @@
         result
     }
 
-    ☉ λ traverse(&self, start: &NodeId, path: &GraphPath) -> Vec<NodeId> {
+    ☉ rite traverse(&self, start: &NodeId, path: &GraphPath) -> Vec<NodeId> {
         ≔ Δ current = vec![start.clone()];
 
         ∀ step ∈ &path.steps {
@@ -563,7 +563,7 @@
         current
     }
 
-    λ compute_relevance(&self, query_words: &Vec<&str>, node: &Node) -> f64 {
+    rite compute_relevance(&self, query_words: &Vec<&str>, node: &Node) -> f64 {
         ≔ label_lower = node.label.to_lowercase();
         ≔ label_words: Vec<&str> = label_lower.split_whitespace().collect();
 
@@ -605,14 +605,14 @@
 // ============================================================================
 
 #[test]
-λ test_node_creation() {
+rite test_node_creation() {
     ≔ node = Node·new(1, "Test Node", NodeType·Concept);
     assert_eq(node.label, "Test Node");
     assert_eq(node.access_count, 0);
 }
 
 #[test]
-λ test_node_with_confidence() {
+rite test_node_with_confidence() {
     ≔ node = Node·new(1, "Test", NodeType·Concept)
         .with_confidence(0.9);
     ≔ diff = (node.confidence - 0.9).abs();
@@ -620,7 +620,7 @@
 }
 
 #[test]
-λ test_node_with_epistemic() {
+rite test_node_with_epistemic() {
     ≔ node = Node·new(1, "Test", NodeType·Concept)
         .with_epistemic(Epistemic·Observed { observer: "agent".to_string() });
 
@@ -629,7 +629,7 @@
 }
 
 #[test]
-λ test_node_aliases() {
+rite test_node_aliases() {
     ≔ Δ node = Node·new(1, "United States", NodeType·Entity);
     node.add_alias("USA");
     node.add_alias("America");
@@ -642,7 +642,7 @@
 // ============================================================================
 
 #[test]
-λ test_edge_creation() {
+rite test_edge_creation() {
     ≔ source = NodeId·new(1);
     ≔ target = NodeId·new(2);
     ≔ edge = Edge·new(1, source, target, Relation·IsA);
@@ -652,13 +652,13 @@
 }
 
 #[test]
-λ test_edge_relation() {
+rite test_edge_relation() {
     ≔ edge = Edge·new(1, NodeId·new(1), NodeId·new(2), Relation·HasProperty);
     assert(edge.relation == Relation·HasProperty);
 }
 
 #[test]
-λ test_custom_relation() {
+rite test_custom_relation() {
     ≔ edge = Edge·new(1, NodeId·new(1), NodeId·new(2),
         Relation·Custom("worksAt".to_string()));
 
@@ -674,14 +674,14 @@
 // ============================================================================
 
 #[test]
-λ test_fact_creation() {
+rite test_fact_creation() {
     ≔ fact = Fact·new("Python");
     assert_eq(fact.subject, "Python");
     assert_eq(fact.claims.len(), 0);
 }
 
 #[test]
-λ test_fact_with_claim() {
+rite test_fact_with_claim() {
     ≔ fact = Fact·new("Python")
         .claim(Relation·IsA, "Programming Language");
 
@@ -690,7 +690,7 @@
 }
 
 #[test]
-λ test_fact_multiple_claims() {
+rite test_fact_multiple_claims() {
     ≔ fact = Fact·new("Python")
         .claim(Relation·IsA, "Programming Language")
         .claim(Relation·HasProperty, "Dynamic Typing")
@@ -700,7 +700,7 @@
 }
 
 #[test]
-λ test_fact_observed() {
+rite test_fact_observed() {
     ≔ fact = Fact·new("Test").observed();
 
     ≔ is_observed = ⌥ fact.epistemic {
@@ -712,7 +712,7 @@
 }
 
 #[test]
-λ test_fact_reported() {
+rite test_fact_reported() {
     ≔ fact = Fact·new("Test").reported("Wikipedia");
 
     ≔ source = ⌥ &fact.epistemic {
@@ -723,7 +723,7 @@
 }
 
 #[test]
-λ test_fact_significance() {
+rite test_fact_significance() {
     ≔ fact = Fact·new("Test").observed();
     ≔ sig = fact.significance();
 
@@ -736,14 +736,14 @@
 // ============================================================================
 
 #[test]
-λ test_semantic_memory_creation() {
+rite test_semantic_memory_creation() {
     ≔ memory = SemanticMemory·default_memory();
     assert_eq(memory.node_count(), 0);
     assert_eq(memory.edge_count(), 0);
 }
 
 #[test]
-λ test_add_node() {
+rite test_add_node() {
     ≔ Δ memory = SemanticMemory·default_memory();
     ≔ id = memory.add_node("Python", NodeType·Concept);
 
@@ -751,7 +751,7 @@
 }
 
 #[test]
-λ test_add_duplicate_node() {
+rite test_add_duplicate_node() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ id1 = memory.add_node("Python", NodeType·Concept);
@@ -763,7 +763,7 @@
 }
 
 #[test]
-λ test_add_edge() {
+rite test_add_edge() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -774,7 +774,7 @@
 }
 
 #[test]
-λ test_get_node_by_id() {
+rite test_get_node_by_id() {
     ≔ Δ memory = SemanticMemory·default_memory();
     ≔ id = memory.add_node("Test", NodeType·Concept);
 
@@ -784,7 +784,7 @@
 }
 
 #[test]
-λ test_get_node_by_label() {
+rite test_get_node_by_label() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python", NodeType·Concept);
 
@@ -793,7 +793,7 @@
 }
 
 #[test]
-λ test_get_nonexistent_node() {
+rite test_get_nonexistent_node() {
     ≔ memory = SemanticMemory·default_memory();
     ≔ fake_id = NodeId·new(999);
     ≔ node = memory.get_node(&fake_id);
@@ -805,7 +805,7 @@
 // ============================================================================
 
 #[test]
-λ test_learn_simple_fact() {
+rite test_learn_simple_fact() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ fact = Fact·new("Python")
@@ -820,7 +820,7 @@
 }
 
 #[test]
-λ test_learn_fact_with_multiple_claims() {
+rite test_learn_fact_with_multiple_claims() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ fact = Fact·new("Python")
@@ -836,7 +836,7 @@
 }
 
 #[test]
-λ test_learn_updates_epistemic() {
+rite test_learn_updates_epistemic() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ fact = Fact·new("Python")
@@ -850,7 +850,7 @@
 }
 
 #[test]
-λ test_learn_reuses_existing_nodes() {
+rite test_learn_reuses_existing_nodes() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     // First fact
@@ -871,7 +871,7 @@
 // ============================================================================
 
 #[test]
-λ test_query_exact_match() {
+rite test_query_exact_match() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python", NodeType·Concept);
     memory.add_node("Java", NodeType·Concept);
@@ -884,7 +884,7 @@
 }
 
 #[test]
-λ test_query_partial_match() {
+rite test_query_partial_match() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python Programming", NodeType·Concept);
     memory.add_node("Java Development", NodeType·Concept);
@@ -895,7 +895,7 @@
 }
 
 #[test]
-λ test_query_no_match() {
+rite test_query_no_match() {
     ≔ Δ memory = SemanticMemory·default_memory();
     memory.add_node("Python", NodeType·Concept);
     memory.add_node("Java", NodeType·Concept);
@@ -906,7 +906,7 @@
 }
 
 #[test]
-λ test_query_respects_limit() {
+rite test_query_respects_limit() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ∀ i ∈ 0..10 {
@@ -918,7 +918,7 @@
 }
 
 #[test]
-λ test_query_ranks_by_relevance_and_confidence() {
+rite test_query_ranks_by_relevance_and_confidence() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     // Low confidence exact match
@@ -945,7 +945,7 @@
 // ============================================================================
 
 #[test]
-λ test_neighbors_outgoing() {
+rite test_neighbors_outgoing() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -960,7 +960,7 @@
 }
 
 #[test]
-λ test_neighbors_filtered_by_relation() {
+rite test_neighbors_filtered_by_relation() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -975,7 +975,7 @@
 }
 
 #[test]
-λ test_incoming_neighbors() {
+rite test_incoming_neighbors() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -990,7 +990,7 @@
 }
 
 #[test]
-λ test_traverse_single_hop() {
+rite test_traverse_single_hop() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -1005,7 +1005,7 @@
 }
 
 #[test]
-λ test_traverse_multi_hop() {
+rite test_traverse_multi_hop() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -1026,7 +1026,7 @@
 }
 
 #[test]
-λ test_traverse_no_path() {
+rite test_traverse_no_path() {
     ≔ Δ memory = SemanticMemory·default_memory();
 
     ≔ python = memory.add_node("Python", NodeType·Concept);
@@ -1045,7 +1045,7 @@
 // ============================================================================
 
 #[test]
-λ test_epistemic_strength_axiomatic() {
+rite test_epistemic_strength_axiomatic() {
     ≔ ep = Epistemic·Axiomatic;
     ≔ strength = ep.strength();
     ≔ diff = (strength - 1.0).abs();
@@ -1053,14 +1053,14 @@
 }
 
 #[test]
-λ test_epistemic_strength_observed() {
+rite test_epistemic_strength_observed() {
     ≔ ep = Epistemic·Observed { observer: "self".to_string() };
     ≔ strength = ep.strength();
     assert(strength > 0.8);
 }
 
 #[test]
-λ test_epistemic_strength_reported() {
+rite test_epistemic_strength_reported() {
     ≔ ep = Epistemic·Reported { source: "wiki".to_string() };
     ≔ strength = ep.strength();
     assert(strength > 0.5);
@@ -1068,14 +1068,14 @@
 }
 
 #[test]
-λ test_epistemic_strength_inferred() {
+rite test_epistemic_strength_inferred() {
     ≔ ep = Epistemic·Inferred { basis: "reasoning".to_string() };
     ≔ strength = ep.strength();
     assert(strength >= 0.5);
 }
 
 #[test]
-λ test_epistemic_strength_unknown() {
+rite test_epistemic_strength_unknown() {
     ≔ ep = Epistemic·Unknown;
     ≔ strength = ep.strength();
     assert(strength < 0.2);
@@ -1086,19 +1086,19 @@
 // ============================================================================
 
 #[test]
-λ test_graph_path_empty() {
+rite test_graph_path_empty() {
     ≔ path = GraphPath·new();
     assert_eq(path.steps.len(), 0);
 }
 
 #[test]
-λ test_graph_path_single_step() {
+rite test_graph_path_single_step() {
     ≔ path = GraphPath·new().follow(Relation·IsA);
     assert_eq(path.steps.len(), 1);
 }
 
 #[test]
-λ test_graph_path_multiple_steps() {
+rite test_graph_path_multiple_steps() {
     ≔ path = GraphPath·new()
         .follow(Relation·IsA)
         .follow(Relation·PartOf)
@@ -1107,6 +1107,6 @@
     assert_eq(path.steps.len(), 3);
 }
 
-λ main() {
+rite main() {
     print("Engram semantic memory tests");
 }

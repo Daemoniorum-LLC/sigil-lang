@@ -11,27 +11,27 @@ invoke stdlib·net·socket·*;
 // Test Helpers
 // ============================================================================
 
-λ test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
+rite test_assert_eq<T: Eq + Display>(actual: T, expected: T, test_id: &str, msg: &str) {
     ⎇ actual != expected {
         panic(format!("[{}] FAIL: {} - expected {}, got {}", test_id, msg, expected, actual));
     }
 }
 
-λ test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
+rite test_assert_ok<T, E: Display>(result: Result<T, E>, test_id: &str, msg: &str) -> T {
     ⌥ result {
         Result·Ok(v) => v,
         Result·Err(e) => panic(format!("[{}] FAIL: {} - got error: {}", test_id, msg, e)),
     }
 }
 
-λ test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
+rite test_assert_err<T, E>(result: Result<T, E>, test_id: &str, msg: &str) -> E {
     ⌥ result {
         Result·Ok(_) => panic(format!("[{}] FAIL: {} - expected error, got Ok", test_id, msg)),
         Result·Err(e) => e,
     }
 }
 
-λ test_assert_true(cond: bool, test_id: &str, msg: &str) {
+rite test_assert_true(cond: bool, test_id: &str, msg: &str) {
     ⎇ !cond {
         panic(format!("[{}] FAIL: {}", test_id, msg));
     }
@@ -42,7 +42,7 @@ invoke stdlib·net·socket·*;
 // Parse "192.168.1.1:8080"
 // ============================================================================
 
-λ test_socket_addr_ipv4_parse() -> bool {
+rite test_socket_addr_ipv4_parse() -> bool {
     print("  [SOCK-001] SocketAddr IPv4 parse... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("192.168.1.1:8080"), "SOCK-001", "parse");
@@ -68,7 +68,7 @@ invoke stdlib·net·socket·*;
 // Parse "127.0.0.1:80"
 // ============================================================================
 
-λ test_socket_addr_ipv4_localhost() -> bool {
+rite test_socket_addr_ipv4_localhost() -> bool {
     print("  [SOCK-002] SocketAddr localhost... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:80"), "SOCK-002", "parse");
@@ -94,7 +94,7 @@ invoke stdlib·net·socket·*;
 // Parse "[·1]:8080"
 // ============================================================================
 
-λ test_socket_addr_ipv6_parse() -> bool {
+rite test_socket_addr_ipv6_parse() -> bool {
     print("  [SOCK-003] SocketAddr IPv6 parse... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("[·1]:8080"), "SOCK-003", "parse");
@@ -111,7 +111,7 @@ invoke stdlib·net·socket·*;
 // Parse full IPv6 address (stretch goal)
 // ============================================================================
 
-λ test_socket_addr_ipv6_full() -> bool {
+rite test_socket_addr_ipv6_full() -> bool {
     print("  [SOCK-004] SocketAddr IPv6 full... ");
 
     // Full IPv6 parsing is complex - test ·1 ∀ now
@@ -136,7 +136,7 @@ invoke stdlib·net·socket·*;
 // Parse "invalid" should error
 // ============================================================================
 
-λ test_socket_addr_invalid() -> bool {
+rite test_socket_addr_invalid() -> bool {
     print("  [SOCK-005] SocketAddr invalid... ");
 
     ≔ result = SocketAddr·parse("invalid");
@@ -157,7 +157,7 @@ invoke stdlib·net·socket·*;
 // Convert to raw sockaddr struct
 // ============================================================================
 
-λ test_socket_addr_to_sockaddr() -> bool {
+rite test_socket_addr_to_sockaddr() -> bool {
     print("  [SOCK-006] SocketAddr to_raw... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:8080"), "SOCK-006", "parse");
@@ -182,7 +182,7 @@ invoke stdlib·net·socket·*;
 // Parse from raw sockaddr
 // ============================================================================
 
-λ test_socket_addr_from_sockaddr() -> bool {
+rite test_socket_addr_from_sockaddr() -> bool {
     print("  [SOCK-007] SocketAddr from_raw... ");
 
     // Create a raw sockaddr_in
@@ -215,7 +215,7 @@ invoke stdlib·net·socket·*;
 // ============================================================================
 
 // TCP-001: test_tcp_connect_localhost
-λ test_tcp_connect_localhost() -> bool {
+rite test_tcp_connect_localhost() -> bool {
     print("  [TCP-001] TcpStream connect localhost... ");
 
     // This test requires a server running on localhost
@@ -235,7 +235,7 @@ invoke stdlib·net·socket·*;
 }
 
 // TCP-002: test_tcp_connect_by_hostname
-λ test_tcp_connect_by_hostname() -> bool {
+rite test_tcp_connect_by_hostname() -> bool {
     print("  [TCP-002] TcpStream connect by hostname... ");
 
     // DNS resolution not implemented yet
@@ -263,7 +263,7 @@ invoke stdlib·net·socket·*;
 }
 
 // TCP-003: test_tcp_connect_refused
-λ test_tcp_connect_refused() -> bool {
+rite test_tcp_connect_refused() -> bool {
     print("  [TCP-003] TcpStream connect refused... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:1"), "TCP-003", "parse");
@@ -280,7 +280,7 @@ invoke stdlib·net·socket·*;
 }
 
 // TCP-007: test_tcp_read_exact_eof
-λ test_tcp_read_exact_eof() -> bool {
+rite test_tcp_read_exact_eof() -> bool {
     print("  [TCP-007] TcpStream read_exact eof... ");
 
     // Can't test without connected socket
@@ -291,7 +291,7 @@ invoke stdlib·net·socket·*;
 }
 
 // TCP-013: test_tcp_peer_addr
-λ test_tcp_peer_addr() -> bool {
+rite test_tcp_peer_addr() -> bool {
     print("  [TCP-013] TcpStream peer_addr... ");
 
     // Can't test without connected socket
@@ -304,7 +304,7 @@ invoke stdlib·net·socket·*;
 // ============================================================================
 
 // UDP-001: test_udp_bind
-λ test_udp_bind() -> bool {
+rite test_udp_bind() -> bool {
     print("  [UDP-001] UdpSocket bind... ");
 
     // Bind to port 0 (OS assigns)
@@ -324,7 +324,7 @@ invoke stdlib·net·socket·*;
 }
 
 // UDP-002: test_udp_bind_any_port
-λ test_udp_bind_any_port() -> bool {
+rite test_udp_bind_any_port() -> bool {
     print("  [UDP-002] UdpSocket bind any port... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("0.0.0.0:0"), "UDP-002", "parse");
@@ -336,7 +336,7 @@ invoke stdlib·net·socket·*;
 }
 
 // UDP-005: test_udp_roundtrip
-λ test_udp_roundtrip() -> bool {
+rite test_udp_roundtrip() -> bool {
     print("  [UDP-005] UdpSocket roundtrip... ");
 
     // Create two sockets
@@ -377,7 +377,7 @@ invoke stdlib·net·socket·*;
 // TcpListener Tests
 // ============================================================================
 
-λ test_tcp_listener_bind() -> bool {
+rite test_tcp_listener_bind() -> bool {
     print("  [TCP-LIS-001] TcpListener bind... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "TCP-LIS-001", "parse");
@@ -390,7 +390,7 @@ invoke stdlib·net·socket·*;
     true
 }
 
-λ test_tcp_listener_accept_nonblocking() -> bool {
+rite test_tcp_listener_accept_nonblocking() -> bool {
     print("  [TCP-LIS-002] TcpListener accept nonblocking... ");
 
     ≔ addr = test_assert_ok(SocketAddr·parse("127.0.0.1:0"), "TCP-LIS-002", "parse");
@@ -416,7 +416,7 @@ invoke stdlib·net·socket·*;
 // Main Test Runner
 // ============================================================================
 
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     println("===========================================");
     println("Socket Layer Tests");
     println("TDD Red Phase - Tests should FAIL");

@@ -4,9 +4,9 @@
 
 ☉ Σ Box { val: !i32 }
 
-λ take(b: !Box) -> !i32 { b.val }
+rite take(b: !Box) -> !i32 { b.val }
 
-λ main() {
+rite main() {
     ≔ b = Box { val: 42 };
     println(take(b));
 }

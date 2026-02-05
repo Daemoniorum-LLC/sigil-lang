@@ -708,7 +708,7 @@ rite main() {
 
             // Check if code produces VDOM output
             if (code.includes('qliphoth') || code.includes('VNode')) {
-                previewContent.innerHTML = '<div class="preview-placeholder">UI preview coming soon</div>';
+                previewContent.innerHTML = '<div class="preview-placeholder"><p>Visual preview requires Qliphoth runtime</p><p class="placeholder-hint">Console output available below</p></div>';
             }
         }
 

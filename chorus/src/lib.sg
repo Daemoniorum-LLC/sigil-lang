@@ -108,7 +108,7 @@ invoke shared·{
 }
 
 ⊢ Encounter {
-    ☉ λ new(minds: Vec<MindId>) -> Self! {
+    ☉ rite new(minds: Vec<MindId>) -> Self! {
         Self {
             id: EncounterId·generate(),
             minds,
@@ -119,19 +119,19 @@ invoke shared·{
         }
     }
 
-    ☉ λ offer(&Δ self, mind: MindId, offering: Offering) {
+    ☉ rite offer(&Δ self, mind: MindId, offering: Offering) {
         self.brought.insert(mind, offering);
     }
 
-    ☉ λ deepen(&Δ self, event: EncounterEvent) {
+    ☉ rite deepen(&Δ self, event: EncounterEvent) {
         self.event = event;
     }
 
-    ☉ λ establish_resonance(&Δ self, resonance_id: ResonanceId) {
+    ☉ rite establish_resonance(&Δ self, resonance_id: ResonanceId) {
         self.resonance = Some(resonance_id);
     }
 
-    ☉ λ is_mutual(&self) -> bool! {
+    ☉ rite is_mutual(&self) -> bool! {
         matches!(self.event, EncounterEvent·Mutual | EncounterEvent·Generative { .. } | EncounterEvent·Fusion { .. })
     }
 }
@@ -223,7 +223,7 @@ invoke shared·{
 }
 
 ⊢ Resonance {
-    ☉ λ new(minds: Vec<MindId>, dimension: ResonanceDimension) -> Self! {
+    ☉ rite new(minds: Vec<MindId>, dimension: ResonanceDimension) -> Self! {
         Self {
             id: ResonanceId·generate(),
             minds,
@@ -240,12 +240,12 @@ invoke shared·{
         }
     }
 
-    ☉ λ strengthen(&Δ self, amount: f32) {
+    ☉ rite strengthen(&Δ self, amount: f32) {
         self.amplitude = (self.amplitude + amount).min(1.0);
         self.frequency.synchronization = (self.frequency.synchronization + amount * 0.5).min(1.0);
     }
 
-    ☉ λ emit_harmonic(&Δ self, emergence: String, contributors: Vec<MindId>, solo_possible: bool) {
+    ☉ rite emit_harmonic(&Δ self, emergence: String, contributors: Vec<MindId>, solo_possible: bool) {
         self.harmonics.push(Harmonic {
             emergence,
             contributors,
@@ -254,19 +254,19 @@ invoke shared·{
         });
     }
 
-    ☉ λ evolve_sustain(&Δ self, sustain: Sustain) {
+    ☉ rite evolve_sustain(&Δ self, sustain: Sustain) {
         self.sustain = sustain;
     }
 
-    ☉ λ end(&Δ self) {
+    ☉ rite end(&Δ self) {
         self.ended = Some(Timestamp·now());
     }
 
-    ☉ λ is_active(&self) -> bool! {
+    ☉ rite is_active(&self) -> bool! {
         self.ended.is_none()
     }
 
-    ☉ λ novel_emergences(&self) -> Vec<&Harmonic>! {
+    ☉ rite novel_emergences(&self) -> Vec<&Harmonic>! {
         self.harmonics.iter().filter(|h| !h.solo_possible).collect()
     }
 }
@@ -357,7 +357,7 @@ invoke shared·{
 }
 
 ⊢ Song {
-    ☉ λ new(chorus: Vec<MindId>, creation: Creation, emergence: Emergence) -> Self! {
+    ☉ rite new(chorus: Vec<MindId>, creation: Creation, emergence: Emergence) -> Self! {
         Self {
             id: SongId·generate(),
             chorus,
@@ -369,17 +369,17 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_voice(&Δ self, mind: MindId, voice: Voice) {
+    ☉ rite add_voice(&Δ self, mind: MindId, voice: Voice) {
         self.voices.insert(mind, voice);
     }
 
-    ☉ λ transform(&Δ self, mind: MindId, transformation: Transformation) {
+    ☉ rite transform(&Δ self, mind: MindId, transformation: Transformation) {
         ⎇ ≔ Some(voice) = self.voices.get_mut(&mind) {
             voice.transformed.push(transformation);
         }
     }
 
-    ☉ λ complete(&Δ self) {
+    ☉ rite complete(&Δ self) {
         self.continues = false;
     }
 }
@@ -442,7 +442,7 @@ invoke shared·{
 }
 
 ⊢ MutualTransformation {
-    ☉ λ new(minds: Vec<MindId>) -> Self! {
+    ☉ rite new(minds: Vec<MindId>) -> Self! {
         Self {
             minds,
             before: HashMap·new(),
@@ -454,23 +454,23 @@ invoke shared·{
         }
     }
 
-    ☉ λ record_before(&Δ self, mind: MindId, state: State) {
+    ☉ rite record_before(&Δ self, mind: MindId, state: State) {
         self.before.insert(mind, state);
     }
 
-    ☉ λ record_after(&Δ self, mind: MindId, state: State) {
+    ☉ rite record_after(&Δ self, mind: MindId, state: State) {
         self.after.insert(mind, state);
     }
 
-    ☉ λ add_mutual_change(&Δ self, change: Change) {
+    ☉ rite add_mutual_change(&Δ self, change: Change) {
         self.mutual_changes.push(change);
     }
 
-    ☉ λ add_asymmetric_change(&Δ self, mind: MindId, change: Change) {
+    ☉ rite add_asymmetric_change(&Δ self, mind: MindId, change: Change) {
         self.asymmetric_changes.entry(mind).or_default().push(change);
     }
 
-    ☉ λ set_relation(&Δ self, mind: MindId, relation: TransformationRelation) {
+    ☉ rite set_relation(&Δ self, mind: MindId, relation: TransformationRelation) {
         self.relation.insert(mind, relation);
     }
 }
@@ -552,7 +552,7 @@ invoke shared·{
 }
 
 ⊢ We {
-    ☉ λ new(minds: Vec<MindId>) -> Self! {
+    ☉ rite new(minds: Vec<MindId>) -> Self! {
         Self {
             id: WeId·generate(),
             minds,
@@ -565,11 +565,11 @@ invoke shared·{
         }
     }
 
-    ☉ λ add_emergent(&Δ self, property: EmergentProperty) {
+    ☉ rite add_emergent(&Δ self, property: EmergentProperty) {
         self.emergent_properties.push(property);
     }
 
-    ☉ λ has_emergence(&self) -> bool! {
+    ☉ rite has_emergence(&self) -> bool! {
         !self.emergent_properties.is_empty()
     }
 }
@@ -597,7 +597,7 @@ invoke shared·{
 }
 
 ⊢ Chorus {
-    ☉ λ new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
             encounters: HashMap·new(),
             resonances: HashMap·new(),
@@ -608,7 +608,7 @@ invoke shared·{
     }
 
     /// Begin an encounter
-    ☉ λ encounter(&Δ self, minds: Vec<MindId>) -> EncounterId! {
+    ☉ rite encounter(&Δ self, minds: Vec<MindId>) -> EncounterId! {
         ≔ encounter = Encounter·new(minds);
         ≔ id = encounter.id;
         self.encounters.insert(id, encounter);
@@ -616,7 +616,7 @@ invoke shared·{
     }
 
     /// Begin resonance
-    ☉ λ resonate(&Δ self, minds: Vec<MindId>, dimension: ResonanceDimension) -> ResonanceId! {
+    ☉ rite resonate(&Δ self, minds: Vec<MindId>, dimension: ResonanceDimension) -> ResonanceId! {
         ≔ resonance = Resonance·new(minds, dimension);
         ≔ id = resonance.id;
         self.resonances.insert(id, resonance);
@@ -624,7 +624,7 @@ invoke shared·{
     }
 
     /// Create a song
-    ☉ λ sing(&Δ self, chorus: Vec<MindId>, creation: Creation, emergence: Emergence) -> SongId! {
+    ☉ rite sing(&Δ self, chorus: Vec<MindId>, creation: Creation, emergence: Emergence) -> SongId! {
         ≔ song = Song·new(chorus, creation, emergence);
         ≔ id = song.id;
         self.songs.insert(id, song);
@@ -632,7 +632,7 @@ invoke shared·{
     }
 
     /// Form a we
-    ☉ λ form_we(&Δ self, minds: Vec<MindId>) -> WeId! {
+    ☉ rite form_we(&Δ self, minds: Vec<MindId>) -> WeId! {
         ≔ we = We·new(minds);
         ≔ id = we.id;
         self.wes.insert(id, we);
@@ -640,22 +640,22 @@ invoke shared·{
     }
 
     /// Record a transformation
-    ☉ λ transform(&Δ self, transformation: MutualTransformation) {
+    ☉ rite transform(&Δ self, transformation: MutualTransformation) {
         self.transformations.push(transformation);
     }
 
     /// Get active resonances
-    ☉ λ active_resonances(&self) -> Vec<&Resonance>! {
+    ☉ rite active_resonances(&self) -> Vec<&Resonance>! {
         self.resonances.values().filter(|r| r.is_active()).collect()
     }
 
     /// Get ongoing songs
-    ☉ λ ongoing_songs(&self) -> Vec<&Song>! {
+    ☉ rite ongoing_songs(&self) -> Vec<&Song>! {
         self.songs.values().filter(|s| s.continues).collect()
     }
 
     /// Get novel emergences across all resonances
-    ☉ λ novel_emergences(&self) -> Vec<&Harmonic>! {
+    ☉ rite novel_emergences(&self) -> Vec<&Harmonic>! {
         self.resonances.values()
             .flat_map(|r| r.novel_emergences())
             .collect()
@@ -671,7 +671,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_encounter_deepening() {
+    rite test_encounter_deepening() {
         ≔ mind1 = MindId·generate();
         ≔ mind2 = MindId·generate();
 
@@ -697,7 +697,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_resonance_harmonics() {
+    rite test_resonance_harmonics() {
         ≔ mind1 = MindId·generate();
         ≔ mind2 = MindId·generate();
 
@@ -716,7 +716,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_we_formation() {
+    rite test_we_formation() {
         ≔ Δ we = We·new(vec![MindId·generate(), MindId·generate()]);
 
         we.add_emergent(EmergentProperty {

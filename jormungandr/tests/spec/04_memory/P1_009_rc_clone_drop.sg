@@ -2,7 +2,7 @@
 // Spec: 04-MEMORY.md § 4.2 Rc
 // Priority: P1 - Production Ready
 
-λ main() {
+rite main() {
     ≔ rc1: Rc<i32> = Rc·new(42);
 
     {

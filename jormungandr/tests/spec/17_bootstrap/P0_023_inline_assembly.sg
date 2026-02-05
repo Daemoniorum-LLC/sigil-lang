@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 42 (via asm or fallback)
 
-λ main() {
+rite main() {
     ≔ x: !i32 = 42;
     unsafe {
         // Most implementations will invoke C fallback

@@ -12,11 +12,11 @@
     value: !i32
 }
 
-λ consume(d: !Data) -> !i32 {
+rite consume(d: !Data) -> !i32 {
     d.value
 }
 
-λ main() {
+rite main() {
     ≔ d: !Data = Data { value: 42 };
     println(consume(d));
 }

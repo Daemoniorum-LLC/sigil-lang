@@ -2,7 +2,7 @@
 // Should fail with type error
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ result = "hello" - 5;  // ERROR: cannot subtract from string
     println(result);
 }

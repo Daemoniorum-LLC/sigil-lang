@@ -2,7 +2,7 @@
 // Spec: 07-METAPROGRAMMING.md § 1.1 Format Macro
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     ≔ s = format!("Hello, World!");
     println(s);
 }

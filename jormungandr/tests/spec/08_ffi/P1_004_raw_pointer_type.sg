@@ -3,10 +3,10 @@
 // Priority: P1 - Standard Feature
 
 extern "C" {
-    λ memcpy(dest: *Δ !u8, src: *const !u8, n: !usize) -> *Δ !u8;
+    rite memcpy(dest: *Δ !u8, src: *const !u8, n: !usize) -> *Δ !u8;
 }
 
-λ main() {
+rite main() {
     // Pointer types are parsed
     println("pointer types ok");
 }

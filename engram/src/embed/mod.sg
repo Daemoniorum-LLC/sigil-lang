@@ -13,18 +13,18 @@ invoke std·collections·HashMap
 /// Trait ∀ text embedding generation
 ☉ Θ Embedder {
     /// Generate embedding ∀ a single text
-    λ embed(text: &str) -> Vector<f32>;
+    rite embed(text: &str) -> Vector<f32>;
 
     /// Generate embeddings ∀ multiple texts (batch)
-    λ embed_batch(texts: &[&str]) -> Vec<Vector<f32>> {
+    rite embed_batch(texts: &[&str]) -> Vec<Vector<f32>> {
         texts.iter().map(|t| self.embed(t)).collect()
     }
 
     /// Get embedding dimensions
-    λ dimensions() -> usize;
+    rite dimensions() -> usize;
 
     /// Get model name/identifier
-    λ model_name() -> &str;
+    rite model_name() -> &str;
 }
 
 // ============================================================================
@@ -40,16 +40,16 @@ invoke std·collections·HashMap
 }
 
 ⊢ HashEmbedder {
-    ☉ λ new(dimensions: usize) -> Self {
+    ☉ rite new(dimensions: usize) -> Self {
         Self { dimensions }
     }
 
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self { dimensions: 384 }
     }
 
     /// Hash a string to a u64
-    λ hash_str(s: &str) -> u64 {
+    rite hash_str(s: &str) -> u64 {
         // Simple FNV-1a hash
         ≔ Δ hash: u64 = 0xcbf29ce484222325;
         ∀ byte ∈ s.bytes() {
@@ -61,7 +61,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ Embedder ∀ HashEmbedder {
-    λ embed(text: &str) -> Vector<f32> {
+    rite embed(text: &str) -> Vector<f32> {
         ≔ Δ result = vec![0.0f32; self.dimensions];
 
         // Normalize text
@@ -93,11 +93,11 @@ invoke std·collections·HashMap
         Vector·new(result).normalize()
     }
 
-    λ dimensions() -> usize {
+    rite dimensions() -> usize {
         self.dimensions
     }
 
-    λ model_name() -> &str {
+    rite model_name() -> &str {
         "hash-embedder-dev"
     }
 }
@@ -131,7 +131,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ BagOfWordsEmbedder {
-    ☉ λ new(dimensions: usize) -> Self {
+    ☉ rite new(dimensions: usize) -> Self {
         Self {
             vocab: HashMap·new(),
             idf: Vec·new(),
@@ -143,7 +143,7 @@ invoke std·collections·HashMap
     }
 
     /// Add documents to build vocabulary
-    ☉ λ add_documents(docs: &[&str]) {
+    ☉ rite add_documents(docs: &[&str]) {
         ⎇ self.frozen {
             ⤺;
         }
@@ -174,7 +174,7 @@ invoke std·collections·HashMap
     }
 
     /// Freeze vocabulary and compute IDF weights
-    ☉ λ freeze() {
+    ☉ rite freeze() {
         self.frozen = true;
 
         // Compute IDF: log(N / df)
@@ -190,7 +190,7 @@ invoke std·collections·HashMap
     }
 
     /// Tokenize text into terms
-    λ tokenize(text: &str) -> Vec<String> {
+    rite tokenize(text: &str) -> Vec<String> {
         text.to_lowercase()
             .split_whitespace()
             .map(|s| s.to_string())
@@ -199,7 +199,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ Embedder ∀ BagOfWordsEmbedder {
-    λ embed(text: &str) -> Vector<f32> {
+    rite embed(text: &str) -> Vector<f32> {
         ≔ Δ result = vec![0.0f32; self.dimensions];
 
         // Tokenize
@@ -231,11 +231,11 @@ invoke std·collections·HashMap
         Vector·new(result).normalize()
     }
 
-    λ dimensions() -> usize {
+    rite dimensions() -> usize {
         self.dimensions
     }
 
-    λ model_name() -> &str {
+    rite model_name() -> &str {
         "bow-tfidf"
     }
 }
@@ -257,7 +257,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ SemanticHashEmbedder {
-    ☉ λ new(dimensions: usize) -> Self {
+    ☉ rite new(dimensions: usize) -> Self {
         // Generate random projections deterministically
         ≔ shingle_size = 3;
         ≔ num_projections = dimensions;
@@ -285,12 +285,12 @@ invoke std·collections·HashMap
         }
     }
 
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self·new(384)
     }
 
     /// Extract character n-grams (shingles)
-    λ shingles(text: &str) -> Vec<u8> {
+    rite shingles(text: &str) -> Vec<u8> {
         ≔ chars: Vec<char> = text.to_lowercase().chars().collect();
         ≔ Δ result = Vec·new();
 
@@ -311,7 +311,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ Embedder ∀ SemanticHashEmbedder {
-    λ embed(text: &str) -> Vector<f32> {
+    rite embed(text: &str) -> Vector<f32> {
         ≔ shingles = self.shingles(text);
 
         ⎇ shingles.is_empty() {
@@ -332,11 +332,11 @@ invoke std·collections·HashMap
         Vector·new(result).normalize()
     }
 
-    λ dimensions() -> usize {
+    rite dimensions() -> usize {
         self.dimensions
     }
 
-    λ model_name() -> &str {
+    rite model_name() -> &str {
         "semantic-hash"
     }
 }
@@ -359,7 +359,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ ExternalEmbedder {
-    ☉ λ new(endpoint: &str, model: &str, dimensions: usize) -> Self {
+    ☉ rite new(endpoint: &str, model: &str, dimensions: usize) -> Self {
         Self {
             endpoint: endpoint.to_string(),
             model: model.to_string(),
@@ -369,13 +369,13 @@ invoke std·collections·HashMap
         }
     }
 
-    ☉ λ with_api_key(Δ self, key: &str) -> Self {
+    ☉ rite with_api_key(Δ self, key: &str) -> Self {
         self.api_key = Some(key.to_string());
         self
     }
 
     /// OpenAI configuration
-    ☉ λ openai(model: &str) -> Self {
+    ☉ rite openai(model: &str) -> Self {
         ≔ dimensions = ⌥ model {
             "text-embedding-3-small" => 1536,
             "text-embedding-3-large" => 3072,
@@ -388,7 +388,7 @@ invoke std·collections·HashMap
 }
 
 ⊢ Embedder ∀ ExternalEmbedder {
-    λ embed(text: &str) -> Vector<f32> {
+    rite embed(text: &str) -> Vector<f32> {
         // Check cache
         ⎇ ≔ Some(cached) = self.cache.get(text) {
             ⤺ cached.clone();
@@ -405,11 +405,11 @@ invoke std·collections·HashMap
         result
     }
 
-    λ dimensions() -> usize {
+    rite dimensions() -> usize {
         self.dimensions
     }
 
-    λ model_name() -> &str {
+    rite model_name() -> &str {
         &self.model
     }
 }
@@ -419,17 +419,17 @@ invoke std·collections·HashMap
 // ============================================================================
 
 /// Get the default embedder ∀ the system
-☉ λ default_embedder() -> ⊢ Embedder {
+☉ rite default_embedder() -> ⊢ Embedder {
     SemanticHashEmbedder·default()
 }
 
 /// Embed text using the default embedder
-☉ λ embed(text: &str) -> Vector<f32> {
+☉ rite embed(text: &str) -> Vector<f32> {
     default_embedder().embed(text)
 }
 
 /// Embed multiple texts using the default embedder
-☉ λ embed_batch(texts: &[&str]) -> Vec<Vector<f32>> {
+☉ rite embed_batch(texts: &[&str]) -> Vec<Vector<f32>> {
     ≔ embedder = default_embedder();
     texts.iter().map(|t| embedder.embed(t)).collect()
 }
@@ -443,7 +443,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_hash_embedder() {
+    rite test_hash_embedder() {
         ≔ embedder = HashEmbedder·default();
 
         ≔ v1 = embedder.embed("hello world");
@@ -462,7 +462,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_semantic_hash_similarity() {
+    rite test_semantic_hash_similarity() {
         ≔ embedder = SemanticHashEmbedder·default();
 
         ≔ v1 = embedder.embed("the quick brown fox");
@@ -478,7 +478,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_bow_embedder() {
+    rite test_bow_embedder() {
         ≔ Δ embedder = BagOfWordsEmbedder·new(100);
 
         embedder.add_documents(&[

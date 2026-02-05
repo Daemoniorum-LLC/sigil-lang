@@ -353,8 +353,7 @@ pub enum Token {
     DeprecatedAmpMut,
 
     // === Keywords (Native Sigil Syntax Only) ===
-    #[token("λ")]  // Lambda - function
-    #[token("rite")]  // Rite - method/ritual (Sigil alternative to fn in impl blocks)
+    #[token("rite")]  // Rite - named function declaration (canonical Sigil keyword)
     Fn,
     #[token("async")]
     #[token("⌛")]  // Hourglass - time/waiting (native symbol alternative)
@@ -417,6 +416,7 @@ pub enum Token {
     #[token("⌥")]  // Option key - choices
     Match,
     #[token("loop")]
+    #[token("forever")]  // Prose alternative for loop
     Loop, // Legacy - parser also handles ∞ (Infinity token) for loop
     #[token("⟳")]  // Cycle arrow
     While,
@@ -518,6 +518,7 @@ pub enum Token {
     // Boolean literals
     #[token("true")]
     #[token("yay")]
+    #[token("yea")]
     True,
     #[token("false")]
     #[token("nay")]
@@ -544,7 +545,10 @@ pub enum Token {
     Rho, // Reduce
 
     #[token("Λ")]
-    Lambda, // Lambda morpheme (uppercase only - lowercase λ is fn keyword)
+    Lambda, // Lambda morpheme (uppercase Λ only - used in pipe morpheme contexts)
+
+    #[token("λ")]
+    LambdaExpr, // Lambda closure expression: λ(params) [→ RetType] { body }
 
     #[token("Π")]
     Pi, // Product
@@ -616,6 +620,7 @@ pub enum Token {
     Exists, // Existential quantification
 
     #[token("∈")]
+    #[token("of")]   // Prose alternative: each x of iter { }
     ElementOf, // Membership test (parser handles contextual use as `in` keyword)
 
     #[token("∉")]
@@ -705,6 +710,7 @@ pub enum Token {
     Rotate, // Reverse/rotate (U+233D)
 
     #[token("↻")]
+    #[token("⊳")]  // Right triangle - prose alternative for continue
     CycleArrow, // Cycle/repeat (U+21BB)
 
     #[token("⌺")]
@@ -721,7 +727,8 @@ pub enum Token {
     Compose, // Function composition
 
     #[token("⊗")]
-    Tensor, // Tensor product
+    #[token("⊲")]  // Left triangle - prose alternative for break
+    Tensor, // Tensor product (parser also handles as break keyword)
 
     #[token("⊕")]
     DirectSum, // Direct sum / XOR
@@ -1068,12 +1075,13 @@ pub enum Token {
     DuodecimalLit(String),
 
     // Float: 123.456 or 1.23e10 or 1e-15 (with or without decimal point if exponent present)
-    // Optional type suffix: f16, f32, f64, f128
-    #[regex(r"([0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+)(f16|f32|f64|f128)?", |lex| lex.slice().to_string())]
+    // Optional type suffix: f16, f32, f64, f128 (with optional underscore separator, e.g. 2.0_f64)
+    #[regex(r"([0-9][0-9_]*\.[0-9][0-9_]*([eE][+-]?[0-9_]+)?|[0-9][0-9_]*[eE][+-]?[0-9_]+)_?(f16|f32|f64|f128)?", |lex| lex.slice().to_string())]
     FloatLit(String),
 
     // Integer: 123 with optional type suffix (i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize)
-    #[regex(r"[0-9][0-9_]*(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
+    // Optional underscore separator before suffix (e.g. 42_i32)
+    #[regex(r"[0-9][0-9_]*_?(i8|i16|i32|i64|i128|isize|u8|u16|u32|u64|u128|usize)?", |lex| lex.slice().to_string())]
     IntLit(String),
 
     // === Strings ===
@@ -1517,15 +1525,19 @@ mod tests {
 
     #[test]
     fn test_morphemes() {
-        let mut lexer = Lexer::new("τ φ σ ρ λ Σ Π ⌛");
-        assert!(matches!(lexer.next_token(), Some((Token::Tau, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Phi, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Rho, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Lambda, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Pi, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Async, _))));
+        // Note: Case matters for Greek letters in Sigil:
+        // - lowercase λ = Token::LambdaExpr (closure expression), uppercase Λ = Token::Lambda (morpheme)
+        // - lowercase σ = Token::Sigma (sort morpheme), uppercase Σ = Token::Struct (keyword)
+        // - lowercase π = identifier, uppercase Π = Token::Pi (product morpheme)
+        // This test verifies uppercase morphemes that are NOT keywords
+        let mut lexer = Lexer::new("τ φ σ ρ Λ Π ⌛");
+        assert!(matches!(lexer.next_token(), Some((Token::Tau, _))));      // τ = Tau (transform)
+        assert!(matches!(lexer.next_token(), Some((Token::Phi, _))));      // φ = Phi (filter)
+        assert!(matches!(lexer.next_token(), Some((Token::Sigma, _))));    // σ = Sigma (sort/sum)
+        assert!(matches!(lexer.next_token(), Some((Token::Rho, _))));      // ρ = Rho (reduce)
+        assert!(matches!(lexer.next_token(), Some((Token::Lambda, _))));   // Λ = Lambda (uppercase)
+        assert!(matches!(lexer.next_token(), Some((Token::Pi, _))));       // Π = Pi (product)
+        assert!(matches!(lexer.next_token(), Some((Token::Async, _))));    // ⌛ = Async
     }
 
     #[test]
@@ -1642,11 +1654,13 @@ mod tests {
 
     #[test]
     fn test_parallel_morphemes() {
+        // Note: ⊛ is Token::Convolve (convolution operator), not Gpu
+        // gpu (keyword) produces Token::Gpu
         let mut lexer = Lexer::new("∥ parallel ⊛ gpu");
         assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Parallel, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));
+        assert!(matches!(lexer.next_token(), Some((Token::Convolve, _))));  // ⊛ = Convolve
+        assert!(matches!(lexer.next_token(), Some((Token::Gpu, _))));       // gpu = Gpu
     }
 
     #[test]

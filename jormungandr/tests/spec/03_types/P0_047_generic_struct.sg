@@ -12,7 +12,7 @@
     value: T
 }
 
-λ main() {
+rite main() {
     ≔ b: !Box<!i32> = Box { value: 42 };
     println(b.value);
 }

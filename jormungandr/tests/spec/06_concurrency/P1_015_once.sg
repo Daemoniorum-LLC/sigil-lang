@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 5.3 Atomics
 // Priority: P1 - Production Ready
 
-λ main() {
+rite main() {
     ≔ flag: AtomicBool = AtomicBool·new(false);
 
     // Initial

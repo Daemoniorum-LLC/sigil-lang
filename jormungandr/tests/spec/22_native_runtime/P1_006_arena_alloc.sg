@@ -5,7 +5,7 @@
 // This test verifies sequential memory allocation patterns
 // using interpreter arrays.
 
-λ main() {
+rite main() {
     // Test 1: Create arena and allocate (using array)
     ≔ Δ arena = [];
     ≔ Δ i = 0;

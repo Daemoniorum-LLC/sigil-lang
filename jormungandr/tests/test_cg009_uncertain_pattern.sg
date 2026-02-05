@@ -12,14 +12,14 @@
 }
 
 /// This function uses a ?v pattern that MUST generate a TAG_NULL check
-☉ λ extract_value(c: !Container) -> !i32 {
+☉ rite extract_value(c: !Container) -> !i32 {
     ⌥ c.value {
         ?v => v,
         null => 0,
     }
 }
 
-☉ λ main() -> !i32 {
+☉ rite main() -> !i32 {
     ≔ with_value = Container { value: ?42 };
     ≔ without_value = Container { value: null };
     

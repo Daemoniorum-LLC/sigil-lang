@@ -21,27 +21,32 @@ jobs:
             target: x86_64-unknown-linux-gnu
             artifact_name: sigil
             asset_name: sigil-kit-linux-x86_64
+            llvm: true
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             artifact_name: sigil
             asset_name: sigil-kit-linux-aarch64
             cross: true
+            llvm: false
 
           # macOS
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact_name: sigil
             asset_name: sigil-kit-macos-x86_64
+            llvm: true
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: sigil
             asset_name: sigil-kit-macos-aarch64
+            llvm: true
 
           # Windows
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: sigil.exe
             asset_name: sigil-kit-windows-x86_64
+            llvm: true
 
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +55,28 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Install LLVM 18 (Ubuntu)
+        if: matrix.llvm && matrix.os == 'ubuntu-latest'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-18 main"
+          sudo apt-get update
+          sudo apt-get install -y llvm-18-dev libpolly-18-dev
+          echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+
+      - name: Install LLVM 18 (macOS)
+        if: matrix.llvm && matrix.os == 'macos-latest'
+        run: |
+          brew install llvm@18
+          echo "LLVM_SYS_181_PREFIX=$(brew --prefix llvm@18)" >> $GITHUB_ENV
+
+      - name: Install LLVM 18 (Windows)
+        if: matrix.llvm && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          choco install llvm --version=18.1.8 -y
+          echo "LLVM_SYS_181_PREFIX=C:\Program Files\LLVM" >> $env:GITHUB_ENV
 
       - name: Install cross-compilation tools
         if: matrix.cross
@@ -60,7 +87,11 @@ jobs:
       - name: Build
         working-directory: parser
         run: |
-          FEATURES="--no-default-features --features jit,wasm,lsp,protocols"
+          if [ "${{ matrix.llvm }}" = "true" ]; then
+            FEATURES="--no-default-features --features jit,llvm,wasm,lsp,protocols"
+          else
+            FEATURES="--no-default-features --features jit,wasm,lsp,protocols"
+          fi
           if [ "${{ matrix.cross }}" = "true" ]; then
             cargo install cross --git https://github.com/cross-rs/cross
             cross build --release --target ${{ matrix.target }} $FEATURES
@@ -160,10 +191,24 @@ jobs:
             This release includes the complete Sigil Development Kit with:
 
             - **Compiler binary** - Full Sigil compiler with interpreter, JIT, and LLVM backends
+            - **WASM codegen** - Compile Sigil to WebAssembly
+            - **LSP server** - Language server protocol support for editors
+            - **Protocol support** - HTTP client and WebSocket stdlib
             - **Documentation** - Getting started guide, language reference, and standard library docs
             - **Methodologies** - Spec-Driven Development and Agent-TDD guides
             - **Examples** - Progressive example programs
-            - **Style Guide** - Code formatting conventions
+
+            ### Platform Notes
+
+            | Platform | LLVM (`sigil compile`) | JIT (`sigil jit`) | Interpreter (`sigil run`) |
+            |----------|----------------------|-------------------|--------------------------|
+            | Linux x86_64 | yes | yes | yes |
+            | Linux aarch64 | no* | yes | yes |
+            | macOS x86_64 | yes | yes | yes |
+            | macOS aarch64 | yes | yes | yes |
+            | Windows x86_64 | yes | yes | yes |
+
+            *aarch64 Linux: build from source with `cargo install sigil-parser --features llvm` for LLVM support.
 
             ### Quick Install
 
@@ -224,10 +269,15 @@ jobs:
             head "https://github.com/Daemoniorum-LLC/sigil-lang.git", branch: "main"
 
             depends_on "rust" => :build
+            depends_on "llvm@18" => :build
 
             def install
+              ENV["LLVM_SYS_181_PREFIX"] = Formula["llvm@18"].opt_prefix
+
               cd "parser" do
-                system "cargo", "install", *std_cargo_args
+                system "cargo", "install", *std_cargo_args,
+                  "--no-default-features",
+                  "--features", "jit,llvm,wasm,lsp,protocols"
               end
 
               # Install kit documentation

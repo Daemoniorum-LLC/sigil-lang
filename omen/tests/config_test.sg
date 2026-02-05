@@ -9,16 +9,16 @@
 ☉ Σ Duration { nanos: u64 }
 
 ⊢ Duration {
-    ☉ λ zero() -> Self { Self { nanos: 0 } }
-    ☉ λ seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
-    ☉ λ minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
-    ☉ λ hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
-    ☉ λ as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
+    ☉ rite zero() -> Self { Self { nanos: 0 } }
+    ☉ rite seconds(s: u64) -> Self { Self { nanos: s * 1_000_000_000 } }
+    ☉ rite minutes(m: u64) -> Self { Self { nanos: m * 60_000_000_000 } }
+    ☉ rite hours(h: u64) -> Self { Self { nanos: h * 3_600_000_000_000 } }
+    ☉ rite as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
 }
 
 ⊢ Copy ∀ Duration {}
 ⊢ Clone ∀ Duration {
-    λ clone(&self) -> Self { *self }
+    rite clone(&self) -> Self { *self }
 }
 
 /// Main configuration ∀ Omen planner
@@ -49,7 +49,7 @@
 }
 
 ⊢ OmenConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             horizon: 10,
             uncertainty_tolerance: 0.3,
@@ -62,7 +62,7 @@
         }
     }
 
-    ☉ λ conservative() -> Self {
+    ☉ rite conservative() -> Self {
         Self {
             horizon: 5,
             uncertainty_tolerance: 0.1,
@@ -75,7 +75,7 @@
         }
     }
 
-    ☉ λ aggressive() -> Self {
+    ☉ rite aggressive() -> Self {
         Self {
             horizon: 20,
             uncertainty_tolerance: 0.5,
@@ -88,7 +88,7 @@
         }
     }
 
-    ☉ λ minimal() -> Self {
+    ☉ rite minimal() -> Self {
         Self {
             horizon: 3,
             uncertainty_tolerance: 0.2,
@@ -101,57 +101,57 @@
         }
     }
 
-    ☉ λ with_horizon(Δ self, horizon: usize) -> Self {
+    ☉ rite with_horizon(Δ self, horizon: usize) -> Self {
         self.horizon = horizon;
         self
     }
 
-    ☉ λ with_uncertainty_tolerance(Δ self, tolerance: f32) -> Self {
+    ☉ rite with_uncertainty_tolerance(Δ self, tolerance: f32) -> Self {
         self.uncertainty_tolerance = tolerance.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_revision_threshold(Δ self, threshold: f32) -> Self {
+    ☉ rite with_revision_threshold(Δ self, threshold: f32) -> Self {
         self.revision_threshold = threshold.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_max_depth(Δ self, depth: usize) -> Self {
+    ☉ rite with_max_depth(Δ self, depth: usize) -> Self {
         self.max_depth = depth;
         self
     }
 
-    ☉ λ with_timeout(Δ self, timeout: Duration) -> Self {
+    ☉ rite with_timeout(Δ self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    ☉ λ with_risk_tolerance(Δ self, tolerance: f32) -> Self {
+    ☉ rite with_risk_tolerance(Δ self, tolerance: f32) -> Self {
         self.risk_tolerance = tolerance.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ disable_causal(Δ self) -> Self {
+    ☉ rite disable_causal(Δ self) -> Self {
         self.enable_causal = false;
         self
     }
 
-    ☉ λ disable_learning(Δ self) -> Self {
+    ☉ rite disable_learning(Δ self) -> Self {
         self.enable_learning = false;
         self
     }
 
-    ☉ λ is_conservative(&self) -> bool {
+    ☉ rite is_conservative(&self) -> bool {
         self.uncertainty_tolerance < 0.2 && self.risk_tolerance < 0.3
     }
 
-    ☉ λ is_aggressive(&self) -> bool {
+    ☉ rite is_aggressive(&self) -> bool {
         self.uncertainty_tolerance > 0.4 && self.risk_tolerance > 0.6
     }
 }
 
 ⊢ Default ∀ OmenConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·default_config()
     }
 }
@@ -172,7 +172,7 @@
 }
 
 ⊢ BeliefConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_beliefs: 10000,
             decay_rate: 0.01,
@@ -181,24 +181,24 @@
         }
     }
 
-    ☉ λ with_max_beliefs(Δ self, max: usize) -> Self {
+    ☉ rite with_max_beliefs(Δ self, max: usize) -> Self {
         self.max_beliefs = max;
         self
     }
 
-    ☉ λ with_decay_rate(Δ self, rate: f32) -> Self {
+    ☉ rite with_decay_rate(Δ self, rate: f32) -> Self {
         self.decay_rate = rate.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_min_confidence(Δ self, min: f32) -> Self {
+    ☉ rite with_min_confidence(Δ self, min: f32) -> Self {
         self.min_confidence = min.clamp(0.0, 1.0);
         self
     }
 }
 
 ⊢ Default ∀ BeliefConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·default_config()
     }
 }
@@ -219,7 +219,7 @@
 }
 
 ⊢ GoalConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_goals: 100,
             default_priority: 0.5,
@@ -228,24 +228,24 @@
         }
     }
 
-    ☉ λ with_max_goals(Δ self, max: usize) -> Self {
+    ☉ rite with_max_goals(Δ self, max: usize) -> Self {
         self.max_goals = max;
         self
     }
 
-    ☉ λ with_default_priority(Δ self, priority: f32) -> Self {
+    ☉ rite with_default_priority(Δ self, priority: f32) -> Self {
         self.default_priority = priority.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ with_stale_threshold(Δ self, hours: f32) -> Self {
+    ☉ rite with_stale_threshold(Δ self, hours: f32) -> Self {
         self.stale_threshold_hours = hours.max(0.0);
         self
     }
 }
 
 ⊢ Default ∀ GoalConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·default_config()
     }
 }
@@ -269,7 +269,7 @@
 }
 
 ⊢ PlanningConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_steps: 50,
             max_alternatives: 3,
@@ -279,34 +279,34 @@
         }
     }
 
-    ☉ λ with_max_steps(Δ self, max: usize) -> Self {
+    ☉ rite with_max_steps(Δ self, max: usize) -> Self {
         self.max_steps = max;
         self
     }
 
-    ☉ λ with_max_alternatives(Δ self, max: usize) -> Self {
+    ☉ rite with_max_alternatives(Δ self, max: usize) -> Self {
         self.max_alternatives = max;
         self
     }
 
-    ☉ λ with_min_success_probability(Δ self, min: f32) -> Self {
+    ☉ rite with_min_success_probability(Δ self, min: f32) -> Self {
         self.min_success_probability = min.clamp(0.0, 1.0);
         self
     }
 
-    ☉ λ disable_contingencies(Δ self) -> Self {
+    ☉ rite disable_contingencies(Δ self) -> Self {
         self.enable_contingencies = false;
         self
     }
 
-    ☉ λ disable_risk_assessment(Δ self) -> Self {
+    ☉ rite disable_risk_assessment(Δ self) -> Self {
         self.enable_risk_assessment = false;
         self
     }
 }
 
 ⊢ Default ∀ PlanningConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·default_config()
     }
 }
@@ -324,7 +324,7 @@
 }
 
 ⊢ LearningConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             max_history: 1000,
             learning_rate: 0.1,
@@ -332,19 +332,19 @@
         }
     }
 
-    ☉ λ with_max_history(Δ self, max: usize) -> Self {
+    ☉ rite with_max_history(Δ self, max: usize) -> Self {
         self.max_history = max;
         self
     }
 
-    ☉ λ with_learning_rate(Δ self, rate: f32) -> Self {
+    ☉ rite with_learning_rate(Δ self, rate: f32) -> Self {
         self.learning_rate = rate.clamp(0.0, 1.0);
         self
     }
 }
 
 ⊢ Default ∀ LearningConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·default_config()
     }
 }
@@ -354,7 +354,7 @@
 // ============================================================================
 
 #[test]
-λ test_omen_config_default() {
+rite test_omen_config_default() {
     ≔ c = OmenConfig·default_config();
     assert_eq(c.horizon, 10);
     assert_eq(c.max_depth, 20);
@@ -363,7 +363,7 @@
 }
 
 #[test]
-λ test_omen_config_conservative() {
+rite test_omen_config_conservative() {
     ≔ c = OmenConfig·conservative();
     assert_eq(c.horizon, 5);
     assert_eq(c.uncertainty_tolerance, 0.1);
@@ -372,7 +372,7 @@
 }
 
 #[test]
-λ test_omen_config_aggressive() {
+rite test_omen_config_aggressive() {
     ≔ c = OmenConfig·aggressive();
     assert_eq(c.horizon, 20);
     assert_eq(c.uncertainty_tolerance, 0.5);
@@ -381,7 +381,7 @@
 }
 
 #[test]
-λ test_omen_config_minimal() {
+rite test_omen_config_minimal() {
     ≔ c = OmenConfig·minimal();
     assert_eq(c.horizon, 3);
     assert(!c.enable_causal);
@@ -389,61 +389,61 @@
 }
 
 #[test]
-λ test_omen_config_with_horizon() {
+rite test_omen_config_with_horizon() {
     ≔ c = OmenConfig·default_config().with_horizon(15);
     assert_eq(c.horizon, 15);
 }
 
 #[test]
-λ test_omen_config_with_uncertainty_tolerance() {
+rite test_omen_config_with_uncertainty_tolerance() {
     ≔ c = OmenConfig·default_config().with_uncertainty_tolerance(0.4);
     assert_eq(c.uncertainty_tolerance, 0.4);
 }
 
 #[test]
-λ test_omen_config_uncertainty_clamped() {
+rite test_omen_config_uncertainty_clamped() {
     ≔ c = OmenConfig·default_config().with_uncertainty_tolerance(1.5);
     assert_eq(c.uncertainty_tolerance, 1.0);
 }
 
 #[test]
-λ test_omen_config_with_revision_threshold() {
+rite test_omen_config_with_revision_threshold() {
     ≔ c = OmenConfig·default_config().with_revision_threshold(0.5);
     assert_eq(c.revision_threshold, 0.5);
 }
 
 #[test]
-λ test_omen_config_with_max_depth() {
+rite test_omen_config_with_max_depth() {
     ≔ c = OmenConfig·default_config().with_max_depth(100);
     assert_eq(c.max_depth, 100);
 }
 
 #[test]
-λ test_omen_config_with_timeout() {
+rite test_omen_config_with_timeout() {
     ≔ c = OmenConfig·default_config().with_timeout(Duration·minutes(2));
     assert_eq(c.timeout.as_secs(), 120);
 }
 
 #[test]
-λ test_omen_config_with_risk_tolerance() {
+rite test_omen_config_with_risk_tolerance() {
     ≔ c = OmenConfig·default_config().with_risk_tolerance(0.7);
     assert_eq(c.risk_tolerance, 0.7);
 }
 
 #[test]
-λ test_omen_config_disable_causal() {
+rite test_omen_config_disable_causal() {
     ≔ c = OmenConfig·default_config().disable_causal();
     assert(!c.enable_causal);
 }
 
 #[test]
-λ test_omen_config_disable_learning() {
+rite test_omen_config_disable_learning() {
     ≔ c = OmenConfig·default_config().disable_learning();
     assert(!c.enable_learning);
 }
 
 #[test]
-λ test_omen_config_is_conservative() {
+rite test_omen_config_is_conservative() {
     ≔ conservative = OmenConfig·default_config()
         .with_uncertainty_tolerance(0.1)
         .with_risk_tolerance(0.2);
@@ -451,7 +451,7 @@
 }
 
 #[test]
-λ test_omen_config_is_aggressive() {
+rite test_omen_config_is_aggressive() {
     ≔ aggressive = OmenConfig·default_config()
         .with_uncertainty_tolerance(0.6)
         .with_risk_tolerance(0.8);
@@ -463,26 +463,26 @@
 // ============================================================================
 
 #[test]
-λ test_belief_config_default() {
+rite test_belief_config_default() {
     ≔ c = BeliefConfig·default_config();
     assert_eq(c.max_beliefs, 10000);
     assert(c.detect_contradictions);
 }
 
 #[test]
-λ test_belief_config_with_max_beliefs() {
+rite test_belief_config_with_max_beliefs() {
     ≔ c = BeliefConfig·default_config().with_max_beliefs(5000);
     assert_eq(c.max_beliefs, 5000);
 }
 
 #[test]
-λ test_belief_config_with_decay_rate() {
+rite test_belief_config_with_decay_rate() {
     ≔ c = BeliefConfig·default_config().with_decay_rate(0.05);
     assert_eq(c.decay_rate, 0.05);
 }
 
 #[test]
-λ test_belief_config_with_min_confidence() {
+rite test_belief_config_with_min_confidence() {
     ≔ c = BeliefConfig·default_config().with_min_confidence(0.2);
     assert_eq(c.min_confidence, 0.2);
 }
@@ -492,7 +492,7 @@
 // ============================================================================
 
 #[test]
-λ test_goal_config_default() {
+rite test_goal_config_default() {
     ≔ c = GoalConfig·default_config();
     assert_eq(c.max_goals, 100);
     assert_eq(c.default_priority, 0.5);
@@ -500,19 +500,19 @@
 }
 
 #[test]
-λ test_goal_config_with_max_goals() {
+rite test_goal_config_with_max_goals() {
     ≔ c = GoalConfig·default_config().with_max_goals(50);
     assert_eq(c.max_goals, 50);
 }
 
 #[test]
-λ test_goal_config_with_default_priority() {
+rite test_goal_config_with_default_priority() {
     ≔ c = GoalConfig·default_config().with_default_priority(0.7);
     assert_eq(c.default_priority, 0.7);
 }
 
 #[test]
-λ test_goal_config_with_stale_threshold() {
+rite test_goal_config_with_stale_threshold() {
     ≔ c = GoalConfig·default_config().with_stale_threshold(48.0);
     assert_eq(c.stale_threshold_hours, 48.0);
 }
@@ -522,7 +522,7 @@
 // ============================================================================
 
 #[test]
-λ test_planning_config_default() {
+rite test_planning_config_default() {
     ≔ c = PlanningConfig·default_config();
     assert_eq(c.max_steps, 50);
     assert_eq(c.max_alternatives, 3);
@@ -531,31 +531,31 @@
 }
 
 #[test]
-λ test_planning_config_with_max_steps() {
+rite test_planning_config_with_max_steps() {
     ≔ c = PlanningConfig·default_config().with_max_steps(100);
     assert_eq(c.max_steps, 100);
 }
 
 #[test]
-λ test_planning_config_with_max_alternatives() {
+rite test_planning_config_with_max_alternatives() {
     ≔ c = PlanningConfig·default_config().with_max_alternatives(5);
     assert_eq(c.max_alternatives, 5);
 }
 
 #[test]
-λ test_planning_config_with_min_success_probability() {
+rite test_planning_config_with_min_success_probability() {
     ≔ c = PlanningConfig·default_config().with_min_success_probability(0.7);
     assert_eq(c.min_success_probability, 0.7);
 }
 
 #[test]
-λ test_planning_config_disable_contingencies() {
+rite test_planning_config_disable_contingencies() {
     ≔ c = PlanningConfig·default_config().disable_contingencies();
     assert(!c.enable_contingencies);
 }
 
 #[test]
-λ test_planning_config_disable_risk_assessment() {
+rite test_planning_config_disable_risk_assessment() {
     ≔ c = PlanningConfig·default_config().disable_risk_assessment();
     assert(!c.enable_risk_assessment);
 }
@@ -565,7 +565,7 @@
 // ============================================================================
 
 #[test]
-λ test_learning_config_default() {
+rite test_learning_config_default() {
     ≔ c = LearningConfig·default_config();
     assert_eq(c.max_history, 1000);
     assert_eq(c.learning_rate, 0.1);
@@ -573,17 +573,17 @@
 }
 
 #[test]
-λ test_learning_config_with_max_history() {
+rite test_learning_config_with_max_history() {
     ≔ c = LearningConfig·default_config().with_max_history(500);
     assert_eq(c.max_history, 500);
 }
 
 #[test]
-λ test_learning_config_with_learning_rate() {
+rite test_learning_config_with_learning_rate() {
     ≔ c = LearningConfig·default_config().with_learning_rate(0.2);
     assert_eq(c.learning_rate, 0.2);
 }
 
-λ main() {
+rite main() {
     print("Omen configuration tests");
 }

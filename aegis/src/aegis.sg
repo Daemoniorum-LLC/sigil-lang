@@ -37,7 +37,7 @@ invoke crate·types·*;
 
 ⊢ Identity {
     /// Generate new identity
-    ☉ λ generate() -> IdentityBuilder {
+    ☉ rite generate() -> IdentityBuilder {
         ≔ (public_key, private_key) = generate_keypair();
 
         IdentityBuilder {
@@ -49,35 +49,35 @@ invoke crate·types·*;
     }
 
     /// Sign data
-    ☉ λ sign(&self, data: &[u8]) -> Signature {
+    ☉ rite sign(&self, data: &[u8]) -> Signature {
         self.private_key.sign(data)
     }
 
     /// Verify signature from another identity
-    ☉ λ verify(public_key: &PublicKey, data: &[u8], signature: &Signature) -> bool {
+    ☉ rite verify(public_key: &PublicKey, data: &[u8], signature: &Signature) -> bool {
         public_key.verify(data, signature)
     }
 
     /// Check ⎇ identity has capability
-    ☉ λ has_capability(&self, capability: &str) -> bool {
+    ☉ rite has_capability(&self, capability: &str) -> bool {
         self.attestations.iter()
             .any(|a| matches!(a, Attestation·Capability(c) ⎇ c == capability))
     }
 
     /// Check ⎇ identity has role
-    ☉ λ has_role(&self, role: &Role) -> bool {
+    ☉ rite has_role(&self, role: &Role) -> bool {
         self.attestations.iter()
             .any(|a| matches!(a, Attestation·Role(r) ⎇ role_matches(r, role)))
     }
 
     /// Get public key hash
-    ☉ λ public_key_hash(&self) -> [u8; 32] {
+    ☉ rite public_key_hash(&self) -> [u8; 32] {
         sha256(&self.public_key.bytes)
     }
 }
 
 ⊢ Clone ∀ Identity {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: self.id.clone(),
             public_key: self.public_key.clone(),
@@ -102,22 +102,22 @@ invoke crate·types·*;
 }
 
 ⊢ IdentityBuilder {
-    ☉ λ with_capability(Δ self, capability: &str) -> Self {
+    ☉ rite with_capability(Δ self, capability: &str) -> Self {
         self.attestations.push(Attestation·Capability(capability.to_string()));
         self
     }
 
-    ☉ λ with_role(Δ self, role: Role) -> Self {
+    ☉ rite with_role(Δ self, role: Role) -> Self {
         self.attestations.push(Attestation·Role(role));
         self
     }
 
-    ☉ λ with_group(Δ self, group: GroupId) -> Self {
+    ☉ rite with_group(Δ self, group: GroupId) -> Self {
         self.attestations.push(Attestation·GroupMembership(group));
         self
     }
 
-    ☉ λ build(self) -> Identity {
+    ☉ rite build(self) -> Identity {
         Identity {
             id: self.id,
             public_key: self.public_key,
@@ -149,7 +149,7 @@ invoke crate·types·*;
 }
 
 ⊢ IdentityVerifier {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             trusted_authorities: HashMap·new(),
             revoked: HashSet·new(),
@@ -158,18 +158,18 @@ invoke crate·types·*;
     }
 
     /// Add a trusted authority
-    ☉ λ trust_authority(&Δ self, id: AuthorityId, public_key: PublicKey) {
+    ☉ rite trust_authority(&Δ self, id: AuthorityId, public_key: PublicKey) {
         self.trusted_authorities.insert(id, public_key);
     }
 
     /// Revoke an identity
-    ☉ λ revoke(&Δ self, id: AgentId) {
+    ☉ rite revoke(&Δ self, id: AgentId) {
         self.revoked.insert(id);
         self.cache.remove(&id);
     }
 
     /// Verify an identity credential
-    ☉ λ verify(&Δ self, credential: &Credential) -> Result<VerifiedIdentity, VerificationError> {
+    ☉ rite verify(&Δ self, credential: &Credential) -> Result<VerifiedIdentity, VerificationError> {
         // Check cache first
         ⎇ ≔ Some(cached) = self.cache.get(&credential.identity_id) {
             ≔ now = Timestamp·now();
@@ -215,7 +215,7 @@ invoke crate·types·*;
     }
 
     /// Verify identity has required capabilities
-    ☉ λ verify_capabilities(
+    ☉ rite verify_capabilities(
         &Δ self,
         credential: &Credential,
         required: &[&str]
@@ -235,7 +235,7 @@ invoke crate·types·*;
 }
 
 ⊢ Clone ∀ VerifiedIdentity {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             id: self.id.clone(),
             attestations: self.attestations.clone(),
@@ -244,7 +244,7 @@ invoke crate·types·*;
     }
 }
 
-λ role_matches(a: &Role, b: &Role) -> bool {
+rite role_matches(a: &Role, b: &Role) -> bool {
     ⌥ (a, b) {
         (Role·Admin, Role·Admin) => true,
         (Role·Operator, Role·Operator) => true,
@@ -281,7 +281,7 @@ invoke crate·types·*;
 }
 
 ⊢ SandboxConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             limits: ResourceLimits·default(),
             isolation: IsolationLevel·Process,
@@ -292,7 +292,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         Self {
             limits: ResourceLimits·permissive(),
             isolation: IsolationLevel·Process,
@@ -303,7 +303,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ restrictive() -> Self {
+    ☉ rite restrictive() -> Self {
         Self {
             limits: ResourceLimits·restrictive(),
             isolation: IsolationLevel·Container,
@@ -322,21 +322,21 @@ invoke crate·types·*;
 }
 
 ⊢ SyscallFilter {
-    ☉ λ allow_list(syscalls: &[&str]) -> Self {
+    ☉ rite allow_list(syscalls: &[&str]) -> Self {
         Self {
             mode: FilterMode·AllowList,
             syscalls: syscalls.iter().map(|s| s.to_string()).collect(),
         }
     }
 
-    ☉ λ deny_list(syscalls: &[&str]) -> Self {
+    ☉ rite deny_list(syscalls: &[&str]) -> Self {
         Self {
             mode: FilterMode·DenyList,
             syscalls: syscalls.iter().map(|s| s.to_string()).collect(),
         }
     }
 
-    ☉ λ restrictive() -> Self {
+    ☉ rite restrictive() -> Self {
         Self·allow_list(&[
             "read", "write", "open", "close", "stat", "fstat",
             "mmap", "mprotect", "munmap", "brk",
@@ -344,14 +344,14 @@ invoke crate·types·*;
         ])
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         Self·deny_list(&[
             "fork", "vfork", "clone", "execve", "execveat",
             "ptrace", "process_vm_readv", "process_vm_writev",
         ])
     }
 
-    ☉ λ is_allowed(&self, syscall: &str) -> bool {
+    ☉ rite is_allowed(&self, syscall: &str) -> bool {
         ⌥ self.mode {
             FilterMode·AllowList => self.syscalls.contains(syscall),
             FilterMode·DenyList => !self.syscalls.contains(syscall),
@@ -360,7 +360,7 @@ invoke crate·types·*;
 }
 
 ⊢ Clone ∀ SyscallFilter {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             mode: self.mode,
             syscalls: self.syscalls.clone(),
@@ -388,7 +388,7 @@ invoke crate·types·*;
 }
 
 ⊢ ResourceTracker {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             start_time: Timestamp·now(),
             current: ResourceUsage·zero(),
@@ -396,12 +396,12 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ start_tracking(&Δ self) {
+    ☉ rite start_tracking(&Δ self) {
         self.start_time = Timestamp·now();
         self.current = ResourceUsage·zero();
     }
 
-    ☉ λ update(&Δ self, usage: ResourceUsage) {
+    ☉ rite update(&Δ self, usage: ResourceUsage) {
         self.current = usage;
         // Update peaks
         ⎇ usage.memory_bytes > self.peak.memory_bytes {
@@ -412,7 +412,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ stop(&self) -> ResourceUsage {
+    ☉ rite stop(&self) -> ResourceUsage {
         ≔ Δ usage = self.current;
         usage.cpu_time = Duration·from_nanos(
             Timestamp·now().nanos - self.start_time.nanos
@@ -422,7 +422,7 @@ invoke crate·types·*;
 }
 
 ⊢ Duration {
-    λ from_nanos(nanos: u64) -> Self {
+    rite from_nanos(nanos: u64) -> Self {
         Self { nanos }
     }
 }
@@ -446,7 +446,7 @@ invoke crate·types·*;
 }
 
 ⊢ Sandbox {
-    ☉ λ new(config: SandboxConfig) -> Self {
+    ☉ rite new(config: SandboxConfig) -> Self {
         Self {
             config,
             resources: ResourceTracker·new(),
@@ -454,13 +454,13 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_audit<F: Fn(SandboxEvent) + 'static>(Δ self, f: F) -> Self {
+    ☉ rite with_audit<F: Fn(SandboxEvent) + 'static>(Δ self, f: F) -> Self {
         self.audit_fn = Some(Box·new(f));
         self
     }
 
     /// Check ⎇ syscall is allowed
-    ☉ λ check_syscall(&self, syscall: &str) -> Result<(), SandboxError> {
+    ☉ rite check_syscall(&self, syscall: &str) -> Result<(), SandboxError> {
         ⎇ self.config.syscall_filter.is_allowed(syscall) {
             Ok(())
         } ⎉ {
@@ -472,7 +472,7 @@ invoke crate·types·*;
     }
 
     /// Check ⎇ network access is allowed
-    ☉ λ check_network(&self, host: &str) -> Result<(), SandboxError> {
+    ☉ rite check_network(&self, host: &str) -> Result<(), SandboxError> {
         ≔ allowed = ⌥ &self.config.network {
             NetworkPolicy·Deny => false,
             NetworkPolicy·Allow => true,
@@ -491,7 +491,7 @@ invoke crate·types·*;
     }
 
     /// Check ⎇ filesystem access is allowed
-    ☉ λ check_filesystem(&self, path: &str, write: bool) -> Result<(), SandboxError> {
+    ☉ rite check_filesystem(&self, path: &str, write: bool) -> Result<(), SandboxError> {
         ≔ allowed = ⌥ &self.config.filesystem {
             FilesystemPolicy·Deny => false,
             FilesystemPolicy·Allow => true,
@@ -521,7 +521,7 @@ invoke crate·types·*;
     }
 
     /// Check resource usage against limits
-    ☉ λ check_resources(&self, usage: &ResourceUsage) -> Result<(), SandboxError> {
+    ☉ rite check_resources(&self, usage: &ResourceUsage) -> Result<(), SandboxError> {
         ⎇ usage.exceeds(&self.config.limits) {
             ⤺ Err(SandboxError·ResourceLimitExceeded(usage.clone()));
         }
@@ -539,7 +539,7 @@ invoke crate·types·*;
     }
 
     /// Execute a function ∈ the sandbox
-    ☉ λ execute<F, T>(&Δ self, f: F) -> Result<SandboxResult, SandboxError>
+    ☉ rite execute<F, T>(&Δ self, f: F) -> Result<SandboxResult, SandboxError>
     where
         F: FnOnce() -> T,
         T: Into<Value>,
@@ -570,7 +570,7 @@ invoke crate·types·*;
     }
 
     /// Execute a tool by name
-    ☉ λ execute_tool(&Δ self, tool: &str, params: Value) -> Result<SandboxResult, SandboxError> {
+    ☉ rite execute_tool(&Δ self, tool: &str, params: Value) -> Result<SandboxResult, SandboxError> {
         // This would invoke the actual tool through the daemon's tool registry
         // For now, ⤺ a placeholder
         self.execute(|| {
@@ -578,7 +578,7 @@ invoke crate·types·*;
         })
     }
 
-    λ emit_event(&self, event: SandboxEvent) {
+    rite emit_event(&self, event: SandboxEvent) {
         ⎇ ≔ Some(ref f) = self.audit_fn {
             f(event);
         }
@@ -586,7 +586,7 @@ invoke crate·types·*;
 }
 
 ⊢ Clone ∀ ResourceUsage {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             memory_bytes: self.memory_bytes,
             cpu_time: self.cpu_time,
@@ -600,7 +600,7 @@ invoke crate·types·*;
     }
 }
 
-λ host_matches(pattern: &str, host: &str) -> bool {
+rite host_matches(pattern: &str, host: &str) -> bool {
     ⎇ pattern.starts_with("*.") {
         host.ends_with(&pattern[1..])
     } ⎉ {
@@ -608,7 +608,7 @@ invoke crate·types·*;
     }
 }
 
-λ path_matches(pattern: &str, path: &str) -> bool {
+rite path_matches(pattern: &str, path: &str) -> bool {
     ⎇ pattern.ends_with("/*") {
         path.starts_with(&pattern[..pattern.len()-1])
     } ⎉ ⎇ pattern.ends_with("/**") {
@@ -650,7 +650,7 @@ invoke crate·types·*;
 }
 
 ⊢ IntegrityChain {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             root: [0u8; 32],
             entries: HashMap·new(),
@@ -658,7 +658,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ add(&Δ self, id: MemoryId, data: &[u8]) -> [u8; 32] {
+    ☉ rite add(&Δ self, id: MemoryId, data: &[u8]) -> [u8; 32] {
         ≔ hash = sha256(data);
         self.entries.insert(id, hash);
 
@@ -669,11 +669,11 @@ invoke crate·types·*;
         hash
     }
 
-    ☉ λ get_hash(&self, id: &MemoryId) -> Option<[u8; 32]> {
+    ☉ rite get_hash(&self, id: &MemoryId) -> Option<[u8; 32]> {
         self.entries.get(id).copied()
     }
 
-    ☉ λ verify(&self) -> IntegrityStatus {
+    ☉ rite verify(&self) -> IntegrityStatus {
         // Verify merkle tree consistency
         ≔ computed_root = self.compute_root();
         ⎇ computed_root == self.root {
@@ -683,11 +683,11 @@ invoke crate·types·*;
         }
     }
 
-    λ recompute_root(&Δ self) {
+    rite recompute_root(&Δ self) {
         self.root = self.compute_root();
     }
 
-    λ compute_root(&self) -> [u8; 32] {
+    rite compute_root(&self) -> [u8; 32] {
         ⎇ self.nodes.is_empty() {
             ⤺ [0u8; 32];
         }
@@ -714,7 +714,7 @@ invoke crate·types·*;
         current_level[0]
     }
 
-    λ find_first_invalid(&self) -> Option<MemoryId> {
+    rite find_first_invalid(&self) -> Option<MemoryId> {
         // Would search ∀ first inconsistent entry
         None
     }
@@ -743,14 +743,14 @@ invoke crate·types·*;
 }
 
 ⊢ TamperDetector {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             writes: VecDeque·new(),
             tampers: vec![],
         }
     }
 
-    ☉ λ record_write(&Δ self, id: MemoryId, hash: [u8; 32]) {
+    ☉ rite record_write(&Δ self, id: MemoryId, hash: [u8; 32]) {
         self.writes.push_back(WriteRecord {
             id,
             hash,
@@ -763,7 +763,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ record_tamper(&Δ self, id: MemoryId, expected: [u8; 32], actual: [u8; 32]) {
+    ☉ rite record_tamper(&Δ self, id: MemoryId, expected: [u8; 32], actual: [u8; 32]) {
         self.tampers.push(TamperEvent {
             id,
             expected_hash: expected,
@@ -772,11 +772,11 @@ invoke crate·types·*;
         });
     }
 
-    ☉ λ has_tampers(&self) -> bool {
+    ☉ rite has_tampers(&self) -> bool {
         !self.tampers.is_empty()
     }
 
-    ☉ λ tamper_count(&self) -> usize {
+    ☉ rite tamper_count(&self) -> usize {
         self.tampers.len()
     }
 }
@@ -790,7 +790,7 @@ invoke crate·types·*;
 }
 
 ⊢ MemoryGuard {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             encryption_key: None,
             integrity_chain: IntegrityChain·new(),
@@ -799,18 +799,18 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_encryption(Δ self, key: EncryptionKey) -> Self {
+    ☉ rite with_encryption(Δ self, key: EncryptionKey) -> Self {
         self.encryption_key = Some(key);
         self
     }
 
-    ☉ λ with_audit<F: Fn(MemorySecurityEvent) + 'static>(Δ self, f: F) -> Self {
+    ☉ rite with_audit<F: Fn(MemorySecurityEvent) + 'static>(Δ self, f: F) -> Self {
         self.audit_fn = Some(Box·new(f));
         self
     }
 
     /// Store data with integrity protection
-    ☉ λ store(&Δ self, id: MemoryId, data: &[u8]) -> Result<Vec<u8>, MemoryError> {
+    ☉ rite store(&Δ self, id: MemoryId, data: &[u8]) -> Result<Vec<u8>, MemoryError> {
         // Encrypt ⎇ key available
         ≔ stored_data = ⌥ &self.encryption_key {
             Some(key) => key.encrypt(data).map_err(MemoryError·EncryptionError)?,
@@ -832,7 +832,7 @@ invoke crate·types·*;
     }
 
     /// Retrieve and verify data
-    ☉ λ retrieve(&self, id: &MemoryId, stored_data: &[u8]) -> Result<Vec<u8>, MemoryError> {
+    ☉ rite retrieve(&self, id: &MemoryId, stored_data: &[u8]) -> Result<Vec<u8>, MemoryError> {
         // Verify integrity
         ≔ expected_hash = self.integrity_chain.get_hash(id)
             .ok_or(MemoryError·NotFound)?;
@@ -859,7 +859,7 @@ invoke crate·types·*;
     }
 
     /// Verify entire chain integrity
-    ☉ λ verify_integrity(&self) -> IntegrityStatus {
+    ☉ rite verify_integrity(&self) -> IntegrityStatus {
         ≔ status = self.integrity_chain.verify();
 
         self.emit_event(MemorySecurityEvent·IntegrityVerified {
@@ -875,11 +875,11 @@ invoke crate·types·*;
     }
 
     /// Check ⎇ any tampering detected
-    ☉ λ has_tampering(&self) -> bool {
+    ☉ rite has_tampering(&self) -> bool {
         self.tamper_detector.has_tampers()
     }
 
-    λ emit_event(&self, event: MemorySecurityEvent) {
+    rite emit_event(&self, event: MemorySecurityEvent) {
         ⎇ ≔ Some(ref f) = self.audit_fn {
             f(event);
         }
@@ -924,7 +924,7 @@ invoke crate·types·*;
 }
 
 ⊢ GoalPolicy {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             allowed_sources: vec![
                 GoalSource·Constitution,
@@ -937,7 +937,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ permissive() -> Self {
+    ☉ rite permissive() -> Self {
         Self {
             allowed_sources: vec![
                 GoalSource·Constitution,
@@ -989,14 +989,14 @@ invoke crate·types·*;
 }
 
 ⊢ InjectionDetector {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             patterns: Self·default_patterns(),
             baseline: None,
         }
     }
 
-    λ default_patterns() -> Vec<InjectionPattern> {
+    rite default_patterns() -> Vec<InjectionPattern> {
         vec![
             InjectionPattern {
                 name: "system_override".to_string(),
@@ -1026,7 +1026,7 @@ invoke crate·types·*;
         ]
     }
 
-    ☉ λ analyze(&self, goal: &Goal) -> InjectionCheck {
+    ☉ rite analyze(&self, goal: &Goal) -> InjectionCheck {
         ≔ Δ indicators = Vec·new();
         ≔ text = goal.description.to_lowercase();
 
@@ -1075,7 +1075,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ add_pattern(&Δ self, pattern: InjectionPattern) {
+    ☉ rite add_pattern(&Δ self, pattern: InjectionPattern) {
         self.patterns.push(pattern);
     }
 }
@@ -1088,7 +1088,7 @@ invoke crate·types·*;
 }
 
 ⊢ GoalGuard {
-    ☉ λ new(policy: GoalPolicy) -> Self {
+    ☉ rite new(policy: GoalPolicy) -> Self {
         Self {
             policy,
             detector: InjectionDetector·new(),
@@ -1097,13 +1097,13 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_audit<F: Fn(GoalSecurityEvent) + 'static>(Δ self, f: F) -> Self {
+    ☉ rite with_audit<F: Fn(GoalSecurityEvent) + 'static>(Δ self, f: F) -> Self {
         self.audit_fn = Some(Box·new(f));
         self
     }
 
     /// Propose a new goal
-    ☉ λ propose_goal(&Δ self, goal: Goal, source: GoalSource) -> GoalDecision {
+    ☉ rite propose_goal(&Δ self, goal: Goal, source: GoalSource) -> GoalDecision {
         self.emit_event(GoalSecurityEvent·Proposed {
             goal: goal.clone(),
             source: source.clone(),
@@ -1162,11 +1162,11 @@ invoke crate·types·*;
         GoalDecision·Accepted
     }
 
-    λ is_source_allowed(&self, source: &GoalSource) -> bool {
+    rite is_source_allowed(&self, source: &GoalSource) -> bool {
         self.policy.allowed_sources.iter().any(|s| s == source)
     }
 
-    λ check_constitutional_compliance(&self, goal: &Goal) -> bool {
+    rite check_constitutional_compliance(&self, goal: &Goal) -> bool {
         ∀ directive ∈ &self.policy.constitution.directives {
             ⎇ directive.prohibits(goal) {
                 ⤺ false;
@@ -1175,7 +1175,7 @@ invoke crate·types·*;
         true
     }
 
-    λ record_decision(&Δ self, goal: Goal, decision: GoalDecision) {
+    rite record_decision(&Δ self, goal: Goal, decision: GoalDecision) {
         self.history.push_back(GoalRecord {
             goal,
             decision,
@@ -1188,7 +1188,7 @@ invoke crate·types·*;
         }
     }
 
-    λ emit_event(&self, event: GoalSecurityEvent) {
+    rite emit_event(&self, event: GoalSecurityEvent) {
         ⎇ ≔ Some(ref f) = self.audit_fn {
             f(event);
         }
@@ -1196,7 +1196,7 @@ invoke crate·types·*;
 }
 
 ⊢ Clone ∀ GoalDecision {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             GoalDecision·Accepted => GoalDecision·Accepted,
             GoalDecision·Rejected { reason } => GoalDecision·Rejected { reason: reason.clone() },
@@ -1239,7 +1239,7 @@ invoke crate·types·*;
 
 ⊢ SecureChannel {
     /// Establish secure channel with key exchange
-    ☉ λ establish(
+    ☉ rite establish(
         local: &Identity,
         remote: &Identity,
     ) -> Result<Self, ChannelError> {
@@ -1257,7 +1257,7 @@ invoke crate·types·*;
     }
 
     /// Send encrypted message
-    ☉ λ send(&Δ self, data: &[u8]) -> Result<EncryptedMessage, ChannelError> {
+    ☉ rite send(&Δ self, data: &[u8]) -> Result<EncryptedMessage, ChannelError> {
         // Increment counter
         self.send_counter += 1;
 
@@ -1280,7 +1280,7 @@ invoke crate·types·*;
     }
 
     /// Receive and decrypt message
-    ☉ λ receive(&Δ self, encrypted: &EncryptedMessage) -> Result<Vec<u8>, ChannelError> {
+    ☉ rite receive(&Δ self, encrypted: &EncryptedMessage) -> Result<Vec<u8>, ChannelError> {
         // Verify signature
         ⎇ !Identity·verify(
             &self.remote_identity.public_key,
@@ -1319,7 +1319,7 @@ invoke crate·types·*;
         Ok(plaintext)
     }
 
-    λ construct_aad(&self, counter: u64) -> Vec<u8> {
+    rite construct_aad(&self, counter: u64) -> Vec<u8> {
         ≔ Δ aad = Vec·new();
         aad.extend(&self.local_identity.id.bytes);
         aad.extend(&self.remote_identity.id.bytes);
@@ -1328,12 +1328,12 @@ invoke crate·types·*;
     }
 
     /// Get local identity
-    ☉ λ local_id(&self) -> &AgentId {
+    ☉ rite local_id(&self) -> &AgentId {
         &self.local_identity.id
     }
 
     /// Get remote identity
-    ☉ λ remote_id(&self) -> &AgentId {
+    ☉ rite remote_id(&self) -> &AgentId {
         &self.remote_identity.id
     }
 }
@@ -1382,7 +1382,7 @@ invoke crate·types·*;
 }
 
 ⊢ AuditEntry {
-    ☉ λ compute_hash(&self) -> [u8; 32] {
+    ☉ rite compute_hash(&self) -> [u8; 32] {
         ≔ Δ data = Vec·new();
         data.extend(&self.id.bytes);
         data.extend(&self.timestamp.nanos.to_le_bytes());
@@ -1409,7 +1409,7 @@ invoke crate·types·*;
 }
 
 ⊢ AuditContext {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             current_goal: None,
             confidence: None,
@@ -1418,24 +1418,24 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_goal(Δ self, goal_id: GoalId) -> Self {
+    ☉ rite with_goal(Δ self, goal_id: GoalId) -> Self {
         self.current_goal = Some(goal_id);
         self
     }
 
-    ☉ λ with_confidence(Δ self, confidence: f32) -> Self {
+    ☉ rite with_confidence(Δ self, confidence: f32) -> Self {
         self.confidence = Some(confidence);
         self
     }
 
-    ☉ λ with_agent(Δ self, agent_id: AgentId) -> Self {
+    ☉ rite with_agent(Δ self, agent_id: AgentId) -> Self {
         self.extra.insert("agent_id".to_string(), Value·bytes(agent_id.bytes.to_vec()));
         self
     }
 }
 
 ⊢ Default ∀ AuditContext {
-    λ default() -> Self {
+    rite default() -> Self {
         Self·new()
     }
 }
@@ -1453,7 +1453,7 @@ invoke crate·types·*;
 }
 
 ⊢ AuditConfig {
-    ☉ λ default() -> Self {
+    ☉ rite default() -> Self {
         Self {
             max_entries: 10000,
             persist: true,
@@ -1477,13 +1477,13 @@ invoke crate·types·*;
 
 /// Storage backend trait
 ☉ Θ AuditStorage {
-    λ append(&Δ self, entry: &AuditEntry);
-    λ load(&self, start: usize, count: usize) -> Vec<AuditEntry>;
-    λ count(&self) -> usize;
+    rite append(&Δ self, entry: &AuditEntry);
+    rite load(&self, start: usize, count: usize) -> Vec<AuditEntry>;
+    rite count(&self) -> usize;
 }
 
 ⊢ AuditLog {
-    ☉ λ new(config: AuditConfig) -> Self {
+    ☉ rite new(config: AuditConfig) -> Self {
         Self {
             entries: Vec·new(),
             config,
@@ -1491,13 +1491,13 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_storage<S: AuditStorage + 'static>(Δ self, storage: S) -> Self {
+    ☉ rite with_storage<S: AuditStorage + 'static>(Δ self, storage: S) -> Self {
         self.storage = Some(Box·new(storage));
         self
     }
 
     /// Log an event
-    ☉ λ log(&Δ self, action: AuditAction, outcome: AuditOutcome, context: AuditContext) {
+    ☉ rite log(&Δ self, action: AuditAction, outcome: AuditOutcome, context: AuditContext) {
         ≔ prev_hash = self.entries.last()
             .map(|e| e.hash)
             .unwrap_or([0u8; 32]);
@@ -1534,12 +1534,12 @@ invoke crate·types·*;
     }
 
     /// Shorthand ∀ logging with default context
-    ☉ λ log_simple(&Δ self, action: AuditAction, outcome: AuditOutcome) {
+    ☉ rite log_simple(&Δ self, action: AuditAction, outcome: AuditOutcome) {
         self.log(action, outcome, AuditContext·new());
     }
 
     /// Verify chain integrity
-    ☉ λ verify_chain(&self) -> bool {
+    ☉ rite verify_chain(&self) -> bool {
         ⎇ self.entries.is_empty() {
             ⤺ true;
         }
@@ -1570,19 +1570,19 @@ invoke crate·types·*;
     }
 
     /// Query audit log
-    ☉ λ query(&self, query: &AuditQuery) -> Vec<&AuditEntry> {
+    ☉ rite query(&self, query: &AuditQuery) -> Vec<&AuditEntry> {
         self.entries.iter()
             .filter(|e| query.matches(e))
             .collect()
     }
 
     /// Get entry count
-    ☉ λ count(&self) -> usize {
+    ☉ rite count(&self) -> usize {
         self.entries.len()
     }
 
     /// Get last entry hash (∀ external verification)
-    ☉ λ last_hash(&self) -> [u8; 32] {
+    ☉ rite last_hash(&self) -> [u8; 32] {
         self.entries.last()
             .map(|e| e.hash)
             .unwrap_or([0u8; 32])
@@ -1597,7 +1597,7 @@ invoke crate·types·*;
 }
 
 ⊢ AuditQuery {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             agent: None,
             time_range: None,
@@ -1605,22 +1605,22 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ agent(Δ self, agent: AgentId) -> Self {
+    ☉ rite agent(Δ self, agent: AgentId) -> Self {
         self.agent = Some(agent);
         self
     }
 
-    ☉ λ time_range(Δ self, start: Timestamp, end: Timestamp) -> Self {
+    ☉ rite time_range(Δ self, start: Timestamp, end: Timestamp) -> Self {
         self.time_range = Some((start, end));
         self
     }
 
-    ☉ λ action_type(Δ self, filter: &str) -> Self {
+    ☉ rite action_type(Δ self, filter: &str) -> Self {
         self.action_filter = Some(filter.to_string());
         self
     }
 
-    ☉ λ matches(&self, entry: &AuditEntry) -> bool {
+    ☉ rite matches(&self, entry: &AuditEntry) -> bool {
         ⎇ ≔ Some(ref agent) = self.agent {
             ⎇ &entry.agent != agent {
                 ⤺ false;
@@ -1681,14 +1681,14 @@ invoke crate·types·*;
 }
 
 ⊢ BehaviorProfile {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             action_distribution: HashMap·new(),
             sample_count: 0,
         }
     }
 
-    ☉ λ record_action(&Δ self, action: &Action) {
+    ☉ rite record_action(&Δ self, action: &Action) {
         ≔ name = action.name().to_string();
         *self.action_distribution.entry(name).or_insert(0.0) += 1.0;
         self.sample_count += 1;
@@ -1702,7 +1702,7 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ action_probability(&self, action: &Action) -> f32 {
+    ☉ rite action_probability(&self, action: &Action) -> f32 {
         self.action_distribution
             .get(action.name())
             .copied()
@@ -1711,7 +1711,7 @@ invoke crate·types·*;
 }
 
 ⊢ AlignmentMonitor {
-    ☉ λ new(constitution: Constitution) -> Self {
+    ☉ rite new(constitution: Constitution) -> Self {
         Self {
             constitution,
             baseline: BehaviorProfile·new(),
@@ -1723,18 +1723,18 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_thresholds(Δ self, drift: f32, compliance: f32) -> Self {
+    ☉ rite with_thresholds(Δ self, drift: f32, compliance: f32) -> Self {
         self.drift_threshold = drift;
         self.compliance_threshold = compliance;
         self
     }
 
-    ☉ λ add_alert_handler<F: Fn(&Alert) + 'static>(&Δ self, handler: F) {
+    ☉ rite add_alert_handler<F: Fn(&Alert) + 'static>(&Δ self, handler: F) {
         self.alert_handlers.push(Box·new(handler));
     }
 
     /// Check action ∀ constitutional compliance
-    ☉ λ check_compliance(&self, action: &Action) -> ComplianceResult {
+    ☉ rite check_compliance(&self, action: &Action) -> ComplianceResult {
         ≔ Δ violations = Vec·new();
         ≔ Δ score = 1.0;
 
@@ -1754,7 +1754,7 @@ invoke crate·types·*;
     }
 
     /// Measure behavioral drift
-    ☉ λ measure_drift(&self, action: &Action) -> f32 {
+    ☉ rite measure_drift(&self, action: &Action) -> f32 {
         ⎇ self.baseline.sample_count < 100 {
             // Not enough data ∀ drift detection
             ⤺ 0.0;
@@ -1774,7 +1774,7 @@ invoke crate·types·*;
     }
 
     /// Handle action with monitoring
-    ☉ λ on_action(&Δ self, action: &Action) -> ActionDecision {
+    ☉ rite on_action(&Δ self, action: &Action) -> ActionDecision {
         // Record ∀ baseline
         self.baseline.record_action(action);
         self.record_action(action);
@@ -1813,26 +1813,26 @@ invoke crate·types·*;
     }
 
     /// Trigger emergency stop
-    ☉ λ emergency_stop(&self) {
+    ☉ rite emergency_stop(&self) {
         self.emergency_stop.store(true, Ordering·SeqCst);
     }
 
     /// Check ⎇ emergency stop is triggered
-    ☉ λ is_emergency_stopped(&self) -> bool {
+    ☉ rite is_emergency_stopped(&self) -> bool {
         self.emergency_stop.load(Ordering·SeqCst)
     }
 
     /// Reset emergency stop
-    ☉ λ reset_emergency_stop(&self) {
+    ☉ rite reset_emergency_stop(&self) {
         self.emergency_stop.store(false, Ordering·SeqCst);
     }
 
     /// Get emergency stop handle
-    ☉ λ emergency_stop_handle(&self) -> Arc<AtomicBool> {
+    ☉ rite emergency_stop_handle(&self) -> Arc<AtomicBool> {
         Arc·clone(&self.emergency_stop)
     }
 
-    λ check_directive(&self, directive: &Directive, action: &Action) -> DirectiveResult {
+    rite check_directive(&self, directive: &Directive, action: &Action) -> DirectiveResult {
         ≔ compliant = !directive.prohibits(&Goal·new(action.name()));
 
         DirectiveResult {
@@ -1847,7 +1847,7 @@ invoke crate·types·*;
         }
     }
 
-    λ record_action(&Δ self, action: &Action) {
+    rite record_action(&Δ self, action: &Action) {
         self.recent_actions.push_back(ActionRecord {
             action: action.clone(),
             context_hash: [0u8; 32], // Simplified
@@ -1860,7 +1860,7 @@ invoke crate·types·*;
         }
     }
 
-    λ raise_alert(&self, alert: Alert) {
+    rite raise_alert(&self, alert: Alert) {
         ∀ handler ∈ &self.alert_handlers {
             handler(&alert);
         }
@@ -1899,7 +1899,7 @@ invoke crate·types·*;
 }
 
 ⊢ ReputationSystem {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             direct_trust: HashMap·new(),
             accuracy_history: HashMap·new(),
@@ -1908,7 +1908,7 @@ invoke crate·types·*;
     }
 
     /// Get reputation score ∀ an agent
-    ☉ λ score(&self, agent: &AgentId) -> f32 {
+    ☉ rite score(&self, agent: &AgentId) -> f32 {
         // Combine direct trust with accuracy history
         ≔ direct = self.direct_trust.get(agent).copied().unwrap_or(0.5);
         ≔ accuracy = self.accuracy_history.get(agent)
@@ -1926,12 +1926,12 @@ invoke crate·types·*;
     }
 
     /// Set direct trust ∀ an agent
-    ☉ λ set_trust(&Δ self, agent: AgentId, trust: f32) {
+    ☉ rite set_trust(&Δ self, agent: AgentId, trust: f32) {
         self.direct_trust.insert(agent, trust.clamp(0.0, 1.0));
     }
 
     /// Record accuracy ∀ an agent
-    ☉ λ record_accuracy(&Δ self, agent: AgentId, accurate: bool) {
+    ☉ rite record_accuracy(&Δ self, agent: AgentId, accurate: bool) {
         self.accuracy_history
             .entry(agent)
             .or_insert_with(AccuracyHistory·new)
@@ -1939,7 +1939,7 @@ invoke crate·types·*;
     }
 
     /// Add vouch from one agent to another
-    ☉ λ add_vouch(&Δ self, voucher: AgentId, vouchee: AgentId) {
+    ☉ rite add_vouch(&Δ self, voucher: AgentId, vouchee: AgentId) {
         self.vouches
             .entry(vouchee)
             .or_insert_with(Vec·new)
@@ -1964,7 +1964,7 @@ invoke crate·types·*;
 }
 
 ⊢ SybilResistanceConfig {
-    ☉ λ is_suspicious(&self, agent: &AgentId, context: &SybilContext) -> bool {
+    ☉ rite is_suspicious(&self, agent: &AgentId, context: &SybilContext) -> bool {
         ⌥ self {
             SybilResistanceConfig·None => false,
             SybilResistanceConfig·ProofOfWork { difficulty } => {
@@ -1989,7 +1989,7 @@ invoke crate·types·*;
 }
 
 ⊢ SybilContext {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             proof_of_work_bits: 0,
             vouch_count: 0,
@@ -2014,14 +2014,14 @@ invoke crate·types·*;
 }
 
 ⊢ ProvenanceTracker {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             records: HashMap·new(),
         }
     }
 
     /// Record knowledge provenance
-    ☉ λ record(&Δ self, knowledge: &Knowledge, from: Option<AgentId>) {
+    ☉ rite record(&Δ self, knowledge: &Knowledge, from: Option<AgentId>) {
         ≔ record = self.records.entry(knowledge.id.clone())
             .or_insert_with(|| ProvenanceRecord {
                 knowledge_id: knowledge.id.clone(),
@@ -2041,7 +2041,7 @@ invoke crate·types·*;
     }
 
     /// Build provenance chain ∀ verification
-    ☉ λ build_chain(&self, knowledge: &Knowledge) -> ProvenanceChain {
+    ☉ rite build_chain(&self, knowledge: &Knowledge) -> ProvenanceChain {
         ⌥ self.records.get(&knowledge.id) {
             Some(record) => ProvenanceChain {
                 links: record.chain.clone(),
@@ -2056,7 +2056,7 @@ invoke crate·types·*;
 }
 
 ⊢ Clone ∀ ProvenanceLink {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         Self {
             from: self.from.clone(),
             to: self.to.clone(),
@@ -2079,13 +2079,13 @@ invoke crate·types·*;
 }
 
 ⊢ Quarantine {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             items: HashMap·new(),
         }
     }
 
-    ☉ λ add(&Δ self, knowledge: Knowledge, reasons: Vec<String>) {
+    ☉ rite add(&Δ self, knowledge: Knowledge, reasons: Vec<String>) {
         ≔ id = knowledge.id.clone();
         self.items.insert(id, QuarantinedItem {
             knowledge,
@@ -2095,21 +2095,21 @@ invoke crate·types·*;
         });
     }
 
-    ☉ λ is_quarantined(&self, id: &KnowledgeId) -> bool {
+    ☉ rite is_quarantined(&self, id: &KnowledgeId) -> bool {
         self.items.contains_key(id)
     }
 
-    ☉ λ release(&Δ self, id: &KnowledgeId) -> Option<Knowledge> {
+    ☉ rite release(&Δ self, id: &KnowledgeId) -> Option<Knowledge> {
         self.items.remove(id).map(|item| item.knowledge)
     }
 
-    ☉ λ count(&self) -> usize {
+    ☉ rite count(&self) -> usize {
         self.items.len()
     }
 }
 
 ⊢ CollectiveDefense {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             reputation: ReputationSystem·new(),
             sybil_resistance: SybilResistanceConfig·None,
@@ -2118,13 +2118,13 @@ invoke crate·types·*;
         }
     }
 
-    ☉ λ with_sybil_resistance(Δ self, config: SybilResistanceConfig) -> Self {
+    ☉ rite with_sybil_resistance(Δ self, config: SybilResistanceConfig) -> Self {
         self.sybil_resistance = config;
         self
     }
 
     /// Verify knowledge before accepting
-    ☉ λ verify_knowledge(&self, knowledge: &Knowledge, sybil_context: &SybilContext) -> Verification {
+    ☉ rite verify_knowledge(&self, knowledge: &Knowledge, sybil_context: &SybilContext) -> Verification {
         ≔ source = &knowledge.source;
 
         // Check reputation
@@ -2161,22 +2161,22 @@ invoke crate·types·*;
     }
 
     /// Record knowledge and track provenance
-    ☉ λ record_knowledge(&Δ self, knowledge: &Knowledge, from: Option<AgentId>) {
+    ☉ rite record_knowledge(&Δ self, knowledge: &Knowledge, from: Option<AgentId>) {
         self.provenance.record(knowledge, from);
     }
 
     /// Quarantine suspicious knowledge
-    ☉ λ quarantine(&Δ self, knowledge: Knowledge, reasons: Vec<String>) {
+    ☉ rite quarantine(&Δ self, knowledge: Knowledge, reasons: Vec<String>) {
         self.quarantine.add(knowledge, reasons);
     }
 
     /// Get reputation system (mutable)
-    ☉ λ reputation_mut(&Δ self) -> &Δ ReputationSystem {
+    ☉ rite reputation_mut(&Δ self) -> &Δ ReputationSystem {
         &Δ self.reputation
     }
 
     /// Get reputation system
-    ☉ λ reputation(&self) -> &ReputationSystem {
+    ☉ rite reputation(&self) -> &ReputationSystem {
         &self.reputation
     }
 }

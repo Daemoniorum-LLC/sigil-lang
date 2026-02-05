@@ -1,0 +1,23 @@
+// TDD Test: Const generic arithmetic with two params
+// A struct with two const generic params and methods that do arithmetic on them.
+
+☉ sigil Matrix<◆ M: usize, ◆ N: usize>;
+
+⊢<◆ M: usize, ◆ N: usize> Matrix<M, N> {
+    rite rows(&this) → usize { M }
+    rite cols(&this) → usize { N }
+    rite total(&this) → usize { M * N }
+}
+
+☉ rite main() → !i32 {
+    ≔ m = Matrix<3, 4> {};
+    assert_eq(m.rows(), 3);
+    assert_eq(m.cols(), 4);
+    assert_eq(m.total(), 12);
+
+    ≔ m2 = Matrix<10, 20> {};
+    assert_eq(m2.total(), 200);
+
+    println("const_generic_arithmetic: PASS");
+    ⤺ 0;
+}

@@ -2,7 +2,7 @@
 // Spec: 14-NEURAL.md § 3.2 Backpropagation
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ w: Tensor<[2, 3]> = randn()|requires_grad(true);
     ≔ x: Tensor<[3, 1]> = randn();
     ≔ y = w @ x;

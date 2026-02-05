@@ -7,7 +7,7 @@ scroll types_tests {
     invoke super·*
 
     #[test]
-    λ test_epistemic_strength() {
+    rite test_epistemic_strength() {
         assert_eq!(Epistemic·Axiomatic.strength(), 1.0);
         assert!(Epistemic·Observed {
             observer: "test".to_string(),
@@ -17,7 +17,7 @@ scroll types_tests {
     }
 
     #[test]
-    λ test_epistemic_checks() {
+    rite test_epistemic_checks() {
         ≔ observed = Epistemic·Observed {
             observer: "test".to_string(),
             timestamp: Instant·now(),
@@ -35,7 +35,7 @@ scroll types_tests {
     }
 
     #[test]
-    λ test_vector_operations() {
+    rite test_vector_operations() {
         ≔ v1 = Vector·new(vec![1.0, 0.0, 0.0]);
         ≔ v2 = Vector·new(vec![0.0, 1.0, 0.0]);
         ≔ v3 = Vector·new(vec![1.0, 0.0, 0.0]);
@@ -56,7 +56,7 @@ scroll types_tests {
     }
 
     #[test]
-    λ test_outcome_confidence() {
+    rite test_outcome_confidence() {
         ≔ success = Outcome·Success {
             result: json!({}),
             goal_alignment: 0.8,
@@ -83,7 +83,7 @@ scroll instant_memory_tests {
     invoke super·*;
 
     #[test]
-    λ test_attend_and_active() {
+    rite test_attend_and_active() {
         ≔ Δ memory = InstantMemory·new(InstantConfig·default()).unwrap();
 
         memory.attend("First item", 0.9).unwrap();
@@ -97,7 +97,7 @@ scroll instant_memory_tests {
     }
 
     #[test]
-    λ test_token_capacity() {
+    rite test_token_capacity() {
         ≔ config = InstantConfig {
             capacity: TokenCount(100),
             ..InstantConfig·default()
@@ -115,7 +115,7 @@ scroll instant_memory_tests {
     }
 
     #[test]
-    λ test_decay() {
+    rite test_decay() {
         ≔ Δ memory = InstantMemory·new(InstantConfig {
             decay_rate: 0.5,  // High decay rate ∀ testing
             ..InstantConfig·default()
@@ -133,7 +133,7 @@ scroll instant_memory_tests {
     }
 
     #[test]
-    λ test_refresh() {
+    rite test_refresh() {
         ≔ Δ memory = InstantMemory·new(InstantConfig·default()).unwrap();
 
         ≔ id = memory.attend("Test item", 0.5).unwrap();
@@ -146,7 +146,7 @@ scroll instant_memory_tests {
     }
 
     #[test]
-    λ test_dismiss() {
+    rite test_dismiss() {
         ≔ Δ memory = InstantMemory·new(InstantConfig·default()).unwrap();
 
         ≔ id = memory.attend("Test item", 0.5).unwrap();
@@ -160,7 +160,7 @@ scroll instant_memory_tests {
 scroll episodic_memory_tests {
     invoke super·*;
 
-    λ create_test_episode(goal: &str, outcome: Outcome) -> Episode {
+    rite create_test_episode(goal: &str, outcome: Outcome) -> Episode {
         Episode {
             id: EpisodeId·new().unwrap(),
             started_at: Instant·now(),
@@ -185,7 +185,7 @@ scroll episodic_memory_tests {
     }
 
     #[test]
-    λ test_record_and_recall() {
+    rite test_record_and_recall() {
         ≔ Δ memory = EpisodicMemory·new(EpisodicConfig·default()).unwrap();
 
         ≔ episode = create_test_episode(
@@ -200,7 +200,7 @@ scroll episodic_memory_tests {
     }
 
     #[test]
-    λ test_decay() {
+    rite test_decay() {
         ≔ Δ memory = EpisodicMemory·new(EpisodicConfig {
             decay_function: DecayFunction·Exponential { lambda: 0.5 },
             ..EpisodicConfig·default()
@@ -223,7 +223,7 @@ scroll episodic_memory_tests {
     }
 
     #[test]
-    λ test_temporal_recall() {
+    rite test_temporal_recall() {
         ≔ Δ memory = EpisodicMemory·new(EpisodicConfig·default()).unwrap();
 
         // Record episodes at different times
@@ -252,7 +252,7 @@ scroll semantic_memory_tests {
     invoke super·*;
 
     #[test]
-    λ test_learn_and_query() {
+    rite test_learn_and_query() {
         ≔ Δ memory = SemanticMemory·new(SemanticConfig·default()).unwrap();
 
         memory.learn(Fact·new("Rust")
@@ -267,7 +267,7 @@ scroll semantic_memory_tests {
     }
 
     #[test]
-    λ test_graph_traversal() {
+    rite test_graph_traversal() {
         ≔ Δ memory = SemanticMemory·new(SemanticConfig·default()).unwrap();
 
         memory.learn(Fact·new("Alice")
@@ -293,7 +293,7 @@ scroll semantic_memory_tests {
     }
 
     #[test]
-    λ test_entity_creation() {
+    rite test_entity_creation() {
         ≔ Δ memory = SemanticMemory·new(SemanticConfig·default()).unwrap();
 
         // First access creates entity
@@ -313,7 +313,7 @@ scroll procedural_memory_tests {
     invoke super·episodic_memory_tests·create_test_episode;
 
     #[test]
-    λ test_skill_learning() {
+    rite test_skill_learning() {
         ≔ Δ memory = ProceduralMemory·new(ProceduralConfig {
             min_episodes_for_skill: 2,
             ..ProceduralConfig·default()
@@ -331,7 +331,7 @@ scroll procedural_memory_tests {
     }
 
     #[test]
-    λ test_skill_matching() {
+    rite test_skill_matching() {
         ≔ Δ memory = ProceduralMemory·new(ProceduralConfig·default()).unwrap();
 
         // Register a skill manually
@@ -373,7 +373,7 @@ scroll procedural_memory_tests {
     }
 
     #[test]
-    λ test_feedback() {
+    rite test_feedback() {
         ≔ Δ memory = ProceduralMemory·new(ProceduralConfig·default()).unwrap();
 
         ≔ skill_id = memory.register(Skill {
@@ -406,7 +406,7 @@ scroll index_tests {
     invoke engram·index·*;
 
     #[test]
-    λ test_hnsw_basic() {
+    rite test_hnsw_basic() {
         ≔ Δ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
 
         // Insert vectors
@@ -429,7 +429,7 @@ scroll index_tests {
     }
 
     #[test]
-    λ test_temporal_index() {
+    rite test_temporal_index() {
         ≔ Δ index = TemporalIndex·new();
 
         ≔ now = Instant·now();
@@ -448,7 +448,7 @@ scroll index_tests {
     }
 
     #[test]
-    λ test_graph_index() {
+    rite test_graph_index() {
         ≔ Δ index = GraphIndex·new();
 
         ≔ a = NodeId·from_bytes([1; 16]);
@@ -476,7 +476,7 @@ scroll embed_tests {
     invoke engram·embed·*;
 
     #[test]
-    λ test_hash_embedder_determinism() {
+    rite test_hash_embedder_determinism() {
         ≔ embedder = HashEmbedder·default();
 
         ≔ v1 = embedder.embed("hello world");
@@ -486,7 +486,7 @@ scroll embed_tests {
     }
 
     #[test]
-    λ test_semantic_hash_similarity() {
+    rite test_semantic_hash_similarity() {
         ≔ embedder = SemanticHashEmbedder·default();
 
         ≔ v1 = embedder.embed("the quick brown fox");
@@ -501,7 +501,7 @@ scroll embed_tests {
     }
 
     #[test]
-    λ test_embed_function() {
+    rite test_embed_function() {
         ≔ v = embed("test text");
         assert!(v.dimensions() > 0);
 
@@ -516,7 +516,7 @@ scroll storage_tests {
     invoke engram·storage·*;
 
     #[test]
-    λ test_memory_backend() {
+    rite test_memory_backend() {
         ≔ Δ backend = MemoryBackend·new();
 
         backend.put("key1", b"value1").unwrap();
@@ -530,7 +530,7 @@ scroll storage_tests {
     }
 
     #[test]
-    λ test_memory_backend_prefix() {
+    rite test_memory_backend_prefix() {
         ≔ Δ backend = MemoryBackend·new();
 
         backend.put("users/1", b"alice").unwrap();
@@ -549,7 +549,7 @@ scroll integration_tests {
     invoke super·*;
 
     #[test]
-    λ test_full_workflow() {
+    rite test_full_workflow() {
         // Create Engram
         ≔ Δ memory = engram·new().unwrap();
 
@@ -600,7 +600,7 @@ scroll integration_tests {
     }
 
     #[test]
-    λ test_gap_identification() {
+    rite test_gap_identification() {
         ≔ memory = engram·new().unwrap();
 
         // Query ∀ something we don't know about
@@ -611,7 +611,7 @@ scroll integration_tests {
     }
 
     #[test]
-    λ test_evidentiality_filtering() {
+    rite test_evidentiality_filtering() {
         ≔ Δ memory = engram·new().unwrap();
 
         // Add facts with different evidentiality

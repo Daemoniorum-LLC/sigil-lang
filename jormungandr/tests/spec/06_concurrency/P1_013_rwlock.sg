@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 5.1 Mutex
 // Priority: P1 - Production Ready
 
-λ main() {
+rite main() {
     ≔ mutex: Mutex<i32> = Mutex·new(10);
 
     // Lock and read

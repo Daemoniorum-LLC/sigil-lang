@@ -33,7 +33,7 @@ const SYS_FCNTL: i64 = 72;
 // ============================================================================
 
 /// syscall with 0 arguments
-λ syscall0(num: i64) -> i64 {
+rite syscall0(num: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -46,7 +46,7 @@ const SYS_FCNTL: i64 = 72;
 }
 
 /// syscall with 1 argument
-λ syscall1(num: i64, arg1: i64) -> i64 {
+rite syscall1(num: i64, arg1: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -60,7 +60,7 @@ const SYS_FCNTL: i64 = 72;
 }
 
 /// syscall with 2 arguments
-λ syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
+rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -75,7 +75,7 @@ const SYS_FCNTL: i64 = 72;
 }
 
 /// syscall with 3 arguments
-λ syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
+rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -91,7 +91,7 @@ const SYS_FCNTL: i64 = 72;
 }
 
 /// syscall with 4 arguments (uses r10 instead of rcx)
-λ syscall4(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64) -> i64 {
+rite syscall4(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -108,7 +108,7 @@ const SYS_FCNTL: i64 = 72;
 }
 
 /// syscall with 5 arguments
-λ syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
+rite syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -126,7 +126,7 @@ const SYS_FCNTL: i64 = 72;
 }
 
 /// syscall with 6 arguments
-λ syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
+rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, arg6: i64) -> i64 {
     ≔ ret: i64 = 0;
     unsafe {
         asm!("syscall",
@@ -150,17 +150,17 @@ const SYS_FCNTL: i64 = 72;
 // ============================================================================
 
 /// Read from file descriptor
-☉ λ sys_read(fd: i64, buf: i64, count: i64) -> i64 {
+☉ rite sys_read(fd: i64, buf: i64, count: i64) -> i64 {
     syscall3(SYS_READ, fd, buf, count)
 }
 
 /// Write to file descriptor
-☉ λ sys_write(fd: i64, buf: i64, count: i64) -> i64 {
+☉ rite sys_write(fd: i64, buf: i64, count: i64) -> i64 {
     syscall3(SYS_WRITE, fd, buf, count)
 }
 
 /// Close file descriptor
-☉ λ sys_close(fd: i64) -> i64 {
+☉ rite sys_close(fd: i64) -> i64 {
     syscall1(SYS_CLOSE, fd)
 }
 
@@ -168,57 +168,57 @@ const SYS_FCNTL: i64 = 72;
 /// domain: AF_INET (2), AF_INET6 (10)
 /// type: SOCK_STREAM (1), SOCK_DGRAM (2)
 /// protocol: 0 ∀ default
-☉ λ sys_socket(domain: i64, socket_type: i64, protocol: i64) -> i64 {
+☉ rite sys_socket(domain: i64, socket_type: i64, protocol: i64) -> i64 {
     syscall3(SYS_SOCKET, domain, socket_type, protocol)
 }
 
 /// Connect socket to address
-☉ λ sys_connect(fd: i64, addr: i64, addrlen: i64) -> i64 {
+☉ rite sys_connect(fd: i64, addr: i64, addrlen: i64) -> i64 {
     syscall3(SYS_CONNECT, fd, addr, addrlen)
 }
 
 /// Accept connection on listening socket
-☉ λ sys_accept(fd: i64, addr: i64, addrlen: i64) -> i64 {
+☉ rite sys_accept(fd: i64, addr: i64, addrlen: i64) -> i64 {
     syscall3(SYS_ACCEPT, fd, addr, addrlen)
 }
 
 /// Bind socket to address
-☉ λ sys_bind(fd: i64, addr: i64, addrlen: i64) -> i64 {
+☉ rite sys_bind(fd: i64, addr: i64, addrlen: i64) -> i64 {
     syscall3(SYS_BIND, fd, addr, addrlen)
 }
 
 /// Listen ∀ connections on socket
-☉ λ sys_listen(fd: i64, backlog: i64) -> i64 {
+☉ rite sys_listen(fd: i64, backlog: i64) -> i64 {
     syscall2(SYS_LISTEN, fd, backlog)
 }
 
 /// Set socket option
-☉ λ sys_setsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
+☉ rite sys_setsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
     syscall5(SYS_SETSOCKOPT, fd, level, optname, optval, optlen)
 }
 
 /// Get socket option
-☉ λ sys_getsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
+☉ rite sys_getsockopt(fd: i64, level: i64, optname: i64, optval: i64, optlen: i64) -> i64 {
     syscall5(SYS_GETSOCKOPT, fd, level, optname, optval, optlen)
 }
 
 /// Send data on socket
-☉ λ sys_sendto(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
+☉ rite sys_sendto(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
     syscall6(SYS_SENDTO, fd, buf, len, flags, addr, addrlen)
 }
 
 /// Receive data from socket
-☉ λ sys_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
+☉ rite sys_recvfrom(fd: i64, buf: i64, len: i64, flags: i64, addr: i64, addrlen: i64) -> i64 {
     syscall6(SYS_RECVFROM, fd, buf, len, flags, addr, addrlen)
 }
 
 /// File control (∀ non-blocking mode)
-☉ λ sys_fcntl(fd: i64, cmd: i64, arg: i64) -> i64 {
+☉ rite sys_fcntl(fd: i64, cmd: i64, arg: i64) -> i64 {
     syscall3(SYS_FCNTL, fd, cmd, arg)
 }
 
 /// Poll ∀ events
-☉ λ sys_poll(fds: i64, nfds: i64, timeout: i64) -> i64 {
+☉ rite sys_poll(fds: i64, nfds: i64, timeout: i64) -> i64 {
     syscall3(SYS_POLL, fds, nfds, timeout)
 }
 
@@ -261,7 +261,7 @@ const SYS_FCNTL: i64 = 72;
 // Test: Create and close a TCP socket
 // ============================================================================
 
-λ main() -> i64 {
+rite main() -> i64 {
     // Create a TCP socket (AF_INET=2, SOCK_STREAM=1, protocol=0)
     ≔ fd = sys_socket(AF_INET, SOCK_STREAM, 0);
 

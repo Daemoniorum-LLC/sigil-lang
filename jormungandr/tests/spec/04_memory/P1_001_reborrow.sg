@@ -2,11 +2,11 @@
 // Spec: 04-MEMORY.md § 3.3 Borrow Rules
 // Priority: P1 - Production Ready
 
-λ take_ref(r: &i32) -> !i32 {
+rite take_ref(r: &i32) -> !i32 {
     *r
 }
 
-λ main() {
+rite main() {
     ≔ Δ x: !i32 = 42;
     ≔ r: &Δ i32 = &Δ x;
 

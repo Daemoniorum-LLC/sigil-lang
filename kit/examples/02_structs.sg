@@ -11,28 +11,28 @@
 // Implementation block with ⊢ (or 'impl')
 ⊢ Rectangle {
     // Associated function (constructor by convention)
-    λ new(width: f64, height: f64) → This {
+    rite new(width: f64, height: f64) → This {
         Rectangle { width, height }
     }
 
     // Instance method (takes &this)
-    λ area(&this) → f64 {
+    rite area(&this) → f64 {
         this.width * this.height
     }
 
     // Another instance method
-    λ perimeter(&this) → f64 {
+    rite perimeter(&this) → f64 {
         2.0 * (this.width + this.height)
     }
 
     // Method that takes mutable reference
-    λ scale(&Δ this, factor: f64) {
+    rite scale(&Δ this, factor: f64) {
         this.width = this.width * factor;
         this.height = this.height * factor;
     }
 
     // Method that returns boolean
-    λ is_square(&this) → bool {
+    rite is_square(&this) → bool {
         this.width == this.height
     }
 }
@@ -45,20 +45,20 @@
 }
 
 ⊢ Person {
-    λ new(name: String, age: i32) → This {
+    rite new(name: String, age: i32) → This {
         Person { name, age, active: true }
     }
 
-    λ describe(&this) → String {
+    rite describe(&this) → String {
         this.name + " is " + str(this.age) + " years old"
     }
 
-    λ birthday(&Δ this) {
+    rite birthday(&Δ this) {
         this.age = this.age + 1;
     }
 }
 
-λ main() {
+rite main() {
     // Create rectangle using constructor
     ≔ rect! = Rectangle·new(10.0, 5.0);
 

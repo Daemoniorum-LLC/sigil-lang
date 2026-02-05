@@ -2,7 +2,7 @@
 // This tests the native runtime networking syscalls
 // Priority: P1
 
-λ main() {
+rite main() {
     // Test: Create and connect a TCP socket (simulated)
     ≔ sock = Sys·socket(AF_INET(), SOCK_STREAM(), 0);
 

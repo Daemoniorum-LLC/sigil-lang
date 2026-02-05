@@ -46,7 +46,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     // Construction
     // ========================================================================
 
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             outgoing: HashMap·new(),
             incoming: HashMap·new(),
@@ -61,12 +61,12 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     // ========================================================================
 
     /// Add a node to the index
-    ☉ λ add_node(id: NodeId) {
+    ☉ rite add_node(id: NodeId) {
         self.nodes.insert(id);
     }
 
     /// Add an edge to the index
-    ☉ λ add_edge(
+    ☉ rite add_edge(
         source: NodeId,
         target: NodeId,
         edge_id: EdgeId,
@@ -103,7 +103,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Remove an edge
-    ☉ λ remove_edge(source: &NodeId, target: &NodeId, edge_id: &EdgeId) -> bool {
+    ☉ rite remove_edge(source: &NodeId, target: &NodeId, edge_id: &EdgeId) -> bool {
         ≔ Δ removed = false;
 
         // Remove from outgoing
@@ -133,7 +133,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Remove a node and all its edges
-    ☉ λ remove_node(id: &NodeId) -> bool {
+    ☉ rite remove_node(id: &NodeId) -> bool {
         ⎇ !self.nodes.remove(id) {
             ⤺ false;
         }
@@ -177,7 +177,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     // ========================================================================
 
     /// Get outgoing neighbors of a node
-    ☉ λ neighbors_out(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
+    ☉ rite neighbors_out(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
         self.outgoing.get(node)
             .map(|edges| edges.iter()
                 .map(|e| (e.node.clone(), e.edge.clone(), e.relation.clone()))
@@ -186,7 +186,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Get incoming neighbors of a node
-    ☉ λ neighbors_in(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
+    ☉ rite neighbors_in(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
         self.incoming.get(node)
             .map(|edges| edges.iter()
                 .map(|e| (e.node.clone(), e.edge.clone(), e.relation.clone()))
@@ -195,14 +195,14 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Get all neighbors (both directions)
-    ☉ λ neighbors(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
+    ☉ rite neighbors(node: &NodeId) -> Vec<(NodeId, EdgeId, Relation)> {
         ≔ Δ result = self.neighbors_out(node);
         result.extend(self.neighbors_in(node));
         result
     }
 
     /// Follow a specific relation from a node
-    ☉ λ follow(node: &NodeId, relation: &Relation) -> Vec<NodeId> {
+    ☉ rite follow(node: &NodeId, relation: &Relation) -> Vec<NodeId> {
         self.outgoing.get(node)
             .map(|edges| edges.iter()
                 .filter(|e| &e.relation == relation)
@@ -212,7 +212,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Follow reverse relation to a node
-    ☉ λ follow_reverse(node: &NodeId, relation: &Relation) -> Vec<NodeId> {
+    ☉ rite follow_reverse(node: &NodeId, relation: &Relation) -> Vec<NodeId> {
         self.incoming.get(node)
             .map(|edges| edges.iter()
                 .filter(|e| &e.relation == relation)
@@ -222,7 +222,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// BFS traversal from a starting node
-    ☉ λ bfs(start: &NodeId, max_depth: usize) -> Vec<(NodeId, usize)> {
+    ☉ rite bfs(start: &NodeId, max_depth: usize) -> Vec<(NodeId, usize)> {
         ≔ Δ visited: HashSet<NodeId> = HashSet·new();
         ≔ Δ queue: VecDeque<(NodeId, usize)> = VecDeque·new();
         ≔ Δ result: Vec<(NodeId, usize)> = Vec·new();
@@ -246,7 +246,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// DFS traversal from a starting node
-    ☉ λ dfs(start: &NodeId, max_depth: usize) -> Vec<(NodeId, usize)> {
+    ☉ rite dfs(start: &NodeId, max_depth: usize) -> Vec<(NodeId, usize)> {
         ≔ Δ visited: HashSet<NodeId> = HashSet·new();
         ≔ Δ result: Vec<(NodeId, usize)> = Vec·new();
 
@@ -255,7 +255,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
         result
     }
 
-    λ dfs_visit(
+    rite dfs_visit(
         node: &NodeId,
         depth: usize,
         max_depth: usize,
@@ -276,7 +276,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Find all paths between two nodes (up to max_depth)
-    ☉ λ paths(from: &NodeId, to: &NodeId, max_depth: usize) -> Vec<Vec<EdgeId>> {
+    ☉ rite paths(from: &NodeId, to: &NodeId, max_depth: usize) -> Vec<Vec<EdgeId>> {
         ≔ Δ result: Vec<Vec<EdgeId>> = Vec·new();
         ≔ Δ current_path: Vec<EdgeId> = Vec·new();
         ≔ Δ visited: HashSet<NodeId> = HashSet·new();
@@ -286,7 +286,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
         result
     }
 
-    λ find_paths(
+    rite find_paths(
         current: &NodeId,
         target: &NodeId,
         remaining_depth: usize,
@@ -317,7 +317,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     }
 
     /// Get neighborhood within n hops
-    ☉ λ neighborhood(node: &NodeId, hops: usize) -> HashSet<NodeId> {
+    ☉ rite neighborhood(node: &NodeId, hops: usize) -> HashSet<NodeId> {
         self.bfs(node, hops)
             .into_iter()
             .map(|(n, _)| n)
@@ -329,40 +329,40 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     // ========================================================================
 
     /// Check ⎇ node exists
-    ☉ λ has_node(id: &NodeId) -> bool {
+    ☉ rite has_node(id: &NodeId) -> bool {
         self.nodes.contains(id)
     }
 
     /// Check ⎇ edge exists between two nodes
-    ☉ λ has_edge(from: &NodeId, to: &NodeId) -> bool {
+    ☉ rite has_edge(from: &NodeId, to: &NodeId) -> bool {
         self.outgoing.get(from)
             .map(|edges| edges.iter().any(|e| &e.node == to))
             .unwrap_or(false)
     }
 
     /// Get all edges with a specific relation
-    ☉ λ edges_by_relation(relation: &Relation) -> Vec<EdgeId> {
+    ☉ rite edges_by_relation(relation: &Relation) -> Vec<EdgeId> {
         self.by_relation.get(relation)
             .cloned()
             .unwrap_or_default()
     }
 
     /// Get degree of a node (outgoing edges)
-    ☉ λ out_degree(node: &NodeId) -> usize {
+    ☉ rite out_degree(node: &NodeId) -> usize {
         self.outgoing.get(node)
             .map(|e| e.len())
             .unwrap_or(0)
     }
 
     /// Get degree of a node (incoming edges)
-    ☉ λ in_degree(node: &NodeId) -> usize {
+    ☉ rite in_degree(node: &NodeId) -> usize {
         self.incoming.get(node)
             .map(|e| e.len())
             .unwrap_or(0)
     }
 
     /// Get total degree of a node
-    ☉ λ degree(node: &NodeId) -> usize {
+    ☉ rite degree(node: &NodeId) -> usize {
         self.out_degree(node) + self.in_degree(node)
     }
 
@@ -370,15 +370,15 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     // Stats
     // ========================================================================
 
-    ☉ λ node_count() -> usize {
+    ☉ rite node_count() -> usize {
         self.nodes.len()
     }
 
-    ☉ λ edge_count() -> usize {
+    ☉ rite edge_count() -> usize {
         self.edge_count
     }
 
-    ☉ λ is_empty() -> bool {
+    ☉ rite is_empty() -> bool {
         self.nodes.is_empty()
     }
 }
@@ -391,12 +391,12 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
 scroll tests {
     invoke super·*;
 
-    λ make_id(n: u8) -> NodeId {
+    rite make_id(n: u8) -> NodeId {
         NodeId·from_bytes([n; 16])
     }
 
     #[test]
-    λ test_add_and_traverse() {
+    rite test_add_and_traverse() {
         ≔ Δ index = GraphIndex·new();
 
         ≔ a = make_id(1);
@@ -417,7 +417,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_paths() {
+    rite test_paths() {
         ≔ Δ index = GraphIndex·new();
 
         ≔ a = make_id(1);

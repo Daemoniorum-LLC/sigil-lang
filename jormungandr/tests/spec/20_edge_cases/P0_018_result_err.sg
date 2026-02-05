@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Error Values
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ res: Result<i32, String> = Err("error message".to_string());
     println(res.is_err());
 }

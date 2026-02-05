@@ -9,7 +9,7 @@
 // Should print 42
 
 ☉ Θ Display {
-    λ display(self) -> !i32;
+    rite display(self) -> !i32;
 }
 
 ☉ Σ Value {
@@ -17,12 +17,12 @@
 }
 
 ⊢ Display ∀ Value {
-    λ display(self) -> !i32 {
+    rite display(self) -> !i32 {
         self.x
     }
 }
 
-λ main() {
+rite main() {
     ≔ v: !Value = Value { x: 42 };
     println(v.display());
 }

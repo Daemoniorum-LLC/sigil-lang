@@ -4,7 +4,7 @@
 // Tests: ∀ ∀ ∀, ∈ ∀ in
 // Expected: Program compiles and runs, printing sum of 1+2+3+4+5 = 15
 
-λ main() {
+rite main() {
     ≔ Δ sum = 0;
     ≔ numbers = [1, 2, 3, 4, 5];
 

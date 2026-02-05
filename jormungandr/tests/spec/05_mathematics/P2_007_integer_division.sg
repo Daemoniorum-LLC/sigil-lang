@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 2.3 Operators
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ a: !i32 = 17;
     ≔ b: !i32 = 5;
 

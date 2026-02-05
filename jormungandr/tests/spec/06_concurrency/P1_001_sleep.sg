@@ -2,7 +2,7 @@
 // Spec: 06-CONCURRENCY.md § 1.1 Sleep
 // Priority: P1 - Standard Feature
 
-λ main() {
+rite main() {
     println("before");
 
     // Sleep ∀ 10ms (short to keep tests fast)

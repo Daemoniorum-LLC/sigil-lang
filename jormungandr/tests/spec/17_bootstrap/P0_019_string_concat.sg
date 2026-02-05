@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print: Hello World
 
-λ main() {
+rite main() {
     ≔ s1: !String = "Hello ";
     ≔ s2: !String = "World";
     ≔ result: !String = s1.concat(s2);

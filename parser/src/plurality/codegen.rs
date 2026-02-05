@@ -64,7 +64,8 @@ pub struct PluralityCodeGen {
     output: String,
     /// Indentation level
     indent: usize,
-    /// Module name for generated code
+    /// Module name for generated code (reserved for future use)
+    #[allow(dead_code)]
     module_name: String,
 }
 

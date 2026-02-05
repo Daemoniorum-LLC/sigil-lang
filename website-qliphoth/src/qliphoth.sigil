@@ -97,7 +97,7 @@ rite header() → i64 {
     append_child(logo_icon, img);
     append_child(logo, logo_icon);
     append_child(logo, span("Sigil", "logo-text"));
-    append_child(logo, span("0.3", "version-badge"));
+    append_child(logo, span("0.4", "version-badge"));
     append_child(content, logo);
 
     // Nav

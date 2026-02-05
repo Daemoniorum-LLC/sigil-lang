@@ -2,7 +2,7 @@
 // Spec: 18-COMPILER.md § 3.1 Recursion
 // Priority: P2 - Enhancement
 
-λ factorial(n: !i32) -> !i32 {
+rite factorial(n: !i32) -> !i32 {
     ⎇ n <= 1 {
         1
     } ⎉ {
@@ -10,6 +10,6 @@
     }
 }
 
-λ main() {
+rite main() {
     println(factorial(5));
 }

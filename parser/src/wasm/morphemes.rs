@@ -163,6 +163,12 @@ impl WasmCompiler {
             PipeOp::PossibilityExtract => Err(WasmError::unsupported("possibility extract")),
             PipeOp::NecessityVerify => Err(WasmError::unsupported("necessity verify")),
 
+            // Sort with custom comparator
+            PipeOp::SortBy(_) => Err(WasmError::unsupported("sort-by comparator")),
+
+            // Reduce with initial value
+            PipeOp::ReduceWithInit(_, _) => Err(WasmError::unsupported("reduce with init")),
+
             // Function call in pipe context
             PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
         }

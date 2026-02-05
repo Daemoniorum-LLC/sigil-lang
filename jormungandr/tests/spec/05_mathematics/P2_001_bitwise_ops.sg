@@ -2,7 +2,7 @@
 // Spec: 05-MATHEMATICS.md § 3.2 Bitwise
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ a: !i32 = 12;  // 1100 ∈ binary
     ≔ b: !i32 = 10;  // 1010 ∈ binary
 

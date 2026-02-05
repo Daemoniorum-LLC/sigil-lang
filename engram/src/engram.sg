@@ -40,7 +40,7 @@ invoke engram·query·{Query, RecallResult}
     stats: EngramStats,
 
     // Event handlers
-    event_handlers: Vec<λ(EngramEvent)>,
+    event_handlers: Vec<rite(EngramEvent)>,
 }
 
 ⊢ Engram {
@@ -49,7 +49,7 @@ invoke engram·query·{Query, RecallResult}
     // ========================================================================
 
     /// Create a new Engram instance with the specified configuration
-    ☉ λ new(config: EngramConfig) -> EngramResult<Self>! {
+    ☉ rite new(config: EngramConfig) -> EngramResult<Self>! {
         ≔ agent_id = config.agent_id.clone()
             .unwrap_or_else(|| generate_agent_id())
 
@@ -74,7 +74,7 @@ invoke engram·query·{Query, RecallResult}
     }
 
     /// Create with default configuration
-    ☉ λ default() -> EngramResult<Self>! {
+    ☉ rite default() -> EngramResult<Self>! {
         Self·new(EngramConfig·default())
     }
 
@@ -86,7 +86,7 @@ invoke engram·query·{Query, RecallResult}
     ///
     /// Returns results with uncertainty metadata, ranked by relevance.
     /// Automatically identifies gaps ∈ knowledge.
-    ☉ λ recall(query: ⊢ Into<Query>) -> RecallResult~ {
+    ☉ rite recall(query: ⊢ Into<Query>) -> RecallResult~ {
         ≔ query = query.into()
         ≔ start = Instant·now()
 
@@ -135,7 +135,7 @@ invoke engram·query·{Query, RecallResult}
     }
 
     /// Add knowledge to semantic memory
-    ☉ λ learn(fact: Fact) -> EngramResult<Vec<EngramId>>! {
+    ☉ rite learn(fact: Fact) -> EngramResult<Vec<EngramId>>! {
         ≔ ids = self.semantic.learn(fact.clone())?
 
         // Bring into instant memory ⎇ significant
@@ -157,7 +157,7 @@ invoke engram·query·{Query, RecallResult}
     }
 
     /// Record an experience to episodic memory
-    ☉ λ experience(episode: Episode) -> EngramResult<EpisodeId>! {
+    ☉ rite experience(episode: Episode) -> EngramResult<EpisodeId>! {
         ≔ id = self.episodic.record(episode.clone())?
 
         // Bring summary into instant memory
@@ -180,12 +180,12 @@ invoke engram·query·{Query, RecallResult}
     }
 
     /// Bring something into instant (working) memory
-    ☉ λ attend(content: ⊢ Into<Content>, relevance: f64) -> EngramResult<ItemId>! {
+    ☉ rite attend(content: ⊢ Into<Content>, relevance: f64) -> EngramResult<ItemId>! {
         self.instant.attend(content.into(), relevance)
     }
 
     /// Find applicable skills ∀ the current situation
-    ☉ λ match_skills(context: &Context) -> Vec<SkillMatch> {
+    ☉ rite match_skills(context: &Context) -> Vec<SkillMatch> {
         self.procedural.match_situation(context)
     }
 
@@ -194,7 +194,7 @@ invoke engram·query·{Query, RecallResult}
     // ========================================================================
 
     /// Build a context export suitable ∀ LLM consumption
-    ☉ λ build_context(config: ContextConfig) -> ExportedContext {
+    ☉ rite build_context(config: ContextConfig) -> ExportedContext {
         ≔ Δ items = vec![]
         ≔ Δ used_tokens = TokenCount·zero()
 
@@ -265,7 +265,7 @@ invoke engram·query·{Query, RecallResult}
     // ========================================================================
 
     /// Trigger memory consolidation
-    ☉ λ consolidate() -> ConsolidationReport {
+    ☉ rite consolidate() -> ConsolidationReport {
         ≔ start = Instant·now()
 
         // Decay episodic memories
@@ -293,7 +293,7 @@ invoke engram·query·{Query, RecallResult}
     }
 
     /// Archive memories matching predicate to cold storage
-    ☉ λ archive(predicate: λ(&Memory) -> bool) -> ArchiveReport {
+    ☉ rite archive(predicate: rite(&Memory) -> bool) -> ArchiveReport {
         ≔ Δ archived_count = 0
 
         // Archive from episodic
@@ -309,7 +309,7 @@ invoke engram·query·{Query, RecallResult}
     }
 
     /// Synchronize with remote memory stores
-    ☉ λ sync(config: SyncConfig) -> EngramResult<SyncReport> {
+    ☉ rite sync(config: SyncConfig) -> EngramResult<SyncReport> {
         self.emit(EngramEvent·SyncStarted {
             scope: config.scope.clone(),
         })
@@ -337,42 +337,42 @@ invoke engram·query·{Query, RecallResult}
     // ========================================================================
 
     /// Direct access to instant memory
-    ☉ λ instant() -> &InstantMemory {
+    ☉ rite instant() -> &InstantMemory {
         &self.instant
     }
 
     /// Direct access to instant memory (mutable)
-    ☉ λ instant_mut() -> &Δ InstantMemory {
+    ☉ rite instant_mut() -> &Δ InstantMemory {
         &Δ self.instant
     }
 
     /// Direct access to episodic memory
-    ☉ λ episodic() -> &EpisodicMemory {
+    ☉ rite episodic() -> &EpisodicMemory {
         &self.episodic
     }
 
     /// Direct access to episodic memory (mutable)
-    ☉ λ episodic_mut() -> &Δ EpisodicMemory {
+    ☉ rite episodic_mut() -> &Δ EpisodicMemory {
         &Δ self.episodic
     }
 
     /// Direct access to semantic memory
-    ☉ λ semantic() -> &SemanticMemory {
+    ☉ rite semantic() -> &SemanticMemory {
         &self.semantic
     }
 
     /// Direct access to semantic memory (mutable)
-    ☉ λ semantic_mut() -> &Δ SemanticMemory {
+    ☉ rite semantic_mut() -> &Δ SemanticMemory {
         &Δ self.semantic
     }
 
     /// Direct access to procedural memory
-    ☉ λ procedural() -> &ProceduralMemory {
+    ☉ rite procedural() -> &ProceduralMemory {
         &self.procedural
     }
 
     /// Direct access to procedural memory (mutable)
-    ☉ λ procedural_mut() -> &Δ ProceduralMemory {
+    ☉ rite procedural_mut() -> &Δ ProceduralMemory {
         &Δ self.procedural
     }
 
@@ -381,11 +381,11 @@ invoke engram·query·{Query, RecallResult}
     // ========================================================================
 
     /// Subscribe to engram events
-    ☉ λ on_event(handler: λ(EngramEvent)) {
+    ☉ rite on_event(handler: rite(EngramEvent)) {
         self.event_handlers.push(handler)
     }
 
-    λ emit(event: EngramEvent) {
+    rite emit(event: EngramEvent) {
         ∀ handler ∈ &self.event_handlers {
             handler(event.clone())
         }
@@ -396,12 +396,12 @@ invoke engram·query·{Query, RecallResult}
     // ========================================================================
 
     /// Get current statistics
-    ☉ λ stats() -> &EngramStats {
+    ☉ rite stats() -> &EngramStats {
         &self.stats
     }
 
     /// Get memory usage information
-    ☉ λ memory_usage() -> MemoryUsage {
+    ☉ rite memory_usage() -> MemoryUsage {
         MemoryUsage {
             instant: self.instant.usage(),
             episodic: self.episodic.usage(),
@@ -414,7 +414,7 @@ invoke engram·query·{Query, RecallResult}
     // Internal Helpers
     // ========================================================================
 
-    λ merge_results(
+    rite merge_results(
         instant: Vec<Memory>,
         episodic: Vec<Memory>,
         semantic: Vec<Memory>,
@@ -439,7 +439,7 @@ invoke engram·query·{Query, RecallResult}
         all
     }
 
-    λ identify_gaps(query: &Query, results: &[Memory]) -> Vec<Gap> {
+    rite identify_gaps(query: &Query, results: &[Memory]) -> Vec<Gap> {
         ≔ Δ gaps = vec![]
 
         // Check overall confidence
@@ -497,7 +497,7 @@ invoke engram·query·{Query, RecallResult}
         gaps
     }
 
-    λ maybe_extract_skill(episode: &Episode) {
+    rite maybe_extract_skill(episode: &Episode) {
         // Only extract from successful episodes
         ⎇ !episode.outcome.is_success() {
             return
@@ -518,7 +518,7 @@ invoke engram·query·{Query, RecallResult}
         }
     }
 
-    λ sync_crdt(config: SyncConfig) -> EngramResult<SyncReport> {
+    rite sync_crdt(config: SyncConfig) -> EngramResult<SyncReport> {
         // CRDT-based sync implementation
         // TODO: Implement full CRDT sync
         Ok(SyncReport {
@@ -530,7 +530,7 @@ invoke engram·query·{Query, RecallResult}
         })
     }
 
-    λ sync_consensus(config: SyncConfig) -> EngramResult<SyncReport> {
+    rite sync_consensus(config: SyncConfig) -> EngramResult<SyncReport> {
         // Consensus-based sync implementation
         // TODO: Implement consensus sync
         Ok(SyncReport {
@@ -559,7 +559,7 @@ invoke engram·query·{Query, RecallResult}
 }
 
 ⊢ EngramStats {
-    λ new() -> Self {
+    rite new() -> Self {
         Self {
             recall_count: 0,
             total_recall_time: Duration·zero(),
@@ -659,7 +659,7 @@ invoke engram·query·{Query, RecallResult}
 }
 
 ⊢ ExportedContext {
-    ☉ λ to_string() -> String {
+    ☉ rite to_string() -> String {
         ⌥ self.format {
             ContextFormat·Plain => {
                 self.items.iter()
@@ -758,10 +758,10 @@ invoke engram·query·{Query, RecallResult}
 // Helper Functions
 // ============================================================================
 
-λ generate_agent_id() -> AgentId {
+rite generate_agent_id() -> AgentId {
     format!("agent_{}", ulid·generate().unwrap())
 }
 
-λ generate_instance_id() -> InstanceId {
+rite generate_instance_id() -> InstanceId {
     format!("inst_{}", ulid·generate().unwrap())
 }

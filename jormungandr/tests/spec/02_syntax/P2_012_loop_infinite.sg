@@ -2,7 +2,7 @@
 // Spec: 02-SYNTAX.md § 5.4 Loop
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ Δ count = 0;
     loop {
         count = count + 1;

@@ -8,7 +8,7 @@
 // Expected behavior:
 // Should print 0
 
-λ main() {
+rite main() {
     ≔ res: !Result<!i32, String> = Result·Err("error");
     ⌥ res {
         Result·Ok(x) => println(x),

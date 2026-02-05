@@ -1,13 +1,13 @@
-// P0_002: λ (lowercase lambda) should parse as λ keyword
+// P0_002: rite (lowercase lambda) should parse as rite keyword
 // Priority: P0
 // Category: Native Symbols
 // Expected: Program compiles and runs, printing "42"
 
-λ add(a: i64, b: i64) -> i64 {
+rite add(a: i64, b: i64) -> i64 {
     a + b
 }
 
-λ main() {
+rite main() {
     ≔ result = add(20, 22);
     println!("{}", result);
 }

@@ -2,7 +2,7 @@
 // Spec: Edge Cases - Control Flow
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ Δ count = 0;
     ≔ Δ i = 0;
     ⟳ i < 3 {

@@ -2,7 +2,7 @@
 // Spec: 09-STDLIB.md § 4.2 String
 // Priority: P2 - Enhancement
 
-λ main() {
+rite main() {
     ≔ s1: String = "ab";
     ≔ s2: String = s1 + "cd";
     println(s2);

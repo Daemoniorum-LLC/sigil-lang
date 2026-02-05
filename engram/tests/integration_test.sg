@@ -8,8 +8,8 @@
 
 ☉ Σ TokenCount(☉ usize);
 ⊢ TokenCount {
-    ☉ λ zero() -> Self { Self(0) }
-    ☉ λ from_text(text: &str) -> Self { Self(text.len() / 4 + 1) }
+    ☉ rite zero() -> Self { Self(0) }
+    ☉ rite from_text(text: &str) -> Self { Self(text.len() / 4 + 1) }
 }
 
 ☉ ᛈ MemorySource {
@@ -20,7 +20,7 @@
 }
 
 ⊢ Clone ∀ MemorySource {
-    λ clone(&self) -> Self {
+    rite clone(&self) -> Self {
         ⌥ self {
             MemorySource·Instant => MemorySource·Instant,
             MemorySource·Episodic => MemorySource·Episodic,
@@ -45,7 +45,7 @@
 }
 
 ⊢ EngramStats {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             recall_count: 0,
             facts_learned: 0,
@@ -78,8 +78,8 @@
 }
 
 ⊢ RecallResult {
-    ☉ λ is_empty(&self) -> bool { self.memories.is_empty() }
-    ☉ λ has_gaps(&self) -> bool { !self.gaps.is_empty() }
+    ☉ rite is_empty(&self) -> bool { self.memories.is_empty() }
+    ☉ rite has_gaps(&self) -> bool { !self.gaps.is_empty() }
 }
 
 // Simplified Engram ∀ testing integration patterns
@@ -98,7 +98,7 @@
 }
 
 ⊢ Engram {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self {
             agent_id: "agent_test_001".to_string(),
             instance_id: "inst_test_001".to_string(),
@@ -111,37 +111,37 @@
         }
     }
 
-    ☉ λ agent_id(&self) -> &str {
+    ☉ rite agent_id(&self) -> &str {
         &self.agent_id
     }
 
-    ☉ λ instance_id(&self) -> &str {
+    ☉ rite instance_id(&self) -> &str {
         &self.instance_id
     }
 
     // Attend - add to working memory
-    ☉ λ attend(&Δ self, content: &str, relevance: f64) {
+    ☉ rite attend(&Δ self, content: &str, relevance: f64) {
         self.instant_items.push((content.to_string(), relevance));
         // Sort by relevance descending
         self.instant_items.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     }
 
     // Learn - add fact to semantic memory
-    ☉ λ learn(&Δ self, subject: &str, object: &str, confidence: f64) {
+    ☉ rite learn(&Δ self, subject: &str, object: &str, confidence: f64) {
         self.semantic_facts.push((subject.to_string(), object.to_string(), confidence));
         self.stats.facts_learned = self.stats.facts_learned + 1;
         self.event_count = self.event_count + 1;
     }
 
     // Experience - record episode
-    ☉ λ experience(&Δ self, context: &str, outcome: &str) {
+    ☉ rite experience(&Δ self, context: &str, outcome: &str) {
         self.episodic_events.push((context.to_string(), outcome.to_string()));
         self.stats.episodes_recorded = self.stats.episodes_recorded + 1;
         self.event_count = self.event_count + 1;
     }
 
     // Register skill
-    ☉ λ register_skill(&Δ self, name: &str, triggers: Vec<&str>, success_rate: f64) {
+    ☉ rite register_skill(&Δ self, name: &str, triggers: Vec<&str>, success_rate: f64) {
         self.procedural_skills.push((
             name.to_string(),
             triggers.iter().map(|s| s.to_string()).collect(),
@@ -150,7 +150,7 @@
     }
 
     // Recall - search across all memories
-    ☉ λ recall(&Δ self, query: &str, limit: usize) -> RecallResult {
+    ☉ rite recall(&Δ self, query: &str, limit: usize) -> RecallResult {
         self.stats.recall_count = self.stats.recall_count + 1;
 
         ≔ query_lower = query.to_lowercase();
@@ -226,7 +226,7 @@
     }
 
     // Match skills to context
-    ☉ λ match_skills(&self, context: &str) -> Vec<(String, f64)> {
+    ☉ rite match_skills(&self, context: &str) -> Vec<(String, f64)> {
         ≔ context_lower = context.to_lowercase();
         ≔ Δ matches = Vec·new();
 
@@ -248,12 +248,12 @@
     }
 
     // Get stats
-    ☉ λ stats(&self) -> &EngramStats {
+    ☉ rite stats(&self) -> &EngramStats {
         &self.stats
     }
 
     // Get memory usage
-    ☉ λ memory_usage(&self) -> MemoryUsage {
+    ☉ rite memory_usage(&self) -> MemoryUsage {
         MemoryUsage {
             instant: MemorySystemUsage {
                 item_count: self.instant_items.len(),
@@ -275,12 +275,12 @@
     }
 
     // Clear working memory
-    ☉ λ clear_instant(&Δ self) {
+    ☉ rite clear_instant(&Δ self) {
         self.instant_items.clear();
     }
 
     // Get event count (∀ testing event emission)
-    ☉ λ event_count(&self) -> usize {
+    ☉ rite event_count(&self) -> usize {
         self.event_count
     }
 }
@@ -298,7 +298,7 @@
 }
 
 ⊢ ContextConfig {
-    ☉ λ default_config() -> Self {
+    ☉ rite default_config() -> Self {
         Self {
             budget: TokenCount(4096),
             format: ContextFormat·Plain,
@@ -306,23 +306,23 @@
         }
     }
 
-    ☉ λ with_budget(Δ self, budget: usize) -> Self {
+    ☉ rite with_budget(Δ self, budget: usize) -> Self {
         self.budget = TokenCount(budget);
         self
     }
 
-    ☉ λ with_format(Δ self, format: ContextFormat) -> Self {
+    ☉ rite with_format(Δ self, format: ContextFormat) -> Self {
         self.format = format;
         self
     }
 
-    ☉ λ for_task(Δ self, task: &str) -> Self {
+    ☉ rite for_task(Δ self, task: &str) -> Self {
         self.for_task = Some(task.to_string());
         self
     }
 }
 
-☉ λ build_context(engram: &Engram, config: &ContextConfig) -> String {
+☉ rite build_context(engram: &Engram, config: &ContextConfig) -> String {
     ≔ Δ items = Vec·new();
 
     // Add instant memory items
@@ -358,14 +358,14 @@
 // ============================================================================
 
 #[test]
-λ test_engram_creation() {
+rite test_engram_creation() {
     ≔ engram = Engram·new();
     assert(!engram.agent_id().is_empty());
     assert(!engram.instance_id().is_empty());
 }
 
 #[test]
-λ test_engram_initial_stats() {
+rite test_engram_initial_stats() {
     ≔ engram = Engram·new();
     ≔ stats = engram.stats();
     assert_eq(stats.recall_count, 0);
@@ -378,7 +378,7 @@
 // ============================================================================
 
 #[test]
-λ test_attend_adds_to_instant() {
+rite test_attend_adds_to_instant() {
     ≔ Δ engram = Engram·new();
     engram.attend("Important task context", 0.9);
 
@@ -387,7 +387,7 @@
 }
 
 #[test]
-λ test_attend_maintains_priority_order() {
+rite test_attend_maintains_priority_order() {
     ≔ Δ engram = Engram·new();
     engram.attend("Low priority", 0.3);
     engram.attend("High priority", 0.9);
@@ -398,7 +398,7 @@
 }
 
 #[test]
-λ test_clear_instant() {
+rite test_clear_instant() {
     ≔ Δ engram = Engram·new();
     engram.attend("Some content", 0.5);
     engram.attend("More content", 0.7);
@@ -414,7 +414,7 @@
 // ============================================================================
 
 #[test]
-λ test_learn_adds_fact() {
+rite test_learn_adds_fact() {
     ≔ Δ engram = Engram·new();
     engram.learn("Python", "programming language", 0.95);
 
@@ -423,7 +423,7 @@
 }
 
 #[test]
-λ test_learn_updates_stats() {
+rite test_learn_updates_stats() {
     ≔ Δ engram = Engram·new();
     engram.learn("Rust", "systems language", 0.9);
 
@@ -431,7 +431,7 @@
 }
 
 #[test]
-λ test_learn_multiple_facts() {
+rite test_learn_multiple_facts() {
     ≔ Δ engram = Engram·new();
     engram.learn("Python", "interpreted", 0.9);
     engram.learn("Rust", "compiled", 0.95);
@@ -445,7 +445,7 @@
 // ============================================================================
 
 #[test]
-λ test_experience_records_episode() {
+rite test_experience_records_episode() {
     ≔ Δ engram = Engram·new();
     engram.experience("Helping user with code", "success");
 
@@ -454,7 +454,7 @@
 }
 
 #[test]
-λ test_experience_updates_stats() {
+rite test_experience_updates_stats() {
     ≔ Δ engram = Engram·new();
     engram.experience("Debug session", "fixed bug");
 
@@ -466,7 +466,7 @@
 // ============================================================================
 
 #[test]
-λ test_recall_finds_instant_memory() {
+rite test_recall_finds_instant_memory() {
     ≔ Δ engram = Engram·new();
     engram.attend("Current Python project discussion", 0.9);
 
@@ -475,7 +475,7 @@
 }
 
 #[test]
-λ test_recall_finds_semantic_memory() {
+rite test_recall_finds_semantic_memory() {
     ≔ Δ engram = Engram·new();
     engram.learn("Python", "high-level language", 0.9);
 
@@ -484,7 +484,7 @@
 }
 
 #[test]
-λ test_recall_finds_episodic_memory() {
+rite test_recall_finds_episodic_memory() {
     ≔ Δ engram = Engram·new();
     engram.experience("Python debugging", "resolved");
 
@@ -493,7 +493,7 @@
 }
 
 #[test]
-λ test_recall_updates_stats() {
+rite test_recall_updates_stats() {
     ≔ Δ engram = Engram·new();
     engram.recall("anything", 10);
 
@@ -501,7 +501,7 @@
 }
 
 #[test]
-λ test_recall_respects_limit() {
+rite test_recall_respects_limit() {
     ≔ Δ engram = Engram·new();
     ∀ i ∈ 0..10 {
         engram.learn(&format!("Python fact {}", i), "value", 0.8);
@@ -512,7 +512,7 @@
 }
 
 #[test]
-λ test_recall_identifies_gaps() {
+rite test_recall_identifies_gaps() {
     ≔ Δ engram = Engram·new();
     ≔ result = engram.recall("nonexistent topic", 10);
 
@@ -520,7 +520,7 @@
 }
 
 #[test]
-λ test_recall_ranks_by_score() {
+rite test_recall_ranks_by_score() {
     ≔ Δ engram = Engram·new();
     engram.attend("Python is great", 0.9);  // high relevance
     engram.learn("Python", "language", 0.5);  // low confidence
@@ -540,7 +540,7 @@
 // ============================================================================
 
 #[test]
-λ test_register_skill() {
+rite test_register_skill() {
     ≔ Δ engram = Engram·new();
     engram.register_skill("code_review", vec!["review", "code", "check"], 0.85);
 
@@ -549,7 +549,7 @@
 }
 
 #[test]
-λ test_match_skills_finds_relevant() {
+rite test_match_skills_finds_relevant() {
     ≔ Δ engram = Engram·new();
     engram.register_skill("code_review", vec!["review", "code"], 0.9);
     engram.register_skill("debugging", vec!["debug", "fix", "error"], 0.8);
@@ -561,7 +561,7 @@
 }
 
 #[test]
-λ test_match_skills_ranks_by_match_score() {
+rite test_match_skills_ranks_by_match_score() {
     ≔ Δ engram = Engram·new();
     engram.register_skill("partial_match", vec!["code"], 0.9);
     engram.register_skill("full_match", vec!["code", "review"], 0.9);
@@ -579,7 +579,7 @@
 // ============================================================================
 
 #[test]
-λ test_memory_usage_tracking() {
+rite test_memory_usage_tracking() {
     ≔ Δ engram = Engram·new();
 
     engram.attend("instant item", 0.5);
@@ -599,7 +599,7 @@
 // ============================================================================
 
 #[test]
-λ test_build_context_plain() {
+rite test_build_context_plain() {
     ≔ Δ engram = Engram·new();
     engram.attend("First item", 0.9);
     engram.attend("Second item", 0.7);
@@ -612,7 +612,7 @@
 }
 
 #[test]
-λ test_build_context_xml() {
+rite test_build_context_xml() {
     ≔ Δ engram = Engram·new();
     engram.attend("Test content", 0.8);
 
@@ -624,7 +624,7 @@
 }
 
 #[test]
-λ test_build_context_markdown() {
+rite test_build_context_markdown() {
     ≔ Δ engram = Engram·new();
     engram.attend("Test content", 0.8);
 
@@ -639,7 +639,7 @@
 // ============================================================================
 
 #[test]
-λ test_events_emitted_on_learn() {
+rite test_events_emitted_on_learn() {
     ≔ Δ engram = Engram·new();
     ≔ before = engram.event_count();
 
@@ -650,7 +650,7 @@
 }
 
 #[test]
-λ test_events_emitted_on_experience() {
+rite test_events_emitted_on_experience() {
     ≔ Δ engram = Engram·new();
     ≔ before = engram.event_count();
 
@@ -665,7 +665,7 @@
 // ============================================================================
 
 #[test]
-λ test_learning_and_recall_workflow() {
+rite test_learning_and_recall_workflow() {
     ≔ Δ engram = Engram·new();
 
     // Learn some facts
@@ -679,7 +679,7 @@
 }
 
 #[test]
-λ test_experience_and_skill_extraction() {
+rite test_experience_and_skill_extraction() {
     ≔ Δ engram = Engram·new();
 
     // Record experiences
@@ -695,7 +695,7 @@
 }
 
 #[test]
-λ test_full_agent_interaction() {
+rite test_full_agent_interaction() {
     ≔ Δ engram = Engram·new();
 
     // User asks a question
@@ -716,6 +716,6 @@
     assert(result.total_found >= 2);
 }
 
-λ main() {
+rite main() {
     print("Engram integration tests");
 }

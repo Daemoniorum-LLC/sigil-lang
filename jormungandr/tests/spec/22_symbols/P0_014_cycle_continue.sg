@@ -4,7 +4,7 @@
 // Tests: ↻ ∀ ↻
 // Expected: Program compiles and runs, printing only odd numbers: 1, 3, 5, 7, 9
 
-λ main() {
+rite main() {
     ≔ Δ i = 0;
 
     ⟳ i < 10 {

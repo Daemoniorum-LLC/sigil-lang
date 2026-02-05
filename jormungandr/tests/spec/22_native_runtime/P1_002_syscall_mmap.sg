@@ -4,7 +4,7 @@
 //
 // This test verifies memory operations using interpreter arrays.
 
-λ main() {
+rite main() {
     // Test 1: Allocate array (simulates mmap allocation)
     ≔ Δ buffer = [];
     buffer.push(0);

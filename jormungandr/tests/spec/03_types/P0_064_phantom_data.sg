@@ -13,7 +13,7 @@
     _phantom: PhantomData<T>
 }
 
-λ main() {
+rite main() {
     ≔ w: !Wrapper<!String> = Wrapper {
         value: 42,
         _phantom: PhantomData

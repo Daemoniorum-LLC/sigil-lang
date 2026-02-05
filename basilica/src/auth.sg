@@ -64,32 +64,32 @@ invoke crate·error·BasilicaError;
 
 ⊢ AuthenticatedUser {
     /// Check ⎇ user has a specific role
-    ☉ λ has_role(&self, role: &str) -> bool {
+    ☉ rite has_role(&self, role: &str) -> bool {
         self.roles.iter().any(|r| r == role)
     }
 
     /// Check ⎇ user has any of the specified roles
-    ☉ λ has_any_role(&self, roles: &[&str]) -> bool {
+    ☉ rite has_any_role(&self, roles: &[&str]) -> bool {
         roles.iter().any(|r| self.has_role(r))
     }
 
     /// Check ⎇ user has all of the specified roles
-    ☉ λ has_all_roles(&self, roles: &[&str]) -> bool {
+    ☉ rite has_all_roles(&self, roles: &[&str]) -> bool {
         roles.iter().all(|r| self.has_role(r))
     }
 
     /// Check ⎇ token is expired
-    ☉ λ is_expired(&self) -> bool {
+    ☉ rite is_expired(&self) -> bool {
         self.expires_at.is_past()
     }
 
     /// Get a custom claim
-    ☉ λ claim(&self, key: &str) -> Option<&String> {
+    ☉ rite claim(&self, key: &str) -> Option<&String> {
         self.claims.get(key)
     }
 
     /// Convert to HTTP evidence
-    ☉ λ to_evidence(&self) -> HttpEvidence {
+    ☉ rite to_evidence(&self) -> HttpEvidence {
         HttpEvidence·Authenticated {
             user_id: self.id,
             trust: self.trust_level,
@@ -109,17 +109,17 @@ invoke crate·error·BasilicaError;
 }
 
 ⊢ AnonymousUser {
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self·default()
     }
 
-    ☉ λ with_ip(Δ self, ip: &str) -> Self {
+    ☉ rite with_ip(Δ self, ip: &str) -> Self {
         self.ip = Some(ip.to_string());
         self
     }
 
     /// Convert to HTTP evidence (reported/external)
-    ☉ λ to_evidence(&self) -> HttpEvidence {
+    ☉ rite to_evidence(&self) -> HttpEvidence {
         HttpEvidence·External {
             source: self.ip.clone().unwrap_or_else(|| "anonymous".to_string()),
             fetched_at: Timestamp·now(),
@@ -137,12 +137,12 @@ invoke crate·error·BasilicaError;
 
 ⊢ CurrentUser {
     /// Check ⎇ authenticated
-    ☉ λ is_authenticated(&self) -> bool {
+    ☉ rite is_authenticated(&self) -> bool {
         matches!(self, CurrentUser·Authenticated(_))
     }
 
     /// Get authenticated user ⎇ present
-    ☉ λ authenticated(&self) -> Option<&AuthenticatedUser> {
+    ☉ rite authenticated(&self) -> Option<&AuthenticatedUser> {
         ⌥ self {
             CurrentUser·Authenticated(user) => Some(user),
             CurrentUser·Anonymous(_) => None,
@@ -150,12 +150,12 @@ invoke crate·error·BasilicaError;
     }
 
     /// Get user ID ⎇ authenticated
-    ☉ λ user_id(&self) -> Option<[u8; 16]> {
+    ☉ rite user_id(&self) -> Option<[u8; 16]> {
         self.authenticated().map(|u| u.id)
     }
 
     /// Get the evidence level ∀ this user's requests
-    ☉ λ evidence_level(&self) -> EvidenceLevel {
+    ☉ rite evidence_level(&self) -> EvidenceLevel {
         ⌥ self {
             CurrentUser·Authenticated(user) => {
                 ⎇ user.trust_level.is_high() {
@@ -169,7 +169,7 @@ invoke crate·error·BasilicaError;
     }
 
     /// Convert to HTTP evidence
-    ☉ λ to_evidence(&self) -> HttpEvidence {
+    ☉ rite to_evidence(&self) -> HttpEvidence {
         ⌥ self {
             CurrentUser·Authenticated(user) => user.to_evidence(),
             CurrentUser·Anonymous(anon) => anon.to_evidence(),
@@ -214,7 +214,7 @@ invoke crate·error·BasilicaError;
 
 ⊢ JwtConfig {
     /// Create a new JWT configuration with secret
-    ☉ λ new(secret: &str) -> Self {
+    ☉ rite new(secret: &str) -> Self {
         Self {
             secret: secret.to_string(),
             algorithm: "HS256".to_string(),
@@ -229,49 +229,49 @@ invoke crate·error·BasilicaError;
     }
 
     /// Set expected issuer
-    ☉ λ issuer(Δ self, issuer: &str) -> Self {
+    ☉ rite issuer(Δ self, issuer: &str) -> Self {
         self.issuer = Some(issuer.to_string());
         self
     }
 
     /// Set expected audience
-    ☉ λ audience(Δ self, audience: &str) -> Self {
+    ☉ rite audience(Δ self, audience: &str) -> Self {
         self.audience = Some(audience.to_string());
         self
     }
 
     /// Set algorithm
-    ☉ λ algorithm(Δ self, alg: &str) -> Self {
+    ☉ rite algorithm(Δ self, alg: &str) -> Self {
         self.algorithm = alg.to_string();
         self
     }
 
     /// Set clock skew tolerance
-    ☉ λ clock_skew(Δ self, seconds: u32) -> Self {
+    ☉ rite clock_skew(Δ self, seconds: u32) -> Self {
         self.clock_skew = seconds;
         self
     }
 
     /// Set header name
-    ☉ λ header(Δ self, name: &str) -> Self {
+    ☉ rite header(Δ self, name: &str) -> Self {
         self.header_name = name.to_lowercase();
         self
     }
 
     /// Set token prefix
-    ☉ λ prefix(Δ self, prefix: &str) -> Self {
+    ☉ rite prefix(Δ self, prefix: &str) -> Self {
         self.token_prefix = prefix.to_string();
         self
     }
 
     /// Disable cookie checking
-    ☉ λ no_cookies(Δ self) -> Self {
+    ☉ rite no_cookies(Δ self) -> Self {
         self.check_cookies = false;
         self
     }
 
     /// Set cookie name
-    ☉ λ cookie(Δ self, name: &str) -> Self {
+    ☉ rite cookie(Δ self, name: &str) -> Self {
         self.cookie_name = name.to_string();
         self
     }
@@ -301,7 +301,7 @@ invoke crate·error·BasilicaError;
 }
 
 ⊢ Default ∀ AuthConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             jwt: None,
             public_paths: vec![
@@ -318,24 +318,24 @@ invoke crate·error·BasilicaError;
 
 ⊢ AuthConfig {
     /// Create a new auth configuration
-    ☉ λ new() -> Self {
+    ☉ rite new() -> Self {
         Self·default()
     }
 
     /// Set JWT configuration
-    ☉ λ with_jwt(Δ self, jwt: JwtConfig) -> Self {
+    ☉ rite with_jwt(Δ self, jwt: JwtConfig) -> Self {
         self.jwt = Some(jwt);
         self
     }
 
     /// Add a public path
-    ☉ λ public(Δ self, path: &str) -> Self {
+    ☉ rite public(Δ self, path: &str) -> Self {
         self.public_paths.push(path.to_string());
         self
     }
 
     /// Add public paths
-    ☉ λ public_paths(Δ self, paths: &[&str]) -> Self {
+    ☉ rite public_paths(Δ self, paths: &[&str]) -> Self {
         ∀ path ∈ paths {
             self.public_paths.push(path.to_string());
         }
@@ -343,7 +343,7 @@ invoke crate·error·BasilicaError;
     }
 
     /// Require role ∀ a path
-    ☉ λ require_role(Δ self, path: &str, roles: &[&str]) -> Self {
+    ☉ rite require_role(Δ self, path: &str, roles: &[&str]) -> Self {
         self.role_requirements.push((
             path.to_string(),
             roles.iter().map(|s| s.to_string()).collect()
@@ -352,19 +352,19 @@ invoke crate·error·BasilicaError;
     }
 
     /// Allow anonymous access
-    ☉ λ allow_anonymous(Δ self) -> Self {
+    ☉ rite allow_anonymous(Δ self) -> Self {
         self.allow_anonymous = true;
         self
     }
 
     /// Set default trust level
-    ☉ λ default_trust(Δ self, trust: f64) -> Self {
+    ☉ rite default_trust(Δ self, trust: f64) -> Self {
         self.default_trust = TrustLevel·new(trust);
         self
     }
 
     /// Check ⎇ path is public
-    ☉ λ is_public(&self, path: &str) -> bool {
+    ☉ rite is_public(&self, path: &str) -> bool {
         ∀ public_path ∈ &self.public_paths {
             ⎇ path == public_path {
                 ⤺ true;
@@ -381,7 +381,7 @@ invoke crate·error·BasilicaError;
     }
 
     /// Get required roles ∀ a path
-    ☉ λ required_roles(&self, path: &str) -> Option<&[String]> {
+    ☉ rite required_roles(&self, path: &str) -> Option<&[String]> {
         ∀ (pattern, roles) ∈ &self.role_requirements {
             ⎇ path == pattern {
                 ⤺ Some(roles);
@@ -408,17 +408,17 @@ invoke crate·error·BasilicaError;
 
 ⊢ AuthMiddleware {
     /// Create a new auth middleware
-    ☉ λ new(config: AuthConfig) -> Self {
+    ☉ rite new(config: AuthConfig) -> Self {
         Self { config }
     }
 
     /// Create with JWT configuration
-    ☉ λ jwt(jwt_config: JwtConfig) -> Self {
+    ☉ rite jwt(jwt_config: JwtConfig) -> Self {
         Self·new(AuthConfig·new().with_jwt(jwt_config))
     }
 
     /// Extract token from request
-    λ extract_token(&self, req: &Request) -> Option<String> {
+    rite extract_token(&self, req: &Request) -> Option<String> {
         ≔ jwt_config = self.config.jwt.as_ref()?;
 
         // Try header first
@@ -448,7 +448,7 @@ invoke crate·error·BasilicaError;
     }
 
     /// Validate JWT token (placeholder - actual implementation would invoke jwt crate)
-    λ validate_token(&self, token: &str) -> Result<AuthenticatedUser, AuthError> {
+    rite validate_token(&self, token: &str) -> Result<AuthenticatedUser, AuthError> {
         ≔ jwt_config = self.config.jwt.as_ref()
             .ok_or(AuthError·NotConfigured)?;
 
@@ -481,7 +481,7 @@ invoke crate·error·BasilicaError;
 }
 
 ⊢ Middleware ∀ AuthMiddleware {
-    λ before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
+    rite before(&self, req: &Δ Request, ctx: &Δ Context) -> MiddlewareResult {
         ≔ path = req.path();
 
         // Skip auth ∀ public paths
@@ -573,7 +573,7 @@ invoke crate·error·BasilicaError;
 }
 
 ⊢ std·fmt·Display ∀ AuthError {
-    λ fmt(&self, f: &Δ std·fmt·Formatter<'_>) -> std·fmt·Result {
+    rite fmt(&self, f: &Δ std·fmt·Formatter<'_>) -> std·fmt·Result {
         ⌥ self {
             AuthError·NotConfigured => write!(f, "Authentication not configured"),
             AuthError·NoToken => write!(f, "No authentication token provided"),
@@ -595,42 +595,42 @@ invoke crate·error·BasilicaError;
 /// Extension Θ ∀ accessing auth from context
 ☉ Θ AuthContext {
     /// Get the current user
-    λ current_user(&self) -> Option<&CurrentUser>;
+    rite current_user(&self) -> Option<&CurrentUser>;
 
     /// Get authenticated user (None ⎇ anonymous)
-    λ authenticated_user(&self) -> Option<&AuthenticatedUser>;
+    rite authenticated_user(&self) -> Option<&AuthenticatedUser>;
 
     /// Check ⎇ request is authenticated
-    λ is_authenticated(&self) -> bool;
+    rite is_authenticated(&self) -> bool;
 
     /// Require authentication, returning error ⎇ not authenticated
-    λ require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError>;
+    rite require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError>;
 
     /// Require specific role
-    λ require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError>;
+    rite require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError>;
 }
 
 ⊢ AuthContext ∀ Context {
-    λ current_user(&self) -> Option<&CurrentUser> {
+    rite current_user(&self) -> Option<&CurrentUser> {
         self.get·<CurrentUser>("user")
     }
 
-    λ authenticated_user(&self) -> Option<&AuthenticatedUser> {
+    rite authenticated_user(&self) -> Option<&AuthenticatedUser> {
         self.current_user()?.authenticated()
     }
 
-    λ is_authenticated(&self) -> bool {
+    rite is_authenticated(&self) -> bool {
         self.current_user()
             .map(|u| u.is_authenticated())
             .unwrap_or(false)
     }
 
-    λ require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError> {
+    rite require_auth(&self) -> Result<&AuthenticatedUser, BasilicaError> {
         self.authenticated_user()
             .ok_or(BasilicaError·Unauthorized("Authentication required".to_string()))
     }
 
-    λ require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError> {
+    rite require_role(&self, role: &str) -> Result<&AuthenticatedUser, BasilicaError> {
         ≔ user = self.require_auth()?;
         ⎇ user.has_role(role) {
             Ok(user)
@@ -645,7 +645,7 @@ invoke crate·error·BasilicaError;
 // ============================================================================
 
 /// Create an authentication middleware ∀ Sanctum
-☉ λ sanctum_auth(secret: &str) -> AuthMiddleware {
+☉ rite sanctum_auth(secret: &str) -> AuthMiddleware {
     AuthMiddleware·new(
         AuthConfig·new()
             .with_jwt(

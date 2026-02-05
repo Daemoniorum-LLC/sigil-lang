@@ -1437,8 +1437,12 @@ pub enum PipeOp {
     Filter(Box<Expr>),
     /// Sort morpheme: `σ` or `σ.field`
     Sort(Option<Ident>),
+    /// Sort with custom comparator: `σ{a, b => b - a}`
+    SortBy(Box<Expr>),
     /// Reduce morpheme: `ρ{f}`
     Reduce(Box<Expr>),
+    /// Reduce with initial value: `ρ{init, acc, x => acc + x}`
+    ReduceWithInit(Box<Expr>, Box<Expr>),
     /// Sum reduction: `ρ+` or `ρ_sum` - sum all elements
     ReduceSum,
     /// Product reduction: `ρ*` or `ρ_prod` - multiply all elements

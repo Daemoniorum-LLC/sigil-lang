@@ -2,7 +2,7 @@
 // Spec: Feature Interaction - Closures + Variables
 // Priority: P0 - Bootstrap Critical
 
-λ main() {
+rite main() {
     ≔ multiplier = 10;
     ≔ f = |x: i32| -> i32 { x * multiplier };
     println(f(5));  // 50
