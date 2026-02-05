@@ -18273,9 +18273,46 @@ impl Interpreter {
 
     /// Evaluate vec! macro
     fn eval_vec_macro(&mut self, tokens: &str) -> Result<Value, RuntimeError> {
+        // Check for fill syntax: vec![value; count]
+        // Find ';' at depth 0
+        let mut depth = 0;
+        let mut semicolon_pos = None;
+        for (i, c) in tokens.chars().enumerate() {
+            match c {
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                ';' if depth == 0 => {
+                    semicolon_pos = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(pos) = semicolon_pos {
+            // Fill syntax: vec![value; count]
+            let value_str = tokens[..pos].trim();
+            let count_str = tokens[pos + 1..].trim();
+
+            let mut parser = crate::parser::Parser::new(value_str);
+            let value_expr = parser.parse_expr().map_err(|e| RuntimeError::new(format!("vec! fill value parse error: {}", e)))?;
+            let value = self.evaluate(&value_expr)?;
+
+            let mut parser = crate::parser::Parser::new(count_str);
+            let count_expr = parser.parse_expr().map_err(|e| RuntimeError::new(format!("vec! fill count parse error: {}", e)))?;
+            let count_val = self.evaluate(&count_expr)?;
+            let count = match count_val {
+                Value::Int(n) => n as usize,
+                _ => return Err(RuntimeError::new(format!("vec! fill count must be integer, got {:?}", count_val))),
+            };
+
+            let elements: Vec<Value> = (0..count).map(|_| value.clone()).collect();
+            return Ok(Value::Array(Rc::new(RefCell::new(elements))));
+        }
+
         // Parse comma-separated elements
         let mut elements = Vec::new();
-        let mut depth = 0;
+        depth = 0;
         let mut current = String::new();
 
         for c in tokens.chars() {

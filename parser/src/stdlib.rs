@@ -14124,6 +14124,13 @@ fn register_pattern(interp: &mut Interpreter) {
 
 // Deep value equality for nested structures
 fn deep_value_eq(a: &Value, b: &Value) -> bool {
+    // Unwrap Ref wrappers before comparison
+    if let Value::Ref(r) = a {
+        return deep_value_eq(&r.borrow(), b);
+    }
+    if let Value::Ref(r) = b {
+        return deep_value_eq(a, &r.borrow());
+    }
     match (a, b) {
         (Value::Null, Value::Null) => true,
         (Value::Bool(a), Value::Bool(b)) => a == b,
