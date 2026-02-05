@@ -1,0 +1,39 @@
+// Regression test: User-defined Sequential·new() constructor
+// Hardcoded Sequential::new handler must not shadow user constructors
+
+☉ ᛈ LayerKind {
+    Dense { size: usize },
+    Relu,
+}
+
+☉ Σ Sequential {
+    layers: Vec<LayerKind>,
+}
+
+⊢ Sequential {
+    ☉ rite new() -> Self {
+        Sequential { layers: Vec·new() }
+    }
+
+    ☉ rite add(&Δ self, layer: LayerKind) {
+        self.layers.push(layer);
+    }
+
+    ☉ rite len(&self) -> usize {
+        self.layers.len()
+    }
+}
+
+☉ rite main() -> !i32 {
+    // Test 1: user-defined no-arg constructor works
+    ≔ Δ model = Sequential·new();
+    assert_eq(model.len(), 0);
+
+    // Test 2: methods on user-constructed struct work
+    model.add(LayerKind·Dense { size: 128 });
+    model.add(LayerKind·Relu);
+    model.add(LayerKind·Dense { size: 10 });
+    assert_eq(model.len(), 3);
+
+    ⤺ 0;
+}

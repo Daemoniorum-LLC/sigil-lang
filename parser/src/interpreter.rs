@@ -5883,6 +5883,15 @@ impl Interpreter {
                 }
                 // Sequential::new([layers]) - container for layers
                 ["Sequential", "new"] => {
+                    // Check for user-defined Sequential·new first
+                    let user_ctor = self.globals.borrow().get("Sequential·new").map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_ctor {
+                        let mut evaluated_args = Vec::new();
+                        for arg in args {
+                            evaluated_args.push(self.evaluate(arg)?);
+                        }
+                        return self.call_function(&func, evaluated_args);
+                    }
                     if args.len() == 1 {
                         let layers = self.evaluate(&args[0])?;
                         let mut fields = HashMap::new();
