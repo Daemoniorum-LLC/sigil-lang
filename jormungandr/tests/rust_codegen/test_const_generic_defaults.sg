@@ -1,0 +1,57 @@
+// Test: Const Generic Default Values
+// Spec: RUST-CODEGEN-PARSER-GAPS-SPEC.md § 19 (Gap M)
+// Priority: P2 - Parser enhancement
+//
+// Purpose: Validate const generic parameters can have default values
+//
+// Expected: ◆ N: usize = 10 → const N: usize = 10
+//
+// Note: Rust doesn't allow defaults on impl blocks, only struct/trait definitions
+
+// EC₁: Simple numeric default
+sigil SimpleDefault<◆ N: usize = 10> {
+    len: usize,
+}
+
+// EC₂: Multiple const params with defaults
+sigil MultiDefault<◆ N: usize = 8, ◆ M: usize = 16> {
+    total: usize,
+}
+
+// EC₄: Mixed type and const defaults
+sigil MixedDefaults<T = String, ◆ N: usize = 16> {
+    data: T,
+    capacity: usize,
+}
+
+// EC₇: No default (regression test - must still work)
+sigil NoDefault<◆ ROWS: usize, ◆ COLS: usize> {
+    dimensions: usize,
+}
+
+// EC₈: Struct with const default (impl without default)
+sigil ImplWithDefault<◆ N: usize = 10> {
+    value: i32,
+}
+
+⊢<◆ N: usize> ImplWithDefault<N> {
+    rite new() → Self {
+        ImplWithDefault { value: 0 }
+    }
+
+    rite capacity(&self) → usize {
+        N
+    }
+}
+
+// Main for compilation test (explicit types for inference)
+rite main() {
+    ≔ s1: SimpleDefault = SimpleDefault { len: 10 };
+    ≔ m1: MixedDefaults = MixedDefaults { data: "hello".to_string(), capacity: 16 };
+    ≔ i1: ImplWithDefault = ImplWithDefault·new();
+    ≔ n1: NoDefault<3, 4> = NoDefault { dimensions: 12 };
+
+    println!("{}", s1.len);
+    println!("{}", i1.capacity());
+    println!("{}", n1.dimensions);
+}

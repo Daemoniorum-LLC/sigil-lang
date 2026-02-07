@@ -1,0 +1,146 @@
+// Test: Pipe Method Fallback
+// Verifies Gap 1 from INTERPRETER-GAPS-SPEC.md
+//
+// When a pipe method isn't in the interpreter's whitelist, it should
+// delegate to regular method dispatch on the value, not fail with
+// "Unknown pipe method: X"
+
+sigil Counter {
+    value: i64,
+}
+
+⊢ Counter {
+    ☉ rite new() → Self {
+        Counter { value: 0 }
+    }
+
+    ☉ rite increment(&Δ self) → &Δ Self {
+        self.value += 1;
+        self
+    }
+
+    ☉ rite decrement(&Δ self) → &Δ Self {
+        self.value -= 1;
+        self
+    }
+
+    ☉ rite get(&self) → i64 {
+        self.value
+    }
+
+    ☉ rite double(&self) → i64 {
+        self.value * 2
+    }
+}
+
+// Wrapper type to test method chaining
+sigil Builder {
+    items: Vec<String>,
+}
+
+⊢ Builder {
+    ☉ rite new() → Self {
+        Builder { items: vec![] }
+    }
+
+    ☉ rite add(&Δ self, item: String) → &Δ Self {
+        self.items.push(item);
+        self
+    }
+
+    ☉ rite build(&self) → Vec<String> {
+        self.items.clone()
+    }
+}
+
+#[test]
+rite test_pipe_delegates_to_struct_method() {
+    ≔ Δ counter = Counter·new();
+
+    // |increment() should find Counter.increment()
+    // This pattern mirrors axum's |route() usage
+    ≔ Δ c2 = counter|increment();
+    ≔ result = c2.get();
+
+    assert_eq(result, 1);
+}
+
+#[test]
+rite test_pipe_chain_delegates_multiple_methods() {
+    ≔ Δ counter = Counter·new();
+
+    // Chain of pipe methods should all delegate
+    ≔ Δ c = counter|increment()|increment()|increment();
+    ≔ result = c.get();
+
+    assert_eq(result, 3);
+}
+
+#[test]
+rite test_pipe_method_with_args() {
+    ≔ Δ builder = Builder·new();
+
+    // |add("x") should find Builder.add() with argument
+    ≔ Δ b = builder|add("first")|add("second")|add("third");
+    ≔ items = b.build();
+
+    assert_eq(items.len(), 3);
+    assert_eq(items[0], "first");
+    assert_eq(items[1], "second");
+    assert_eq(items[2], "third");
+}
+
+#[test]
+rite test_pipe_to_known_method_still_works() {
+    // Built-in pipe methods should still work
+    ≔ arr = [1, 2, 3, 4, 5];
+
+    ≔ doubled = arr|τ{x => x * 2}|collect;
+    assert_eq(len(doubled), 5);
+    assert_eq(doubled[0], 2);
+    assert_eq(doubled[4], 10);
+
+    ≔ sum = arr|Σ;
+    assert_eq(sum, 15);
+
+    ≔ len_val = arr|len;
+    assert_eq(len_val, 5);
+}
+
+#[test]
+rite test_pipe_fallback_then_known() {
+    ≔ Δ counter = Counter·new();
+
+    // Mix: delegate (increment) then known (collect wraps in array)
+    ≔ Δ c = counter|increment()|increment();
+    ≔ val = c.get();
+
+    assert_eq(val, 2);
+}
+
+☉ rite main() → !i32 {
+    println("=== Interpreter Gap: Pipe Method Fallback ===");
+    println("Testing that |method delegates to value.method() when not in whitelist");
+    println("");
+
+    // First test the known ops that should work
+    test_pipe_to_known_method_still_works();
+    println("  PASS: test_pipe_to_known_method_still_works");
+
+    // These should fail with "Unknown pipe method: X" until the gap is fixed
+    test_pipe_delegates_to_struct_method();
+    println("  PASS: test_pipe_delegates_to_struct_method");
+
+    test_pipe_chain_delegates_multiple_methods();
+    println("  PASS: test_pipe_chain_delegates_multiple_methods");
+
+    test_pipe_method_with_args();
+    println("  PASS: test_pipe_method_with_args");
+
+    test_pipe_fallback_then_known();
+    println("  PASS: test_pipe_fallback_then_known");
+
+    println("");
+    println("All pipe fallback tests passed!");
+    ⤺ 0;
+}

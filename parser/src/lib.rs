@@ -79,6 +79,8 @@ pub mod codegen;
 #[cfg(feature = "llvm")]
 pub mod llvm_codegen;
 
+pub mod rust_codegen;
+
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
@@ -142,3 +144,5 @@ pub use llvm_codegen::llvm::{CompileMode, LlvmCompiler};
 
 #[cfg(feature = "wasm")]
 pub use wasm::WasmCompiler;
+
+pub use rust_codegen::{RustCompiler, RustCodegenOptions, RustCodegenError, RustEdition};

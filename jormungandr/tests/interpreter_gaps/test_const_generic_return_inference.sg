@@ -1,0 +1,54 @@
+// Test: Const generic inferred from return type annotation
+// Verifies 03C-CONST-GENERIC-INFERENCE.md Section 4.3
+//
+// When a function's return type has const generics, the body should
+// be able to construct values without explicit turbofish.
+
+sigil Container<◆ N: usize> {
+    value: i64,
+}
+
+⊢<◆ N: usize> Container<N> {
+    ☉ rite new() → This {
+        Container { value: N as i64 }
+    }
+}
+
+☉ rite make_seven() → Container<7> {
+    Container·new()  // Should infer N=7 from return type
+}
+
+☉ rite make_hundred() → Container<100> {
+    Container·new()  // Should infer N=100 from return type
+}
+
+#[test]
+rite test_return_inference_basic() {
+    ≔ c = make_seven();
+    assert_eq(c.value, 7);
+}
+
+#[test]
+rite test_return_inference_different_values() {
+    ≔ a = make_seven();
+    ≔ b = make_hundred();
+
+    assert_eq(a.value, 7);
+    assert_eq(b.value, 100);
+}
+
+☉ rite main() → !i32 {
+    println("=== Const Generic Return Inference ===");
+    println("Testing that return type → Container<N> infers N in body");
+    println("");
+
+    test_return_inference_basic();
+    println("  PASS: test_return_inference_basic");
+
+    test_return_inference_different_values();
+    println("  PASS: test_return_inference_different_values");
+
+    println("");
+    println("All const generic return inference tests passed!");
+    ⤺ 0;
+}

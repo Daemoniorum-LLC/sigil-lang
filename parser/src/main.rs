@@ -58,6 +58,7 @@ fn main() -> ExitCode {
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        eprintln!("  rust <file>     Transpile to Rust source code");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
         eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
@@ -239,6 +240,35 @@ fn main() -> ExitCode {
         "wasm" => {
             eprintln!("Error: WASM compilation requires --features wasm");
             ExitCode::from(1)
+        }
+        "rust" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil rust <file.sigil|dir> [-o output] [--preserve-evidence] [--no-std] [--emit-cargo] [--workspace]");
+                return ExitCode::from(1);
+            }
+            let preserve_evidence = args.iter().any(|a| a == "--preserve-evidence");
+            let no_std = args.iter().any(|a| a == "--no-std");
+            let emit_comments = args.iter().any(|a| a == "--emit-comments");
+            let emit_cargo = args.iter().any(|a| a == "--emit-cargo");
+            let workspace = args.iter().any(|a| a == "--workspace");
+            let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
+                if pos + 1 < args.len() {
+                    Some(args[pos + 1].clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Check if path is a directory (workspace mode)
+            let path = &args[2];
+            if std::path::Path::new(path).is_dir() || workspace {
+                rust_compile_workspace(path, output.as_deref(), preserve_evidence, no_std, emit_comments, emit_cargo)
+            } else {
+                rust_compile_file(path, output.as_deref(), preserve_evidence, no_std, emit_comments)
+            }
         }
         "check" => {
             if args.len() < 3 {
@@ -1479,6 +1509,404 @@ fn find_linker() -> String {
         }
     }
     "cc".to_string()
+}
+
+/// Transpile a Sigil source file to Rust source code.
+fn rust_compile_file(
+    path: &str,
+    output: Option<&str>,
+    preserve_evidence: bool,
+    no_std: bool,
+    emit_comments: bool,
+) -> ExitCode {
+    use sigil_parser::{RustCompiler, RustCodegenOptions, RustEdition};
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Configure options
+    let options = RustCodegenOptions {
+        preserve_evidence,
+        emit_comments,
+        edition: RustEdition::Edition2021,
+        no_std,
+        indent_spaces: 4,
+    };
+
+    // Parse
+    let mut parser = Parser::new(&source);
+    let source_file = match parser.parse_file() {
+        Ok(sf) => sf,
+        Err(e) => {
+            eprintln!("Parse error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Extract items from SourceFile
+    let items: Vec<_> = source_file.items.iter().map(|s| s.node.clone()).collect();
+
+    // Generate Rust code
+    let mut compiler = RustCompiler::with_options(options);
+    let rust_code = match compiler.compile(&items) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("Rust codegen error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Output
+    if let Some(output_path) = output {
+        if let Err(e) = fs::write(output_path, &rust_code) {
+            eprintln!("Error writing output file '{}': {}", output_path, e);
+            return ExitCode::from(1);
+        }
+        println!("Generated: {} ({} bytes)", output_path, rust_code.len());
+    } else {
+        // Print to stdout
+        print!("{}", rust_code);
+    }
+
+    ExitCode::SUCCESS
+}
+
+/// Compile a Sigil workspace to Rust with Cargo.toml generation.
+fn rust_compile_workspace(
+    path: &str,
+    output: Option<&str>,
+    preserve_evidence: bool,
+    no_std: bool,
+    emit_comments: bool,
+    emit_cargo: bool,
+) -> ExitCode {
+    use sigil_parser::{RustCompiler, RustCodegenOptions, RustEdition};
+    use std::path::Path;
+
+    let workspace_path = Path::new(path);
+    let output_dir = output.unwrap_or("rust-out");
+
+    // Look for Sigil.toml in the workspace root
+    let sigil_toml_path = workspace_path.join("Sigil.toml");
+    let workspace_config = if sigil_toml_path.exists() {
+        match fs::read_to_string(&sigil_toml_path) {
+            Ok(content) => Some(content),
+            Err(e) => {
+                eprintln!("Warning: Could not read {}: {}", sigil_toml_path.display(), e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Parse workspace members from Sigil.toml
+    let crate_dirs: Vec<String> = if let Some(ref config) = workspace_config {
+        parse_workspace_members(config)
+    } else {
+        // Fallback: find all directories with .sigil or .sg files
+        find_sigil_crates(workspace_path)
+    };
+
+    if crate_dirs.is_empty() {
+        eprintln!("No Sigil crates found in workspace");
+        return ExitCode::from(1);
+    }
+
+    // Create output directory
+    if let Err(e) = fs::create_dir_all(output_dir) {
+        eprintln!("Error creating output directory '{}': {}", output_dir, e);
+        return ExitCode::from(1);
+    }
+
+    println!("Compiling {} crates to Rust...", crate_dirs.len());
+
+    // Configure codegen options
+    let options = RustCodegenOptions {
+        preserve_evidence,
+        emit_comments,
+        edition: RustEdition::Edition2021,
+        no_std,
+        indent_spaces: 4,
+    };
+
+    let mut success_count = 0;
+    let mut crate_names = Vec::new();
+
+    for crate_dir in &crate_dirs {
+        let crate_path = workspace_path.join(crate_dir);
+        let crate_name = Path::new(crate_dir)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| crate_dir.replace('/', "-"));
+
+        // Create output crate directory
+        let out_crate_dir = Path::new(output_dir).join(&crate_name);
+        let out_src_dir = out_crate_dir.join("src");
+        if let Err(e) = fs::create_dir_all(&out_src_dir) {
+            eprintln!("  Error creating {}: {}", out_src_dir.display(), e);
+            continue;
+        }
+
+        // Find all .sigil and .sg files in src/
+        let src_dir = crate_path.join("src");
+        if !src_dir.is_dir() {
+            eprintln!("  Skipping {}: no src/ directory", crate_name);
+            continue;
+        }
+
+        let mut has_lib = false;
+        let mut file_count = 0;
+
+        if let Ok(entries) = fs::read_dir(&src_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let ext = path.extension().and_then(|e| e.to_str());
+
+                if ext != Some("sigil") && ext != Some("sg") {
+                    continue;
+                }
+
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                let out_name = if stem == "lib" {
+                    has_lib = true;
+                    "lib.rs".to_string()
+                } else {
+                    format!("{}.rs", stem)
+                };
+
+                // Read and compile
+                let source = match fs::read_to_string(&path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("    Error reading {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+
+                let mut parser = Parser::new(&source);
+                let source_file = match parser.parse_file() {
+                    Ok(sf) => sf,
+                    Err(e) => {
+                        eprintln!("    Parse error in {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+
+                let items: Vec<_> = source_file.items.iter().map(|s| s.node.clone()).collect();
+                let mut compiler = RustCompiler::with_options(options.clone());
+                let rust_code = match compiler.compile(&items) {
+                    Ok(code) => code,
+                    Err(e) => {
+                        eprintln!("    Codegen error in {}: {}", stem, e);
+                        continue;
+                    }
+                };
+
+                // Write output file
+                let out_path = out_src_dir.join(&out_name);
+                if let Err(e) = fs::write(&out_path, &rust_code) {
+                    eprintln!("    Error writing {}: {}", out_path.display(), e);
+                    continue;
+                }
+
+                file_count += 1;
+            }
+        }
+
+        if !has_lib {
+            eprintln!("  Skipping {}: no lib.sigil or lib.sg", crate_name);
+            continue;
+        }
+
+        // Generate Cargo.toml if requested
+        if emit_cargo {
+            let cargo_toml = generate_cargo_toml(&crate_name, crate_dir, workspace_config.as_deref());
+            let cargo_path = out_crate_dir.join("Cargo.toml");
+            if let Err(e) = fs::write(&cargo_path, &cargo_toml) {
+                eprintln!("  Error writing {}: {}", cargo_path.display(), e);
+            }
+        }
+
+        println!("  {} ({} files) -> {}", crate_name, file_count, out_src_dir.display());
+        crate_names.push(crate_name);
+        success_count += 1;
+    }
+
+    // Generate workspace Cargo.toml
+    if emit_cargo && !crate_names.is_empty() {
+        let workspace_cargo = generate_workspace_cargo(&crate_names);
+        let workspace_cargo_path = Path::new(output_dir).join("Cargo.toml");
+        if let Err(e) = fs::write(&workspace_cargo_path, &workspace_cargo) {
+            eprintln!("Error writing workspace Cargo.toml: {}", e);
+        } else {
+            println!("Generated workspace: {}", workspace_cargo_path.display());
+        }
+    }
+
+    println!("\nCompiled {}/{} crates successfully", success_count, crate_dirs.len());
+
+    if success_count > 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+/// Parse workspace.members from Sigil.toml
+fn parse_workspace_members(toml_content: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    let mut in_members = false;
+
+    for line in toml_content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("members = [") {
+            in_members = true;
+            continue;
+        }
+
+        if in_members {
+            if trimmed == "]" {
+                break;
+            }
+            // Extract path from quoted string
+            if let Some(start) = trimmed.find('"') {
+                if let Some(end) = trimmed[start + 1..].find('"') {
+                    let path = &trimmed[start + 1..start + 1 + end];
+                    members.push(path.to_string());
+                }
+            }
+        }
+    }
+
+    members
+}
+
+/// Find directories containing .sigil or .sg files
+fn find_sigil_crates(workspace_path: &std::path::Path) -> Vec<String> {
+    let mut crates = Vec::new();
+    let crates_dir = workspace_path.join("crates");
+
+    if crates_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&crates_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let src_dir = path.join("src");
+                    if src_dir.join("lib.sigil").exists() || src_dir.join("lib.sg").exists() {
+                        if let Some(name) = path.file_name() {
+                            crates.push(format!("crates/{}", name.to_string_lossy()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    crates
+}
+
+/// Generate a Cargo.toml for a single crate
+fn generate_cargo_toml(crate_name: &str, _crate_path: &str, _workspace_config: Option<&str>) -> String {
+    // Normalize crate name (replace hyphens with underscores for Rust)
+    let lib_name = crate_name.replace('-', "_");
+
+    // Infer dependencies based on crate name patterns
+    let deps = infer_crate_dependencies(crate_name);
+
+    format!(
+        r#"[package]
+name = "{crate_name}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "{lib_name}"
+path = "src/lib.rs"
+
+[dependencies]
+{deps}
+
+[features]
+default = []
+cuda = []
+"#,
+        crate_name = crate_name,
+        lib_name = lib_name,
+        deps = deps,
+    )
+}
+
+/// Infer dependencies for a crate based on naming conventions
+fn infer_crate_dependencies(crate_name: &str) -> String {
+    // Nihil dependency graph (based on Sigil.toml structure)
+    let deps: Vec<&str> = match crate_name {
+        "nihil-core" => vec![],
+        "nihil-memory" => vec!["nihil-core"],
+        "nihil-ops" => vec!["nihil-core", "nihil-memory"],
+        "nihil-cpu" => vec!["nihil-core", "nihil-ops"],
+        "nihil-cuda" => vec!["nihil-core", "nihil-ops", "nihil-memory"],
+        "nihil-autograd" => vec!["nihil-core", "nihil-ops"],
+        "nihil-einsum" => vec!["nihil-core", "nihil-ops"],
+        "nihil-linalg" => vec!["nihil-core", "nihil-ops", "nihil-einsum"],
+        "nihil-nn" => vec!["nihil-core", "nihil-ops", "nihil-autograd"],
+        "nihil-optim" => vec!["nihil-nn", "nihil-autograd"],
+        "nihil-transformer" => vec!["nihil-nn", "nihil-ops"],
+        "nihil-io" => vec!["nihil-core"],
+        "nihil-models" => vec!["nihil-transformer", "nihil-io"],
+        "nihil-quant" => vec!["nihil-core", "nihil-ops"],
+        "nihil-distributed" => vec!["nihil-core", "nihil-ops", "nihil-nn"],
+        "nihil-dispatch" => vec!["nihil-core", "nihil-cpu", "nihil-cuda"],
+        "nihil-compile" => vec!["nihil-core", "nihil-ops"],
+        "nihil-test" => vec!["nihil-core", "nihil-ops", "nihil-nn"],
+        "nihil-bench" => vec!["nihil-core", "nihil-ops"],
+        "nihil-embed" => vec!["nihil-transformer", "nihil-models"],
+        "pynihil" => vec!["nihil-core", "nihil-ops", "nihil-nn"],
+        "nihil" => vec![
+            "nihil-core", "nihil-ops", "nihil-nn", "nihil-autograd",
+            "nihil-transformer", "nihil-io", "nihil-models",
+        ],
+        _ => vec![],
+    };
+
+    if deps.is_empty() {
+        String::new()
+    } else {
+        deps.iter()
+            .map(|d| format!("{} = {{ path = \"../{}\" }}", d, d))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+/// Generate a workspace Cargo.toml
+fn generate_workspace_cargo(crate_names: &[String]) -> String {
+    let members: Vec<String> = crate_names.iter().map(|n| format!("    \"{}\",", n)).collect();
+
+    format!(
+        r#"[workspace]
+resolver = "2"
+members = [
+{}
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+"#,
+        members.join("\n")
+    )
 }
 
 /// Compile a Sigil source file to WebAssembly.

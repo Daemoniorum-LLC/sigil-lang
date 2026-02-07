@@ -1,0 +1,108 @@
+// Test: Float Literal Suffixes
+// Verifies Gap 3 from INTERPRETER-GAPS-SPEC.md
+//
+// Float literals with type suffixes (0.0f32, 1.0f64) should parse correctly.
+// Currently the lexer rejects these with "Invalid float: 0.0f32"
+
+#[test]
+rite test_f32_literal_basic() {
+    // Basic f32 suffix
+    ≔ x = 1.5f32;
+    assert_eq(x, 1.5);
+}
+
+#[test]
+rite test_f64_literal_basic() {
+    // Basic f64 suffix
+    ≔ x = 1.5f64;
+    assert_eq(x, 1.5);
+}
+
+#[test]
+rite test_f32_with_method() {
+    // Method call on suffixed literal
+    ≔ y = 2.0f32.sqrt();
+    // sqrt(2) ≈ 1.414
+    assert(y > 1.4 && y < 1.5);
+}
+
+#[test]
+rite test_f64_with_method() {
+    ≔ y = 2.0f64.sqrt();
+    assert(y > 1.4 && y < 1.5);
+}
+
+#[test]
+rite test_f32_powi() {
+    // Common pattern in ML code: 2^-14 for float16 epsilon
+    ≔ result = 2.0f32.powi(-14);
+    // 2^-14 ≈ 0.000061
+    assert(result > 0.00005 && result < 0.0001);
+}
+
+#[test]
+rite test_f32_exp() {
+    ≔ e = 1.0f32.exp();
+    // e ≈ 2.718
+    assert(e > 2.7 && e < 2.8);
+}
+
+#[test]
+rite test_f32_in_expression() {
+    // Arithmetic with suffixed literals
+    ≔ result = 1.0f32 + 2.0f32;
+    assert_eq(result, 3.0);
+}
+
+#[test]
+rite test_f32_accumulator() {
+    // Common pattern: accumulator initialization
+    ≔ Δ sum = 0.0f32;
+    sum = sum + 1.0;
+    sum = sum + 2.0;
+    assert_eq(sum, 3.0);
+}
+
+#[test]
+rite test_scientific_notation() {
+    // Scientific notation with suffix
+    ≔ x = 1.0e-5f32;
+    assert(x > 0.0 && x < 0.0001);
+}
+
+☉ rite main() → !i32 {
+    println("=== Interpreter Gap: Float Literal Suffixes ===");
+    println("Testing that 1.5f32 and 1.5f64 parse correctly");
+    println("");
+
+    test_f32_literal_basic();
+    println("  PASS: test_f32_literal_basic");
+
+    test_f64_literal_basic();
+    println("  PASS: test_f64_literal_basic");
+
+    test_f32_with_method();
+    println("  PASS: test_f32_with_method");
+
+    test_f64_with_method();
+    println("  PASS: test_f64_with_method");
+
+    test_f32_powi();
+    println("  PASS: test_f32_powi");
+
+    test_f32_exp();
+    println("  PASS: test_f32_exp");
+
+    test_f32_in_expression();
+    println("  PASS: test_f32_in_expression");
+
+    test_f32_accumulator();
+    println("  PASS: test_f32_accumulator");
+
+    test_scientific_notation();
+    println("  PASS: test_scientific_notation");
+
+    println("");
+    println("All float suffix tests passed!");
+    ⤺ 0;
+}

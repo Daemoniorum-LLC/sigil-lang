@@ -1,0 +1,73 @@
+//! Test: Public Struct Field Visibility (Gap E)
+//!
+//! Spec Reference: RUST-CODEGEN-PARSER-GAPS-SPEC.md Section 6
+//!
+//! This test verifies that public field visibility markers (☉) on struct
+//! fields correctly emit `pub` in generated Rust code.
+//!
+//! Key behaviors:
+//! 1. Fields without ☉ should be private (no pub)
+//! 2. Fields with ☉ should be public (pub)
+//! 3. Mixed visibility within same struct works
+//! 4. Tuple struct fields support visibility
+//! 5. Generic structs preserve field visibility
+
+// Test 1: Basic public and private fields
+☉ sigil PublicFields {
+    ☉ public_field: i32,
+    private_field: String,
+    ☉ another_public: bool,
+}
+
+// Test 2: All private fields (default)
+☉ sigil AllPrivate {
+    x: f64,
+    y: f64,
+}
+
+// Test 3: All public fields
+☉ sigil AllPublic {
+    ☉ a: u8,
+    ☉ b: u16,
+    ☉ c: u32,
+}
+
+// Test 4: Generic struct with mixed visibility
+☉ sigil Container<T> {
+    ☉ value: T,
+    internal_cache: Option<T>,
+}
+
+// Test 5: Struct with complex types and visibility
+☉ sigil TensorLike<S, D> {
+    ☉ storage: Vec<D>,
+    ☉ shape: S,
+    requires_grad: bool,
+    ☉ layout: Vec<usize>,
+}
+
+// Test 6: Tuple struct with visibility
+// Note: Tuple struct fields can also have visibility in Sigil
+☉ sigil Wrapper(☉ i32);
+
+// Test 7: Impl block accessing fields
+⊢ PublicFields {
+    ☉ rite new(public: i32, private: String, flag: bool) → This {
+        This {
+            public_field: public,
+            private_field: private,
+            another_public: flag,
+        }
+    }
+
+    // Public getter for private field
+    ☉ rite get_private(&this) → &String {
+        &this.private_field
+    }
+}
+
+// Test 8: External access pattern (documented in spec)
+// When nihil-ops accesses nihil-core's Tensor fields, they must be public
+☉ rite access_public_fields(container: &Container<i32>) → i32 {
+    container.value  // Only works if value is pub
+}
