@@ -1288,14 +1288,14 @@ impl<'a> Parser<'a> {
             Some(Token::Struct) => {
                 Item::Struct(self.parse_struct_with_doc_comments(visibility, outer_attrs, doc_comments)?)
             }
-            Some(Token::Enum) => Item::Enum(self.parse_enum_with_doc_comments(visibility, doc_comments)?),
+            Some(Token::Enum) => Item::Enum(self.parse_enum_with_doc_comments(visibility, outer_attrs, doc_comments)?),
             Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc_comments(visibility, doc_comments)?),
-            Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments)?),
+            Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments, false)?),
             Some(Token::Unsafe) => {
                 // unsafe impl, unsafe fn, unsafe trait
                 self.advance(); // consume 'unsafe'
                 match self.current_token() {
-                    Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments)?),
+                    Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments, true)?),
                     Some(Token::Fn) | Some(Token::Async) => {
                         Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
                     }
@@ -1759,14 +1759,15 @@ impl<'a> Parser<'a> {
     fn parse_enum_with_doc_comments(
         &mut self,
         visibility: Visibility,
+        outer_attrs: Vec<Attribute>,
         doc_comments: Vec<crate::ast::DocComment>,
     ) -> ParseResult<EnumDef> {
-        let mut result = self.parse_enum(visibility)?;
+        let mut result = self.parse_enum(visibility, outer_attrs)?;
         result.doc_comments = doc_comments;
         Ok(result)
     }
 
-    fn parse_enum(&mut self, visibility: Visibility) -> ParseResult<EnumDef> {
+    fn parse_enum(&mut self, visibility: Visibility, outer_attrs: Vec<Attribute>) -> ParseResult<EnumDef> {
         self.expect(Token::Enum)?;
         let name = self.parse_ident()?;
         let generics = self.parse_generics_opt()?;
@@ -1811,6 +1812,7 @@ impl<'a> Parser<'a> {
 
         Ok(EnumDef {
             doc_comments: vec![], // TODO: collect doc comments
+            outer_attrs,
             visibility,
             name,
             generics,
@@ -1939,13 +1941,14 @@ impl<'a> Parser<'a> {
     fn parse_impl_with_doc_comments(
         &mut self,
         doc_comments: Vec<crate::ast::DocComment>,
+        is_unsafe: bool,
     ) -> ParseResult<ImplBlock> {
-        let mut result = self.parse_impl()?;
+        let mut result = self.parse_impl(is_unsafe)?;
         result.doc_comments = doc_comments;
         Ok(result)
     }
 
-    fn parse_impl(&mut self) -> ParseResult<ImplBlock> {
+    fn parse_impl(&mut self, is_unsafe: bool) -> ParseResult<ImplBlock> {
         self.expect(Token::Impl)?;
         let generics = self.parse_generics_opt()?;
 
@@ -1973,8 +1976,8 @@ impl<'a> Parser<'a> {
             (None, first_type)
         };
 
-        // Optional where clause for impl bounds (parsed but not yet stored in AST)
-        let _ = self.parse_where_clause_opt()?;
+        // Optional where clause for impl bounds
+        let where_clause = self.parse_where_clause_opt()?;
 
         self.expect(Token::LBrace)?;
         let mut items = Vec::new();
@@ -2012,9 +2015,11 @@ impl<'a> Parser<'a> {
 
         Ok(ImplBlock {
             doc_comments: vec![], // TODO: collect doc comments
+            is_unsafe,
             generics,
             trait_,
             self_ty,
+            where_clause,
             items,
         })
     }
@@ -4835,6 +4840,10 @@ impl<'a> Parser<'a> {
                     Token::ElementOf => "∈".to_string(), // Membership test
                     Token::Union => "∪".to_string(),     // Set union
                     Token::Intersection => "∩".to_string(), // Set intersection
+                    Token::LogicAnd => "&&".to_string(),   // ∧ -> &&
+                    Token::LogicOr => "||".to_string(),    // ∨ -> ||
+                    Token::LogicNot => "!".to_string(),    // ¬ -> !
+                    Token::LogicXor => "^".to_string(),    // ⊻ -> ^
                     _ => {
                         // Try contextual keywords that can be used as identifiers
                         if let Some(ident) = Self::keyword_as_ident(token) {
@@ -9182,8 +9191,9 @@ impl<'a> Parser<'a> {
                     TypeExpr::Infer
                 };
                 // Parse optional default value: const N: usize = 10
+                // Use parse_const_expr_simple to stop at > and , (not parse_expr which is too greedy)
                 let default = if self.consume_if(&Token::Eq) {
-                    Some(Box::new(self.parse_expr()?))
+                    Some(Box::new(self.parse_const_expr_simple()?))
                 } else {
                     None
                 };

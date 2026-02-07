@@ -1,0 +1,51 @@
+fn main() {
+    // Basic map
+    let numbers = [1, 2, 3, 4, 5];
+    let doubled: Vec<_> = numbers.iter().map(|x| x * 2).collect();
+    println!("{:?}", doubled);
+
+    // Filter
+    let evens: Vec<_> = numbers.iter().filter(|x| *x % 2 == 0).collect();
+    println!("{:?}", evens);
+
+    // Map + Filter chain
+    let result: Vec<_> = numbers.iter().map(|x| x * 2).filter(|x| *x > 5).collect();
+    println!("{:?}", result);
+
+    // Sum reduction
+    let total: i32 = numbers.iter().sum();
+    println!("{}", total);
+
+    // Product reduction
+    let product: i32 = numbers.iter().product();
+    println!("{}", product);
+
+    // First/Last
+    let first = numbers.iter().next();
+    let last = numbers.iter().last();
+    println!("{:?}", first);
+    println!("{:?}", last);
+
+    // Sort
+    let mut sorted = numbers.to_vec();
+    sorted.sort();
+    println!("{:?}", sorted);
+
+    // Distinct
+    let nums_dup = [1, 2, 2, 3, 3, 3];
+    let unique: Vec<_> = nums_dup.iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    println!("{:?}", unique);
+
+    // Complex chain (single line)
+    let data = [10, 20, 30, 40, 50];
+    let processed: Vec<_> = data.iter()
+        .map(|x| x + 5)
+        .filter(|x| *x > 20)
+        .map(|x| x * 2)
+        .collect();
+    println!("{:?}", processed);
+}

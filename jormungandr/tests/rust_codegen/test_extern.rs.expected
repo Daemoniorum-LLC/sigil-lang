@@ -1,0 +1,27 @@
+// Extern block translation
+// Note: Extern functions aren't callable without linking to actual C libraries
+
+extern "C" {
+    fn malloc(size: usize) -> *mut u8;
+    fn free(ptr: *mut u8);
+    fn memcpy(dst: *mut u8, src: *const u8, size: usize) -> *mut u8;
+}
+
+#[no_mangle]
+pub extern "C" fn exported_function(x: i32) -> i32 {
+    x * 2
+}
+
+#[no_mangle]
+pub extern "C" fn c_callable(n: i32) -> i32 {
+    n + 1
+}
+
+fn main() {
+    // Test that exported functions work
+    let result = exported_function(21);
+    println!("{}", result);
+
+    let result2 = c_callable(99);
+    println!("{}", result2);
+}

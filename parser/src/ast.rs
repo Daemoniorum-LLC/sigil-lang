@@ -825,6 +825,8 @@ pub struct FieldDef {
 pub struct EnumDef {
     /// Doc comments attached to this enum (SGDOC)
     pub doc_comments: Vec<DocComment>,
+    /// Outer attributes (derives, repr, etc.)
+    pub outer_attrs: Vec<Attribute>,
     pub visibility: Visibility,
     pub name: Ident,
     pub generics: Option<Generics>,
@@ -862,9 +864,13 @@ pub enum TraitItem {
 pub struct ImplBlock {
     /// Doc comments attached to this impl block (SGDOC)
     pub doc_comments: Vec<DocComment>,
+    /// Whether this is an `unsafe impl` block
+    pub is_unsafe: bool,
     pub generics: Option<Generics>,
     pub trait_: Option<TypePath>,
     pub self_ty: TypeExpr,
+    /// Where clause constraints for the impl block
+    pub where_clause: Option<WhereClause>,
     pub items: Vec<ImplItem>,
 }
 

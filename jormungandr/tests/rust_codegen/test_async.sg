@@ -1,0 +1,36 @@
+// Test: Async/await translation
+// Spec: RUST-CODEGEN-SPEC.md § 3.3, 8.9
+// Priority: P1 - Important
+//
+// Purpose: Validate async function and await operator translation
+// Note: Simplified test - full async requires runtime support
+//
+// Expected: async fn and .await syntax
+
+// Simulated async function (would require tokio/async-std runtime)
+async rite fetch_data(url: String) → String {
+    // In real code: http_get(url)⌛
+    "response"
+}
+
+async rite process_single(url: String) → String {
+    ≔ result = fetch_data(url)⌛;
+    result
+}
+
+// Non-async helper
+rite create_urls() → Vec<String> {
+    ≔ Δ urls = Vec·new();
+    urls.push("http://example1.com");
+    urls.push("http://example2.com");
+    urls
+}
+
+rite main() {
+    // Async functions are created but not awaited in sync main
+    ≔ urls = create_urls();
+    println("Created URLs:");
+    ∀ url ∈ urls {
+        println(url);
+    }
+}

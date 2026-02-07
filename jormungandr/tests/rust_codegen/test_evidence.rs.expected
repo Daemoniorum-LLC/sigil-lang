@@ -1,0 +1,43 @@
+// Evidence handling - runtime evidence_of() function translates to runtime checks
+
+fn compute() -> i32 {
+    42
+}
+
+fn lookup(key: String) -> Option<i32> {
+    if key == "found" {
+        Some(100)
+    } else {
+        None
+    }
+}
+
+fn external_data() -> String {
+    "data from API".to_string()
+}
+
+// Runtime evidence helper (would be in prelude)
+fn evidence_of<T>(_value: &T) -> &'static str {
+    "known"  // All computed values are "known" at runtime
+}
+
+fn main() {
+    // Computed value (known evidence)
+    let value = compute();
+    let evidence = evidence_of(&value);
+    println!("{}", evidence);
+    println!("{}", value);
+
+    // Optional value (uncertain evidence)
+    let maybe = lookup("found".to_string());
+    match maybe {
+        Some(v) => println!("{}", v),
+        None => println!("not found"),
+    }
+
+    // External data (reported evidence)
+    let data = external_data();
+    let data_evidence = evidence_of(&data);
+    println!("{}", data_evidence);
+    println!("{}", data);
+}

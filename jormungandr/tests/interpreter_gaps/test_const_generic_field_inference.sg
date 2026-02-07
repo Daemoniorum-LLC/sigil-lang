@@ -1,0 +1,85 @@
+// Test: Const generic inferred from field type annotation
+// Verifies 03C-CONST-GENERIC-INFERENCE.md Section 4.1
+//
+// When initializing a struct field, the const generic should be inferred
+// from the field's declared type annotation.
+
+sigil Container<◆ N: usize> {
+    value: i64,
+}
+
+⊢<◆ N: usize> Container<N> {
+    ☉ rite new() → This {
+        Container { value: N as i64 }
+    }
+
+    ☉ rite get_value(&self) → i64 {
+        self.value
+    }
+}
+
+sigil Wrapper {
+    c: Container<42>,
+}
+
+⊢ Wrapper {
+    ☉ rite new() → This {
+        This { c: Container·new() }  // Should infer N=42 from field type
+    }
+}
+
+#[test]
+rite test_field_inference_basic() {
+    ≔ w = Wrapper·new();
+    assert_eq(w.c.value, 42);
+}
+
+#[test]
+rite test_field_inference_method_call() {
+    ≔ w = Wrapper·new();
+    assert_eq(w.c.get_value(), 42);
+}
+
+// Multiple fields with different const generics
+sigil MultiWrapper {
+    a: Container<10>,
+    b: Container<20>,
+    c: Container<30>,
+}
+
+⊢ MultiWrapper {
+    ☉ rite new() → This {
+        This {
+            a: Container·new(),  // Should infer N=10
+            b: Container·new(),  // Should infer N=20
+            c: Container·new(),  // Should infer N=30
+        }
+    }
+}
+
+#[test]
+rite test_multiple_field_inference() {
+    ≔ mw = MultiWrapper·new();
+    assert_eq(mw.a.value, 10);
+    assert_eq(mw.b.value, 20);
+    assert_eq(mw.c.value, 30);
+}
+
+☉ rite main() → !i32 {
+    println("=== Const Generic Field Inference ===");
+    println("Testing that Container·new() infers N from field type");
+    println("");
+
+    test_field_inference_basic();
+    println("  PASS: test_field_inference_basic");
+
+    test_field_inference_method_call();
+    println("  PASS: test_field_inference_method_call");
+
+    test_multiple_field_inference();
+    println("  PASS: test_multiple_field_inference");
+
+    println("");
+    println("All const generic field inference tests passed!");
+    ⤺ 0;
+}

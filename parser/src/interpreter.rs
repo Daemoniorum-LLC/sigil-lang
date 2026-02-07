@@ -233,6 +233,8 @@ pub struct Function {
     pub closure: Rc<RefCell<Environment>>,
     /// Generic type parameter names (e.g., ["T", "U"] for fn foo<T, U>())
     pub generic_params: Vec<String>,
+    /// Return type annotation for const generic inference (spec 03C)
+    pub return_type: Option<crate::ast::TypeExpr>,
 }
 
 /// Built-in function type
@@ -1184,6 +1186,12 @@ impl Environment {
         } else {
             Err(RuntimeError::undefined_variable(name))
         }
+    }
+
+    /// Remove a variable from this environment (only from current scope)
+    /// Used for cleaning up temporary const generic bindings
+    pub fn undefine(&mut self, name: &str) {
+        self.values.remove(name);
     }
 
     /// Iterate over all values in this environment (not including parent scopes)
@@ -3733,6 +3741,7 @@ impl Interpreter {
             body,
             closure: self.environment.clone(),
             generic_params,
+            return_type: func.return_type.clone(),
         })))
     }
 
@@ -6140,14 +6149,31 @@ impl Interpreter {
 
         let result = match func {
             Value::Function(f) => {
-                // Wrap with const generic bindings from turbofish if present
-                let f = if turbofish_const_bindings.is_empty() {
+                // Wrap with const generic bindings from turbofish if present,
+                // OR infer from type_context.struct_generics (spec 03C-CONST-GENERIC-INFERENCE.md)
+                let effective_const_bindings: Vec<(String, Value)> = if !turbofish_const_bindings.is_empty() {
+                    turbofish_const_bindings
+                } else if let Some((ctx_type, ctx_values)) = self.type_context.struct_generics.borrow().clone() {
+                    // Infer const generics from expected type context
+                    // (e.g., field type Container<42> when calling Container·new())
+                    if let Some(param_names) = self.const_generic_params.get(&ctx_type).cloned() {
+                        param_names.iter().zip(ctx_values.iter())
+                            .map(|(name, val)| (name.clone(), Value::Int(*val)))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                let f = if effective_const_bindings.is_empty() {
                     f
                 } else {
                     let wrapper_env = Rc::new(RefCell::new(
                         Environment::with_parent(f.closure.clone())
                     ));
-                    for (name, value) in &turbofish_const_bindings {
+                    for (name, value) in &effective_const_bindings {
                         wrapper_env.borrow_mut().define(name.clone(), value.clone());
                     }
                     Rc::new(Function {
@@ -6156,6 +6182,7 @@ impl Interpreter {
                         body: f.body.clone(),
                         closure: wrapper_env,
                         generic_params: f.generic_params.clone(),
+                        return_type: f.return_type.clone(),
                     })
                 };
                 // Reorder arguments based on named parameters
@@ -6291,6 +6318,44 @@ impl Interpreter {
         let prev_linear_consumed = std::mem::take(&mut *self.linear_state.consumed.borrow_mut());
         let prev_linear_vars = std::mem::take(&mut *self.linear_state.vars.borrow_mut());
 
+        // Const generic inference from return type (spec 03C-CONST-GENERIC-INFERENCE.md)
+        // If the function has a return type like Container<7>, propagate N=7 to the body
+        let prev_struct_generics = self.type_context.struct_generics.borrow().clone();
+        if let Some(return_ty) = &func.return_type {
+            if let crate::ast::TypeExpr::Path(type_path) = return_ty {
+                if let Some(seg) = type_path.segments.first() {
+                    let return_type_name = seg.ident.name.clone();
+                    if self.const_generic_params.contains_key(return_type_name.as_str()) {
+                        if let Some(generics) = &seg.generics {
+                            let mut const_values: Vec<i64> = Vec::new();
+                            for generic in generics {
+                                let val = match generic {
+                                    crate::ast::TypeExpr::ConstExpr(const_expr) => {
+                                        if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = const_expr.as_ref() {
+                                            value.parse::<i64>().ok()
+                                        } else { None }
+                                    }
+                                    crate::ast::TypeExpr::Path(inner_path) => {
+                                        if let Some(inner_seg) = inner_path.segments.first() {
+                                            inner_seg.ident.name.parse::<i64>().ok()
+                                        } else { None }
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(v) = val {
+                                    const_values.push(v);
+                                }
+                            }
+                            if !const_values.is_empty() {
+                                *self.type_context.struct_generics.borrow_mut() =
+                                    Some((return_type_name, const_values));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let result = match self.evaluate(&func.body) {
             Ok(val) => Ok(val),
             Err(e) if e.message == "return" => {
@@ -6312,6 +6377,7 @@ impl Interpreter {
             if let Some(var_name) = unused_var {
                 *self.linear_state.consumed.borrow_mut() = prev_linear_consumed;
                 *self.linear_state.vars.borrow_mut() = prev_linear_vars;
+                *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
                 self.environment = prev_env;
                 return Err(RuntimeError::new(format!(
                     "linear variable '{}' was declared but never used (linear types must be consumed exactly once)",
@@ -6323,6 +6389,9 @@ impl Interpreter {
         // Restore previous linear state
         *self.linear_state.consumed.borrow_mut() = prev_linear_consumed;
         *self.linear_state.vars.borrow_mut() = prev_linear_vars;
+
+        // Restore previous struct_generics context (for const generic inference)
+        *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
 
         self.environment = prev_env;
         result
@@ -6945,6 +7014,7 @@ impl Interpreter {
             body: func.body.clone(),
             closure: wrapper_env,
             generic_params: func.generic_params.clone(),
+            return_type: func.return_type.clone(),
         })
     }
 
@@ -15303,6 +15373,27 @@ impl Interpreter {
                             return Ok(Value::Int(1));
                         }
 
+                        // Fallback: try to delegate to value's method
+                        // This enables |method() to work for user-defined types
+                        if let Value::Struct {
+                            name: struct_name,
+                            fields,
+                        } = &value
+                        {
+                            let qualified_name = format!("{}·{}", struct_name, name.name);
+                            let user_fn = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
+                            if let Some(Value::Function(func)) = user_fn {
+                                // Call with self as first argument
+                                let self_val = Value::Struct {
+                                    name: struct_name.clone(),
+                                    fields: fields.clone(),
+                                };
+                                let mut all_args = vec![self_val];
+                                all_args.extend(arg_values);
+                                return self.call_function(&func, all_args);
+                            }
+                        }
+
                         Err(RuntimeError::new(format!(
                             "Unknown pipe method: {}",
                             name.name
@@ -17386,6 +17477,7 @@ impl Interpreter {
             body: body.clone(),
             closure: self.environment.clone(),
             generic_params: Vec::new(),
+            return_type: None,  // Closures infer return type
         })))
     }
 
@@ -17440,9 +17532,74 @@ impl Interpreter {
         }
 
         // Override with explicitly provided fields
+        // Look up struct definition once for field type inference
+        let struct_field_types: HashMap<String, crate::ast::TypeExpr> =
+            if let Some(TypeDef::Struct(struct_def)) = self.types.get(&name) {
+                if let crate::ast::StructFields::Named(def_fields) = &struct_def.fields {
+                    def_fields.iter()
+                        .map(|f| (f.name.name.clone(), f.ty.clone()))
+                        .collect()
+                } else {
+                    HashMap::new()
+                }
+            } else {
+                HashMap::new()
+            };
+
         for field in fields {
             let value = match &field.value {
-                Some(expr) => self.evaluate(expr)?,
+                Some(expr) => {
+                    // Const generic inference: propagate expected type's const generics
+                    // to the initializer expression (spec 03C-CONST-GENERIC-INFERENCE.md)
+                    //
+                    // Save and restore type_context.struct_generics so that nested
+                    // constructor calls like Container·new() can infer const generics
+                    // from the expected field type like Container<42>.
+                    let prev_struct_generics = self.type_context.struct_generics.borrow().clone();
+
+                    if let Some(field_ty) = struct_field_types.get(&field.name.name) {
+                        if let crate::ast::TypeExpr::Path(type_path) = field_ty {
+                            if let Some(seg) = type_path.segments.first() {
+                                let field_type_name = seg.ident.name.clone();
+                                // Check if this type has const generic parameters
+                                if self.const_generic_params.contains_key(field_type_name.as_str()) {
+                                    if let Some(generics) = &seg.generics {
+                                        let mut const_values: Vec<i64> = Vec::new();
+                                        for generic in generics {
+                                            let val = match generic {
+                                                crate::ast::TypeExpr::ConstExpr(const_expr) => {
+                                                    if let crate::ast::Expr::Literal(crate::ast::Literal::Int { value, .. }) = const_expr.as_ref() {
+                                                        value.parse::<i64>().ok()
+                                                    } else { None }
+                                                }
+                                                crate::ast::TypeExpr::Path(inner_path) => {
+                                                    if let Some(inner_seg) = inner_path.segments.first() {
+                                                        inner_seg.ident.name.parse::<i64>().ok()
+                                                    } else { None }
+                                                }
+                                                _ => None,
+                                            };
+                                            if let Some(v) = val {
+                                                const_values.push(v);
+                                            }
+                                        }
+                                        if !const_values.is_empty() {
+                                            *self.type_context.struct_generics.borrow_mut() =
+                                                Some((field_type_name, const_values));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let result = self.evaluate(expr);
+
+                    // Restore previous struct_generics context
+                    *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
+
+                    result?
+                },
                 None => self
                     .environment
                     .borrow()

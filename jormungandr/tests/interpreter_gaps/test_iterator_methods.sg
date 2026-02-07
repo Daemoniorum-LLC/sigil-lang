@@ -1,0 +1,99 @@
+// Test: Iterator Methods via Pipe
+// Verifies Gap 1 from INTERPRETER-GAPS-SPEC.md
+//
+// Methods like |unwrap_or need to delegate to the underlying type's methods.
+
+// Simple wrapper for chaining tests
+sigil Wrapper {
+    value: i64,
+}
+
+⊢ Wrapper {
+    ☉ rite new(v: i64) → Self {
+        Wrapper { value: v }
+    }
+
+    ☉ rite add(&self, n: i64) → Self {
+        Wrapper { value: self.value + n }
+    }
+
+    ☉ rite multiply(&self, n: i64) → Self {
+        Wrapper { value: self.value * n }
+    }
+
+    ☉ rite unwrap(&self) → i64 {
+        self.value
+    }
+
+    ☉ rite double(&self) → Self {
+        Wrapper { value: self.value * 2 }
+    }
+}
+
+#[test]
+rite test_pipe_delegates_add_method() {
+    ≔ w = Wrapper·new(10);
+
+    // |add should delegate to Wrapper.add()
+    ≔ result = w|add(5)|unwrap();
+
+    assert_eq(result, 15);
+}
+
+#[test]
+rite test_pipe_chain_custom_methods() {
+    ≔ w = Wrapper·new(2);
+
+    // Chain: add(3) -> multiply(4) -> unwrap
+    // (2 + 3) * 4 = 20
+    ≔ result = w|add(3)|multiply(4)|unwrap();
+
+    assert_eq(result, 20);
+}
+
+#[test]
+rite test_pipe_to_no_arg_method() {
+    ≔ w = Wrapper·new(5);
+
+    // |double() is a no-arg method
+    ≔ result = w|double()|double()|unwrap();
+
+    // 5 * 2 * 2 = 20
+    assert_eq(result, 20);
+}
+
+#[test]
+rite test_pipe_chain_with_known_ops() {
+    // Complex chain mixing known ops and delegated methods
+    ≔ arr = [1, 2, 3, 4, 5];
+
+    // τ is known, but assume we had a custom method
+    ≔ doubled = arr|τ{x => x * 2};
+    ≔ sum = doubled|Σ;
+
+    assert_eq(sum, 30);  // 2+4+6+8+10 = 30
+}
+
+☉ rite main() → !i32 {
+    println("=== Interpreter Gap: Iterator Methods via Pipe ===");
+    println("Testing that |method() delegates to value.method()");
+    println("");
+
+    // Known ops that should work
+    test_pipe_chain_with_known_ops();
+    println("  PASS: test_pipe_chain_with_known_ops");
+
+    // These should fail with "Unknown pipe method" until the gap is fixed
+    test_pipe_delegates_add_method();
+    println("  PASS: test_pipe_delegates_add_method");
+
+    test_pipe_chain_custom_methods();
+    println("  PASS: test_pipe_chain_custom_methods");
+
+    test_pipe_to_no_arg_method();
+    println("  PASS: test_pipe_to_no_arg_method");
+
+    println("");
+    println("All iterator method tests passed!");
+    ⤺ 0;
+}

@@ -1,0 +1,105 @@
+// Test: Generic default params vs associated type bindings
+// Spec: RUST-CODEGEN-PARSER-GAPS-SPEC.md § 3 (Gap B)
+// Priority: P0 - Parser level
+//
+// Purpose: Validate parser distinguishes:
+//   - Default type parameters: <T = Default> in param position
+//   - Associated type bindings: <Item = T> in argument position
+//
+// Expected: Correct AST nodes and Rust output
+
+// EC₁: Default type with bounds
+sigil DefaultWithBounds<T: Clone = String> {
+    value: T,
+}
+
+// EC₂: Default type without bounds
+sigil DefaultNoBounds<T = i32> {
+    value: T,
+}
+
+// EC₃: Multiple bounds with default
+sigil MultipleBounds<T: Clone + Send = String> {
+    value: T,
+}
+
+// EC₄: Associated type binding in trait bound
+rite use_iterator<I: Iterator<Item = i32>>(iter: I) {
+    ∀ item ∈ iter {
+        println!("{}", item);
+    }
+}
+
+// EC₅: Multiple associated type bindings
+aspect TwoAssoc {
+    type Output;
+    type Error;
+}
+
+rite use_two_assoc<T: TwoAssoc<Output = i32, Error = String>>(_t: T) {
+    // use t
+}
+
+// EC₆: Mixed type args and defaults (HashMap-style)
+sigil MyMap<K, V, S = i32> {
+    keys: Vec<K>,
+    values: Vec<V>,
+    hasher: S,
+}
+
+// EC₇: impl block with associated type
+aspect Producer {
+    type Output;
+    rite produce(&self) → Self·Output;
+}
+
+sigil IntProducer {}
+
+⊢ Producer ∀ IntProducer {
+    type Output = i32;
+
+    rite produce(&self) → i32 {
+        42
+    }
+}
+
+// EC₈: Simple function using Vec
+rite simple_vec_test() {
+    ≔ v: Vec<i32> = Vec·new();
+    ≔ _collected: Vec<i32> = v.into_iter().collect();
+}
+
+// EC₉: Nested associated types
+aspect Container {
+    type Item;
+}
+
+aspect IterContainer: Container {
+    type Iter: Iterator<Item = Self·Item>;
+}
+
+// EC₁₀: Default after constraint
+sigil ConstraintThenDefault<T: Clone = String> {
+    data: T,
+}
+
+// EC₁₁: Const generic (no default - defaults not yet supported)
+sigil ArrayWrapper<◆ N: usize> {
+    len: usize,
+}
+
+// EC₁₂: Complex real-world pattern with multiple defaults
+sigil Cache<K, V, S = i32, A = i32> {
+    keys: Vec<K>,
+    values: Vec<V>,
+    hasher: S,
+    alloc: A,
+}
+
+// Minimal main for compilation test
+rite main() {
+    ≔ d1 = DefaultWithBounds { value: "hello".to_string() };
+    ≔ d2: DefaultNoBounds<i64> = DefaultNoBounds { value: 42 };
+    println!("{}", d1.value);
+    println!("{}", d2.value);
+}

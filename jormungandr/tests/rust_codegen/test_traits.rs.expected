@@ -1,0 +1,56 @@
+trait Drawable {
+    fn draw(&self);
+    fn area(&self) -> f64;
+}
+
+trait Named {
+    fn name(&self) -> String;
+}
+
+struct Circle {
+    radius: f64,
+    label: String,
+}
+
+struct Square {
+    side: f64,
+}
+
+impl Drawable for Circle {
+    fn draw(&self) {
+        println!("Drawing circle with radius: {}", self.radius);
+    }
+
+    fn area(&self) -> f64 {
+        3.14159 * self.radius * self.radius
+    }
+}
+
+impl Named for Circle {
+    fn name(&self) -> String {
+        self.label.clone()
+    }
+}
+
+impl Drawable for Square {
+    fn draw(&self) {
+        println!("Drawing square with side: {}", self.side);
+    }
+
+    fn area(&self) -> f64 {
+        self.side * self.side
+    }
+}
+
+fn draw_shape<T: Drawable>(shape: &T) {
+    shape.draw();
+    let a = shape.area();
+    println!("Area: {}", a);
+}
+
+fn main() {
+    let c = Circle { radius: 5.0, label: "MyCircle".to_string() };
+    let s = Square { side: 4.0 };
+    draw_shape(&c);
+    draw_shape(&s);
+}

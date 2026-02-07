@@ -1,0 +1,29 @@
+// Async/await translation
+// Note: Simplified test - full async requires tokio/async-std runtime
+
+async fn fetch_data(url: String) -> String {
+    // In real code: http_get(url).await
+    "response".to_string()
+}
+
+async fn process_single(url: String) -> String {
+    let result = fetch_data(url).await;
+    result
+}
+
+// Non-async helper
+fn create_urls() -> Vec<String> {
+    let mut urls = Vec::new();
+    urls.push("http://example1.com".to_string());
+    urls.push("http://example2.com".to_string());
+    urls
+}
+
+fn main() {
+    // Async functions are created but not awaited in sync main
+    let urls = create_urls();
+    println!("Created URLs:");
+    for url in urls {
+        println!("{}", url);
+    }
+}

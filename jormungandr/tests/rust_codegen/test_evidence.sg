@@ -1,0 +1,42 @@
+// Test: Evidentiality handling translation
+// Spec: RUST-CODEGEN-SPEC.md § 6
+// Priority: P1 - Important
+//
+// Purpose: Validate evidence handling in Rust codegen
+// Note: Sigil runtime evidence is via functions, not type syntax
+//
+// Expected: Evidence functions translate to runtime checks
+
+rite compute() → i32 {
+    42
+}
+
+rite lookup(key: String) → Option<i32> {
+    ⎇ key == "found" {
+        Some(100)
+    } ∅ {
+        None
+    }
+}
+
+rite external_data() → String {
+    "data from API"
+}
+
+rite main() {
+    // Computed value (known evidence)
+    ≔ value = compute();
+    ≔ evidence = evidence_of(value);
+    println(evidence);  // "known"
+    println(value);
+
+    // Optional value (uncertain evidence)
+    ≔ maybe = lookup("found");
+    ⌥ maybe { Some(v) => println(v), None => println("not found") }
+
+    // External data (reported evidence)
+    ≔ data = external_data();
+    ≔ data_evidence = evidence_of(data);
+    println(data_evidence);
+    println(data);
+}

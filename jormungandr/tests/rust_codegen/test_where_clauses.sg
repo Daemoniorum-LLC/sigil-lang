@@ -1,0 +1,121 @@
+//! Test: Where Clause Emission (Gap F)
+//!
+//! Spec Reference: RUST-CODEGEN-PARSER-GAPS-SPEC.md Section 7
+//!
+//! This test verifies that where clauses (∋) are correctly emitted
+//! in generated Rust code.
+//!
+//! Key behaviors:
+//! 1. Single predicate where clauses
+//! 2. Multiple predicate where clauses
+//! 3. Where clauses with multiple bounds (+ syntax)
+//! 4. Where clauses on functions
+//! 5. Where clauses on impl blocks
+//! 6. Where clauses with lifetime bounds
+//! 7. Where clauses with associated type constraints
+
+// Trait definitions for testing
+☉ aspect Printable {
+    rite print(&this);
+}
+
+☉ aspect Cloneable {
+    rite clone_it(&this) → This;
+}
+
+☉ aspect Numeric {
+    rite zero() → This;
+    rite add(&this, other: &This) → This;
+}
+
+// Test 1: Single predicate where clause on function
+☉ rite print_value<T>(value: T)
+∋ T: Printable
+{
+    value.print();
+}
+
+// Test 2: Multiple predicate where clause
+☉ rite process<T, U>(a: T, b: U)
+∋ T: Printable,
+  U: Cloneable
+{
+    a.print();
+    ≔ _cloned = b.clone_it();
+}
+
+// Test 3: Where clause with multiple bounds using +
+☉ rite complex_bounds<T>(value: T)
+∋ T: Printable + Cloneable + Clone
+{
+    value.print();
+    ≔ _c1 = value.clone_it();
+    ≔ _c2 = value.clone();
+}
+
+// Test 4: Where clause with generic return type
+☉ rite create_zero<N>() → N
+∋ N: Numeric
+{
+    N·zero()
+}
+
+// Test 5: Where clause with closure constraint (Gap G integration)
+☉ rite apply_fn<T, F>(value: T, f: F) → T
+∋ F: Fn(T) → T
+{
+    f(value)
+}
+
+// Test 6: Where clause with multiple closure parameters
+☉ rite combine<A, B, C, F>(a: A, b: B, f: F) → C
+∋ F: Fn(A, B) → C
+{
+    f(a, b)
+}
+
+// Test 7: Where clause on methods in impl block
+// NOTE: Impl-block-level where clauses are not yet supported (Gap J).
+// Use method-level where clauses as workaround.
+☉ sigil Accumulator<T> {
+    value: T,
+}
+
+⊢<T> Accumulator<T> {
+    ☉ rite new() → This
+    ∋ T: Numeric
+    {
+        This { value: T·zero() }
+    }
+
+    ☉ rite add(&vary this, other: &T)
+    ∋ T: Numeric
+    {
+        this.value = this.value.add(other);
+    }
+}
+
+// Test 8: Multiple where predicates with complex bounds
+☉ rite multi_constraint<A, B, C>(a: A, b: B) → C
+∋ A: Printable + Clone,
+  B: Cloneable,
+  C: Default
+{
+    a.print();
+    ≔ _b = b.clone_it();
+    C·default()
+}
+
+// Test 9: Where clause with FnMut
+☉ rite mutating_apply<T, F>(vary value: T, vary f: F) → T
+∋ F: FnMut(T) → T
+{
+    f(value)
+}
+
+// Test 10: Where clause with FnOnce
+☉ rite consuming_apply<T, F>(value: T, f: F) → T
+∋ F: FnOnce(T) → T
+{
+    f(value)
+}

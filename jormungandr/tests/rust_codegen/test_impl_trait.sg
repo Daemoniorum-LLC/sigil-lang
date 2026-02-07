@@ -1,0 +1,70 @@
+// Test: impl Trait Return Types
+// Spec: RUST-CODEGEN-PARSER-GAPS-SPEC.md § 11 (Gap K)
+// Priority: P1 - Opaque return types
+//
+// Purpose: Validate impl Trait syntax in return position
+//
+// Key rules:
+//   - rite foo() → ⊢ Clone { } → fn foo() -> impl Clone { }
+//   - Multiple bounds: ⊢ Clone + Debug + Send
+//   - Fn traits: ⊢ Fn(i32) → i32
+
+// EC₁: Simple impl Clone + Debug (for println)
+rite get_number() → ⊢ Clone + std·fmt·Debug {
+    42
+}
+
+// EC₂: impl with multiple bounds including Display
+rite get_display() → ⊢ Clone + Copy + std·fmt·Display {
+    42i32
+}
+
+// EC₃: impl Iterator with associated type
+rite make_range(n: i32) → ⊢ Iterator<Item = i32> {
+    0..n
+}
+
+// EC₄: impl Fn - closure returning
+rite make_adder(n: i32) → ⊢ Fn(i32) → i32 {
+    move |x| x + n
+}
+
+// EC₅: impl FnMut
+rite make_counter() → ⊢ FnMut() → i32 {
+    ≔ Δ count = 0;
+    move || {
+        count += 1;
+        count
+    }
+}
+
+// EC₆: Public function with impl trait
+☉ rite public_impl() → ⊢ Clone {
+    "hello"
+}
+
+// EC₇: Generic function returning impl trait
+rite wrap_value<T: Clone>(x: T) → ⊢ Clone {
+    x
+}
+
+// Main function for testing
+rite main() {
+    ≔ num = get_number();
+    println!("Number: {:?}", num);
+
+    ≔ disp = get_display();
+    println!("Display: {}", disp);
+
+    ≔ Δ range_iter = make_range(5);
+    // Use fold to avoid turbofish syntax issue
+    ≔ sum: i32 = range_iter.fold(0, |a, b| a + b);
+    println!("Range sum: {}", sum);
+
+    ≔ add_five = make_adder(5);
+    println!("5 + 10 = {}", add_five(10));
+
+    ≔ Δ counter = make_counter();
+    println!("Count: {}", counter());
+    println!("Count: {}", counter());
+}

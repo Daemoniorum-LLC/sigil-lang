@@ -1,0 +1,127 @@
+// Test: Return statement translation
+// Spec: RUST-CODEGEN-PARSER-GAPS-SPEC.md § 18 (Gap L)
+// Priority: P0 - Core
+//
+// Purpose: Validate ⤺ (return) symbol emits 'return' keyword
+//
+// Expected: Generates valid Rust return statements
+
+// EC₁: Return with value
+rite return_value() → i32 {
+    ⤺ 42
+}
+
+// EC₂: Early return in conditional
+rite early_return(x: i32) → i32 {
+    ⎇ x < 0 {
+        ⤺ 0
+    }
+    x
+}
+
+// EC₃: Return None (Option)
+rite return_none(cond: bool) → Option<i32> {
+    ⎇ cond {
+        ⤺ None
+    }
+    Some(42)
+}
+
+// EC₄: Return Err (Result)
+rite return_err(cond: bool) → Result<i32, String> {
+    ⎇ cond {
+        ⤺ Err("error".to_string())
+    }
+    Ok(42)
+}
+
+// EC₅: Bare return (unit)
+rite bare_return(cond: bool) {
+    ⎇ cond {
+        ⤺
+    }
+    println!("continuing")
+}
+
+// EC₆: Return complex expression
+rite return_complex(data: Vec<i32>) → Vec<i32> {
+    ⤺ data.iter().map(|x| x * 2).collect()
+}
+
+// EC₇: Return struct literal
+sigil Point {
+    x: i32,
+    y: i32,
+}
+
+rite return_struct() → Point {
+    ⤺ Point { x: 1, y: 2 }
+}
+
+// EC₈: Return tuple
+rite return_tuple() → (i32, i32, i32) {
+    ⤺ (1, 2, 3)
+}
+
+// EC₉: Return in loop
+rite return_in_loop(items: Vec<i32>, target: i32) → Option<i32> {
+    ∀ item ∈ items {
+        ⎇ item == target {
+            ⤺ Some(item)
+        }
+    }
+    None
+}
+
+// EC₁₀: Return in match arm
+rite return_in_match(opt: Option<i32>) → i32 {
+    ⌥ opt {
+        Some(x) => ⤺ x,
+        None => ⤺ 0,
+    }
+}
+
+// EC₁₁: Return in closure
+rite return_in_closure() → i32 {
+    ≔ f = |x: i32| { ⤺ x * 2 };
+    f(21)
+}
+
+// EC₁₂: Nested functions with return
+rite nested_return() → i32 {
+    rite inner() → i32 {
+        ⤺ 1
+    }
+    ⤺ inner() + 1
+}
+
+// EC₁₃: Explicit vs implicit return
+rite explicit_return() → i32 {
+    ⤺ 42
+}
+
+rite implicit_return() → i32 {
+    42
+}
+
+// EC₁₄: Multiple early returns
+rite classify(x: i32) → &'static str {
+    ⎇ x < 0 {
+        ⤺ "negative"
+    }
+    ⎇ x == 0 {
+        ⤺ "zero"
+    }
+    "positive"
+}
+
+// EC₁₅: Return with try operator
+rite return_with_try(opt: Option<i32>) → Option<i32> {
+    ⤺ Some(opt? + 1)
+}
+
+// Minimal main for compilation test
+rite main() {
+    ≔ v = return_value();
+    println!("{}", v);
+}

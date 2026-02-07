@@ -1,0 +1,57 @@
+// Test: Const generic translation
+// Spec: RUST-CODEGEN-SPEC.md § 5.6
+// Priority: P0 - Core
+//
+// Purpose: Validate const generic parameters translate correctly
+//
+// Expected: ◆ N: usize → const N: usize
+
+// Simple const generic struct (no array repeat which isn't fully supported)
+sigil FixedVec<◆ N: usize> {
+    data: Vec<i32>,
+}
+
+⊢<◆ N: usize> FixedVec<N> {
+    rite new() → This {
+        ≔ Δ v = Vec·new();
+        ∀ _ ∈ 0..N {
+            v.push(0);
+        }
+        FixedVec { data: v }
+    }
+
+    rite len(&this) → usize {
+        this.data.len()
+    }
+
+    rite capacity(&this) → usize {
+        N
+    }
+}
+
+// Multiple const generics
+sigil Dims<◆ ROWS: usize, ◆ COLS: usize> {
+    rows: usize,
+    cols: usize,
+}
+
+⊢<◆ ROWS: usize, ◆ COLS: usize> Dims<ROWS, COLS> {
+    rite new() → This {
+        Dims { rows: ROWS, cols: COLS }
+    }
+
+    rite total(&this) → usize {
+        ROWS * COLS
+    }
+}
+
+rite main() {
+    // Const generic constructor: Type·<N>·method()
+    ≔ v = FixedVec·<5>·new();
+    println(v.len());
+    println(v.capacity());
+
+    // Multiple const generics
+    ≔ d = Dims·<3, 4>·new();
+    println(d.total());
+}
