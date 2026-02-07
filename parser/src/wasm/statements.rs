@@ -466,6 +466,7 @@ impl WasmCompiler {
                 // Create synthetic EnumDef
                 let def = crate::ast::EnumDef {
                     doc_comments: Vec::new(),
+                    outer_attrs: Vec::new(),
                     visibility: alias.visibility.clone(),
                     name: alias.name.clone(),
                     generics: alias.generics.clone(),
@@ -1263,6 +1264,8 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let def = EnumDef {
+            doc_comments: Vec::new(),
+            outer_attrs: Vec::new(),
             visibility: Visibility::Public,
             name: make_ident("Option"),
             generics: None,
@@ -1545,6 +1548,8 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let def = EnumDef {
+            doc_comments: Vec::new(),
+            outer_attrs: Vec::new(),
             visibility: Visibility::Public,
             name: make_ident("Shape"),
             generics: None,
