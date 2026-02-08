@@ -1,0 +1,32 @@
+// Function Call Overhead Test
+// Tests: call/return overhead, inlining effectiveness
+
+rite tiny_func(x: i64) → i64 {
+    ⤺ x + 1;
+}
+
+rite call_chain(x: i64) → i64 {
+    ⤺ tiny_func(tiny_func(tiny_func(tiny_func(x))));
+}
+
+rite deep_recursion(n: i64, acc: i64) → i64 {
+    ⎇ n <= 0 { ⤺ acc; }
+    ⤺ deep_recursion(n - 1, acc + 1);
+}
+
+rite many_calls(n: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary i: i64 = 0;
+    ⟳ i < n {
+        sum = sum + call_chain(i);
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+☉ rite main() → !i32 {
+    ≔ r1 = many_calls(10000000);
+    ≔ r2 = deep_recursion(100000, 0);
+    ⎇ r1 > 0 && r2 == 100000 { ⤺ 0; }
+    ⤺ 1;
+}

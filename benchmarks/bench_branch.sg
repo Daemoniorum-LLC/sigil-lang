@@ -1,0 +1,43 @@
+// Branch Prediction Stress Test
+// Tests: predictable vs unpredictable branches
+
+rite predictable_branches(n: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary i: i64 = 0;
+    
+    // Predictable: always same branch for long runs
+    ⟳ i < n {
+        ⎇ i < n / 2 {
+            sum = sum + 1;
+        } ⎉ {
+            sum = sum + 2;
+        }
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+rite unpredictable_branches(n: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary i: i64 = 0;
+    ≔ vary state: i64 = 12345;
+    
+    // Unpredictable: pseudo-random branches
+    ⟳ i < n {
+        state = (state * 1103515245 + 12345) % 2147483648;
+        ⎇ state % 2 == 0 {
+            sum = sum + 1;
+        } ⎉ {
+            sum = sum + 2;
+        }
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+☉ rite main() → !i32 {
+    ≔ r1 = predictable_branches(100000000);
+    ≔ r2 = unpredictable_branches(100000000);
+    ⎇ r1 > 0 && r2 > 0 { ⤺ 0; }
+    ⤺ 1;
+}

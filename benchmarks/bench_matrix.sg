@@ -1,0 +1,28 @@
+// Matrix-like Computation
+// Tests: loop nest optimization, potential for SIMD
+
+rite matrix_compute(size: i64, iterations: i64) → i64 {
+    ≔ vary result: i64 = 0;
+    ≔ vary iter: i64 = 0;
+    
+    ⟳ iter < iterations {
+        ≔ vary i: i64 = 0;
+        ⟳ i < size {
+            ≔ vary j: i64 = 0;
+            ⟳ j < size {
+                // Simulated matrix element computation
+                result = result + (i * size + j) * (iter + 1);
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        iter = iter + 1;
+    }
+    ⤺ result;
+}
+
+☉ rite main() → !i32 {
+    ≔ r = matrix_compute(100, 1000);
+    ⎇ r != 0 { ⤺ 0; }
+    ⤺ 1;
+}
