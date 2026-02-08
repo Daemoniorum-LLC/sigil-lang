@@ -8429,6 +8429,26 @@ impl Interpreter {
         // Built-in methods
         match (&recv, method.name.as_str()) {
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
+            (Value::Array(arr), "numel") => {
+                // numel() returns total number of elements (recursive for nested arrays)
+                fn count_elements(v: &Value) -> i64 {
+                    match v {
+                        Value::Array(inner) => inner.borrow().iter().map(count_elements).sum(),
+                        _ => 1,
+                    }
+                }
+                let total: i64 = arr.borrow().iter().map(count_elements).sum();
+                Ok(Value::Int(total))
+            }
+            (Value::Array(arr), "dims") | (Value::Array(arr), "shape") => {
+                // dims()/shape() returns the array itself (for shape-like usage)
+                // e.g., [4, 784].dims() returns [4, 784]
+                Ok(Value::Array(arr.clone()))
+            }
+            (Value::Array(arr), "ndim") | (Value::Array(arr), "rank") => {
+                // ndim()/rank() returns number of dimensions (length of shape array)
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
             (Value::Array(arr), "capacity") => Ok(Value::Int(arr.borrow().capacity() as i64)),
             (Value::Array(arr), "as_slice") => {
                 // In interpreter mode, just return a clone of the array
@@ -9139,6 +9159,25 @@ impl Interpreter {
             | (Value::Array(arr), "len") => {
                 // #() -> cardinality of collection
                 // Symbolic: standard cardinality notation
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
+            (Value::Array(arr), "numel") => {
+                // numel() -> total number of elements (recursive)
+                fn count_elements(v: &Value) -> i64 {
+                    match v {
+                        Value::Array(inner) => inner.borrow().iter().map(count_elements).sum(),
+                        _ => 1,
+                    }
+                }
+                let total: i64 = arr.borrow().iter().map(count_elements).sum();
+                Ok(Value::Int(total))
+            }
+            (Value::Array(arr), "dims") | (Value::Array(arr), "shape") => {
+                // dims()/shape() returns the array itself (for shape-like usage)
+                Ok(Value::Array(arr.clone()))
+            }
+            (Value::Array(arr), "ndim") | (Value::Array(arr), "rank") => {
+                // ndim()/rank() returns number of dimensions
                 Ok(Value::Int(arr.borrow().len() as i64))
             }
             (Value::Array(arr), "⊥")
@@ -13402,6 +13441,25 @@ impl Interpreter {
 
             // Array methods
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
+            (Value::Array(arr), "numel") => {
+                // numel() returns total number of elements (recursive for nested arrays)
+                fn count_elements(v: &Value) -> i64 {
+                    match v {
+                        Value::Array(inner) => inner.borrow().iter().map(count_elements).sum(),
+                        _ => 1,
+                    }
+                }
+                let total: i64 = arr.borrow().iter().map(count_elements).sum();
+                Ok(Value::Int(total))
+            }
+            (Value::Array(arr), "dims") | (Value::Array(arr), "shape") => {
+                // dims()/shape() returns the array itself (for shape-like usage)
+                Ok(Value::Array(arr.clone()))
+            }
+            (Value::Array(arr), "ndim") | (Value::Array(arr), "rank") => {
+                // ndim()/rank() returns number of dimensions
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
             (Value::Array(arr), "first") | (Value::Array(arr), "next") => {
                 Ok(arr.borrow().first().cloned().unwrap_or(Value::Null))
             }
