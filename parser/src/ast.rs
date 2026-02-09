@@ -1170,6 +1170,8 @@ pub enum Expr {
     Unsafe(Block),
     /// Async block: `async { ... }` or `async move { ... }`
     Async { block: Block, is_move: bool },
+    /// No-gradient block: `no_grad { ... }` - disables gradient tracking inside
+    NoGrad(Block),
     /// Raw pointer dereference: `*ptr`
     Deref(Box<Expr>),
     /// Address-of: `&expr` or `&mut expr`

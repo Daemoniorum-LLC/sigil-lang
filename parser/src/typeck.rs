@@ -2874,24 +2874,56 @@ impl TypeChecker {
 
             // Method call
             PipeOp::Method { name, type_args: _, args: _ } => {
-                // Look up method
-                if let Some(fn_ty) = self.functions.get(&name.name).cloned() {
-                    // Freshen to get fresh type variables for polymorphic functions
-                    let fresh_ty = self.freshen(&fn_ty);
-                    if let Type::Function { return_type, .. } = fresh_ty {
-                        *return_type
-                    } else {
-                        Type::Error
+                // Check for known pipe method types first
+                match name.name.as_str() {
+                    // Mean always returns Float
+                    "mean" | "μ" => Type::Float(FloatSize::F64),
+                    // Argmax returns integer index
+                    "argmax" => Type::Int(IntSize::I64),
+                    // Count returns integer
+                    "count" => Type::Int(IntSize::I64),
+                    // Min/max return element type or Float for tensors
+                    "min" | "max" => {
+                        if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                            *element
+                        } else {
+                            Type::Float(FloatSize::F64)
+                        }
                     }
-                } else {
-                    // Could be a method on the type
-                    self.fresh_var()
+                    // Sum operations return element type or Float
+                    "sum" | "product" | "Σ" => {
+                        if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                            *element
+                        } else {
+                            Type::Float(FloatSize::F64)
+                        }
+                    }
+                    // Activation functions preserve input type
+                    "gelu" | "relu" | "sigmoid" | "tanh" | "softmax" | "log_softmax" => inner,
+                    // Math functions that return Float
+                    "sqrt" | "abs" | "exp" | "log" | "sin" | "cos" | "tan" => {
+                        Type::Float(FloatSize::F64)
+                    }
+                    // Look up method in functions
+                    _ => {
+                        if let Some(fn_ty) = self.functions.get(&name.name).cloned() {
+                            let fresh_ty = self.freshen(&fn_ty);
+                            if let Type::Function { return_type, .. } = fresh_ty {
+                                *return_type
+                            } else {
+                                Type::Error
+                            }
+                        } else {
+                            // Could be a method on the type
+                            self.fresh_var()
+                        }
+                    }
                 }
             }
 
             // Named operation (morpheme)
             PipeOp::Named { prefix, body: _ } => {
-                // Named operations like |sum, |product
+                // Named operations like |sum, |product, |mean, |argmax, etc.
                 if let Some(first) = prefix.first() {
                     match first.name.as_str() {
                         "sum" | "product" => {
@@ -2900,6 +2932,33 @@ impl TypeChecker {
                             } else {
                                 self.error(TypeError::new("sum/product requires array"));
                                 Type::Error
+                            }
+                        }
+                        // Mean always returns Float (average of elements)
+                        "mean" | "μ" => Type::Float(FloatSize::F64),
+                        // Argmax returns index as integer
+                        "argmax" => Type::Int(IntSize::I64),
+                        // Min/max return element type (like sum/product)
+                        "min" | "max" => {
+                            if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                                *element
+                            } else {
+                                // For tensors and other types, return Float
+                                Type::Float(FloatSize::F64)
+                            }
+                        }
+                        // Activation functions preserve input type
+                        "gelu" | "relu" | "sigmoid" | "tanh" | "softmax" | "log_softmax" => inner,
+                        // Math functions that return Float
+                        "sqrt" | "abs" | "exp" | "log" | "sin" | "cos" | "tan" => {
+                            Type::Float(FloatSize::F64)
+                        }
+                        // Σ (sum) returns element type or Float for tensors
+                        "Σ" => {
+                            if let Type::Array { element, .. } | Type::Slice(element) = inner {
+                                *element
+                            } else {
+                                Type::Float(FloatSize::F64)
                             }
                         }
                         _ => self.fresh_var(),

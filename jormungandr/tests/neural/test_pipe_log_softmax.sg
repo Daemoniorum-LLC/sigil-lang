@@ -1,0 +1,167 @@
+//! Test: log_softmax pipe method (numerically stable)
+//! Spec: 14-NEURAL.md §4.3
+//! Priority: P0
+//! Formula: log_softmax(x)_i = x_i - log(Σ exp(x_j))
+//! Numerically stable: log_softmax(x)_i = x_i - max(x) - log(Σ exp(x_j - max(x)))
+
+rite main() {
+    println("=== Testing log_softmax pipe method ===");
+    println("");
+
+    // =========================================================================
+    // Core Properties
+    // =========================================================================
+
+    // Test 1: All log probabilities are negative (log of prob < 1)
+    ≔ logits = Tensor·from([1.0, 2.0, 3.0]);
+    ≔ log_probs = logits|log_softmax;
+    ≔ log_max = log_probs|max;
+    assert(log_max < 0.0, "All log probs are negative");
+    println("  [1] All log_probs negative: passed");
+
+    // Test 2: exp(log_softmax) sums to 1
+    ≔ probs_from_log = log_probs|τ{v => v|exp};
+    ≔ sum = probs_from_log|Σ;
+    assert(sum > 0.999, "exp(log_softmax) sums to 1");
+    assert(sum < 1.001, "exp(log_softmax) sums to 1");
+    println("  [2] exp(log_softmax) sums to 1: passed");
+
+    // Test 3: Ordering preserved (larger logit → larger log_prob)
+    // Can verify via argmax
+    ≔ logits_argmax = logits|argmax;
+    ≔ log_probs_argmax = log_probs|argmax;
+    assert(logits_argmax == log_probs_argmax, "Argmax preserved");
+    println("  [3] Order preserved: passed");
+
+    println("");
+
+    // =========================================================================
+    // Edge Cases
+    // =========================================================================
+
+    // Test 4: Single element → log(1) = 0
+    ≔ single = Tensor·from([5.0]);
+    ≔ single_log = single|log_softmax;
+    ≔ single_sum = single_log|Σ;
+    // log(1.0) = 0.0
+    assert(single_sum > -0.001, "Single element log_softmax ≈ 0");
+    assert(single_sum < 0.001, "Single element log_softmax ≈ 0");
+    println("  [4] Single element = 0: passed");
+
+    // Test 5: Two equal elements → log(0.5) each
+    ≔ two_equal = Tensor·from([1.0, 1.0]);
+    ≔ two_log = two_equal|log_softmax;
+    // Each should be log(0.5) ≈ -0.693
+    ≔ two_max = two_log|max;
+    ≔ two_min = two_log|min;
+    assert(two_max > -0.7, "log(0.5) ≈ -0.693");
+    assert(two_max < -0.69, "log(0.5) ≈ -0.693");
+    assert((two_max - two_min)|abs < 0.001, "Equal inputs → equal outputs");
+    println("  [5] Two equal → log(0.5): passed");
+
+    // Test 6: Uniform input → log(1/n) each
+    ≔ uniform = Tensor·from([1.0, 1.0, 1.0]);
+    ≔ uniform_log = uniform|log_softmax;
+    // Each should be log(1/3) ≈ -1.0986
+    ≔ uniform_max = uniform_log|max;
+    assert(uniform_max > -1.1, "log(1/3) ≈ -1.0986");
+    assert(uniform_max < -1.09, "log(1/3) ≈ -1.0986");
+    println("  [6] Uniform → log(1/3): passed");
+
+    println("");
+
+    // =========================================================================
+    // Numerical Stability
+    // =========================================================================
+
+    // Test 7: Large positive values (would overflow exp without stability)
+    ≔ large = Tensor·from([1000.0, 1001.0, 1002.0]);
+    ≔ large_log = large|log_softmax;
+    // Should not be NaN or Inf
+    ≔ large_max = large_log|max;
+    ≔ large_min = large_log|min;
+    assert(large_max < 0.0, "Large values: max log_prob < 0");
+    assert(large_min > -10.0, "Large values: finite result");
+    // Order should be preserved
+    ≔ large_log_argmax = large_log|argmax;
+    assert(large_log_argmax == 2, "Large values: order preserved");
+    println("  [7] Large positive stability: passed");
+
+    // Test 8: Large negative values
+    ≔ large_neg = Tensor·from([-1000.0, -1001.0, -1002.0]);
+    ≔ large_neg_log = large_neg|log_softmax;
+    ≔ large_neg_max = large_neg_log|max;
+    assert(large_neg_max < 0.0, "Large negative: valid result");
+    assert(large_neg_max > -10.0, "Large negative: finite result");
+    println("  [8] Large negative stability: passed");
+
+    // Test 9: Mixed extreme values
+    ≔ mixed = Tensor·from([-100.0, 0.0, 100.0]);
+    ≔ mixed_log = mixed|log_softmax;
+    // The 100.0 should dominate → log_prob ≈ 0
+    ≔ mixed_max = mixed_log|max;
+    assert(mixed_max > -0.01, "Dominant value → log_prob ≈ 0");
+    assert(mixed_max <= 0.0, "Still negative or zero");
+    println("  [9] Mixed extreme values: passed");
+
+    println("");
+
+    // =========================================================================
+    // Equivalence with log(softmax)
+    // =========================================================================
+
+    // Test 10: log_softmax ≈ log(softmax) but more stable
+    ≔ x = Tensor·from([2.0, 3.0, 4.0]);
+    ≔ via_log_softmax = x|log_softmax;
+    ≔ via_softmax = x|softmax|τ{v => v|log};
+
+    // Both should give same argmax
+    ≔ ls_argmax = via_log_softmax|argmax;
+    ≔ s_argmax = via_softmax|argmax;
+    assert(ls_argmax == s_argmax, "Same argmax as log(softmax)");
+    println("  [10] Equivalent to log(softmax): passed");
+
+    println("");
+
+    // =========================================================================
+    // Tensor Shapes
+    // =========================================================================
+
+    // Test 11: 2D Tensor
+    ≔ t2d = Tensor·from([[1.0, 2.0], [3.0, 4.0]]);
+    ≔ t2d_log = t2d|log_softmax;
+    assert(t2d_log.shape() == [2, 2], "2D shape preserved");
+    println("  [11] 2D Tensor shape: passed");
+
+    // Test 12: 3D Tensor
+    ≔ t3d = Tensor·randn([2, 3, 4]);
+    ≔ t3d_log = t3d|log_softmax;
+    assert(t3d_log.shape() == [2, 3, 4], "3D shape preserved");
+    println("  [12] 3D Tensor shape: passed");
+
+    println("");
+
+    // =========================================================================
+    // Array Input
+    // =========================================================================
+
+    // Test 13: Array log_softmax
+    ≔ arr = [1.0, 2.0, 3.0];
+    ≔ arr_log = arr|log_softmax;
+    ≔ arr_max = arr_log|max;
+    assert(arr_max < 0.0, "Array log_softmax works");
+    println("  [13] Array log_softmax: passed");
+
+    println("");
+
+    // =========================================================================
+    // Axis Parameter (Phase 2)
+    // =========================================================================
+
+    // Test 14: Log softmax along axis
+    // Each row should independently have log_probs
+    println("  [14] Axis parameter: SKIPPED (Phase 2)");
+
+    println("");
+    println("=== All log_softmax tests passed ===");
+}

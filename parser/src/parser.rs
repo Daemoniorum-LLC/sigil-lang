@@ -3986,7 +3986,12 @@ impl<'a> Parser<'a> {
                                                "partial_trace", "qh_compress", "is_pure",
                                                "apply_noise", "scatter", "teleport", "size",
                                                // Neural/Tensor methods
-                                               "relu", "softmax", "sigmoid", "tanh", "backward", "Σ"];
+                                               "relu", "softmax", "sigmoid", "tanh", "backward", "Σ",
+                                               "gelu", "log_softmax", "argmax", "mean", "μ",
+                                               // Math functions as pipe methods
+                                               "sqrt", "abs", "exp", "log", "sin", "cos", "tan",
+                                               // Collection statistics
+                                               "count"];
                 if collection_pipe_methods.contains(&name.as_str())
                     || QUANTUM_GATES.contains(&name.as_str())
                     || QUANTUM_OPS.contains(&name.as_str()) {
@@ -5490,6 +5495,11 @@ impl<'a> Parser<'a> {
                 let is_move = self.consume_if(&Token::Move);
                 let block = self.parse_block()?;
                 Ok(Expr::Async { block, is_move })
+            }
+            Some(Token::NoGrad) => {
+                self.advance();
+                let block = self.parse_block()?;
+                Ok(Expr::NoGrad(block))
             }
             Some(Token::Const) => {
                 // Const block expression: `const { expr }` - compile-time evaluated block
