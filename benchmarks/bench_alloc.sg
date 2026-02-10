@@ -1,0 +1,22 @@
+// Memory Allocation Stress Test
+// Tests: allocator throughput, fragmentation resistance
+
+rite alloc_test(n: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary i: i64 = 0;
+    
+    // Allocate and immediately use memory
+    ⟳ i < n {
+        // Create array of size proportional to i to stress fragmentation
+        ≔ size = (i % 1000) + 1;
+        ≔ arr = [0; size];
+        sum = sum + arr[0];
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+☉ rite main() → !i32 {
+    ≔ r = alloc_test(100000);
+    ⤺ 0;
+}

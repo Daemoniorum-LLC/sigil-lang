@@ -1,0 +1,164 @@
+//! Test: softmax pipe method
+//! Spec: 14-NEURAL.md §4.3
+//! Priority: P0
+//! Formula: softmax(x)_i = exp(x_i) / Σ exp(x_j)
+
+rite main() {
+    println("=== Testing softmax pipe method ===");
+    println("");
+
+    // =========================================================================
+    // Core Properties
+    // =========================================================================
+
+    // Test 1: Softmax sums to 1
+    ≔ logits = Tensor·from([1.0, 2.0, 3.0]);
+    ≔ probs = logits|softmax;
+    ≔ sum = probs|Σ;
+    assert(sum > 0.999, "Softmax sums to ~1");
+    assert(sum < 1.001, "Softmax sums to ~1");
+    println("  [1] Softmax sums to 1: passed");
+
+    // Test 2: All probabilities are positive
+    ≔ min_prob = probs|min;
+    assert(min_prob > 0.0, "All probs > 0");
+    println("  [2] All probabilities positive: passed");
+
+    // Test 3: All probabilities ≤ 1
+    ≔ max_prob = probs|max;
+    assert(max_prob <= 1.0, "All probs ≤ 1");
+    println("  [3] All probabilities ≤ 1: passed");
+
+    // Test 4: Softmax preserves argmax (largest logit → largest prob)
+    ≔ logits_argmax = logits|argmax;
+    ≔ probs_argmax = probs|argmax;
+    assert(logits_argmax == probs_argmax, "Argmax preserved");
+    println("  [4] Argmax preserved: passed");
+
+    println("");
+
+    // =========================================================================
+    // Edge Cases
+    // =========================================================================
+
+    // Test 5: Single element → probability 1.0
+    ≔ single = Tensor·from([5.0]);
+    ≔ single_prob = single|softmax;
+    ≔ single_sum = single_prob|Σ;
+    assert(single_sum > 0.999, "Single element softmax = 1.0");
+    assert(single_sum < 1.001, "Single element softmax = 1.0");
+    println("  [5] Single element = 1.0: passed");
+
+    // Test 6: Two elements (binary)
+    ≔ binary = Tensor·from([0.0, 0.0]);
+    ≔ binary_probs = binary|softmax;
+    ≔ binary_sum = binary_probs|Σ;
+    assert(binary_sum > 0.999, "Binary sums to 1");
+    // Each should be 0.5
+    ≔ binary_max = binary_probs|max;
+    ≔ binary_min = binary_probs|min;
+    assert(binary_max < 0.51, "Binary equal: max ≈ 0.5");
+    assert(binary_min > 0.49, "Binary equal: min ≈ 0.5");
+    println("  [6] Binary equal [0,0] → [0.5, 0.5]: passed");
+
+    // Test 7: Uniform input → uniform output
+    ≔ uniform = Tensor·from([1.0, 1.0, 1.0, 1.0]);
+    ≔ uniform_probs = uniform|softmax;
+    ≔ uniform_max = uniform_probs|max;
+    ≔ uniform_min = uniform_probs|min;
+    assert(uniform_max < 0.26, "Uniform → ~0.25 each");
+    assert(uniform_min > 0.24, "Uniform → ~0.25 each");
+    println("  [7] Uniform → uniform distribution: passed");
+
+    // Test 8: Negative logits (still valid probabilities)
+    ≔ neg_logits = Tensor·from([-1.0, -2.0, -3.0]);
+    ≔ neg_probs = neg_logits|softmax;
+    ≔ neg_sum = neg_probs|Σ;
+    assert(neg_sum > 0.999, "Negative logits sum to 1");
+    assert(neg_sum < 1.001, "Negative logits sum to 1");
+    ≔ neg_min = neg_probs|min;
+    assert(neg_min > 0.0, "Negative logits → positive probs");
+    println("  [8] Negative logits → valid probs: passed");
+
+    println("");
+
+    // =========================================================================
+    // Numerical Stability
+    // =========================================================================
+
+    // Test 9: Large positive values (potential overflow)
+    ≔ large = Tensor·from([1000.0, 1001.0, 1002.0]);
+    ≔ large_probs = large|softmax;
+    ≔ large_sum = large_probs|Σ;
+    assert(large_sum > 0.999, "Stable with large positive");
+    assert(large_sum < 1.001, "Stable with large positive");
+    // Should not be NaN or Inf
+    ≔ large_max = large_probs|max;
+    assert(large_max <= 1.0, "No overflow");
+    assert(large_max > 0.0, "No NaN");
+    println("  [9] Large positive stability: passed");
+
+    // Test 10: Large negative values (potential underflow)
+    ≔ large_neg = Tensor·from([-1000.0, -1001.0, -1002.0]);
+    ≔ large_neg_probs = large_neg|softmax;
+    ≔ large_neg_sum = large_neg_probs|Σ;
+    assert(large_neg_sum > 0.999, "Stable with large negative");
+    assert(large_neg_sum < 1.001, "Stable with large negative");
+    println("  [10] Large negative stability: passed");
+
+    // Test 11: Mixed large values
+    ≔ mixed = Tensor·from([-100.0, 0.0, 100.0]);
+    ≔ mixed_probs = mixed|softmax;
+    ≔ mixed_sum = mixed_probs|Σ;
+    assert(mixed_sum > 0.999, "Mixed large values sum to 1");
+    // The 100.0 should dominate → prob ≈ 1.0
+    ≔ mixed_max = mixed_probs|max;
+    assert(mixed_max > 0.99, "Dominant logit → prob ≈ 1");
+    println("  [11] Mixed large values: passed");
+
+    println("");
+
+    // =========================================================================
+    // Tensor Shape Variations
+    // =========================================================================
+
+    // Test 12: 2D Tensor (batch of vectors)
+    ≔ batch = Tensor·from([[1.0, 2.0, 3.0], [3.0, 2.0, 1.0]]);
+    ≔ batch_probs = batch|softmax;
+    assert(batch_probs.shape() == [2, 3], "2D shape preserved");
+    println("  [12] 2D Tensor shape preserved: passed");
+
+    // Test 13: 3D Tensor (batch of matrices)
+    ≔ t3d = Tensor·randn([2, 3, 4]);
+    ≔ t3d_probs = t3d|softmax;
+    assert(t3d_probs.shape() == [2, 3, 4], "3D shape preserved");
+    println("  [13] 3D Tensor shape preserved: passed");
+
+    println("");
+
+    // =========================================================================
+    // Array Input
+    // =========================================================================
+
+    // Test 14: Array softmax
+    ≔ arr = [1.0, 2.0, 3.0];
+    ≔ arr_probs = arr|softmax;
+    ≔ arr_sum = arr_probs|Σ;
+    assert(arr_sum > 0.999, "Array softmax sums to 1");
+    assert(arr_sum < 1.001, "Array softmax sums to 1");
+    println("  [14] Array softmax: passed");
+
+    println("");
+
+    // =========================================================================
+    // Axis Parameter (Phase 2)
+    // =========================================================================
+
+    // Test 15: Softmax along last axis
+    // Spec: batch|softmax(dim: -1)
+    // Each row should independently sum to 1
+    println("  [15] Axis parameter: SKIPPED (Phase 2)");
+
+    println("");
+    println("=== All softmax tests passed ===");
+}

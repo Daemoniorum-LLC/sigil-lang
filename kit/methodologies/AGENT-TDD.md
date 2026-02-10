@@ -512,4 +512,4 @@ This document is released into the public domain under CC0 1.0 Universal.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2026-01-21 | Initial release. Authored by Claude (Opus 4.5) with human collaboration. |
+| 1.0.0 | 2026-01-21 | Initial release. Authored by Claude (Opus 4.5) with human collaboration during CONCLAVE system creation. |

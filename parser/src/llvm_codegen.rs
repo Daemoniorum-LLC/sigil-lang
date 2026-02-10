@@ -1484,6 +1484,34 @@ pub mod llvm {
             );
             fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, nounwind_attr);
 
+            // Handle inline hints for controlling inlining behavior
+            if let Some(ref hint) = func.attrs.inline {
+                match hint {
+                    ast::InlineHint::Never => {
+                        // Prevent inlining - critical for benchmarks to avoid DCE
+                        let noinline_attr = self.context.create_enum_attribute(
+                            inkwell::attributes::Attribute::get_named_enum_kind_id("noinline"),
+                            0,
+                        );
+                        fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, noinline_attr);
+                    }
+                    ast::InlineHint::Always => {
+                        let alwaysinline_attr = self.context.create_enum_attribute(
+                            inkwell::attributes::Attribute::get_named_enum_kind_id("alwaysinline"),
+                            0,
+                        );
+                        fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, alwaysinline_attr);
+                    }
+                    ast::InlineHint::Hint => {
+                        let inlinehint_attr = self.context.create_enum_attribute(
+                            inkwell::attributes::Attribute::get_named_enum_kind_id("inlinehint"),
+                            0,
+                        );
+                        fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, inlinehint_attr);
+                    }
+                }
+            }
+
             // Name parameters
             for (i, param) in func.params.iter().enumerate() {
                 if let ast::Pattern::Ident {
@@ -1774,6 +1802,40 @@ pub mod llvm {
                     self.compile_binary_op(*op, lhs, rhs)
                 }
                 Expr::Unary { op, expr: inner } => {
+                    // Special case: *( ptr + offset ) needs GEP for proper pointer arithmetic
+                    if matches!(op, ast::UnaryOp::Deref) {
+                        if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                            // Compile base pointer and offset separately
+                            let base_addr = self.compile_expr(fn_value, scope, left)?;
+                            let offset = self.compile_expr(fn_value, scope, right)?;
+
+                            // Convert base address to pointer
+                            let i64_type = self.context.i64_type();
+                            let base_ptr = self
+                                .builder
+                                .build_int_to_ptr(
+                                    base_addr,
+                                    i64_type.ptr_type(Default::default()),
+                                    "base_ptr",
+                                )
+                                .map_err(|e| e.to_string())?;
+
+                            // Use GEP for proper pointer arithmetic (scales by element size)
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                            }
+                            .map_err(|e| e.to_string())?;
+
+                            // Load the value
+                            let loaded = self
+                                .builder
+                                .build_load(i64_type, elem_ptr, "deref_val")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(loaded.into_int_value());
+                        }
+                    }
+                    // Default case: compile inner and apply unary op
                     let val = self.compile_expr(fn_value, scope, inner)?;
                     self.compile_unary_op(*op, val)
                 }
@@ -1898,7 +1960,32 @@ pub mod llvm {
                             Ok(val)
                         }
                         Expr::Unary { op, expr } if matches!(op, ast::UnaryOp::Deref) => {
-                            // Dereference assignment: *ptr = val
+                            // Dereference assignment: *ptr = val or *(ptr + offset) = val
+                            // Check for pointer arithmetic pattern
+                            if let Expr::Binary { op: BinOp::Add, left, right } = expr.as_ref() {
+                                let base_addr = self.compile_expr(fn_value, scope, left)?;
+                                let offset = self.compile_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        base_addr,
+                                        i64_type.ptr_type(Default::default()),
+                                        "base_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                // Use GEP for proper pointer arithmetic (scales by element size)
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                                }
+                                .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(elem_ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val);
+                            }
+                            // Simple dereference: *ptr = val
                             let ptr_val = self.compile_expr(fn_value, scope, expr)?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
                             let ptr = self
@@ -1934,6 +2021,44 @@ pub mod llvm {
                                 .map_err(|e| e.to_string())?;
                             self.builder
                                 .build_store(elem_ptr, val)
+                                .map_err(|e| e.to_string())?;
+                            Ok(val)
+                        }
+                        Expr::Deref(inner) => {
+                            // Dereference assignment: *ptr = val or *(ptr + offset) = val
+                            // Check for pointer arithmetic pattern
+                            if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                                let base_addr = self.compile_expr(fn_value, scope, left)?;
+                                let offset = self.compile_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        base_addr,
+                                        i64_type.ptr_type(Default::default()),
+                                        "base_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                // Use GEP for proper pointer arithmetic (scales by element size)
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                                }
+                                .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(elem_ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val);
+                            }
+                            // Simple dereference: *ptr = val
+                            let ptr_val = self.compile_expr(fn_value, scope, inner)?;
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let ptr = self
+                                .builder
+                                .build_int_to_ptr(ptr_val, ptr_type, "deref_ptr")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(ptr, val)
                                 .map_err(|e| e.to_string())?;
                             Ok(val)
                         }
@@ -3151,9 +3276,42 @@ pub mod llvm {
                 // Address-of: &expr, &mut expr
                 Expr::AddrOf { expr, .. } => self.compile_expr(fn_value, scope, expr),
 
-                // Dereference: *ptr
+                // Dereference: *ptr or *(ptr + offset)
                 Expr::Deref(inner) => {
-                    // Dereference: load value from pointer
+                    // Check for pointer arithmetic pattern: *(ptr + offset)
+                    // When we have *(ptr + n), we need to use GEP to scale offset by element size
+                    if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                        // Compile base pointer and offset separately
+                        let base_addr = self.compile_expr(fn_value, scope, left)?;
+                        let offset = self.compile_expr(fn_value, scope, right)?;
+
+                        // Convert base address to pointer
+                        let i64_type = self.context.i64_type();
+                        let base_ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                base_addr,
+                                i64_type.ptr_type(Default::default()),
+                                "base_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Use GEP for proper pointer arithmetic (scales by element size)
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                        }
+                        .map_err(|e| e.to_string())?;
+
+                        // Load the value
+                        let loaded = self
+                            .builder
+                            .build_load(i64_type, elem_ptr, "deref_val")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(loaded.into_int_value());
+                    }
+
+                    // Simple dereference: *ptr (no offset)
                     let ptr_val = self.compile_expr(fn_value, scope, inner)?;
                     let ptr = self
                         .builder
@@ -6400,6 +6558,61 @@ pub mod llvm {
                         .left()
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                // Memory allocation: alloc(size) -> ptr as i64
+                "alloc" => {
+                    if args.is_empty() {
+                        return Err("alloc requires size argument".to_string());
+                    }
+                    let size = self.compile_expr(fn_value, scope, &args[0])?;
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(alloc_fn, &[size.into()], "alloc")
+                        .map_err(|e| e.to_string())?;
+                    // Convert pointer to i64 for uniform handling
+                    let ptr_val = call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("alloc returned void")?;
+                    if ptr_val.is_pointer_value() {
+                        return Ok(self
+                            .builder
+                            .build_ptr_to_int(
+                                ptr_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "ptr_as_int",
+                            )
+                            .map_err(|e| e.to_string())?);
+                    }
+                    return Ok(ptr_val.into_int_value());
+                }
+                // Memory deallocation: free(ptr)
+                "free" => {
+                    if args.is_empty() {
+                        return Err("free requires pointer argument".to_string());
+                    }
+                    let ptr_int = self.compile_expr(fn_value, scope, &args[0])?;
+                    // Convert i64 back to pointer for the call
+                    let ptr = self
+                        .builder
+                        .build_int_to_ptr(
+                            ptr_int,
+                            self.context.ptr_type(AddressSpace::default()),
+                            "free_ptr",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let free_fn = self
+                        .module
+                        .get_function("sigil_free")
+                        .ok_or("sigil_free not declared")?;
+                    self.builder
+                        .build_call(free_fn, &[ptr.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
                 }
                 // Unary math functions
                 "sqrt" | "sin" | "cos" | "tan" | "exp" | "ln" | "floor" | "ceil" | "abs" => {

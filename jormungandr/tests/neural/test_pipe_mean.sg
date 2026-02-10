@@ -1,0 +1,129 @@
+//! Test: mean pipe method for tensors and arrays
+//! Spec: 14-NEURAL.md §2.2, 09-STDLIB.md §3.3
+//! Priority: P0
+//! Note: Use |mean (not |μ, which is the "middle element" morpheme)
+
+rite main() {
+    println("=== Testing mean pipe method ===");
+    println("");
+
+    // =========================================================================
+    // Basic Cases
+    // =========================================================================
+
+    // Test 1: Array mean
+    ≔ arr = [1.0, 2.0, 3.0, 4.0, 5.0];
+    ≔ mean_val = arr|mean;
+    assert(mean_val == 3.0, "Array mean should be 3.0");
+    println("  [1] Array mean [1,2,3,4,5] = 3.0: passed");
+
+    // Test 2: Tensor mean (all elements)
+    ≔ t = Tensor·from([[1.0, 2.0], [3.0, 4.0]]);
+    ≔ t_mean = t|mean;
+    assert(t_mean == 2.5, "Tensor mean should be 2.5");
+    println("  [2] 2D Tensor mean = 2.5: passed");
+
+    // Test 3: Integer array mean (returns float)
+    ≔ ints = [2, 4, 6, 8];
+    ≔ int_mean = ints|mean;
+    assert(int_mean == 5.0, "Integer array mean = 5.0");
+    println("  [3] Integer array mean: passed");
+
+    // Test 4: Single element
+    ≔ single = [42.0];
+    assert(single|mean == 42.0, "Single element mean");
+    println("  [4] Single element [42] = 42: passed");
+
+    // Test 5: Alternative syntax works (alias)
+    ≔ mean_alias = arr|mean;
+    assert(mean_alias == 3.0, "mean works");
+    println("  [5] mean method works: passed");
+
+    println("");
+
+    // =========================================================================
+    // Edge Cases
+    // =========================================================================
+
+    // Test 6: Negative values
+    ≔ neg = [-10.0, -5.0, 0.0, 5.0, 10.0];
+    ≔ neg_mean = neg|mean;
+    assert(neg_mean == 0.0, "Mean of symmetric negatives = 0");
+    println("  [6] Negative values mean = 0: passed");
+
+    // Test 7: All same values
+    ≔ same = [7.0, 7.0, 7.0, 7.0];
+    assert(same|mean == 7.0, "All same values");
+    println("  [7] All same values [7,7,7,7] = 7: passed");
+
+    // Test 8: Two elements
+    ≔ two = [10.0, 20.0];
+    assert(two|mean == 15.0, "Two element mean");
+    println("  [8] Two elements [10,20] = 15: passed");
+
+    // Test 9: Large values (numerical stability)
+    ≔ large = [1e10, 2e10, 3e10];
+    ≔ large_mean = large|mean;
+    assert(large_mean > 1.9e10, "Large values mean");
+    assert(large_mean < 2.1e10, "Large values mean");
+    println("  [9] Large values [1e10, 2e10, 3e10]: passed");
+
+    // Test 10: Small values close to zero
+    ≔ small = [1e-10, 2e-10, 3e-10];
+    ≔ small_mean = small|mean;
+    assert(small_mean > 1.9e-10, "Small values mean");
+    assert(small_mean < 2.1e-10, "Small values mean");
+    println("  [10] Small values near zero: passed");
+
+    println("");
+
+    // =========================================================================
+    // Tensor Cases
+    // =========================================================================
+
+    // Test 11: 1D Tensor
+    ≔ t1d = Tensor·from([1.0, 2.0, 3.0, 4.0]);
+    assert(t1d|mean == 2.5, "1D Tensor mean");
+    println("  [11] 1D Tensor mean: passed");
+
+    // Test 12: 3D Tensor (batch of matrices)
+    ≔ t3d = Tensor·randn([2, 3, 4]);  // Random, just check it runs
+    ≔ t3d_mean = t3d|mean;
+    // Can't assert exact value, but should be finite
+    assert(t3d_mean > -100.0, "3D Tensor mean is finite");
+    assert(t3d_mean < 100.0, "3D Tensor mean is finite");
+    println("  [12] 3D Tensor mean (no crash): passed");
+
+    println("");
+
+    // =========================================================================
+    // Axis Parameter (if supported)
+    // =========================================================================
+
+    // Test 13: Mean along axis 0 (column means)
+    // Spec: a|mean(axis: 0)
+    // [[1, 2], [3, 4]] → [2, 3] (mean of each column)
+    // Note: This may not be implemented yet - wrap in try if needed
+
+    // Test 14: Mean along axis 1 (row means)
+    // Spec: a|mean(axis: 1)
+    // [[1, 2], [3, 4]] → [1.5, 3.5] (mean of each row)
+
+    println("  [13-14] Axis parameter: SKIPPED (Phase 2)");
+
+    println("");
+
+    // =========================================================================
+    // Error Cases
+    // =========================================================================
+
+    // Test 15: Empty array
+    // Expected: Returns Option::None or panics
+    // ≔ empty: [f64] = [];
+    // ≔ empty_mean = empty|mean;
+    // assert(empty_mean.is_none(), "Empty array returns None");
+    println("  [15] Empty array: SKIPPED (behavior TBD)");
+
+    println("");
+    println("=== All mean tests passed ===");
+}

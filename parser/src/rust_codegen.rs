@@ -2322,7 +2322,6 @@ impl RustCompiler {
             Pattern::Rest => {
                 self.write("..");
             }
-            _ => self.write("/* TODO: pattern */"),
         }
         Ok(())
     }

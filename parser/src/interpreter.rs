@@ -1322,6 +1322,15 @@ pub struct Interpreter {
     /// Deferred associated constants for const-generic impl blocks
     /// Maps "TypeName·ConstName" → unevaluated AST expression
     pub const_generic_deferred_consts: HashMap<String, crate::ast::Expr>,
+    /// Pending const generics for the next method/function call
+    /// Populated by method calls with turbofish syntax (e.g., method·<64>())
+    /// Consumed by call_function when creating the function's environment
+    pub pending_const_generics: RefCell<Vec<(String, Value)>>,
+    /// Current batch size for const generic B inference during forward passes
+    /// This persists across nested function calls within a training batch
+    pub current_batch_size: RefCell<Option<i64>>,
+    /// Whether gradient tracking is enabled (false inside no_grad blocks)
+    pub grad_enabled: RefCell<bool>,
 }
 
 /// Type definition for structs/enums
@@ -1376,6 +1385,9 @@ impl Interpreter {
             crate_alias: None,
             const_generic_params: HashMap::new(),
             const_generic_deferred_consts: HashMap::new(),
+            pending_const_generics: RefCell::new(Vec::new()),
+            current_batch_size: RefCell::new(None),
+            grad_enabled: RefCell::new(true),
         };
 
         // Register built-in functions
@@ -1731,6 +1743,171 @@ impl Interpreter {
             Value::Float(n) => Ok(Value::Float(n.cos())),
             _ => Err(RuntimeError::new("cos() requires number")),
         });
+
+        // Mathematical constants (zero-arity builtins that auto-resolve)
+        self.define_builtin("√2", Some(0), |_, _| {
+            Ok(Value::Float(std::f64::consts::SQRT_2))
+        });
+        self.define_builtin("√3", Some(0), |_, _| {
+            Ok(Value::Float(3.0_f64.sqrt()))
+        });
+        self.define_builtin("π", Some(0), |_, _| {
+            Ok(Value::Float(std::f64::consts::PI))
+        });
+        self.define_builtin("τ", Some(0), |_, _| {
+            Ok(Value::Float(std::f64::consts::TAU))
+        });
+        self.define_builtin("φ", Some(0), |_, _| {
+            Ok(Value::Float(1.618033988749895)) // Golden ratio
+        });
+        self.define_builtin("e", Some(0), |_, _| {
+            Ok(Value::Float(std::f64::consts::E))
+        });
+
+        // Neural network loss functions
+        // cross_entropy(logits: Tensor, targets: [usize]) -> f32
+        // CE = -Σ log_softmax(logits)[target] / batch_size
+        self.globals.borrow_mut().define(
+            "cross_entropy".to_string(),
+            Value::BuiltIn(Rc::new(BuiltInFn {
+                name: "cross_entropy".to_string(),
+                arity: Some(2),
+                func: |interp, args| {
+                    if args.len() != 2 {
+                        return Err(RuntimeError::new("cross_entropy expects 2 arguments"));
+                    }
+
+                    // Dereference if we got a Ref
+                    let logits_val = match &args[0] {
+                        Value::Ref(r) => r.borrow().clone(),
+                        other => other.clone(),
+                    };
+
+                    // Extract logits tensor data
+                    let (batch_size, num_classes, logits_data) = match &logits_val {
+                        Value::Struct { name, fields } if name == "Tensor" => {
+                            let f = fields.borrow();
+                            let shape = tensor_shape_from_fields(&f)
+                                .ok_or_else(|| RuntimeError::new("logits has no shape"))?;
+                            let data = tensor_data_from_fields(&f)
+                                .ok_or_else(|| RuntimeError::new("logits has no data"))?;
+
+                            if shape.len() != 2 {
+                                return Err(RuntimeError::new(format!(
+                                    "logits must be 2D [batch, classes], got {}D",
+                                    shape.len()
+                                )));
+                            }
+                            (shape[0], shape[1], data)
+                        }
+                        _ => return Err(RuntimeError::new("cross_entropy expects Tensor as first arg")),
+                    };
+
+                    // Dereference and unwrap second arg
+                    let targets_val = {
+                        let mut val = args[1].clone();
+                        loop {
+                            let next = match &val {
+                                Value::Ref(r) => Some(r.borrow().clone()),
+                                Value::Evidential { value, .. } => Some((**value).clone()),
+                                Value::Affective { value, .. } => Some((**value).clone()),
+                                _ => None,
+                            };
+                            match next {
+                                Some(v) => val = v,
+                                None => break,
+                            }
+                        }
+                        val
+                    };
+
+                    // Extract targets array
+                    let targets: Vec<usize> = match &targets_val {
+                        Value::Array(arr) => {
+                            arr.borrow()
+                                .iter()
+                                .filter_map(|v| match v {
+                                    Value::Int(i) => Some(*i as usize),
+                                    _ => None,
+                                })
+                                .collect()
+                        }
+                        _ => return Err(RuntimeError::new(format!(
+                            "cross_entropy expects array as second arg, got {:?}",
+                            std::mem::discriminant(&targets_val)
+                        ))),
+                    };
+
+                    if targets.len() != batch_size {
+                        return Err(RuntimeError::new(format!(
+                            "batch size mismatch: {} logits vs {} targets",
+                            batch_size, targets.len()
+                        )));
+                    }
+
+                    // Compute cross entropy loss
+                    let mut total_loss = 0.0;
+                    for b in 0..batch_size {
+                        // Get logits for this batch element
+                        let start = b * num_classes;
+                        let end = start + num_classes;
+                        let row_logits = &logits_data[start..end];
+
+                        // Numerically stable log-softmax
+                        let max_val = row_logits.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                        let shifted: Vec<f64> = row_logits.iter().map(|x| x - max_val).collect();
+                        let log_sum_exp = shifted.iter().map(|x| x.exp()).sum::<f64>().ln();
+
+                        // -log_softmax[target_class]
+                        let target_idx = targets[b];
+                        if target_idx >= num_classes {
+                            return Err(RuntimeError::new(format!(
+                                "target index {} out of range for {} classes",
+                                target_idx, num_classes
+                            )));
+                        }
+                        total_loss += -(shifted[target_idx] - log_sum_exp);
+                    }
+
+                    // Return mean loss as a scalar Tensor to preserve gradient graph
+                    let mean_loss = total_loss / batch_size as f64;
+
+                    // Check if logits requires grad
+                    let requires_grad = match &logits_val {
+                        Value::Struct { fields, .. } => {
+                            matches!(fields.borrow().get("requires_grad"), Some(Value::Bool(true)))
+                                || matches!(fields.borrow().get("__requires_grad__"), Some(Value::Bool(true)))
+                        }
+                        _ => false,
+                    };
+
+                    // Build a scalar tensor [1] with the loss value
+                    let mut result_fields = std::collections::HashMap::new();
+                    result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Float(mean_loss)]))));
+                    result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(vec![Value::Int(1)]))));
+                    result_fields.insert("requires_grad".to_string(), Value::Bool(requires_grad));
+                    result_fields.insert("__requires_grad__".to_string(), Value::Bool(requires_grad));
+
+                    // Preserve gradient graph: store reference to input logits and targets
+                    if requires_grad {
+                        result_fields.insert("_grad_input".to_string(), logits_val.clone());
+                        result_fields.insert("_op".to_string(), Value::String(Rc::new("cross_entropy".to_string())));
+                        // Store targets for backward pass (compute softmax - one_hot)
+                        result_fields.insert("_targets".to_string(), args[1].clone());
+                        // Store logits data and shape for backward computation
+                        result_fields.insert("_logits_data".to_string(),
+                            Value::Array(Rc::new(RefCell::new(logits_data.iter().map(|&x| Value::Float(x)).collect()))));
+                        result_fields.insert("_logits_shape".to_string(),
+                            Value::Array(Rc::new(RefCell::new(vec![Value::Int(batch_size as i64), Value::Int(num_classes as i64)]))));
+                    }
+
+                    Ok(Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(result_fields)),
+                    })
+                },
+            })),
+        );
 
         // Evidence operations
         self.define_builtin("known", Some(1), |_, args| {
@@ -2987,7 +3164,20 @@ impl Interpreter {
                     .unwrap_or_default();
 
                 if !const_params.is_empty() {
+                    if type_name.contains("Norm") || type_name.contains("Batch") || type_name.contains("Linear") {
+                        eprintln!("DEBUG: Registering const_generic_params for '{}' with params {:?}, current_module={:?}",
+                            type_name, const_params, self.current_module);
+                    }
                     self.const_generic_params.insert(type_name.clone(), const_params.clone());
+                    // Also register with module-qualified name if in a module context
+                    // This is critical for const generic inference when types are imported
+                    if let Some(ref module) = self.current_module {
+                        let qualified_name = format!("{}·{}", module, type_name);
+                        if qualified_name.contains("Norm") || qualified_name.contains("Batch") {
+                            eprintln!("DEBUG: Also registering as '{}'", qualified_name);
+                        }
+                        self.const_generic_params.insert(qualified_name, const_params.clone());
+                    }
                 }
 
                 // Check if this is `impl Drop for X` - register for automatic drop calls
@@ -3122,6 +3312,10 @@ impl Interpreter {
                 // Handle module definitions
                 let module_name = &module.name.name;
 
+                // Debug: trace ALL modules being processed
+                eprintln!("DEBUG Module: processing module '{}', has_items={}, current_module={:?}",
+                    module_name, module.items.is_some(), self.current_module);
+
                 // Track module for IR export
                 self.crate_modules.insert(module_name.clone());
 
@@ -3146,9 +3340,18 @@ impl Interpreter {
                                 self.globals.borrow_mut().define(qualified_name, fn_value);
                             }
                             Item::Struct(s) => {
+                                // Register with module-qualified name
                                 let qualified_name = format!("{}·{}", module_name, s.name.name);
                                 self.types
-                                    .insert(qualified_name, TypeDef::Struct(s.clone()));
+                                    .insert(qualified_name.clone(), TypeDef::Struct(s.clone()));
+                                // Also register with simple name for local access
+                                self.types
+                                    .insert(s.name.name.clone(), TypeDef::Struct(s.clone()));
+                                // Also register with outer module prefix if we're in a crate
+                                if let Some(ref outer_module) = self.current_module {
+                                    let full_qualified = format!("{}·{}", outer_module, qualified_name);
+                                    self.types.insert(full_qualified, TypeDef::Struct(s.clone()));
+                                }
                             }
                             Item::Enum(e) => {
                                 let qualified_name = format!("{}·{}", module_name, e.name.name);
@@ -3157,6 +3360,14 @@ impl Interpreter {
                             Item::Impl(impl_block) => {
                                 // Handle impl blocks inside modules
                                 // Extract the type name and qualify it with the module name
+                                let type_name_raw = match &impl_block.self_ty {
+                                    TypeExpr::Path(path) => path.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·"),
+                                    _ => String::new(),
+                                };
+                                if type_name_raw.contains("Norm") || type_name_raw.contains("Batch") {
+                                    eprintln!("DEBUG Module Impl: found impl for '{}' in module '{}', has_generics={}",
+                                        type_name_raw, module_name, impl_block.generics.is_some());
+                                }
                                 let type_name = match &impl_block.self_ty {
                                     TypeExpr::Path(path) => path
                                         .segments
@@ -3174,6 +3385,34 @@ impl Interpreter {
                                 } else {
                                     format!("{}·{}", module_name, type_name)
                                 };
+
+                                // Extract const generic param names from impl block generics
+                                // This is critical for const generic inference
+                                let const_params: Vec<String> = impl_block.generics.as_ref()
+                                    .map(|g| g.params.iter().filter_map(|p| match p {
+                                        crate::ast::GenericParam::Const { name, .. } => Some(name.name.clone()),
+                                        _ => None,
+                                    }).collect())
+                                    .unwrap_or_default();
+
+                                if !const_params.is_empty() {
+                                    if type_name.contains("Norm") || type_name.contains("Batch") || type_name.contains("Linear") {
+                                        eprintln!("DEBUG (scroll): Registering const_generic_params for '{}', qualified='{}', params {:?}",
+                                            type_name, qualified_type, const_params);
+                                    }
+                                    // Register with simple type name
+                                    self.const_generic_params.insert(type_name.clone(), const_params.clone());
+                                    // Register with module-qualified name
+                                    self.const_generic_params.insert(qualified_type.clone(), const_params.clone());
+                                    // Also register with outer module prefix if we're nested
+                                    if let Some(ref outer_module) = self.current_module {
+                                        let full_qualified = format!("{}·{}", outer_module, qualified_type);
+                                        if full_qualified.contains("Norm") || full_qualified.contains("Batch") {
+                                            eprintln!("DEBUG (scroll): Also registering as '{}'", full_qualified);
+                                        }
+                                        self.const_generic_params.insert(full_qualified, const_params.clone());
+                                    }
+                                }
 
                                 // Check for Drop trait impl
                                 if let Some(trait_path) = &impl_block.trait_ {
@@ -3598,12 +3837,41 @@ impl Interpreter {
                     qualified.clone()
                 };
 
-                if let Some(type_def) = self.types.get(&lookup_name).cloned() {
+                // Try primary lookup, then fall back to simple name for local module imports
+                let type_def_opt = self.types.get(&lookup_name).cloned()
+                    .or_else(|| {
+                        // If qualified lookup fails, try simple name for local module refs
+                        if lookup_name != simple_name {
+                            self.types.get(&simple_name).cloned()
+                        } else {
+                            None
+                        }
+                    });
+                if let Some(type_def) = type_def_opt {
                     if lookup_name != simple_name {
                         self.types.insert(simple_name.clone(), type_def.clone());
                     }
                     // Also register with the qualified name for consistency
                     self.types.insert(qualified.clone(), type_def);
+
+                    // Also copy const_generic_params for the imported type
+                    // This is critical for const generic inference in field types
+                    // e.g., when `BatchNorm1d<512>` is used, we need to know its params
+                    let params_opt = self.const_generic_params.get(&lookup_name).cloned()
+                        .or_else(|| {
+                            // Fallback to simple name
+                            if lookup_name != simple_name {
+                                self.const_generic_params.get(&simple_name).cloned()
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(params) = params_opt {
+                        if lookup_name != simple_name {
+                            self.const_generic_params.insert(simple_name.clone(), params.clone());
+                        }
+                        self.const_generic_params.insert(qualified.clone(), params);
+                    }
                 }
                 // For functions: if foo·bar·Baz exists in globals, also register as Baz
                 let func = self.globals.borrow().get(&lookup_name).map(|v| v.clone());
@@ -3648,6 +3916,10 @@ impl Interpreter {
 
                 if let Some(type_def) = self.types.get(&qualified).cloned() {
                     self.types.insert(alias_name.clone(), type_def);
+                    // Also copy const_generic_params for the aliased type
+                    if let Some(params) = self.const_generic_params.get(&qualified).cloned() {
+                        self.const_generic_params.insert(alias_name.clone(), params);
+                    }
                 }
                 let func = self.globals.borrow().get(&qualified).map(|v| v.clone());
                 if let Some(val) = func {
@@ -3659,7 +3931,7 @@ impl Interpreter {
                 // use foo::bar::* - import all from foo·bar
                 let path_prefix = prefix.join("·");
                 // Find all types starting with this prefix
-                let matching_types: Vec<(String, TypeDef)> = self
+                let matching_types: Vec<(String, String, TypeDef)> = self
                     .types
                     .iter()
                     .filter(|(k, _)| k.starts_with(&path_prefix) && k.len() > path_prefix.len())
@@ -3668,12 +3940,16 @@ impl Interpreter {
                             .strip_prefix(&path_prefix)
                             .unwrap()
                             .trim_start_matches('·');
-                        (suffix.to_string(), v.clone())
+                        (k.clone(), suffix.to_string(), v.clone())
                     })
-                    .filter(|(k, _)| !k.contains('·')) // Only immediate children
+                    .filter(|(_, k, _)| !k.contains('·')) // Only immediate children
                     .collect();
-                for (name, def) in matching_types {
-                    self.types.insert(name, def);
+                for (original_name, name, def) in matching_types {
+                    self.types.insert(name.clone(), def);
+                    // Also copy const_generic_params for glob imports
+                    if let Some(params) = self.const_generic_params.get(&original_name).cloned() {
+                        self.const_generic_params.insert(name, params);
+                    }
                 }
                 // Similar for functions
                 let matching_funcs: Vec<(String, Value)> = {
@@ -3793,8 +4069,8 @@ impl Interpreter {
                 receiver,
                 method,
                 args,
-                ..
-            } => self.eval_method_call(receiver, method, args),
+                type_args,
+            } => self.eval_method_call_with_generics(receiver, method, args, type_args),
             // Polysynthetic incorporation: path·file·read·string
             // Each segment is a method/function that transforms the value
             Expr::Incorporation { segments } => self.eval_incorporation(segments),
@@ -3996,6 +4272,14 @@ impl Interpreter {
             Expr::Unsafe(block) => self.eval_block(block),
             // Async block - evaluate the block (interpreter doesn't handle true async)
             Expr::Async { block, .. } => self.eval_block(block),
+            // NoGrad block - disable gradient tracking for the duration
+            Expr::NoGrad(block) => {
+                let prev = *self.grad_enabled.borrow();
+                *self.grad_enabled.borrow_mut() = false;
+                let result = self.eval_block(block);
+                *self.grad_enabled.borrow_mut() = prev;
+                result
+            }
             // Try expression: expr?
             Expr::Try(inner) => {
                 let value = self.evaluate(inner)?;
@@ -4127,12 +4411,111 @@ impl Interpreter {
                             Err(RuntimeError::new(format!("invalid char code: {}", i)))
                         }
                     }
+                    // Bool to int (true=1, false=0)
+                    (Value::Bool(b), "i8")
+                    | (Value::Bool(b), "i16")
+                    | (Value::Bool(b), "i32")
+                    | (Value::Bool(b), "i64")
+                    | (Value::Bool(b), "u8")
+                    | (Value::Bool(b), "u16")
+                    | (Value::Bool(b), "u32")
+                    | (Value::Bool(b), "u64")
+                    | (Value::Bool(b), "usize")
+                    | (Value::Bool(b), "isize") => Ok(Value::Int(if b { 1 } else { 0 })),
+                    // Bool to float
+                    (Value::Bool(b), "f32") | (Value::Bool(b), "f64") => {
+                        Ok(Value::Float(if b { 1.0 } else { 0.0 }))
+                    }
                     // Pass through for same type
                     (v, _) => Ok(v),
                 }
             }
             // Named argument: evaluate the value (name is used by caller for reordering)
             Expr::NamedArg { value, .. } => self.evaluate(value),
+            // Array repeat: [value; count] - creates array with `count` copies of `value`
+            Expr::ArrayRepeat { value, count } => {
+                // Evaluate the count expression (might be a const generic like N)
+                let count_val = self.evaluate(count)?;
+                let count_usize = match &count_val {
+                    Value::Int(n) => *n as usize,
+                    Value::Float(f) => *f as usize,
+                    _ => {
+                        return Err(RuntimeError::new(format!(
+                            "ArrayRepeat count must be an integer, got {:?}",
+                            count_val
+                        )));
+                    }
+                };
+                // Evaluate the value expression once, then clone it
+                let elem_val = self.evaluate(value)?;
+                let elements: Vec<Value> = (0..count_usize).map(|_| elem_val.clone()).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(elements))))
+            }
+            // Morpheme expressions: τ{f}, φ{p}, σ{key}, etc.
+            // These create a function that applies a collection operation
+            Expr::Morpheme { kind, body } => {
+                // Check if this is a standalone Greek letter that should resolve to a constant
+                // (e.g., φ without a body should be PHI, not a filter morpheme)
+                let is_standalone = matches!(body.as_ref(),
+                    Expr::Path(p) if p.segments.len() == 1 && p.segments[0].ident.name == "_");
+
+                if is_standalone {
+                    // Try to resolve as a mathematical constant first
+                    let const_name = match kind {
+                        MorphemeKind::Filter => "PHI",  // φ -> golden ratio
+                        MorphemeKind::Middle => "MU",   // μ -> could be a constant
+                        MorphemeKind::Lambda => "LAMBDA",
+                        _ => "",
+                    };
+                    if !const_name.is_empty() {
+                        // Clone the value to avoid borrow conflicts
+                        let val_opt = {
+                            let borrowed = self.globals.borrow();
+                            borrowed.get(const_name).map(|v| v.clone())
+                        };
+                        if let Some(val) = val_opt {
+                            // Resolve builtin constants
+                            if let Value::BuiltIn(ref b) = val {
+                                if b.arity == Some(0) {
+                                    if let Ok(result) = (b.func)(self, vec![]) {
+                                        return Ok(result);
+                                    }
+                                }
+                            }
+                            return Ok(val);
+                        }
+                    }
+                }
+
+                // Evaluate the body (should be a closure or function)
+                let func = self.evaluate(body)?;
+                // The morpheme is used in pipe chains; return a value that captures the operation
+                // When applied via pipe, eval_pipe handles the morpheme method names
+                // Here we return the morpheme as a wrapped structure for later application
+                let morpheme_name = match kind {
+                    MorphemeKind::Transform => "τ",   // map
+                    MorphemeKind::Filter => "φ",      // filter
+                    MorphemeKind::Sort => "σ",        // sort
+                    MorphemeKind::Reduce => "ρ",      // reduce/fold
+                    MorphemeKind::Lambda => "λ",      // lambda
+                    MorphemeKind::Sum => "Σ",         // sum
+                    MorphemeKind::Product => "Π",     // product
+                    MorphemeKind::Middle => "μ",      // mean/average
+                    MorphemeKind::Choice => "χ",      // choice/select
+                    MorphemeKind::Nth => "ν",         // nth element
+                    MorphemeKind::Next => "ξ",        // next element
+                    MorphemeKind::First => "α",       // first element
+                    MorphemeKind::Last => "ω",        // last element
+                };
+                // Store as a struct that can be applied via pipe
+                let mut fields = std::collections::HashMap::new();
+                fields.insert("kind".to_string(), Value::String(Rc::new(morpheme_name.to_string())));
+                fields.insert("func".to_string(), func);
+                Ok(Value::Struct {
+                    name: "__morpheme__".to_string(),
+                    fields: Rc::new(RefCell::new(fields)),
+                })
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unsupported expression: {:?}",
                 expr
@@ -4171,10 +4554,20 @@ impl Interpreter {
             }
             Expr::Index { expr, index } => {
                 // Array/map index assignment
-                let idx = self.evaluate(index)?;
-                let idx = match idx {
+                let idx_val = self.evaluate(index)?;
+                eprintln!("DEBUG index assignment: idx_val = {:?}", std::mem::discriminant(&idx_val));
+                let idx = match idx_val {
                     Value::Int(i) => i as usize,
-                    _ => return Err(RuntimeError::new("Index must be an integer")),
+                    Value::Array(ref arr) => {
+                        // Multi-dimensional index - for now just use first element
+                        // TODO: proper multi-dim index assignment
+                        if let Some(Value::Int(i)) = arr.borrow().first() {
+                            *i as usize
+                        } else {
+                            return Err(RuntimeError::new("Index array must contain integers"));
+                        }
+                    }
+                    _ => return Err(RuntimeError::new(format!("Index must be an integer, got {:?}", idx_val))),
                 };
 
                 // Get the array and modify it
@@ -4221,6 +4614,51 @@ impl Interpreter {
                             "Index {} out of bounds for array of length {}",
                             idx,
                             borrowed.len()
+                        )))
+                    }
+                    // Support index assignment on Tensor-like structs
+                    // Look for storage or data field containing an array
+                    Value::Struct { ref name, ref fields } => {
+                        let borrowed = fields.borrow();
+                        // Try to find storage/data field
+                        let storage_field = borrowed.get("storage")
+                            .or_else(|| borrowed.get("data"))
+                            .or_else(|| borrowed.get("elements"))
+                            .or_else(|| borrowed.get("items"));
+
+                        if let Some(storage) = storage_field {
+                            // Storage might be wrapped in another struct (StoragePtr)
+                            let arr = match storage {
+                                Value::Array(a) => Some(a.clone()),
+                                Value::Struct { fields: inner_fields, .. } => {
+                                    // Look for data/ptr field in inner struct
+                                    let inner_borrowed = inner_fields.borrow();
+                                    let inner_val = inner_borrowed.get("data")
+                                        .or_else(|| inner_borrowed.get("ptr"));
+                                    match inner_val {
+                                        Some(Value::Array(a)) => Some(a.clone()),
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            };
+
+                            if let Some(arr) = arr {
+                                drop(borrowed);
+                                let mut arr_borrowed = arr.borrow_mut();
+                                if idx < arr_borrowed.len() {
+                                    arr_borrowed[idx] = val.clone();
+                                    return Ok(val);
+                                }
+                                return Err(RuntimeError::new(format!(
+                                    "Index {} out of bounds for {} storage of length {}",
+                                    idx, name, arr_borrowed.len()
+                                )));
+                            }
+                        }
+                        Err(RuntimeError::new(format!(
+                            "Invalid index assignment target: struct '{}' has no indexable storage",
+                            name
                         )))
                     }
                     _ => Err(RuntimeError::new("Invalid index assignment target")),
@@ -4448,6 +4886,173 @@ impl Interpreter {
                         name: self_type.clone(),
                         fields: Rc::new(RefCell::new(HashMap::new())),
                     });
+                }
+            }
+            // Check if this is a const generic parameter from the current struct context
+            // Common const generic names: B (batch), C (channels), N (size), H (height), W (width)
+            if name.len() == 1 && name.chars().all(|c| c.is_ascii_uppercase()) {
+                // First check the environment - it may have been injected via pending_const_generics
+                if let Some(value) = self.environment.borrow().get(&name) {
+                    eprintln!("DEBUG: Found const generic '{}' = {:?} in environment", name, value);
+                    return Ok(value);
+                }
+
+                // Check global batch size as fallback for B
+                if name == "B" {
+                    if let Some(b) = *self.current_batch_size.borrow() {
+                        eprintln!("DEBUG: Found B = {} from current_batch_size", b);
+                        return Ok(Value::Int(b));
+                    }
+                }
+
+                eprintln!("DEBUG: Looking for const generic '{}', struct_generics = {:?}, current_self_type = {:?}",
+                    name, self.type_context.struct_generics.borrow(), self.current_self_type);
+                // Try to get from type_context.struct_generics
+                if let Some((type_name, values)) = self.type_context.struct_generics.borrow().as_ref() {
+                    // Look up the parameter names for this type
+                    if let Some(param_names) = self.const_generic_params.get(type_name.as_str()) {
+                        for (i, param_name) in param_names.iter().enumerate() {
+                            if param_name == name && i < values.len() {
+                                return Ok(Value::Int(values[i]));
+                            }
+                        }
+                    }
+                }
+
+                // Also check the current Self type context for const generics
+                // This handles cases like impl<◆ C: usize> BatchNorm1d<C> where C is used
+                // inside the impl block
+                if let Some(ref self_type) = self.current_self_type {
+                    // Look through struct_generics borrow to see if there's a match
+                    if let Some(params) = self.const_generic_params.get(self_type.as_str()) {
+                        // If this type has a const generic with this name, try to find its value
+                        // from the type_context.struct_generics first
+                        if let Some((ctx_type, ctx_values)) = self.type_context.struct_generics.borrow().as_ref() {
+                            if ctx_type == self_type {
+                                for (i, param_name) in params.iter().enumerate() {
+                                    if param_name == name && i < ctx_values.len() {
+                                        return Ok(Value::Int(ctx_values[i]));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: Infer common const generics from Tensor arguments in scope
+                // B (batch size) = first dimension of any Tensor
+                // This handles method-level const generics like forward<◆ B: usize>
+                if name == "B" || name == "N" {
+                    // Look for Tensor values in the environment to infer batch/size
+                    // First, recursively search through environment and parents
+                    // Prefer variables named "x", "input", "inputs" (common ML input names)
+                    fn extract_batch_from_tensor(val: &Value) -> Option<i64> {
+                        match val {
+                            Value::Struct { name: struct_name, fields } if struct_name == "Tensor" => {
+                                let fields_ref = fields.borrow();
+                                let shape = fields_ref.get("__shape__")
+                                    .or_else(|| fields_ref.get("shape"));
+                                if let Some(Value::Array(shape_arr)) = shape {
+                                    let shape_vec = shape_arr.borrow();
+                                    if !shape_vec.is_empty() {
+                                        if let Value::Int(batch) = &shape_vec[0] {
+                                            return Some(*batch);
+                                        }
+                                    }
+                                }
+                                None
+                            }
+                            Value::Ref(r) => extract_batch_from_tensor(&*r.borrow()),
+                            _ => None,
+                        }
+                    }
+
+                    fn find_tensor_batch_dim(env: &Rc<RefCell<Environment>>, preferred_names: &[&str]) -> Option<i64> {
+                        let env_ref = env.borrow();
+
+                        // First pass: look for preferred input variable names
+                        for preferred in preferred_names {
+                            if let Some(val) = env_ref.get(*preferred) {
+                                if let Some(batch) = extract_batch_from_tensor(&val) {
+                                    if batch > 1 { // Skip weight tensors which often have shape [1, ...]
+                                        eprintln!("DEBUG: Found preferred Tensor '{}' with batch = {}", preferred, batch);
+                                        return Some(batch);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Second pass: any Tensor with batch > 1
+                        let mut fallback: Option<i64> = None;
+                        for (var_name, val) in env_ref.iter_values() {
+                            if let Some(batch) = extract_batch_from_tensor(val) {
+                                if batch > 1 { // Skip weight tensors
+                                    eprintln!("DEBUG: Found Tensor '{}' with batch = {}", var_name, batch);
+                                    return Some(batch);
+                                }
+                                // Keep track of any tensor as fallback
+                                if fallback.is_none() {
+                                    fallback = Some(batch);
+                                }
+                            }
+                        }
+
+                        // Check parent environment if exists
+                        if let Some(parent) = &env_ref.parent {
+                            if let Some(batch) = find_tensor_batch_dim(parent, preferred_names) {
+                                return Some(batch);
+                            }
+                        }
+
+                        fallback
+                    }
+
+                    let preferred_names = ["x", "input", "inputs", "batch", "data"];
+                    if let Some(batch) = find_tensor_batch_dim(&self.environment, &preferred_names) {
+                        eprintln!("DEBUG: Inferred {} = {} from environment Tensor", name, batch);
+                        return Ok(Value::Int(batch));
+                    }
+
+                    // Legacy fallback - check first few values at current level
+                    let env = self.environment.borrow();
+                    for (_, val) in env.iter_values().take(10) { // Check first few values
+                        // Check for Tensor with shape
+                        if let Value::Struct { name: struct_name, fields } = val {
+                            if struct_name == "Tensor" {
+                                let fields_ref = fields.borrow();
+                                let shape = fields_ref.get("__shape__")
+                                    .or_else(|| fields_ref.get("shape"));
+                                if let Some(Value::Array(shape_arr)) = shape {
+                                    let shape_vec = shape_arr.borrow();
+                                    if !shape_vec.is_empty() {
+                                        if let Value::Int(batch) = &shape_vec[0] {
+                                            eprintln!("DEBUG: Inferred {} = {} from Tensor shape", name, batch);
+                                            return Ok(Value::Int(*batch));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Also check for Ref to Tensor
+                        if let Value::Ref(r) = val {
+                            if let Value::Struct { name: struct_name, fields } = &*r.borrow() {
+                                if struct_name == "Tensor" {
+                                    let fields_ref = fields.borrow();
+                                    let shape = fields_ref.get("__shape__")
+                                        .or_else(|| fields_ref.get("shape"));
+                                    if let Some(Value::Array(shape_arr)) = shape {
+                                        let shape_vec = shape_arr.borrow();
+                                        if !shape_vec.is_empty() {
+                                            if let Value::Int(batch) = &shape_vec[0] {
+                                                eprintln!("DEBUG: Inferred {} = {} from Tensor ref shape", name, batch);
+                                                return Ok(Value::Int(*batch));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if name.len() <= 2 {
@@ -5014,6 +5619,47 @@ impl Interpreter {
                         fields: Rc::new(RefCell::new(fields)),
                     })
                 }
+                // Tensor * scalar (element-wise scaling)
+                BinOp::Mul if n1 == "Tensor" => {
+                    // Get tensor data
+                    let f1_ref = f1.borrow();
+                    let shape = tensor_shape_from_fields(&f1_ref)
+                        .ok_or_else(|| RuntimeError::new("tensor has no shape"))?;
+                    let data = tensor_data_from_fields(&f1_ref)
+                        .ok_or_else(|| RuntimeError::new("tensor has no data"))?;
+                    drop(f1_ref);
+
+                    // Get scalar from other operand
+                    let scalar = match f2.borrow().get("data") {
+                        Some(Value::Array(arr)) => {
+                            if let Some(Value::Float(f)) = arr.borrow().first() {
+                                *f
+                            } else if let Some(Value::Int(i)) = arr.borrow().first() {
+                                *i as f64
+                            } else {
+                                return Err(RuntimeError::new("Cannot extract scalar from right operand"));
+                            }
+                        }
+                        _ => {
+                            return Err(RuntimeError::new("Cannot extract scalar from right operand"));
+                        }
+                    };
+
+                    // Scale all elements
+                    let result_data: Vec<Value> = data.iter().map(|x| Value::Float(x * scalar)).collect();
+                    let shape_values: Vec<Value> = shape.iter().map(|&d| Value::Int(d as i64)).collect();
+
+                    let mut fields = std::collections::HashMap::new();
+                    fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                    fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(result_data.clone()))));
+                    fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                    fields.insert("requires_grad".to_string(), Value::Bool(false));
+                    Ok(Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    })
+                }
                 // Matrix multiplication (@)
                 BinOp::MatMul if n1 == "Tensor" && n2 == "Tensor" => {
                     // Get shape and data from both tensors using field helpers (no allocation)
@@ -5057,11 +5703,13 @@ impl Interpreter {
                         }
                     }
 
-                    // Check if either operand requires grad
-                    let left_requires_grad =
+                    // Check if either operand requires grad (only when grad_enabled)
+                    let grad_enabled = *self.grad_enabled.borrow();
+                    let left_requires_grad = grad_enabled &&
                         matches!(f1.borrow().get("requires_grad"), Some(Value::Bool(true)));
-                    let right_requires_grad =
+                    let right_requires_grad = grad_enabled &&
                         matches!(f2.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                    let result_requires_grad = left_requires_grad || right_requires_grad;
 
                     // Build result tensor with __field__ naming convention
                     let mut fields = std::collections::HashMap::new();
@@ -5078,16 +5726,18 @@ impl Interpreter {
                     fields.insert("data".to_string(), data_arr);
                     fields.insert(
                         "__requires_grad__".to_string(),
-                        Value::Bool(left_requires_grad || right_requires_grad),
+                        Value::Bool(result_requires_grad),
                     );
                     fields.insert(
                         "requires_grad".to_string(),
-                        Value::Bool(left_requires_grad || right_requires_grad),
+                        Value::Bool(result_requires_grad),
                     );
 
                     // Store references to operands for backward pass (autograd)
-                    if left_requires_grad {
-                        // Store the left operand's fields Rc for gradient computation
+                    // For matmul: dW = X^T @ dY (needs X), dX = dY @ W^T (needs W)
+                    // So if EITHER operand requires grad, we need BOTH operands
+                    if result_requires_grad {
+                        // Store left operand (X) - needed for dW computation
                         fields.insert(
                             "_grad_left".to_string(),
                             Value::Struct {
@@ -5095,8 +5745,7 @@ impl Interpreter {
                                 fields: f1.clone(),
                             },
                         );
-                    }
-                    if right_requires_grad {
+                        // Store right operand (W) - needed for dX computation
                         fields.insert(
                             "_grad_right".to_string(),
                             Value::Struct {
@@ -5104,6 +5753,9 @@ impl Interpreter {
                                 fields: f2.clone(),
                             },
                         );
+                        // Track which operands actually need gradients
+                        fields.insert("_left_requires_grad".to_string(), Value::Bool(left_requires_grad));
+                        fields.insert("_right_requires_grad".to_string(), Value::Bool(right_requires_grad));
                     }
                     fields.insert(
                         "_op".to_string(),
@@ -5228,6 +5880,74 @@ impl Interpreter {
                         fields: Rc::new(RefCell::new(fields)),
                     })
                 }
+                // Tensor subtraction with broadcasting
+                BinOp::Sub if n1 == "Tensor" && n2 == "Tensor" => {
+                    // Get shape and data from both tensors
+                    let f1_ref = f1.borrow();
+                    let f2_ref = f2.borrow();
+                    let shape1: Vec<i64> = tensor_shape_from_fields(&f1_ref)
+                        .ok_or_else(|| RuntimeError::new("left tensor has no shape"))?
+                        .iter()
+                        .map(|&x| x as i64)
+                        .collect();
+                    let shape2: Vec<i64> = tensor_shape_from_fields(&f2_ref)
+                        .ok_or_else(|| RuntimeError::new("right tensor has no shape"))?
+                        .iter()
+                        .map(|&x| x as i64)
+                        .collect();
+                    let data1 = tensor_data_from_fields(&f1_ref)
+                        .ok_or_else(|| RuntimeError::new("left tensor has no data"))?;
+                    let data2 = tensor_data_from_fields(&f2_ref)
+                        .ok_or_else(|| RuntimeError::new("right tensor has no data"))?;
+                    drop(f1_ref);
+                    drop(f2_ref);
+
+                    // Broadcasting support
+                    let result_data: Vec<f64>;
+                    let result_shape: Vec<Value>;
+
+                    let size1: i64 = shape1.iter().product();
+                    let size2: i64 = shape2.iter().product();
+
+                    if size1 == size2 {
+                        result_data = data1.iter().zip(data2.iter()).map(|(a, b)| a - b).collect();
+                        result_shape = shape1.into_iter().map(Value::Int).collect();
+                    } else if size1 > size2 && size1 % size2 == 0 {
+                        result_data = data1
+                            .iter()
+                            .enumerate()
+                            .map(|(i, a)| a - data2[i % data2.len()])
+                            .collect();
+                        result_shape = shape1.into_iter().map(Value::Int).collect();
+                    } else if size2 > size1 && size2 % size1 == 0 {
+                        result_data = data2
+                            .iter()
+                            .enumerate()
+                            .map(|(i, b)| data1[i % data1.len()] - b)
+                            .collect();
+                        result_shape = shape2.into_iter().map(Value::Int).collect();
+                    } else {
+                        result_data = data1.iter().zip(data2.iter()).map(|(a, b)| a - b).collect();
+                        result_shape = shape1.into_iter().map(Value::Int).collect();
+                    }
+
+                    let mut fields = std::collections::HashMap::new();
+                    fields.insert(
+                        "shape".to_string(),
+                        Value::Array(Rc::new(RefCell::new(result_shape))),
+                    );
+                    fields.insert(
+                        "data".to_string(),
+                        Value::Array(Rc::new(RefCell::new(
+                            result_data.into_iter().map(Value::Float).collect(),
+                        ))),
+                    );
+                    fields.insert("requires_grad".to_string(), Value::Bool(false));
+                    Ok(Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    })
+                }
                 // Tensor product (⊗) for qubits
                 BinOp::TensorProd if n1 == "Qubit" && n2 == "Qubit" => {
                     // |ψ₁⟩ ⊗ |ψ₂⟩ creates a 2-qubit register
@@ -5269,6 +5989,72 @@ impl Interpreter {
                     Ok(create_qregister_value(0, n_qubits))
                 }
                 _ => Err(RuntimeError::new("Invalid struct operation")),
+            },
+            // Tensor * Float (scalar multiplication)
+            (
+                Value::Struct {
+                    name,
+                    fields,
+                },
+                Value::Float(scalar),
+            ) if name == "Tensor" => match op {
+                BinOp::Mul => {
+                    let f_ref = fields.borrow();
+                    let shape = tensor_shape_from_fields(&f_ref)
+                        .ok_or_else(|| RuntimeError::new("tensor has no shape"))?;
+                    let data = tensor_data_from_fields(&f_ref)
+                        .ok_or_else(|| RuntimeError::new("tensor has no data"))?;
+                    drop(f_ref);
+
+                    // Scale all elements
+                    let result_data: Vec<Value> = data.iter().map(|x| Value::Float(x * scalar)).collect();
+                    let shape_values: Vec<Value> = shape.iter().map(|&d| Value::Int(d as i64)).collect();
+
+                    let mut result_fields = std::collections::HashMap::new();
+                    result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                    result_fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                    result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(result_data.clone()))));
+                    result_fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                    result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                    Ok(Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(result_fields)),
+                    })
+                }
+                _ => Err(RuntimeError::new(format!("Invalid Tensor op: {:?}", op))),
+            },
+            // Float * Tensor (scalar multiplication, commutative)
+            (
+                Value::Float(scalar),
+                Value::Struct {
+                    name,
+                    fields,
+                },
+            ) if name == "Tensor" => match op {
+                BinOp::Mul => {
+                    let f_ref = fields.borrow();
+                    let shape = tensor_shape_from_fields(&f_ref)
+                        .ok_or_else(|| RuntimeError::new("tensor has no shape"))?;
+                    let data = tensor_data_from_fields(&f_ref)
+                        .ok_or_else(|| RuntimeError::new("tensor has no data"))?;
+                    drop(f_ref);
+
+                    // Scale all elements
+                    let result_data: Vec<Value> = data.iter().map(|x| Value::Float(scalar * x)).collect();
+                    let shape_values: Vec<Value> = shape.iter().map(|&d| Value::Int(d as i64)).collect();
+
+                    let mut result_fields = std::collections::HashMap::new();
+                    result_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                    result_fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                    result_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(result_data.clone()))));
+                    result_fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(result_data))));
+                    result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                    Ok(Value::Struct {
+                        name: "Tensor".to_string(),
+                        fields: Rc::new(RefCell::new(result_fields)),
+                    })
+                }
+                _ => Err(RuntimeError::new(format!("Invalid Tensor op: {:?}", op))),
             },
             (l, r) => Err(RuntimeError::new(format!(
                 "Type mismatch in binary operation: {:?} {:?} {:?}",
@@ -5662,8 +6448,24 @@ impl Interpreter {
                 ["String", "new"] => {
                     return Ok(Value::String(Rc::new(String::new())));
                 }
-                ["Vec", "new"] | ["Array", "new"] => {
+                ["Vec", "new"] | ["Array", "new"] | ["Vec", "default"] | ["Array", "default"] => {
                     return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                }
+                ["Vec", "with_capacity"] | ["Array", "with_capacity"] => {
+                    // Capacity hint is ignored in interpreter mode - just create empty array
+                    return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                }
+                ["Vec", "from_elem"] => {
+                    if args.len() == 2 {
+                        let elem = self.evaluate(&args[0])?;
+                        let count = match self.evaluate(&args[1])? {
+                            Value::Int(n) => n as usize,
+                            _ => return Err(RuntimeError::new("Vec::from_elem expects integer count")),
+                        };
+                        let elements: Vec<Value> = (0..count).map(|_| elem.clone()).collect();
+                        return Ok(Value::Array(Rc::new(RefCell::new(elements))));
+                    }
+                    return Err(RuntimeError::new("Vec::from_elem expects 2 arguments"));
                 }
                 ["Box", "new"] => {
                     // Box::new(value) - just return the value (no heap allocation in interpreter)
@@ -5671,6 +6473,284 @@ impl Interpreter {
                         return self.evaluate(&args[0]);
                     }
                     return Err(RuntimeError::new("Box::new expects 1 argument"));
+                }
+                // SecureRng::new - create a secure random number generator
+                ["arcanum", "random", "SecureRng", "new"]
+                | ["SecureRng", "new"] => {
+                    // Create a SecureRng struct that can be used with gen_range
+                    return Ok(Value::Struct {
+                        name: "SecureRng".to_string(),
+                        fields: Rc::new(RefCell::new(HashMap::new())),
+                    });
+                }
+                // Tensor constructors - basic support for nihil tensors
+                ["Tensor", method, ..] | [.., "Tensor", method] => {
+                    match *method {
+                        "zeros" => {
+                            // Tensor::zeros([shape]) - create tensor filled with zeros
+                            let (size, shape_vec) = if args.len() == 1 {
+                                match self.evaluate(&args[0])? {
+                                    Value::Array(arr) => {
+                                        let dims: Vec<i64> = arr.borrow().iter().filter_map(|v| {
+                                            if let Value::Int(n) = v { Some(*n) } else { None }
+                                        }).collect();
+                                        let size = dims.iter().map(|&d| d as usize).product();
+                                        (size, dims)
+                                    }
+                                    Value::Int(n) => (n as usize, vec![n]),
+                                    _ => (1, vec![1]),
+                                }
+                            } else {
+                                (1, vec![1])
+                            };
+                            let data: Vec<Value> = vec![Value::Float(0.0); size];
+                            let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
+                            let mut fields = HashMap::new();
+                            fields.insert("storage".to_string(), Value::Struct {
+                                name: "StoragePtr".to_string(),
+                                fields: Rc::new(RefCell::new(HashMap::from([
+                                    ("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone())))),
+                                ]))),
+                            });
+                            // Also add shape and data at top level for compatibility
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                            fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                            fields.insert("requires_grad".to_string(), Value::Bool(false));
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        "ones" => {
+                            // Tensor::ones([shape]) - create tensor filled with ones
+                            let (size, shape_vec) = if args.len() == 1 {
+                                match self.evaluate(&args[0])? {
+                                    Value::Array(arr) => {
+                                        let dims: Vec<i64> = arr.borrow().iter().filter_map(|v| {
+                                            if let Value::Int(n) = v { Some(*n) } else { None }
+                                        }).collect();
+                                        let size = dims.iter().map(|&d| d as usize).product();
+                                        (size, dims)
+                                    }
+                                    Value::Int(n) => (n as usize, vec![n]),
+                                    _ => (1, vec![1]),
+                                }
+                            } else {
+                                (1, vec![1])
+                            };
+                            let data: Vec<Value> = vec![Value::Float(1.0); size];
+                            let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
+                            let mut fields = HashMap::new();
+                            fields.insert("storage".to_string(), Value::Struct {
+                                name: "StoragePtr".to_string(),
+                                fields: Rc::new(RefCell::new(HashMap::from([
+                                    ("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone())))),
+                                ]))),
+                            });
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                            fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                            fields.insert("requires_grad".to_string(), Value::Bool(false));
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        "randn" => {
+                            // Tensor::randn([shape]) - create tensor with random normal values
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+                            let (size, shape_vec) = if args.len() == 1 {
+                                match self.evaluate(&args[0])? {
+                                    Value::Array(arr) => {
+                                        let dims: Vec<i64> = arr.borrow().iter().filter_map(|v| {
+                                            if let Value::Int(n) = v { Some(*n) } else { None }
+                                        }).collect();
+                                        let size = dims.iter().map(|&d| d as usize).product();
+                                        (size, dims)
+                                    }
+                                    Value::Int(n) => (n as usize, vec![n]),
+                                    _ => (1, vec![1]),
+                                }
+                            } else {
+                                (1, vec![1])
+                            };
+                            let data: Vec<Value> = (0..size)
+                                .map(|_| Value::Float(rng.gen::<f64>() * 2.0 - 1.0))
+                                .collect();
+                            let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
+                            let mut fields = HashMap::new();
+                            fields.insert("storage".to_string(), Value::Struct {
+                                name: "StoragePtr".to_string(),
+                                fields: Rc::new(RefCell::new(HashMap::from([
+                                    ("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone())))),
+                                ]))),
+                            });
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                            fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                            fields.insert("requires_grad".to_string(), Value::Bool(true));
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        "from_slice" => {
+                            // Tensor::from_slice(&[...]) - create tensor from slice
+                            let data = if args.len() >= 1 {
+                                match self.evaluate(&args[0])? {
+                                    Value::Array(arr) => arr.borrow().clone(),
+                                    Value::Ref(r) => match &*r.borrow() {
+                                        Value::Array(arr) => arr.borrow().clone(),
+                                        _ => vec![],
+                                    },
+                                    _ => vec![],
+                                }
+                            } else {
+                                vec![]
+                            };
+                            let size = data.len() as i64;
+                            let shape_values = vec![Value::Int(size)];
+                            let mut fields = HashMap::new();
+                            fields.insert("storage".to_string(), Value::Struct {
+                                name: "StoragePtr".to_string(),
+                                fields: Rc::new(RefCell::new(HashMap::from([
+                                    ("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone())))),
+                                ]))),
+                            });
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                            fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                            fields.insert("requires_grad".to_string(), Value::Bool(false));
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        "from" => {
+                            // Tensor::from(data) - create tensor from 1D or 2D array
+                            // Supports: Tensor·from([1.0, 2.0, 3.0]) -> shape [3]
+                            //           Tensor·from([[1.0, 2.0], [3.0, 4.0]]) -> shape [2, 2]
+                            if args.is_empty() {
+                                return Err(RuntimeError::new("Tensor·from requires an argument"));
+                            }
+                            let arg = self.evaluate(&args[0])?;
+                            let (flat_data, shape_vec): (Vec<Value>, Vec<i64>) = match &arg {
+                                Value::Array(arr) => {
+                                    let borrowed = arr.borrow();
+                                    if borrowed.is_empty() {
+                                        (vec![], vec![0])
+                                    } else if let Value::Array(_) = &borrowed[0] {
+                                        // 2D array: [[...], [...], ...]
+                                        let mut flat = Vec::new();
+                                        let rows = borrowed.len() as i64;
+                                        let mut cols: Option<i64> = None;
+                                        for row_val in borrowed.iter() {
+                                            if let Value::Array(row_arr) = row_val {
+                                                let row = row_arr.borrow();
+                                                if cols.is_none() {
+                                                    cols = Some(row.len() as i64);
+                                                }
+                                                for v in row.iter() {
+                                                    flat.push(v.clone());
+                                                }
+                                            }
+                                        }
+                                        (flat, vec![rows, cols.unwrap_or(0)])
+                                    } else {
+                                        // 1D array: [...]
+                                        let len = borrowed.len() as i64;
+                                        (borrowed.clone(), vec![len])
+                                    }
+                                }
+                                _ => return Err(RuntimeError::new("Tensor·from requires an array argument")),
+                            };
+                            let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
+                            let mut fields = HashMap::new();
+                            fields.insert("storage".to_string(), Value::Struct {
+                                name: "StoragePtr".to_string(),
+                                fields: Rc::new(RefCell::new(HashMap::from([
+                                    ("data".to_string(), Value::Array(Rc::new(RefCell::new(flat_data.clone())))),
+                                ]))),
+                            });
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                            fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(flat_data.clone()))));
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(flat_data))));
+                            // By default, tensors from data don't require gradients (they're input data)
+                            // Use Tensor·randn or set requires_grad manually for parameters
+                            fields.insert("requires_grad".to_string(), Value::Bool(false));
+                            fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        "uniform" => {
+                            // Tensor::uniform([shape], min, max) - create tensor with uniform random values
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+                            let (size, shape_vec) = if args.len() >= 1 {
+                                match self.evaluate(&args[0])? {
+                                    Value::Array(arr) => {
+                                        let dims: Vec<i64> = arr.borrow().iter().filter_map(|v| {
+                                            if let Value::Int(n) = v { Some(*n) } else { None }
+                                        }).collect();
+                                        let size = dims.iter().map(|&d| d as usize).product();
+                                        (size, dims)
+                                    }
+                                    Value::Int(n) => (n as usize, vec![n]),
+                                    _ => (1, vec![1]),
+                                }
+                            } else {
+                                (1, vec![1])
+                            };
+                            let min_val = if args.len() >= 2 {
+                                match self.evaluate(&args[1])? {
+                                    Value::Float(f) => f,
+                                    Value::Int(n) => n as f64,
+                                    _ => -1.0,
+                                }
+                            } else {
+                                -1.0
+                            };
+                            let max_val = if args.len() >= 3 {
+                                match self.evaluate(&args[2])? {
+                                    Value::Float(f) => f,
+                                    Value::Int(n) => n as f64,
+                                    _ => 1.0,
+                                }
+                            } else {
+                                1.0
+                            };
+                            let data: Vec<Value> = (0..size)
+                                .map(|_| Value::Float(rng.gen::<f64>() * (max_val - min_val) + min_val))
+                                .collect();
+                            let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
+                            let mut fields = HashMap::new();
+                            fields.insert("storage".to_string(), Value::Struct {
+                                name: "StoragePtr".to_string(),
+                                fields: Rc::new(RefCell::new(HashMap::from([
+                                    ("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone())))),
+                                ]))),
+                            });
+                            fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                            fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                            fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+                            fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                            fields.insert("requires_grad".to_string(), Value::Bool(true));
+                            return Ok(Value::Struct {
+                                name: "Tensor".to_string(),
+                                fields: Rc::new(RefCell::new(fields)),
+                            });
+                        }
+                        _ => {} // Fall through for other methods
+                    }
                 }
                 ["char", "from_u32"] => {
                     // char::from_u32(u32) -> Option<char>
@@ -5794,44 +6874,72 @@ impl Interpreter {
                 }
                 // Linear::new() - neural network layer constructor
                 ["Linear", "new"] => {
-                    if args.is_empty() {
-                        // First try to extract generics from turbofish syntax: Linear::<784, 256>::new()
-                        let turbofish_generics: Option<(i64, i64)> =
-                            if let Some(seg) = path.segments.first() {
-                                if let Some(generics) = &seg.generics {
-                                    let mut const_values: Vec<i64> = Vec::new();
-                                    for generic in generics {
-                                        if let crate::ast::TypeExpr::ConstExpr(expr) = generic {
-                                            if let crate::ast::Expr::Literal(
-                                                crate::ast::Literal::Int { value, .. },
-                                            ) = expr.as_ref()
-                                            {
-                                                if let Ok(n) = value.parse::<i64>() {
-                                                    const_values.push(n);
-                                                }
-                                            }
-                                        }
-                                        if let crate::ast::TypeExpr::Path(inner_path) = generic {
-                                            if let Some(inner_seg) = inner_path.segments.first() {
-                                                if let Ok(n) = inner_seg.ident.name.parse::<i64>() {
-                                                    const_values.push(n);
-                                                }
+                    // First extract turbofish generics (needed for both user-defined and built-in)
+                    // Linear::<784, 512>::new() -> IN=784, OUT=512
+                    let turbofish_generics: Option<(i64, i64)> =
+                        if let Some(seg) = path.segments.first() {
+                            if let Some(generics) = &seg.generics {
+                                let mut const_values: Vec<i64> = Vec::new();
+                                for generic in generics {
+                                    if let crate::ast::TypeExpr::ConstExpr(expr) = generic {
+                                        if let crate::ast::Expr::Literal(
+                                            crate::ast::Literal::Int { value, .. },
+                                        ) = expr.as_ref()
+                                        {
+                                            if let Ok(n) = value.parse::<i64>() {
+                                                const_values.push(n);
                                             }
                                         }
                                     }
-                                    if const_values.len() >= 2 {
-                                        Some((const_values[0], const_values[1]))
-                                    } else {
-                                        None
+                                    if let crate::ast::TypeExpr::Path(inner_path) = generic {
+                                        if let Some(inner_seg) = inner_path.segments.first() {
+                                            if let Ok(n) = inner_seg.ident.name.parse::<i64>() {
+                                                const_values.push(n);
+                                            }
+                                        }
                                     }
+                                }
+                                if const_values.len() >= 2 {
+                                    Some((const_values[0], const_values[1]))
                                 } else {
                                     None
                                 }
                             } else {
                                 None
-                            };
+                            }
+                        } else {
+                            None
+                        };
 
-                        // Use turbofish generics, or fall back to type annotation generics
+                    // Check for user-defined Linear·new first (like Sequential does)
+                    // This allows nihil's Linear·new to properly wrap bias in Option::Some
+                    let user_ctor = self.globals.borrow().get("Linear·new").map(|v| v.clone());
+                    if let Some(Value::Function(func)) = user_ctor {
+                        // Bind const generics IN and OUT before calling user function
+                        if let Some((in_val, out_val)) = turbofish_generics {
+                            self.globals.borrow_mut().define("IN".to_string(), Value::Int(in_val));
+                            self.globals.borrow_mut().define("OUT".to_string(), Value::Int(out_val));
+                        }
+                        let mut evaluated_args = Vec::new();
+                        for arg in args {
+                            evaluated_args.push(self.evaluate(arg)?);
+                        }
+                        // Set current_self_type to Linear for the user-defined constructor
+                        let prev_self_type = self.current_self_type.take();
+                        self.current_self_type = Some("Linear".to_string());
+                        let result = self.call_function(&func, evaluated_args);
+                        // Restore previous self type
+                        self.current_self_type = prev_self_type;
+                        // Clean up const generics
+                        if turbofish_generics.is_some() {
+                            self.globals.borrow_mut().values.remove("IN");
+                            self.globals.borrow_mut().values.remove("OUT");
+                        }
+                        return result;
+                    }
+                    // Fall back to built-in only if no user-defined constructor exists
+                    if args.is_empty() {
+                        // Use turbofish generics (extracted above), or fall back to type annotation generics
                         let (in_features, out_features) = if let Some((i, o)) = turbofish_generics {
                             (i, o)
                         } else if let Some((name, generics)) =
@@ -6197,7 +7305,11 @@ impl Interpreter {
             // Handle constructor markers for unknown external types
             Value::Struct { ref name, .. } if name.starts_with("__constructor__") => {
                 let actual_type = name.strip_prefix("__constructor__").unwrap();
-                // Create an empty struct for the unknown type
+                // Special case for Vec/Array - return array instead of struct
+                if actual_type == "Vec" || actual_type == "Array" {
+                    return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                }
+                // Create an empty struct for other unknown types
                 Ok(Value::Struct {
                     name: actual_type.to_string(),
                     fields: Rc::new(RefCell::new(HashMap::new())),
@@ -6295,6 +7407,17 @@ impl Interpreter {
         // Create new environment for function
         let env = Rc::new(RefCell::new(Environment::with_parent(func.closure.clone())));
 
+        // Inject pending const generics (from turbofish syntax like method·<64>())
+        let pending = std::mem::take(&mut *self.pending_const_generics.borrow_mut());
+        if !pending.is_empty() {
+            eprintln!("DEBUG: call_function injecting pending_const_generics: {:?}, func={:?}",
+                pending.iter().map(|(k,_)| k.as_str()).collect::<Vec<_>>(), func.name);
+        }
+        for (name, value) in pending {
+            env.borrow_mut().define(name.clone(), value);
+            eprintln!("DEBUG: Defined {} in func {:?} env", name, func.name);
+        }
+
         // Bind parameters, auto-resolving zero-arg BuiltIn constants
         for (param, value) in func.params.iter().zip(args) {
             let value = self.resolve_constant(value);
@@ -6312,6 +7435,9 @@ impl Interpreter {
         // Execute function body
         let prev_env = self.environment.clone();
         self.environment = env;
+
+        // Save current_self_type (fixes type leakage between nested method calls)
+        let prev_self_type = self.current_self_type.clone();
 
         // Save and reset linear state for this function scope
         // Linear type tracking should be per-function, not global
@@ -6378,6 +7504,7 @@ impl Interpreter {
                 *self.linear_state.consumed.borrow_mut() = prev_linear_consumed;
                 *self.linear_state.vars.borrow_mut() = prev_linear_vars;
                 *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
+                self.current_self_type = prev_self_type;
                 self.environment = prev_env;
                 return Err(RuntimeError::new(format!(
                     "linear variable '{}' was declared but never used (linear types must be consumed exactly once)",
@@ -6392,6 +7519,9 @@ impl Interpreter {
 
         // Restore previous struct_generics context (for const generic inference)
         *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;
+
+        // Restore previous current_self_type (fixes type leakage between nested method calls)
+        self.current_self_type = prev_self_type;
 
         self.environment = prev_env;
         result
@@ -8121,12 +9251,87 @@ impl Interpreter {
                     Err(RuntimeError::new("Cannot index scalar tensor"))
                 }
             }
+            // Handle Tensor multi-dimensional indexing: tensor[[i, j]] -> scalar
+            (Value::Struct { name, fields }, Value::Array(indices)) if name == "Tensor" => {
+                let fields_ref = fields.borrow();
+
+                // Get shape and data
+                let shape: Vec<i64> = match fields_ref.get("shape") {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Int(n) => Some(*n),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => vec![],
+                };
+                let data: Vec<f64> = match fields_ref.get("data") {
+                    Some(Value::Array(arr)) => arr
+                        .borrow()
+                        .iter()
+                        .filter_map(|v| match v {
+                            Value::Float(f) => Some(*f),
+                            Value::Int(n) => Some(*n as f64),
+                            _ => None,
+                        })
+                        .collect(),
+                    _ => vec![],
+                };
+                drop(fields_ref);
+
+                // Convert indices array to vec of i64
+                let idx_vec: Vec<i64> = indices
+                    .borrow()
+                    .iter()
+                    .filter_map(|v| match v {
+                        Value::Int(n) => Some(*n),
+                        _ => None,
+                    })
+                    .collect();
+
+                if idx_vec.len() != shape.len() {
+                    return Err(RuntimeError::new(format!(
+                        "Index dimension mismatch: got {} indices for tensor with {} dimensions",
+                        idx_vec.len(),
+                        shape.len()
+                    )));
+                }
+
+                // Calculate flat index
+                let mut flat_idx: usize = 0;
+                let mut stride: usize = 1;
+                for i in (0..shape.len()).rev() {
+                    let dim_size = shape[i] as usize;
+                    let idx = if idx_vec[i] < 0 {
+                        (shape[i] + idx_vec[i]) as usize
+                    } else {
+                        idx_vec[i] as usize
+                    };
+                    if idx >= dim_size {
+                        eprintln!("DEBUG tensor index error: shape={:?}, idx_vec={:?}, dim={}, idx={}, dim_size={}",
+                            shape, idx_vec, i, idx, dim_size);
+                        return Err(RuntimeError::index_out_of_bounds(idx_vec[i], dim_size));
+                    }
+                    flat_idx += idx * stride;
+                    stride *= dim_size;
+                }
+
+                if flat_idx < data.len() {
+                    Ok(Value::Float(data[flat_idx]))
+                } else {
+                    Err(RuntimeError::index_out_of_bounds(flat_idx as i64, data.len()))
+                }
+            }
             (coll, idx) => {
-                crate::sigil_debug!(
+                eprintln!(
                     "DEBUG Cannot index: collection={:?}, index={:?}",
                     std::mem::discriminant(&coll),
                     std::mem::discriminant(&idx)
                 );
+                eprintln!("DEBUG coll = {:?}", coll);
+                eprintln!("DEBUG idx = {:?}", idx);
                 Err(RuntimeError::new("Cannot index"))
             }
         }
@@ -8164,6 +9369,46 @@ impl Interpreter {
             }
             match val {
                 Value::Struct { name, fields } => {
+                    // Special handling for .T (transpose) on Tensor
+                    if field_name == "T" && name == "Tensor" {
+                        let fields_ref = fields.borrow();
+                        let data = fields_ref.get("__data__")
+                            .or_else(|| fields_ref.get("data"))
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        let shape = fields_ref.get("__shape__")
+                            .or_else(|| fields_ref.get("shape"))
+                            .cloned()
+                            .unwrap_or(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        drop(fields_ref);
+
+                        // For 2D tensors, transpose by reversing shape
+                        // For higher dims, reverse all dimensions
+                        let new_shape = match shape {
+                            Value::Array(arr) => {
+                                let mut dims: Vec<Value> = arr.borrow().clone();
+                                dims.reverse();
+                                Value::Array(Rc::new(RefCell::new(dims)))
+                            }
+                            _ => shape.clone(),
+                        };
+
+                        // Create transposed tensor (data layout unchanged for now - logical transpose)
+                        let mut new_fields = std::collections::HashMap::new();
+                        new_fields.insert("__shape__".to_string(), new_shape.clone());
+                        new_fields.insert("shape".to_string(), new_shape);
+                        new_fields.insert("__data__".to_string(), data.clone());
+                        new_fields.insert("data".to_string(), data);
+                        new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                        new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                        new_fields.insert("__grad__".to_string(), Value::Null);
+                        new_fields.insert("grad".to_string(), Value::Null);
+                        return Ok(Value::Struct {
+                            name: "Tensor".to_string(),
+                            fields: Rc::new(RefCell::new(new_fields)),
+                        });
+                    }
+
                     let field_val = fields.borrow().get(field_name).cloned();
                     if field_val.is_none() && field_name == "path" {
                         crate::sigil_debug!(
@@ -8266,6 +9511,52 @@ impl Interpreter {
         }
     }
 
+    /// Method call with optional type arguments (generics/turbofish)
+    fn eval_method_call_with_generics(
+        &mut self,
+        receiver: &Expr,
+        method: &Ident,
+        args: &[Expr],
+        type_args: &Option<Vec<TypeExpr>>,
+    ) -> Result<Value, RuntimeError> {
+        // Collect const generics from type_args to inject into the method's environment
+        // These will be consumed by call_function when the method is actually invoked
+        if let Some(ref generics) = type_args {
+            let mut pending = Vec::new();
+            for (i, ty) in generics.iter().enumerate() {
+                // Bind const generic to common single-letter names like B, N, M
+                let param_name = match i {
+                    0 => "B".to_string(),
+                    1 => "N".to_string(),
+                    2 => "M".to_string(),
+                    n => format!("C{}", n),
+                };
+
+                let value = match ty {
+                    // Check if it's a const expression (const generic value)
+                    TypeExpr::ConstExpr(expr) => {
+                        self.evaluate(expr)?
+                    }
+                    // Handle Path that might be a numeric literal parsed as type name
+                    TypeExpr::Path(path) if path.segments.len() == 1 => {
+                        let segment = &path.segments[0];
+                        // Try to parse as integer
+                        if let Ok(n) = segment.ident.name.parse::<i64>() {
+                            Value::Int(n)
+                        } else {
+                            continue;
+                        }
+                    }
+                    _ => continue,
+                };
+                pending.push((param_name, value));
+            }
+            // Store for consumption by call_function
+            *self.pending_const_generics.borrow_mut() = pending;
+        }
+        self.eval_method_call(receiver, method, args)
+    }
+
     fn eval_method_call(
         &mut self,
         receiver: &Expr,
@@ -8326,6 +9617,18 @@ impl Interpreter {
         let recv_raw = self.evaluate(receiver)?;
         // Unwrap evidential/affective wrappers for method dispatch
         let recv = Self::unwrap_value(&recv_raw).clone();
+
+        // Debug: show method and receiver type for forward calls
+        if method.name == "forward" {
+            eprintln!("DEBUG: forward method called, recv type = {:?}", match &recv {
+                Value::Struct { name, .. } => format!("Struct({})", name),
+                Value::Ref(r) => format!("Ref(inner={:?})", match &*r.borrow() {
+                    Value::Struct { name, .. } => format!("Struct({})", name),
+                    other => format!("{:?}", std::mem::discriminant(other)),
+                }),
+                other => format!("{:?}", std::mem::discriminant(other)),
+            });
+        }
 
         // Debug: trace ALL method calls to find Lexer
         static METHOD_COUNT: std::sync::atomic::AtomicUsize =
@@ -8429,6 +9732,38 @@ impl Interpreter {
         // Built-in methods
         match (&recv, method.name.as_str()) {
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
+            (Value::Array(arr), "numel") => {
+                // numel() returns total number of elements (recursive for nested arrays)
+                fn count_elements(v: &Value) -> i64 {
+                    match v {
+                        Value::Array(inner) => inner.borrow().iter().map(count_elements).sum(),
+                        _ => 1,
+                    }
+                }
+                let total: i64 = arr.borrow().iter().map(count_elements).sum();
+                Ok(Value::Int(total))
+            }
+            (Value::Array(arr), "dims") | (Value::Array(arr), "shape") => {
+                // dims()/shape() returns array wrapped as Dim·Const variants
+                // e.g., [4, 784].dims() returns [Dim·Const(4), Dim·Const(784)]
+                let dim_values: Vec<Value> = arr
+                    .borrow()
+                    .iter()
+                    .map(|v| {
+                        // Wrap each integer value in Dim·Const variant
+                        Value::Variant {
+                            enum_name: "Dim".to_string(),
+                            variant_name: "Const".to_string(),
+                            fields: Some(Rc::new(vec![v.clone()])),
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(dim_values))))
+            }
+            (Value::Array(arr), "ndim") | (Value::Array(arr), "rank") => {
+                // ndim()/rank() returns number of dimensions (length of shape array)
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
             (Value::Array(arr), "capacity") => Ok(Value::Int(arr.borrow().capacity() as i64)),
             (Value::Array(arr), "as_slice") => {
                 // In interpreter mode, just return a clone of the array
@@ -8644,6 +9979,19 @@ impl Interpreter {
                     _ => return Err(RuntimeError::new("truncate length must be integer")),
                 };
                 arr.borrow_mut().truncate(len);
+                Ok(Value::Null)
+            }
+            (Value::Array(arr), "resize") => {
+                // resize(new_len, default_value) -> ()
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("resize expects 2 arguments: (new_len, default_value)"));
+                }
+                let new_len = match &arg_values[0] {
+                    Value::Int(n) => *n as usize,
+                    _ => return Err(RuntimeError::new("resize first argument must be an integer")),
+                };
+                let default_val = arg_values[1].clone();
+                arr.borrow_mut().resize(new_len, default_val);
                 Ok(Value::Null)
             }
             (Value::Array(arr), "retain") => {
@@ -9139,6 +10487,36 @@ impl Interpreter {
             | (Value::Array(arr), "len") => {
                 // #() -> cardinality of collection
                 // Symbolic: standard cardinality notation
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
+            (Value::Array(arr), "numel") => {
+                // numel() -> total number of elements (recursive)
+                fn count_elements(v: &Value) -> i64 {
+                    match v {
+                        Value::Array(inner) => inner.borrow().iter().map(count_elements).sum(),
+                        _ => 1,
+                    }
+                }
+                let total: i64 = arr.borrow().iter().map(count_elements).sum();
+                Ok(Value::Int(total))
+            }
+            (Value::Array(arr), "dims") | (Value::Array(arr), "shape") => {
+                // dims()/shape() returns array wrapped as Dim·Const variants
+                let dim_values: Vec<Value> = arr
+                    .borrow()
+                    .iter()
+                    .map(|v| {
+                        Value::Variant {
+                            enum_name: "Dim".to_string(),
+                            variant_name: "Const".to_string(),
+                            fields: Some(Rc::new(vec![v.clone()])),
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(dim_values))))
+            }
+            (Value::Array(arr), "ndim") | (Value::Array(arr), "rank") => {
+                // ndim()/rank() returns number of dimensions
                 Ok(Value::Int(arr.borrow().len() as i64))
             }
             (Value::Array(arr), "⊥")
@@ -9960,6 +11338,10 @@ impl Interpreter {
                 // Return a reference to the inner value (mutable in place)
                 Ok(recv.clone())
             }
+            (Value::Ref(r), "unwrap") | (Value::Ref(r), "deref") | (Value::Ref(r), "into_inner") => {
+                // Unwrap/deref: return the inner value (consume the reference)
+                Ok(r.borrow().clone())
+            }
             // Forward method calls on Ref to inner value (struct method lookup)
             (Value::Ref(r), _) => {
                 // Dereference and look up method on inner struct
@@ -9991,6 +11373,56 @@ impl Interpreter {
                             };
                             let mut all_args = vec![recv.clone()];
                             all_args.extend(reordered);
+
+                            // Extract batch size (B) from Tensor arguments and add to pending_const_generics
+                            // This enables method-level const generic inference like forward<◆ B: usize>
+                            if method.name == "forward" {
+                                eprintln!("DEBUG: Ref forward args: count={}", all_args.len());
+                                for (i, arg) in all_args.iter().enumerate() {
+                                    eprintln!("DEBUG:   arg[{}] = {:?}", i, match arg {
+                                        Value::Struct { name, fields } => {
+                                            let fields_ref = fields.borrow();
+                                            format!("Struct({}, keys={:?})", name, fields_ref.keys().collect::<Vec<_>>())
+                                        },
+                                        Value::Ref(r) => format!("Ref(inner={:?})", match &*r.borrow() {
+                                            Value::Struct { name, fields } => {
+                                                let fields_ref = fields.borrow();
+                                                format!("Struct({}, keys={:?})", name, fields_ref.keys().collect::<Vec<_>>())
+                                            },
+                                            other => format!("{:?}", std::mem::discriminant(other)),
+                                        }),
+                                        other => format!("{:?}", std::mem::discriminant(other)),
+                                    });
+                                }
+                            }
+                            for arg in &all_args {
+                                // Unwrap evidential/affective wrappers and refs to get the inner value
+                                let unwrapped = Self::unwrap_all(arg);
+                                let batch = match &unwrapped {
+                                    Value::Struct { name: sn, fields: f } if sn == "Tensor" => {
+                                        let fields_ref = f.borrow();
+                                        fields_ref.get("__shape__")
+                                            .or_else(|| fields_ref.get("shape"))
+                                            .and_then(|s| {
+                                                if let Value::Array(arr) = s {
+                                                    let arr_ref = arr.borrow();
+                                                    if let Some(Value::Int(b)) = arr_ref.first() {
+                                                        if *b > 1 { Some(*b) } else { None }
+                                                    } else { None }
+                                                } else { None }
+                                            })
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(b) = batch {
+                                    eprintln!("DEBUG: Injecting B = {} from Ref method arg Tensor shape", b);
+                                    self.pending_const_generics.borrow_mut().push(("B".to_string(), Value::Int(b)));
+                                    // Also set global batch size for nested calls
+                                    *self.current_batch_size.borrow_mut() = Some(b);
+                                    break; // Only inject from first tensor with valid batch size
+                                }
+                            }
+
                             let result = self.call_function(&f, all_args);
 
                             // Restore old Self type
@@ -10313,6 +11745,97 @@ impl Interpreter {
                                 _ => return Err(RuntimeError::new("get expects integer index")),
                             };
                             return Ok(arr.borrow().get(idx).cloned().unwrap_or(Value::Null));
+                        }
+                        "resize" => {
+                            // resize(new_len, default_value) - resize array to new_len, filling with default_value
+                            if arg_values.len() != 2 {
+                                return Err(RuntimeError::new("resize expects 2 arguments: (new_len, default_value)"));
+                            }
+                            let new_len = match &arg_values[0] {
+                                Value::Int(n) => *n as usize,
+                                _ => return Err(RuntimeError::new("resize first argument must be an integer")),
+                            };
+                            let default_val = arg_values[1].clone();
+                            let mut arr_mut = arr.borrow_mut();
+                            arr_mut.resize(new_len, default_val);
+                            return Ok(Value::Null);
+                        }
+                        "clear" => {
+                            arr.borrow_mut().clear();
+                            return Ok(Value::Null);
+                        }
+                        "truncate" => {
+                            if arg_values.len() != 1 {
+                                return Err(RuntimeError::new("truncate expects 1 argument"));
+                            }
+                            let len = match &arg_values[0] {
+                                Value::Int(n) => *n as usize,
+                                _ => return Err(RuntimeError::new("truncate expects integer length")),
+                            };
+                            arr.borrow_mut().truncate(len);
+                            return Ok(Value::Null);
+                        }
+                        "insert" => {
+                            if arg_values.len() != 2 {
+                                return Err(RuntimeError::new("insert expects 2 arguments: (index, value)"));
+                            }
+                            let idx = match &arg_values[0] {
+                                Value::Int(n) => *n as usize,
+                                _ => return Err(RuntimeError::new("insert first argument must be an integer")),
+                            };
+                            let value = arg_values[1].clone();
+                            let mut arr_mut = arr.borrow_mut();
+                            if idx > arr_mut.len() {
+                                return Err(RuntimeError::new(format!("insert index {} out of bounds for len {}", idx, arr_mut.len())));
+                            }
+                            arr_mut.insert(idx, value);
+                            return Ok(Value::Null);
+                        }
+                        "remove" => {
+                            if arg_values.len() != 1 {
+                                return Err(RuntimeError::new("remove expects 1 argument"));
+                            }
+                            let idx = match &arg_values[0] {
+                                Value::Int(n) => *n as usize,
+                                _ => return Err(RuntimeError::new("remove expects integer index")),
+                            };
+                            let mut arr_mut = arr.borrow_mut();
+                            if idx >= arr_mut.len() {
+                                return Err(RuntimeError::new(format!("remove index {} out of bounds for len {}", idx, arr_mut.len())));
+                            }
+                            return Ok(arr_mut.remove(idx));
+                        }
+                        "extend" => {
+                            if arg_values.len() != 1 {
+                                return Err(RuntimeError::new("extend expects 1 argument"));
+                            }
+                            match &arg_values[0] {
+                                Value::Array(other_arr) => {
+                                    let other_values: Vec<Value> = other_arr.borrow().clone();
+                                    arr.borrow_mut().extend(other_values);
+                                }
+                                _ => return Err(RuntimeError::new("extend expects an array")),
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "swap" => {
+                            if arg_values.len() != 2 {
+                                return Err(RuntimeError::new("swap expects 2 arguments: (index1, index2)"));
+                            }
+                            let idx1 = match &arg_values[0] {
+                                Value::Int(n) => *n as usize,
+                                _ => return Err(RuntimeError::new("swap first argument must be an integer")),
+                            };
+                            let idx2 = match &arg_values[1] {
+                                Value::Int(n) => *n as usize,
+                                _ => return Err(RuntimeError::new("swap second argument must be an integer")),
+                            };
+                            let mut arr_mut = arr.borrow_mut();
+                            if idx1 >= arr_mut.len() || idx2 >= arr_mut.len() {
+                                return Err(RuntimeError::new(format!("swap indices out of bounds")));
+                            }
+                            arr_mut.swap(idx1, idx2);
+                            return Ok(Value::Null);
                         }
                         _ => {}
                     }
@@ -10832,6 +12355,221 @@ impl Interpreter {
                                 return Ok(inner.clone());
                             }
                             return Err(RuntimeError::new("RwLock has no inner value"));
+                        }
+                        _ => {}
+                    }
+                }
+                // SecureRng methods - gen_range() for random number generation
+                if name == "SecureRng" {
+                    match method.name.as_str() {
+                        "gen_range" => {
+                            // gen_range(low, high) - generate random number in [low, high)
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+
+                            if arg_values.len() != 2 {
+                                return Err(RuntimeError::new("gen_range expects 2 arguments: (low, high)"));
+                            }
+
+                            match (&arg_values[0], &arg_values[1]) {
+                                (Value::Int(low), Value::Int(high)) => {
+                                    if low >= high {
+                                        return Err(RuntimeError::new("gen_range: low must be < high"));
+                                    }
+                                    let n = rng.gen_range(*low..*high);
+                                    return Ok(Value::Int(n));
+                                }
+                                (Value::Float(low), Value::Float(high)) => {
+                                    if low >= high {
+                                        return Err(RuntimeError::new("gen_range: low must be < high"));
+                                    }
+                                    let f = rng.gen_range(*low..*high);
+                                    return Ok(Value::Float(f));
+                                }
+                                _ => return Err(RuntimeError::new("gen_range arguments must be same numeric type (both int or both float)")),
+                            }
+                        }
+                        "gen_bool" => {
+                            // gen_bool(probability) - generate bool with given probability
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+
+                            let p = match arg_values.first() {
+                                Some(Value::Float(f)) => *f,
+                                Some(Value::Int(i)) => *i as f64,
+                                _ => 0.5,
+                            };
+                            return Ok(Value::Bool(rng.gen_bool(p.clamp(0.0, 1.0))));
+                        }
+                        "gen" => {
+                            // gen() - generate random f64 in [0, 1)
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+                            return Ok(Value::Float(rng.gen::<f64>()));
+                        }
+                        _ => {}
+                    }
+                }
+                // Tensor methods
+                if name == "Tensor" {
+                    match method.name.as_str() {
+                        "as_ref" | "borrow" => {
+                            // as_ref() returns a reference to the tensor (identity for interpreter)
+                            let tensor = Value::Struct {
+                                name: name.clone(),
+                                fields: fields.clone(),
+                            };
+                            return Ok(Value::Ref(Rc::new(RefCell::new(tensor))));
+                        }
+                        "clone" => {
+                            // clone() returns a copy of the tensor
+                            return Ok(Value::Struct {
+                                name: name.clone(),
+                                fields: fields.clone(),
+                            });
+                        }
+                        "data" | "storage" => {
+                            // Get the underlying data array
+                            let borrowed = fields.borrow();
+                            if let Some(storage) = borrowed.get("storage") {
+                                if let Value::Struct { fields: storage_fields, .. } = storage {
+                                    if let Some(data) = storage_fields.borrow().get("data") {
+                                        return Ok(data.clone());
+                                    }
+                                }
+                            }
+                            return Err(RuntimeError::new("Tensor has no data"));
+                        }
+                        "shape" => {
+                            let borrowed = fields.borrow();
+                            if let Some(shape) = borrowed.get("shape") {
+                                return Ok(shape.clone());
+                            }
+                            return Ok(Value::Array(Rc::new(RefCell::new(vec![]))));
+                        }
+                        "len" | "numel" => {
+                            let borrowed = fields.borrow();
+                            if let Some(storage) = borrowed.get("storage") {
+                                if let Value::Struct { fields: storage_fields, .. } = storage {
+                                    if let Some(Value::Array(data)) = storage_fields.borrow().get("data") {
+                                        return Ok(Value::Int(data.borrow().len() as i64));
+                                    }
+                                }
+                            }
+                            return Ok(Value::Int(0));
+                        }
+                        "item" => {
+                            // Get scalar value from 0-d or 1-element tensor
+                            let borrowed = fields.borrow();
+                            // Try storage.data first (PyTorch-style tensors)
+                            if let Some(storage) = borrowed.get("storage") {
+                                if let Value::Struct { fields: storage_fields, .. } = storage {
+                                    if let Some(Value::Array(data)) = storage_fields.borrow().get("data") {
+                                        if let Some(v) = data.borrow().first() {
+                                            return Ok(v.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            // Try direct data field (simple tensors)
+                            if let Some(Value::Array(data)) = borrowed.get("data") {
+                                if let Some(v) = data.borrow().first() {
+                                    return Ok(v.clone());
+                                }
+                            }
+                            return Err(RuntimeError::new("Tensor has no data"));
+                        }
+                        "requires_grad_" => {
+                            // Set requires_grad (mutating)
+                            let grad = if !arg_values.is_empty() {
+                                match &arg_values[0] {
+                                    Value::Bool(b) => *b,
+                                    _ => true,
+                                }
+                            } else {
+                                true
+                            };
+                            fields.borrow_mut().insert("requires_grad".to_string(), Value::Bool(grad));
+                            return Ok(Value::Struct {
+                                name: name.clone(),
+                                fields: fields.clone(),
+                            });
+                        }
+                        "sub_" => {
+                            // In-place subtraction: self.sub_(other) modifies self
+                            // Critical for SGD: preserves tensor identity (Rc pointer)
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("sub_ requires an argument"));
+                            }
+                            let other = match &arg_values[0] {
+                                Value::Ref(r) => r.borrow().clone(),
+                                other => other.clone(),
+                            };
+
+                            // Get other's data (try storage.data first, then data)
+                            let other_data: Vec<f64> = match &other {
+                                Value::Struct { name: oname, fields: ofields } if oname == "Tensor" => {
+                                    let of = ofields.borrow();
+                                    // Try storage.data first (used by operations)
+                                    if let Some(Value::Struct { fields: storage_fields, .. }) = of.get("storage") {
+                                        if let Some(Value::Array(arr)) = storage_fields.borrow().get("data") {
+                                            arr.borrow().iter().filter_map(|v| match v {
+                                                Value::Float(f) => Some(*f),
+                                                Value::Int(i) => Some(*i as f64),
+                                                _ => None,
+                                            }).collect()
+                                        } else { vec![] }
+                                    } else if let Some(Value::Array(arr)) = of.get("data") {
+                                        arr.borrow().iter().filter_map(|v| match v {
+                                            Value::Float(f) => Some(*f),
+                                            Value::Int(i) => Some(*i as f64),
+                                            _ => None,
+                                        }).collect()
+                                    } else { vec![] }
+                                }
+                                _ => return Err(RuntimeError::new("sub_ argument must be a Tensor")),
+                            };
+
+                            // Helper to update array in place
+                            fn update_array(arr: &Rc<RefCell<Vec<Value>>>, other_data: &[f64]) {
+                                let mut data = arr.borrow_mut();
+                                for (i, val) in data.iter_mut().enumerate() {
+                                    if i < other_data.len() {
+                                        if let Value::Float(ref mut fv) = val {
+                                            *fv -= other_data[i];
+                                        } else if let Value::Int(iv) = val {
+                                            *val = Value::Float(*iv as f64 - other_data[i]);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Modify ALL data locations in place (storage.data, data, __data__)
+                            let mut f = fields.borrow_mut();
+
+                            // Update storage.data (primary - used by matmul etc)
+                            if let Some(Value::Struct { fields: storage_fields, .. }) = f.get("storage") {
+                                if let Some(Value::Array(arr)) = storage_fields.borrow().get("data") {
+                                    update_array(arr, &other_data);
+                                }
+                            }
+
+                            // Update data (secondary)
+                            if let Some(Value::Array(arr)) = f.get("data") {
+                                update_array(arr, &other_data);
+                            }
+
+                            // Update __data__ (backup)
+                            if let Some(Value::Array(arr)) = f.get("__data__") {
+                                update_array(arr, &other_data);
+                            }
+
+                            drop(f);
+
+                            return Ok(Value::Struct {
+                                name: name.clone(),
+                                fields: fields.clone(),
+                            });
                         }
                         _ => {}
                     }
@@ -12380,6 +14118,50 @@ impl Interpreter {
                     return Err(RuntimeError::new("Sequential.forward expects input tensor"));
                 }
 
+                // Built-in Tensor methods
+                if name == "Tensor" {
+                    match method.name.as_str() {
+                        // broadcast() - return the tensor unchanged (logical broadcast marker)
+                        "broadcast" => {
+                            // Returns self unchanged - actual broadcasting happens during operations
+                            return Ok(recv.clone());
+                        }
+                        // size() - return the shape as a tuple
+                        "size" => {
+                            let fields_ref = fields.borrow();
+                            let shape = fields_ref.get("__shape__")
+                                .or_else(|| fields_ref.get("shape"))
+                                .cloned()
+                                .unwrap_or(Value::Array(Rc::new(RefCell::new(vec![]))));
+                            return Ok(shape);
+                        }
+                        // numel() - return total number of elements
+                        "numel" => {
+                            let fields_ref = fields.borrow();
+                            let data = fields_ref.get("__data__")
+                                .or_else(|| fields_ref.get("data"))
+                                .cloned();
+                            let count = match data {
+                                Some(Value::Array(arr)) => arr.borrow().len() as i64,
+                                _ => 0,
+                            };
+                            return Ok(Value::Int(count));
+                        }
+                        // dim() - return the number of dimensions (rank)
+                        "dim" => {
+                            let fields_ref = fields.borrow();
+                            let shape = fields_ref.get("__shape__")
+                                .or_else(|| fields_ref.get("shape"));
+                            let rank = match shape {
+                                Some(Value::Array(arr)) => arr.borrow().len() as i64,
+                                _ => 0,
+                            };
+                            return Ok(Value::Int(rank));
+                        }
+                        _ => {} // Fall through to globals lookup
+                    }
+                }
+
                 let qualified_name = format!("{}·{}", name, method.name);
 
                 // Debug: track Parser method calls
@@ -12443,6 +14225,56 @@ impl Interpreter {
                         };
                         let mut all_args = vec![recv.clone()];
                         all_args.extend(reordered);
+
+                        // Extract batch size (B) from Tensor arguments and add to pending_const_generics
+                        // This enables method-level const generic inference like forward<◆ B: usize>
+                        eprintln!("DEBUG: Looking for B in method args (count={})", all_args.len());
+                        for (i, arg) in all_args.iter().enumerate() {
+                            eprintln!("DEBUG:   arg[{}] = {:?}", i, match arg {
+                                Value::Struct { name, .. } => format!("Struct({})", name),
+                                Value::Ref(_) => "Ref(...)".to_string(),
+                                _ => format!("{:?}", arg),
+                            });
+                            let batch = match arg {
+                                Value::Struct { name: sn, fields: f } if sn == "Tensor" => {
+                                    let fields_ref = f.borrow();
+                                    fields_ref.get("__shape__")
+                                        .or_else(|| fields_ref.get("shape"))
+                                        .and_then(|s| {
+                                            if let Value::Array(arr) = s {
+                                                let arr_ref = arr.borrow();
+                                                if let Some(Value::Int(b)) = arr_ref.first() {
+                                                    if *b > 1 { Some(*b) } else { None }
+                                                } else { None }
+                                            } else { None }
+                                        })
+                                }
+                                Value::Ref(r) => {
+                                    if let Value::Struct { name: sn, fields: f } = &*r.borrow() {
+                                        if sn == "Tensor" {
+                                            let fields_ref = f.borrow();
+                                            fields_ref.get("__shape__")
+                                                .or_else(|| fields_ref.get("shape"))
+                                                .and_then(|s| {
+                                                    if let Value::Array(arr) = s {
+                                                        let arr_ref = arr.borrow();
+                                                        if let Some(Value::Int(b)) = arr_ref.first() {
+                                                            if *b > 1 { Some(*b) } else { None }
+                                                        } else { None }
+                                                    } else { None }
+                                                })
+                                        } else { None }
+                                    } else { None }
+                                }
+                                _ => None,
+                            };
+                            if let Some(b) = batch {
+                                eprintln!("DEBUG: Injecting B = {} from method arg Tensor shape", b);
+                                self.pending_const_generics.borrow_mut().push(("B".to_string(), Value::Int(b)));
+                                break; // Only inject from first tensor with valid batch size
+                            }
+                        }
+
                         let result = self.call_function(&f, all_args);
 
                         // Restore old Self type
@@ -12511,6 +14343,68 @@ impl Interpreter {
                                 }
                             }
                         }
+                    }
+                }
+
+                // Built-in Gradients methods
+                if name == "Gradients" {
+                    match method.name.as_str() {
+                        // get(param) - get gradient for a parameter by tensor identity
+                        "get" => {
+                            let grads_map = match fields.borrow().get("__grads__") {
+                                Some(Value::Map(m)) => m.clone(),
+                                _ => {
+                                    return Ok(Value::Variant {
+                                        enum_name: "Option".to_string(),
+                                        variant_name: "None".to_string(),
+                                        fields: None,
+                                    });
+                                }
+                            };
+
+                            if arg_values.is_empty() {
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                });
+                            }
+
+                            // Get the tensor from the argument (unwrap Ref if needed)
+                            let tensor = match &arg_values[0] {
+                                Value::Ref(r) => r.borrow().clone(),
+                                other => other.clone(),
+                            };
+
+                            // Look up by tensor identity (Rc pointer)
+                            if let Value::Struct { name: tensor_name, fields: tensor_fields } = &tensor {
+                                if tensor_name == "Tensor" {
+                                    let tensor_id = format!("tensor_{:p}", Rc::as_ptr(tensor_fields));
+                                    let grads_ref = grads_map.borrow();
+                                    if let Some(grad) = grads_ref.get(&tensor_id) {
+                                        return Ok(Value::Variant {
+                                            enum_name: "Option".to_string(),
+                                            variant_name: "Some".to_string(),
+                                            fields: Some(Rc::new(vec![grad.clone()])),
+                                        });
+                                    }
+                                }
+                            }
+
+                            return Ok(Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            });
+                        }
+                        // zero() - clear all gradients
+                        "zero" => {
+                            if let Some(Value::Map(m)) = fields.borrow().get("__grads__") {
+                                m.borrow_mut().clear();
+                            }
+                            return Ok(Value::Null);
+                        }
+                        _ => {}
                     }
                 }
 
@@ -12669,6 +14563,11 @@ impl Interpreter {
                                 variant_name: "Err".to_string(),
                                 fields: Some(Rc::new(vec![err_val])),
                             });
+                        }
+                        "as_ref" => {
+                            // as_ref() converts Option<T> to Option<&T>
+                            // In our interpreter, references work like clones, so just return the same
+                            return Ok(recv.clone());
                         }
                         _ => {}
                     }
@@ -13402,6 +15301,36 @@ impl Interpreter {
 
             // Array methods
             (Value::Array(arr), "len") => Ok(Value::Int(arr.borrow().len() as i64)),
+            (Value::Array(arr), "numel") => {
+                // numel() returns total number of elements (recursive for nested arrays)
+                fn count_elements(v: &Value) -> i64 {
+                    match v {
+                        Value::Array(inner) => inner.borrow().iter().map(count_elements).sum(),
+                        _ => 1,
+                    }
+                }
+                let total: i64 = arr.borrow().iter().map(count_elements).sum();
+                Ok(Value::Int(total))
+            }
+            (Value::Array(arr), "dims") | (Value::Array(arr), "shape") => {
+                // dims()/shape() returns array wrapped as Dim·Const variants
+                let dim_values: Vec<Value> = arr
+                    .borrow()
+                    .iter()
+                    .map(|v| {
+                        Value::Variant {
+                            enum_name: "Dim".to_string(),
+                            variant_name: "Const".to_string(),
+                            fields: Some(Rc::new(vec![v.clone()])),
+                        }
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(dim_values))))
+            }
+            (Value::Array(arr), "ndim") | (Value::Array(arr), "rank") => {
+                // ndim()/rank() returns number of dimensions
+                Ok(Value::Int(arr.borrow().len() as i64))
+            }
             (Value::Array(arr), "first") | (Value::Array(arr), "next") => {
                 Ok(arr.borrow().first().cloned().unwrap_or(Value::Null))
             }
@@ -13587,6 +15516,118 @@ impl Interpreter {
                             })
                             .collect::<Result<_, _>>()?;
                         Ok(Value::Array(Rc::new(RefCell::new(results))))
+                    }
+                    // Handle Option::Some tau transform - unwrap, apply, rewrap (like Rust's map)
+                    Value::Variant { ref enum_name, ref variant_name, ref fields }
+                        if enum_name == "Option" && variant_name == "Some" => {
+                        // Unwrap Some to get the inner value
+                        let inner_value = if let Some(field_vec) = fields {
+                            field_vec.first().cloned().unwrap_or(Value::Null)
+                        } else {
+                            Value::Null
+                        };
+
+                        // Bind the inner value
+                        if let Some(ref pattern) = param_pattern {
+                            self.bind_pattern(pattern, inner_value)?;
+                        } else {
+                            self.environment.borrow_mut().define("_".to_string(), inner_value);
+                        }
+
+                        // Evaluate the body
+                        let result = self.evaluate(inner_body)?;
+
+                        // Rewrap in Some
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "Some".to_string(),
+                            fields: Some(Rc::new(vec![result])),
+                        })
+                    }
+                    // Handle Some/None as Struct (alternate representation)
+                    Value::Struct { ref name, ref fields } if name == "Some" => {
+                        let borrowed = fields.borrow();
+                        let inner_value = borrowed.get("0")
+                            .or_else(|| borrowed.get("value"))
+                            .cloned()
+                            .unwrap_or(Value::Null);
+                        drop(borrowed);
+
+                        // Bind the inner value
+                        if let Some(ref pattern) = param_pattern {
+                            self.bind_pattern(pattern, inner_value)?;
+                        } else {
+                            self.environment.borrow_mut().define("_".to_string(), inner_value);
+                        }
+
+                        // Evaluate the body
+                        let result = self.evaluate(inner_body)?;
+
+                        // Rewrap in Some struct
+                        let mut new_fields = std::collections::HashMap::new();
+                        new_fields.insert("0".to_string(), result);
+                        Ok(Value::Struct {
+                            name: "Some".to_string(),
+                            fields: Rc::new(RefCell::new(new_fields)),
+                        })
+                    }
+                    // Handle None struct - return unchanged
+                    Value::Struct { ref name, .. } if name == "None" => {
+                        Ok(value)
+                    }
+                    // Handle Option::None tau transform - return None unchanged
+                    Value::Variant { ref enum_name, ref variant_name, .. }
+                        if enum_name == "Option" && variant_name == "None" => {
+                        Ok(value)
+                    }
+                    // Handle Tensor tau transform - map over elements and return new tensor
+                    // DISABLED: This breaks Option<Tensor> tau patterns like:
+                    //   this.bias|τ{b => output + b.broadcast()}
+                    // The Option should be matched first, not the inner Tensor
+                    Value::Struct { ref name, ref fields } if name == "Tensor" && false => {
+                        eprintln!("DEBUG Tensor tau transform: mapping over tensor elements");
+                        let fields_ref = fields.borrow();
+                        let shape = fields_ref.get("__shape__").or_else(|| fields_ref.get("shape")).cloned().unwrap_or(Value::Null);
+                        let data: Vec<f64> = match fields_ref.get("__data__").or_else(|| fields_ref.get("data")) {
+                            Some(Value::Array(arr)) => arr.borrow().iter().filter_map(|v| match v {
+                                Value::Float(f) => Some(*f),
+                                Value::Int(n) => Some(*n as f64),
+                                _ => None,
+                            }).collect(),
+                            _ => vec![],
+                        };
+                        drop(fields_ref);
+
+                        // Map over each element
+                        let mut new_data = Vec::with_capacity(data.len());
+                        for &val in &data {
+                            if let Some(ref pattern) = param_pattern {
+                                self.bind_pattern(pattern, Value::Float(val))?;
+                            } else {
+                                self.environment.borrow_mut().define("_".to_string(), Value::Float(val));
+                            }
+                            let result = self.evaluate(inner_body)?;
+                            match result {
+                                Value::Float(f) => new_data.push(Value::Float(f)),
+                                Value::Int(i) => new_data.push(Value::Float(i as f64)),
+                                other => new_data.push(other),
+                            }
+                        }
+
+                        // Build new tensor
+                        let mut new_fields = std::collections::HashMap::new();
+                        new_fields.insert("__shape__".to_string(), shape.clone());
+                        new_fields.insert("shape".to_string(), shape);
+                        new_fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(new_data.clone()))));
+                        new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(new_data))));
+                        new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                        new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                        new_fields.insert("__grad__".to_string(), Value::Null);
+                        new_fields.insert("grad".to_string(), Value::Null);
+                        Ok(Value::Struct {
+                            name: "Tensor".to_string(),
+                            fields: Rc::new(RefCell::new(new_fields)),
+                        })
                     }
                     single => {
                         if let Some(ref pattern) = param_pattern {
@@ -13886,7 +15927,22 @@ impl Interpreter {
 
                 // |expr - call an arbitrary expression (like self.layer) with piped value
                 let callee_val = self.evaluate(callee)?;
-                match callee_val {
+
+                // Helper to extract struct name/fields from Value or Value::Ref(Struct)
+                let try_extract_struct = |v: &Value| -> Option<(String, Rc<RefCell<HashMap<String, Value>>>)> {
+                    match v {
+                        Value::Struct { name, fields } => Some((name.clone(), fields.clone())),
+                        Value::Ref(r) => {
+                            match &*r.borrow() {
+                                Value::Struct { name, fields } => Some((name.clone(), fields.clone())),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                };
+
+                match &callee_val {
                     Value::Function(f) => {
                         // Call the function with the piped value as argument
                         self.call_function(&f, vec![value])
@@ -13895,10 +15951,68 @@ impl Interpreter {
                         // Call built-in with the piped value
                         self.call_builtin(&b, vec![value])
                     }
-                    Value::Struct { .. } => {
-                        // Structs that implement __call__ can be called as functions
-                        // For now, just return the value (ML layers would override)
-                        Ok(value)
+                    _ if try_extract_struct(&callee_val).is_some() => {
+                        // For structs/refs to structs, try to call their `forward` method (ML layer semantics)
+                        let (sname, sfields) = try_extract_struct(&callee_val).unwrap();
+
+                        // Try to find and call the forward method
+                        let qualified_name = format!("{}·forward", sname);
+                        let func = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
+                        if let Some(Value::Function(f)) = func {
+                            // Wrap with const generics from hidden fields
+                            let f = Self::wrap_with_const_generics(&f, &sfields);
+
+                            // Extract batch size (B) from piped Tensor value for method const generics
+                            let batch = match &value {
+                                Value::Struct { name: sn, fields } if sn == "Tensor" => {
+                                    let fields_ref = fields.borrow();
+                                    fields_ref.get("__shape__")
+                                        .or_else(|| fields_ref.get("shape"))
+                                        .and_then(|s| {
+                                            if let Value::Array(arr) = s {
+                                                let arr_ref = arr.borrow();
+                                                if let Some(Value::Int(b)) = arr_ref.first() {
+                                                    if *b > 1 { Some(*b) } else { None }
+                                                } else { None }
+                                            } else { None }
+                                        })
+                                }
+                                Value::Ref(r) => {
+                                    if let Value::Struct { name: sn, fields } = &*r.borrow() {
+                                        if sn == "Tensor" {
+                                            let fields_ref = fields.borrow();
+                                            fields_ref.get("__shape__")
+                                                .or_else(|| fields_ref.get("shape"))
+                                                .and_then(|s| {
+                                                    if let Value::Array(arr) = s {
+                                                        let arr_ref = arr.borrow();
+                                                        if let Some(Value::Int(b)) = arr_ref.first() {
+                                                            if *b > 1 { Some(*b) } else { None }
+                                                        } else { None }
+                                                    } else { None }
+                                                })
+                                        } else { None }
+                                    } else { None }
+                                }
+                                _ => None,
+                            };
+                            if let Some(b) = batch {
+                                eprintln!("DEBUG: Injecting B = {} from piped Tensor shape", b);
+                                self.pending_const_generics.borrow_mut().push(("B".to_string(), Value::Int(b)));
+                                // Also set global batch size for nested calls
+                                *self.current_batch_size.borrow_mut() = Some(b);
+                            }
+
+                            // Call forward with (self, input)
+                            let self_val = Value::Struct {
+                                name: sname,
+                                fields: sfields,
+                            };
+                            self.call_function(&f, vec![self_val, value])
+                        } else {
+                            // No forward method found, just pass through the value
+                            Ok(value)
+                        }
                     }
                     _ => Err(RuntimeError::new(format!(
                         "Cannot call non-function value in pipe: {:?}",
@@ -13921,11 +16035,406 @@ impl Interpreter {
                     "collect" => Ok(value), // Already collected
                     "sum" | "Σ" => self.sum_values(value),
                     "product" | "Π" => self.product_values(value),
+
+                    // Mean (μ) - average of all elements
+                    "mean" | "μ" => {
+                        let (sum, count) = self.sum_and_count(&value)?;
+                        if count == 0 {
+                            Err(RuntimeError::new("mean of empty collection"))
+                        } else {
+                            Ok(Value::Float(sum / count as f64))
+                        }
+                    }
+
+                    // Min - minimum element
+                    "min" => {
+                        match &value {
+                            Value::Array(arr) => {
+                                let borrowed = arr.borrow();
+                                if borrowed.is_empty() {
+                                    return Err(RuntimeError::new("min of empty array"));
+                                }
+                                let mut min_val = f64::INFINITY;
+                                for v in borrowed.iter() {
+                                    let f = match v {
+                                        Value::Float(f) => *f,
+                                        Value::Int(i) => *i as f64,
+                                        _ => continue,
+                                    };
+                                    if f < min_val { min_val = f; }
+                                }
+                                Ok(Value::Float(min_val))
+                            }
+                            Value::Struct { name, fields } if name == "Tensor" => {
+                                let data = self.tensor_data_vec(fields)?;
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("min of empty tensor"));
+                                }
+                                let min_val = data.iter().cloned().fold(f64::INFINITY, f64::min);
+                                Ok(Value::Float(min_val))
+                            }
+                            _ => Err(RuntimeError::new("min requires array or tensor")),
+                        }
+                    }
+
+                    // Max - maximum element
+                    "max" => {
+                        match &value {
+                            Value::Array(arr) => {
+                                let borrowed = arr.borrow();
+                                if borrowed.is_empty() {
+                                    return Err(RuntimeError::new("max of empty array"));
+                                }
+                                let mut max_val = f64::NEG_INFINITY;
+                                for v in borrowed.iter() {
+                                    let f = match v {
+                                        Value::Float(f) => *f,
+                                        Value::Int(i) => *i as f64,
+                                        _ => continue,
+                                    };
+                                    if f > max_val { max_val = f; }
+                                }
+                                Ok(Value::Float(max_val))
+                            }
+                            Value::Struct { name, fields } if name == "Tensor" => {
+                                let data = self.tensor_data_vec(fields)?;
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("max of empty tensor"));
+                                }
+                                let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                Ok(Value::Float(max_val))
+                            }
+                            _ => Err(RuntimeError::new("max requires array or tensor")),
+                        }
+                    }
+
+                    // Argmax - index of maximum element
+                    "argmax" => {
+                        match &value {
+                            Value::Array(arr) => {
+                                let borrowed = arr.borrow();
+                                if borrowed.is_empty() {
+                                    return Err(RuntimeError::new("argmax of empty array"));
+                                }
+                                let mut max_val = f64::NEG_INFINITY;
+                                let mut max_idx = 0usize;
+                                for (i, v) in borrowed.iter().enumerate() {
+                                    let f = match v {
+                                        Value::Float(f) => *f,
+                                        Value::Int(i) => *i as f64,
+                                        _ => continue,
+                                    };
+                                    if f > max_val {
+                                        max_val = f;
+                                        max_idx = i;
+                                    }
+                                }
+                                Ok(Value::Int(max_idx as i64))
+                            }
+                            Value::Struct { name, fields } if name == "Tensor" => {
+                                let data = self.tensor_data_vec(fields)?;
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("argmax of empty tensor"));
+                                }
+                                let mut max_val = f64::NEG_INFINITY;
+                                let mut max_idx = 0usize;
+                                for (i, &f) in data.iter().enumerate() {
+                                    if f > max_val {
+                                        max_val = f;
+                                        max_idx = i;
+                                    }
+                                }
+                                Ok(Value::Int(max_idx as i64))
+                            }
+                            _ => Err(RuntimeError::new("argmax requires array or tensor")),
+                        }
+                    }
+
+                    // GELU activation: x * Φ(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
+                    "gelu" => {
+                        fn gelu_scalar(x: f64) -> f64 {
+                            let sqrt_2_over_pi = (2.0 / std::f64::consts::PI).sqrt();
+                            0.5 * x * (1.0 + (sqrt_2_over_pi * (x + 0.044715 * x.powi(3))).tanh())
+                        }
+                        match &value {
+                            Value::Float(f) => Ok(Value::Float(gelu_scalar(*f))),
+                            Value::Int(i) => Ok(Value::Float(gelu_scalar(*i as f64))),
+                            Value::Array(arr) => {
+                                let result: Vec<Value> = arr.borrow().iter()
+                                    .map(|v| match v {
+                                        Value::Float(f) => Value::Float(gelu_scalar(*f)),
+                                        Value::Int(i) => Value::Float(gelu_scalar(*i as f64)),
+                                        _ => Value::Float(0.0),
+                                    })
+                                    .collect();
+                                Ok(Value::Array(Rc::new(RefCell::new(result))))
+                            }
+                            Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                                let data = self.tensor_data_vec(fields)?;
+                                let shape = self.tensor_shape_vec(fields)?;
+                                let result: Vec<Value> = data.iter()
+                                    .map(|&x| Value::Float(gelu_scalar(x)))
+                                    .collect();
+                                // Preserve gradient chain
+                                let requires_grad = matches!(fields.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                                let mut tensor = self.create_tensor_from_data(result, shape);
+                                if let Value::Struct { fields: new_fields, .. } = &mut tensor {
+                                    new_fields.borrow_mut().insert("requires_grad".to_string(), Value::Bool(requires_grad));
+                                    new_fields.borrow_mut().insert("__requires_grad__".to_string(), Value::Bool(requires_grad));
+                                    if requires_grad {
+                                        new_fields.borrow_mut().insert("_grad_input".to_string(), value.clone());
+                                        new_fields.borrow_mut().insert("_op".to_string(), Value::String(Rc::new("gelu".to_string())));
+                                        // Store input data for computing derivative
+                                        new_fields.borrow_mut().insert("_input_data".to_string(),
+                                            Value::Array(Rc::new(RefCell::new(data.iter().map(|&x| Value::Float(x)).collect()))));
+                                    }
+                                }
+                                Ok(tensor)
+                            }
+                            _ => Err(RuntimeError::new("gelu requires numeric value, array, or tensor")),
+                        }
+                    }
+
+                    // Softmax: exp(x_i) / Σ exp(x_j) with numerical stability
+                    "softmax" => {
+                        match &value {
+                            Value::Array(arr) => {
+                                let data: Vec<f64> = arr.borrow().iter()
+                                    .filter_map(|v| match v {
+                                        Value::Float(f) => Some(*f),
+                                        Value::Int(i) => Some(*i as f64),
+                                        _ => None,
+                                    })
+                                    .collect();
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("softmax of empty array"));
+                                }
+                                let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                let exp_vals: Vec<f64> = data.iter().map(|&x| (x - max_val).exp()).collect();
+                                let sum_exp: f64 = exp_vals.iter().sum();
+                                let result: Vec<Value> = exp_vals.iter()
+                                    .map(|&e| Value::Float(e / sum_exp))
+                                    .collect();
+                                Ok(Value::Array(Rc::new(RefCell::new(result))))
+                            }
+                            Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                                let data = self.tensor_data_vec(fields)?;
+                                let shape = self.tensor_shape_vec(fields)?;
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("softmax of empty tensor"));
+                                }
+                                let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                let exp_vals: Vec<f64> = data.iter().map(|&x| (x - max_val).exp()).collect();
+                                let sum_exp: f64 = exp_vals.iter().sum();
+                                let result: Vec<Value> = exp_vals.iter()
+                                    .map(|&e| Value::Float(e / sum_exp))
+                                    .collect();
+                                Ok(self.create_tensor_from_data(result, shape))
+                            }
+                            _ => Err(RuntimeError::new("softmax requires array or tensor")),
+                        }
+                    }
+
+                    // Log-softmax: log(softmax(x)) but numerically stable
+                    // log_softmax(x)_i = x_i - max(x) - log(Σ exp(x_j - max(x)))
+                    "log_softmax" => {
+                        match &value {
+                            Value::Array(arr) => {
+                                let data: Vec<f64> = arr.borrow().iter()
+                                    .filter_map(|v| match v {
+                                        Value::Float(f) => Some(*f),
+                                        Value::Int(i) => Some(*i as f64),
+                                        _ => None,
+                                    })
+                                    .collect();
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("log_softmax of empty array"));
+                                }
+                                let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                let shifted: Vec<f64> = data.iter().map(|&x| x - max_val).collect();
+                                let log_sum_exp = shifted.iter().map(|&x| x.exp()).sum::<f64>().ln();
+                                let result: Vec<Value> = shifted.iter()
+                                    .map(|&x| Value::Float(x - log_sum_exp))
+                                    .collect();
+                                Ok(Value::Array(Rc::new(RefCell::new(result))))
+                            }
+                            Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                                let data = self.tensor_data_vec(fields)?;
+                                let shape = self.tensor_shape_vec(fields)?;
+                                if data.is_empty() {
+                                    return Err(RuntimeError::new("log_softmax of empty tensor"));
+                                }
+                                let max_val = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                                let shifted: Vec<f64> = data.iter().map(|&x| x - max_val).collect();
+                                let log_sum_exp = shifted.iter().map(|&x| x.exp()).sum::<f64>().ln();
+                                let result: Vec<Value> = shifted.iter()
+                                    .map(|&x| Value::Float(x - log_sum_exp))
+                                    .collect();
+                                Ok(self.create_tensor_from_data(result, shape))
+                            }
+                            _ => Err(RuntimeError::new("log_softmax requires array or tensor")),
+                        }
+                    }
+
+                    // Math functions as pipe methods
+                    "sqrt" | "√" => match &value {
+                        Value::Float(f) => Ok(Value::Float(f.sqrt())),
+                        Value::Int(i) => Ok(Value::Float((*i as f64).sqrt())),
+                        Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                            let fields_ref = fields.borrow();
+                            let data = fields_ref.get("data")
+                                .or_else(|| fields_ref.get("__data__"));
+                            let shape = fields_ref.get("shape")
+                                .or_else(|| fields_ref.get("__shape__"))
+                                .cloned();
+                            if let Some(Value::Array(arr)) = data {
+                                let result_data: Vec<Value> = arr.borrow().iter()
+                                    .map(|v| match v {
+                                        Value::Float(f) => Value::Float(f.sqrt()),
+                                        Value::Int(i) => Value::Float((*i as f64).sqrt()),
+                                        _ => Value::Float(0.0),
+                                    })
+                                    .collect();
+                                drop(fields_ref);
+                                let mut result_fields = std::collections::HashMap::new();
+                                if let Some(s) = shape {
+                                    result_fields.insert("shape".to_string(), s.clone());
+                                    result_fields.insert("__shape__".to_string(), s);
+                                }
+                                result_fields.insert("data".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(result_data.clone()))));
+                                result_fields.insert("__data__".to_string(),
+                                    Value::Array(Rc::new(RefCell::new(result_data))));
+                                result_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                Ok(Value::Struct {
+                                    name: "Tensor".to_string(),
+                                    fields: Rc::new(RefCell::new(result_fields)),
+                                })
+                            } else {
+                                Err(RuntimeError::new("Tensor has no data for sqrt"))
+                            }
+                        }
+                        _ => Err(RuntimeError::new("sqrt requires numeric value")),
+                    },
+                    "exp" => match &value {
+                        Value::Float(f) => Ok(Value::Float(f.exp())),
+                        Value::Int(i) => Ok(Value::Float((*i as f64).exp())),
+                        Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                            let data = self.tensor_data_vec(fields)?;
+                            let shape = self.tensor_shape_vec(fields)?;
+                            let result: Vec<Value> = data.iter()
+                                .map(|&x| Value::Float(x.exp()))
+                                .collect();
+                            Ok(self.create_tensor_from_data(result, shape))
+                        }
+                        Value::Array(arr) => {
+                            let result: Vec<Value> = arr.borrow().iter()
+                                .map(|v| match v {
+                                    Value::Float(f) => Value::Float(f.exp()),
+                                    Value::Int(i) => Value::Float((*i as f64).exp()),
+                                    _ => v.clone(),
+                                })
+                                .collect();
+                            Ok(Value::Array(Rc::new(RefCell::new(result))))
+                        }
+                        _ => Err(RuntimeError::new("exp requires numeric value")),
+                    },
+                    "log" => match &value {
+                        Value::Float(f) => Ok(Value::Float(f.ln())),
+                        Value::Int(i) => Ok(Value::Float((*i as f64).ln())),
+                        Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                            let data = self.tensor_data_vec(fields)?;
+                            let shape = self.tensor_shape_vec(fields)?;
+                            let result: Vec<Value> = data.iter()
+                                .map(|&x| Value::Float(x.ln()))
+                                .collect();
+                            Ok(self.create_tensor_from_data(result, shape))
+                        }
+                        Value::Array(arr) => {
+                            let result: Vec<Value> = arr.borrow().iter()
+                                .map(|v| match v {
+                                    Value::Float(f) => Value::Float(f.ln()),
+                                    Value::Int(i) => Value::Float((*i as f64).ln()),
+                                    _ => v.clone(),
+                                })
+                                .collect();
+                            Ok(Value::Array(Rc::new(RefCell::new(result))))
+                        }
+                        _ => Err(RuntimeError::new("log requires numeric value")),
+                    },
+                    "abs" => match &value {
+                        Value::Float(f) => Ok(Value::Float(f.abs())),
+                        Value::Int(i) => Ok(Value::Int(i.abs())),
+                        Value::Struct { name: tname, fields } if tname == "Tensor" => {
+                            let data = self.tensor_data_vec(fields)?;
+                            let shape = self.tensor_shape_vec(fields)?;
+                            let result: Vec<Value> = data.iter()
+                                .map(|&x| Value::Float(x.abs()))
+                                .collect();
+                            Ok(self.create_tensor_from_data(result, shape))
+                        }
+                        Value::Array(arr) => {
+                            let result: Vec<Value> = arr.borrow().iter()
+                                .map(|v| match v {
+                                    Value::Float(f) => Value::Float(f.abs()),
+                                    Value::Int(i) => Value::Int(i.abs()),
+                                    _ => v.clone(),
+                                })
+                                .collect();
+                            Ok(Value::Array(Rc::new(RefCell::new(result))))
+                        }
+                        _ => Err(RuntimeError::new("abs requires numeric value")),
+                    },
                     "len" => match &value {
                         Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
                         Value::String(s) => Ok(Value::Int(s.len() as i64)),
                         _ => Err(RuntimeError::new("len requires array or string")),
                     },
+                    // Count: without predicate = len, with predicate = count matching
+                    "count" => {
+                        // Check if we have a predicate in args
+                        if !args.is_empty() {
+                            // count{predicate} - count elements matching predicate
+                            let predicate = &args[0];
+                            // Extract closure parameter pattern and body
+                            let (param_pattern, inner_pred) = match predicate {
+                                Expr::Closure { params, body, .. } => {
+                                    let pattern = params.first().map(|p| p.pattern.clone());
+                                    (pattern, body.as_ref())
+                                }
+                                _ => (None, predicate),
+                            };
+                            match &value {
+                                Value::Array(arr) => {
+                                    let mut count = 0i64;
+                                    for item in arr.borrow().iter() {
+                                        // Bind the item to the pattern
+                                        if let Some(ref pattern) = param_pattern {
+                                            self.bind_pattern(pattern, item.clone())?;
+                                        } else {
+                                            self.environment
+                                                .borrow_mut()
+                                                .define("_".to_string(), item.clone());
+                                        }
+                                        // Evaluate predicate
+                                        let result = self.evaluate(inner_pred)?;
+                                        if self.is_truthy(&result) {
+                                            count += 1;
+                                        }
+                                    }
+                                    Ok(Value::Int(count))
+                                }
+                                _ => Err(RuntimeError::new("count requires array")),
+                            }
+                        } else {
+                            // count without predicate = len
+                            match &value {
+                                Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
+                                Value::String(s) => Ok(Value::Int(s.len() as i64)),
+                                _ => Err(RuntimeError::new("count requires array or string")),
+                            }
+                        }
+                    }
                     "reverse" => match value {
                         Value::Array(arr) => {
                             arr.borrow_mut().reverse();
@@ -13952,6 +16461,65 @@ impl Interpreter {
                                 Ok(Value::Array(Rc::new(RefCell::new(enumerated))))
                             }
                             _ => Err(RuntimeError::new("enumerate requires array")),
+                        }
+                    }
+                    "unzip" => {
+                        // unzip() converts array of tuples into tuple of arrays
+                        // [(a1, b1), (a2, b2)] -> ([a1, a2], [b1, b2])
+                        match &value {
+                            Value::Array(arr) => {
+                                let borrowed = arr.borrow();
+                                if borrowed.is_empty() {
+                                    // Empty array -> tuple of two empty arrays
+                                    return Ok(Value::Tuple(Rc::new(vec![
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                        Value::Array(Rc::new(RefCell::new(vec![]))),
+                                    ])));
+                                }
+                                // Determine tuple arity from first element
+                                let first = &borrowed[0];
+                                let arity = match first {
+                                    Value::Tuple(t) => t.len(),
+                                    _ => return Err(RuntimeError::new("unzip requires array of tuples")),
+                                };
+                                // Create vectors for each position
+                                let mut result_vecs: Vec<Vec<Value>> = (0..arity).map(|_| Vec::new()).collect();
+                                for item in borrowed.iter() {
+                                    match item {
+                                        Value::Tuple(t) if t.len() == arity => {
+                                            for (i, v) in t.iter().enumerate() {
+                                                result_vecs[i].push(v.clone());
+                                            }
+                                        }
+                                        _ => return Err(RuntimeError::new("unzip: all elements must be tuples of same arity")),
+                                    }
+                                }
+                                // Convert to tuple of arrays
+                                let arrays: Vec<Value> = result_vecs
+                                    .into_iter()
+                                    .map(|v| Value::Array(Rc::new(RefCell::new(v))))
+                                    .collect();
+                                Ok(Value::Tuple(Rc::new(arrays)))
+                            }
+                            _ => Err(RuntimeError::new("unzip requires array")),
+                        }
+                    }
+                    "zip" => {
+                        // zip(other) combines two arrays into array of tuples
+                        if arg_values.len() != 1 {
+                            return Err(RuntimeError::new("zip requires 1 argument"));
+                        }
+                        match (&value, &arg_values[0]) {
+                            (Value::Array(arr1), Value::Array(arr2)) => {
+                                let b1 = arr1.borrow();
+                                let b2 = arr2.borrow();
+                                let zipped: Vec<Value> = b1.iter()
+                                    .zip(b2.iter())
+                                    .map(|(a, b)| Value::Tuple(Rc::new(vec![a.clone(), b.clone()])))
+                                    .collect();
+                                Ok(Value::Array(Rc::new(RefCell::new(zipped))))
+                            }
+                            _ => Err(RuntimeError::new("zip requires two arrays")),
                         }
                     }
                     "first" => match &value {
@@ -14143,6 +16711,12 @@ impl Interpreter {
                             _ => Err(RuntimeError::new("fold requires array")),
                         }
                     }
+                    // ∇ (nabla) operator - backpropagation/gradient
+                    "∇" | "nabla" | "grad" | "backward" => {
+                        // Phase 1 implementation: Minimal gradient for MNIST training
+                        // Returns a Gradients struct that optimizer can use
+                        self.backward_pass(&value, &arg_values)
+                    }
                     _ => {
                         // Try calling as a struct method
                         if let Value::Struct {
@@ -14180,6 +16754,58 @@ impl Interpreter {
                                         return Ok(Value::Int(result.round() as i64));
                                     }
                                     return Ok(Value::Int(0));
+                                }
+                                // Gradients.get(param) - get gradient for a parameter
+                                ("Gradients", "get") => {
+                                    // Get the gradients map from the struct
+                                    let grads_map = match fields.borrow().get("__grads__") {
+                                        Some(Value::Map(m)) => m.clone(),
+                                        _ => {
+                                            // Return None if no gradients map
+                                            return Ok(Value::Variant {
+                                                enum_name: "Option".to_string(),
+                                                variant_name: "None".to_string(),
+                                                fields: None,
+                                            });
+                                        }
+                                    };
+
+                                    if arg_values.is_empty() {
+                                        return Ok(Value::Variant {
+                                            enum_name: "Option".to_string(),
+                                            variant_name: "None".to_string(),
+                                            fields: None,
+                                        });
+                                    }
+
+                                    // Get the tensor from the argument (unwrap Ref if needed)
+                                    let tensor = match &arg_values[0] {
+                                        Value::Ref(r) => r.borrow().clone(),
+                                        other => other.clone(),
+                                    };
+
+                                    // Look up by tensor identity (Rc pointer)
+                                    if let Value::Struct { name: tensor_name, fields: tensor_fields } = &tensor {
+                                        if tensor_name == "Tensor" {
+                                            // Create the lookup key using the tensor's Rc pointer
+                                            let tensor_id = format!("tensor_{:p}", Rc::as_ptr(tensor_fields));
+                                            let grads_ref = grads_map.borrow();
+                                            if let Some(grad) = grads_ref.get(&tensor_id) {
+                                                return Ok(Value::Variant {
+                                                    enum_name: "Option".to_string(),
+                                                    variant_name: "Some".to_string(),
+                                                    fields: Some(Rc::new(vec![grad.clone()])),
+                                                });
+                                            }
+                                        }
+                                    }
+
+                                    // No gradient found for this tensor - return None
+                                    return Ok(Value::Variant {
+                                        enum_name: "Option".to_string(),
+                                        variant_name: "None".to_string(),
+                                        fields: None,
+                                    });
                                 }
                                 ("BloomFilter", "contains") => {
                                     if arg_values.len() != 1 {
@@ -14802,6 +17428,71 @@ impl Interpreter {
                                 }
                             }
                         }
+                        // Handle |gelu for Tensor (GELU activation: x * Φ(x))
+                        if name.name == "gelu" {
+                            if let Value::Struct {
+                                name: sname,
+                                fields,
+                            } = &value
+                            {
+                                if sname == "Tensor" {
+                                    let fields_ref = fields.borrow();
+                                    let shape =
+                                        fields_ref.get("__shape__").or_else(|| fields_ref.get("shape")).cloned().unwrap_or(Value::Null);
+                                    let data: Vec<f64> = match fields_ref.get("__data__").or_else(|| fields_ref.get("data")) {
+                                        Some(Value::Array(arr)) => arr
+                                            .borrow()
+                                            .iter()
+                                            .filter_map(|v| match v {
+                                                Value::Float(f) => Some(*f),
+                                                Value::Int(n) => Some(*n as f64),
+                                                _ => None,
+                                            })
+                                            .collect(),
+                                        _ => vec![],
+                                    };
+                                    drop(fields_ref);
+                                    // Apply GELU: 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
+                                    let sqrt_2_over_pi = (2.0_f64 / std::f64::consts::PI).sqrt();
+                                    let gelu_data: Vec<Value> = data
+                                        .iter()
+                                        .map(|&x| {
+                                            let inner = sqrt_2_over_pi * (x + 0.044715 * x * x * x);
+                                            let gelu = 0.5 * x * (1.0 + inner.tanh());
+                                            Value::Float(gelu)
+                                        })
+                                        .collect();
+                                    let mut new_fields = std::collections::HashMap::new();
+                                    new_fields.insert("__shape__".to_string(), shape.clone());
+                                    new_fields.insert("shape".to_string(), shape);
+                                    new_fields.insert(
+                                        "__data__".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(gelu_data.clone()))),
+                                    );
+                                    new_fields.insert(
+                                        "data".to_string(),
+                                        Value::Array(Rc::new(RefCell::new(gelu_data))),
+                                    );
+                                    // Check if input requires grad and preserve gradient chain
+                                    let requires_grad = matches!(fields.borrow().get("requires_grad"), Some(Value::Bool(true)));
+                                    new_fields.insert("__requires_grad__".to_string(), Value::Bool(requires_grad));
+                                    new_fields.insert("requires_grad".to_string(), Value::Bool(requires_grad));
+                                    new_fields.insert("__grad__".to_string(), Value::Null);
+                                    new_fields.insert("grad".to_string(), Value::Null);
+                                    // Store input tensor and operation for gradient chain
+                                    if requires_grad {
+                                        new_fields.insert("_grad_input".to_string(), value.clone());
+                                        new_fields.insert("_op".to_string(), Value::String(Rc::new("gelu".to_string())));
+                                        // Also store input data for computing derivative
+                                        new_fields.insert("_input_data".to_string(), Value::Array(Rc::new(RefCell::new(data.iter().map(|&x| Value::Float(x)).collect()))));
+                                    }
+                                    return Ok(Value::Struct {
+                                        name: "Tensor".to_string(),
+                                        fields: Rc::new(RefCell::new(new_fields)),
+                                    });
+                                }
+                            }
+                        }
                         // Handle |softmax for Tensor (softmax activation)
                         if name.name == "softmax" {
                             if let Value::Struct {
@@ -14902,6 +17593,62 @@ impl Interpreter {
                                 }
                             }
                         }
+                        // Handle |collect_tensor([shape]) - convert array to tensor
+                        if name.name == "collect_tensor" {
+                            if let Value::Array(arr) = &value {
+                                let data: Vec<Value> = arr.borrow().iter().map(|v| {
+                                    match v {
+                                        Value::Float(f) => Value::Float(*f),
+                                        Value::Int(i) => Value::Float(*i as f64),
+                                        other => other.clone(),
+                                    }
+                                }).collect();
+
+                                // Get shape from args
+                                let shape_vec: Vec<i64> = if !arg_values.is_empty() {
+                                    match &arg_values[0] {
+                                        Value::Array(shape_arr) => {
+                                            shape_arr.borrow().iter().filter_map(|v| {
+                                                if let Value::Int(n) = v { Some(*n) } else { None }
+                                            }).collect()
+                                        }
+                                        _ => vec![data.len() as i64],
+                                    }
+                                } else {
+                                    vec![data.len() as i64]
+                                };
+
+                                let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
+                                let mut new_fields = std::collections::HashMap::new();
+                                new_fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_values.clone()))));
+                                new_fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+                                new_fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+                                new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+                                new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                                new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                new_fields.insert("__grad__".to_string(), Value::Null);
+                                new_fields.insert("grad".to_string(), Value::Null);
+                                return Ok(Value::Struct {
+                                    name: "Tensor".to_string(),
+                                    fields: Rc::new(RefCell::new(new_fields)),
+                                });
+                            }
+                        }
+                        // Handle |flatten for Array - flatten nested arrays
+                        if name.name == "flatten" {
+                            if let Value::Array(arr) = &value {
+                                let mut results = Vec::new();
+                                for val in arr.borrow().iter() {
+                                    match val {
+                                        Value::Array(inner) => {
+                                            results.extend(inner.borrow().iter().cloned());
+                                        }
+                                        other => results.push(other.clone()),
+                                    }
+                                }
+                                return Ok(Value::Array(Rc::new(RefCell::new(results))));
+                            }
+                        }
                         // Handle |flatten for Tensor - flatten to 1D
                         if name.name == "flatten" {
                             if let Value::Struct {
@@ -14953,6 +17700,114 @@ impl Interpreter {
                             // If called on a float (scalar loss), also return null
                             if let Value::Float(_) = &value {
                                 return Ok(Value::Null);
+                            }
+                        }
+
+                        // Handle |stack(axis: N) - stack array of tensors along new axis
+                        if name.name == "stack" {
+                            if let Value::Array(arr) = &value {
+                                // Get axis from args (default 0)
+                                let axis: i64 = arg_values.first().map(|v| {
+                                    match v {
+                                        Value::Int(i) => *i,
+                                        _ => 0,
+                                    }
+                                }).unwrap_or(0);
+
+                                let items = arr.borrow();
+                                if items.is_empty() {
+                                    return Err(RuntimeError::new("stack on empty array"));
+                                }
+
+                                // Collect all tensor data and compute new shape
+                                let num_items = items.len() as i64;
+                                let mut all_data: Vec<Value> = Vec::new();
+                                let mut inner_shape: Vec<i64> = Vec::new();
+
+                                for item in items.iter() {
+                                    match item {
+                                        Value::Struct { name: sname, fields } if sname == "Tensor" => {
+                                            let fields_ref = fields.borrow();
+                                            if inner_shape.is_empty() {
+                                                // Debug: show what fields exist
+                                                let keys: Vec<_> = fields_ref.keys().collect();
+                                                eprintln!("DEBUG stack tensor fields: {:?}", keys);
+                                            }
+                                            let data = fields_ref.get("__data__")
+                                                .or_else(|| fields_ref.get("data"))
+                                                .cloned()
+                                                .unwrap_or(Value::Null);
+                                            if inner_shape.is_empty() {
+                                                // Get shape from first tensor
+                                                if let Some(Value::Array(shape_arr)) = fields_ref.get("__shape__")
+                                                    .or_else(|| fields_ref.get("shape"))
+                                                {
+                                                    for s in shape_arr.borrow().iter() {
+                                                        if let Value::Int(d) = s {
+                                                            inner_shape.push(*d);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if let Value::Array(d) = data {
+                                                all_data.extend(d.borrow().iter().cloned());
+                                            }
+                                        }
+                                        // Also handle non-tensor values (arrays, etc.)
+                                        Value::Array(inner) => {
+                                            if inner_shape.is_empty() {
+                                                inner_shape.push(inner.borrow().len() as i64);
+                                            }
+                                            all_data.extend(inner.borrow().iter().cloned());
+                                        }
+                                        other => {
+                                            // Scalar items
+                                            all_data.push(other.clone());
+                                        }
+                                    }
+                                }
+
+                                // Build new shape: insert num_items at axis position
+                                let mut new_shape: Vec<i64> = Vec::new();
+                                let axis_usize = if axis < 0 {
+                                    ((inner_shape.len() as i64 + 1 + axis) as usize).max(0)
+                                } else {
+                                    (axis as usize).min(inner_shape.len())
+                                };
+
+                                for (i, dim) in inner_shape.iter().enumerate() {
+                                    if i == axis_usize {
+                                        new_shape.push(num_items);
+                                    }
+                                    new_shape.push(*dim);
+                                }
+                                if axis_usize >= inner_shape.len() {
+                                    new_shape.push(num_items);
+                                }
+
+                                // If no inner shape was found, just create [num_items, data_per_item]
+                                if new_shape.is_empty() {
+                                    let data_per_item = if num_items > 0 { all_data.len() as i64 / num_items } else { 0 };
+                                    new_shape = vec![num_items, data_per_item];
+                                }
+
+                                let shape_values: Vec<Value> = new_shape.iter().map(|d| Value::Int(*d)).collect();
+                                eprintln!("DEBUG stack: inner_shape={:?}, new_shape={:?}, num_items={}", inner_shape, new_shape, num_items);
+                                let new_shape_val = Value::Array(Rc::new(RefCell::new(shape_values)));
+
+                                let mut new_fields = std::collections::HashMap::new();
+                                new_fields.insert("__shape__".to_string(), new_shape_val.clone());
+                                new_fields.insert("shape".to_string(), new_shape_val);
+                                new_fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(all_data.clone()))));
+                                new_fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(all_data))));
+                                new_fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+                                new_fields.insert("requires_grad".to_string(), Value::Bool(false));
+                                new_fields.insert("__grad__".to_string(), Value::Null);
+                                new_fields.insert("grad".to_string(), Value::Null);
+                                return Ok(Value::Struct {
+                                    name: "Tensor".to_string(),
+                                    fields: Rc::new(RefCell::new(new_fields)),
+                                });
                             }
                         }
 
@@ -15373,6 +18228,41 @@ impl Interpreter {
                             return Ok(Value::Int(1));
                         }
 
+                        // |unwrap_or(default) - unwrap Option/Some or return default
+                        if name.name == "unwrap_or" {
+                            match &value {
+                                // Option::None or null -> return default
+                                Value::Null => {
+                                    let default_val = arg_values.first().cloned().unwrap_or(Value::Null);
+                                    return Ok(default_val);
+                                }
+                                // Option::Some(x) or Variant with value -> return inner value
+                                Value::Variant { variant_name, fields, .. } => {
+                                    if variant_name == "None" {
+                                        let default_val = arg_values.first().cloned().unwrap_or(Value::Null);
+                                        return Ok(default_val);
+                                    }
+                                    if variant_name == "Some" {
+                                        // fields is Option<Rc<Vec<Value>>> - get first element
+                                        if let Some(f) = fields {
+                                            if let Some(inner) = f.first() {
+                                                return Ok(inner.clone());
+                                            }
+                                        }
+                                    }
+                                    // Return the variant's first value if it has one
+                                    if let Some(f) = fields {
+                                        if let Some(v) = f.first() {
+                                            return Ok(v.clone());
+                                        }
+                                    }
+                                    return Ok(value.clone());
+                                }
+                                // Any other value -> return as-is (already "unwrapped")
+                                _ => return Ok(value.clone()),
+                            }
+                        }
+
                         // Fallback: try to delegate to value's method
                         // This enables |method() to work for user-defined types
                         if let Value::Struct {
@@ -15383,6 +18273,8 @@ impl Interpreter {
                             let qualified_name = format!("{}·{}", struct_name, name.name);
                             let user_fn = self.globals.borrow().get(&qualified_name).map(|v| v.clone());
                             if let Some(Value::Function(func)) = user_fn {
+                                // Wrap with const generics from hidden fields
+                                let func = Self::wrap_with_const_generics(&func, fields);
                                 // Call with self as first argument
                                 let self_val = Value::Struct {
                                     name: struct_name.clone(),
@@ -17050,91 +19942,536 @@ impl Interpreter {
     }
 
     /// Backward propagation for autograd - traverse computation graph and set gradients
+    /// Helper to extract tensor data as Vec<f64>
+    fn get_tensor_data(fields: &std::collections::HashMap<String, Value>) -> Vec<f64> {
+        if let Some(Value::Array(arr)) = fields.get("data") {
+            arr.borrow().iter().filter_map(|v| match v {
+                Value::Float(f) => Some(*f),
+                Value::Int(i) => Some(*i as f64),
+                _ => None,
+            }).collect()
+        } else if let Some(Value::Struct { fields: storage, .. }) = fields.get("storage") {
+            if let Some(Value::Array(arr)) = storage.borrow().get("data") {
+                arr.borrow().iter().filter_map(|v| match v {
+                    Value::Float(f) => Some(*f),
+                    Value::Int(i) => Some(*i as f64),
+                    _ => None,
+                }).collect()
+            } else { vec![] }
+        } else { vec![] }
+    }
+
+    /// Helper to extract tensor shape as Vec<usize>
+    fn get_tensor_shape(fields: &std::collections::HashMap<String, Value>) -> Vec<usize> {
+        if let Some(Value::Array(arr)) = fields.get("shape") {
+            arr.borrow().iter().filter_map(|v| match v {
+                Value::Int(i) => Some(*i as usize),
+                _ => None,
+            }).collect()
+        } else { vec![] }
+    }
+
+    /// Matrix multiply helper: A[m,k] @ B[k,n] = C[m,n]
+    fn matmul_2d(a: &[f64], b: &[f64], m: usize, k: usize, n: usize) -> Vec<f64> {
+        let mut result = vec![0.0; m * n];
+        for i in 0..m {
+            for j in 0..n {
+                let mut sum = 0.0;
+                for l in 0..k {
+                    sum += a[i * k + l] * b[l * n + j];
+                }
+                result[i * n + j] = sum;
+            }
+        }
+        result
+    }
+
+    /// Transpose helper: A[m,n] -> A^T[n,m]
+    fn transpose_2d(a: &[f64], m: usize, n: usize) -> Vec<f64> {
+        let mut result = vec![0.0; m * n];
+        for i in 0..m {
+            for j in 0..n {
+                result[j * m + i] = a[i * n + j];
+            }
+        }
+        result
+    }
+
+    /// Create gradient tensor Value from data and shape
+    fn make_grad_tensor(data: Vec<f64>, shape: Vec<usize>) -> Value {
+        let data_values: Vec<Value> = data.into_iter().map(Value::Float).collect();
+        let shape_values: Vec<Value> = shape.into_iter().map(|s| Value::Int(s as i64)).collect();
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data_values))));
+        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_values))));
+        fields.insert("requires_grad".to_string(), Value::Bool(false));
+        Value::Struct {
+            name: "Tensor".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        }
+    }
+
     fn backward_propagate(
         &self,
         tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>,
     ) -> Result<(), RuntimeError> {
+        self.backward_propagate_with_grad(tensor_fields, None)
+    }
+
+    fn backward_propagate_with_grad(
+        &self,
+        tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>,
+        incoming_grad: Option<Vec<f64>>,
+    ) -> Result<(), RuntimeError> {
         let fields_ref = tensor_fields.borrow();
 
-        // Get the gradient input references and propagate
-        if let Some(Value::Struct {
-            fields: grad_fields,
-            ..
-        }) = fields_ref.get("_grad_left")
-        {
-            // This tensor was an operand in a computation - set its gradient
-            let shape = grad_fields.borrow().get("shape").cloned();
-            let data_len = match grad_fields.borrow().get("data") {
-                Some(Value::Array(arr)) => arr.borrow().len(),
-                _ => 0,
-            };
+        // Get operation type if any
+        let op = match fields_ref.get("_op") {
+            Some(Value::String(s)) => Some(s.as_str().to_string()),
+            _ => None,
+        };
 
-            // Create gradient tensor (all ones for simplicity - this is the gradient of sum)
-            let grad_data: Vec<Value> = vec![Value::Float(1.0); data_len];
-            let mut grad_tensor_fields = std::collections::HashMap::new();
-            if let Some(s) = shape {
-                grad_tensor_fields.insert("shape".to_string(), s);
+        // Get current tensor's shape for default gradient
+        let self_shape = Self::get_tensor_shape(&fields_ref);
+        let self_size: usize = self_shape.iter().product();
+
+        // Incoming gradient (from upstream) - defaults to all 1s (gradient of sum)
+        let grad_output = incoming_grad.unwrap_or_else(|| vec![1.0; self_size]);
+
+        // Handle matmul operation: Y = X @ W
+        // dW = X^T @ dY, dX = dY @ W^T
+        if op.as_deref() == Some("matmul") {
+            // Check which operands actually need gradients
+            let left_requires_grad = matches!(fields_ref.get("_left_requires_grad"), Some(Value::Bool(true)));
+            let right_requires_grad = matches!(fields_ref.get("_right_requires_grad"), Some(Value::Bool(true)));
+
+            // Get left operand (X) and right operand (W)
+            let (left_data, left_shape, left_fields) = if let Some(Value::Struct { fields: lf, .. }) = fields_ref.get("_grad_left") {
+                let lf_ref = lf.borrow();
+                (Self::get_tensor_data(&lf_ref), Self::get_tensor_shape(&lf_ref), Some(lf.clone()))
+            } else { (vec![], vec![], None) };
+
+            let (right_data, right_shape, right_fields) = if let Some(Value::Struct { fields: rf, .. }) = fields_ref.get("_grad_right") {
+                let rf_ref = rf.borrow();
+                (Self::get_tensor_data(&rf_ref), Self::get_tensor_shape(&rf_ref), Some(rf.clone()))
+            } else { (vec![], vec![], None) };
+
+            // Y = X @ W where X is [m, k], W is [k, n], Y is [m, n]
+            let m = if left_shape.len() >= 2 { left_shape[0] } else { 1 };
+            let k = if left_shape.len() >= 2 { left_shape[1] } else if !left_shape.is_empty() { left_shape[0] } else { 1 };
+            let n = if right_shape.len() >= 2 { right_shape[1] } else { 1 };
+
+            // grad_output should have shape [m, n]
+            if !right_data.is_empty() && !left_data.is_empty() {
+                // Compute dW = X^T @ dY: [k, m] @ [m, n] = [k, n]
+                let x_t = Self::transpose_2d(&left_data, m, k); // [k, m]
+                let dw = Self::matmul_2d(&x_t, &grad_output, k, m, n); // [k, n]
+
+                // Compute dX = dY @ W^T: [m, n] @ [n, k] = [m, k]
+                let w_t = Self::transpose_2d(&right_data, k, n); // [n, k]
+                let dx = Self::matmul_2d(&grad_output, &w_t, m, n, k); // [m, k]
+
+                // Set gradient on right operand (W) if it requires grad
+                if right_requires_grad {
+                    if let Some(rf) = &right_fields {
+                        let grad_tensor = Self::make_grad_tensor(dw.clone(), right_shape.clone());
+                        rf.borrow_mut().insert(
+                            "grad".to_string(),
+                            Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![grad_tensor])),
+                            },
+                        );
+                    }
+                }
+
+                // Set gradient on left operand (X) if it requires grad
+                if left_requires_grad {
+                    if let Some(lf) = &left_fields {
+                        let grad_tensor = Self::make_grad_tensor(dx.clone(), left_shape.clone());
+                        lf.borrow_mut().insert(
+                            "grad".to_string(),
+                            Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![grad_tensor])),
+                            },
+                        );
+                    }
+                }
+
+                // Drop borrow before recursing
+                drop(fields_ref);
+
+                // Recurse to propagate gradients through operands' graphs
+                if let Some(rf) = right_fields {
+                    self.backward_propagate_with_grad(rf, Some(dw))?;
+                }
+                if let Some(lf) = left_fields {
+                    self.backward_propagate_with_grad(lf, Some(dx))?;
+                }
+
+                return Ok(());
             }
-            grad_tensor_fields.insert(
-                "data".to_string(),
-                Value::Array(Rc::new(RefCell::new(grad_data))),
-            );
-            grad_tensor_fields.insert("requires_grad".to_string(), Value::Bool(false));
-
-            // Set the grad field on the original tensor as a proper Variant
-            grad_fields.borrow_mut().insert(
-                "grad".to_string(),
-                Value::Variant {
-                    enum_name: "Option".to_string(),
-                    variant_name: "Some".to_string(),
-                    fields: Some(Rc::new(vec![Value::Struct {
-                        name: "Tensor".to_string(),
-                        fields: Rc::new(RefCell::new(grad_tensor_fields)),
-                    }])),
-                },
-            );
-
-            // Recursively propagate to any further inputs
-            self.backward_propagate(grad_fields.clone())?;
         }
 
-        if let Some(Value::Struct {
-            fields: grad_fields,
-            ..
-        }) = fields_ref.get("_grad_input")
-        {
-            // This is from sum operation - propagate to the input tensor
-            let shape = grad_fields.borrow().get("shape").cloned();
-            let data_len = match grad_fields.borrow().get("data") {
-                Some(Value::Array(arr)) => arr.borrow().len(),
-                _ => 0,
+        // Collect fields we need to process (to avoid borrow issues)
+        let grad_input_fields = if let Some(Value::Struct { fields: gf, .. }) = fields_ref.get("_grad_input") {
+            Some(gf.clone())
+        } else { None };
+
+        let grad_left_fields = if let Some(Value::Struct { fields: gf, .. }) = fields_ref.get("_grad_left") {
+            Some(gf.clone())
+        } else { None };
+
+        let grad_right_fields = if op.as_deref() != Some("matmul") {
+            if let Some(Value::Struct { fields: gf, .. }) = fields_ref.get("_grad_right") {
+                Some(gf.clone())
+            } else { None }
+        } else { None };
+
+        // Check for activation function operations
+        let op_type = match fields_ref.get("_op") {
+            Some(Value::String(s)) => Some(s.clone()),
+            _ => None,
+        };
+
+        // Get input data for activation functions (stored during forward pass)
+        let input_data: Option<Vec<f64>> = if let Some(Value::Array(arr)) = fields_ref.get("_input_data") {
+            Some(arr.borrow().iter().filter_map(|v| match v {
+                Value::Float(f) => Some(*f),
+                Value::Int(i) => Some(*i as f64),
+                _ => None,
+            }).collect())
+        } else { None };
+
+        // Get cross_entropy specific data (unwrap Ref if needed)
+        let ce_targets: Option<Vec<usize>> = {
+            let targets_val = match fields_ref.get("_targets") {
+                Some(Value::Ref(r)) => Some(r.borrow().clone()),
+                Some(other) => Some(other.clone()),
+                None => None,
+            };
+            match targets_val {
+                Some(Value::Array(arr)) => {
+                    Some(arr.borrow().iter().filter_map(|v| match v {
+                        Value::Int(i) => Some(*i as usize),
+                        Value::Float(f) => Some(*f as usize),
+                        _ => None,
+                    }).collect())
+                }
+                _ => None,
+            }
+        };
+        let ce_logits_data: Option<Vec<f64>> = if let Some(Value::Array(arr)) = fields_ref.get("_logits_data") {
+            Some(arr.borrow().iter().filter_map(|v| match v {
+                Value::Float(f) => Some(*f),
+                Value::Int(i) => Some(*i as f64),
+                _ => None,
+            }).collect())
+        } else { None };
+        let ce_logits_shape: Option<(usize, usize)> = if let Some(Value::Array(arr)) = fields_ref.get("_logits_shape") {
+            let shape: Vec<usize> = arr.borrow().iter().filter_map(|v| match v {
+                Value::Int(i) => Some(*i as usize),
+                _ => None,
+            }).collect();
+            if shape.len() == 2 { Some((shape[0], shape[1])) } else { None }
+        } else { None };
+
+        // Release the borrow
+        drop(fields_ref);
+
+        // Handle cross_entropy backward: d_logits = softmax(logits) - one_hot(targets)
+        if op_type.as_deref().is_some_and(|s| s == "cross_entropy") {
+            if let (Some(grad_fields), Some(targets), Some(logits_data), Some((batch_size, num_classes))) =
+                (grad_input_fields.clone(), ce_targets, ce_logits_data, ce_logits_shape)
+            {
+                // Compute d_logits = softmax(logits) - one_hot(targets)
+                let mut d_logits = vec![0.0; batch_size * num_classes];
+                for b in 0..batch_size {
+                    // Get logits for this batch element
+                    let start = b * num_classes;
+                    let end = start + num_classes;
+                    let row_logits = &logits_data[start..end];
+
+                    // Compute softmax with numerical stability
+                    let max_val = row_logits.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    let exp_shifted: Vec<f64> = row_logits.iter().map(|x| (x - max_val).exp()).collect();
+                    let sum_exp: f64 = exp_shifted.iter().sum();
+                    let softmax: Vec<f64> = exp_shifted.iter().map(|e| e / sum_exp).collect();
+
+                    // Compute gradient: softmax - one_hot
+                    let target_class = targets.get(b).copied().unwrap_or(0);
+                    for c in 0..num_classes {
+                        let one_hot = if c == target_class { 1.0 } else { 0.0 };
+                        d_logits[start + c] = (softmax[c] - one_hot) / batch_size as f64;  // divide by batch for mean
+                    }
+                }
+
+                // Set gradient on logits tensor
+                let child_shape = vec![batch_size, num_classes];
+                let grad_tensor = Self::make_grad_tensor(d_logits.clone(), child_shape.clone());
+                grad_fields.borrow_mut().insert(
+                    "grad".to_string(),
+                    Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![grad_tensor])),
+                    },
+                );
+
+                // Recurse with the d_logits as incoming gradient
+                self.backward_propagate_with_grad(grad_fields, Some(d_logits))?;
+                return Ok(());
+            }
+        }
+
+        // Handle gelu backward with proper derivative computation
+        if op_type.as_deref().is_some_and(|s| s == "gelu") {
+            if let (Some(grad_fields), Some(x_data)) = (grad_input_fields.clone(), input_data) {
+                let child_shape = {
+                    let gf = grad_fields.borrow();
+                    Self::get_tensor_shape(&gf)
+                };
+                let child_size: usize = child_shape.iter().product();
+
+                // Broadcast incoming gradient if needed
+                let grad_out = if grad_output.len() == 1 {
+                    vec![grad_output[0]; child_size]
+                } else {
+                    grad_output.clone()
+                };
+
+                // Compute gelu derivative: gelu'(x) = 0.5 * (1 + tanh(a)) + 0.5 * x * sech²(a) * sqrt(2/π) * (1 + 3 * 0.044715 * x²)
+                // where a = sqrt(2/π) * (x + 0.044715 * x³)
+                let sqrt_2_over_pi = (2.0_f64 / std::f64::consts::PI).sqrt();
+                let child_grad: Vec<f64> = x_data.iter().zip(grad_out.iter()).map(|(&x, &dy)| {
+                    let a = sqrt_2_over_pi * (x + 0.044715 * x * x * x);
+                    let tanh_a = a.tanh();
+                    let sech2_a = 1.0 - tanh_a * tanh_a; // sech²(a) = 1 - tanh²(a)
+                    let gelu_prime = 0.5 * (1.0 + tanh_a) + 0.5 * x * sech2_a * sqrt_2_over_pi * (1.0 + 3.0 * 0.044715 * x * x);
+                    dy * gelu_prime
+                }).collect();
+
+                let grad_tensor = Self::make_grad_tensor(child_grad.clone(), child_shape);
+                grad_fields.borrow_mut().insert(
+                    "grad".to_string(),
+                    Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![grad_tensor])),
+                    },
+                );
+                self.backward_propagate_with_grad(grad_fields, Some(child_grad))?;
+                return Ok(());
+            }
+        }
+
+        // Handle sum/generic operations with _grad_input (passthrough)
+        if let Some(grad_fields) = grad_input_fields {
+            let child_shape = {
+                let gf = grad_fields.borrow();
+                Self::get_tensor_shape(&gf)
+            };
+            let child_size: usize = child_shape.iter().product();
+
+            // For sum: gradient is broadcast to all elements (all 1s if incoming is scalar 1)
+            let child_grad = if grad_output.len() == 1 {
+                vec![grad_output[0]; child_size]
+            } else {
+                grad_output.clone()
             };
 
-            let grad_data: Vec<Value> = vec![Value::Float(1.0); data_len];
-            let mut grad_tensor_fields = std::collections::HashMap::new();
-            if let Some(s) = shape {
-                grad_tensor_fields.insert("shape".to_string(), s);
-            }
-            grad_tensor_fields.insert(
-                "data".to_string(),
-                Value::Array(Rc::new(RefCell::new(grad_data))),
-            );
-            grad_tensor_fields.insert("requires_grad".to_string(), Value::Bool(false));
-
-            // Set the grad field as a proper Variant
+            let grad_tensor = Self::make_grad_tensor(child_grad.clone(), child_shape);
             grad_fields.borrow_mut().insert(
                 "grad".to_string(),
                 Value::Variant {
                     enum_name: "Option".to_string(),
                     variant_name: "Some".to_string(),
-                    fields: Some(Rc::new(vec![Value::Struct {
-                        name: "Tensor".to_string(),
-                        fields: Rc::new(RefCell::new(grad_tensor_fields)),
-                    }])),
+                    fields: Some(Rc::new(vec![grad_tensor])),
                 },
             );
+            self.backward_propagate_with_grad(grad_fields, Some(child_grad))?;
+            return Ok(());
+        }
 
-            self.backward_propagate(grad_fields.clone())?;
+        // Handle _grad_left (non-matmul binary ops or single operand)
+        if let Some(grad_fields) = grad_left_fields {
+            let child_shape = {
+                let gf = grad_fields.borrow();
+                Self::get_tensor_shape(&gf)
+            };
+            let grad_tensor = Self::make_grad_tensor(grad_output.clone(), child_shape);
+            grad_fields.borrow_mut().insert(
+                "grad".to_string(),
+                Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![grad_tensor])),
+                },
+            );
+            self.backward_propagate_with_grad(grad_fields, Some(grad_output.clone()))?;
+        }
+
+        // Handle _grad_right (non-matmul case)
+        if let Some(grad_fields) = grad_right_fields {
+            let child_shape = {
+                let gf = grad_fields.borrow();
+                Self::get_tensor_shape(&gf)
+            };
+            let grad_tensor = Self::make_grad_tensor(grad_output.clone(), child_shape);
+            grad_fields.borrow_mut().insert(
+                "grad".to_string(),
+                Value::Variant {
+                    enum_name: "Option".to_string(),
+                    variant_name: "Some".to_string(),
+                    fields: Some(Rc::new(vec![grad_tensor])),
+                },
+            );
+            self.backward_propagate_with_grad(grad_fields, Some(grad_output))?;
+        }
+
+        Ok(())
+    }
+
+    /// ∇ (nabla) operator - backward pass for autograd
+    /// Returns a Gradients struct containing computed gradients for all tensors with requires_grad
+    fn backward_pass(&self, loss: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+        // Phase 1: Minimal implementation for MNIST training
+        // For a scalar loss, we start with gradient 1.0 and backpropagate
+
+        // Unwrap the loss value if it's a Ref/Evidential
+        let loss_val = match loss {
+            Value::Ref(r) => r.borrow().clone(),
+            Value::Evidential { value, .. } => (**value).clone(),
+            Value::Affective { value, .. } => (**value).clone(),
+            other => other.clone(),
+        };
+
+        // Get the loss tensor or scalar
+        match &loss_val {
+            // Loss is a Tensor (from cross_entropy)
+            Value::Struct { name, fields } if name == "Tensor" => {
+                // Trigger backward propagation on the tensor
+                self.backward_propagate(fields.clone())?;
+
+                // Build Gradients struct containing computed gradients
+                // For Phase 1, we return a Gradients struct that optimizer can iterate
+                let mut grads_map = std::collections::HashMap::new();
+
+                // Collect gradients from all tracked tensors
+                self.collect_gradients_from_graph(fields.clone(), &mut grads_map)?;
+
+                // Return Gradients! struct
+                let mut grads_fields = std::collections::HashMap::new();
+                grads_fields.insert("__grads__".to_string(),
+                    Value::Map(Rc::new(RefCell::new(grads_map))));
+                grads_fields.insert("__loss__".to_string(),
+                    Value::Struct { name: name.clone(), fields: fields.clone() });
+
+                Ok(Value::Struct {
+                    name: "Gradients".to_string(),
+                    fields: Rc::new(RefCell::new(grads_fields)),
+                })
+            }
+            // Loss is a scalar Float
+            Value::Float(loss_val) => {
+                // For scalar loss, return empty Gradients (no computation graph)
+                let mut grads_fields = std::collections::HashMap::new();
+                grads_fields.insert("__grads__".to_string(),
+                    Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                grads_fields.insert("__loss__".to_string(), Value::Float(*loss_val));
+
+                Ok(Value::Struct {
+                    name: "Gradients".to_string(),
+                    fields: Rc::new(RefCell::new(grads_fields)),
+                })
+            }
+            // Any other type - return stub Gradients
+            _ => {
+                let mut grads_fields = std::collections::HashMap::new();
+                grads_fields.insert("__grads__".to_string(),
+                    Value::Map(Rc::new(RefCell::new(std::collections::HashMap::new()))));
+                grads_fields.insert("__loss__".to_string(), loss_val.clone());
+
+                Ok(Value::Struct {
+                    name: "Gradients".to_string(),
+                    fields: Rc::new(RefCell::new(grads_fields)),
+                })
+            }
+        }
+    }
+
+    /// Collect gradients from the computation graph into a map
+    fn collect_gradients_from_graph(
+        &self,
+        tensor_fields: Rc<RefCell<std::collections::HashMap<String, Value>>>,
+        grads_map: &mut std::collections::HashMap<String, Value>,
+    ) -> Result<(), RuntimeError> {
+        let fields_ref = tensor_fields.borrow();
+
+        // Check for gradient inputs and collect their computed gradients
+        if let Some(Value::Struct { name, fields: grad_fields }) = fields_ref.get("_grad_left") {
+            if name == "Tensor" {
+                // Check if this tensor has a computed gradient
+                let grad_fields_ref = grad_fields.borrow();
+                if let Some(grad) = grad_fields_ref.get("grad") {
+                    // Unwrap Option::Some if grad is wrapped in Option
+                    let unwrapped_grad = match grad {
+                        Value::Variant { variant_name, fields: Some(f), .. } if variant_name == "Some" => {
+                            f.first().cloned().unwrap_or(grad.clone())
+                        }
+                        _ => grad.clone(),
+                    };
+                    // Use a unique ID for this tensor (address-based or name-based)
+                    let tensor_id = format!("tensor_{:p}", Rc::as_ptr(grad_fields));
+                    grads_map.insert(tensor_id, unwrapped_grad);
+                }
+                drop(grad_fields_ref);
+
+                // Recursively collect from this tensor's graph
+                self.collect_gradients_from_graph(grad_fields.clone(), grads_map)?;
+            }
+        }
+
+        if let Some(Value::Struct { name, fields: grad_fields }) = fields_ref.get("_grad_right") {
+            if name == "Tensor" {
+                let grad_fields_ref = grad_fields.borrow();
+                if let Some(grad) = grad_fields_ref.get("grad") {
+                    let unwrapped_grad = match grad {
+                        Value::Variant { variant_name, fields: Some(f), .. } if variant_name == "Some" => {
+                            f.first().cloned().unwrap_or(grad.clone())
+                        }
+                        _ => grad.clone(),
+                    };
+                    let tensor_id = format!("tensor_{:p}", Rc::as_ptr(grad_fields));
+                    grads_map.insert(tensor_id, unwrapped_grad);
+                }
+                drop(grad_fields_ref);
+
+                self.collect_gradients_from_graph(grad_fields.clone(), grads_map)?;
+            }
+        }
+
+        if let Some(Value::Struct { name, fields: grad_fields }) = fields_ref.get("_grad_input") {
+            if name == "Tensor" {
+                let grad_fields_ref = grad_fields.borrow();
+                if let Some(grad) = grad_fields_ref.get("grad") {
+                    // Unwrap Option::Some if grad is wrapped in Option
+                    let unwrapped_grad = match grad {
+                        Value::Variant { variant_name, fields: Some(f), .. } if variant_name == "Some" => {
+                            f.first().cloned().unwrap_or(grad.clone())
+                        }
+                        _ => grad.clone(),
+                    };
+                    let tensor_id = format!("tensor_{:p}", Rc::as_ptr(grad_fields));
+                    grads_map.insert(tensor_id, unwrapped_grad);
+                }
+                drop(grad_fields_ref);
+
+                self.collect_gradients_from_graph(grad_fields.clone(), grads_map)?;
+            }
         }
 
         Ok(())
@@ -17199,19 +20536,15 @@ impl Interpreter {
                     result_fields.insert("requires_grad".to_string(), Value::Bool(true));
                     result_fields
                         .insert("_op".to_string(), Value::String(Rc::new("sum".to_string())));
-                    // Propagate the gradient input reference
-                    if let Some(grad_input) = grad_left {
-                        result_fields.insert("_grad_left".to_string(), grad_input);
-                    } else {
-                        // Store reference to the input tensor
-                        result_fields.insert(
-                            "_grad_input".to_string(),
-                            Value::Struct {
-                                name: "Tensor".to_string(),
-                                fields: fields.clone(),
-                            },
-                        );
-                    }
+                    // Store reference to the input tensor for backward pass
+                    // This preserves the full computation graph (including _grad_left and _grad_right)
+                    result_fields.insert(
+                        "_grad_input".to_string(),
+                        Value::Struct {
+                            name: "Tensor".to_string(),
+                            fields: fields.clone(),
+                        },
+                    );
                     Ok(Value::Struct {
                         name: "Tensor".to_string(),
                         fields: Rc::new(RefCell::new(result_fields)),
@@ -17248,6 +20581,86 @@ impl Interpreter {
                 Ok(prod)
             }
             _ => Err(RuntimeError::new("product requires array")),
+        }
+    }
+
+    /// Helper for mean: returns (sum, count) of numeric elements
+    fn sum_and_count(&self, value: &Value) -> Result<(f64, usize), RuntimeError> {
+        match value {
+            Value::Array(arr) => {
+                let borrowed = arr.borrow();
+                let mut sum = 0.0;
+                let mut count = 0usize;
+                for item in borrowed.iter() {
+                    match item {
+                        Value::Float(f) => { sum += f; count += 1; }
+                        Value::Int(i) => { sum += *i as f64; count += 1; }
+                        _ => {}
+                    }
+                }
+                Ok((sum, count))
+            }
+            Value::Struct { name, fields } if name == "Tensor" => {
+                let data = self.tensor_data_vec(fields)?;
+                let sum: f64 = data.iter().sum();
+                Ok((sum, data.len()))
+            }
+            _ => Err(RuntimeError::new("sum_and_count requires array or tensor")),
+        }
+    }
+
+    /// Extract tensor data as Vec<f64>
+    fn tensor_data_vec(&self, fields: &Rc<RefCell<std::collections::HashMap<String, Value>>>) -> Result<Vec<f64>, RuntimeError> {
+        let fields_ref = fields.borrow();
+        let data = fields_ref.get("__data__")
+            .or_else(|| fields_ref.get("data"));
+        match data {
+            Some(Value::Array(arr)) => {
+                Ok(arr.borrow().iter()
+                    .filter_map(|v| match v {
+                        Value::Float(f) => Some(*f),
+                        Value::Int(i) => Some(*i as f64),
+                        _ => None,
+                    })
+                    .collect())
+            }
+            _ => Err(RuntimeError::new("Tensor has no data")),
+        }
+    }
+
+    /// Extract tensor shape as Vec<i64>
+    fn tensor_shape_vec(&self, fields: &Rc<RefCell<std::collections::HashMap<String, Value>>>) -> Result<Vec<i64>, RuntimeError> {
+        let fields_ref = fields.borrow();
+        let shape = fields_ref.get("__shape__")
+            .or_else(|| fields_ref.get("shape"));
+        match shape {
+            Some(Value::Array(arr)) => {
+                Ok(arr.borrow().iter()
+                    .filter_map(|v| match v {
+                        Value::Int(i) => Some(*i),
+                        _ => None,
+                    })
+                    .collect())
+            }
+            _ => Ok(vec![]),
+        }
+    }
+
+    /// Create a tensor from data and shape
+    fn create_tensor_from_data(&self, data: Vec<Value>, shape: Vec<i64>) -> Value {
+        let mut fields = std::collections::HashMap::new();
+        let shape_vals: Vec<Value> = shape.iter().map(|&s| Value::Int(s)).collect();
+        fields.insert("__shape__".to_string(), Value::Array(Rc::new(RefCell::new(shape_vals.clone()))));
+        fields.insert("shape".to_string(), Value::Array(Rc::new(RefCell::new(shape_vals))));
+        fields.insert("__data__".to_string(), Value::Array(Rc::new(RefCell::new(data.clone()))));
+        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(data))));
+        fields.insert("__requires_grad__".to_string(), Value::Bool(false));
+        fields.insert("requires_grad".to_string(), Value::Bool(false));
+        fields.insert("__grad__".to_string(), Value::Null);
+        fields.insert("grad".to_string(), Value::Null);
+        Value::Struct {
+            name: "Tensor".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
         }
     }
 
@@ -17562,6 +20975,14 @@ impl Interpreter {
                             if let Some(seg) = type_path.segments.first() {
                                 let field_type_name = seg.ident.name.clone();
                                 // Check if this type has const generic parameters
+                                // Debug: show what types are in const_generic_params
+                                if field_type_name.contains("BatchNorm") || field_type_name.contains("Norm") {
+                                    eprintln!("DEBUG: field_type_name = {}, has_const_generics = {}, available = {:?}",
+                                        field_type_name,
+                                        self.const_generic_params.contains_key(field_type_name.as_str()),
+                                        self.const_generic_params.keys().filter(|k| k.contains("Norm") || k.contains("Batch")).collect::<Vec<_>>()
+                                    );
+                                }
                                 if self.const_generic_params.contains_key(field_type_name.as_str()) {
                                     if let Some(generics) = &seg.generics {
                                         let mut const_values: Vec<i64> = Vec::new();
@@ -17584,6 +21005,7 @@ impl Interpreter {
                                             }
                                         }
                                         if !const_values.is_empty() {
+                                            eprintln!("DEBUG: Setting struct_generics: type={}, values={:?}", field_type_name, const_values);
                                             *self.type_context.struct_generics.borrow_mut() =
                                                 Some((field_type_name, const_values));
                                         }
@@ -17594,6 +21016,30 @@ impl Interpreter {
                     }
 
                     let result = self.evaluate(expr);
+
+                    // Inject const generics as hidden fields on the returned struct
+                    // This allows wrap_with_const_generics to find them when methods are called
+                    let result = match result {
+                        Ok(Value::Struct { name, fields }) => {
+                            // Get the currently set struct_generics before restoring
+                            if let Some((type_name, const_values)) = self.type_context.struct_generics.borrow().as_ref() {
+                                // Look up parameter names for this type
+                                if let Some(param_names) = self.const_generic_params.get(type_name.as_str()).cloned() {
+                                    let mut fields_mut = fields.borrow_mut();
+                                    for (i, value) in const_values.iter().enumerate() {
+                                        if i < param_names.len() {
+                                            let hidden_name = format!("__const_{}__", param_names[i]);
+                                            eprintln!("DEBUG: Injecting {} = {} into struct {}", hidden_name, value, name);
+                                            fields_mut.insert(hidden_name, Value::Int(*value));
+                                        }
+                                    }
+                                    drop(fields_mut);
+                                }
+                            }
+                            Ok(Value::Struct { name, fields })
+                        }
+                        other => other,
+                    };
 
                     // Restore previous struct_generics context
                     *self.type_context.struct_generics.borrow_mut() = prev_struct_generics;

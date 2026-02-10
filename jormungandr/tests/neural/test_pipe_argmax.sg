@@ -1,0 +1,142 @@
+//! Test: argmax pipe method
+//! Spec: 14-NEURAL.md §7.1
+//! Priority: P0
+//! Returns: Index of maximum element
+
+rite main() {
+    println("=== Testing argmax pipe method ===");
+    println("");
+
+    // =========================================================================
+    // Basic Cases
+    // =========================================================================
+
+    // Test 1: Basic argmax
+    ≔ arr = [1.0, 5.0, 3.0, 2.0];
+    ≔ idx = arr|argmax;
+    assert(idx == 1, "Argmax of [1,5,3,2] is index 1");
+    println("  [1] Basic argmax: passed");
+
+    // Test 2: Max at beginning
+    ≔ first_max = [10.0, 5.0, 3.0, 2.0];
+    assert(first_max|argmax == 0, "Max at index 0");
+    println("  [2] Max at beginning: passed");
+
+    // Test 3: Max at end
+    ≔ last_max = [1.0, 2.0, 3.0, 10.0];
+    assert(last_max|argmax == 3, "Max at last index");
+    println("  [3] Max at end: passed");
+
+    // Test 4: Single element
+    ≔ single = [42.0];
+    assert(single|argmax == 0, "Single element argmax is 0");
+    println("  [4] Single element: passed");
+
+    // Test 5: Two elements
+    ≔ two = [5.0, 10.0];
+    assert(two|argmax == 1, "Two elements");
+    println("  [5] Two elements: passed");
+
+    println("");
+
+    // =========================================================================
+    // Edge Cases
+    // =========================================================================
+
+    // Test 6: Tie → first occurrence wins
+    ≔ tie = [3.0, 3.0, 1.0];
+    ≔ tie_idx = tie|argmax;
+    assert(tie_idx == 0, "Argmax returns first on tie");
+    println("  [6] Tie (first wins): passed");
+
+    // Test 7: All same values → index 0
+    ≔ all_same = [7.0, 7.0, 7.0, 7.0];
+    assert(all_same|argmax == 0, "All same → first index");
+    println("  [7] All same values: passed");
+
+    // Test 8: Negative values
+    ≔ neg = [-5.0, -1.0, -3.0];
+    assert(neg|argmax == 1, "Argmax with negatives is -1 at index 1");
+    println("  [8] Negative values: passed");
+
+    // Test 9: Mixed positive/negative
+    ≔ mixed = [-10.0, 5.0, -2.0, 3.0];
+    assert(mixed|argmax == 1, "Mixed pos/neg");
+    println("  [9] Mixed positive/negative: passed");
+
+    // Test 10: Very close values
+    ≔ close = [1.0, 1.0001, 1.0000001];
+    assert(close|argmax == 1, "Distinguishes close values");
+    println("  [10] Very close values: passed");
+
+    println("");
+
+    // =========================================================================
+    // Type Variations
+    // =========================================================================
+
+    // Test 11: Integer array
+    ≔ ints = [10, 30, 20, 5];
+    assert(ints|argmax == 1, "Integer argmax");
+    println("  [11] Integer array: passed");
+
+    // Test 12: Tensor argmax
+    ≔ t = Tensor·from([0.1, 0.7, 0.2]);
+    ≔ t_idx = t|argmax;
+    assert(t_idx == 1, "Tensor argmax");
+    println("  [12] Tensor argmax: passed");
+
+    // Test 13: 2D Tensor (flattened argmax)
+    ≔ t2d = Tensor·from([[1.0, 2.0], [3.0, 0.5]]);
+    // Flattened: [1, 2, 3, 0.5] → argmax = 2
+    ≔ t2d_idx = t2d|argmax;
+    assert(t2d_idx == 2, "2D Tensor flattened argmax");
+    println("  [13] 2D Tensor (flattened): passed");
+
+    println("");
+
+    // =========================================================================
+    // Large Values
+    // =========================================================================
+
+    // Test 14: Large positive value
+    ≔ large = [1.0, 1e10, 100.0];
+    assert(large|argmax == 1, "Large value detected");
+    println("  [14] Large positive: passed");
+
+    // Test 15: Large negative values
+    ≔ large_neg = [-1e10, -1.0, -100.0];
+    assert(large_neg|argmax == 1, "Least negative is max");
+    println("  [15] Large negative: passed");
+
+    // Test 16: Very small differences
+    ≔ small_diff = [1e-10, 2e-10, 1.5e-10];
+    assert(small_diff|argmax == 1, "Small differences");
+    println("  [16] Very small differences: passed");
+
+    println("");
+
+    // =========================================================================
+    // Axis Parameter (Phase 2)
+    // =========================================================================
+
+    // Test 17: Argmax along axis (per-row argmax)
+    // Spec: batch|argmax(dim: -1)
+    // [[1, 2, 3], [3, 2, 1]] → [2, 0]
+    println("  [17] Axis parameter: SKIPPED (Phase 2)");
+
+    println("");
+
+    // =========================================================================
+    // Error Cases
+    // =========================================================================
+
+    // Test 18: Empty array
+    // Expected: Error or panic
+    // ≔ empty: [f64] = [];
+    // ≔ empty_idx = empty|argmax;  // Should error
+    println("  [18] Empty array: SKIPPED (behavior TBD)");
+
+    println("");
+    println("=== All argmax tests passed ===");
+}

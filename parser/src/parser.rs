@@ -429,10 +429,11 @@ impl<'a> Parser<'a> {
             }
             Some(Token::IntLit(s)) => {
                 self.advance();
+                let (value, suffix) = Self::strip_int_suffix(&s);
                 Ok(AttrArg::Literal(Literal::Int {
-                    value: s,
+                    value,
                     base: NumBase::Decimal,
-                    suffix: None,
+                    suffix,
                 }))
             }
             Some(Token::HexLit(s)) => {
@@ -816,6 +817,22 @@ impl<'a> Parser<'a> {
             if s.ends_with(suffix) {
                 let before = &s[..s.len() - suffix.len()];
                 // Strip optional underscore separator (e.g., 2.0_f64 -> 2.0)
+                let value = before.strip_suffix('_').unwrap_or(before).to_string();
+                return (value, Some(suffix.to_string()));
+            }
+        }
+        (s.to_string(), None)
+    }
+
+    /// Strip integer type suffix (i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize) from a literal string.
+    /// Handles both `42u16` and `42_u16` forms.
+    /// Returns (numeric_value, optional_suffix).
+    fn strip_int_suffix(s: &str) -> (String, Option<String>) {
+        // Check longer suffixes first to avoid matching i32 before i128
+        for suffix in &["i128", "i64", "i32", "i16", "isize", "i8", "u128", "u64", "u32", "u16", "usize", "u8"] {
+            if s.ends_with(suffix) {
+                let before = &s[..s.len() - suffix.len()];
+                // Strip optional underscore separator (e.g., 42_u16 -> 42)
                 let value = before.strip_suffix('_').unwrap_or(before).to_string();
                 return (value, Some(suffix.to_string()));
             }
@@ -3969,7 +3986,12 @@ impl<'a> Parser<'a> {
                                                "partial_trace", "qh_compress", "is_pure",
                                                "apply_noise", "scatter", "teleport", "size",
                                                // Neural/Tensor methods
-                                               "relu", "softmax", "sigmoid", "tanh", "backward", "Σ"];
+                                               "relu", "softmax", "sigmoid", "tanh", "backward", "Σ",
+                                               "gelu", "log_softmax", "argmax", "mean", "μ",
+                                               // Math functions as pipe methods
+                                               "sqrt", "abs", "exp", "log", "sin", "cos", "tan",
+                                               // Collection statistics
+                                               "count"];
                 if collection_pipe_methods.contains(&name.as_str())
                     || QUANTUM_GATES.contains(&name.as_str())
                     || QUANTUM_OPS.contains(&name.as_str()) {
@@ -5235,10 +5257,11 @@ impl<'a> Parser<'a> {
         match self.current_token().cloned() {
             Some(Token::IntLit(s)) => {
                 self.advance();
+                let (value, suffix) = Self::strip_int_suffix(&s);
                 Ok(Expr::Literal(Literal::Int {
-                    value: s,
+                    value,
                     base: NumBase::Decimal,
-                    suffix: None,
+                    suffix,
                 }))
             }
             Some(Token::BinaryLit(s)) => {
@@ -5472,6 +5495,11 @@ impl<'a> Parser<'a> {
                 let is_move = self.consume_if(&Token::Move);
                 let block = self.parse_block()?;
                 Ok(Expr::Async { block, is_move })
+            }
+            Some(Token::NoGrad) => {
+                self.advance();
+                let block = self.parse_block()?;
+                Ok(Expr::NoGrad(block))
             }
             Some(Token::Const) => {
                 // Const block expression: `const { expr }` - compile-time evaluated block
@@ -8644,10 +8672,11 @@ impl<'a> Parser<'a> {
         match self.current_token().cloned() {
             Some(Token::IntLit(s)) => {
                 self.advance();
+                let (value, suffix) = Self::strip_int_suffix(&s);
                 Ok(Literal::Int {
-                    value: s,
+                    value,
                     base: NumBase::Decimal,
-                    suffix: None,
+                    suffix,
                 })
             }
             Some(Token::HexLit(s)) => {

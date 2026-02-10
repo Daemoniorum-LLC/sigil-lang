@@ -458,6 +458,8 @@ pub enum Token {
     Static,
     #[token("unsafe")]
     Unsafe,
+    #[token("no_grad")]
+    NoGrad,
     #[token("extern")]
     Extern,
     #[token("asm")]

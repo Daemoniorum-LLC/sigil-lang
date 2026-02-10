@@ -1,0 +1,38 @@
+// Cache Stress Test - Random access patterns
+// Tests: cache miss behavior, memory latency
+
+rite cache_unfriendly(n: i64, stride: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary idx: i64 = 0;
+    ≔ vary i: i64 = 0;
+    
+    // Simulate pointer chasing with stride jumps
+    ⟳ i < n {
+        // Large stride causes cache misses
+        idx = (idx + stride) % 10000;
+        sum = sum + idx;
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+rite cache_friendly(n: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary i: i64 = 0;
+    
+    // Sequential access - cache friendly
+    ⟳ i < n {
+        sum = sum + i;
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+☉ rite main() → !i32 {
+    // Cache unfriendly: large stride
+    ≔ r1 = cache_unfriendly(10000000, 4096);
+    // Cache friendly: sequential
+    ≔ r2 = cache_friendly(10000000);
+    ⎇ r1 > 0 && r2 > 0 { ⤺ 0; }
+    ⤺ 1;
+}

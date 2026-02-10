@@ -1,0 +1,140 @@
+//! Test: gelu activation function
+//! Spec: 14-NEURAL.md §4.3
+//! Priority: P0
+//! Formula: gelu(x) = x * Φ(x) ≈ 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
+
+rite main() {
+    println("=== Testing gelu activation ===");
+    println("");
+
+    // =========================================================================
+    // Core Mathematical Properties
+    // =========================================================================
+
+    // Test 1: GELU(0) = 0 (exact)
+    ≔ gelu_zero = 0.0|gelu;
+    assert(gelu_zero == 0.0, "GELU(0) = 0");
+    println("  [1] GELU(0) = 0: passed");
+
+    // Test 2: GELU(1) ≈ 0.8413
+    ≔ gelu_one = 1.0|gelu;
+    assert(gelu_one > 0.841, "GELU(1) > 0.841");
+    assert(gelu_one < 0.842, "GELU(1) < 0.842");
+    println("  [2] GELU(1) ≈ 0.8413: passed");
+
+    // Test 3: GELU(-1) ≈ -0.1587 (NOT zero like ReLU)
+    ≔ gelu_neg_one = (-1.0)|gelu;
+    assert(gelu_neg_one < 0.0, "GELU(-1) is negative");
+    assert(gelu_neg_one > -0.16, "GELU(-1) > -0.16");
+    assert(gelu_neg_one < -0.15, "GELU(-1) < -0.15");
+    println("  [3] GELU(-1) ≈ -0.1587: passed");
+
+    // Test 4: GELU(0.5) ≈ 0.3457
+    ≔ gelu_half = 0.5|gelu;
+    assert(gelu_half > 0.345, "GELU(0.5) > 0.345");
+    assert(gelu_half < 0.346, "GELU(0.5) < 0.346");
+    println("  [4] GELU(0.5) ≈ 0.3457: passed");
+
+    // Test 5: GELU(-0.5) ≈ -0.1543
+    ≔ gelu_neg_half = (-0.5)|gelu;
+    assert(gelu_neg_half < 0.0, "GELU(-0.5) is negative");
+    assert(gelu_neg_half > -0.155, "GELU(-0.5) > -0.155");
+    assert(gelu_neg_half < -0.153, "GELU(-0.5) < -0.153");
+    println("  [5] GELU(-0.5) ≈ -0.1543: passed");
+
+    println("");
+
+    // =========================================================================
+    // Asymptotic Behavior
+    // =========================================================================
+
+    // Test 6: Large positive → approaches x (identity)
+    ≔ large_pos = 5.0|gelu;
+    // GELU(5) ≈ 5.0 (very close to identity for large positive)
+    assert(large_pos > 4.99, "GELU(5) ≈ 5");
+    assert(large_pos < 5.01, "GELU(5) ≈ 5");
+    println("  [6] Large positive GELU(5) ≈ 5: passed");
+
+    // Test 7: Large negative → approaches 0
+    ≔ large_neg = (-5.0)|gelu;
+    // GELU(-5) ≈ 0 (approaches 0 for large negative)
+    assert(large_neg > -0.01, "GELU(-5) ≈ 0");
+    assert(large_neg < 0.01, "GELU(-5) ≈ 0");
+    println("  [7] Large negative GELU(-5) ≈ 0: passed");
+
+    // Test 8: Very large positive
+    ≔ very_large = 10.0|gelu;
+    assert(very_large > 9.99, "GELU(10) ≈ 10");
+    assert(very_large < 10.01, "GELU(10) ≈ 10");
+    println("  [8] Very large GELU(10) ≈ 10: passed");
+
+    println("");
+
+    // =========================================================================
+    // Tensor Operations
+    // =========================================================================
+
+    // Test 9: Tensor GELU preserves shape
+    ≔ t1d = Tensor·from([-2.0, -1.0, 0.0, 1.0, 2.0]);
+    ≔ gelu_t1d = t1d|gelu;
+    assert(gelu_t1d.shape() == [5], "1D shape preserved");
+    println("  [9] 1D Tensor shape preserved: passed");
+
+    // Test 10: Tensor GELU values are correct
+    // Check that GELU(0) in tensor is also 0
+    ≔ t_with_zero = Tensor·from([0.0]);
+    ≔ gelu_t_zero = t_with_zero|gelu;
+    ≔ gelu_t_zero_sum = gelu_t_zero|Σ;  // Sum of single element
+    assert(gelu_t_zero_sum == 0.0, "Tensor GELU(0) = 0");
+    println("  [10] Tensor GELU values correct: passed");
+
+    // Test 11: 2D Tensor
+    ≔ t2d = Tensor·from([[0.0, 1.0], [-1.0, 2.0]]);
+    ≔ gelu_t2d = t2d|gelu;
+    assert(gelu_t2d.shape() == [2, 2], "2D shape preserved");
+    println("  [11] 2D Tensor shape preserved: passed");
+
+    // Test 12: 3D Tensor (batch)
+    ≔ t3d = Tensor·randn([2, 3, 4]);
+    ≔ gelu_t3d = t3d|gelu;
+    assert(gelu_t3d.shape() == [2, 3, 4], "3D shape preserved");
+    println("  [12] 3D Tensor shape preserved: passed");
+
+    println("");
+
+    // =========================================================================
+    // Array Operations
+    // =========================================================================
+
+    // Test 13: Array GELU
+    ≔ arr = [-1.0, 0.0, 1.0];
+    ≔ gelu_arr = arr|gelu;
+    // Result should be array with GELU applied element-wise
+    assert(gelu_arr|len == 3, "Array length preserved");
+    println("  [13] Array GELU: passed");
+
+    println("");
+
+    // =========================================================================
+    // Comparison with ReLU
+    // =========================================================================
+
+    // Test 14: GELU(-x) ≠ 0 for small negative (unlike ReLU)
+    ≔ small_neg = (-0.1)|gelu;
+    assert(small_neg != 0.0, "GELU(-0.1) ≠ 0 (unlike ReLU)");
+    assert(small_neg < 0.0, "GELU(-0.1) is negative");
+    println("  [14] GELU differs from ReLU at -0.1: passed");
+
+    // Test 15: GELU is smooth (no discontinuity at 0)
+    ≔ eps = 0.001;
+    ≔ gelu_near_zero_pos = eps|gelu;
+    ≔ gelu_near_zero_neg = (-eps)|gelu;
+    // Both should be close to 0, with smooth transition
+    assert(gelu_near_zero_pos > 0.0, "GELU(ε) > 0");
+    assert(gelu_near_zero_neg < 0.0, "GELU(-ε) < 0");
+    assert((gelu_near_zero_pos - gelu_near_zero_neg)|abs < 0.01, "Smooth near zero");
+    println("  [15] Smooth transition at zero: passed");
+
+    println("");
+    println("=== All gelu tests passed ===");
+}

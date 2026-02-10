@@ -1,6 +1,6 @@
 # Spec-Driven Development (SDD)
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** Public Domain
 **Authors:** Human + Claude
 **Date:** 2026-01-20
@@ -188,7 +188,66 @@ Started building HTTP layer. Tests passing with Rust stdlib. Then architectural 
 
 ---
 
-## 4. Integration with TDD
+## 4. Specs as Contracts, Not Constraints
+
+### 4.1 Desired Reality, Not Implementation Mandate
+
+A spec describes the reality we want to create. It does NOT:
+- Dictate how to implement
+- Constrain creative solutions
+- Require specific variable names
+- Mandate internal architecture
+
+A spec DOES:
+- Define observable behavior
+- Establish invariants that must hold
+- Specify contracts at boundaries
+- Describe properties to verify
+
+### 4.2 Agent Freedom Within Contracts
+
+Agents implementing specs have full freedom to:
+- Choose implementation approaches
+- Optimize as they see fit
+- Restructure internal design
+- Use their full cognitive capabilities
+
+The only constraint: the implementation must satisfy the spec's behavioral contracts.
+
+### 4.3 Pseudocode, Not Binding Code
+
+Specs should use pseudocode for examples:
+
+```
+// Spec pseudocode - illustrative, not binding
+transfer_layer(idx):
+    buffer ← get_transfer_buffer()
+    async_copy(ram[idx] → buffer)
+    return success
+```
+
+This specifies WHAT happens. The agent decides HOW:
+- Which library to use
+- How to structure the code
+- What optimizations to apply
+- How to handle edge cases
+
+### 4.4 Compliance, Not Conformance
+
+We audit for compliance (behavioral match), not conformance (structural match):
+
+| Audit Question | Type |
+|----------------|------|
+| "Does it use cudaMemcpyAsync?" | Conformance (wrong) |
+| "Does transfer happen asynchronously?" | Compliance (right) |
+| "Is the variable named `transfer_stream`?" | Conformance (wrong) |
+| "Can compute overlap with transfer?" | Compliance (right) |
+
+See [COMPLIANCE-AUDITS.md](./COMPLIANCE-AUDITS.md) for audit methodology.
+
+---
+
+## 5. Integration with TDD
 
 SDD and TDD are complementary:
 
@@ -221,9 +280,9 @@ When this happens: stop TDD, update spec, then continue.
 
 ---
 
-## 5. Principles Summary
+## 6. Principles Summary
 
-### 5.1 The Five Principles of SDD
+### 6.1 The Five Principles of SDD
 
 1. **Specs model reality; they don't negotiate with it.**
    - Reality doesn't care what you committed to. Update your model.
@@ -240,7 +299,7 @@ When this happens: stop TDD, update spec, then continue.
 5. **Document gaps explicitly, not shamefully.**
    - Gap sections in specs are evidence of learning, not failure.
 
-### 5.2 Anti-Patterns to Avoid
+### 6.2 Anti-Patterns to Avoid
 
 | Anti-Pattern | Why It's Harmful |
 |--------------|------------------|
@@ -252,9 +311,9 @@ When this happens: stop TDD, update spec, then continue.
 
 ---
 
-## 6. Adopting SDD
+## 7. Adopting SDD
 
-### 6.1 Prerequisites
+### 7.1 Prerequisites
 
 SDD requires:
 
@@ -263,7 +322,7 @@ SDD requires:
 - **Learning culture**: Gaps are discoveries, not failures
 - **Long-term thinking**: Optimize for working systems, not velocity metrics
 
-### 6.2 Incompatible Environments
+### 7.2 Incompatible Environments
 
 SDD is difficult or impossible when:
 
@@ -272,7 +331,7 @@ SDD is difficult or impossible when:
 - Velocity metrics override correctness
 - "We already committed" trumps "we learned something"
 
-### 6.3 Organizational Adoption
+### 7.3 Organizational Adoption
 
 For organizations:
 
@@ -283,7 +342,7 @@ For organizations:
 
 ---
 
-## 7. Conclusion
+## 8. Conclusion
 
 Spec-Driven Development is not about writing more documentation. It's about treating specifications as what they actually are: models of reality that improve as we learn.
 
@@ -310,3 +369,4 @@ https://creativecommons.org/publicdomain/zero/1.0/
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0.0 | 2026-01-20 | Initial public release. Documented during Sigil native networking implementation when inline assembly gap was discovered. |
+| 1.1.0 | 2026-02-07 | Added Section 4: Specs as Contracts, Not Constraints. Clarified that specs model desired reality without binding implementation approaches. Added reference to COMPLIANCE-AUDITS.md. |
