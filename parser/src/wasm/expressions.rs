@@ -204,6 +204,7 @@ impl WasmCompiler {
             Expr::LegionConsensus { .. } => Err(WasmError::unsupported("Legion consensus")),
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
             Expr::NamedArg { .. } => Err(WasmError::unsupported("named arguments")),
+            Expr::NoGrad(_) => Err(WasmError::unsupported("no_grad blocks")),
         }
     }
 
