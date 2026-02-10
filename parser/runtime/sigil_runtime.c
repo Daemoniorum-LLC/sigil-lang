@@ -214,6 +214,16 @@ int64_t sigil_vec_get(void* vec_ptr, int64_t index) {
     return vec->data[index];
 }
 
+/* Set a value in the Vec */
+void sigil_vec_set(void* vec_ptr, int64_t index, int64_t value) {
+    if (!vec_ptr) return;
+    SigilVec* vec = (SigilVec*)vec_ptr;
+
+    if (index < 0 || index >= vec->len) return;
+
+    vec->data[index] = value;
+}
+
 /* Get Vec length */
 int64_t sigil_vec_len(void* vec_ptr) {
     if (!vec_ptr) return 0;
