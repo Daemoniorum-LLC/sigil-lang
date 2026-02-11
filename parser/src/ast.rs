@@ -377,11 +377,13 @@ pub enum MacroDelimiter {
 
 /// Foreign function interface block.
 /// `extern "C" { fn foo(x: c_int) -> c_int; }`
+/// `unsafe extern "C" { fn foo(x: c_int) -> c_int; }`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternBlock {
     pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
     pub link_libraries: Vec<String>, // From #[link("lib")] attributes
+    pub is_unsafe: bool, // true for `unsafe extern "C" { ... }`
 }
 
 /// Items that can appear in an extern block.

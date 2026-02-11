@@ -4854,7 +4854,13 @@ impl Interpreter {
         };
 
         let clean = value[prefix_len..].replace('_', "");
+        // Try i64 first, then u64 for large values (reinterpret as signed)
         i64::from_str_radix(&clean, radix)
+            .or_else(|_| {
+                // For values > i64::MAX, parse as u64 and reinterpret bits as i64
+                u64::from_str_radix(&clean, radix)
+                    .map(|u| u as i64)
+            })
             .map_err(|_| RuntimeError::new(format!("Invalid integer: {}", value)))
     }
 
@@ -7375,6 +7381,42 @@ impl Interpreter {
                 if actual_type == "HashMap" {
                     return Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))));
                 }
+
+                // Check if this is a Parser-derived struct (Clap CLI args)
+                // func_expr is the Path expression (e.g., Args·parse)
+                if let Expr::Path(path) = func_expr {
+                    if path.segments.len() == 2 && path.segments[1].ident.name == "parse" {
+                        // Check if struct has derive(Parser) attribute
+                        // Clone to avoid borrow conflict with self.parse_cli_args_for_struct
+                        let struct_def_opt = self.types.get(actual_type).and_then(|td| {
+                            if let TypeDef::Struct(s) = td {
+                                Some(s.clone())
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(struct_def) = struct_def_opt {
+                            let has_parser_derive = struct_def.attrs.outer_attrs.iter().any(|attr| {
+                                attr.name.name == "derive" &&
+                                attr.args.as_ref().map_or(false, |args| {
+                                    if let crate::ast::AttrArgs::Paren(items) = args {
+                                        items.iter().any(|item| {
+                                            matches!(item, crate::ast::AttrArg::Ident(id) if id.name == "Parser")
+                                        })
+                                    } else {
+                                        false
+                                    }
+                                })
+                            });
+
+                            if has_parser_derive {
+                                return self.parse_cli_args_for_struct(actual_type, &struct_def);
+                            }
+                        }
+                    }
+                }
+
                 // Create an empty struct for other unknown types
                 Ok(Value::Struct {
                     name: actual_type.to_string(),
@@ -7604,6 +7646,184 @@ impl Interpreter {
 
         self.environment = prev_env;
         result
+    }
+
+    /// Parse CLI arguments for a Parser-derived struct (Clap emulation)
+    /// Supports --field_name=value and --field_name value style arguments
+    fn parse_cli_args_for_struct(
+        &mut self,
+        type_name: &str,
+        struct_def: &crate::ast::StructDef,
+    ) -> Result<Value, RuntimeError> {
+        use std::collections::HashMap;
+
+        let mut field_values: HashMap<String, Value> = HashMap::new();
+        let cli_args: Vec<String> = std::env::args().collect();
+
+        // Extract field information from struct definition
+        let fields = match &struct_def.fields {
+            crate::ast::StructFields::Named(fields) => fields,
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "Parser derive only supports named struct fields"
+                )));
+            }
+        };
+
+        // Build field info map: name -> (type, default_value_from_attr)
+        let mut field_info: HashMap<String, (&crate::ast::TypeExpr, Option<String>)> = HashMap::new();
+        for field in fields {
+            // Try to extract default_value from //@ rune: arg(..., default_value = "...")
+            // by looking at outer_attrs on the struct (field-level attrs aren't stored yet)
+            field_info.insert(field.name.name.clone(), (&field.ty, None));
+        }
+
+        // Parse command-line arguments
+        let mut i = 1; // skip program name
+        while i < cli_args.len() {
+            let arg = &cli_args[i];
+
+            if arg.starts_with("--") {
+                let arg_part = &arg[2..];
+
+                // Handle --field=value or --field value
+                let (field_name, value_str) = if let Some(eq_pos) = arg_part.find('=') {
+                    let name = arg_part[..eq_pos].replace('-', "_");
+                    let val = arg_part[eq_pos + 1..].to_string();
+                    (name, Some(val))
+                } else {
+                    let name = arg_part.replace('-', "_");
+                    // Check if next arg is a value (not another flag)
+                    let val = if i + 1 < cli_args.len() && !cli_args[i + 1].starts_with('-') {
+                        i += 1;
+                        Some(cli_args[i].clone())
+                    } else {
+                        // It's a boolean flag
+                        Some("true".to_string())
+                    };
+                    (name, val)
+                };
+
+                if let Some(val_str) = value_str {
+                    if let Some((ty, _)) = field_info.get(&field_name) {
+                        // Parse value based on type
+                        let value = self.parse_cli_value(&val_str, ty)?;
+                        field_values.insert(field_name, value);
+                    }
+                }
+            } else if arg.starts_with('-') && arg.len() == 2 {
+                // Short flag: -p value
+                let flag_char = arg.chars().nth(1).unwrap();
+                // Try to find field that starts with this character
+                for (name, (ty, _)) in &field_info {
+                    if name.starts_with(flag_char) {
+                        if i + 1 < cli_args.len() && !cli_args[i + 1].starts_with('-') {
+                            i += 1;
+                            let value = self.parse_cli_value(&cli_args[i], ty)?;
+                            field_values.insert(name.clone(), value);
+                        }
+                        break;
+                    }
+                }
+            }
+            i += 1;
+        }
+
+        // Set default values for fields not provided
+        for field in fields {
+            if !field_values.contains_key(&field.name.name) {
+                // Use default value from field definition or type default
+                let default_value = if let Some(ref default_expr) = field.default {
+                    self.evaluate(default_expr)?
+                } else {
+                    // Type-based defaults
+                    self.default_value_for_cli_type(&field.ty)
+                };
+                field_values.insert(field.name.name.clone(), default_value);
+            }
+        }
+
+        Ok(Value::Struct {
+            name: type_name.to_string(),
+            fields: Rc::new(RefCell::new(field_values)),
+        })
+    }
+
+    /// Parse a CLI argument string into a Value based on type
+    fn parse_cli_value(
+        &self,
+        value: &str,
+        ty: &crate::ast::TypeExpr,
+    ) -> Result<Value, RuntimeError> {
+        let type_name = match ty {
+            crate::ast::TypeExpr::Path(path) => {
+                path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("")
+            }
+            _ => "",
+        };
+
+        match type_name {
+            "String" | "str" => Ok(Value::String(Rc::new(value.to_string()))),
+            "bool" => Ok(Value::Bool(value == "true" || value == "1")),
+            "i8" | "i16" | "i32" | "i64" | "isize" => {
+                value.parse::<i64>()
+                    .map(Value::Int)
+                    .map_err(|_| RuntimeError::new(format!("Invalid integer: {}", value)))
+            }
+            "u8" | "u16" | "u32" | "u64" | "usize" => {
+                value.parse::<u64>()
+                    .map(|v| Value::Int(v as i64))
+                    .map_err(|_| RuntimeError::new(format!("Invalid unsigned integer: {}", value)))
+            }
+            "f32" | "f64" => {
+                value.parse::<f64>()
+                    .map(Value::Float)
+                    .map_err(|_| RuntimeError::new(format!("Invalid float: {}", value)))
+            }
+            "Option" => {
+                // For Option types, wrap in Some
+                // Try to get inner type and parse
+                if let crate::ast::TypeExpr::Path(path) = ty {
+                    if let Some(seg) = path.segments.first() {
+                        if let Some(ref generics) = seg.generics {
+                            if let Some(inner_ty) = generics.first() {
+                                let inner_val = self.parse_cli_value(value, inner_ty)?;
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![inner_val])),
+                                });
+                            }
+                        }
+                    }
+                }
+                Ok(Value::String(Rc::new(value.to_string())))
+            }
+            _ => Ok(Value::String(Rc::new(value.to_string()))),
+        }
+    }
+
+    /// Get default value for a type in CLI context
+    fn default_value_for_cli_type(&self, ty: &crate::ast::TypeExpr) -> Value {
+        let type_name = match ty {
+            crate::ast::TypeExpr::Path(path) => {
+                path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("")
+            }
+            _ => "",
+        };
+
+        match type_name {
+            "String" | "str" => Value::String(Rc::new(String::new())),
+            "bool" => Value::Bool(false),
+            "i8" | "i16" | "i32" | "i64" | "isize" | "u8" | "u16" | "u32" | "u64" | "usize" => Value::Int(0),
+            "f32" | "f64" => Value::Float(0.0),
+            "Option" => Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "None".to_string(),
+                fields: None,
+            },
+            _ => Value::Null,
+        }
     }
 
     fn call_builtin(
@@ -9949,7 +10169,7 @@ impl Interpreter {
                 arr.borrow_mut().clear();
                 Ok(Value::Null)
             }
-            (Value::Array(arr), "extend") => {
+            (Value::Array(arr), "extend") | (Value::Array(arr), "extend_from_slice") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("extend expects 1 argument"));
                 }
@@ -10207,8 +10427,9 @@ impl Interpreter {
                     },
                 })
             }
-            (Value::Array(arr), "iter") | (Value::Array(arr), "into_iter") => {
-                // iter()/into_iter() on an array just returns the array - iteration happens in for loops
+            (Value::Array(arr), "iter") | (Value::Array(arr), "into_iter") | (Value::Array(arr), "peekable") => {
+                // iter()/into_iter()/peekable() on an array just returns the array
+                // True iteration/peeking happens via peek()/next() methods
                 Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "↦") | (Value::Array(arr), "map") => {
@@ -10912,12 +11133,24 @@ impl Interpreter {
                 }
             }
             (Value::Array(arr), "→[]")
-            | (Value::Array(arr), "collect")
             | (Value::Array(arr), "to_vec")
             | (Value::Array(arr), "toList") => {
                 // →[]() -> materialize to array
                 // Symbolic: arrow to array brackets
                 Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
+            }
+            (Value::Array(arr), "collect") => {
+                // collect() on array - if all elements are Char, collect into String
+                // Otherwise, return the array itself
+                let borrowed = arr.borrow();
+                let all_chars = borrowed.iter().all(|v| matches!(v, Value::Char(_)));
+                if all_chars && !borrowed.is_empty() {
+                    let s: String = borrowed.iter().filter_map(|v| {
+                        if let Value::Char(c) = v { Some(*c) } else { None }
+                    }).collect();
+                    return Ok(Value::String(Rc::new(s)));
+                }
+                Ok(Value::Array(arr.clone()))
             }
             (Value::Array(arr), "→{}")
             | (Value::Array(arr), "to_set")
@@ -11286,6 +11519,127 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("split expects string or char separator")),
                 }
             }
+            (Value::String(s), "splitn") => {
+                // splitn(n, separator) - split into at most n parts
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("splitn expects 2 arguments (n, separator)"));
+                }
+                let n = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("splitn: first arg must be integer")),
+                };
+                let parts: Vec<Value> = match &arg_values[1] {
+                    Value::String(sep) => s
+                        .splitn(n, sep.as_str())
+                        .map(|p| Value::String(Rc::new(p.to_string())))
+                        .collect(),
+                    Value::Char(sep) => s
+                        .splitn(n, *sep)
+                        .map(|p| Value::String(Rc::new(p.to_string())))
+                        .collect(),
+                    _ => return Err(RuntimeError::new("splitn: second arg must be string or char")),
+                };
+                Ok(Value::Array(Rc::new(RefCell::new(parts))))
+            }
+            (Value::String(s), "to_str") => {
+                // to_str() on String just returns itself
+                Ok(Value::String(s.clone()))
+            }
+            (Value::String(s), "split_once") => {
+                // split_once(separator) - split into exactly 2 parts at first occurrence
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("split_once expects 1 argument"));
+                }
+                let result = match &arg_values[0] {
+                    Value::String(sep) => s.split_once(sep.as_str()),
+                    Value::Char(c) => s.split_once(*c),
+                    _ => return Err(RuntimeError::new("split_once expects string or char separator")),
+                };
+                match result {
+                    Some((first, second)) => {
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "Some".to_string(),
+                            fields: Some(Rc::new(vec![
+                                Value::Tuple(Rc::new(vec![
+                                    Value::String(Rc::new(first.to_string())),
+                                    Value::String(Rc::new(second.to_string())),
+                                ]))
+                            ])),
+                        })
+                    }
+                    None => {
+                        Ok(Value::Variant {
+                            enum_name: "Option".to_string(),
+                            variant_name: "None".to_string(),
+                            fields: None,
+                        })
+                    }
+                }
+            }
+            (Value::String(s), "split_whitespace") => {
+                let parts: Vec<Value> = s
+                    .split_whitespace()
+                    .map(|p| Value::String(Rc::new(p.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(parts))))
+            }
+            (Value::String(s), "trim_start_matches") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("trim_start_matches expects 1 argument"));
+                }
+                let result = match &arg_values[0] {
+                    Value::Char(c) => s.trim_start_matches(*c).to_string(),
+                    Value::String(pat) => {
+                        let mut result = s.as_str();
+                        while result.starts_with(pat.as_str()) {
+                            result = &result[pat.len()..];
+                        }
+                        result.to_string()
+                    }
+                    _ => return Err(RuntimeError::new("trim_start_matches expects char or string")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            (Value::String(s), "trim_end_matches") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("trim_end_matches expects 1 argument"));
+                }
+                let result = match &arg_values[0] {
+                    Value::Char(c) => s.trim_end_matches(*c).to_string(),
+                    Value::String(pat) => {
+                        let mut result = s.as_str();
+                        while result.ends_with(pat.as_str()) {
+                            result = &result[..result.len() - pat.len()];
+                        }
+                        result.to_string()
+                    }
+                    _ => return Err(RuntimeError::new("trim_end_matches expects char or string")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            (Value::String(s), "rfind") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("rfind expects 1 argument"));
+                }
+                let pos = match &arg_values[0] {
+                    Value::Char(c) => s.rfind(*c),
+                    Value::String(pat) => s.rfind(pat.as_str()),
+                    _ => return Err(RuntimeError::new("rfind expects char or string")),
+                };
+                Ok(match pos {
+                    Some(i) => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![Value::Int(i as i64)])),
+                    },
+                    None => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                })
+            }
             (Value::String(s), "lines") => {
                 let parts: Vec<Value> = s
                     .lines()
@@ -11370,6 +11724,7 @@ impl Interpreter {
             (Value::Char(c), "is_whitespace") => Ok(Value::Bool(c.is_whitespace())),
             (Value::Char(c), "is_uppercase") => Ok(Value::Bool(c.is_uppercase())),
             (Value::Char(c), "is_lowercase") => Ok(Value::Bool(c.is_lowercase())),
+            (Value::Char(c), "is_control") => Ok(Value::Bool(c.is_control())),
             (Value::Char(c), "to_uppercase") => {
                 let upper: String = c.to_uppercase().collect();
                 Ok(Value::String(Rc::new(upper)))
@@ -11403,6 +11758,32 @@ impl Interpreter {
             | (Value::String(s), "lowercase")
             | (Value::String(s), "to_lowercase") => Ok(Value::String(Rc::new(s.to_lowercase()))),
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
+            // Passthrough for unwrap on String (when not wrapped in Result)
+            (Value::String(s), "unwrap") | (Value::String(s), "expect") => Ok(Value::String(s.clone())),
+            (Value::String(s), "parse") => {
+                // Try parsing as integer first, then float
+                let trimmed = s.trim();
+                if let Ok(i) = trimmed.parse::<i64>() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::Int(i)])),
+                    });
+                }
+                if let Ok(f) = trimmed.parse::<f64>() {
+                    return Ok(Value::Variant {
+                        enum_name: "Result".to_string(),
+                        variant_name: "Ok".to_string(),
+                        fields: Some(Rc::new(vec![Value::Float(f)])),
+                    });
+                }
+                // Return error
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(format!("failed to parse '{}' as number", s)))])),
+                })
+            }
             (Value::String(s), "len") => Ok(Value::Int(s.len() as i64)),
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "capacity") => Ok(Value::Int(s.capacity() as i64)),
@@ -11479,10 +11860,14 @@ impl Interpreter {
             (Value::Array(arr), "clone") => {
                 Ok(Value::Array(Rc::new(RefCell::new(arr.borrow().clone()))))
             }
-            (Value::Array(arr), "collect") => {
-                // collect() on array just returns the array itself
-                // It's the terminal operation that materializes pipeline results
-                Ok(Value::Array(arr.clone()))
+            (Value::Array(arr), "collect_string") => {
+                let borrowed = arr.borrow();
+                let s: String = borrowed.iter().filter_map(|v| match v {
+                    Value::Char(c) => Some(*c),
+                    Value::String(s) => Some(s.chars().next().unwrap_or(' ')),
+                    _ => None,
+                }).collect();
+                Ok(Value::String(Rc::new(s)))
             }
             (Value::Array(arr), "join") => {
                 let separator = if arg_values.is_empty() {
@@ -11554,6 +11939,20 @@ impl Interpreter {
             (Value::Map(m), "values") => {
                 let values: Vec<Value> = m.borrow().values().cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            (Value::Map(m), "iter") => {
+                // Return array of (key, value) tuples
+                let pairs: Vec<Value> = m
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| {
+                        Value::Tuple(Rc::new(vec![
+                            Value::String(Rc::new(k.clone())),
+                            v.clone(),
+                        ]))
+                    })
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(pairs))))
             }
             // Set methods
             (Value::Set(s), "insert") => {
@@ -14643,6 +15042,76 @@ impl Interpreter {
                     }
                 }
 
+                // Built-in Map/HashMap struct methods (when stored as struct instead of Value::Map)
+                if name == "Map" || name == "HashMap" {
+                    match method.name.as_str() {
+                        "iter" => {
+                            // Return array of (key, value) tuples from fields
+                            let pairs: Vec<Value> = fields
+                                .borrow()
+                                .iter()
+                                .map(|(k, v)| {
+                                    Value::Tuple(Rc::new(vec![
+                                        Value::String(Rc::new(k.clone())),
+                                        v.clone(),
+                                    ]))
+                                })
+                                .collect();
+                            return Ok(Value::Array(Rc::new(RefCell::new(pairs))));
+                        }
+                        "get" => {
+                            if arg_values.is_empty() {
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                });
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => (**s).clone(),
+                                _ => format!("{}", arg_values[0]),
+                            };
+                            return Ok(match fields.borrow().get(&key).cloned() {
+                                Some(value) => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![value])),
+                                },
+                                None => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                },
+                            });
+                        }
+                        "contains_key" => {
+                            if arg_values.is_empty() {
+                                return Ok(Value::Bool(false));
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => (**s).clone(),
+                                _ => format!("{}", arg_values[0]),
+                            };
+                            return Ok(Value::Bool(fields.borrow().contains_key(&key)));
+                        }
+                        "len" => return Ok(Value::Int(fields.borrow().len() as i64)),
+                        "is_empty" => return Ok(Value::Bool(fields.borrow().is_empty())),
+                        "keys" => {
+                            let keys: Vec<Value> = fields
+                                .borrow()
+                                .keys()
+                                .map(|k| Value::String(Rc::new(k.clone())))
+                                .collect();
+                            return Ok(Value::Array(Rc::new(RefCell::new(keys))));
+                        }
+                        "values" => {
+                            let values: Vec<Value> = fields.borrow().values().cloned().collect();
+                            return Ok(Value::Array(Rc::new(RefCell::new(values))));
+                        }
+                        _ => {}
+                    }
+                }
+
                 // Built-in Gradients methods
                 if name == "Gradients" {
                     match method.name.as_str() {
@@ -14703,6 +15172,20 @@ impl Interpreter {
                         }
                         _ => {}
                     }
+                }
+
+                // Passthrough methods for structs (when Result/Option wrapping isn't implemented)
+                if method.name.as_str() == "unwrap" || method.name.as_str() == "expect" {
+                    // Return the struct itself - assumes it's not actually a Result/Option
+                    return Ok(recv.clone());
+                }
+                if method.name.as_str() == "ok" {
+                    // Return as Option::Some
+                    return Ok(Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![recv.clone()])),
+                    });
                 }
 
                 // Error on unknown methods - type checking
@@ -15119,9 +15602,9 @@ impl Interpreter {
 
                 // Built-in as_str/to_string method for all enums - returns variant name
                 if method.name == "as_str" || method.name == "to_string" {
-                    // Default: return the variant name as-is
+                    // Default: return the variant name in lowercase (snake_case convention)
                     // Specific enums can override via impl blocks
-                    return Ok(Value::String(Rc::new(variant_name.clone())));
+                    return Ok(Value::String(Rc::new(variant_name.to_lowercase())));
                 }
 
                 // Built-in marker method for enums (like Evidentiality)
@@ -15135,6 +15618,15 @@ impl Interpreter {
                         _ => variant_name.chars().next().unwrap_or('?'),
                     };
                     return Ok(Value::Char(marker_char));
+                }
+
+                // Generic unwrap for any enum variant with fields
+                if method.name.as_str() == "unwrap" || method.name.as_str() == "expect" {
+                    if let Some(f) = fields {
+                        return Ok(f.first().cloned().unwrap_or(Value::Null));
+                    }
+                    // Variant without fields - return the variant itself or null
+                    return Ok(recv.clone());
                 }
 
                 let qualified_name = format!("{}·{}", enum_name, method.name);
@@ -15576,10 +16068,7 @@ impl Interpreter {
             | (Value::String(s), "to_lowercase") => Ok(Value::String(Rc::new(s.to_lowercase()))),
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
             (Value::String(s), "chars") => {
-                let chars: Vec<Value> = s
-                    .chars()
-                    .map(|c| Value::String(Rc::new(c.to_string())))
-                    .collect();
+                let chars: Vec<Value> = s.chars().map(Value::Char).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chars))))
             }
             (Value::String(s), "lines") => {

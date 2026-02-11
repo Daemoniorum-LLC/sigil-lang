@@ -2014,11 +2014,11 @@ impl TypeChecker {
                 let coll_ty = self.infer_expr(expr);
                 let idx_ty = self.infer_expr(index);
 
+                // Unify index type with usize (handles type variables)
+                let _ = self.unify(&idx_ty, &Type::Int(IntSize::USize));
+
                 match coll_ty {
                     Type::Array { element, .. } | Type::Slice(element) => {
-                        if !matches!(idx_ty, Type::Int(_)) {
-                            self.error(TypeError::new("index must be integer"));
-                        }
                         *element
                     }
                     _ => {
@@ -3651,9 +3651,9 @@ impl TypeChecker {
                     }
                 }
 
-            // &Vec<T> to &[T] coercion
+            // &[T] to &Vec<T> coercion (slice to vec reference)
             (Type::Ref { mutable: false, inner: a, .. }, Type::Ref { mutable: false, inner: b, .. })
-                if matches!(b.as_ref(), Type::Named { name, .. } if name == "Vec") => {
+                if matches!(a.as_ref(), Type::Slice(_)) && matches!(b.as_ref(), Type::Named { name, .. } if name == "Vec") => {
                     if let (Type::Slice(elem_a), Type::Named { generics, .. }) = (a.as_ref(), b.as_ref()) {
                         if !generics.is_empty() {
                             return self.unify(elem_a, &generics[0]);

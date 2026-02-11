@@ -1398,6 +1398,15 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // Skip any regular comments between attributes and the item
+        // This allows patterns like:
+        //   //@ rune: test
+        //   // cfg(feature = "cuda")  <-- regular comment, skip it
+        //   rite test_foo() { ... }
+        while self.check_regular_comment() {
+            self.advance();
+        }
+
         let visibility = self.parse_visibility()?;
 
         let item = match self.current_token() {
@@ -1411,7 +1420,7 @@ impl<'a> Parser<'a> {
             Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc_comments(visibility, doc_comments)?),
             Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments, false)?),
             Some(Token::Unsafe) => {
-                // unsafe impl, unsafe fn, unsafe trait
+                // unsafe impl, unsafe fn, unsafe trait, unsafe extern
                 self.advance(); // consume 'unsafe'
                 match self.current_token() {
                     Some(Token::Impl) => Item::Impl(self.parse_impl_with_doc_comments(doc_comments, true)?),
@@ -1419,9 +1428,20 @@ impl<'a> Parser<'a> {
                         Item::Function(self.parse_function_with_doc_comments(visibility, outer_attrs, doc_comments)?)
                     }
                     Some(Token::Trait) => Item::Trait(self.parse_trait_with_doc_comments(visibility, doc_comments)?),
+                    Some(Token::Extern) => {
+                        // unsafe extern "C" { ... } - FFI block
+                        self.advance(); // consume 'extern'
+                        let abi = if let Some(Token::StringLit(s)) = self.current_token().cloned() {
+                            self.advance();
+                            s
+                        } else {
+                            "C".to_string()
+                        };
+                        Item::ExternBlock(self.parse_extern_block_with_abi(outer_attrs, abi, true)?)
+                    }
                     Some(t) => {
                         return Err(ParseError::UnexpectedToken {
-                            expected: "impl, fn, or trait after unsafe".to_string(),
+                            expected: "impl, fn, trait, or extern after unsafe".to_string(),
                             found: t.clone(),
                             span: self.current_span(),
                         })
@@ -2970,9 +2990,8 @@ impl<'a> Parser<'a> {
         // Check what follows the ABI string
         match self.current_token() {
             Some(Token::LBrace) => {
-                // extern "C" { ... } - extern block
-                // Put back the extern token info and call parse_extern_block_with_abi
-                self.parse_extern_block_with_abi(attrs, abi)
+                // extern "C" { ... } - extern block (not unsafe)
+                self.parse_extern_block_with_abi(attrs, abi, false)
                     .map(Item::ExternBlock)
             }
             Some(Token::Fn) => {
@@ -3062,7 +3081,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an extern block with already-parsed ABI: `{ ... }`
-    fn parse_extern_block_with_abi(&mut self, attrs: Vec<Attribute>, abi: String) -> ParseResult<ExternBlock> {
+    /// `is_unsafe` is true for `unsafe extern "C" { ... }`
+    fn parse_extern_block_with_abi(&mut self, attrs: Vec<Attribute>, abi: String, is_unsafe: bool) -> ParseResult<ExternBlock> {
         // Extract link libraries from #[link("lib")] attributes
         let mut link_libraries = Vec::new();
         for attr in &attrs {
@@ -3121,6 +3141,7 @@ impl<'a> Parser<'a> {
             abi,
             items,
             link_libraries,
+            is_unsafe,
         })
     }
 
@@ -3190,7 +3211,7 @@ impl<'a> Parser<'a> {
 
         self.expect(Token::RBrace)?;
 
-        Ok(ExternBlock { abi, items, link_libraries })
+        Ok(ExternBlock { abi, items, link_libraries, is_unsafe: false })
     }
 
     /// Parse an extern function declaration (no body).
