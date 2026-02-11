@@ -5558,6 +5558,40 @@ impl Interpreter {
                         };
                     Ok(Value::Bool(!eq))
                 }
+                // Comparison operators for enum variants (by declaration order)
+                BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
+                    if e1 != e2 {
+                        return Err(RuntimeError::new(format!(
+                            "Cannot compare variants of different enums: {} and {}",
+                            e1, e2
+                        )));
+                    }
+                    // Get variant indices from enum definition
+                    let (idx1, idx2) = if let Some(TypeDef::Enum(enum_def)) = self.types.get(e1.as_str()) {
+                        let i1 = enum_def.variants.iter().position(|v| v.name.name == *v1);
+                        let i2 = enum_def.variants.iter().position(|v| v.name.name == *v2);
+                        match (i1, i2) {
+                            (Some(a), Some(b)) => (a, b),
+                            _ => return Err(RuntimeError::new("Variant not found in enum")),
+                        }
+                    } else {
+                        // If enum not found, compare lexicographically
+                        return Ok(Value::Bool(match op {
+                            BinOp::Lt => v1 < v2,
+                            BinOp::Le => v1 <= v2,
+                            BinOp::Gt => v1 > v2,
+                            BinOp::Ge => v1 >= v2,
+                            _ => unreachable!(),
+                        }));
+                    };
+                    Ok(Value::Bool(match op {
+                        BinOp::Lt => idx1 < idx2,
+                        BinOp::Le => idx1 <= idx2,
+                        BinOp::Gt => idx1 > idx2,
+                        BinOp::Ge => idx1 >= idx2,
+                        _ => unreachable!(),
+                    }))
+                }
                 _ => Err(RuntimeError::new("Invalid variant operation")),
             },
             // Struct equality (by value for Cbit, by reference for others) and Tensor operations
@@ -11483,7 +11517,19 @@ impl Interpreter {
                     Value::String(s) => (**s).clone(),
                     _ => format!("{}", arg_values[0]),
                 };
-                Ok(m.borrow().get(&key).cloned().unwrap_or(Value::Null))
+                // Return Option::Some(value) or Option::None
+                Ok(match m.borrow().get(&key).cloned() {
+                    Some(value) => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![value])),
+                    },
+                    None => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                })
             }
             (Value::Map(m), "contains_key") => {
                 if arg_values.len() != 1 {
