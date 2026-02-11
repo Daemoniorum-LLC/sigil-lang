@@ -8901,6 +8901,60 @@ impl Interpreter {
                 result
             }
             (Value::Char(a), Value::Char(b)) => a == b,
+            // Compare enum variants
+            (Value::Variant { enum_name: en1, variant_name: vn1, fields: f1 },
+             Value::Variant { enum_name: en2, variant_name: vn2, fields: f2 }) => {
+                // Same enum type and variant name
+                if en1 != en2 || vn1 != vn2 {
+                    return false;
+                }
+                // Compare fields if present
+                match (f1, f2) {
+                    (None, None) => true,
+                    (Some(fields1), Some(fields2)) => {
+                        if fields1.len() != fields2.len() {
+                            return false;
+                        }
+                        fields1.iter().zip(fields2.iter()).all(|(f1, f2)| self.values_equal(f1, f2))
+                    }
+                    _ => false,
+                }
+            }
+            // Compare arrays
+            (Value::Array(a), Value::Array(b)) => {
+                let a_ref = a.borrow();
+                let b_ref = b.borrow();
+                if a_ref.len() != b_ref.len() {
+                    return false;
+                }
+                a_ref.iter().zip(b_ref.iter()).all(|(a, b)| self.values_equal(a, b))
+            }
+            // Compare tuples
+            (Value::Tuple(a), Value::Tuple(b)) => {
+                if a.len() != b.len() {
+                    return false;
+                }
+                a.iter().zip(b.iter()).all(|(a, b)| self.values_equal(a, b))
+            }
+            // Compare structs by comparing all fields
+            (Value::Struct { name: n1, fields: f1 },
+             Value::Struct { name: n2, fields: f2 }) => {
+                if n1 != n2 {
+                    return false;
+                }
+                let f1_ref = f1.borrow();
+                let f2_ref = f2.borrow();
+                if f1_ref.len() != f2_ref.len() {
+                    return false;
+                }
+                for (k, v1) in f1_ref.iter() {
+                    match f2_ref.get(k) {
+                        Some(v2) => if !self.values_equal(v1, v2) { return false; }
+                        None => return false,
+                    }
+                }
+                true
+            }
             _ => false,
         }
     }
