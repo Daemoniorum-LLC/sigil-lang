@@ -1,0 +1,17 @@
+// FFI Test: Static method constructor call
+// Tests: Type·new() syntax resolves to compiled function
+// Expected: 42
+// Bug: ::new handler was stubbing to 0 instead of calling actual function
+
+Σ Counter { value: i64 }
+
+⊢ Counter {
+    rite new(v: i64) → Self { Self { value: v } }
+
+    rite get(self: &Self) → i64 { self.value }
+}
+
+rite main() → i64 {
+    ≔ c = Counter·new(42);
+    c.value
+}

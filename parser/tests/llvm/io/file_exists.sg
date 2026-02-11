@@ -1,0 +1,7 @@
+// Test: File existence check
+// Expected exit code: 1 (file exists)
+
+rite main() → i64 {
+    // Check if the runtime file exists
+    file_exists("runtime/sigil_runtime.c")
+}

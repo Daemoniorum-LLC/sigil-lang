@@ -6459,8 +6459,23 @@ impl Interpreter {
                     return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
                 }
                 ["Vec", "with_capacity"] | ["Array", "with_capacity"] => {
-                    // Capacity hint is ignored in interpreter mode - just create empty array
-                    return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                    // Return a struct with capacity metadata
+                    let capacity = if !args.is_empty() {
+                        match self.evaluate(&args[0])? {
+                            Value::Int(n) => n as usize,
+                            _ => 0,
+                        }
+                    } else {
+                        0
+                    };
+                    let mut fields = HashMap::new();
+                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(Vec::with_capacity(capacity)))));
+                    fields.insert("capacity".to_string(), Value::Int(capacity as i64));
+                    fields.insert("len".to_string(), Value::Int(0));
+                    return Ok(Value::Struct {
+                        name: "Vec".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
                 }
                 ["Vec", "from_elem"] => {
                     if args.len() == 2 {
@@ -6675,7 +6690,10 @@ impl Interpreter {
                                         (borrowed.clone(), vec![len])
                                     }
                                 }
-                                _ => return Err(RuntimeError::new("Tensor·from requires an array argument")),
+                                // Handle scalar values (int or float)
+                                Value::Int(i) => (vec![Value::Float(*i as f64)], vec![]), // 0-D tensor
+                                Value::Float(f) => (vec![Value::Float(*f)], vec![]),      // 0-D tensor
+                                _ => return Err(RuntimeError::new("Tensor·from requires an array, int, or float argument")),
                             };
                             let shape_values: Vec<Value> = shape_vec.iter().map(|&d| Value::Int(d)).collect();
                             let mut fields = HashMap::new();
@@ -16438,6 +16456,35 @@ impl Interpreter {
                             match &value {
                                 Value::Array(arr) => Ok(Value::Int(arr.borrow().len() as i64)),
                                 Value::String(s) => Ok(Value::Int(s.len() as i64)),
+                                // HyperLogLog approximate count
+                                Value::Struct { name: struct_name, fields } if struct_name == "HyperLogLog" => {
+                                    if let Some(Value::Array(regs)) = fields.borrow().get("__registers__") {
+                                        let regs_borrow = regs.borrow();
+                                        let m = regs_borrow.len() as f64;
+                                        let mut sum = 0.0;
+                                        let mut zeros = 0;
+                                        for reg in regs_borrow.iter() {
+                                            let val = match reg {
+                                                Value::Int(v) => *v as i32,
+                                                _ => 0,
+                                            };
+                                            sum += 2.0_f64.powi(-val);
+                                            if val == 0 {
+                                                zeros += 1;
+                                            }
+                                        }
+                                        let alpha = 0.7213 / (1.0 + 1.079 / m);
+                                        let estimate = alpha * m * m / sum;
+                                        let result = if estimate <= 2.5 * m && zeros > 0 {
+                                            m * (m / zeros as f64).ln()
+                                        } else {
+                                            estimate
+                                        };
+                                        Ok(Value::Int(result.round() as i64))
+                                    } else {
+                                        Err(RuntimeError::new("HyperLogLog missing __registers__"))
+                                    }
+                                }
                                 _ => Err(RuntimeError::new("count requires array or string")),
                             }
                         }

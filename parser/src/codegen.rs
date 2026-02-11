@@ -391,6 +391,11 @@ pub mod jit {
                             stat.name.name
                         );
                     }
+                    ExternItem::Type(extern_type) => {
+                        // Opaque foreign type - nothing to do in Cranelift backend
+                        // The type is accessed via pointers only
+                        let _ = extern_type; // Silence unused warning
+                    }
                 }
             }
 

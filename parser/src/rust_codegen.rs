@@ -557,6 +557,16 @@ impl RustCompiler {
                     self.emit_type(&s.ty)?;
                     self.write(";\n");
                 }
+                ExternItem::Type(t) => {
+                    self.write_indent();
+                    self.write("type ");
+                    self.write(&t.name.name);
+                    if let Some(ref ty) = t.ty {
+                        self.write(" = ");
+                        self.emit_type(ty)?;
+                    }
+                    self.write(";\n");
+                }
             }
         }
         self.dedent();

@@ -1,0 +1,13 @@
+// Test: Simple unit enum - return variant directly
+// Expected exit code: 2
+
+ᛈ Color {
+    Red,
+    Green,
+    Blue,
+}
+
+rite main() → i64 {
+    ≔ c = Color·Blue;
+    c
+}

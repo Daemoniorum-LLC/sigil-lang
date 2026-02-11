@@ -1,0 +1,14 @@
+// FFI Test 45: Extern "C" function definition
+// Tests: Define a C-callable function with extern "C" rite syntax
+// Expected exit code: 42
+
+// C-callable function using extern "C" rite syntax
+#[no_mangle]
+extern "C" rite my_callback(x: i64) → i64 {
+    x * 2
+}
+
+rite main() → i64 {
+    // Call the C-callable function from Sigil
+    my_callback(21)
+}

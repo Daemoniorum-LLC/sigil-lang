@@ -765,6 +765,22 @@ fn register_core(interp: &mut Interpreter) {
         Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
     });
 
+    // Vec::with_capacity - create vector with preallocated capacity (returns struct)
+    define(interp, "Vec·with_capacity", Some(1), |_, args| {
+        let capacity = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => 0,
+        };
+        let mut fields = HashMap::new();
+        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(Vec::with_capacity(capacity)))));
+        fields.insert("capacity".to_string(), Value::Int(capacity as i64));
+        fields.insert("len".to_string(), Value::Int(0));
+        Ok(Value::Struct {
+            name: "Vec".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
     // String::new - create empty string
     define(interp, "String·new", Some(0), |_, _| {
         Ok(Value::String(Rc::new(String::new())))

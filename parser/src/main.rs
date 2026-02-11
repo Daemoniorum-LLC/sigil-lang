@@ -1193,6 +1193,12 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
         return ExitCode::from(1);
     }
 
+    // Get link libraries from #[link("lib")] attributes on extern blocks
+    let link_libs: Vec<String> = compiler.get_link_libraries()
+        .iter()
+        .map(|lib| format!("-l{}", lib))
+        .collect();
+
     // Debug: print IR
     if std::env::var("SIGIL_DEBUG_IR").is_ok() {
         eprintln!("Generated LLVM IR:\n{}", compiler.get_ir());
@@ -1275,6 +1281,11 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
         args.push("-Wl,-rpath,/usr/lib/wsl/lib");
         args.push("-Wl,-rpath,/usr/lib/x86_64-linux-gnu");
         args.push("-Wl,-rpath,/usr/local/cuda/lib64");
+    }
+
+    // Add libraries from #[link("lib")] attributes on extern blocks
+    for lib_flag in &link_libs {
+        args.push(lib_flag);
     }
 
     let link_result = Command::new(&linker).args(&args).status();

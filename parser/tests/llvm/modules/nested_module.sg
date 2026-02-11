@@ -1,0 +1,18 @@
+// Test: Nested modules
+// Expected exit code: 24
+
+scroll outer {
+    ☉ scroll inner {
+        ☉ rite factorial(n: i64) → i64 {
+            ⎇ n <= 1 {
+                1
+            } ⎉ {
+                n * factorial(n - 1)
+            }
+        }
+    }
+}
+
+rite main() → i64 {
+    outer·inner·factorial(4)
+}

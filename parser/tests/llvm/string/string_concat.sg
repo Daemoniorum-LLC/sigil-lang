@@ -1,0 +1,10 @@
+// Test: String concatenation
+// Expected exit code: 11 (length of concatenated string)
+
+rite main() → i64 {
+    ≔ s1 = String_from("Hello ");
+    ≔ s2 = String_from("World");
+    ≔ s3 = string_concat(s1, s2);
+    string_print(s3);
+    string_len(s3)
+}

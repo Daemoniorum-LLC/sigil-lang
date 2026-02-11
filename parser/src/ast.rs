@@ -381,6 +381,7 @@ pub enum MacroDelimiter {
 pub struct ExternBlock {
     pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
+    pub link_libraries: Vec<String>, // From #[link("lib")] attributes
 }
 
 /// Items that can appear in an extern block.
@@ -388,6 +389,18 @@ pub struct ExternBlock {
 pub enum ExternItem {
     Function(ExternFunction),
     Static(ExternStatic),
+    Type(ExternType),
+}
+
+/// Foreign type declaration (opaque or alias).
+/// - Opaque: `type GtkWindow;` - a type defined in C whose layout is unknown.
+/// - Alias: `type Callback = rite(*void);` - a type alias for FFI.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternType {
+    pub visibility: Visibility,
+    pub name: Ident,
+    /// None for opaque types, Some for type aliases
+    pub ty: Option<TypeExpr>,
 }
 
 /// Foreign function declaration (no body).
