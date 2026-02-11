@@ -4562,7 +4562,6 @@ impl Interpreter {
             Expr::Index { expr, index } => {
                 // Array/map index assignment
                 let idx_val = self.evaluate(index)?;
-                eprintln!("DEBUG index assignment: idx_val = {:?}", std::mem::discriminant(&idx_val));
                 let idx = match idx_val {
                     Value::Int(i) => i as usize,
                     Value::Array(ref arr) => {
@@ -6459,7 +6458,8 @@ impl Interpreter {
                     return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
                 }
                 ["Vec", "with_capacity"] | ["Array", "with_capacity"] => {
-                    // Return a struct with capacity metadata
+                    // Return Value::Array directly (consistent with Vec::new)
+                    // Capacity is just a Rust-level pre-allocation hint
                     let capacity = if !args.is_empty() {
                         match self.evaluate(&args[0])? {
                             Value::Int(n) => n as usize,
@@ -6468,14 +6468,7 @@ impl Interpreter {
                     } else {
                         0
                     };
-                    let mut fields = HashMap::new();
-                    fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(Vec::with_capacity(capacity)))));
-                    fields.insert("capacity".to_string(), Value::Int(capacity as i64));
-                    fields.insert("len".to_string(), Value::Int(0));
-                    return Ok(Value::Struct {
-                        name: "Vec".to_string(),
-                        fields: Rc::new(RefCell::new(fields)),
-                    });
+                    return Ok(Value::Array(Rc::new(RefCell::new(Vec::with_capacity(capacity)))));
                 }
                 ["Vec", "from_elem"] => {
                     if args.len() == 2 {
