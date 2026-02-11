@@ -3313,8 +3313,8 @@ impl Interpreter {
                 let module_name = &module.name.name;
 
                 // Debug: trace ALL modules being processed
-                eprintln!("DEBUG Module: processing module '{}', has_items={}, current_module={:?}",
-                    module_name, module.items.is_some(), self.current_module);
+                // eprintln!("DEBUG Module: processing module '{}', has_items={}, current_module={:?}",
+                //     module_name, module.items.is_some(), self.current_module);
 
                 // Track module for IR export
                 self.crate_modules.insert(module_name.clone());
