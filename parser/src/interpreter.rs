@@ -235,6 +235,8 @@ pub struct Function {
     pub generic_params: Vec<String>,
     /// Return type annotation for const generic inference (spec 03C)
     pub return_type: Option<crate::ast::TypeExpr>,
+    /// Original parameter patterns for closures (enables tuple destructuring like |(x, y)|)
+    pub param_patterns: Option<Vec<Pattern>>,
 }
 
 /// Built-in function type
@@ -4018,6 +4020,7 @@ impl Interpreter {
             closure: self.environment.clone(),
             generic_params,
             return_type: func.return_type.clone(),
+            param_patterns: None,  // Regular functions don't use pattern destructuring
         })))
     }
 
@@ -7311,6 +7314,7 @@ impl Interpreter {
                         closure: wrapper_env,
                         generic_params: f.generic_params.clone(),
                         return_type: f.return_type.clone(),
+                        param_patterns: f.param_patterns.clone(),
                     })
                 };
                 // Reorder arguments based on named parameters
@@ -7328,6 +7332,14 @@ impl Interpreter {
                 // Special case for Vec/Array - return array instead of struct
                 if actual_type == "Vec" || actual_type == "Array" {
                     return Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))));
+                }
+                // Special case for HashSet - return set
+                if actual_type == "HashSet" {
+                    return Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))));
+                }
+                // Special case for HashMap - return map
+                if actual_type == "HashMap" {
+                    return Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))));
                 }
                 // Create an empty struct for other unknown types
                 Ok(Value::Struct {
@@ -7439,17 +7451,30 @@ impl Interpreter {
         }
 
         // Bind parameters, auto-resolving zero-arg BuiltIn constants
-        for (param, value) in func.params.iter().zip(args) {
-            let value = self.resolve_constant(value);
-            // Debug: trace path parameter binding
-            if param == "path" {
-                crate::sigil_debug!(
-                    "DEBUG call_function func={:?} binding param 'path' = {:?}",
-                    func.name,
-                    value
-                );
+        // Use param_patterns for destructuring if available (closures with tuple params)
+        if let Some(ref patterns) = func.param_patterns {
+            // Use pattern binding for closures with destructuring patterns
+            let prev_env = self.environment.clone();
+            self.environment = env.clone();
+            for (pattern, value) in patterns.iter().zip(args) {
+                let value = self.resolve_constant(value);
+                self.bind_pattern(pattern, value)?;
             }
-            env.borrow_mut().define(param.clone(), value);
+            self.environment = prev_env;
+        } else {
+            // Simple string-based binding for regular functions
+            for (param, value) in func.params.iter().zip(args) {
+                let value = self.resolve_constant(value);
+                // Debug: trace path parameter binding
+                if param == "path" {
+                    crate::sigil_debug!(
+                        "DEBUG call_function func={:?} binding param 'path' = {:?}",
+                        func.name,
+                        value
+                    );
+                }
+                env.borrow_mut().define(param.clone(), value);
+            }
         }
 
         // Execute function body
@@ -8165,6 +8190,7 @@ impl Interpreter {
             closure: wrapper_env,
             generic_params: func.generic_params.clone(),
             return_type: func.return_type.clone(),
+            param_patterns: func.param_patterns.clone(),
         })
     }
 
@@ -10118,13 +10144,35 @@ impl Interpreter {
                     .ok_or_else(|| RuntimeError::new("tuple index out of bounds"))
             }
             (Value::Array(arr), "first") | (Value::Array(arr), "next") => {
-                Ok(arr.borrow().first().cloned().unwrap_or(Value::Null))
+                // Return Option::Some(value) or Option::None
+                Ok(match arr.borrow().first().cloned() {
+                    Some(value) => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![value])),
+                    },
+                    None => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                })
             }
-            (Value::Array(arr), "last") => arr
-                .borrow()
-                .last()
-                .cloned()
-                .ok_or_else(|| RuntimeError::new("empty array")),
+            (Value::Array(arr), "last") => {
+                // Return Option::Some(value) or Option::None
+                Ok(match arr.borrow().last().cloned() {
+                    Some(value) => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![value])),
+                    },
+                    None => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                })
+            }
             (Value::Array(arr), "iter") | (Value::Array(arr), "into_iter") => {
                 // iter()/into_iter() on an array just returns the array - iteration happens in for loops
                 Ok(Value::Array(arr.clone()))
@@ -11044,7 +11092,8 @@ impl Interpreter {
                 }
                 match &arg_values[0] {
                     Value::String(prefix) => Ok(Value::Bool(s.starts_with(prefix.as_str()))),
-                    _ => Err(RuntimeError::new("starts_with expects string")),
+                    Value::Char(c) => Ok(Value::Bool(s.starts_with(*c))),
+                    _ => Err(RuntimeError::new("starts_with expects string or char")),
                 }
             }
             (Value::String(s), "ends_with") => {
@@ -11053,7 +11102,8 @@ impl Interpreter {
                 }
                 match &arg_values[0] {
                     Value::String(suffix) => Ok(Value::Bool(s.ends_with(suffix.as_str()))),
-                    _ => Err(RuntimeError::new("ends_with expects string")),
+                    Value::Char(c) => Ok(Value::Bool(s.ends_with(*c))),
+                    _ => Err(RuntimeError::new("ends_with expects string or char")),
                 }
             }
             (Value::String(s), "strip_prefix") => {
@@ -11201,6 +11251,66 @@ impl Interpreter {
                     }
                     _ => Err(RuntimeError::new("split expects string or char separator")),
                 }
+            }
+            (Value::String(s), "lines") => {
+                let parts: Vec<Value> = s
+                    .lines()
+                    .map(|p| Value::String(Rc::new(p.to_string())))
+                    .collect();
+                Ok(Value::Array(Rc::new(RefCell::new(parts))))
+            }
+            (Value::String(s), "replace") => {
+                if arg_values.len() != 2 {
+                    return Err(RuntimeError::new("replace expects 2 arguments (from, to)"));
+                }
+                let from_str = match &arg_values[0] {
+                    Value::String(str) => (**str).clone(),
+                    Value::Char(c) => c.to_string(),
+                    _ => return Err(RuntimeError::new("replace: 'from' must be string or char")),
+                };
+                let to_str = match &arg_values[1] {
+                    Value::String(str) => (**str).clone(),
+                    Value::Char(c) => c.to_string(),
+                    _ => return Err(RuntimeError::new("replace: 'to' must be string or char")),
+                };
+                Ok(Value::String(Rc::new(s.replace(&from_str, &to_str))))
+            }
+            (Value::String(s), "trim_matches") => {
+                // trim_matches(pattern) - removes matching characters from both ends
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("trim_matches expects 1 argument"));
+                }
+                let result = match &arg_values[0] {
+                    Value::Char(c) => s.trim_matches(*c).to_string(),
+                    Value::String(pat) => {
+                        if pat.len() == 1 {
+                            s.trim_matches(pat.chars().next().unwrap()).to_string()
+                        } else {
+                            // For multi-char patterns, trim repeatedly
+                            let mut result = s.as_str();
+                            while result.starts_with(pat.as_str()) {
+                                result = &result[pat.len()..];
+                            }
+                            while result.ends_with(pat.as_str()) {
+                                result = &result[..result.len() - pat.len()];
+                            }
+                            result.to_string()
+                        }
+                    }
+                    _ => return Err(RuntimeError::new("trim_matches expects char or string")),
+                };
+                Ok(Value::String(Rc::new(result)))
+            }
+            (Value::String(s), "repeat") => {
+                // repeat(n) - repeat the string n times
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("repeat expects 1 argument"));
+                }
+                let n = match &arg_values[0] {
+                    Value::Int(i) => *i as usize,
+                    _ => return Err(RuntimeError::new("repeat expects integer")),
+                };
+                Ok(Value::String(Rc::new(s.repeat(n))))
             }
             // Char methods
             (Value::Char(c), "len_utf8") => Ok(Value::Int(c.len_utf8() as i64)),
@@ -11398,6 +11508,53 @@ impl Interpreter {
             (Value::Map(m), "values") => {
                 let values: Vec<Value> = m.borrow().values().cloned().collect();
                 Ok(Value::Array(Rc::new(RefCell::new(values))))
+            }
+            // Set methods
+            (Value::Set(s), "insert") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("insert expects 1 argument"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(str) => (**str).clone(),
+                    Value::Int(i) => i.to_string(),
+                    other => format!("{}", other),
+                };
+                let was_new = s.borrow_mut().insert(key);
+                Ok(Value::Bool(was_new))
+            }
+            (Value::Set(s), "contains") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("contains expects 1 argument"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(str) => (**str).clone(),
+                    Value::Int(i) => i.to_string(),
+                    other => format!("{}", other),
+                };
+                Ok(Value::Bool(s.borrow().contains(&key)))
+            }
+            (Value::Set(s), "remove") => {
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("remove expects 1 argument"));
+                }
+                let key = match &arg_values[0] {
+                    Value::String(str) => (**str).clone(),
+                    Value::Int(i) => i.to_string(),
+                    other => format!("{}", other),
+                };
+                let was_present = s.borrow_mut().remove(&key);
+                Ok(Value::Bool(was_present))
+            }
+            (Value::Set(s), "len") => Ok(Value::Int(s.borrow().len() as i64)),
+            (Value::Set(s), "is_empty") => Ok(Value::Bool(s.borrow().is_empty())),
+            (Value::Set(s), "clear") => {
+                s.borrow_mut().clear();
+                Ok(Value::Null)
+            }
+            (Value::Set(s), "iter") | (Value::Set(s), "into_iter") => {
+                // Convert to array for iteration
+                let arr: Vec<Value> = s.borrow().iter().map(|k| Value::String(Rc::new(k.clone()))).collect();
+                Ok(Value::Array(Rc::new(RefCell::new(arr))))
             }
             // Ref methods
             (Value::Ref(r), "cloned") => {
@@ -11781,14 +11938,34 @@ impl Interpreter {
                             return Ok(Value::Bool(found));
                         }
                         "first" | "next" => {
-                            return Ok(arr.borrow().first().cloned().unwrap_or(Value::Null));
+                            // Return Option::Some(value) or Option::None
+                            return Ok(match arr.borrow().first().cloned() {
+                                Some(value) => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![value])),
+                                },
+                                None => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                },
+                            });
                         }
                         "last" => {
-                            return arr
-                                .borrow()
-                                .last()
-                                .cloned()
-                                .ok_or_else(|| RuntimeError::new("empty array"));
+                            // Return Option::Some(value) or Option::None
+                            return Ok(match arr.borrow().last().cloned() {
+                                Some(value) => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![value])),
+                                },
+                                None => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                },
+                            });
                         }
                         "iter" | "into_iter" => {
                             return Ok(Value::Array(arr.clone()));
@@ -14643,6 +14820,30 @@ impl Interpreter {
                             // In our interpreter, references work like clones, so just return the same
                             return Ok(recv.clone());
                         }
+                        "take" => {
+                            // take() consumes the Option, returning Some(val) if Some, None if None
+                            // In interpreter, we can't truly "consume", so just return the value
+                            if variant_name == "Some" {
+                                if let Some(f) = fields {
+                                    if let Some(inner) = f.first() {
+                                        return Ok(inner.clone());
+                                    }
+                                }
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "expect" => {
+                            // expect(msg) - unwrap or panic with message
+                            if variant_name == "Some" {
+                                if let Some(f) = fields {
+                                    return Ok(f.first().cloned().unwrap_or(Value::Null));
+                                }
+                            }
+                            let msg = arg_values.first()
+                                .map(|v| format!("{}", v))
+                                .unwrap_or_else(|| "called Option::expect() on a None value".to_string());
+                            return Err(RuntimeError::new(msg));
+                        }
                         _ => {}
                     }
                 }
@@ -14868,6 +15069,26 @@ impl Interpreter {
                 // Built-in clone method for all variants
                 if method.name == "clone" {
                     return Ok(recv.clone());
+                }
+
+                // Built-in as_str/to_string method for all enums - returns variant name
+                if method.name == "as_str" || method.name == "to_string" {
+                    // Default: return the variant name as-is
+                    // Specific enums can override via impl blocks
+                    return Ok(Value::String(Rc::new(variant_name.clone())));
+                }
+
+                // Built-in marker method for enums (like Evidentiality)
+                if method.name == "marker" {
+                    // Return the evidentiality marker character for the variant
+                    let marker_char = match variant_name.as_str() {
+                        "Known" | "Certain" => '!',
+                        "Reported" | "Inferred" => '~',
+                        "Uncertain" => '?',
+                        "Contradictory" | "Paradox" => '‽',
+                        _ => variant_name.chars().next().unwrap_or('?'),
+                    };
+                    return Ok(Value::Char(marker_char));
                 }
 
                 let qualified_name = format!("{}·{}", enum_name, method.name);
@@ -15406,13 +15627,35 @@ impl Interpreter {
                 Ok(Value::Int(arr.borrow().len() as i64))
             }
             (Value::Array(arr), "first") | (Value::Array(arr), "next") => {
-                Ok(arr.borrow().first().cloned().unwrap_or(Value::Null))
+                // Return Option::Some(value) or Option::None
+                Ok(match arr.borrow().first().cloned() {
+                    Some(value) => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![value])),
+                    },
+                    None => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                })
             }
-            (Value::Array(arr), "last") => arr
-                .borrow()
-                .last()
-                .cloned()
-                .ok_or_else(|| RuntimeError::new("empty array")),
+            (Value::Array(arr), "last") => {
+                // Return Option::Some(value) or Option::None
+                Ok(match arr.borrow().last().cloned() {
+                    Some(value) => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "Some".to_string(),
+                        fields: Some(Rc::new(vec![value])),
+                    },
+                    None => Value::Variant {
+                        enum_name: "Option".to_string(),
+                        variant_name: "None".to_string(),
+                        fields: None,
+                    },
+                })
+            }
             (Value::Array(arr), "reverse") | (Value::Array(arr), "rev") => {
                 arr.borrow_mut().reverse();
                 Ok(Value::Array(arr.clone()))
@@ -16626,19 +16869,33 @@ impl Interpreter {
                         }
                     }
                     "first" => match &value {
-                        Value::Array(arr) => arr
-                            .borrow()
-                            .first()
-                            .cloned()
-                            .ok_or_else(|| RuntimeError::new("first on empty array")),
+                        Value::Array(arr) => Ok(match arr.borrow().first().cloned() {
+                            Some(value) => Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![value])),
+                            },
+                            None => Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            },
+                        }),
                         _ => Err(RuntimeError::new("first requires array")),
                     },
                     "last" => match &value {
-                        Value::Array(arr) => arr
-                            .borrow()
-                            .last()
-                            .cloned()
-                            .ok_or_else(|| RuntimeError::new("last on empty array")),
+                        Value::Array(arr) => Ok(match arr.borrow().last().cloned() {
+                            Some(value) => Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "Some".to_string(),
+                                fields: Some(Rc::new(vec![value])),
+                            },
+                            None => Value::Variant {
+                                enum_name: "Option".to_string(),
+                                variant_name: "None".to_string(),
+                                fields: None,
+                            },
+                        }),
                         _ => Err(RuntimeError::new("last requires array")),
                     },
                     "take" => {
@@ -20987,6 +21244,12 @@ impl Interpreter {
             .map(|p| Self::extract_param_name(&p.pattern))
             .collect();
 
+        // Store original patterns for tuple destructuring support
+        let param_patterns: Vec<Pattern> = params
+            .iter()
+            .map(|p| p.pattern.clone())
+            .collect();
+
         Ok(Value::Function(Rc::new(Function {
             name: None,
             params: param_names,
@@ -20994,6 +21257,7 @@ impl Interpreter {
             closure: self.environment.clone(),
             generic_params: Vec::new(),
             return_type: None,  // Closures infer return type
+            param_patterns: Some(param_patterns),
         })))
     }
 
