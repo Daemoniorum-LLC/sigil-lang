@@ -153,6 +153,9 @@ pub mod llvm {
     extern "C" fn sigil_abs(x: i64) -> i64 {
         x.abs()
     }
+    extern "C" fn sigil_pi() -> i64 {
+        f64::to_bits(std::f64::consts::PI) as i64
+    }
     extern "C" fn sigil_min(a: i64, b: i64) -> i64 {
         a.min(b)
     }
@@ -532,6 +535,10 @@ pub mod llvm {
             for name in ["sigil_pow", "sigil_min", "sigil_max"] {
                 self.module.add_function(name, binary_math_type, None);
             }
+
+            // Math constants: () -> i64
+            let const_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_pi", const_type, None);
 
             // Vec functions - use ptr type (i64 as opaque pointer)
             let ptr_type = i64_type; // Using i64 as opaque pointer type
@@ -1652,6 +1659,13 @@ pub mod llvm {
                     } = pattern
                     {
                         // eprintln!("DEBUG: Let binding: {}", ident.name);
+                        // Check if init is a float expression before compiling
+                        let is_float = if let Some(ref expr) = init {
+                            self.is_float_expr_with_scope(expr, scope)
+                        } else {
+                            false
+                        };
+
                         let init_val = if let Some(ref expr) = init {
                             self.compile_expr(fn_value, scope, expr)?
                         } else {
@@ -1667,6 +1681,11 @@ pub mod llvm {
                             .build_store(alloca, init_val)
                             .map_err(|e| e.to_string())?;
                         scope.vars.insert(ident.name.clone(), alloca);
+
+                        // Track float variables
+                        if is_float {
+                            scope.float_vars.insert(ident.name.clone());
+                        }
                         // eprintln!("DEBUG: Added {} to scope, scope now: {:?}", ident.name, scope.vars.keys().collect::<Vec<_>>());
                     }
                     Ok(None)
@@ -1800,9 +1819,15 @@ pub mod llvm {
                     }
                 }
                 Expr::Binary { op, left, right } => {
+                    // Check if either operand is a float expression (using scope for variable tracking)
+                    let is_float = self.is_float_expr_with_scope(left, scope) || self.is_float_expr_with_scope(right, scope);
                     let lhs = self.compile_expr(fn_value, scope, left)?;
                     let rhs = self.compile_expr(fn_value, scope, right)?;
-                    self.compile_binary_op(*op, lhs, rhs)
+                    if is_float {
+                        self.compile_float_binary_op(*op, lhs, rhs)
+                    } else {
+                        self.compile_binary_op(*op, lhs, rhs)
+                    }
                 }
                 Expr::Unary { op, expr: inner } => {
                     // Special case: *( ptr + offset ) needs GEP for proper pointer arithmetic
@@ -2002,13 +2027,23 @@ pub mod llvm {
                         }
                         Expr::Index { expr, index } => {
                             // Index assignment: arr[i] = val
+                            // Vec layout: {len, cap, data[]} - data starts at offset 2
                             let base = self.compile_expr(fn_value, scope, expr)?;
                             let idx = self.compile_expr(fn_value, scope, index)?;
-                            // Calculate element pointer: base + (idx * 8)
+                            // Adjust index for Vec layout (add 2 for len and cap fields)
+                            let adjusted_idx = self
+                                .builder
+                                .build_int_add(
+                                    idx,
+                                    self.context.i64_type().const_int(2, false),
+                                    "adj_idx",
+                                )
+                                .map_err(|e| e.to_string())?;
+                            // Calculate element pointer: base + (adjusted_idx * 8)
                             let offset = self
                                 .builder
                                 .build_int_mul(
-                                    idx,
+                                    adjusted_idx,
                                     self.context.i64_type().const_int(8, false),
                                     "idx_offset",
                                 )
@@ -2827,6 +2862,18 @@ pub mod llvm {
                             if args.is_empty() {
                                 return Err("push requires a value argument".to_string());
                             }
+
+                            // Track if we're pushing a float to mark the Vec as a float Vec
+                            let arg_is_float = self.is_float_expr_with_scope(&args[0], scope);
+                            if arg_is_float {
+                                // Mark the receiver Vec as containing floats
+                                if let Expr::Path(path) = receiver.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        scope.float_vars.insert(seg.ident.name.clone());
+                                    }
+                                }
+                            }
+
                             let value = self.compile_expr(fn_value, scope, &args[0])?;
                             let push_fn = self
                                 .module
@@ -2994,6 +3041,23 @@ pub mod llvm {
                         "is_none" | "is_err" => {
                             // For simplicity, return false (0)
                             return Ok(self.context.i64_type().const_int(0, false));
+                        }
+                        // Math methods: x.sqrt(), x.sin(), x.cos(), etc.
+                        "sqrt" | "sin" | "cos" | "tan" | "exp" | "ln" | "floor" | "ceil" | "abs" => {
+                            let rt_name = format!("sigil_{}", method_name);
+                            let rt_fn = self
+                                .module
+                                .get_function(&rt_name)
+                                .ok_or(format!("{} not declared", rt_name))?;
+                            let call = self
+                                .builder
+                                .build_call(rt_fn, &[receiver_val.into()], method_name)
+                                .map_err(|e| e.to_string())?;
+                            return Ok(call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
                         "push_str" => {
                             // s.push_str(other) - append string
@@ -4957,7 +5021,7 @@ pub mod llvm {
         }
 
         /// Compile array/slice indexing: arr[idx]
-        /// Expects arr to be a pointer (as i64) to an array
+        /// Vec layout is: {len: i64, cap: i64, data[]} where data is inline at offset 2
         fn compile_index(
             &mut self,
             fn_value: FunctionValue<'ctx>,
@@ -4969,21 +5033,27 @@ pub mod llvm {
             let idx = self.compile_expr(fn_value, scope, index)?;
 
             let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
 
             // Convert i64 back to pointer
             let base_ptr = self
                 .builder
-                .build_int_to_ptr(
-                    base_ptr_int,
-                    i64_type.ptr_type(Default::default()),
-                    "arr_ptr",
-                )
+                .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
                 .map_err(|e| e.to_string())?;
 
-            // GEP to get element at index
+            // Vec layout: {len: i64, cap: i64, data: i64[]}
+            // Data starts at offset 2 (after len and cap)
+            // So element at index i is at vec[2 + i]
+            let offset_2 = self.context.i64_type().const_int(2, false);
+            let adjusted_idx = self
+                .builder
+                .build_int_add(idx, offset_2, "adj_idx")
+                .map_err(|e| e.to_string())?;
+
+            // GEP to get element at adjusted index
             let elem_ptr = unsafe {
                 self.builder
-                    .build_gep(i64_type, base_ptr, &[idx], "elem_ptr")
+                    .build_gep(i64_type, base_ptr, &[adjusted_idx], "elem_ptr")
             }
             .map_err(|e| e.to_string())?;
 
@@ -5138,6 +5208,223 @@ pub mod llvm {
                 }
                 _ => Ok(self.context.i64_type().const_int(0, false)),
             }
+        }
+
+        /// Check if an expression is a float (or involves floats), with scope for variable tracking
+        fn is_float_expr_with_scope(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> bool {
+            match expr {
+                Expr::Literal(Literal::Float { .. }) => true,
+                Expr::Binary { left, right, .. } => {
+                    self.is_float_expr_with_scope(left, scope) || self.is_float_expr_with_scope(right, scope)
+                }
+                Expr::Unary { expr: inner, .. } => self.is_float_expr_with_scope(inner, scope),
+                Expr::Path(path) => {
+                    // Check if variable is known to be a float
+                    if let Some(seg) = path.segments.last() {
+                        return scope.float_vars.contains(&seg.ident.name);
+                    }
+                    false
+                }
+                Expr::Call { func, .. } => {
+                    // Check for float-returning functions
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let name = seg.ident.name.as_str();
+                            return matches!(
+                                name,
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "PI" |
+                                "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan"
+                            );
+                        }
+                    }
+                    false
+                }
+                Expr::MethodCall { receiver, method, .. } => {
+                    // sqrt() method returns float, or receiver is float
+                    let name = method.name.as_str();
+                    if matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "pow") {
+                        return true;
+                    }
+                    // Check if receiver is float
+                    self.is_float_expr_with_scope(receiver, scope)
+                }
+                Expr::Cast { ty, .. } => {
+                    // Check if casting to f64
+                    if let ast::TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.last() {
+                            return seg.ident.name == "f64" || seg.ident.name == "f32";
+                        }
+                    }
+                    false
+                }
+                Expr::Index { expr, .. } => {
+                    // Check if the array/vec being indexed contains floats
+                    // This is a heuristic - check if the container variable is marked as float
+                    if let Expr::AddrOf { expr: inner, .. } = expr.as_ref() {
+                        return self.is_float_expr_with_scope(inner, scope);
+                    }
+                    self.is_float_expr_with_scope(expr, scope)
+                }
+                _ => false,
+            }
+        }
+
+        /// Check if an expression is a float (or involves floats), without scope
+        fn is_float_expr(&self, expr: &Expr) -> bool {
+            match expr {
+                Expr::Literal(Literal::Float { .. }) => true,
+                Expr::Binary { left, right, .. } => {
+                    self.is_float_expr(left) || self.is_float_expr(right)
+                }
+                Expr::Unary { expr: inner, .. } => self.is_float_expr(inner),
+                Expr::Call { func, .. } => {
+                    // Check for float-returning functions
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let name = seg.ident.name.as_str();
+                            return matches!(
+                                name,
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "PI" |
+                                "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan"
+                            );
+                        }
+                    }
+                    false
+                }
+                Expr::MethodCall { method, .. } => {
+                    // sqrt() method returns float
+                    let name = method.name.as_str();
+                    matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "pow")
+                }
+                Expr::Cast { ty, .. } => {
+                    // Check if casting to f64
+                    if let ast::TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.last() {
+                            return seg.ident.name == "f64" || seg.ident.name == "f32";
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            }
+        }
+
+        /// Compile a float binary operation
+        /// Values are stored as i64 bit patterns, so we bitcast to f64, operate, and bitcast back
+        fn compile_float_binary_op(
+            &mut self,
+            op: BinOp,
+            lhs: IntValue<'ctx>,
+            rhs: IntValue<'ctx>,
+        ) -> Result<IntValue<'ctx>, String> {
+            let f64_type = self.context.f64_type();
+            let i64_type = self.context.i64_type();
+
+            // Bitcast i64 -> f64
+            let lhs_f64 = self
+                .builder
+                .build_bit_cast(lhs, f64_type, "lhs_f64")
+                .map_err(|e| e.to_string())?
+                .into_float_value();
+            let rhs_f64 = self
+                .builder
+                .build_bit_cast(rhs, f64_type, "rhs_f64")
+                .map_err(|e| e.to_string())?
+                .into_float_value();
+
+            // Perform float operation
+            let result_f64 = match op {
+                BinOp::Add => self
+                    .builder
+                    .build_float_add(lhs_f64, rhs_f64, "fadd")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Sub => self
+                    .builder
+                    .build_float_sub(lhs_f64, rhs_f64, "fsub")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Mul => self
+                    .builder
+                    .build_float_mul(lhs_f64, rhs_f64, "fmul")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Div => self
+                    .builder
+                    .build_float_div(lhs_f64, rhs_f64, "fdiv")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Rem => self
+                    .builder
+                    .build_float_rem(lhs_f64, rhs_f64, "frem")
+                    .map_err(|e| e.to_string())?,
+                // Comparisons return i64 (0 or 1)
+                BinOp::Lt => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OLT, lhs_f64, rhs_f64, "flt")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "flt_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Le => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OLE, lhs_f64, rhs_f64, "fle")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fle_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Gt => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OGT, lhs_f64, rhs_f64, "fgt")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fgt_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Ge => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OGE, lhs_f64, rhs_f64, "fge")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fge_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Eq => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OEQ, lhs_f64, rhs_f64, "feq")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "feq_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Ne => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::ONE, lhs_f64, rhs_f64, "fne")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fne_ext")
+                        .map_err(|e| e.to_string());
+                }
+                // For other ops, fall back to integer
+                _ => return self.compile_binary_op(op, lhs, rhs),
+            };
+
+            // Bitcast f64 -> i64
+            let result = self
+                .builder
+                .build_bit_cast(result_f64, i64_type, "fresult")
+                .map_err(|e| e.to_string())?;
+            Ok(result.into_int_value())
         }
 
         /// Compile a unary operation
@@ -5375,47 +5662,155 @@ pub mod llvm {
             iter: &Expr,
             body: &ast::Block,
         ) -> Result<IntValue<'ctx>, String> {
-            // Get the loop variable name(s) from pattern
-            let var_names: Vec<String> = match pattern {
-                ast::Pattern::Ident { name, .. } => vec![name.name.clone()],
-                ast::Pattern::Tuple(elements) => {
-                    // Tuple pattern like (a, b) or (x, y, z)
-                    elements
-                        .iter()
-                        .filter_map(|elem| {
-                            if let ast::Pattern::Ident { name, .. } = elem {
-                                Some(name.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                }
-                ast::Pattern::TupleStruct { path, fields, .. } => {
-                    // TupleStruct pattern like Some(x) or Pair(a, b)
-                    fields
-                        .iter()
-                        .filter_map(|f| {
-                            if let ast::Pattern::Ident { name, .. } = f {
-                                Some(name.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                }
-                _ => vec!["_item".to_string()], // Fallback for unsupported patterns
+            // Get the loop variable name from pattern
+            let var_name = match pattern {
+                ast::Pattern::Ident { name, .. } => name.name.clone(),
+                _ => "_item".to_string(),
             };
 
-            let var_name = var_names
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "_item".to_string());
+            // Check if iterator is a Range expression (0..n, start..end)
+            if let Expr::Range { start, end, inclusive } = iter {
+                return self.compile_range_for_loop(
+                    fn_value, scope, &var_name, start.as_deref(), end.as_deref(), *inclusive, body
+                );
+            }
 
+            // For non-range iterators (arrays, vecs), use array-based loop
+            self.compile_array_for_loop(fn_value, scope, &var_name, iter, body)
+        }
+
+        /// Compile a for loop over a range (0..n, start..end)
+        fn compile_range_for_loop(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            var_name: &str,
+            start: Option<&Expr>,
+            end: Option<&Expr>,
+            inclusive: bool,
+            body: &ast::Block,
+        ) -> Result<IntValue<'ctx>, String> {
+            // Compile start and end values
+            let start_val = if let Some(s) = start {
+                self.compile_expr(fn_value, scope, s)?
+            } else {
+                self.context.i64_type().const_int(0, false)
+            };
+
+            let end_val = if let Some(e) = end {
+                self.compile_expr(fn_value, scope, e)?
+            } else {
+                // No end means infinite - use max i64 (shouldn't happen in practice)
+                self.context.i64_type().const_int(i64::MAX as u64, false)
+            };
+
+            // Create blocks
+            let init_bb = self.context.append_basic_block(fn_value, "range_init");
+            let cond_bb = self.context.append_basic_block(fn_value, "range_cond");
+            let body_bb = self.context.append_basic_block(fn_value, "range_body");
+            let incr_bb = self.context.append_basic_block(fn_value, "range_incr");
+            let after_bb = self.context.append_basic_block(fn_value, "range_after");
+
+            // Jump to init
+            self.builder
+                .build_unconditional_branch(init_bb)
+                .map_err(|e| e.to_string())?;
+
+            // Init block: allocate loop variable, set to start
+            self.builder.position_at_end(init_bb);
+            let var_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), var_name)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(var_ptr, start_val)
+                .map_err(|e| e.to_string())?;
+            scope.vars.insert(var_name.to_string(), var_ptr);
+
+            self.builder
+                .build_unconditional_branch(cond_bb)
+                .map_err(|e| e.to_string())?;
+
+            // Condition block: check if var < end (or var <= end for inclusive)
+            self.builder.position_at_end(cond_bb);
+            let var_val = self
+                .builder
+                .build_load(self.context.i64_type(), var_ptr, var_name)
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+
+            let predicate = if inclusive {
+                IntPredicate::SLE // signed less than or equal
+            } else {
+                IntPredicate::SLT // signed less than
+            };
+
+            let cond = self
+                .builder
+                .build_int_compare(predicate, var_val, end_val, "range_cond")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cond, body_bb, after_bb)
+                .map_err(|e| e.to_string())?;
+
+            // Body block
+            self.builder.position_at_end(body_bb);
+            self.compile_block(fn_value, scope, body)?;
+
+            // If body didn't terminate, jump to increment
+            if self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
+                self.builder
+                    .build_unconditional_branch(incr_bb)
+                    .map_err(|e| e.to_string())?;
+            }
+
+            // Increment block: var++
+            self.builder.position_at_end(incr_bb);
+            let var_val = self
+                .builder
+                .build_load(self.context.i64_type(), var_ptr, var_name)
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let one = self.context.i64_type().const_int(1, false);
+            let next_val = self
+                .builder
+                .build_int_add(var_val, one, "next_val")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(var_ptr, next_val)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(cond_bb)
+                .map_err(|e| e.to_string())?;
+
+            // After block
+            self.builder.position_at_end(after_bb);
+
+            // Clean up
+            scope.vars.remove(var_name);
+
+            Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Compile a for loop over an array/vec
+        fn compile_array_for_loop(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            var_name: &str,
+            iter: &Expr,
+            body: &ast::Block,
+        ) -> Result<IntValue<'ctx>, String> {
             // Evaluate iterator to get array
             let iter_val = self.compile_expr(fn_value, scope, iter)?;
 
-            // Create blocks for loop structure
+            // Create blocks
             let init_bb = self.context.append_basic_block(fn_value, "for_init");
             let cond_bb = self.context.append_basic_block(fn_value, "for_cond");
             let body_bb = self.context.append_basic_block(fn_value, "for_body");
@@ -5427,7 +5822,7 @@ pub mod llvm {
                 .build_unconditional_branch(init_bb)
                 .map_err(|e| e.to_string())?;
 
-            // Init block: allocate index variable, set to 0
+            // Init block: allocate index and loop variable
             self.builder.position_at_end(init_bb);
             let idx_ptr = self
                 .builder
@@ -5438,20 +5833,14 @@ pub mod llvm {
                 .build_store(idx_ptr, zero)
                 .map_err(|e| e.to_string())?;
 
-            // Allocate all loop variable(s) from pattern
-            for name in &var_names {
-                let var_ptr = self
-                    .builder
-                    .build_alloca(self.context.i64_type(), name)
-                    .map_err(|e| e.to_string())?;
-                scope.vars.insert(name.clone(), var_ptr);
-            }
+            let var_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), var_name)
+                .map_err(|e| e.to_string())?;
+            scope.vars.insert(var_name.to_string(), var_ptr);
 
-            // Get array length - for now use a fixed approach
-            // The iter_val is treated as an array pointer; we need its length
-            // For simplicity, we'll extract length from the array header if available
-            // or use a hardcoded approach for now
-            let len_val = self.get_array_length(iter_val)?;
+            // Get array length from Vec struct (field 0)
+            let len_val = self.get_vec_length(iter_val)?;
 
             self.builder
                 .build_unconditional_branch(cond_bb)
@@ -5472,21 +5861,13 @@ pub mod llvm {
                 .build_conditional_branch(cond, body_bb, after_bb)
                 .map_err(|e| e.to_string())?;
 
-            // Body block: get element, bind to var, execute body
+            // Body block: get element, store in var, execute body
             self.builder.position_at_end(body_bb);
+            let elem_val = self.get_vec_element(iter_val, idx_val)?;
+            self.builder
+                .build_store(var_ptr, elem_val)
+                .map_err(|e| e.to_string())?;
 
-            // Get element at current index
-            let elem_val = self.get_array_element(iter_val, idx_val)?;
-
-            // Store in loop variable(s)
-            // For tuple patterns, we'd need to destructure - for now just use first var
-            if let Some(&first_var_ptr) = scope.vars.get(&var_name) {
-                self.builder
-                    .build_store(first_var_ptr, elem_val)
-                    .map_err(|e| e.to_string())?;
-            }
-
-            // Compile body
             self.compile_block(fn_value, scope, body)?;
 
             // If body didn't terminate, jump to increment
@@ -5523,11 +5904,67 @@ pub mod llvm {
 
             // After block
             self.builder.position_at_end(after_bb);
-
-            // Clean up: remove loop variable from scope
-            scope.vars.remove(&var_name);
+            scope.vars.remove(var_name);
 
             Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Get length from a Vec (field 0 of {len, cap, data} struct)
+        fn get_vec_length(&self, vec_ptr_int: IntValue<'ctx>) -> Result<IntValue<'ctx>, String> {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i64_type = self.context.i64_type();
+
+            // Vec is stored as pointer to {len, cap, data}
+            let vec_ptr = self
+                .builder
+                .build_int_to_ptr(vec_ptr_int, ptr_type, "vec_ptr")
+                .map_err(|e| e.to_string())?;
+
+            // Load length (field 0, offset 0)
+            let len = self
+                .builder
+                .build_load(i64_type, vec_ptr, "vec_len")
+                .map_err(|e| e.to_string())?;
+
+            Ok(len.into_int_value())
+        }
+
+        /// Get element from a Vec at given index
+        /// Vec layout: {len: i64, cap: i64, data: i64[]} - data is inline at offset 2
+        fn get_vec_element(
+            &self,
+            vec_ptr_int: IntValue<'ctx>,
+            index: IntValue<'ctx>,
+        ) -> Result<IntValue<'ctx>, String> {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i64_type = self.context.i64_type();
+
+            let vec_ptr = self
+                .builder
+                .build_int_to_ptr(vec_ptr_int, ptr_type, "vec_ptr")
+                .map_err(|e| e.to_string())?;
+
+            // Data is inline at offset 2 (after len and cap)
+            // Element i is at vec[2 + i]
+            let offset_2 = self.context.i64_type().const_int(2, false);
+            let adjusted_idx = self
+                .builder
+                .build_int_add(index, offset_2, "adj_idx")
+                .map_err(|e| e.to_string())?;
+
+            // Get element at adjusted index
+            let elem_ptr = unsafe {
+                self.builder
+                    .build_gep(i64_type, vec_ptr, &[adjusted_idx], "elem_ptr")
+            }
+            .map_err(|e| e.to_string())?;
+
+            let elem = self
+                .builder
+                .build_load(i64_type, elem_ptr, "elem")
+                .map_err(|e| e.to_string())?;
+
+            Ok(elem.into_int_value())
         }
 
         /// Get the length of an array (represented as i64 for now)
@@ -6758,6 +7195,22 @@ pub mod llvm {
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
+                // Math constant: PI()
+                "PI" => {
+                    let pi_fn = self
+                        .module
+                        .get_function("sigil_pi")
+                        .ok_or("sigil_pi not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(pi_fn, &[], "pi")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
                 // Vec built-in functions
                 "vec_new" => {
                     if args.is_empty() {
@@ -7685,6 +8138,9 @@ pub mod llvm {
             if let Some(f) = self.module.get_function("sigil_max") {
                 ee.add_global_mapping(&f, sigil_max as usize);
             }
+            if let Some(f) = self.module.get_function("sigil_pi") {
+                ee.add_global_mapping(&f, sigil_pi as usize);
+            }
 
             // Vec runtime mappings
             if let Some(f) = self.module.get_function("sigil_vec_new") {
@@ -7794,12 +8250,15 @@ pub mod llvm {
     /// Variable scope for compilation
     struct CompileScope<'ctx> {
         vars: HashMap<String, PointerValue<'ctx>>,
+        /// Track which variables hold float values
+        float_vars: std::collections::HashSet<String>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
         fn new() -> Self {
             Self {
                 vars: HashMap::new(),
+                float_vars: std::collections::HashSet::new(),
             }
         }
     }

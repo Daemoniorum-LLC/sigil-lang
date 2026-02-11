@@ -378,6 +378,11 @@ int64_t sigil_sqrt(int64_t x) {
     return double_to_bits(sqrt(bits_to_double(x)));
 }
 
+/* PI constant */
+int64_t sigil_pi(void) {
+    return double_to_bits(3.14159265358979323846);
+}
+
 /* Sine */
 int64_t sigil_sin(int64_t x) {
     return double_to_bits(sin(bits_to_double(x)));
