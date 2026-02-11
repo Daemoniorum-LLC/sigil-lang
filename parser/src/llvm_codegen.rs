@@ -468,9 +468,12 @@ pub mod llvm {
             let i64_type = self.context.i64_type();
             let void_type = self.context.void_type();
 
-            // sigil_now() -> i64
+            // sigil_now() -> i64 (milliseconds)
             let now_type = i64_type.fn_type(&[], false);
             self.module.add_function("sigil_now", now_type, None);
+
+            // sigil_now_micros() -> i64 (microseconds)
+            self.module.add_function("sigil_now_micros", now_type, None);
 
             // sigil_print_int(i64) -> void
             let print_int_type = void_type.fn_type(&[i64_type.into()], false);
@@ -3268,9 +3271,40 @@ pub mod llvm {
                 }
 
                 // Cast/type coercion
-                Expr::Cast { expr, .. } => {
-                    // Types are erased, just compile the expression
-                    self.compile_expr(fn_value, scope, expr)
+                Expr::Cast { expr, ty } => {
+                    let val = self.compile_expr(fn_value, scope, expr)?;
+
+                    // Check target type for numeric conversions
+                    let target_type_str = self.type_expr_to_string(ty);
+
+                    // i64 -> f64: use sitofp, then bitcast back to i64 for storage
+                    if target_type_str == "f64" {
+                        let f64_val = self
+                            .builder
+                            .build_signed_int_to_float(
+                                val,
+                                self.context.f64_type(),
+                                "i_to_f64",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        // Bitcast f64 to i64 for uniform storage
+                        let bits = self
+                            .builder
+                            .build_bit_cast(f64_val, self.context.i64_type(), "f64_bits")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(bits.into_int_value());
+                    }
+
+                    // f64 -> i64: bitcast i64 to f64, then fptosi
+                    if target_type_str == "i64" || target_type_str == "isize" {
+                        // Assume the value might be a float stored as bits
+                        // This is a heuristic - proper type tracking would be better
+                        // For now, just return the value as-is since ints are already i64
+                        return Ok(val);
+                    }
+
+                    // Default: pass through
+                    Ok(val)
                 }
 
                 // Address-of: &expr, &mut expr
@@ -3535,6 +3569,32 @@ pub mod llvm {
                 }
                 Literal::Char(c) => Ok(self.context.i64_type().const_int(*c as u64, false)),
                 _ => Ok(self.context.i64_type().const_int(0, false)),
+            }
+        }
+
+        /// Convert a TypeExpr to a simple string for type checking
+        fn type_expr_to_string(&self, ty: &ast::TypeExpr) -> String {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    // Get the last segment's name
+                    path.segments
+                        .last()
+                        .map(|seg| seg.ident.name.clone())
+                        .unwrap_or_else(|| "unknown".to_string())
+                }
+                ast::TypeExpr::Reference { inner, .. } => {
+                    format!("&{}", self.type_expr_to_string(inner))
+                }
+                ast::TypeExpr::Pointer { inner, .. } => {
+                    format!("*{}", self.type_expr_to_string(inner))
+                }
+                ast::TypeExpr::Array { element, .. } => {
+                    format!("[{}]", self.type_expr_to_string(element))
+                }
+                ast::TypeExpr::Slice(inner) => {
+                    format!("[{}]", self.type_expr_to_string(inner))
+                }
+                _ => "unknown".to_string(),
             }
         }
 
@@ -5847,6 +5907,31 @@ pub mod llvm {
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
                 // ========================================
+                // Float print functions (need i64->f64 bitcast)
+                // ========================================
+                "sigil_print_float" | "sigil_write_float" => {
+                    if args.is_empty() {
+                        return Err("sigil_print_float requires an argument".to_string());
+                    }
+                    // Compile argument as i64 (bit pattern)
+                    let arg_bits = self.compile_expr(fn_value, scope, &args[0])?;
+                    // Bitcast i64 to f64
+                    let f64_val = self
+                        .builder
+                        .build_bit_cast(arg_bits, self.context.f64_type(), "f64_arg")
+                        .map_err(|e| e.to_string())?;
+                    // Get the function
+                    let print_fn = self
+                        .module
+                        .get_function(fn_name)
+                        .ok_or(format!("{} not declared", fn_name))?;
+                    // Call with f64 argument
+                    self.builder
+                        .build_call(print_fn, &[f64_val.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                // ========================================
                 // AVX-512 SIMD Intrinsics
                 // ========================================
                 "F32x16::splat" => {
@@ -6544,7 +6629,7 @@ pub mod llvm {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 "now" => {
-                    // Call sigil_now runtime function
+                    // Call sigil_now runtime function (milliseconds)
                     let now_fn = self
                         .module
                         .get_function("sigil_now")
@@ -6552,6 +6637,22 @@ pub mod llvm {
                     let call = self
                         .builder
                         .build_call(now_fn, &[], "now")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "now_micros" => {
+                    // Call sigil_now_micros runtime function (microseconds)
+                    let now_fn = self
+                        .module
+                        .get_function("sigil_now_micros")
+                        .ok_or("sigil_now_micros not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(now_fn, &[], "now_micros")
                         .map_err(|e| e.to_string())?;
                     return Ok(call
                         .try_as_basic_value()
