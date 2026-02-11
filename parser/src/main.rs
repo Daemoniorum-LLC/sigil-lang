@@ -4076,6 +4076,7 @@ struct Manifest {
     has_lib: bool,
     has_bin: bool,
     dependencies: Vec<Dependency>,
+    workspace_members: Vec<String>,  // [workspace] members list
 }
 
 /// A dependency reference
@@ -4114,12 +4115,16 @@ fn parse_manifest(manifest_path: &std::path::Path) -> Result<Manifest, String> {
     // Parse dependencies
     let dependencies = parse_dependencies(&content, manifest_dir);
 
+    // Parse workspace members
+    let workspace_members = parse_workspace_members(&content);
+
     Ok(Manifest {
         name,
         version,
         has_lib,
         has_bin,
         dependencies,
+        workspace_members,
     })
 }
 
@@ -4337,11 +4342,16 @@ fn build_project() -> ExitCode {
 
     let debug = std::env::var("SIGIL_DEBUG_DEPS").is_ok();
     if debug {
-        eprintln!("DEBUG: Manifest name={}, has_lib={}, has_bin={}, deps={}",
-            manifest.name, manifest.has_lib, manifest.has_bin, manifest.dependencies.len());
+        eprintln!("DEBUG: Manifest name={}, has_lib={}, has_bin={}, deps={}, workspace_members={}",
+            manifest.name, manifest.has_lib, manifest.has_bin, manifest.dependencies.len(), manifest.workspace_members.len());
         for dep in &manifest.dependencies {
             eprintln!("DEBUG:   dep: {} at {}", dep.name, dep.path.display());
         }
+    }
+
+    // Check if this is a workspace manifest
+    if !manifest.workspace_members.is_empty() {
+        return build_workspace(&manifest);
     }
 
     if !manifest.has_lib && !manifest.has_bin {
@@ -4395,6 +4405,86 @@ fn build_project() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Build all tomes in a workspace
+fn build_workspace(manifest: &Manifest) -> ExitCode {
+    use std::path::Path;
+
+    println!("Building workspace '{}' with {} members...", manifest.name, manifest.workspace_members.len());
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    for member_path in &manifest.workspace_members {
+        let member_dir = Path::new(member_path);
+
+        // Check if member directory exists
+        if !member_dir.exists() {
+            eprintln!("  Warning: member '{}' not found, skipping", member_path);
+            continue;
+        }
+
+        // Check for sigil.toml in member
+        let member_manifest = member_dir.join("sigil.toml");
+        if !member_manifest.exists() {
+            eprintln!("  Warning: no sigil.toml in '{}', skipping", member_path);
+            continue;
+        }
+
+        // Get member name from manifest
+        let member_name = match parse_manifest(&member_manifest) {
+            Ok(m) => m.name,
+            Err(_) => member_path.split('/').last().unwrap_or(member_path).to_string(),
+        };
+
+        // Check if library already built
+        let lib_name = format!("lib{}.a", member_name.replace('-', "_"));
+        let lib_path = member_dir.join("target").join(&lib_name);
+
+        if lib_path.exists() {
+            println!("  {} (already built)", member_name);
+            success_count += 1;
+            continue;
+        }
+
+        // Spawn subprocess to build member (isolates LLVM contexts)
+        print!("  {} ... ", member_name);
+
+        let build_result = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("sigil")))
+            .arg("build")
+            .current_dir(member_dir)
+            .stdout(std::process::Stdio::null())  // Suppress verbose output
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        match build_result {
+            Ok(output) if output.status.success() => {
+                println!("ok");
+                success_count += 1;
+            }
+            Ok(output) => {
+                println!("FAILED");
+                if !output.stderr.is_empty() {
+                    eprintln!("    {}", String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or(""));
+                }
+                fail_count += 1;
+            }
+            Err(e) => {
+                println!("FAILED ({})", e);
+                fail_count += 1;
+            }
+        }
+    }
+
+    println!("\nWorkspace build complete: {}/{} tomes succeeded",
+        success_count, success_count + fail_count);
+
+    if fail_count > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Build a library tome (produces .a static library)
