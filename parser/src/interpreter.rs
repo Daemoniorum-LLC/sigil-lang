@@ -4270,6 +4270,8 @@ impl Interpreter {
             }
             // Unsafe block - just evaluate the block normally
             Expr::Unsafe(block) => self.eval_block(block),
+            // Attributed expression - evaluate the inner expression (attributes are compile-time)
+            Expr::Attributed { expr, .. } => self.evaluate(expr),
             // Async block - evaluate the block (interpreter doesn't handle true async)
             Expr::Async { block, .. } => self.eval_block(block),
             // NoGrad block - disable gradient tracking for the duration

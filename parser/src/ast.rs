@@ -1181,6 +1181,12 @@ pub enum Expr {
         expr: Box<Expr>,
         evidentiality: Evidentiality,
     },
+    /// Attributed expression: `//@ rune: cfg(test) { ... }`
+    /// Used for conditional compilation and other expression-level attributes
+    Attributed {
+        attrs: Vec<Attribute>,
+        expr: Box<Expr>,
+    },
     /// Assignment: `x = value`
     Assign { target: Box<Expr>, value: Box<Expr> },
     /// Let expression (for if-let, while-let patterns): `let pattern = expr`

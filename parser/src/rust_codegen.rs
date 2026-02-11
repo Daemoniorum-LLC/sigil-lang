@@ -1676,6 +1676,38 @@ impl RustCompiler {
                 self.write("unsafe ");
                 self.emit_block(block)
             }
+            Expr::Attributed { attrs, expr } => {
+                // Emit attributes
+                for attr in attrs {
+                    self.write("#[");
+                    self.write(&attr.name.name);
+                    if let Some(ref args) = attr.args {
+                        match args {
+                            AttrArgs::Paren(args) => {
+                                self.write("(");
+                                for (i, arg) in args.iter().enumerate() {
+                                    if i > 0 { self.write(", "); }
+                                    match arg {
+                                        AttrArg::Ident(id) => self.write(&id.name),
+                                        AttrArg::Literal(lit) => {
+                                            let _ = self.emit_literal(lit);
+                                        }
+                                        AttrArg::Nested(_) => self.write("..."),
+                                        AttrArg::KeyValue { key, .. } => {
+                                            self.write(&key.name);
+                                            self.write(" = ...");
+                                        }
+                                    }
+                                }
+                                self.write(")");
+                            }
+                            AttrArgs::Eq(_) => self.write(" = ..."),
+                        }
+                    }
+                    self.write("] ");
+                }
+                self.emit_expr(expr)
+            }
             Expr::Pipe { expr, operations } => self.emit_pipe(expr, operations),
             Expr::Incorporation { segments } => {
                 // Helper to check if a name is a type/module

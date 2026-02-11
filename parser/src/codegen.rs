@@ -2038,6 +2038,11 @@ pub mod jit {
                 )
             }
 
+            // Attributed expression - compile the inner expression (attributes are compile-time)
+            Expr::Attributed { expr, .. } => {
+                compile_expr(module, functions, extern_fns, builder, scope, expr)
+            }
+
             // Pointer dereference - load from address
             Expr::Deref(inner) => {
                 let ptr = compile_expr(module, functions, extern_fns, builder, scope, inner)?;
