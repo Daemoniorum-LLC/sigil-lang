@@ -215,6 +215,96 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a rune annotation: `//@ rune: name` or `//@ rune: name(args)`
+    /// This is the preferred Sigil style for test attributes and other annotations.
+    /// Examples:
+    ///   //@ rune: test
+    ///   //@ rune: should_panic(expected = "error message")
+    ///   //@ rune: ignore
+    ///   //@ rune: track_caller
+    fn parse_rune_annotation(&mut self) -> ParseResult<Attribute> {
+        if let Some(Token::RuneAnnotation(annotation)) = self.current_token().cloned() {
+            self.advance();
+
+            // Parse the annotation string: "//@ rune: name" or "//@ rune: name(...)"
+            // Extract the name part after "rune:"
+            let trimmed = annotation.trim();
+            let after_rune = trimmed
+                .strip_prefix("//@")
+                .unwrap_or(trimmed)
+                .trim()
+                .strip_prefix("rune:")
+                .unwrap_or("")
+                .trim();
+
+            // Check if there are arguments in parentheses
+            let (name_str, args) = if let Some(paren_idx) = after_rune.find('(') {
+                let name = &after_rune[..paren_idx];
+                let args_str = &after_rune[paren_idx..];
+                // For now, just capture the args as a raw string
+                // More sophisticated parsing can be added if needed
+                (name.trim(), Some(args_str.to_string()))
+            } else {
+                (after_rune, None)
+            };
+
+            // Parse arguments if present (e.g., should_panic(expected = "..."))
+            let attr_args = if let Some(args_str) = args {
+                // Simple parsing for common patterns
+                if args_str.starts_with("(expected") || args_str.starts_with("(reason") {
+                    // Parse key-value: expected = "..." or reason = "..."
+                    if let Some(eq_idx) = args_str.find('=') {
+                        let key = args_str[1..eq_idx].trim();
+                        let value_start = eq_idx + 1;
+                        // Find the quoted string value
+                        if let Some(quote_start) = args_str[value_start..].find('"') {
+                            let abs_start = value_start + quote_start + 1;
+                            if let Some(quote_end) = args_str[abs_start..].find('"') {
+                                let value = &args_str[abs_start..abs_start + quote_end];
+                                Some(AttrArgs::Paren(vec![AttrArg::KeyValue {
+                                    key: Ident {
+                                        name: key.to_string(),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: self.current_span(),
+                                    },
+                                    value: Box::new(Expr::Literal(Literal::String(value.to_string()))),
+                                }]))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            Ok(Attribute {
+                name: Ident {
+                    name: name_str.to_string(),
+                    evidentiality: None,
+                    affect: None,
+                    span: self.current_span(),
+                },
+                args: attr_args,
+                is_inner: false,
+            })
+        } else {
+            Err(ParseError::UnexpectedToken {
+                expected: "rune annotation".to_string(),
+                found: self.current_token().cloned().unwrap_or(Token::Semi),
+                span: self.current_span(),
+            })
+        }
+    }
+
     /// Evaluate a cfg condition to determine if the annotated item should be included.
     /// Returns true if the condition is satisfied, false if the item should be skipped.
     /// For the interpreter, `debug_assertions` is always true (interpreter = debug mode).
@@ -1290,10 +1380,16 @@ impl<'a> Parser<'a> {
         // Collect doc comments first (SGDOC)
         let doc_comments = self.collect_doc_comments();
 
-        // Collect outer attributes (#[...] or @[...])
+        // Collect outer attributes (#[...] or @[...] or //@ rune: ...)
         let mut outer_attrs = Vec::new();
-        while self.check(&Token::Hash) || self.check(&Token::At) {
-            outer_attrs.push(self.parse_outer_attribute()?);
+        loop {
+            if self.check(&Token::Hash) || self.check(&Token::At) {
+                outer_attrs.push(self.parse_outer_attribute()?);
+            } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                outer_attrs.push(self.parse_rune_annotation()?);
+            } else {
+                break;
+            }
         }
 
         let visibility = self.parse_visibility()?;

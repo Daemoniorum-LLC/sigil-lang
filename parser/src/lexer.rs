@@ -1176,7 +1176,9 @@ pub enum Token {
     Ident(String),
 
     // === Rune annotation ===
-    #[regex(r"//@\s*rune:\s*[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
+    // Match //@ rune: followed by name and optional (args) - capture entire annotation
+    // Examples: //@ rune: test, //@ rune: should_panic(expected = "error")
+    #[regex(r"//@\s*rune:\s*[a-zA-Z_][a-zA-Z0-9_]*(\([^)\n]*\))?", |lex| lex.slice().to_string())]
     RuneAnnotation(String),
 }
 
