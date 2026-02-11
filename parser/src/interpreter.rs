@@ -4257,6 +4257,90 @@ impl Interpreter {
                             )))
                         }
                     }
+                    "matches" => {
+                        // matches!(expr, Pattern) - check if expr matches the pattern
+                        // Supports: matches!(this, This·Success | This·Skipped)
+                        let trimmed = tokens.trim();
+                        // Split by first top-level comma
+                        let mut depth = 0;
+                        let mut split_pos = None;
+                        for (i, c) in trimmed.char_indices() {
+                            match c {
+                                '(' | '[' | '{' => depth += 1,
+                                ')' | ']' | '}' => depth -= 1,
+                                ',' if depth == 0 => {
+                                    split_pos = Some(i);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        if let Some(pos) = split_pos {
+                            let expr_str = trimmed[..pos].trim();
+                            let pattern_str = trimmed[pos + 1..].trim();
+                            let mut parser = crate::parser::Parser::new(expr_str);
+                            match parser.parse_expr() {
+                                Ok(expr) => {
+                                    let value = self.evaluate(&expr)?;
+
+                                    // Get the enum name for This· patterns
+                                    let self_enum_name = match &value {
+                                        Value::Variant { enum_name, .. } => enum_name.clone(),
+                                        _ => String::new(),
+                                    };
+
+                                    // Split by | for OR patterns
+                                    let patterns: Vec<&str> = pattern_str.split('|').map(|s| s.trim()).collect();
+
+                                    // Check if value matches any of the patterns
+                                    let matches = match &value {
+                                        Value::Variant { enum_name, variant_name, .. } => {
+                                            // Get the simple enum name (without module prefix)
+                                            // e.g., "stage·StageStatus" -> "StageStatus"
+                                            let simple_enum_name = enum_name.split('·').last().unwrap_or(enum_name);
+
+                                            patterns.iter().any(|pat| {
+                                                let pat = pat.trim();
+                                                // Pattern format: EnumName·VariantName or This·VariantName
+                                                let pattern_parts: Vec<&str> = pat.split('·').collect();
+                                                if pattern_parts.len() >= 2 {
+                                                    let expected_enum = pattern_parts[pattern_parts.len() - 2].trim();
+                                                    let expected_variant = pattern_parts[pattern_parts.len() - 1].trim().trim_end_matches(|c: char| c == '{' || c.is_whitespace() || c == '}' || c == '(' || c == '_' || c == ')');
+                                                    // Handle This· pattern (Self type)
+                                                    let enum_matches = if expected_enum == "This" || expected_enum == "Self" {
+                                                        true // This matches any enum when used as self-reference
+                                                    } else {
+                                                        simple_enum_name == expected_enum || enum_name == expected_enum
+                                                    };
+                                                    enum_matches && variant_name == expected_variant
+                                                } else {
+                                                    // Single name - check variant name only
+                                                    variant_name == pat
+                                                }
+                                            })
+                                        }
+                                        Value::Struct { name, .. } => {
+                                            patterns.iter().any(|pat| {
+                                                let pattern_name = pat.split(|c: char| c == '{' || c.is_whitespace()).next().unwrap_or("").trim();
+                                                name == pattern_name || pattern_name == "This" || pattern_name == "Self"
+                                            })
+                                        }
+                                        _ => false,
+                                    };
+                                    Ok(Value::Bool(matches))
+                                }
+                                Err(_) => Err(RuntimeError::new(format!(
+                                    "matches!: failed to parse expression: {}",
+                                    expr_str
+                                ))),
+                            }
+                        } else {
+                            Err(RuntimeError::new(format!(
+                                "matches! requires two arguments: expression and pattern: {}",
+                                trimmed
+                            )))
+                        }
+                    }
                     _ => {
                         // Check for user-defined macro
                         // Clone the macro definition out of the borrow to avoid lifetime issues
@@ -11357,7 +11441,12 @@ impl Interpreter {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("starts_with expects 1 argument"));
                 }
-                match &arg_values[0] {
+                // Unwrap Ref if needed
+                let arg = match &arg_values[0] {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                match &arg {
                     Value::String(prefix) => Ok(Value::Bool(s.starts_with(prefix.as_str()))),
                     Value::Char(c) => Ok(Value::Bool(s.starts_with(*c))),
                     _ => Err(RuntimeError::new("starts_with expects string or char")),
@@ -11367,7 +11456,12 @@ impl Interpreter {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("ends_with expects 1 argument"));
                 }
-                match &arg_values[0] {
+                // Unwrap Ref if needed
+                let arg = match &arg_values[0] {
+                    Value::Ref(r) => r.borrow().clone(),
+                    other => other.clone(),
+                };
+                match &arg {
                     Value::String(suffix) => Ok(Value::Bool(s.ends_with(suffix.as_str()))),
                     Value::Char(c) => Ok(Value::Bool(s.ends_with(*c))),
                     _ => Err(RuntimeError::new("ends_with expects string or char")),
@@ -12266,9 +12360,15 @@ impl Interpreter {
                         "capacity" => return Ok(Value::Int(s.capacity() as i64)),
                         "as_str" => return Ok(Value::String(s.clone())),
                         "starts_with" => {
-                            let prefix = match arg_values.first() {
-                                Some(Value::String(p)) => p.as_str(),
-                                Some(Value::Char(c)) => return Ok(Value::Bool(s.starts_with(*c))),
+                            // Unwrap Ref if needed
+                            let arg = match arg_values.first() {
+                                Some(Value::Ref(r)) => r.borrow().clone(),
+                                Some(other) => other.clone(),
+                                None => return Err(RuntimeError::new("starts_with expects 1 argument")),
+                            };
+                            let prefix = match &arg {
+                                Value::String(p) => p.as_str(),
+                                Value::Char(c) => return Ok(Value::Bool(s.starts_with(*c))),
                                 _ => {
                                     return Err(RuntimeError::new(
                                         "starts_with expects string or char",
@@ -12278,9 +12378,15 @@ impl Interpreter {
                             return Ok(Value::Bool(s.starts_with(prefix)));
                         }
                         "ends_with" => {
-                            let suffix = match arg_values.first() {
-                                Some(Value::String(p)) => p.as_str(),
-                                Some(Value::Char(c)) => return Ok(Value::Bool(s.ends_with(*c))),
+                            // Unwrap Ref if needed
+                            let arg = match arg_values.first() {
+                                Some(Value::Ref(r)) => r.borrow().clone(),
+                                Some(other) => other.clone(),
+                                None => return Err(RuntimeError::new("ends_with expects 1 argument")),
+                            };
+                            let suffix = match &arg {
+                                Value::String(p) => p.as_str(),
+                                Value::Char(c) => return Ok(Value::Bool(s.ends_with(*c))),
                                 _ => {
                                     return Err(RuntimeError::new(
                                         "ends_with expects string or char",
@@ -15108,6 +15214,150 @@ impl Interpreter {
                             let values: Vec<Value> = fields.borrow().values().cloned().collect();
                             return Ok(Value::Array(Rc::new(RefCell::new(values))));
                         }
+                        "insert" => {
+                            if arg_values.len() >= 2 {
+                                let key = match &arg_values[0] {
+                                    Value::String(s) => (**s).clone(),
+                                    _ => format!("{}", arg_values[0]),
+                                };
+                                fields.borrow_mut().insert(key, arg_values[1].clone());
+                            }
+                            return Ok(Value::Null);
+                        }
+                        "get_mut" => {
+                            // Return mutable reference (actually just the value for modification)
+                            if arg_values.is_empty() {
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                });
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => (**s).clone(),
+                                _ => format!("{}", arg_values[0]),
+                            };
+                            return Ok(match fields.borrow().get(&key).cloned() {
+                                Some(value) => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![value])),
+                                },
+                                None => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                },
+                            });
+                        }
+                        "entry" => {
+                            // Simplified entry API: returns an Entry struct for chained operations
+                            if arg_values.is_empty() {
+                                return Err(RuntimeError::new("entry expects 1 argument"));
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => (**s).clone(),
+                                _ => format!("{}", arg_values[0]),
+                            };
+                            // Return a MapEntry struct holding the map reference and key
+                            let mut entry_fields = HashMap::new();
+                            entry_fields.insert("__map__".to_string(), recv.clone());
+                            entry_fields.insert("__key__".to_string(), Value::String(Rc::new(key)));
+                            return Ok(Value::Struct {
+                                name: "MapEntry".to_string(),
+                                fields: Rc::new(RefCell::new(entry_fields)),
+                            });
+                        }
+                        "remove" => {
+                            if arg_values.is_empty() {
+                                return Ok(Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                });
+                            }
+                            let key = match &arg_values[0] {
+                                Value::String(s) => (**s).clone(),
+                                _ => format!("{}", arg_values[0]),
+                            };
+                            return Ok(match fields.borrow_mut().remove(&key) {
+                                Some(value) => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "Some".to_string(),
+                                    fields: Some(Rc::new(vec![value])),
+                                },
+                                None => Value::Variant {
+                                    enum_name: "Option".to_string(),
+                                    variant_name: "None".to_string(),
+                                    fields: None,
+                                },
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Built-in MapEntry methods (for entry().and_modify().or_insert() pattern)
+                if name == "MapEntry" {
+                    match method.name.as_str() {
+                        "and_modify" | "or_insert" | "or_insert_with" | "or_default" => {
+                            // Get the map and key from the entry
+                            let map = fields.borrow().get("__map__").cloned();
+                            let key = fields.borrow().get("__key__").cloned();
+
+                            if let (Some(Value::Struct { name: map_name, fields: map_fields }), Some(Value::String(k))) = (map, key) {
+                                if map_name == "Map" || map_name == "HashMap" {
+                                    match method.name.as_str() {
+                                        "and_modify" => {
+                                            // If key exists, apply the closure
+                                            if let Some(value) = map_fields.borrow().get(&*k).cloned() {
+                                                if let Some(closure) = arg_values.first() {
+                                                    if let Value::Function(f) = closure {
+                                                        let result = self.call_function(f, vec![value])?;
+                                                        map_fields.borrow_mut().insert((*k).clone(), result);
+                                                    }
+                                                }
+                                            }
+                                            // Return the entry for chaining
+                                            return Ok(recv.clone());
+                                        }
+                                        "or_insert" => {
+                                            // If key doesn't exist, insert the default
+                                            let mut borrowed = map_fields.borrow_mut();
+                                            if !borrowed.contains_key(&*k) {
+                                                if let Some(default) = arg_values.first() {
+                                                    borrowed.insert((*k).clone(), default.clone());
+                                                    return Ok(default.clone());
+                                                }
+                                            }
+                                            return Ok(borrowed.get(&*k).cloned().unwrap_or(Value::Null));
+                                        }
+                                        "or_insert_with" => {
+                                            // If key doesn't exist, call closure to get default
+                                            let mut borrowed = map_fields.borrow_mut();
+                                            if !borrowed.contains_key(&*k) {
+                                                if let Some(Value::Function(f)) = arg_values.first() {
+                                                    let default = self.call_function(f, vec![])?;
+                                                    borrowed.insert((*k).clone(), default.clone());
+                                                    return Ok(default);
+                                                }
+                                            }
+                                            return Ok(borrowed.get(&*k).cloned().unwrap_or(Value::Null));
+                                        }
+                                        "or_default" => {
+                                            // If key doesn't exist, insert Default::default()
+                                            let mut borrowed = map_fields.borrow_mut();
+                                            if !borrowed.contains_key(&*k) {
+                                                borrowed.insert((*k).clone(), Value::Int(0)); // Default for int
+                                            }
+                                            return Ok(borrowed.get(&*k).cloned().unwrap_or(Value::Null));
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            return Ok(recv.clone());
+                        }
                         _ => {}
                     }
                 }
@@ -15600,13 +15850,6 @@ impl Interpreter {
                     return Ok(recv.clone());
                 }
 
-                // Built-in as_str/to_string method for all enums - returns variant name
-                if method.name == "as_str" || method.name == "to_string" {
-                    // Default: return the variant name in lowercase (snake_case convention)
-                    // Specific enums can override via impl blocks
-                    return Ok(Value::String(Rc::new(variant_name.to_lowercase())));
-                }
-
                 // Built-in marker method for enums (like Evidentiality)
                 if method.name == "marker" {
                     // Return the evidentiality marker character for the variant
@@ -15645,6 +15888,11 @@ impl Interpreter {
                         all_args.extend(arg_values.clone());
                         return (b.func)(self, all_args);
                     }
+                }
+                // Fallback: as_str/to_string returns variant name (if no custom impl found)
+                if method.name == "as_str" || method.name == "to_string" {
+                    // Default: return the variant name as-is (custom impls override above)
+                    return Ok(Value::String(Rc::new(variant_name.clone())));
                 }
                 // Error on unknown methods - type checking
                 Err(RuntimeError::new(format!(

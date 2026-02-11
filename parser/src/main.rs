@@ -168,7 +168,7 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [--cuda] [--native-runtime] [-O0|-O1|-O2|-O3|-Os]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lib] [--lto] [--tls] [--cuda] [--native-runtime] [-O0|-O1|-O2|-O3|-Os]");
                 return ExitCode::from(1);
             }
             // Parse flags
@@ -176,6 +176,7 @@ fn main() -> ExitCode {
             let use_tls = args.iter().any(|a| a == "--tls");
             let use_cuda = args.iter().any(|a| a == "--cuda");
             let use_native_runtime = args.iter().any(|a| a == "--native-runtime" || a == "--native");
+            let is_library = args.iter().any(|a| a == "--lib" || a == "--shared");
             // Parse optimization level
             let opt_level = if args.iter().any(|a| a == "-O0" || a == "-Onone") {
                 OptLevel::None
@@ -205,7 +206,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, use_native_runtime, opt_level)
+            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, use_native_runtime, is_library, opt_level)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -1173,7 +1174,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, use_native_runtime: bool, opt_level: OptLevel) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, use_native_runtime: bool, is_library: bool, opt_level: OptLevel) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -1219,6 +1220,11 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
     if let Err(e) = compiler.write_object_file(Path::new(&obj_path)) {
         eprintln!("Failed to write object file: {}", e);
         return ExitCode::from(1);
+    }
+
+    // Library mode: create shared library without runtime (no main function required)
+    if is_library {
+        return compile_as_library(&obj_path, output, &link_libs);
     }
 
     // Native runtime mode: link with pure assembly runtime, no libc
@@ -1363,6 +1369,85 @@ fn link_native_runtime(obj_path: &str, output: &str) -> ExitCode {
         Err(e) => {
             eprintln!("Failed to run linker 'ld': {}", e);
             ExitCode::from(1)
+        }
+    }
+}
+
+/// Compile as a shared library (no runtime, no main function required)
+#[cfg(feature = "llvm")]
+fn compile_as_library(obj_path: &str, output: &str, link_libs: &[String]) -> ExitCode {
+    use std::process::Command;
+
+    let linker = find_linker();
+
+    // Determine output type based on extension
+    let is_static = output.ends_with(".a");
+    let output_path = if output.ends_with(".so") || output.ends_with(".a") {
+        output.to_string()
+    } else {
+        format!("{}.so", output)
+    };
+
+    if is_static {
+        // Create static library with ar
+        println!("Creating static library {} -> {}", obj_path, output_path);
+
+        let ar_result = Command::new("ar")
+            .args(["rcs", &output_path, obj_path])
+            .status();
+
+        // Clean up object file
+        let _ = std::fs::remove_file(obj_path);
+
+        match ar_result {
+            Ok(status) if status.success() => {
+                println!("Successfully created static library: {}", output_path);
+                ExitCode::SUCCESS
+            }
+            Ok(status) => {
+                eprintln!("ar failed with status: {}", status);
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                eprintln!("Failed to run ar: {}", e);
+                ExitCode::from(1)
+            }
+        }
+    } else {
+        // Create shared library with -shared flag
+        println!("Creating shared library {} -> {}", obj_path, output_path);
+
+        let mut args = vec![
+            "-shared",
+            "-fPIC",
+            obj_path,
+            "-o", &output_path,
+            "-lm",
+        ];
+
+        // Add libraries from #[link("lib")] attributes
+        for lib_flag in link_libs {
+            args.push(lib_flag);
+        }
+
+        let link_result = Command::new(&linker).args(&args).status();
+
+        // Clean up object file
+        let _ = std::fs::remove_file(obj_path);
+
+        match link_result {
+            Ok(status) if status.success() => {
+                println!("Successfully created shared library: {}", output_path);
+                ExitCode::SUCCESS
+            }
+            Ok(status) => {
+                eprintln!("Linker failed with status: {}", status);
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                eprintln!("Failed to run linker '{}': {}", linker, e);
+                ExitCode::from(1)
+            }
         }
     }
 }
@@ -4571,7 +4656,7 @@ fn build_binary(name: &str, main_file: &std::path::Path, target_dir: &std::path:
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, false, OptLevel::Standard);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, false, false, OptLevel::Standard);
     }
 
     #[cfg(not(feature = "llvm"))]
