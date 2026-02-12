@@ -96,6 +96,8 @@ pub mod llvm {
         current_self_type: Option<String>,
         /// Global/static variables
         global_vars: HashMap<String, inkwell::values::GlobalValue<'ctx>>,
+        /// Libraries to link from #[link("lib")] attributes
+        link_libraries: Vec<String>,
     }
 
     // ============================================
@@ -390,6 +392,7 @@ pub mod llvm {
                 evidential_types: HashMap::new(),
                 current_self_type: None,
                 global_vars: HashMap::new(),
+                link_libraries: Vec::new(),
             })
         }
 
@@ -8771,6 +8774,11 @@ pub mod llvm {
         /// Get LLVM IR as string
         pub fn get_ir(&self) -> String {
             self.module.print_to_string().to_string()
+        }
+
+        /// Get libraries to link from #[link("lib")] attributes on extern blocks
+        pub fn get_link_libraries(&self) -> &[String] {
+            &self.link_libraries
         }
     }
 
