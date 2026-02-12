@@ -2204,11 +2204,37 @@ pub mod llvm {
                     let struct_info_opt = self.struct_types.get(&struct_name).cloned();
 
                     if let Some(struct_info) = struct_info_opt {
-                        // Known struct type
-                        let struct_ptr = self
+                        // Known struct type - use heap allocation so returned structs survive
+                        // Calculate struct size: number of fields * 8 bytes (all fields are i64)
+                        let struct_size = struct_info.field_indices.len() as u64 * 8;
+                        let size_const = self.context.i64_type().const_int(struct_size.max(8), false);
+
+                        let alloc_fn = self
+                            .module
+                            .get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let alloc_call = self
                             .builder
-                            .build_alloca(struct_info.llvm_type, &struct_name)
+                            .build_call(alloc_fn, &[size_const.into()], "struct_alloc")
                             .map_err(|e| e.to_string())?;
+                        let alloc_result = alloc_call
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("sigil_alloc returned void")?;
+
+                        // sigil_alloc returns ptr type - convert to typed pointer
+                        let struct_ptr = if alloc_result.is_pointer_value() {
+                            alloc_result.into_pointer_value()
+                        } else {
+                            // If it returns i64, convert to pointer
+                            self.builder
+                                .build_int_to_ptr(
+                                    alloc_result.into_int_value(),
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    "struct_heap_ptr",
+                                )
+                                .map_err(|e| e.to_string())?
+                        };
 
                         // Initialize each field
                         for (idx, field_init) in fields.iter().enumerate() {
@@ -2267,10 +2293,33 @@ pub mod llvm {
 
                     // Create struct type dynamically
                     let llvm_type = self.context.struct_type(&field_types, false);
-                    let struct_ptr = self
+
+                    // Use heap allocation so returned structs survive (matches known struct path)
+                    let struct_size = (fields.len() as u64).max(1) * 8;
+                    let size_const = self.context.i64_type().const_int(struct_size, false);
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let alloc_call = self
                         .builder
-                        .build_alloca(llvm_type, &struct_name)
+                        .build_call(alloc_fn, &[size_const.into()], "struct_alloc_dyn")
                         .map_err(|e| e.to_string())?;
+                    let alloc_result = alloc_call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sigil_alloc returned void")?;
+                    let struct_ptr = if alloc_result.is_pointer_value() {
+                        alloc_result.into_pointer_value()
+                    } else {
+                        self.builder
+                            .build_int_to_ptr(
+                                alloc_result.into_int_value(),
+                                self.context.ptr_type(AddressSpace::default()),
+                                "struct_heap_ptr_dyn",
+                            )
+                            .map_err(|e| e.to_string())?
+                    };
 
                     // Initialize each field by index
                     for (idx, field_init) in fields.iter().enumerate() {
@@ -8138,31 +8187,9 @@ pub mod llvm {
                 full_path.clone()
             };
 
-            // Handle generic struct constructors (TypeName::new, TypeName::default, etc.)
-            // These allocate a struct and return a pointer/value
-            if full_path.ends_with("::new")
-                || full_path.ends_with("·new")
-                || full_path.ends_with("::default")
-                || full_path.ends_with("·default")
-                || full_path.ends_with("::create")
-                || full_path.ends_with("·create")
-                || full_path.ends_with("::init")
-                || full_path.ends_with("·init")
-            {
-                // For struct constructors, we need to allocate and initialize
-                // For now, return a placeholder value (0 = null pointer)
-                // TODO: Implement proper struct allocation
-                return Ok(self.context.i64_type().const_int(0, false));
-            }
-
-            // Handle functions that return new data structures
-            if full_path.ends_with("::with_capacity")
-                || full_path.ends_with("·with_capacity")
-                || full_path.ends_with("::from_iter")
-                || full_path.ends_with("·from_iter")
-            {
-                return Ok(self.context.i64_type().const_int(0, false));
-            }
+            // NOTE: Generic struct constructors (::new, ·new, etc.) are now handled by
+            // actual function lookup below. The previous stub that returned 0 has been removed
+            // to allow proper impl method dispatch.
 
             // Get the function - try resolved path first, then various lookups
             let callee = if let Some(f) = self.functions.get(&resolved_path) {
