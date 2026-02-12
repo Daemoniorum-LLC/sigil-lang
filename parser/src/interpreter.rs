@@ -3216,15 +3216,24 @@ impl Interpreter {
                             }
                         }
                         ImplItem::Const(c) => {
-                            if const_params.is_empty() {
-                                // No const generics: evaluate normally
-                                let value = self.evaluate(&c.value)?;
-                                let qualified_name = format!("{}·{}", type_name, c.name.name);
-                                self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+                            // Set current_self_type so Self/This resolves correctly
+                            let prev_self_type = self.current_self_type.take();
+                            self.current_self_type = Some(type_name.clone());
 
-                                if let Some(ref module) = self.current_module {
-                                    let fully_qualified = format!("{}·{}", module, qualified_name);
-                                    self.globals.borrow_mut().define(fully_qualified, value);
+                            let result = if const_params.is_empty() {
+                                // No const generics: evaluate normally
+                                match self.evaluate(&c.value) {
+                                    Ok(value) => {
+                                        let qualified_name = format!("{}·{}", type_name, c.name.name);
+                                        self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
+
+                                        if let Some(ref module) = self.current_module {
+                                            let fully_qualified = format!("{}·{}", module, qualified_name);
+                                            self.globals.borrow_mut().define(fully_qualified, value);
+                                        }
+                                        Ok(())
+                                    }
+                                    Err(e) => Err(e),
                                 }
                             } else {
                                 // Try to evaluate; defer if it references a const param
@@ -3237,15 +3246,21 @@ impl Interpreter {
                                             let fully_qualified = format!("{}·{}", module, qualified_name);
                                             self.globals.borrow_mut().define(fully_qualified, value);
                                         }
+                                        Ok(())
                                     }
                                     Err(e) if const_params.iter().any(|p| e.message.contains(p)) => {
                                         // Deferred: depends on const generic params
                                         let key = format!("{}·{}", type_name, c.name.name);
                                         self.const_generic_deferred_consts.insert(key, c.value.clone());
+                                        Ok(())
                                     }
-                                    Err(e) => return Err(e),
+                                    Err(e) => Err(e),
                                 }
-                            }
+                            };
+
+                            // Restore previous self type
+                            self.current_self_type = prev_self_type;
+                            result?;
                         }
                         _ => {}
                     }
@@ -6362,6 +6377,36 @@ impl Interpreter {
                             name: type_name,
                             fields: Rc::new(RefCell::new(fields)),
                         });
+                    }
+                }
+            }
+
+            // Handle Self·VariantName(args) or This·VariantName(args) as enum variant constructor
+            if path.segments.len() == 2 {
+                let first_name = &path.segments[0].ident.name;
+                let variant_name = &path.segments[1].ident.name;
+                if first_name == "Self" || first_name == "This" {
+                    if let Some(ref self_type) = self.current_self_type {
+                        // Check if this is an enum variant constructor
+                        let variant_key = format!("{}·{}", self_type, variant_name);
+                        if let Some((enum_name, variant_name, _arity)) = self.variant_constructors.get(&variant_key).cloned() {
+                            // Evaluate arguments
+                            let arg_values: Vec<Value> = args
+                                .iter()
+                                .map(|a| self.evaluate(a))
+                                .collect::<Result<_, _>>()?;
+
+                            // Construct enum variant
+                            return Ok(Value::Variant {
+                                enum_name,
+                                variant_name,
+                                fields: if arg_values.is_empty() {
+                                    None
+                                } else {
+                                    Some(Rc::new(arg_values))
+                                },
+                            });
+                        }
                     }
                 }
             }
@@ -12096,7 +12141,7 @@ impl Interpreter {
                 Ok(Value::Array(Rc::new(RefCell::new(arr))))
             }
             // Ref methods
-            (Value::Ref(r), "cloned") => {
+            (Value::Ref(r), "cloned") | (Value::Ref(r), "clone") => {
                 // Clone the inner value
                 Ok(r.borrow().clone())
             }
@@ -16234,9 +16279,24 @@ impl Interpreter {
                         .transpose()?
                         .unwrap_or_default();
 
-                    // Call as TypeName::method(args)
-                    let full_name = format!("{}::{}", self_type, method_segment.name.name);
-                    let result = self.call_function_by_name(&full_name, arg_values)?;
+                    // Check if this is an enum variant constructor: This·VariantName(args)
+                    let variant_key = format!("{}·{}", self_type, method_segment.name.name);
+                    let result = if let Some((enum_name, variant_name, _arity)) = self.variant_constructors.get(&variant_key).cloned() {
+                        // Construct enum variant
+                        Value::Variant {
+                            enum_name,
+                            variant_name,
+                            fields: if arg_values.is_empty() {
+                                None
+                            } else {
+                                Some(Rc::new(arg_values))
+                            },
+                        }
+                    } else {
+                        // Call as TypeName::method(args)
+                        let full_name = format!("{}::{}", self_type, method_segment.name.name);
+                        self.call_function_by_name(&full_name, arg_values)?
+                    };
 
                     // Continue processing remaining segments (skip first two)
                     let mut value = result;

@@ -4882,7 +4882,7 @@ impl<'a> Parser<'a> {
                 Some(Token::LogicOr) => BinOp::Or,   // ∨ (vee/logical disjunction, parsed as Or)
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard,     // ⊙ element-wise multiply
-                Some(Token::Tensor) => BinOp::TensorProd,       // ⊗ tensor product
+                Some(Token::Tensor) if !Self::is_non_callable_expr(&lhs) => BinOp::TensorProd,  // ⊗ tensor product (contextual: not after control-flow)
                 Some(Token::Convolve) => BinOp::Convolve,       // ⊛ convolution/merge
                 // Legion operators handled specially below
                 Some(Token::Interfere) | Some(Token::Distribute) | Some(Token::Broadcast)

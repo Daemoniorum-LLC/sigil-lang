@@ -942,56 +942,120 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             }
         }
 
-        // Find all .sigil files in src/
-        let src_dir = match fs::read_dir(&src_path) {
-            Ok(d) => d,
-            Err(_) => {
-                eprintln!("  Warning: Could not read {}/src/", member);
-                continue;
+        // Find all .sigil files in src/ (including subdirectories)
+        fn collect_sigil_files(dir: &std::path::Path, files: &mut Vec<String>) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        // Recurse into subdirectories
+                        collect_sigil_files(&path, files);
+                    } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                        files.push(path.to_string_lossy().to_string());
+                    }
+                }
             }
-        };
+        }
 
-        let mut files: Vec<String> = src_dir
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
-            .map(|e| e.path().to_string_lossy().to_string())
-            .collect();
+        let mut files: Vec<String> = Vec::new();
+        collect_sigil_files(&src_path, &mut files);
+
+        if files.is_empty() {
+            eprintln!("  Warning: No .sigil files found in {}/src/", member);
+            continue;
+        }
 
         // Sort files to ensure proper load order:
-        // 1. lib.sigil first (defines the crate's public interface)
-        // 2. Other modules in alphabetical order
-        // 3. main.sigil last (uses definitions from other modules)
+        // 1. Root lib.sigil first (defines the crate's public interface)
+        // 2. Root-level non-lib/main files
+        // 3. Subdirectory mod.sigil files (in order of depth, then alphabetically)
+        // 4. Subdirectory non-mod files
+        // 5. main.sigil last (uses definitions from other modules)
         files.sort_by(|a, b| {
-            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            match (a_name, b_name) {
-                ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
-                (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
-                ("main.sigil", _) | ("main.sg", _) => std::cmp::Ordering::Greater,
-                (_, "main.sigil") | (_, "main.sg") => std::cmp::Ordering::Less,
-                _ => a_name.cmp(b_name),
-            }
+            let a_path = Path::new(a);
+            let b_path = Path::new(b);
+            let a_name = a_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let b_name = b_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            // Count directory depth relative to src/
+            let a_depth = a.matches('/').count();
+            let b_depth = b.matches('/').count();
+
+            // Root-level lib.sigil always first
+            let a_is_root_lib = a_depth <= 3 && (a_name == "lib.sigil" || a_name == "lib.sg");
+            let b_is_root_lib = b_depth <= 3 && (b_name == "lib.sigil" || b_name == "lib.sg");
+            if a_is_root_lib && !b_is_root_lib { return std::cmp::Ordering::Less; }
+            if b_is_root_lib && !a_is_root_lib { return std::cmp::Ordering::Greater; }
+
+            // main.sigil always last
+            let a_is_main = a_name == "main.sigil" || a_name == "main.sg";
+            let b_is_main = b_name == "main.sigil" || b_name == "main.sg";
+            if a_is_main && !b_is_main { return std::cmp::Ordering::Greater; }
+            if b_is_main && !a_is_main { return std::cmp::Ordering::Less; }
+
+            // Sort by depth first (shallower files first)
+            if a_depth != b_depth { return a_depth.cmp(&b_depth); }
+
+            // Within same depth, mod.sigil comes first
+            let a_is_mod = a_name == "mod.sigil" || a_name == "mod.sg";
+            let b_is_mod = b_name == "mod.sigil" || b_name == "mod.sg";
+            if a_is_mod && !b_is_mod { return std::cmp::Ordering::Less; }
+            if b_is_mod && !a_is_mod { return std::cmp::Ordering::Greater; }
+
+            // Otherwise alphabetical by full path
+            a.cmp(b)
         });
 
         eprintln!("  Loading {} ({} files)...", crate_name, files.len());
 
         // Load each file in the crate
         for file_path in &files {
-            let file_name = Path::new(file_path)
+            let file_path_obj = Path::new(file_path);
+            let file_name = file_path_obj
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?");
-            eprintln!("    - {}", file_name);
 
-            // Set current module based on file name (for module-qualified function names)
+            // Get relative path from src/ for subdirectory files
+            let relative_display = file_path_obj
+                .strip_prefix(&src_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| file_name.to_string());
+            eprintln!("    - {}", relative_display);
+
+            // Set current module based on file path (for module-qualified function names)
             // e.g., "analyze.sigil" -> module name "analyze"
+            //       "router/mod.sigil" -> module name "router"
+            //       "router/types.sigil" -> module name "router·types"
             // Skip for lib.sigil and main.sigil as they are the crate root
             let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
                 && file_name != "lib.sg" && file_name != "main.sg" {
-                Path::new(file_name)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
+                // Build module path from relative directory path + file stem
+                let relative_path = file_path_obj.strip_prefix(&src_path).ok();
+                let module_parts: Vec<String> = if let Some(rel) = relative_path {
+                    let parent_parts: Vec<&str> = rel.parent()
+                        .map(|p| p.iter().filter_map(|c| c.to_str()).collect())
+                        .unwrap_or_default();
+                    let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+                    // For mod.sigil files, use just the parent directory path
+                    if stem == "mod" {
+                        parent_parts.iter().map(|s| s.to_string()).collect()
+                    } else {
+                        // For other files, include parent path + file stem
+                        let mut parts: Vec<String> = parent_parts.iter().map(|s| s.to_string()).collect();
+                        parts.push(stem.to_string());
+                        parts
+                    }
+                } else {
+                    vec![file_path_obj.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()]
+                };
+
+                if module_parts.is_empty() || (module_parts.len() == 1 && module_parts[0].is_empty()) {
+                    None
+                } else {
+                    Some(module_parts.join("·"))
+                }
             } else {
                 None
             };
