@@ -23,9 +23,10 @@ pub mod llvm {
     use std::collections::HashMap;
     use std::path::Path;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp};
+    use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, NumBase, PathSegment, TypePath, UnaryOp};
     use crate::optimize::{OptLevel, Optimizer};
     use crate::parser::Parser;
+    use crate::span::Span;
 
     /// Type alias for JIT-compiled main function
     type MainFn = unsafe extern "C" fn() -> i64;
@@ -3560,8 +3561,7 @@ pub mod llvm {
                         }
                         "vec" => {
                             // vec![...] - parse and create Vec
-                            // TODO: implement vec macro
-                            Ok(self.context.i64_type().const_int(0, false))
+                            Ok(self.compile_vec_macro(fn_value, scope, tokens)?)
                         }
                         "panic" => {
                             // For now, just exit with code 1
@@ -8293,6 +8293,277 @@ pub mod llvm {
                 .left()
                 .map(|v| v.into_int_value())
                 .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
+        }
+
+        /// Compile vec! macro - creates a new Vec and optionally initializes it
+        /// Handles: vec![], vec![a, b, c], vec![val; count]
+        fn compile_vec_macro(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            tokens: &str,
+        ) -> Result<IntValue<'ctx>, String> {
+            let tokens = tokens.trim();
+            let i64_type = self.context.i64_type();
+
+            // Get sigil_vec_new function
+            let vec_new_fn = self
+                .module
+                .get_function("sigil_vec_new")
+                .ok_or("sigil_vec_new not declared")?;
+
+            // Case 1: vec![] - empty vector
+            if tokens.is_empty() {
+                let capacity = i64_type.const_int(8, false);
+                let call = self
+                    .builder
+                    .build_call(vec_new_fn, &[capacity.into()], "vec_new")
+                    .map_err(|e| e.to_string())?;
+                return Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_int_value())
+                    .unwrap_or_else(|| i64_type.const_int(0, false)));
+            }
+
+            // Case 2: vec![val; count] - repeat syntax
+            if let Some(semicolon_pos) = tokens.rfind(';') {
+                let val_str = tokens[..semicolon_pos].trim();
+                let count_str = tokens[semicolon_pos + 1..].trim();
+
+                // Parse count as integer constant or expression
+                let count_val = if let Ok(n) = count_str.parse::<u64>() {
+                    i64_type.const_int(n, false)
+                } else {
+                    // Try to compile as expression
+                    let count_expr = self.parse_simple_expr(count_str)?;
+                    self.compile_expr(fn_value, scope, &count_expr)?
+                };
+
+                // Create vector with capacity = count
+                let call = self
+                    .builder
+                    .build_call(vec_new_fn, &[count_val.into()], "vec_new")
+                    .map_err(|e| e.to_string())?;
+                let vec_ptr = call
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_int_value())
+                    .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                // Parse value expression
+                let val_expr = self.parse_simple_expr(val_str)?;
+                let value = self.compile_expr(fn_value, scope, &val_expr)?;
+
+                // Get push function
+                let push_fn = self
+                    .module
+                    .get_function("sigil_vec_push")
+                    .ok_or("sigil_vec_push not declared")?;
+
+                // Build a loop to push the value count times
+                // For now, if count is a constant, unroll the loop
+                // Otherwise, build actual loop
+                if let Some(const_count) = count_val.get_zero_extended_constant() {
+                    // Unroll for small constant counts (up to 64 iterations)
+                    if const_count <= 64 {
+                        for _ in 0..const_count {
+                            self.builder
+                                .build_call(push_fn, &[vec_ptr.into(), value.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        // Build a proper loop for larger counts
+                        self.build_vec_fill_loop(fn_value, vec_ptr, value, count_val, push_fn)?;
+                    }
+                } else {
+                    // Runtime count - build a loop
+                    self.build_vec_fill_loop(fn_value, vec_ptr, value, count_val, push_fn)?;
+                }
+
+                return Ok(vec_ptr);
+            }
+
+            // Case 3: vec![a, b, c] - element list
+            let elements = self.split_macro_args(tokens);
+            let capacity = i64_type.const_int(elements.len().max(8) as u64, false);
+
+            let call = self
+                .builder
+                .build_call(vec_new_fn, &[capacity.into()], "vec_new")
+                .map_err(|e| e.to_string())?;
+            let vec_ptr = call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+            // Get push function
+            let push_fn = self
+                .module
+                .get_function("sigil_vec_push")
+                .ok_or("sigil_vec_push not declared")?;
+
+            // Push each element
+            for elem_str in elements {
+                let elem_str = elem_str.trim();
+                if elem_str.is_empty() {
+                    continue;
+                }
+                let elem_expr = self.parse_simple_expr(elem_str)?;
+                let elem_val = self.compile_expr(fn_value, scope, &elem_expr)?;
+                self.builder
+                    .build_call(push_fn, &[vec_ptr.into(), elem_val.into()], "")
+                    .map_err(|e| e.to_string())?;
+            }
+
+            Ok(vec_ptr)
+        }
+
+        /// Build a loop to fill a vector with a value
+        fn build_vec_fill_loop(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            vec_ptr: IntValue<'ctx>,
+            value: IntValue<'ctx>,
+            count: IntValue<'ctx>,
+            push_fn: FunctionValue<'ctx>,
+        ) -> Result<(), String> {
+            let i64_type = self.context.i64_type();
+
+            // Create blocks
+            let loop_header = self.context.append_basic_block(fn_value, "vec_fill_header");
+            let loop_body = self.context.append_basic_block(fn_value, "vec_fill_body");
+            let loop_end = self.context.append_basic_block(fn_value, "vec_fill_end");
+
+            // Initialize counter
+            let counter_ptr = self.builder
+                .build_alloca(i64_type, "fill_counter")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, i64_type.const_int(0, false))
+                .map_err(|e| e.to_string())?;
+
+            // Jump to header
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Loop header: check if counter < count
+            self.builder.position_at_end(loop_header);
+            let counter = self.builder
+                .build_load(i64_type, counter_ptr, "counter")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let cmp = self.builder
+                .build_int_compare(inkwell::IntPredicate::SLT, counter, count, "cmp")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cmp, loop_body, loop_end)
+                .map_err(|e| e.to_string())?;
+
+            // Loop body: push value and increment counter
+            self.builder.position_at_end(loop_body);
+            self.builder
+                .build_call(push_fn, &[vec_ptr.into(), value.into()], "")
+                .map_err(|e| e.to_string())?;
+            let next_counter = self.builder
+                .build_int_add(counter, i64_type.const_int(1, false), "next_counter")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, next_counter)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Position at end of loop
+            self.builder.position_at_end(loop_end);
+
+            Ok(())
+        }
+
+        /// Parse a simple expression from a string (for macro arguments)
+        fn parse_simple_expr(&self, s: &str) -> Result<Expr, String> {
+            let s = s.trim();
+            let default_span = Span { start: 0, end: 0 };
+
+            // Try to parse as float literal (check for '.' to distinguish from int)
+            if s.contains('.') || s.contains('e') || s.contains('E') {
+                if let Ok(_f) = s.parse::<f64>() {
+                    return Ok(Expr::Literal(Literal::Float {
+                        value: s.to_string(),
+                        suffix: None,
+                    }));
+                }
+            }
+
+            // Try to parse as integer literal
+            if let Ok(_i) = s.parse::<i64>() {
+                return Ok(Expr::Literal(Literal::Int {
+                    value: s.to_string(),
+                    base: NumBase::Decimal,
+                    suffix: None,
+                }));
+            }
+
+            // Try as boolean
+            if s == "true" {
+                return Ok(Expr::Literal(Literal::Bool(true)));
+            }
+            if s == "false" {
+                return Ok(Expr::Literal(Literal::Bool(false)));
+            }
+
+            // Try as string literal
+            if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+                let inner = &s[1..s.len()-1];
+                return Ok(Expr::Literal(Literal::String(inner.to_string())));
+            }
+
+            // Otherwise treat as a variable path
+            Ok(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident {
+                        name: s.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: default_span,
+                    },
+                    generics: None,
+                }],
+            }))
+        }
+
+        /// Split macro arguments by comma, respecting nesting
+        fn split_macro_args(&self, s: &str) -> Vec<String> {
+            let mut result = Vec::new();
+            let mut current = String::new();
+            let mut depth = 0;
+
+            for c in s.chars() {
+                match c {
+                    '(' | '[' | '{' => {
+                        depth += 1;
+                        current.push(c);
+                    }
+                    ')' | ']' | '}' => {
+                        depth -= 1;
+                        current.push(c);
+                    }
+                    ',' if depth == 0 => {
+                        result.push(current.trim().to_string());
+                        current = String::new();
+                    }
+                    _ => current.push(c),
+                }
+            }
+
+            if !current.trim().is_empty() {
+                result.push(current.trim().to_string());
+            }
+
+            result
         }
 
         /// Compile println! and print! macros
