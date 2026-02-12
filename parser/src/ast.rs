@@ -1185,6 +1185,13 @@ pub enum Expr {
     /// Cast: `expr as Type`
     Cast { expr: Box<Expr>, ty: TypeExpr },
 
+    /// Turbofish: explicit type parameters on an expression
+    /// `expr·<T, U>` or `expr::<T, U>` - provides type/const generic arguments
+    Turbofish {
+        expr: Box<Expr>,
+        types: Vec<TypeExpr>,
+    },
+
     /// Inline assembly: `asm!("instruction", ...)`
     InlineAsm(InlineAsm),
 

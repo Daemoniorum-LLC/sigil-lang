@@ -5274,9 +5274,25 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::MiddleDot) => {
                     // Qualified path call: Type::method() or path!::method()
+                    // Also handles turbofish on type: Type!::<1000>::method()
                     self.advance(); // consume ::
+
+                    // Check for immediate turbofish on the type itself: Type::<T>
+                    // This handles patterns like `Encoding!::<1000>::new!(ids)`
+                    if self.check(&Token::Lt) {
+                        self.advance(); // consume <
+                        let types = self.parse_type_list()?;
+                        self.expect_gt()?;
+                        // Apply turbofish to the expression and continue
+                        expr = Expr::Turbofish {
+                            expr: Box::new(expr),
+                            types,
+                        };
+                        continue;
+                    }
+
                     let method = self.parse_ident()?;
-                    // Check for turbofish: Type::method::<T>()
+                    // Check for turbofish on method: Type::method::<T>()
                     let type_args = if self.check(&Token::MiddleDot) {
                         self.advance();
                         self.expect(Token::Lt)?;

@@ -4426,6 +4426,13 @@ impl Interpreter {
                     (v, _) => Ok(v),
                 }
             }
+            // Turbofish: explicit type parameters on an expression
+            // For the interpreter, we evaluate the inner expression and pass through
+            // The type parameters are used at call sites for method resolution
+            Expr::Turbofish { expr, types: _ } => {
+                // Evaluate the inner expression - type params are resolved at call sites
+                self.evaluate(expr)
+            }
             // Named argument: evaluate the value (name is used by caller for reordering)
             Expr::NamedArg { value, .. } => self.evaluate(value),
             // Array repeat: [value; count] - creates array with `count` copies of `value`
