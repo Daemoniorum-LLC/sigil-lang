@@ -5471,11 +5471,31 @@ pub mod llvm {
                                 "PI" => {
                                     return Ok(f64_type.const_float(std::f64::consts::PI));
                                 }
-                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "floor" | "ceil" | "abs" => {
+                                "E" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::E));
+                                }
+                                "TAU" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::TAU));
+                                }
+                                "SQRT2" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::SQRT_2));
+                                }
+                                "LN2" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::LN_2));
+                                }
+                                "LN10" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::LN_10));
+                                }
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "floor" | "ceil" | "abs" |
+                                "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" |
+                                "log10" | "log2" | "round" | "trunc" => {
                                     // Compile argument as float
                                     if !args.is_empty() {
                                         let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
-                                        let intrinsic_name = format!("llvm.{}.f64", seg.ident.name.as_str());
+                                        let intrinsic_name = match seg.ident.name.as_str() {
+                                            "abs" => "llvm.fabs.f64".to_string(),
+                                            name => format!("llvm.{}.f64", name),
+                                        };
 
                                         // Try to get or declare the intrinsic
                                         let intrinsic = self.module.get_function(&intrinsic_name)
@@ -5486,6 +5506,31 @@ pub mod llvm {
 
                                         let call = self.builder
                                             .build_call(intrinsic, &[arg_f64.into()], &seg.ident.name)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(call.try_as_basic_value().left()
+                                            .ok_or("Expected return value")?
+                                            .into_float_value());
+                                    }
+                                }
+                                // Two-argument math functions
+                                "atan2" | "copysign" | "fmin" | "fmax" | "pow" => {
+                                    if args.len() >= 2 {
+                                        let arg1_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+                                        let arg2_f64 = self.compile_native_float_expr(fn_value, scope, &args[1])?;
+                                        let intrinsic_name = match seg.ident.name.as_str() {
+                                            "fmin" => "llvm.minnum.f64".to_string(),
+                                            "fmax" => "llvm.maxnum.f64".to_string(),
+                                            name => format!("llvm.{}.f64", name),
+                                        };
+
+                                        let intrinsic = self.module.get_function(&intrinsic_name)
+                                            .unwrap_or_else(|| {
+                                                let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                                                self.module.add_function(&intrinsic_name, fn_type, None)
+                                            });
+
+                                        let call = self.builder
+                                            .build_call(intrinsic, &[arg1_f64.into(), arg2_f64.into()], &seg.ident.name)
                                             .map_err(|e| e.to_string())?;
                                         return Ok(call.try_as_basic_value().left()
                                             .ok_or("Expected return value")?
@@ -5506,11 +5551,12 @@ pub mod llvm {
                 Expr::MethodCall { receiver, method, args, .. } => {
                     // Handle .sqrt(), .sin(), etc.
                     match method.name.as_str() {
-                        "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "floor" | "ceil" | "abs" => {
+                        "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "floor" | "ceil" | "abs" |
+                        "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" |
+                        "log10" | "log2" | "round" | "trunc" => {
                             let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
                             let intrinsic_name = match method.name.as_str() {
                                 "abs" => "llvm.fabs.f64".to_string(),
-                                "log" => "llvm.log.f64".to_string(),
                                 name => format!("llvm.{}.f64", name),
                             };
 
@@ -5527,25 +5573,54 @@ pub mod llvm {
                                 .ok_or("Expected return value")?
                                 .into_float_value())
                         }
-                        "pow" => {
-                            if args.len() >= 1 {
-                                let base_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
-                                let exp_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+                        // Two-argument methods: receiver.method(arg)
+                        "pow" | "atan2" | "copysign" => {
+                            if !args.is_empty() {
+                                let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+                                let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+                                let intrinsic_name = format!("llvm.{}.f64", method.name);
 
-                                let intrinsic = self.module.get_function("llvm.pow.f64")
+                                let intrinsic = self.module.get_function(&intrinsic_name)
                                     .unwrap_or_else(|| {
                                         let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
-                                        self.module.add_function("llvm.pow.f64", fn_type, None)
+                                        self.module.add_function(&intrinsic_name, fn_type, None)
                                     });
 
                                 let call = self.builder
-                                    .build_call(intrinsic, &[base_f64.into(), exp_f64.into()], "pow")
+                                    .build_call(intrinsic, &[recv_f64.into(), arg_f64.into()], &method.name)
                                     .map_err(|e| e.to_string())?;
                                 Ok(call.try_as_basic_value().left()
                                     .ok_or("Expected return value")?
                                     .into_float_value())
                             } else {
-                                Err("pow requires an argument".to_string())
+                                Err(format!("{} requires an argument", method.name))
+                            }
+                        }
+                        // min/max methods
+                        "min" | "max" => {
+                            if !args.is_empty() {
+                                let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+                                let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+                                let intrinsic_name = match method.name.as_str() {
+                                    "min" => "llvm.minnum.f64".to_string(),
+                                    "max" => "llvm.maxnum.f64".to_string(),
+                                    _ => unreachable!(),
+                                };
+
+                                let intrinsic = self.module.get_function(&intrinsic_name)
+                                    .unwrap_or_else(|| {
+                                        let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                                        self.module.add_function(&intrinsic_name, fn_type, None)
+                                    });
+
+                                let call = self.builder
+                                    .build_call(intrinsic, &[recv_f64.into(), arg_f64.into()], &method.name)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(call.try_as_basic_value().left()
+                                    .ok_or("Expected return value")?
+                                    .into_float_value())
+                            } else {
+                                Err(format!("{} requires an argument", method.name))
                             }
                         }
                         _ => {
