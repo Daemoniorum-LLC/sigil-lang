@@ -1293,6 +1293,7 @@ impl<'a> Parser<'a> {
                     | Token::Extern
                     | Token::Hash
                     | Token::At
+                    | Token::RuneAnnotation(_)  // //@ rune: ... can start an item
                     | Token::Naked
                     | Token::Packed
                     | Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)
@@ -2184,7 +2185,7 @@ impl<'a> Parser<'a> {
             // Skip doc comments, line comments, and attributes before impl items
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash) | Some(Token::RuneAnnotation(_))
             ) {
                 if self.check(&Token::Hash) {
                     // Skip attribute: #[...] or #![...]
@@ -2201,6 +2202,9 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                     }
+                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    // Skip rune annotations (like //@ rune: cfg(...))
+                    self.advance();
                 } else {
                     self.advance();
                 }
@@ -2224,10 +2228,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_impl_item(&mut self) -> ParseResult<ImplItem> {
-        // Parse outer attributes (#[...] or @[...])
+        // Parse outer attributes (#[...] or @[...]) and rune annotations
         let mut outer_attrs = Vec::new();
-        while self.check(&Token::Hash) || self.check(&Token::At) {
-            outer_attrs.push(self.parse_outer_attribute()?);
+        while self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+            if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                outer_attrs.push(self.parse_rune_annotation()?);
+            } else {
+                outer_attrs.push(self.parse_outer_attribute()?);
+            }
         }
 
         let visibility = self.parse_visibility()?;
@@ -5420,9 +5428,9 @@ impl<'a> Parser<'a> {
                     } else {
                         self.parse_ident()?
                     };
-                    // Check for turbofish syntax: method::<Type>(args)
-                    if self.check(&Token::MiddleDot) {
-                        self.advance(); // consume ::
+                    // Check for turbofish syntax: method·<Type>(args)
+                    if self.check(&Token::MiddleDot) && self.peek_next() == Some(&Token::Lt) {
+                        self.advance(); // consume ·
                         self.expect(Token::Lt)?;
                         // Temporarily exit condition context - turbofish is type context
                         let was_in_condition = self.in_condition;
@@ -5438,6 +5446,13 @@ impl<'a> Parser<'a> {
                             method: field,
                             type_args: Some(type_args),
                             args,
+                        };
+                    } else if self.check(&Token::MiddleDot) {
+                        // Chain continues: expr.field·another_field or expr.field·method()
+                        // Don't consume the MiddleDot - let it be handled by the MiddleDot case
+                        expr = Expr::Field {
+                            expr: Box::new(expr),
+                            field,
                         };
                     } else if self.check(&Token::LParen) {
                         self.advance();
@@ -5567,13 +5582,21 @@ impl<'a> Parser<'a> {
                     }
 
                     let method = self.parse_ident()?;
-                    // Check for turbofish on method: Type::method::<T>()
-                    let type_args = if self.check(&Token::MiddleDot) {
-                        self.advance();
+                    // Check for turbofish on method: Type·method·<T>()
+                    let type_args = if self.check(&Token::MiddleDot) && self.peek_next() == Some(&Token::Lt) {
+                        self.advance(); // consume ·
                         self.expect(Token::Lt)?;
                         let types = self.parse_type_list()?;
                         self.expect_gt()?;
                         Some(types)
+                    } else if self.check(&Token::MiddleDot) {
+                        // Chain continues: Type·field·another_field or Type·field·method()
+                        // Treat current method as field access, let MiddleDot case handle next
+                        expr = Expr::Field {
+                            expr: Box::new(expr),
+                            field: method,
+                        };
+                        continue; // Back to main loop to handle the MiddleDot
                     } else {
                         None
                     };
@@ -6273,6 +6296,17 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
+            // RuneAnnotation in expression context: `//@ rune: cfg(...) { ... }`
+            // Parses as an attributed expression
+            Some(Token::RuneAnnotation(_)) => {
+                let attr = self.parse_rune_annotation()?;
+                // Parse the following expression (usually a block)
+                let expr = self.parse_prefix_expr()?;
+                Ok(Expr::Attributed {
+                    attrs: vec![attr],
+                    expr: Box::new(expr),
+                })
+            }
             // Implicit self field access: `.field` desugars to `self.field`
             // This allows more concise method bodies:
             //   fn increment(mut self) { .count += 1; }
@@ -6983,8 +7017,9 @@ impl<'a> Parser<'a> {
                     } else {
                         self.parse_ident()?
                     };
-                    if self.check(&Token::MiddleDot) {
-                        self.advance();
+                    if self.check(&Token::MiddleDot) && self.peek_next() == Some(&Token::Lt) {
+                        // Turbofish syntax: expr.method·<Type>()
+                        self.advance(); // consume ·
                         self.expect(Token::Lt)?;
                         let type_args = self.parse_type_list()?;
                         self.expect_gt()?;
@@ -6996,6 +7031,13 @@ impl<'a> Parser<'a> {
                             method: field,
                             type_args: Some(type_args),
                             args,
+                        };
+                    } else if self.check(&Token::MiddleDot) {
+                        // Chain continues: expr.field·another_field or expr.field·method()
+                        // Don't consume the MiddleDot - let it be handled by the MiddleDot case below
+                        expr = Expr::Field {
+                            expr: Box::new(expr),
+                            field,
                         };
                     } else if self.check(&Token::LParen) {
                         self.advance();
@@ -8236,12 +8278,16 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // Handle statement-level attributes: #[cfg(...)] { ... } or #[attr] let x = ...
-            if self.check(&Token::Hash) || self.check(&Token::At) {
+            // Handle statement-level attributes: #[cfg(...)] { ... } or #[attr] let x = ... or //@ rune: ...
+            if self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
                 // Parse and collect attributes
                 let mut attrs = Vec::new();
-                while self.check(&Token::Hash) || self.check(&Token::At) {
-                    attrs.push(self.parse_outer_attribute()?);
+                while self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                        attrs.push(self.parse_rune_annotation()?);
+                    } else {
+                        attrs.push(self.parse_outer_attribute()?);
+                    }
                     self.skip_comments();
                 }
 
@@ -9944,10 +9990,10 @@ impl<'a> Parser<'a> {
         let mut rest = None;
 
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Skip comments and attributes before field
+            // Skip comments, attributes, and rune annotations before field
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash) | Some(Token::RuneAnnotation(_))
             ) {
                 if self.check(&Token::Hash) {
                     // Skip attribute: #[...] or #![...]
@@ -9964,6 +10010,9 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                     }
+                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    // Skip rune annotations (like //@ rune: cfg(...))
+                    self.advance();
                 } else {
                     self.advance();
                 }
