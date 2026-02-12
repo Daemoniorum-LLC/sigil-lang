@@ -2051,36 +2051,63 @@ pub mod llvm {
                         }
                         Expr::Index { expr, index } => {
                             // Index assignment: arr[i] = val
-                            // Vec layout: {len, cap, data[]} - data starts at offset 2
-                            let base = self.compile_expr(fn_value, scope, expr)?;
+                            // Uses cached Vec base pointer when available
                             let idx = self.compile_expr(fn_value, scope, index)?;
-                            // Adjust index for Vec layout (add 2 for len and cap fields)
-                            let adjusted_idx = self
-                                .builder
-                                .build_int_add(
-                                    idx,
-                                    self.context.i64_type().const_int(2, false),
-                                    "adj_idx",
-                                )
-                                .map_err(|e| e.to_string())?;
-                            // Calculate element pointer: base + (adjusted_idx * 8)
-                            let offset = self
-                                .builder
-                                .build_int_mul(
-                                    adjusted_idx,
-                                    self.context.i64_type().const_int(8, false),
-                                    "idx_offset",
-                                )
-                                .map_err(|e| e.to_string())?;
-                            let elem_ptr_int = self
-                                .builder
-                                .build_int_add(base, offset, "elem_ptr")
-                                .map_err(|e| e.to_string())?;
+                            let i64_type = self.context.i64_type();
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                            let elem_ptr = self
-                                .builder
-                                .build_int_to_ptr(elem_ptr_int, ptr_type, "index_ptr")
-                                .map_err(|e| e.to_string())?;
+
+                            // Try to get the variable name for caching
+                            let var_name = if let Expr::Path(path) = expr.as_ref() {
+                                path.segments.last().map(|s| s.ident.name.clone())
+                            } else {
+                                None
+                            };
+
+                            // Check if we have a cached data base pointer for this Vec
+                            let data_base = if let Some(ref name) = var_name {
+                                if let Some(cached_base) = scope.get_vec_base(name) {
+                                    cached_base
+                                } else {
+                                    // Compute and cache the data base pointer
+                                    let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                                    let base_ptr = self
+                                        .builder
+                                        .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
+                                        .map_err(|e| e.to_string())?;
+
+                                    let offset_2 = i64_type.const_int(2, false);
+                                    let data_base = unsafe {
+                                        self.builder
+                                            .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
+                                    }
+                                    .map_err(|e| e.to_string())?;
+
+                                    scope.register_vec_base(name.clone(), data_base);
+                                    data_base
+                                }
+                            } else {
+                                // Not a simple variable, compute directly
+                                let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
+                                    .map_err(|e| e.to_string())?;
+
+                                let offset_2 = i64_type.const_int(2, false);
+                                unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
+                                }
+                                .map_err(|e| e.to_string())?
+                            };
+
+                            // GEP from data base using just the index
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_gep(i64_type, data_base, &[idx], "elem_ptr")
+                            }
+                            .map_err(|e| e.to_string())?;
+
                             self.builder
                                 .build_store(elem_ptr, val)
                                 .map_err(|e| e.to_string())?;
@@ -5046,6 +5073,7 @@ pub mod llvm {
 
         /// Compile array/slice indexing: arr[idx]
         /// Vec layout is: {len: i64, cap: i64, data[]} where data is inline at offset 2
+        /// Uses cached data base pointer when available to avoid repeated +2 offset calculations
         fn compile_index(
             &mut self,
             fn_value: FunctionValue<'ctx>,
@@ -5053,31 +5081,63 @@ pub mod llvm {
             expr: &Expr,
             index: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
-            let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
             let idx = self.compile_expr(fn_value, scope, index)?;
-
             let i64_type = self.context.i64_type();
             let ptr_type = self.context.ptr_type(AddressSpace::default());
 
-            // Convert i64 back to pointer
-            let base_ptr = self
-                .builder
-                .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
-                .map_err(|e| e.to_string())?;
+            // Try to get the variable name for caching
+            let var_name = if let Expr::Path(path) = expr {
+                path.segments.last().map(|s| s.ident.name.clone())
+            } else {
+                None
+            };
 
-            // Vec layout: {len: i64, cap: i64, data: i64[]}
-            // Data starts at offset 2 (after len and cap)
-            // So element at index i is at vec[2 + i]
-            let offset_2 = self.context.i64_type().const_int(2, false);
-            let adjusted_idx = self
-                .builder
-                .build_int_add(idx, offset_2, "adj_idx")
-                .map_err(|e| e.to_string())?;
+            // Check if we have a cached data base pointer for this Vec
+            let data_base = if let Some(ref name) = var_name {
+                if let Some(cached_base) = scope.get_vec_base(name) {
+                    // Use cached base directly
+                    cached_base
+                } else {
+                    // Compute and cache the data base pointer
+                    let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                    let base_ptr = self
+                        .builder
+                        .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
+                        .map_err(|e| e.to_string())?;
 
-            // GEP to get element at adjusted index
+                    // Data starts at offset 2 (after len and cap)
+                    let offset_2 = i64_type.const_int(2, false);
+                    let data_base = unsafe {
+                        self.builder
+                            .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
+                    }
+                    .map_err(|e| e.to_string())?;
+
+                    // Cache the data base pointer
+                    scope.register_vec_base(name.clone(), data_base);
+                    data_base
+                }
+            } else {
+                // Not a simple variable, fall back to uncached path
+                let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                let base_ptr = self
+                    .builder
+                    .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                // Data starts at offset 2 (after len and cap)
+                let offset_2 = i64_type.const_int(2, false);
+                unsafe {
+                    self.builder
+                        .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
+                }
+                .map_err(|e| e.to_string())?
+            };
+
+            // GEP from data base using just the index (no +2 needed)
             let elem_ptr = unsafe {
                 self.builder
-                    .build_gep(i64_type, base_ptr, &[adjusted_idx], "elem_ptr")
+                    .build_gep(i64_type, data_base, &[idx], "elem_ptr")
             }
             .map_err(|e| e.to_string())?;
 
@@ -8499,8 +8559,10 @@ pub mod llvm {
         vars: HashMap<String, PointerValue<'ctx>>,
         /// Track which variables hold float values (legacy - being replaced by var_types)
         float_vars: std::collections::HashSet<String>,
-        /// New: Track variable types explicitly
+        /// Track variable types explicitly
         var_types: HashMap<String, SigilType>,
+        /// Cache Vec data base pointers (ptr to element 0) for faster indexing
+        vec_bases: HashMap<String, PointerValue<'ctx>>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -8509,6 +8571,7 @@ pub mod llvm {
                 vars: HashMap::new(),
                 float_vars: std::collections::HashSet::new(),
                 var_types: HashMap::new(),
+                vec_bases: HashMap::new(),
             }
         }
 
@@ -8519,6 +8582,16 @@ pub mod llvm {
             if ty == SigilType::Float {
                 self.float_vars.insert(name);
             }
+        }
+
+        /// Register a Vec's data base pointer for faster indexing
+        fn register_vec_base(&mut self, name: String, base_ptr: PointerValue<'ctx>) {
+            self.vec_bases.insert(name, base_ptr);
+        }
+
+        /// Get cached Vec data base pointer
+        fn get_vec_base(&self, name: &str) -> Option<PointerValue<'ctx>> {
+            self.vec_bases.get(name).copied()
         }
 
         /// Get the type of a variable
