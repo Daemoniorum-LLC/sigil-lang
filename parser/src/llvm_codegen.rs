@@ -1821,11 +1821,35 @@ pub mod llvm {
                 Expr::Binary { op, left, right } => {
                     // Check if either operand is a float expression (using scope for variable tracking)
                     let is_float = self.is_float_expr_with_scope(left, scope) || self.is_float_expr_with_scope(right, scope);
-                    let lhs = self.compile_expr(fn_value, scope, left)?;
-                    let rhs = self.compile_expr(fn_value, scope, right)?;
                     if is_float {
-                        self.compile_float_binary_op(*op, lhs, rhs)
+                        // Use native float path for arithmetic ops - avoids bitcasts within the expression
+                        match op {
+                            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
+                                let lhs_f64 = self.compile_native_float_expr(fn_value, scope, left)?;
+                                let rhs_f64 = self.compile_native_float_expr(fn_value, scope, right)?;
+                                let result_f64 = match op {
+                                    BinOp::Add => self.builder.build_float_add(lhs_f64, rhs_f64, "fadd"),
+                                    BinOp::Sub => self.builder.build_float_sub(lhs_f64, rhs_f64, "fsub"),
+                                    BinOp::Mul => self.builder.build_float_mul(lhs_f64, rhs_f64, "fmul"),
+                                    BinOp::Div => self.builder.build_float_div(lhs_f64, rhs_f64, "fdiv"),
+                                    BinOp::Rem => self.builder.build_float_rem(lhs_f64, rhs_f64, "frem"),
+                                    _ => unreachable!(),
+                                }.map_err(|e| e.to_string())?;
+                                // Convert back to i64 bits for return
+                                self.builder.build_bit_cast(result_f64, self.context.i64_type(), "fres_bits")
+                                    .map_err(|e| e.to_string())
+                                    .map(|v| v.into_int_value())
+                            }
+                            _ => {
+                                // For comparisons and other ops, use the traditional path
+                                let lhs = self.compile_expr(fn_value, scope, left)?;
+                                let rhs = self.compile_expr(fn_value, scope, right)?;
+                                self.compile_float_binary_op(*op, lhs, rhs)
+                            }
+                        }
                     } else {
+                        let lhs = self.compile_expr(fn_value, scope, left)?;
+                        let rhs = self.compile_expr(fn_value, scope, right)?;
                         self.compile_binary_op(*op, lhs, rhs)
                     }
                 }
@@ -5309,6 +5333,214 @@ pub mod llvm {
             }
         }
 
+        /// Compile an expression that is known to be a float, returning native FloatValue
+        /// This avoids bitcasts within float expressions by keeping values as f64
+        fn compile_native_float_expr(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            expr: &Expr,
+        ) -> Result<inkwell::values::FloatValue<'ctx>, String> {
+            let f64_type = self.context.f64_type();
+
+            match expr {
+                Expr::Literal(Literal::Float { value, .. }) => {
+                    // Parse float literal directly to f64
+                    let s = value.replace('_', "");
+                    let s = s.trim_end_matches("f64").trim_end_matches("f32");
+                    let v: f64 = s.parse().map_err(|_| format!("Invalid float: {}", value))?;
+                    Ok(f64_type.const_float(v))
+                }
+                Expr::Path(path) => {
+                    // Variable load - check if it's a float variable
+                    let name = path.segments.last()
+                        .map(|s| s.ident.name.as_str())
+                        .ok_or("Empty path")?;
+
+                    if let Some(&ptr) = scope.vars.get(name) {
+                        // Load as i64 bits, convert to f64
+                        let val = self.builder
+                            .build_load(self.context.i64_type(), ptr, name)
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        let f_val = self.builder
+                            .build_bit_cast(val, f64_type, "load_f64")
+                            .map_err(|e| e.to_string())?
+                            .into_float_value();
+                        Ok(f_val)
+                    } else {
+                        Err(format!("Variable not found: {}", name))
+                    }
+                }
+                Expr::Binary { op, left, right } => {
+                    // Compile both sides as floats
+                    let lhs = self.compile_native_float_expr(fn_value, scope, left)?;
+                    let rhs = self.compile_native_float_expr(fn_value, scope, right)?;
+
+                    match op {
+                        BinOp::Add => self.builder
+                            .build_float_add(lhs, rhs, "fadd")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Sub => self.builder
+                            .build_float_sub(lhs, rhs, "fsub")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Mul => self.builder
+                            .build_float_mul(lhs, rhs, "fmul")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Div => self.builder
+                            .build_float_div(lhs, rhs, "fdiv")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Rem => self.builder
+                            .build_float_rem(lhs, rhs, "frem")
+                            .map_err(|e| e.to_string()),
+                        _ => {
+                            // For comparisons and other ops, fall back to regular compile
+                            let int_result = self.compile_expr(fn_value, scope, expr)?;
+                            self.builder
+                                .build_bit_cast(int_result, f64_type, "cast_f64")
+                                .map_err(|e| e.to_string())
+                                .map(|v| v.into_float_value())
+                        }
+                    }
+                }
+                Expr::Call { func, args } => {
+                    // Handle math functions that return float
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            match seg.ident.name.as_str() {
+                                "PI" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::PI));
+                                }
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "floor" | "ceil" | "abs" => {
+                                    // Compile argument as float
+                                    if !args.is_empty() {
+                                        let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+                                        let intrinsic_name = format!("llvm.{}.f64", seg.ident.name.as_str());
+
+                                        // Try to get or declare the intrinsic
+                                        let intrinsic = self.module.get_function(&intrinsic_name)
+                                            .unwrap_or_else(|| {
+                                                let fn_type = f64_type.fn_type(&[f64_type.into()], false);
+                                                self.module.add_function(&intrinsic_name, fn_type, None)
+                                            });
+
+                                        let call = self.builder
+                                            .build_call(intrinsic, &[arg_f64.into()], &seg.ident.name)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(call.try_as_basic_value().left()
+                                            .ok_or("Expected return value")?
+                                            .into_float_value());
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Fall back to regular compile and convert
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "call_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+                Expr::MethodCall { receiver, method, args, .. } => {
+                    // Handle .sqrt(), .sin(), etc.
+                    match method.name.as_str() {
+                        "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "floor" | "ceil" | "abs" => {
+                            let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+                            let intrinsic_name = match method.name.as_str() {
+                                "abs" => "llvm.fabs.f64".to_string(),
+                                "log" => "llvm.log.f64".to_string(),
+                                name => format!("llvm.{}.f64", name),
+                            };
+
+                            let intrinsic = self.module.get_function(&intrinsic_name)
+                                .unwrap_or_else(|| {
+                                    let fn_type = f64_type.fn_type(&[f64_type.into()], false);
+                                    self.module.add_function(&intrinsic_name, fn_type, None)
+                                });
+
+                            let call = self.builder
+                                .build_call(intrinsic, &[recv_f64.into()], &method.name)
+                                .map_err(|e| e.to_string())?;
+                            Ok(call.try_as_basic_value().left()
+                                .ok_or("Expected return value")?
+                                .into_float_value())
+                        }
+                        "pow" => {
+                            if args.len() >= 1 {
+                                let base_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+                                let exp_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                let intrinsic = self.module.get_function("llvm.pow.f64")
+                                    .unwrap_or_else(|| {
+                                        let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                                        self.module.add_function("llvm.pow.f64", fn_type, None)
+                                    });
+
+                                let call = self.builder
+                                    .build_call(intrinsic, &[base_f64.into(), exp_f64.into()], "pow")
+                                    .map_err(|e| e.to_string())?;
+                                Ok(call.try_as_basic_value().left()
+                                    .ok_or("Expected return value")?
+                                    .into_float_value())
+                            } else {
+                                Err("pow requires an argument".to_string())
+                            }
+                        }
+                        _ => {
+                            // Fall back to regular compile
+                            let int_result = self.compile_expr(fn_value, scope, expr)?;
+                            self.builder
+                                .build_bit_cast(int_result, f64_type, "method_f64")
+                                .map_err(|e| e.to_string())
+                                .map(|v| v.into_float_value())
+                        }
+                    }
+                }
+                Expr::Index { expr: container, index } => {
+                    // Load from Vec and convert to float
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "idx_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+                Expr::Cast { expr: inner, ty } => {
+                    // Handle int to float cast
+                    if let ast::TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.last() {
+                            if seg.ident.name == "f64" || seg.ident.name == "f32" {
+                                // Compile inner as int and convert
+                                let int_val = self.compile_expr(fn_value, scope, inner)?;
+                                return self.builder
+                                    .build_signed_int_to_float(int_val, f64_type, "sitofp")
+                                    .map_err(|e| e.to_string());
+                            }
+                        }
+                    }
+                    // Fall back
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "cast_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+                Expr::Tuple(ref elems) if elems.len() == 1 => {
+                    // Single-element tuple acts like parenthesized expression
+                    self.compile_native_float_expr(fn_value, scope, &elems[0])
+                }
+                _ => {
+                    // For other expressions, compile normally and convert
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "other_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+            }
+        }
+
         /// Compile a float binary operation
         /// Values are stored as i64 bit patterns, so we bitcast to f64, operate, and bitcast back
         fn compile_float_binary_op(
@@ -8247,11 +8479,28 @@ pub mod llvm {
         }
     }
 
+    /// Type of a Sigil value for codegen
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum SigilType {
+        Integer,
+        Float,
+        Pointer,
+    }
+
+    /// Variable info in compile scope
+    #[derive(Debug, Clone, Copy)]
+    struct VarInfo<'ctx> {
+        ptr: PointerValue<'ctx>,
+        ty: SigilType,
+    }
+
     /// Variable scope for compilation
     struct CompileScope<'ctx> {
         vars: HashMap<String, PointerValue<'ctx>>,
-        /// Track which variables hold float values
+        /// Track which variables hold float values (legacy - being replaced by var_types)
         float_vars: std::collections::HashSet<String>,
+        /// New: Track variable types explicitly
+        var_types: HashMap<String, SigilType>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -8259,7 +8508,27 @@ pub mod llvm {
             Self {
                 vars: HashMap::new(),
                 float_vars: std::collections::HashSet::new(),
+                var_types: HashMap::new(),
             }
+        }
+
+        /// Register a variable with its type
+        fn register_var(&mut self, name: String, ptr: PointerValue<'ctx>, ty: SigilType) {
+            self.vars.insert(name.clone(), ptr);
+            self.var_types.insert(name.clone(), ty);
+            if ty == SigilType::Float {
+                self.float_vars.insert(name);
+            }
+        }
+
+        /// Get the type of a variable
+        fn get_var_type(&self, name: &str) -> SigilType {
+            self.var_types.get(name).copied().unwrap_or(SigilType::Integer)
+        }
+
+        /// Check if a variable is a float
+        fn is_float_var(&self, name: &str) -> bool {
+            self.get_var_type(name) == SigilType::Float
         }
     }
 
