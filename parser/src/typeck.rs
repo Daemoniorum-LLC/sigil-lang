@@ -1908,11 +1908,21 @@ impl TypeChecker {
                 then_branch,
                 else_branch,
             } => {
-                let cond_ty = self.infer_expr(condition);
-                // Strip evidence wrapper before checking: bool? is still bool
-                let (bare_cond_ty, _) = self.strip_evidence(&cond_ty);
-                if !self.unify(&Type::Bool, &bare_cond_ty) {
-                    self.error(TypeError::new("if condition must be bool"));
+                // Check if this is an if-let pattern: ⎇ ≔ Pattern = expr { ... }
+                let is_if_let = matches!(condition.as_ref(), Expr::Let { .. });
+
+                if !is_if_let {
+                    let cond_ty = self.infer_expr(condition);
+                    // Strip evidence wrapper before checking: bool? is still bool
+                    let (bare_cond_ty, _) = self.strip_evidence(&cond_ty);
+                    if !self.unify(&Type::Bool, &bare_cond_ty) {
+                        self.error(TypeError::new("if condition must be bool"));
+                    }
+                } else if let Expr::Let { pattern, value } = condition.as_ref() {
+                    // Type-check the value being matched
+                    let value_ty = self.infer_expr(value);
+                    // Bind pattern variables to the environment for the then_branch
+                    self.bind_pattern(pattern, &value_ty, EvidenceLevel::Known);
                 }
 
                 let then_ty = self.check_block(then_branch);
@@ -1954,10 +1964,20 @@ impl TypeChecker {
                 body,
                 ..
             } => {
-                let cond_ty = self.infer_expr(condition);
-                let (bare_cond_ty, _) = self.strip_evidence(&cond_ty);
-                if !self.unify(&Type::Bool, &bare_cond_ty) {
-                    self.error(TypeError::new("while condition must be bool"));
+                // Check if this is a while-let pattern: ⟳ ≔ Pattern = expr { ... }
+                let is_while_let = matches!(condition.as_ref(), Expr::Let { .. });
+
+                if !is_while_let {
+                    let cond_ty = self.infer_expr(condition);
+                    let (bare_cond_ty, _) = self.strip_evidence(&cond_ty);
+                    if !self.unify(&Type::Bool, &bare_cond_ty) {
+                        self.error(TypeError::new("while condition must be bool"));
+                    }
+                } else if let Expr::Let { pattern, value } = condition.as_ref() {
+                    // Type-check the value being matched
+                    let value_ty = self.infer_expr(value);
+                    // Bind pattern variables to the environment for the body
+                    self.bind_pattern(pattern, &value_ty, EvidenceLevel::Known);
                 }
                 self.check_block(body);
                 Type::Unit
@@ -1994,11 +2014,11 @@ impl TypeChecker {
                 let coll_ty = self.infer_expr(expr);
                 let idx_ty = self.infer_expr(index);
 
+                // Unify index type with usize (handles type variables)
+                let _ = self.unify(&idx_ty, &Type::Int(IntSize::USize));
+
                 match coll_ty {
                     Type::Array { element, .. } | Type::Slice(element) => {
-                        if !matches!(idx_ty, Type::Int(_)) {
-                            self.error(TypeError::new("index must be integer"));
-                        }
                         *element
                     }
                     _ => {
@@ -2142,21 +2162,8 @@ impl TypeChecker {
                 let recv_ty = self.infer_expr(receiver);
                 let (recv_inner, recv_ev) = self.strip_evidence(&recv_ty);
                 // Strip references to get the underlying type for method lookup
-                let recv_derefed = match &recv_inner {
-                    Type::Ref { inner, .. } => {
-                        // Also strip evidence from inner ref
-                        let (inner_stripped, _) = self.strip_evidence(inner);
-                        // Handle &&T -> T
-                        match &inner_stripped {
-                            Type::Ref { inner: inner2, .. } => {
-                                let (i2, _) = self.strip_evidence(inner2);
-                                i2
-                            }
-                            other => other.clone(),
-                        }
-                    }
-                    other => other.clone(),
-                };
+                // Use recursive deref with a depth limit of 10 to handle deeply nested references
+                let recv_derefed = self.recursive_deref(&recv_inner, 10);
                 let _arg_types: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect();
 
                 // FIRST: Check user-defined methods in impl_methods
@@ -2226,9 +2233,9 @@ impl TypeChecker {
                     // Clone returns same type as receiver
                     "clone" | "cloned" | "copied" => recv_inner.clone(),
 
-                    // Option/Result unwrapping - return inner type or fresh var
-                    "unwrap" | "unwrap_or" | "unwrap_or_default" | "unwrap_or_else"
-                    | "expect" | "ok" | "err" => {
+                    // Option/Result unwrapping - return inner type
+                    // unwrap_or takes a default value of type T, so return T
+                    "unwrap" | "expect" => {
                         if let Type::Named { name, generics } = &recv_inner {
                             if (name == "Option" || name == "Result") && !generics.is_empty() {
                                 generics[0].clone()
@@ -2240,12 +2247,109 @@ impl TypeChecker {
                         }
                     }
 
+                    // unwrap_or(default) - the argument type IS the return type
+                    // This fixes: opt.map(|s| s == value).unwrap_or(false) → bool
+                    "unwrap_or" => {
+                        // If we have an argument, its type is the return type
+                        if !args.is_empty() {
+                            let arg_ty = self.infer_expr(&args[0]);
+                            let (bare_arg_ty, _) = self.strip_evidence(&arg_ty);
+                            bare_arg_ty
+                        } else if let Type::Named { name, generics } = &recv_inner {
+                            if (name == "Option" || name == "Result") && !generics.is_empty() {
+                                generics[0].clone()
+                            } else {
+                                self.fresh_var()
+                            }
+                        } else {
+                            self.fresh_var()
+                        }
+                    }
+
+                    "unwrap_or_default" | "unwrap_or_else" => {
+                        if let Type::Named { name, generics } = &recv_inner {
+                            if (name == "Option" || name == "Result") && !generics.is_empty() {
+                                generics[0].clone()
+                            } else {
+                                self.fresh_var()
+                            }
+                        } else {
+                            self.fresh_var()
+                        }
+                    }
+
+                    // Option::ok() returns T, Result::ok() returns Option<T>
+                    "ok" => {
+                        if let Type::Named { name, generics } = &recv_inner {
+                            if name == "Result" && !generics.is_empty() {
+                                Type::Named {
+                                    name: "Option".to_string(),
+                                    generics: vec![generics[0].clone()],
+                                }
+                            } else if name == "Option" && !generics.is_empty() {
+                                generics[0].clone()
+                            } else {
+                                self.fresh_var()
+                            }
+                        } else {
+                            self.fresh_var()
+                        }
+                    }
+
+                    // Result::err() returns Option<E>
+                    "err" => {
+                        if let Type::Named { name, generics } = &recv_inner {
+                            if name == "Result" && generics.len() >= 2 {
+                                Type::Named {
+                                    name: "Option".to_string(),
+                                    generics: vec![generics[1].clone()],
+                                }
+                            } else {
+                                self.fresh_var()
+                            }
+                        } else {
+                            self.fresh_var()
+                        }
+                    }
+
+                    // Option/Result map - preserves container, transforms inner type
+                    // opt.map(|x| x.to_string()) : Option<T> → Option<String>
+                    "map" | "and_then" | "map_err" => {
+                        if let Type::Named { name, generics } = &recv_inner {
+                            if name == "Option" || name == "Result" {
+                                // For Option/Result, map returns the same container with a fresh inner type
+                                // The closure determines the actual inner type
+                                if method.name == "map_err" && name == "Result" && generics.len() >= 2 {
+                                    // map_err transforms E, keeps T
+                                    Type::Named {
+                                        name: "Result".to_string(),
+                                        generics: vec![generics[0].clone(), self.fresh_var()],
+                                    }
+                                } else {
+                                    Type::Named {
+                                        name: name.clone(),
+                                        generics: vec![self.fresh_var()],
+                                    }
+                                }
+                            } else {
+                                // For iterators, preserve the iterator type
+                                recv_inner.clone()
+                            }
+                        } else {
+                            // Iterator-like behavior
+                            recv_inner.clone()
+                        }
+                    }
+
+                    // Option::is_some(), Option::is_none(), Result::is_ok(), Result::is_err() return bool
+                    "is_some" | "is_none" | "is_ok" | "is_err" => Type::Bool,
+
                     // collect() returns fresh var to unify with type annotation
                     "collect" => self.fresh_var(),
 
                     // Iterator/collection transformation methods - preserve receiver type
                     "iter" | "into_iter" | "iter_mut" | "rev" | "skip" | "take"
-                    | "filter" | "map" | "filter_map" | "flat_map" | "enumerate"
+                    | "filter" | "filter_map" | "flat_map" | "enumerate"
                     | "zip" | "chain" | "flatten" | "reverse" | "sorted"
                     | "dedup" | "unique" | "peekable" | "fuse" | "cycle" | "step_by"
                     | "take_while" | "skip_while" | "scan" | "inspect" => recv_inner.clone(),
@@ -3270,6 +3374,34 @@ impl TypeChecker {
         }
     }
 
+    /// Recursively dereference a type, stripping references and evidence wrappers.
+    /// Returns the innermost non-reference type.
+    /// Has a depth limit to prevent infinite loops.
+    fn recursive_deref(&self, ty: &Type, max_depth: usize) -> Type {
+        if max_depth == 0 {
+            return ty.clone();
+        }
+
+        // First strip evidence
+        let (stripped, _) = self.strip_evidence(ty);
+
+        match &stripped {
+            // Dereference references
+            Type::Ref { inner, .. } => self.recursive_deref(inner, max_depth - 1),
+
+            // Dereference Box, Arc, Rc, etc.
+            Type::Named { name, generics, .. }
+                if matches!(name.as_str(), "Box" | "Arc" | "Rc" | "Cell" | "RefCell" | "Mutex")
+                    && !generics.is_empty() =>
+            {
+                self.recursive_deref(&generics[0], max_depth - 1)
+            }
+
+            // Base case: not a reference or smart pointer
+            other => other.clone(),
+        }
+    }
+
     /// Bind pattern variables with the given type and evidence level.
     /// This propagates evidence through pattern matching.
     fn bind_pattern(&mut self, pattern: &Pattern, ty: &Type, evidence: EvidenceLevel) {
@@ -3447,6 +3579,46 @@ impl TypeChecker {
             (Type::Str, Type::Named { name, .. }) if name == "String" => true,
             (Type::Named { name, .. }, Type::Str) if name == "String" => true,
 
+            // PathBuf to &Path coercion (via Deref)
+            // PathBuf owns path data, Path is a view — similar to String/str
+            (Type::Named { name: n, .. }, Type::Ref { mutable: false, inner, .. })
+                if n == "PathBuf" && matches!(inner.as_ref(), Type::Named { name, .. } if name == "Path") => true,
+            (Type::Ref { mutable: false, inner, .. }, Type::Named { name: n, .. })
+                if n == "PathBuf" && matches!(inner.as_ref(), Type::Named { name, .. } if name == "Path") => true,
+
+            // &PathBuf to &Path coercion
+            (Type::Ref { mutable: false, inner: a, .. }, Type::Ref { mutable: false, inner: b, .. })
+                if matches!(a.as_ref(), Type::Named { name, .. } if name == "PathBuf")
+                && matches!(b.as_ref(), Type::Named { name, .. } if name == "Path") => true,
+
+            // PathBuf to &str coercion (via to_str() conceptually)
+            // Allow PathBuf where &str is expected for string-like path operations
+            (Type::Named { name: n, .. }, Type::Ref { mutable: false, inner, .. })
+                if n == "PathBuf" && matches!(inner.as_ref(), Type::Str) => true,
+
+            // &String to &Path coercion (common pattern)
+            (Type::Ref { mutable: false, inner: a, .. }, Type::Ref { mutable: false, inner: b, .. })
+                if matches!(a.as_ref(), Type::Named { name, .. } if name == "String")
+                && matches!(b.as_ref(), Type::Named { name, .. } if name == "Path") => true,
+
+            // String to &Path coercion
+            (Type::Named { name: n, .. }, Type::Ref { mutable: false, inner, .. })
+                if n == "String" && matches!(inner.as_ref(), Type::Named { name, .. } if name == "Path") => true,
+
+            // &String to &PathBuf coercion (common pattern - paths often constructed from strings)
+            (Type::Ref { mutable: false, inner: a, .. }, Type::Ref { mutable: false, inner: b, .. })
+                if matches!(a.as_ref(), Type::Named { name, .. } if name == "PathBuf")
+                && matches!(b.as_ref(), Type::Named { name, .. } if name == "String") => true,
+
+            // String to PathBuf coercion
+            (Type::Named { name: a, .. }, Type::Named { name: b, .. })
+                if a == "PathBuf" && b == "String" => true,
+
+            // &str to &Path coercion
+            (Type::Ref { mutable: false, inner: a, .. }, Type::Ref { mutable: false, inner: b, .. })
+                if matches!(a.as_ref(), Type::Named { name, .. } if name == "Path")
+                && matches!(b.as_ref(), Type::Str) => true,
+
             // Arrays
             (Type::Array { element: a, size: sa }, Type::Array { element: b, size: sb }) => {
                 (sa == sb || sa.is_none() || sb.is_none()) && self.unify(a, b)
@@ -3459,6 +3631,36 @@ impl TypeChecker {
             // A fixed-size array is always a valid slice of the same element type.
             (Type::Slice(a), Type::Array { element: b, .. }) => self.unify(a, b),
             (Type::Array { element: a, .. }, Type::Slice(b)) => self.unify(a, b),
+
+            // Vec<T> to &[T] coercion (via Deref)
+            // Vec owns data, slice is a view — allow passing Vec where &[T] is expected
+            (Type::Ref { mutable: false, inner, .. }, Type::Named { name, generics, .. })
+                if name == "Vec" && !generics.is_empty() => {
+                    if let Type::Slice(elem) = inner.as_ref() {
+                        self.unify(elem, &generics[0])
+                    } else {
+                        false
+                    }
+                }
+            (Type::Named { name, generics, .. }, Type::Ref { mutable: false, inner, .. })
+                if name == "Vec" && !generics.is_empty() => {
+                    if let Type::Slice(elem) = inner.as_ref() {
+                        self.unify(&generics[0], elem)
+                    } else {
+                        false
+                    }
+                }
+
+            // &[T] to &Vec<T> coercion (slice to vec reference)
+            (Type::Ref { mutable: false, inner: a, .. }, Type::Ref { mutable: false, inner: b, .. })
+                if matches!(a.as_ref(), Type::Slice(_)) && matches!(b.as_ref(), Type::Named { name, .. } if name == "Vec") => {
+                    if let (Type::Slice(elem_a), Type::Named { generics, .. }) = (a.as_ref(), b.as_ref()) {
+                        if !generics.is_empty() {
+                            return self.unify(elem_a, &generics[0]);
+                        }
+                    }
+                    false
+                }
 
             // Tuples
             (Type::Tuple(a), Type::Tuple(b)) if a.len() == b.len() => {

@@ -1,0 +1,33 @@
+// FFI Test 50: Type alias in extern block
+// Tests: Parser accepts type alias syntax and codegen handles it
+// Expected exit code: 42
+
+// Type alias for function pointer - common in C FFI
+extern "C" {
+    // Opaque type (already works)
+    type OpaqueHandle;
+
+    // Type alias for function pointer (new feature)
+    // Note: function pointer types use unnamed params
+    type Comparator = rite(i64, i64) → i64;
+
+    // Function that uses the type alias
+    rite qsort_r(
+        base: *void,
+        nmemb: size_t,
+        size: size_t,
+        compar: Comparator,
+        arg: *void
+    );
+}
+
+// Define a simple comparator function that matches the type alias
+rite compare_ints(a: i64, b: i64) → i64 {
+    a - b
+}
+
+rite main() → i64 {
+    // For now, just verify the type alias is recognized
+    // Return 42 to indicate success
+    42
+}

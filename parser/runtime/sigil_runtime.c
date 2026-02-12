@@ -153,55 +153,95 @@ void sigil_free(void* ptr) {
 }
 
 /* ============================================================================
- * Vec Operations (simple fixed-size array on heap)
- * Vec is represented as: ptr to {len: i64, capacity: i64, data: i64[]}
+ * Vec Operations (growable array on heap)
+ * Vec is represented as: ptr to {len: i64, capacity: i64, data_ptr: i64*}
+ * The data is stored in a separate heap allocation pointed to by data_ptr.
+ * This allows growing without invalidating the Vec pointer itself.
+ *
+ * TODO: Consider moving Vec to pure LLVM IR generation to eliminate runtime
+ * dependency. Would require implementing growth logic directly in codegen.
  * ============================================================================ */
+
+typedef struct {
+    int64_t len;
+    int64_t capacity;
+    int64_t* data;  // separate heap allocation for data
+} SigilVec;
 
 /* Create a new Vec with given capacity */
 void* sigil_vec_new(int64_t capacity) {
-    if (capacity < 4) capacity = 4;
-    // Allocate: 2 i64s for len/cap + data
-    size_t size = 2 * sizeof(int64_t) + (size_t)capacity * sizeof(int64_t);
-    int64_t* vec = (int64_t*)malloc(size);
-    if (vec) {
-        vec[0] = 0;         // len
-        vec[1] = capacity;  // capacity
+    if (capacity < 8) capacity = 8;
+
+    SigilVec* vec = (SigilVec*)malloc(sizeof(SigilVec));
+    if (!vec) return NULL;
+
+    vec->len = 0;
+    vec->capacity = capacity;
+    vec->data = (int64_t*)malloc((size_t)capacity * sizeof(int64_t));
+    if (!vec->data) {
+        free(vec);
+        return NULL;
     }
+
     return vec;
 }
 
-/* Push a value to the Vec */
+/* Push a value to the Vec (grows automatically if needed) */
 void sigil_vec_push(void* vec_ptr, int64_t value) {
     if (!vec_ptr) return;
-    int64_t* vec = (int64_t*)vec_ptr;
-    int64_t len = vec[0];
-    int64_t cap = vec[1];
+    SigilVec* vec = (SigilVec*)vec_ptr;
 
-    if (len >= cap) {
-        // Need to grow - this would require returning new pointer
-        // For simplicity, we panic (don't support growing yet)
-        return;
+    // Grow if needed
+    if (vec->len >= vec->capacity) {
+        int64_t new_cap = vec->capacity * 2;
+        int64_t* new_data = (int64_t*)realloc(vec->data, (size_t)new_cap * sizeof(int64_t));
+        if (!new_data) return;  // allocation failed, silently fail
+        vec->data = new_data;
+        vec->capacity = new_cap;
     }
 
-    vec[2 + len] = value;  // data starts at index 2
-    vec[0] = len + 1;
+    vec->data[vec->len] = value;
+    vec->len++;
 }
 
 /* Get a value from the Vec */
 int64_t sigil_vec_get(void* vec_ptr, int64_t index) {
     if (!vec_ptr) return 0;
-    int64_t* vec = (int64_t*)vec_ptr;
-    int64_t len = vec[0];
+    SigilVec* vec = (SigilVec*)vec_ptr;
 
-    if (index < 0 || index >= len) return 0;
+    if (index < 0 || index >= vec->len) return 0;
 
-    return vec[2 + index];
+    return vec->data[index];
+}
+
+/* Set a value in the Vec */
+void sigil_vec_set(void* vec_ptr, int64_t index, int64_t value) {
+    if (!vec_ptr) return;
+    SigilVec* vec = (SigilVec*)vec_ptr;
+
+    if (index < 0 || index >= vec->len) return;
+
+    vec->data[index] = value;
 }
 
 /* Get Vec length */
 int64_t sigil_vec_len(void* vec_ptr) {
     if (!vec_ptr) return 0;
-    return ((int64_t*)vec_ptr)[0];
+    return ((SigilVec*)vec_ptr)->len;
+}
+
+/* Get Vec capacity */
+int64_t sigil_vec_capacity(void* vec_ptr) {
+    if (!vec_ptr) return 0;
+    return ((SigilVec*)vec_ptr)->capacity;
+}
+
+/* Free a Vec and its data */
+void sigil_vec_free(void* vec_ptr) {
+    if (!vec_ptr) return;
+    SigilVec* vec = (SigilVec*)vec_ptr;
+    free(vec->data);
+    free(vec);
 }
 
 

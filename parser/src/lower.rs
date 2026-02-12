@@ -1184,6 +1184,9 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             evidence: IrEvidence::Paradox, // Unsafe always produces paradox
         },
 
+        // Attributed expression - lower the inner expression (attributes are compile-time)
+        ast::Expr::Attributed { expr, .. } => lower_expr(ctx, expr),
+
         ast::Expr::Async { block, is_move } => IrOperation::Async {
             body: Box::new(lower_block(ctx, block)),
             is_move: *is_move,

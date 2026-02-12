@@ -1,0 +1,188 @@
+// CUDA Kernel Argument Passing Tests
+// Spec: docs/specs/CUDA-KERNEL-ARG-CODEGEN.md
+//
+// These tests verify that kernel arguments are correctly passed
+// through the void** indirection required by CUDA Driver API.
+
+//@ rune: test
+rite test_kernel_single_arg() -> i32 {
+    // Test: single argument passed correctly to kernel
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    // Kernel writes a constant to output location
+    ≔ kernel_src = "
+extern \"C\" __global__ void write_42(long long* out) {
+    if (threadIdx.x == 0) *out = 42;
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "write_42");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    // Allocate output
+    ≔ d_out = Cuda·malloc(8);
+    ⎇ d_out == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Launch with single arg
+    ≔ Δ args = [d_out];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 1, args.as_ptr() as i64, 1);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    // Read result
+    ≔ Δ h_result = [0i64; 1];
+    ≔ d2h_ok = Cuda·memcpy_d2h(h_result.as_ptr() as i64, d_out, 8);
+    ⎇ d2h_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·cleanup();
+        ↩ 5;
+    }
+
+    Cuda·free(d_out);
+    Cuda·cleanup();
+
+    // Verify: kernel wrote 42
+    ⎇ h_result[0] == 42 {
+        ↩ 0;  // PASS
+    }
+    ↩ 6;  // Value mismatch
+}
+
+//@ rune: test
+rite test_kernel_two_args() -> i32 {
+    // Test: two arguments (pointer + value) passed correctly
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    // Kernel writes the value argument to output
+    ≔ kernel_src = "
+extern \"C\" __global__ void write_value(long long* out, long long val) {
+    if (threadIdx.x == 0) *out = val;
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "write_value");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    ≔ d_out = Cuda·malloc(8);
+    ⎇ d_out == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Test value
+    ≔ test_val = 0xCAFEBABEi64;
+
+    // Launch with two args: pointer and value
+    ≔ Δ args = [d_out, test_val];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 1, args.as_ptr() as i64, 2);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    ≔ Δ h_result = [0i64; 1];
+    Cuda·memcpy_d2h(h_result.as_ptr() as i64, d_out, 8);
+
+    Cuda·free(d_out);
+    Cuda·cleanup();
+
+    // Verify: kernel wrote our test value
+    ⎇ h_result[0] == test_val {
+        ↩ 0;  // PASS
+    }
+    ↩ 5;  // Value mismatch
+}
+
+//@ rune: test
+rite test_kernel_three_args_compute() -> i32 {
+    // Test: three arguments with computation (a * b + c)
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    ≔ kernel_src = "
+extern \"C\" __global__ void compute(long long* out, long long a, long long b) {
+    if (threadIdx.x == 0) *out = a * b;
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "compute");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    ≔ d_out = Cuda·malloc(8);
+    ⎇ d_out == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Compute 7 * 6 = 42
+    ≔ a = 7i64;
+    ≔ b = 6i64;
+
+    ≔ Δ args = [d_out, a, b];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 1, args.as_ptr() as i64, 3);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    ≔ Δ h_result = [0i64; 1];
+    Cuda·memcpy_d2h(h_result.as_ptr() as i64, d_out, 8);
+
+    Cuda·free(d_out);
+    Cuda·cleanup();
+
+    // Verify: 7 * 6 = 42
+    ⎇ h_result[0] == 42 {
+        ↩ 0;  // PASS
+    }
+    ↩ 5;
+}
+
+//@ rune: test
+rite test_kernel_zero_args() -> i32 {
+    // Test: zero arguments doesn't crash
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    ≔ kernel_src = "extern \"C\" __global__ void noop() { }";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "noop");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    // Launch with zero args
+    ≔ Δ args = [0i64; 1];  // Dummy, won't be used
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 1, args.as_ptr() as i64, 0);
+    ⎇ launch_ok == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    Cuda·sync();
+    Cuda·cleanup();
+    ↩ 0;  // PASS
+}

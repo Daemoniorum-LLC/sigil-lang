@@ -1,0 +1,8 @@
+// Test: Basic heap-allocated String operations
+// Expected exit code: 11 (length of "Hello World")
+
+rite main() → i64 {
+    ≔ s = String_from("Hello World");
+    string_print(s);
+    string_len(s)
+}

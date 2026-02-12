@@ -1,0 +1,15 @@
+// Test: Vec length tracking
+// Expected exit code: 103 (100 + 3)
+
+rite main() → i64 {
+    ≔ v = vec_new(10);
+
+    vec_push(v, 100);
+    vec_push(v, 200);
+    vec_push(v, 300);
+
+    ≔ first = vec_get(v, 0);  // 100
+    ≔ len = vec_len(v);       // 3
+
+    first + len
+}

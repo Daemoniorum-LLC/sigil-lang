@@ -424,7 +424,8 @@ pub enum Token {
     // In - parser uses ElementOf (∈) token contextually
     // Break - parser uses Tensor (⊗) token contextually
     // Continue - parser uses CycleArrow (↻) token contextually
-    #[token("⤺")]  // Return arrow
+    #[token("⤺")]  // Return arrow (U+2940 anticlockwise closed circle arrow)
+    #[token("↩")]  // Alternative return arrow (U+21A9 leftwards arrow with hook)
     Return,
     #[token("yield")]
     Yield,

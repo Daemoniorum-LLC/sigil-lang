@@ -377,10 +377,13 @@ pub enum MacroDelimiter {
 
 /// Foreign function interface block.
 /// `extern "C" { fn foo(x: c_int) -> c_int; }`
+/// `unsafe extern "C" { fn foo(x: c_int) -> c_int; }`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternBlock {
     pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
+    pub link_libraries: Vec<String>, // From #[link("lib")] attributes
+    pub is_unsafe: bool, // true for `unsafe extern "C" { ... }`
 }
 
 /// Items that can appear in an extern block.
@@ -388,6 +391,18 @@ pub struct ExternBlock {
 pub enum ExternItem {
     Function(ExternFunction),
     Static(ExternStatic),
+    Type(ExternType),
+}
+
+/// Foreign type declaration (opaque or alias).
+/// - Opaque: `type GtkWindow;` - a type defined in C whose layout is unknown.
+/// - Alias: `type Callback = rite(*void);` - a type alias for FFI.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternType {
+    pub visibility: Visibility,
+    pub name: Ident,
+    /// None for opaque types, Some for type aliases
+    pub ty: Option<TypeExpr>,
 }
 
 /// Foreign function declaration (no body).
@@ -1167,6 +1182,12 @@ pub enum Expr {
     Evidential {
         expr: Box<Expr>,
         evidentiality: Evidentiality,
+    },
+    /// Attributed expression: `//@ rune: cfg(test) { ... }`
+    /// Used for conditional compilation and other expression-level attributes
+    Attributed {
+        attrs: Vec<Attribute>,
+        expr: Box<Expr>,
     },
     /// Assignment: `x = value`
     Assign { target: Box<Expr>, value: Box<Expr> },

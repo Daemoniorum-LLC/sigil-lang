@@ -1,0 +1,13 @@
+// Test: Option with is_some, is_none checks
+// Expected exit code: 102
+
+rite main() → i64 {
+    ≔ some_val = Some(100);
+    ≔ none_val = None();
+
+    ≔ a = is_some(some_val);  // 1
+    ≔ b = is_none(none_val);  // 1
+    ≔ c = unwrap(some_val);   // 100
+
+    a + b + c
+}
