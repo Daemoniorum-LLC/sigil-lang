@@ -1580,7 +1580,13 @@ pub mod llvm {
                     self.builder
                         .build_store(alloca, param_value)
                         .map_err(|e| e.to_string())?;
-                    scope.vars.insert(param_name, alloca);
+                    scope.vars.insert(param_name.clone(), alloca);
+
+                    // Check if parameter type contains f64 (for Vec<f64> or f64 params)
+                    // This enables float detection for indexing operations
+                    if self.type_contains_f64(&param.ty) {
+                        scope.float_vars.insert(param_name);
+                    }
                 }
             }
 
@@ -3710,6 +3716,35 @@ pub mod llvm {
                     format!("[{}]", self.type_expr_to_string(inner))
                 }
                 _ => "unknown".to_string(),
+            }
+        }
+
+        /// Check if a TypeExpr contains f64 (including in generics like Vec<f64>)
+        fn type_contains_f64(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    // Check if the type itself is f64
+                    if let Some(seg) = path.segments.last() {
+                        if seg.ident.name == "f64" || seg.ident.name == "f32" {
+                            return true;
+                        }
+                        // Check generic arguments (e.g., Vec<f64>)
+                        if let Some(ref generics) = seg.generics {
+                            for inner_ty in generics {
+                                if self.type_contains_f64(inner_ty) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                ast::TypeExpr::Reference { inner, .. } => self.type_contains_f64(inner),
+                ast::TypeExpr::Pointer { inner, .. } => self.type_contains_f64(inner),
+                ast::TypeExpr::Array { element, .. } => self.type_contains_f64(element),
+                ast::TypeExpr::Slice(inner) => self.type_contains_f64(inner),
+                ast::TypeExpr::Tuple(elements) => elements.iter().any(|e| self.type_contains_f64(e)),
+                _ => false,
             }
         }
 
@@ -8541,8 +8576,7 @@ pub mod llvm {
                 )
                 .ok_or("Failed to create target machine")?;
 
-            // Run aggressive optimization passes
-            // The key is running tailcallelim early and then letting later passes optimize
+            // Run aggressive optimization passes with vectorization enabled
             let passes = match self.opt_level {
                 OptLevel::None => "default<O0>",
                 OptLevel::Basic => "default<O1>",
@@ -8551,8 +8585,15 @@ pub mod llvm {
                 OptLevel::Aggressive => "default<O3>",
             };
 
+            // Configure pass builder with explicit vectorization options
+            let pass_options = PassBuilderOptions::create();
+            pass_options.set_loop_vectorization(true);
+            pass_options.set_loop_slp_vectorization(true);
+            pass_options.set_loop_interleaving(true);
+            pass_options.set_loop_unrolling(true);
+
             self.module
-                .run_passes(passes, &target_machine, PassBuilderOptions::create())
+                .run_passes(passes, &target_machine, pass_options)
                 .map_err(|e| e.to_string())?;
 
             Ok(())
@@ -8706,11 +8747,16 @@ pub mod llvm {
 
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
+
+            // Use native CPU and features for maximum performance (AVX-512, etc.)
+            let cpu = TargetMachine::get_host_cpu_name();
+            let features = TargetMachine::get_host_cpu_features();
+
             let target_machine = target
                 .create_target_machine(
                     &triple,
-                    "generic",
-                    "",
+                    cpu.to_str().unwrap_or("native"),
+                    features.to_str().unwrap_or(""),
                     OptimizationLevel::Aggressive,
                     RelocMode::PIC, // Use PIC for PIE compatibility
                     CodeModel::Default,
