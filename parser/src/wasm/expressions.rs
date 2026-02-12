@@ -205,6 +205,8 @@ impl WasmCompiler {
             Expr::LegionDecay { .. } => Err(WasmError::unsupported("Legion decay")),
             Expr::NamedArg { .. } => Err(WasmError::unsupported("named arguments")),
             Expr::NoGrad(_) => Err(WasmError::unsupported("no_grad blocks")),
+            Expr::Attributed { expr, .. } => self.compile_expr(expr),
+            Expr::Turbofish { expr, .. } => self.compile_expr(expr),
         }
     }
 
