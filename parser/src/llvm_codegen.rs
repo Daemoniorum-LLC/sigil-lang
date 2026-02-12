@@ -5437,6 +5437,27 @@ pub mod llvm {
                     let lhs = self.compile_native_float_expr(fn_value, scope, left)?;
                     let rhs = self.compile_native_float_expr(fn_value, scope, right)?;
 
+                    // Constant folding: if both operands are constants, compute at compile time
+                    if let (Some((lhs_val, _)), Some((rhs_val, _))) = (lhs.get_constant(), rhs.get_constant()) {
+                        let result = match op {
+                            BinOp::Add => lhs_val + rhs_val,
+                            BinOp::Sub => lhs_val - rhs_val,
+                            BinOp::Mul => lhs_val * rhs_val,
+                            BinOp::Div => lhs_val / rhs_val,
+                            BinOp::Rem => lhs_val % rhs_val,
+                            _ => {
+                                // Fall back to runtime for non-arithmetic ops
+                                let int_result = self.compile_expr(fn_value, scope, expr)?;
+                                return self.builder
+                                    .build_bit_cast(int_result, f64_type, "cast_f64")
+                                    .map_err(|e| e.to_string())
+                                    .map(|v| v.into_float_value());
+                            }
+                        };
+                        return Ok(f64_type.const_float(result));
+                    }
+
+                    // Runtime path
                     match op {
                         BinOp::Add => self.builder
                             .build_float_add(lhs, rhs, "fadd")
@@ -5492,6 +5513,34 @@ pub mod llvm {
                                     // Compile argument as float
                                     if !args.is_empty() {
                                         let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                        // Constant folding: if argument is constant, compute at compile time
+                                        if let Some((val, _)) = arg_f64.get_constant() {
+                                            let result = match seg.ident.name.as_str() {
+                                                "sin" => val.sin(),
+                                                "cos" => val.cos(),
+                                                "tan" => val.tan(),
+                                                "sqrt" => val.sqrt(),
+                                                "exp" => val.exp(),
+                                                "log" => val.ln(),
+                                                "floor" => val.floor(),
+                                                "ceil" => val.ceil(),
+                                                "abs" => val.abs(),
+                                                "asin" => val.asin(),
+                                                "acos" => val.acos(),
+                                                "atan" => val.atan(),
+                                                "sinh" => val.sinh(),
+                                                "cosh" => val.cosh(),
+                                                "tanh" => val.tanh(),
+                                                "log10" => val.log10(),
+                                                "log2" => val.log2(),
+                                                "round" => val.round(),
+                                                "trunc" => val.trunc(),
+                                                _ => unreachable!(),
+                                            };
+                                            return Ok(f64_type.const_float(result));
+                                        }
+
                                         let intrinsic_name = match seg.ident.name.as_str() {
                                             "abs" => "llvm.fabs.f64".to_string(),
                                             name => format!("llvm.{}.f64", name),
@@ -5517,6 +5566,20 @@ pub mod llvm {
                                     if args.len() >= 2 {
                                         let arg1_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
                                         let arg2_f64 = self.compile_native_float_expr(fn_value, scope, &args[1])?;
+
+                                        // Constant folding: if both arguments are constant, compute at compile time
+                                        if let (Some((v1, _)), Some((v2, _))) = (arg1_f64.get_constant(), arg2_f64.get_constant()) {
+                                            let result = match seg.ident.name.as_str() {
+                                                "atan2" => v1.atan2(v2),
+                                                "copysign" => v1.copysign(v2),
+                                                "fmin" => v1.min(v2),
+                                                "fmax" => v1.max(v2),
+                                                "pow" => v1.powf(v2),
+                                                _ => unreachable!(),
+                                            };
+                                            return Ok(f64_type.const_float(result));
+                                        }
+
                                         let intrinsic_name = match seg.ident.name.as_str() {
                                             "fmin" => "llvm.minnum.f64".to_string(),
                                             "fmax" => "llvm.maxnum.f64".to_string(),
@@ -5555,6 +5618,34 @@ pub mod llvm {
                         "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" |
                         "log10" | "log2" | "round" | "trunc" => {
                             let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+
+                            // Constant folding: if receiver is constant, compute at compile time
+                            if let Some((val, _)) = recv_f64.get_constant() {
+                                let result = match method.name.as_str() {
+                                    "sqrt" => val.sqrt(),
+                                    "sin" => val.sin(),
+                                    "cos" => val.cos(),
+                                    "tan" => val.tan(),
+                                    "exp" => val.exp(),
+                                    "log" => val.ln(),
+                                    "floor" => val.floor(),
+                                    "ceil" => val.ceil(),
+                                    "abs" => val.abs(),
+                                    "asin" => val.asin(),
+                                    "acos" => val.acos(),
+                                    "atan" => val.atan(),
+                                    "sinh" => val.sinh(),
+                                    "cosh" => val.cosh(),
+                                    "tanh" => val.tanh(),
+                                    "log10" => val.log10(),
+                                    "log2" => val.log2(),
+                                    "round" => val.round(),
+                                    "trunc" => val.trunc(),
+                                    _ => unreachable!(),
+                                };
+                                return Ok(f64_type.const_float(result));
+                            }
+
                             let intrinsic_name = match method.name.as_str() {
                                 "abs" => "llvm.fabs.f64".to_string(),
                                 name => format!("llvm.{}.f64", name),
@@ -5578,6 +5669,18 @@ pub mod llvm {
                             if !args.is_empty() {
                                 let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
                                 let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                // Constant folding
+                                if let (Some((v1, _)), Some((v2, _))) = (recv_f64.get_constant(), arg_f64.get_constant()) {
+                                    let result = match method.name.as_str() {
+                                        "pow" => v1.powf(v2),
+                                        "atan2" => v1.atan2(v2),
+                                        "copysign" => v1.copysign(v2),
+                                        _ => unreachable!(),
+                                    };
+                                    return Ok(f64_type.const_float(result));
+                                }
+
                                 let intrinsic_name = format!("llvm.{}.f64", method.name);
 
                                 let intrinsic = self.module.get_function(&intrinsic_name)
@@ -5601,6 +5704,17 @@ pub mod llvm {
                             if !args.is_empty() {
                                 let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
                                 let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                // Constant folding
+                                if let (Some((v1, _)), Some((v2, _))) = (recv_f64.get_constant(), arg_f64.get_constant()) {
+                                    let result = match method.name.as_str() {
+                                        "min" => v1.min(v2),
+                                        "max" => v1.max(v2),
+                                        _ => unreachable!(),
+                                    };
+                                    return Ok(f64_type.const_float(result));
+                                }
+
                                 let intrinsic_name = match method.name.as_str() {
                                     "min" => "llvm.minnum.f64".to_string(),
                                     "max" => "llvm.maxnum.f64".to_string(),
