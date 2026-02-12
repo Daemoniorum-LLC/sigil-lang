@@ -1312,6 +1312,12 @@ impl<'a> Parser<'a> {
         false // Will be true when "on trigger" is seen
     }
 
+    /// Check if the token AFTER the current one is LBrace
+    /// Used to distinguish `no_grad { block }` from `no_grad(...)` function call
+    fn peek_next_is_lbrace(&mut self) -> bool {
+        matches!(self.peek_next(), Some(Token::LBrace))
+    }
+
     /// Check if the current token can start a new statement in a block.
     /// Used to make semicolons optional in Sigil's advanced syntax.
     fn can_start_stmt(&self) -> bool {
@@ -1934,6 +1940,54 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_enum_variant(&mut self) -> ParseResult<EnumVariant> {
+        // Collect doc comments and attributes before the variant
+        let mut doc_comments = Vec::new();
+        let mut attributes = Vec::new();
+
+        loop {
+            let span = self.current_span();
+            match self.current_token().cloned() {
+                Some(Token::DocComment(content)) | Some(Token::DocCommentVerified(content)) => {
+                    doc_comments.push(crate::ast::DocComment::new(
+                        crate::ast::Evidentiality::Known,
+                        false,
+                        content,
+                        span,
+                    ));
+                    self.advance();
+                }
+                Some(Token::DocCommentReported(content)) => {
+                    doc_comments.push(crate::ast::DocComment::new(
+                        crate::ast::Evidentiality::Reported,
+                        false,
+                        content,
+                        span,
+                    ));
+                    self.advance();
+                }
+                Some(Token::DocCommentUncertain(content)) => {
+                    doc_comments.push(crate::ast::DocComment::new(
+                        crate::ast::Evidentiality::Uncertain,
+                        false,
+                        content,
+                        span,
+                    ));
+                    self.advance();
+                }
+                Some(Token::LineComment(_)) | Some(Token::TildeComment(_)) | Some(Token::BlockComment(_)) => {
+                    // Skip non-doc comments
+                    self.advance();
+                }
+                Some(Token::Hash) | Some(Token::At) => {
+                    attributes.push(self.parse_outer_attribute()?);
+                }
+                Some(Token::RuneAnnotation(_)) => {
+                    attributes.push(self.parse_rune_annotation()?);
+                }
+                _ => break,
+            }
+        }
+
         let name = self.parse_ident()?;
 
         let fields = if self.check(&Token::LBrace) {
@@ -1957,6 +2011,8 @@ impl<'a> Parser<'a> {
         };
 
         Ok(EnumVariant {
+            doc_comments,
+            attributes,
             name,
             fields,
             discriminant,
@@ -2838,6 +2894,7 @@ impl<'a> Parser<'a> {
                 }
 
                 state.push(FieldDef {
+                    attributes: vec![],
                     visibility: vis,
                     name: field_name,
                     ty,
@@ -3572,6 +3629,7 @@ impl<'a> Parser<'a> {
                     self.expect(Token::Colon)?;
                     let ty = self.parse_type()?;
                     fields.push(FieldDef {
+                        attributes: vec![],
                         visibility,
                         name,
                         ty,
@@ -3622,6 +3680,7 @@ impl<'a> Parser<'a> {
                             self.expect(Token::Colon)?;
                             let ty = self.parse_type()?;
                             fields.push(FieldDef {
+                                attributes: vec![],
                                 visibility: Visibility::Private,
                                 name,
                                 ty,
@@ -3643,6 +3702,8 @@ impl<'a> Parser<'a> {
                         None
                     };
                     variants.push(EnumVariant {
+                        doc_comments: vec![],
+                        attributes: vec![],
                         name,
                         fields,
                         discriminant,
@@ -5593,9 +5654,19 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Async { block, is_move })
             }
             Some(Token::NoGrad) => {
-                self.advance();
-                let block = self.parse_block()?;
-                Ok(Expr::NoGrad(block))
+                // Check if this is `no_grad { block }` or `no_grad(...)` function call
+                // Peek at the token AFTER NoGrad to decide
+                let is_block_form = self.peek_next_is_lbrace();
+                if is_block_form {
+                    self.advance(); // consume NoGrad
+                    let block = self.parse_block()?;
+                    Ok(Expr::NoGrad(block))
+                } else {
+                    // Treat as identifier/function call: no_grad(...)
+                    // Parse as path expression; postfix parsing handles the call `(...)`
+                    let path = self.parse_type_path()?;
+                    Ok(Expr::Path(path))
+                }
             }
             Some(Token::Const) => {
                 // Const block expression: `const { expr }` - compile-time evaluated block
@@ -9026,6 +9097,8 @@ impl<'a> Parser<'a> {
             Token::Linear => Some("linear"),
             Token::Affine => Some("affine"),
             Token::Relevant => Some("relevant"),
+            // Autograd keyword - usable as function name
+            Token::NoGrad => Some("no_grad"),
             _ => None,
         }
     }
@@ -9487,16 +9560,21 @@ impl<'a> Parser<'a> {
     fn parse_field_defs(&mut self) -> ParseResult<Vec<FieldDef>> {
         let mut fields = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Skip doc comments, line comments, and attributes before fields
-            while matches!(
-                self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
-            ) || self.check(&Token::Hash) || self.check(&Token::At)
-            {
+            // Collect attributes (including rune annotations) before the field
+            let mut field_attributes = Vec::new();
+            loop {
                 if self.check(&Token::Hash) || self.check(&Token::At) {
-                    self.skip_attribute()?;
-                } else {
+                    field_attributes.push(self.parse_outer_attribute()?);
+                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    field_attributes.push(self.parse_rune_annotation()?);
+                } else if matches!(
+                    self.current_token(),
+                    Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+                ) {
+                    // Skip comments
                     self.advance();
+                } else {
+                    break;
                 }
             }
             if self.check(&Token::RBrace) {
@@ -9515,6 +9593,7 @@ impl<'a> Parser<'a> {
                 None
             };
             fields.push(FieldDef {
+                attributes: field_attributes,
                 visibility,
                 name,
                 ty,
