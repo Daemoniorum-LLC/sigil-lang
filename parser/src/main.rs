@@ -3695,6 +3695,55 @@ fn init_project() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Recursively collect test function names from AST items.
+/// Looks for both top-level #[test]/`//@ rune: test` functions and functions
+/// inside `scroll tests {}` modules.
+fn collect_test_fn_names(
+    items: &[sigil_parser::span::Spanned<sigil_parser::ast::Item>],
+    test_fn_names: &mut Vec<String>,
+    module_prefix: Option<&str>,
+) {
+    use sigil_parser::ast::Item;
+
+    for item in items {
+        match &item.node {
+            Item::Function(func) => {
+                if func.attrs.test {
+                    let name = match module_prefix {
+                        // Use middledot (·) as separator - matches how interpreter registers module functions
+                        Some(prefix) => format!("{}·{}", prefix, func.name.name),
+                        None => func.name.name.clone(),
+                    };
+                    test_fn_names.push(name);
+                }
+            }
+            Item::Module(m) => {
+                // Check if this is a `tests` module (either named "tests" or has #[cfg(test)])
+                let is_test_module = m.name.name == "tests" || m.name.name == "test";
+
+                if let Some(ref inner_items) = m.items {
+                    if is_test_module {
+                        // Look for test functions inside the tests module
+                        let new_prefix = match module_prefix {
+                            Some(prefix) => format!("{}·{}", prefix, m.name.name),
+                            None => m.name.name.clone(),
+                        };
+                        collect_test_fn_names(inner_items, test_fn_names, Some(&new_prefix));
+                    } else {
+                        // Recursively check other modules for nested test modules
+                        let new_prefix = match module_prefix {
+                            Some(prefix) => format!("{}·{}", prefix, m.name.name),
+                            None => m.name.name.clone(),
+                        };
+                        collect_test_fn_names(inner_items, test_fn_names, Some(&new_prefix));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Run tests in the current project
 fn collect_test_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
@@ -3775,15 +3824,9 @@ fn run_test_files(
             continue;
         }
 
-        // Collect test function names
+        // Collect test function names (both top-level and from `scroll tests {}` modules)
         let mut test_fn_names: Vec<String> = Vec::new();
-        for item in &ast.items {
-            if let sigil_parser::ast::Item::Function(func) = &item.node {
-                if func.attrs.test {
-                    test_fn_names.push(func.name.name.clone());
-                }
-            }
-        }
+        collect_test_fn_names(&ast.items, &mut test_fn_names, None);
 
         if !test_fn_names.is_empty() {
             let mut interpreter = Interpreter::new();

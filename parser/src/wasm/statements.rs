@@ -1208,12 +1208,14 @@ mod tests {
             generics: None,
             fields: StructFields::Named(vec![
                 FieldDef {
+                    attributes: vec![],
                     visibility: Visibility::Public,
                     name: make_ident("x"),
                     ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),
                     default: None,
                 },
                 FieldDef {
+                    attributes: vec![],
                     visibility: Visibility::Public,
                     name: make_ident("y"),
                     ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),
@@ -1271,11 +1273,15 @@ mod tests {
             generics: None,
             variants: vec![
                 EnumVariant {
+                    doc_comments: vec![],
+                    attributes: vec![],
                     name: make_ident("None"),
                     fields: StructFields::Unit,
                     discriminant: None,
                 },
                 EnumVariant {
+                    doc_comments: vec![],
+                    attributes: vec![],
                     name: make_ident("Some"),
                     fields: StructFields::Tuple(vec![crate::ast::TypeExpr::Path(TypePath { segments: vec![] })]),
                     discriminant: None,
@@ -1555,8 +1561,11 @@ mod tests {
             generics: None,
             variants: vec![
                 EnumVariant {
+                    doc_comments: vec![],
+                    attributes: vec![],
                     name: make_ident("Circle"),
                     fields: StructFields::Named(vec![FieldDef {
+                        attributes: vec![],
                         visibility: Visibility::Public,
                         name: make_ident("radius"),
                         ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),
@@ -1565,15 +1574,19 @@ mod tests {
                     discriminant: None,
                 },
                 EnumVariant {
+                    doc_comments: vec![],
+                    attributes: vec![],
                     name: make_ident("Rectangle"),
                     fields: StructFields::Named(vec![
                         FieldDef {
+                            attributes: vec![],
                             visibility: Visibility::Public,
                             name: make_ident("width"),
                             ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),
                             default: None,
                         },
                         FieldDef {
+                            attributes: vec![],
                             visibility: Visibility::Public,
                             name: make_ident("height"),
                             ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),

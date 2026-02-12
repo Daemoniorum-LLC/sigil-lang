@@ -54,6 +54,25 @@ int64_t sigil_now(void) {
 #endif
 }
 
+/* Get current time in microseconds since Unix epoch */
+int64_t sigil_now_micros(void) {
+#ifdef _WIN32
+    /* Windows: Use GetSystemTimeAsFileTime (100-ns intervals) */
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER ull;
+    ull.LowPart = ft.dwLowDateTime;
+    ull.HighPart = ft.dwHighDateTime;
+    /* Convert to microseconds since Unix epoch */
+    return (int64_t)((ull.QuadPart - 116444736000000000ULL) / 10);
+#else
+    /* POSIX: Use gettimeofday */
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)(tv.tv_sec * 1000000 + tv.tv_usec);
+#endif
+}
+
 /* ============================================================================
  * Print Functions
  * ============================================================================ */
@@ -357,6 +376,11 @@ static inline int64_t double_to_bits(double d) {
 /* Square root */
 int64_t sigil_sqrt(int64_t x) {
     return double_to_bits(sqrt(bits_to_double(x)));
+}
+
+/* PI constant */
+int64_t sigil_pi(void) {
+    return double_to_bits(3.14159265358979323846);
 }
 
 /* Sine */

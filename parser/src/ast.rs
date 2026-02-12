@@ -813,6 +813,8 @@ pub enum StructFields {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
+    /// Attributes (including rune annotations) on this field
+    pub attributes: Vec<Attribute>,
     pub visibility: Visibility,
     pub name: Ident,
     pub ty: TypeExpr,
@@ -835,6 +837,10 @@ pub struct EnumDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
+    /// Doc comments attached to this variant (SGDOC)
+    pub doc_comments: Vec<DocComment>,
+    /// Attributes (including rune annotations) on this variant
+    pub attributes: Vec<Attribute>,
     pub name: Ident,
     pub fields: StructFields,
     pub discriminant: Option<Expr>,
@@ -1178,6 +1184,13 @@ pub enum Expr {
     AddrOf { mutable: bool, expr: Box<Expr> },
     /// Cast: `expr as Type`
     Cast { expr: Box<Expr>, ty: TypeExpr },
+
+    /// Turbofish: explicit type parameters on an expression
+    /// `expr·<T, U>` or `expr::<T, U>` - provides type/const generic arguments
+    Turbofish {
+        expr: Box<Expr>,
+        types: Vec<TypeExpr>,
+    },
 
     /// Inline assembly: `asm!("instruction", ...)`
     InlineAsm(InlineAsm),

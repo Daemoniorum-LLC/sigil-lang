@@ -3312,10 +3312,6 @@ impl Interpreter {
                 // Handle module definitions
                 let module_name = &module.name.name;
 
-                // Debug: trace ALL modules being processed
-                eprintln!("DEBUG Module: processing module '{}', has_items={}, current_module={:?}",
-                    module_name, module.items.is_some(), self.current_module);
-
                 // Track module for IR export
                 self.crate_modules.insert(module_name.clone());
 
@@ -4429,6 +4425,13 @@ impl Interpreter {
                     // Pass through for same type
                     (v, _) => Ok(v),
                 }
+            }
+            // Turbofish: explicit type parameters on an expression
+            // For the interpreter, we evaluate the inner expression and pass through
+            // The type parameters are used at call sites for method resolution
+            Expr::Turbofish { expr, types: _ } => {
+                // Evaluate the inner expression - type params are resolved at call sites
+                self.evaluate(expr)
             }
             // Named argument: evaluate the value (name is used by caller for reordering)
             Expr::NamedArg { value, .. } => self.evaluate(value),
