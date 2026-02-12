@@ -5969,10 +5969,21 @@ fn register_concurrency(interp: &mut Interpreter) {
         let addr_str = match &args[0] {
             Value::String(s) => s.to_string(),
             Value::Ref(r) => {
-                if let Value::String(s) = &*r.borrow() {
-                    s.to_string()
-                } else {
-                    return Err(RuntimeError::new("TcpListener::bind requires string address"));
+                match &*r.borrow() {
+                    Value::String(s) => s.to_string(),
+                    Value::Struct { name, fields } if name == "SocketAddr" => {
+                        let f = fields.borrow();
+                        let ip = match f.get("ip") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                        };
+                        let port = match f.get("port") {
+                            Some(Value::Int(p)) => *p,
+                            _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                        };
+                        format!("{}:{}", ip, port)
+                    }
+                    _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
                 }
             }
             // Handle SocketAddr map (from parse())
@@ -5990,6 +6001,19 @@ fn register_concurrency(interp: &mut Interpreter) {
                 } else {
                     return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
                 }
+            }
+            // Handle SocketAddr struct (from parse())
+            Value::Struct { name, fields } if name == "SocketAddr" => {
+                let f = fields.borrow();
+                let ip = match f.get("ip") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                };
+                let port = match f.get("port") {
+                    Some(Value::Int(p)) => *p,
+                    _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                };
+                format!("{}:{}", ip, port)
             }
             _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
         };
@@ -6030,10 +6054,21 @@ fn register_concurrency(interp: &mut Interpreter) {
         let addr_str = match &args[0] {
             Value::String(s) => s.to_string(),
             Value::Ref(r) => {
-                if let Value::String(s) = &*r.borrow() {
-                    s.to_string()
-                } else {
-                    return Err(RuntimeError::new("TcpListener::bind requires string address"));
+                match &*r.borrow() {
+                    Value::String(s) => s.to_string(),
+                    Value::Struct { name, fields } if name == "SocketAddr" => {
+                        let f = fields.borrow();
+                        let ip = match f.get("ip") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                        };
+                        let port = match f.get("port") {
+                            Some(Value::Int(p)) => *p,
+                            _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                        };
+                        format!("{}:{}", ip, port)
+                    }
+                    _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
                 }
             }
             // Handle SocketAddr map (from parse())
@@ -6044,6 +6079,19 @@ fn register_concurrency(interp: &mut Interpreter) {
                 } else {
                     return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
                 }
+            }
+            // Handle SocketAddr struct (from parse())
+            Value::Struct { name, fields } if name == "SocketAddr" => {
+                let f = fields.borrow();
+                let ip = match f.get("ip") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                };
+                let port = match f.get("port") {
+                    Some(Value::Int(p)) => *p,
+                    _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                };
+                format!("{}:{}", ip, port)
             }
             _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
         };
@@ -36953,6 +37001,427 @@ fn register_neural(interp: &mut Interpreter) {
             }
             _ => Err(RuntimeError::new("flatten expects Array or Tensor")),
         }
+    });
+
+    // =========================================================================
+    // Tensor Instance Methods (Tensor·method)
+    // =========================================================================
+
+    // Tensor·shape(self) - Get shape as array
+    define(interp, "Tensor·shape", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                let f = fields.borrow();
+                match f.get("__shape__").or_else(|| f.get("shape")) {
+                    Some(shape) => Ok(shape.clone()),
+                    None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                }
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        let f = fields.borrow();
+                        return match f.get("__shape__").or_else(|| f.get("shape")) {
+                            Some(shape) => Ok(shape.clone()),
+                            None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                        };
+                    }
+                }
+                Err(RuntimeError::new("shape expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("shape expects Tensor")),
+        }
+    });
+
+    // Tensor·numel(self) - Get total number of elements
+    define(interp, "Tensor·numel", Some(1), |_, args| {
+        fn get_numel(fields: &HashMap<String, Value>) -> i64 {
+            match fields.get("__shape__").or_else(|| fields.get("shape")) {
+                Some(Value::Array(arr)) => {
+                    arr.borrow().iter().map(|v| match v {
+                        Value::Int(i) => *i,
+                        _ => 1,
+                    }).product()
+                }
+                _ => {
+                    // Fallback to data length
+                    match fields.get("__data__") {
+                        Some(Value::Array(arr)) => arr.borrow().len() as i64,
+                        _ => 0,
+                    }
+                }
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(Value::Int(get_numel(&fields.borrow())))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(Value::Int(get_numel(&fields.borrow())));
+                    }
+                }
+                Err(RuntimeError::new("numel expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("numel expects Tensor")),
+        }
+    });
+
+    // Tensor·ndim(self) - Get number of dimensions
+    define(interp, "Tensor·ndim", Some(1), |_, args| {
+        fn get_ndim(fields: &HashMap<String, Value>) -> i64 {
+            match fields.get("__shape__").or_else(|| fields.get("shape")) {
+                Some(Value::Array(arr)) => arr.borrow().len() as i64,
+                _ => 0,
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(Value::Int(get_ndim(&fields.borrow())))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(Value::Int(get_ndim(&fields.borrow())));
+                    }
+                }
+                Err(RuntimeError::new("ndim expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("ndim expects Tensor")),
+        }
+    });
+
+    // Tensor·to_vec(self) - Get data as flat array
+    define(interp, "Tensor·to_vec", Some(1), |_, args| {
+        fn get_data(fields: &HashMap<String, Value>) -> Value {
+            match fields.get("__data__") {
+                Some(Value::Array(arr)) => Value::Array(arr.clone()),
+                Some(other) => other.clone(),
+                None => Value::Array(Rc::new(RefCell::new(vec![]))),
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(get_data(&fields.borrow()))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(get_data(&fields.borrow()));
+                    }
+                }
+                Err(RuntimeError::new("to_vec expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("to_vec expects Tensor")),
+        }
+    });
+
+    // Tensor·item(self) - Get single element for scalar tensor
+    define(interp, "Tensor·item", Some(1), |_, args| {
+        fn get_item(fields: &HashMap<String, Value>) -> Result<Value, RuntimeError> {
+            match fields.get("__data__") {
+                Some(Value::Array(arr)) => {
+                    let data = arr.borrow();
+                    if data.len() == 1 {
+                        Ok(data[0].clone())
+                    } else if data.is_empty() {
+                        Err(RuntimeError::new("item: tensor is empty"))
+                    } else {
+                        // For multi-element tensor, return first element with warning
+                        Ok(data[0].clone())
+                    }
+                }
+                _ => Err(RuntimeError::new("Invalid Tensor")),
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                get_item(&fields.borrow())
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return get_item(&fields.borrow());
+                    }
+                }
+                Err(RuntimeError::new("item expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("item expects Tensor")),
+        }
+    });
+
+    // Tensor·requires_grad_(self, bool) - Set requires_grad in place, return self
+    define(interp, "Tensor·requires_grad_", Some(2), |_, args| {
+        let req = match &args[1] {
+            Value::Bool(b) => *b,
+            _ => true,
+        };
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                fields.borrow_mut().insert("__requires_grad__".to_string(), Value::Bool(req));
+                Ok(args[0].clone())
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        fields.borrow_mut().insert("__requires_grad__".to_string(), Value::Bool(req));
+                        return Ok(args[0].clone());
+                    }
+                }
+                Err(RuntimeError::new("requires_grad_ expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("requires_grad_ expects Tensor")),
+        }
+    });
+
+    // Tensor·requires_grad(self) - Check if requires_grad is set
+    define(interp, "Tensor·requires_grad", Some(1), |_, args| {
+        fn get_requires_grad(fields: &HashMap<String, Value>) -> bool {
+            matches!(fields.get("__requires_grad__"), Some(Value::Bool(true)))
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(Value::Bool(get_requires_grad(&fields.borrow())))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(Value::Bool(get_requires_grad(&fields.borrow())));
+                    }
+                }
+                Err(RuntimeError::new("requires_grad expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("requires_grad expects Tensor")),
+        }
+    });
+
+    // Tensor·dims(self) - Alias for shape (returns dimensions as array)
+    define(interp, "Tensor·dims", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                let f = fields.borrow();
+                match f.get("__shape__").or_else(|| f.get("shape")) {
+                    Some(shape) => Ok(shape.clone()),
+                    None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                }
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        let f = fields.borrow();
+                        return match f.get("__shape__").or_else(|| f.get("shape")) {
+                            Some(shape) => Ok(shape.clone()),
+                            None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                        };
+                    }
+                }
+                Err(RuntimeError::new("dims expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("dims expects Tensor")),
+        }
+    });
+
+    // =========================================================================
+    // Tensor Linear Algebra Operations
+    // =========================================================================
+
+    // Tensor·matmul(self, other) - Matrix multiplication
+    // Supports: [M, K] @ [K, N] -> [M, N]
+    //           [B, M, K] @ [K, N] -> [B, M, N] (batched)
+    define(interp, "Tensor·matmul", Some(2), |_, args| {
+        fn extract_tensor_data(v: &Value) -> Result<(Vec<f64>, Vec<i64>), RuntimeError> {
+            // Handle Ref by dereferencing first
+            let v = match v {
+                Value::Ref(r) => r.borrow().clone(),
+                other => other.clone(),
+            };
+
+            match &v {
+                Value::Struct { name, fields } if name == "Tensor" => {
+                    let f = fields.borrow();
+
+                    let data: Vec<f64> = match f.get("__data__") {
+                        Some(Value::Array(arr)) => arr.borrow().iter().map(|val| match val {
+                            Value::Float(x) => *x,
+                            Value::Int(x) => *x as f64,
+                            _ => 0.0,
+                        }).collect(),
+                        _ => return Err(RuntimeError::new("Invalid Tensor data")),
+                    };
+
+                    let shape: Vec<i64> = match f.get("__shape__") {
+                        Some(Value::Array(arr)) => arr.borrow().iter().map(|val| match val {
+                            Value::Int(i) => *i,
+                            _ => 1,
+                        }).collect(),
+                        _ => vec![data.len() as i64],
+                    };
+
+                    Ok((data, shape))
+                }
+                _ => Err(RuntimeError::new("matmul expects Tensor")),
+            }
+        }
+
+        let (a_data, a_shape) = extract_tensor_data(&args[0])?;
+        let (b_data, b_shape) = extract_tensor_data(&args[1])?;
+
+        // Handle different shape combinations
+        match (a_shape.len(), b_shape.len()) {
+            // [M, K] @ [K, N] -> [M, N]
+            (2, 2) => {
+                let m = a_shape[0] as usize;
+                let k = a_shape[1] as usize;
+                let k2 = b_shape[0] as usize;
+                let n = b_shape[1] as usize;
+
+                if k != k2 {
+                    return Err(RuntimeError::new(format!(
+                        "matmul shape mismatch: [{}, {}] @ [{}, {}]", m, k, k2, n
+                    )));
+                }
+
+                let mut result = vec![0.0f64; m * n];
+                for i in 0..m {
+                    for j in 0..n {
+                        let mut sum = 0.0;
+                        for kk in 0..k {
+                            sum += a_data[i * k + kk] * b_data[kk * n + j];
+                        }
+                        result[i * n + j] = sum;
+                    }
+                }
+
+                Ok(create_tensor(
+                    result.into_iter().map(Value::Float).collect(),
+                    vec![m as i64, n as i64],
+                    false,
+                ))
+            }
+            // [B, M, K] @ [K, N] -> [B, M, N] (batched)
+            (3, 2) => {
+                let batch = a_shape[0] as usize;
+                let m = a_shape[1] as usize;
+                let k = a_shape[2] as usize;
+                let k2 = b_shape[0] as usize;
+                let n = b_shape[1] as usize;
+
+                if k != k2 {
+                    return Err(RuntimeError::new(format!(
+                        "matmul shape mismatch: [{}, {}, {}] @ [{}, {}]", batch, m, k, k2, n
+                    )));
+                }
+
+                let mut result = vec![0.0f64; batch * m * n];
+                for b in 0..batch {
+                    for i in 0..m {
+                        for j in 0..n {
+                            let mut sum = 0.0;
+                            for kk in 0..k {
+                                sum += a_data[b * m * k + i * k + kk] * b_data[kk * n + j];
+                            }
+                            result[b * m * n + i * n + j] = sum;
+                        }
+                    }
+                }
+
+                Ok(create_tensor(
+                    result.into_iter().map(Value::Float).collect(),
+                    vec![batch as i64, m as i64, n as i64],
+                    false,
+                ))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "matmul: unsupported shapes {:?} @ {:?}", a_shape, b_shape
+            ))),
+        }
+    });
+
+    // Tensor·reshape(self, new_shape) - Reshape tensor
+    define(interp, "Tensor·reshape", Some(2), |_, args| {
+        fn get_tensor_data(v: &Value) -> Result<(Vec<Value>, bool), RuntimeError> {
+            match v {
+                Value::Struct { name, fields } if name == "Tensor" => {
+                    let f = fields.borrow();
+                    let data = match f.get("__data__") {
+                        Some(Value::Array(arr)) => arr.borrow().clone(),
+                        _ => return Err(RuntimeError::new("Invalid Tensor")),
+                    };
+                    let requires_grad = matches!(f.get("__requires_grad__"), Some(Value::Bool(true)));
+                    Ok((data, requires_grad))
+                }
+                Value::Ref(r) => {
+                    let inner = r.borrow();
+                    get_tensor_data(&*inner)
+                }
+                _ => Err(RuntimeError::new("reshape expects Tensor")),
+            }
+        }
+
+        let (data, requires_grad) = get_tensor_data(&args[0])?;
+
+        let new_shape: Vec<i64> = match &args[1] {
+            Value::Array(arr) => {
+                arr.borrow().iter().map(|v| match v {
+                    Value::Int(i) => *i,
+                    _ => 1,
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("reshape: second arg must be shape array")),
+        };
+
+        // Validate that total elements match
+        let new_total: i64 = new_shape.iter().product();
+        if new_total as usize != data.len() {
+            return Err(RuntimeError::new(format!(
+                "reshape: cannot reshape {} elements to {:?}", data.len(), new_shape
+            )));
+        }
+
+        Ok(create_tensor(data, new_shape, requires_grad))
+    });
+
+    // Tensor·mean(self) - Mean of all elements
+    define(interp, "Tensor·mean", Some(1), |_, args| {
+        fn get_tensor_data(v: &Value) -> Result<Vec<f64>, RuntimeError> {
+            match v {
+                Value::Struct { name, fields } if name == "Tensor" => {
+                    let f = fields.borrow();
+                    match f.get("__data__") {
+                        Some(Value::Array(arr)) => Ok(arr.borrow().iter().map(|v| match v {
+                            Value::Float(f) => *f,
+                            Value::Int(i) => *i as f64,
+                            _ => 0.0,
+                        }).collect()),
+                        _ => Err(RuntimeError::new("Invalid Tensor")),
+                    }
+                }
+                Value::Ref(r) => get_tensor_data(&*r.borrow()),
+                _ => Err(RuntimeError::new("mean expects Tensor")),
+            }
+        }
+
+        let data = get_tensor_data(&args[0])?;
+        if data.is_empty() {
+            return Err(RuntimeError::new("mean: empty tensor"));
+        }
+
+        let mean = data.iter().sum::<f64>() / data.len() as f64;
+        Ok(create_tensor(vec![Value::Float(mean)], vec![], false))
     });
 
     // =========================================================================
