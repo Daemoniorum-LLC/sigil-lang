@@ -3122,26 +3122,56 @@ pub mod llvm {
                             return Ok(receiver_val);
                         }
                         "to_vec" => {
-                            // slice.to_vec() or vec.to_vec() - create a copy of the vector
+                            // slice.to_vec() or array.to_vec() - create a Vec from the source
                             let i64_type = self.context.i64_type();
 
                             // Get runtime functions
-                            let len_fn = self
-                                .module
-                                .get_function("sigil_vec_len")
-                                .ok_or("sigil_vec_len not declared")?;
                             let new_fn = self
                                 .module
                                 .get_function("sigil_vec_new")
                                 .ok_or("sigil_vec_new not declared")?;
-                            let get_fn = self
-                                .module
-                                .get_function("sigil_vec_get")
-                                .ok_or("sigil_vec_get not declared")?;
                             let push_fn = self
                                 .module
                                 .get_function("sigil_vec_push")
                                 .ok_or("sigil_vec_push not declared")?;
+
+                            // Check if receiver is an array literal - handle specially
+                            if let Expr::Array(elements) = receiver.as_ref() {
+                                // Array literal: we know the length statically
+                                let arr_len = elements.len() as u64;
+                                let src_len = i64_type.const_int(arr_len, false);
+
+                                // Create new vec with known capacity
+                                let new_call = self
+                                    .builder
+                                    .build_call(new_fn, &[src_len.into()], "new_vec")
+                                    .map_err(|e| e.to_string())?;
+                                let new_vec = new_call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                                // Push each element directly (unrolled loop for small arrays)
+                                for elem_expr in elements {
+                                    let elem_val = self.compile_expr(fn_value, scope, elem_expr)?;
+                                    self.builder
+                                        .build_call(push_fn, &[new_vec.into(), elem_val.into()], "")
+                                        .map_err(|e| e.to_string())?;
+                                }
+
+                                return Ok(new_vec);
+                            }
+
+                            // For Vec/slice: use runtime functions to copy
+                            let len_fn = self
+                                .module
+                                .get_function("sigil_vec_len")
+                                .ok_or("sigil_vec_len not declared")?;
+                            let get_fn = self
+                                .module
+                                .get_function("sigil_vec_get")
+                                .ok_or("sigil_vec_get not declared")?;
 
                             // Get length of source
                             let len_call = self
