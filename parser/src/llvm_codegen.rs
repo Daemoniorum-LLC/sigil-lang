@@ -597,6 +597,11 @@ pub mod llvm {
             self.module
                 .add_function("sigil_string_concat", string_concat_type, None);
 
+            // sigil_string_repeat(str: ptr, count: i64) -> ptr
+            let string_repeat_type = ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_string_repeat", string_repeat_type, None);
+
             // Option functions
             // sigil_option_some(value: i64) -> ptr
             let option_some_type = ptr_type.fn_type(&[i64_type.into()], false);
@@ -3209,6 +3214,48 @@ pub mod llvm {
                             // For now, clone is identity (shallow copy semantics)
                             // TODO: Implement proper deep clone via runtime
                             return Ok(receiver_val);
+                        }
+                        "repeat" => {
+                            // str.repeat(n) -> sigil_string_repeat(str, n)
+                            // Works on string literals (C strings) - returns new allocated string
+                            if args.is_empty() {
+                                return Err("repeat requires a count argument".to_string());
+                            }
+                            let count = self.compile_expr(fn_value, scope, &args[0])?;
+
+                            // Convert receiver i64 (ptr as int) to actual pointer
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let str_ptr = self.builder
+                                .build_int_to_ptr(receiver_val, ptr_type, "repeat_str_ptr")
+                                .map_err(|e| e.to_string())?;
+
+                            let repeat_fn = self
+                                .module
+                                .get_function("sigil_string_repeat")
+                                .ok_or("sigil_string_repeat not declared")?;
+
+                            let call = self
+                                .builder
+                                .build_call(repeat_fn, &[str_ptr.into(), count.into()], "repeated_str")
+                                .map_err(|e| e.to_string())?;
+
+                            // The function returns a pointer, convert to i64 for Sigil
+                            let result = call
+                                .try_as_basic_value()
+                                .left()
+                                .ok_or("repeat returned void")?;
+
+                            // Check if result is pointer or int
+                            if result.is_pointer_value() {
+                                let result_ptr = result.into_pointer_value();
+                                let result_as_int = self.builder
+                                    .build_ptr_to_int(result_ptr, self.context.i64_type(), "repeated_str_int")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(result_as_int);
+                            } else {
+                                // Already an i64 (some LLVM versions return this way)
+                                return Ok(result.into_int_value());
+                            }
                         }
                         "to_vec" => {
                             // slice.to_vec() or array.to_vec() - create a Vec from the source
@@ -9280,8 +9327,8 @@ pub mod llvm {
                 (String::new(), tokens.to_string())
             };
 
-            // Check if format string has placeholders
-            let has_placeholders = format_str.contains("{}");
+            // Check if format string has placeholders (including format specs like {:>6}, {:.2})
+            let has_placeholders = format_str.contains("{") && format_str.contains("}");
 
             if !has_placeholders && args_str.is_empty() {
                 // Simple string literal - use write_str (no newline) then add newline if needed
@@ -9306,8 +9353,8 @@ pub mod llvm {
                 }
             } else if has_placeholders {
                 // Format string with placeholders - parse and substitute
-                // Split format string by {} and interleave with arguments
-                let parts: Vec<&str> = format_str.split("{}").collect();
+                // Parse format specs like {}, {:>6}, {:.2}, {:>10.4}
+                let (parts, format_specs) = self.parse_format_string(&format_str);
                 let args: Vec<&str> = args_str
                     .split(',')
                     .map(|s| s.trim())
@@ -9323,6 +9370,10 @@ pub mod llvm {
                     .module
                     .get_function("sigil_write_int")
                     .ok_or("sigil_write_int not declared")?;
+                let write_float_fn = self
+                    .module
+                    .get_function("sigil_write_float")
+                    .ok_or("sigil_write_float not declared")?;
 
                 for (i, part) in parts.iter().enumerate() {
                     // Print the static part (no newline)
@@ -9337,11 +9388,48 @@ pub mod llvm {
                     // Print the argument (if there's one for this placeholder)
                     if i < args.len() {
                         let arg_str = args[i];
+                        let spec = if i < format_specs.len() { &format_specs[i] } else { "" };
+
+                        // Check if this is a string
+                        let is_string = self.is_string_expression(arg_str);
+
+                        // Check if this is a float - either by variable type or format spec
+                        // Format specs with .N (like :.2, :>10.4) indicate float formatting
+                        let spec_indicates_float = spec.contains('.');
+                        let is_float = !is_string && (spec_indicates_float || self.is_float_expression(arg_str, scope));
+
                         // Parse and compile the argument expression
                         let arg_value = self.compile_format_arg(fn_value, scope, arg_str)?;
-                        self.builder
-                            .build_call(write_int_fn, &[arg_value.into()], "")
-                            .map_err(|e| e.to_string())?;
+
+                        if is_string {
+                            // String value - convert to pointer and call write_str
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let str_ptr = self.builder
+                                .build_int_to_ptr(arg_value, ptr_type, "str_ptr_for_print")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_call(write_str_fn, &[str_ptr.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        } else if is_float {
+                            // Reinterpret i64 bits as f64 via memory (standard LLVM pattern)
+                            let temp_alloca = self.builder
+                                .build_alloca(self.context.i64_type(), "float_bits_temp")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(temp_alloca, arg_value)
+                                .map_err(|e| e.to_string())?;
+                            let f64_val = self.builder
+                                .build_load(self.context.f64_type(), temp_alloca, "float_val")
+                                .map_err(|e| e.to_string())?
+                                .into_float_value();
+                            self.builder
+                                .build_call(write_float_fn, &[f64_val.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        } else {
+                            self.builder
+                                .build_call(write_int_fn, &[arg_value.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        }
                     }
                 }
 
@@ -9398,6 +9486,113 @@ pub mod llvm {
 
             // Fallback: return 0
             Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Parse a format string and extract static parts and format specs
+        /// Returns (static_parts, format_specs) where format_specs[i] is the spec for the i-th placeholder
+        fn parse_format_string(&self, format_str: &str) -> (Vec<String>, Vec<String>) {
+            let mut parts = Vec::new();
+            let mut specs = Vec::new();
+            let mut current_part = String::new();
+            let mut chars = format_str.chars().peekable();
+
+            while let Some(c) = chars.next() {
+                if c == '{' {
+                    // Start of placeholder
+                    parts.push(current_part.clone());
+                    current_part.clear();
+
+                    // Collect until '}'
+                    let mut spec = String::new();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next == '}' {
+                            break;
+                        }
+                        spec.push(next);
+                    }
+                    // spec is empty for {}, or ":>6" for {:>6}, etc.
+                    specs.push(spec);
+                } else {
+                    current_part.push(c);
+                }
+            }
+
+            // Push final part
+            parts.push(current_part);
+
+            (parts, specs)
+        }
+
+        /// Check if an expression string will produce a float value
+        fn is_float_expression(&self, arg_str: &str, scope: &CompileScope<'ctx>) -> bool {
+            let arg_str = arg_str.trim();
+
+            // Check if it's a simple variable name in float_vars
+            if scope.float_vars.contains(arg_str) {
+                return true;
+            }
+
+            // Check if it's a float literal (contains decimal point)
+            if arg_str.contains('.') && !arg_str.contains("..") && !arg_str.contains(".repeat") {
+                // Make sure it's not a method call like "x.len()"
+                if arg_str.parse::<f64>().is_ok() {
+                    return true;
+                }
+            }
+
+            // Check for arithmetic with floats (e.g., "x * 2.0")
+            if arg_str.contains(" * ") || arg_str.contains(" / ") {
+                // If any part is a float, the result is probably a float
+                for part in arg_str.split(|c| c == '*' || c == '/' || c == '+' || c == '-') {
+                    let part = part.trim();
+                    if scope.float_vars.contains(part) {
+                        return true;
+                    }
+                    if part.contains('.') && part.parse::<f64>().is_ok() {
+                        return true;
+                    }
+                }
+            }
+
+            // Check for struct field access that likely returns a float
+            // Heuristic: field names commonly used for floats
+            let float_field_patterns = [
+                "lambda", "rate", "energy", "loss", "weight", "scale", "bias",
+                "grad", "lr", "epsilon", "alpha", "beta", "gamma", "momentum",
+                "decay", "factor", "ratio", "threshold", "temp", "sigma",
+            ];
+            if arg_str.contains('.') && !arg_str.ends_with(')') {
+                // Field access like config.lambda_spectral
+                let parts: Vec<&str> = arg_str.split('.').collect();
+                if let Some(field_name) = parts.last() {
+                    let field_lower = field_name.to_lowercase();
+                    for pattern in &float_field_patterns {
+                        if field_lower.contains(pattern) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            false
+        }
+
+        /// Check if an expression string will produce a string value
+        fn is_string_expression(&self, arg_str: &str) -> bool {
+            let arg_str = arg_str.trim();
+
+            // String literal
+            if arg_str.starts_with('"') && arg_str.ends_with('"') {
+                return true;
+            }
+
+            // String method that returns string
+            if arg_str.contains(".repeat(") {
+                return true;
+            }
+
+            false
         }
 
         /// Create a global string constant and return pointer to it

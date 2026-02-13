@@ -168,6 +168,216 @@ sigil_print_float:
 .float_placeholder:
     .asciz "<float>\n"
 
+# sigil_write_str(str: *const u8)
+# Writes a null-terminated C string (no newline)
+.global sigil_write_str
+sigil_write_str:
+    push rbx
+    push r12
+    mov r12, rdi             # Save string pointer
+
+    # Handle NULL
+    test r12, r12
+    jz .write_str_done
+
+    # Calculate string length (strlen)
+    xor rbx, rbx
+.write_str_len_loop:
+    mov al, [r12 + rbx]
+    test al, al
+    jz .write_str_output
+    inc rbx
+    jmp .write_str_len_loop
+
+.write_str_output:
+    # Write string
+    test rbx, rbx            # Don't write if length is 0
+    jz .write_str_done
+    mov rax, 1               # SYS_write
+    mov rdi, 1               # stdout
+    mov rsi, r12             # buffer
+    mov rdx, rbx             # length
+    syscall
+
+.write_str_done:
+    pop r12
+    pop rbx
+    ret
+
+# sigil_write_int(value: i64)
+# Writes an integer (no newline)
+.global sigil_write_int
+sigil_write_int:
+    push rbx
+    push r12
+    push r13
+    sub rsp, 32              # Buffer for digits
+
+    mov r12, rdi             # Save value
+    lea r13, [rsp + 31]      # End of buffer
+    mov byte ptr [r13], 0    # Null terminator
+
+    # Handle negative numbers
+    test r12, r12
+    jns .write_int_positive
+    neg r12
+    mov bl, 1                # Negative flag
+    jmp .write_int_convert
+.write_int_positive:
+    xor bl, bl               # Positive flag
+
+.write_int_convert:
+    # Convert to decimal digits (reverse order)
+    mov rax, r12
+    mov rcx, 10
+.write_int_digit_loop:
+    dec r13
+    xor rdx, rdx
+    div rcx                  # RAX = quotient, RDX = remainder
+    add dl, '0'
+    mov [r13], dl
+    test rax, rax
+    jnz .write_int_digit_loop
+
+    # Add minus sign if negative
+    test bl, bl
+    jz .write_int_output
+    dec r13
+    mov byte ptr [r13], '-'
+
+.write_int_output:
+    # Calculate length
+    lea rax, [rsp + 31]
+    sub rax, r13             # Length = end - start
+    mov rbx, rax
+
+    # Write number (no newline)
+    mov rax, 1               # SYS_write
+    mov rdi, 1               # stdout
+    mov rsi, r13             # buffer start
+    mov rdx, rbx             # length
+    syscall
+
+    add rsp, 32
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+# sigil_write_float(value: f64 in xmm0)
+# Writes a floating point number with 6 decimal places (no newline)
+.global sigil_write_float
+sigil_write_float:
+    push rbx
+    push r12
+    push r13
+    push r14
+    sub rsp, 64              # Buffer for output
+
+    # Store float to memory
+    movsd [rsp], xmm0
+
+    # Check for negative
+    mov rax, [rsp]
+    test rax, rax
+    jns .write_float_positive
+
+    # Print minus sign
+    mov byte ptr [rsp + 32], '-'
+    mov rax, 1
+    mov rdi, 1
+    lea rsi, [rsp + 32]
+    mov rdx, 1
+    syscall
+
+    # Make positive
+    movsd xmm0, [rsp]
+    pxor xmm1, xmm1
+    subsd xmm1, xmm0         # xmm1 = -xmm0
+    movsd xmm0, xmm1
+
+.write_float_positive:
+    # Extract integer part
+    cvttsd2si r12, xmm0      # r12 = truncated integer part
+
+    # Calculate fractional part: frac = (value - int_part) * 1000000
+    cvtsi2sd xmm1, r12       # xmm1 = (double)int_part
+    subsd xmm0, xmm1         # xmm0 = fractional part
+    mov rax, 1000000         # Scale for 6 decimal places
+    cvtsi2sd xmm1, rax
+    mulsd xmm0, xmm1         # xmm0 = frac * 1000000
+    cvttsd2si r13, xmm0      # r13 = fractional digits
+
+    # Print integer part
+    mov rdi, r12
+    lea r14, [rsp + 48]      # End of buffer
+    mov byte ptr [r14], 0
+
+    # Convert integer to string
+    mov rax, r12
+    mov rcx, 10
+.write_float_int_loop:
+    dec r14
+    xor rdx, rdx
+    div rcx
+    add dl, '0'
+    mov [r14], dl
+    test rax, rax
+    jnz .write_float_int_loop
+
+    # Print integer part
+    lea rax, [rsp + 48]
+    sub rax, r14
+    mov rbx, rax
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, r14
+    mov rdx, rbx
+    syscall
+
+    # Print decimal point
+    mov byte ptr [rsp + 32], '.'
+    mov rax, 1
+    mov rdi, 1
+    lea rsi, [rsp + 32]
+    mov rdx, 1
+    syscall
+
+    # Print fractional part with leading zeros
+    # We need exactly 6 digits
+    lea r14, [rsp + 48]
+    mov byte ptr [r14], 0
+    dec r14
+    mov rax, r13
+    test rax, rax            # Handle 0 fractional part
+    jns .write_float_frac_positive
+    neg rax
+.write_float_frac_positive:
+    mov rcx, 10
+    mov r12, 6               # 6 digits
+.write_float_frac_loop:
+    xor rdx, rdx
+    div rcx
+    add dl, '0'
+    dec r14
+    mov [r14], dl
+    dec r12
+    jnz .write_float_frac_loop
+
+    # Print 6 fractional digits
+    mov rax, 1
+    mov rdi, 1
+    mov rsi, r14
+    mov rdx, 6
+    syscall
+
+    add rsp, 64
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
 # ============================================================================
 # Memory Functions - Arena/Bump Allocator
 # ============================================================================
@@ -795,6 +1005,108 @@ sigil_string_char_at:
     mov rax, -1
     ret
 
+# sigil_string_repeat(str: *const u8, count: i64) -> *const u8
+# Repeats a C string (null-terminated) count times, returns new allocated string
+.global sigil_string_repeat
+sigil_string_repeat:
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    mov r12, rdi             # Save source string pointer
+    mov r13, rsi             # Save count
+
+    # Handle edge cases
+    test r12, r12
+    jz .repeat_empty
+    test r13, r13
+    jle .repeat_empty
+
+    # Calculate source string length (strlen)
+    xor r14, r14             # r14 = src_len
+.repeat_strlen_loop:
+    mov al, [r12 + r14]
+    test al, al
+    jz .repeat_strlen_done
+    inc r14
+    jmp .repeat_strlen_loop
+
+.repeat_strlen_done:
+    # Handle empty source string
+    test r14, r14
+    jz .repeat_empty
+
+    # Calculate total size: src_len * count + 1 (null terminator)
+    mov rax, r14
+    mul r13                  # RAX = src_len * count
+    mov r15, rax             # r15 = total_len (without null)
+    inc rax                  # +1 for null terminator
+
+    # Allocate memory
+    mov rdi, rax
+    call sigil_alloc
+    test rax, rax
+    jz .repeat_alloc_fail
+    mov rbx, rax             # rbx = dest pointer
+
+    # Copy source string 'count' times
+    xor rcx, rcx             # rcx = current offset in dest
+.repeat_copy_outer:
+    cmp r13, 0
+    jle .repeat_copy_done
+    dec r13
+
+    # Copy one instance of source string
+    xor rdx, rdx             # rdx = current position in source
+.repeat_copy_inner:
+    cmp rdx, r14             # Compare with src_len
+    jge .repeat_copy_inner_done
+    mov al, [r12 + rdx]
+    mov [rbx + rcx], al
+    inc rdx
+    inc rcx
+    jmp .repeat_copy_inner
+
+.repeat_copy_inner_done:
+    jmp .repeat_copy_outer
+
+.repeat_copy_done:
+    # Add null terminator
+    mov byte ptr [rbx + r15], 0
+
+    mov rax, rbx             # Return dest pointer
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.repeat_empty:
+    # Allocate and return empty string
+    mov rdi, 1
+    call sigil_alloc
+    test rax, rax
+    jz .repeat_alloc_fail
+    mov byte ptr [rax], 0    # Null terminator
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
+.repeat_alloc_fail:
+    xor rax, rax             # Return NULL on failure
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+
 # ============================================================================
 # Vec Operations
 # ============================================================================
@@ -1186,6 +1498,105 @@ sigil_cos:
     fstp qword ptr [rsp]
     pop rax
     ret
+
+# sigil_tan(x: i64) -> i64
+# Compute tan(x) using fptan
+.global sigil_tan
+sigil_tan:
+    push rdi
+    fld qword ptr [rsp]
+    fptan
+    fstp st(0)               # Pop the 1.0 that fptan pushes
+    fstp qword ptr [rsp]
+    pop rax
+    ret
+
+# sigil_exp(x: i64) -> i64
+# Compute e^x using: 2^(x * log2(e))
+.global sigil_exp
+sigil_exp:
+    push rdi
+    sub rsp, 8
+
+    fld qword ptr [rsp + 8]  # Load x
+    fldl2e                   # Load log2(e)
+    fmulp                    # x * log2(e)
+
+    # Compute 2^result using f2xm1 (for fractional part) and fscale (for integer part)
+    fld st(0)
+    frndint                  # Integer part
+    fxch st(1)
+    fsub st(0), st(1)        # Fractional part
+    f2xm1                    # 2^frac - 1
+    fld1
+    faddp                    # 2^frac
+    fscale                   # * 2^int = 2^(x*log2(e)) = e^x
+    fstp st(1)               # Clean up
+
+    fstp qword ptr [rsp + 8]
+    add rsp, 8
+    pop rax
+    ret
+
+# sigil_ln(x: i64) -> i64
+# Compute ln(x) = log2(x) * ln(2)
+.global sigil_ln
+sigil_ln:
+    push rdi
+    sub rsp, 8
+
+    fld1                     # Push 1.0
+    fld qword ptr [rsp + 8]  # Load x
+    fyl2x                    # 1.0 * log2(x) = log2(x)
+    fldln2                   # Load ln(2)
+    fmulp                    # log2(x) * ln(2) = ln(x)
+
+    fstp qword ptr [rsp + 8]
+    add rsp, 8
+    pop rax
+    ret
+
+# C library compatibility aliases
+# These allow LLVM-generated code to find math functions
+.global exp
+exp:
+    jmp sigil_exp
+
+.global cos
+cos:
+    jmp sigil_cos
+
+.global sin
+sin:
+    jmp sigil_sin
+
+.global tan
+tan:
+    jmp sigil_tan
+
+.global log
+log:
+    jmp sigil_ln
+
+.global sqrt
+sqrt:
+    jmp sigil_sqrt
+
+.global pow
+pow:
+    jmp sigil_pow
+
+.global floor
+floor:
+    jmp sigil_floor
+
+.global ceil
+ceil:
+    jmp sigil_ceil
+
+.global fabs
+fabs:
+    jmp sigil_abs
 
 # sigil_abs(x: i64) -> i64
 .global sigil_abs
