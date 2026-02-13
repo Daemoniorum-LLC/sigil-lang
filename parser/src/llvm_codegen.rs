@@ -7112,10 +7112,6 @@ pub mod llvm {
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Config::default" {
-                // Config::default() returns a struct - for now, return 0 as placeholder
-                return Ok(self.context.i64_type().const_int(0, false));
-            }
             // Print functions - handle both strings and integers
             if full_path == "println"
                 || full_path == "print"
