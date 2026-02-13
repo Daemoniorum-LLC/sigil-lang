@@ -1701,6 +1701,60 @@ pub mod llvm {
         ) -> Result<Option<IntValue<'ctx>>, String> {
             match stmt {
                 ast::Stmt::Let { pattern, init, .. } => {
+                    // G14 fix: Handle Pattern::Tuple for tuple destructuring
+                    if let ast::Pattern::Tuple(patterns) = pattern {
+                        // Compile the init expression (should be a tuple pointer)
+                        let tuple_ptr_int = if let Some(ref expr) = init {
+                            self.compile_expr(fn_value, scope, expr)?
+                        } else {
+                            return Err("Tuple pattern requires initializer".to_string());
+                        };
+
+                        // Convert i64 to pointer
+                        let tuple_ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                tuple_ptr_int,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "tuple_destr_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Extract each element and bind to pattern variables
+                        for (idx, pat) in patterns.iter().enumerate() {
+                            if let ast::Pattern::Ident { name: ident, .. } = pat {
+                                // Load element from tuple at offset idx * 8
+                                let offset = self.context.i64_type().const_int(idx as u64 * 8, false);
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(
+                                            self.context.i8_type(),
+                                            tuple_ptr,
+                                            &[offset],
+                                            &format!("tuple_elem_{}_ptr", idx),
+                                        )
+                                        .map_err(|e| e.to_string())?
+                                };
+                                let elem_val = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), elem_ptr, &format!("tuple_elem_{}", idx))
+                                    .map_err(|e| e.to_string())?
+                                    .into_int_value();
+
+                                // Allocate and store
+                                let alloca = self
+                                    .builder
+                                    .build_alloca(self.context.i64_type(), &ident.name)
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(alloca, elem_val)
+                                    .map_err(|e| e.to_string())?;
+                                scope.vars.insert(ident.name.clone(), alloca);
+                            }
+                        }
+                        return Ok(None);
+                    }
+
                     if let ast::Pattern::Ident {
                         name: ref ident, ..
                     } = pattern
@@ -3878,13 +3932,68 @@ pub mod llvm {
                 // Let expression (for if-let patterns)
                 Expr::Let { value, .. } => self.compile_expr(fn_value, scope, value),
 
-                // Tuple: just return first element for now
+                // Tuple: allocate on heap and store all elements
+                // G14 fix: Proper tuple support - tuples are heap-allocated structs
                 Expr::Tuple(elements) => {
-                    if let Some(first) = elements.first() {
-                        self.compile_expr(fn_value, scope, first)
-                    } else {
-                        Ok(self.context.i64_type().const_int(0, false))
+                    if elements.is_empty() {
+                        // Unit tuple () - return 0
+                        return Ok(self.context.i64_type().const_int(0, false));
                     }
+
+                    // Allocate tuple: num_elements * 8 bytes
+                    let tuple_size = elements.len() as u64 * 8;
+                    let size_const = self.context.i64_type().const_int(tuple_size, false);
+
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let alloc_call = self
+                        .builder
+                        .build_call(alloc_fn, &[size_const.into()], "tuple_alloc")
+                        .map_err(|e| e.to_string())?;
+                    let alloc_result = alloc_call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sigil_alloc returned void")?;
+
+                    let tuple_ptr = if alloc_result.is_pointer_value() {
+                        alloc_result.into_pointer_value()
+                    } else {
+                        self.builder
+                            .build_int_to_ptr(
+                                alloc_result.into_int_value(),
+                                self.context.ptr_type(AddressSpace::default()),
+                                "tuple_heap_ptr",
+                            )
+                            .map_err(|e| e.to_string())?
+                    };
+
+                    // Store each element at its offset
+                    for (idx, elem) in elements.iter().enumerate() {
+                        let elem_val = self.compile_expr(fn_value, scope, elem)?;
+                        let offset = self.context.i64_type().const_int(idx as u64 * 8, false);
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_gep(
+                                    self.context.i8_type(),
+                                    tuple_ptr,
+                                    &[offset],
+                                    &format!("tuple_elem_{}_ptr", idx),
+                                )
+                                .map_err(|e| e.to_string())?
+                        };
+                        self.builder
+                            .build_store(elem_ptr, elem_val)
+                            .map_err(|e| e.to_string())?;
+                    }
+
+                    // Return pointer as i64 (consistent with struct handling)
+                    let ptr_as_int = self
+                        .builder
+                        .build_ptr_to_int(tuple_ptr, self.context.i64_type(), "tuple_ptr_int")
+                        .map_err(|e| e.to_string())?;
+                    Ok(ptr_as_int)
                 }
 
                 // Array literal: allocate on stack and store elements
