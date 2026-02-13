@@ -1717,7 +1717,7 @@ pub mod llvm {
             stmt: &ast::Stmt,
         ) -> Result<Option<IntValue<'ctx>>, String> {
             match stmt {
-                ast::Stmt::Let { pattern, init, .. } => {
+                ast::Stmt::Let { pattern, ty, init } => {
                     // G14 fix: Handle Pattern::Tuple for tuple destructuring
                     if let ast::Pattern::Tuple(patterns) = pattern {
                         // Compile the init expression (should be a tuple pointer)
@@ -1777,8 +1777,15 @@ pub mod llvm {
                     } = pattern
                     {
                         // eprintln!("DEBUG: Let binding: {}", ident.name);
+                        // G19: Check if type annotation contains f64 (e.g., Vec<f64>)
+                        let is_float_from_ty = if let Some(ref type_expr) = ty {
+                            self.type_contains_f64(type_expr)
+                        } else {
+                            false
+                        };
+
                         // Check if init is a float expression before compiling
-                        let is_float = if let Some(ref expr) = init {
+                        let is_float = is_float_from_ty || if let Some(ref expr) = init {
                             self.is_float_expr_with_scope(expr, scope)
                         } else {
                             false
@@ -2019,6 +2026,16 @@ pub mod llvm {
                     }
                     // Default case: compile inner and apply unary op
                     let val = self.compile_expr(fn_value, scope, inner)?;
+
+                    // G18: Float negation requires XOR with sign bit, not integer neg
+                    if matches!(op, ast::UnaryOp::Neg) && self.is_float_expr_with_scope(inner, scope) {
+                        // Flip sign bit for float negation
+                        let sign_bit = self.context.i64_type().const_int(0x8000000000000000, false);
+                        return self.builder
+                            .build_xor(val, sign_bit, "fneg")
+                            .map_err(|e| e.to_string());
+                    }
+
                     self.compile_unary_op(*op, val)
                 }
                 Expr::If {
@@ -3835,8 +3852,14 @@ pub mod llvm {
                     // Check target type for numeric conversions
                     let target_type_str = self.type_expr_to_string(ty);
 
-                    // i64 -> f64: use sitofp, then bitcast back to i64 for storage
+                    // Cast to f64
                     if target_type_str == "f64" {
+                        // G18: If source is already f64, no-op (value is already stored as f64 bits)
+                        if self.is_float_expr_with_scope(expr, scope) {
+                            return Ok(val);
+                        }
+
+                        // i64 -> f64: use sitofp, then bitcast back to i64 for storage
                         let f64_val = self
                             .builder
                             .build_signed_int_to_float(
@@ -6005,13 +6028,28 @@ pub mod llvm {
                     false
                 }
                 Expr::MethodCall { receiver, method, .. } => {
-                    // sqrt() method returns float, or receiver is float
                     let name = method.name.as_str();
+                    // Methods that always return float
                     if matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "pow") {
                         return true;
                     }
-                    // Check if receiver is float
-                    self.is_float_expr_with_scope(receiver, scope)
+                    // G19: Methods that return integers even if receiver is float-containing
+                    if matches!(name, "len" | "capacity" | "is_empty" | "first" | "last" | "get") {
+                        return false;
+                    }
+                    // For other methods, check if receiver is a scalar float (not a container)
+                    if let Expr::Path(path) = receiver.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            // Check if it's a scalar float variable, not a Vec<f64>
+                            if scope.float_vars.contains(&seg.ident.name) {
+                                // Need to distinguish scalar floats from Vec<f64>
+                                // For now, assume if it's in float_vars and called with an unknown method,
+                                // it's probably a scalar float being operated on
+                                return true;
+                            }
+                        }
+                    }
+                    false
                 }
                 Expr::Cast { ty, .. } => {
                     // Check if casting to f64
@@ -6029,6 +6067,26 @@ pub mod llvm {
                         return self.is_float_expr_with_scope(inner, scope);
                     }
                     self.is_float_expr_with_scope(expr, scope)
+                }
+                // G19: Check if vec! macro contains float elements
+                Expr::Macro { path, tokens } => {
+                    let macro_name = path.segments.last()
+                        .map(|s| s.ident.name.trim_end_matches('!'))
+                        .unwrap_or("");
+                    if macro_name == "vec" {
+                        // Check if tokens contain a float literal (has decimal point)
+                        let tokens_trimmed = tokens.trim();
+                        if tokens_trimmed.contains('.') {
+                            // Verify it's likely a number (not a method call)
+                            for part in tokens_trimmed.split(',') {
+                                let part = part.trim().split(';').next().unwrap_or("").trim();
+                                if part.contains('.') && !part.contains('(') {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
                 }
                 _ => false,
             }
@@ -6543,6 +6601,14 @@ pub mod llvm {
                     if let ast::TypeExpr::Path(path) = ty {
                         if let Some(seg) = path.segments.last() {
                             if seg.ident.name == "f64" || seg.ident.name == "f32" {
+                                // G18: If source is already float, just bitcast to f64
+                                if self.is_float_expr_with_scope(inner, scope) {
+                                    let int_val = self.compile_expr(fn_value, scope, inner)?;
+                                    return self.builder
+                                        .build_bit_cast(int_val, f64_type, "f64_to_f64")
+                                        .map_err(|e| e.to_string())
+                                        .map(|v| v.into_float_value());
+                                }
                                 // Compile inner as int and convert
                                 let int_val = self.compile_expr(fn_value, scope, inner)?;
                                 return self.builder
@@ -9531,6 +9597,20 @@ pub mod llvm {
             // Check if it's a simple variable name in float_vars
             if scope.float_vars.contains(arg_str) {
                 return true;
+            }
+
+            // G19: Check if it's an array/slice index like data[i] where data is float
+            if let Some(bracket_pos) = arg_str.find('[') {
+                let base = arg_str[..bracket_pos].trim();
+                if scope.float_vars.contains(base) {
+                    return true;
+                }
+            }
+
+            // G19: Methods that return integer even if receiver is float-containing
+            if arg_str.ends_with(".len()") || arg_str.ends_with(".capacity()") ||
+               arg_str.ends_with(".is_empty()") {
+                return false;
             }
 
             // Check if it's a float literal (contains decimal point)
