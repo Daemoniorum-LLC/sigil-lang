@@ -8009,6 +8009,10 @@ impl<'a> Parser<'a> {
 
     /// Check if current position looks like a morpheme closure: ident => or (pattern) =>
     fn looks_like_morpheme_closure(&mut self) -> bool {
+        // Rust-style closure: |params| body
+        if matches!(self.current_token(), Some(Token::Pipe)) {
+            return true;
+        }
         // Simple closure: x => or _ => (may have evidentiality: x~ => or x◊ =>)
         if matches!(self.current_token(), Some(Token::Ident(_)) | Some(Token::Underscore)) {
             // Check next token - could be => directly or evidentiality marker first
@@ -8056,11 +8060,35 @@ impl<'a> Parser<'a> {
         false
     }
 
-    /// Parse a morpheme closure: x => expr, (a, b) => expr, &x => expr, or a, b => expr
+    /// Parse a morpheme closure: x => expr, (a, b) => expr, &x => expr, a, b => expr, or |a, b| expr
     /// For morphemes, (a, b) is a SINGLE tuple parameter pattern, not multiple parameters
     /// Multi-param: a, b => expr creates multiple ClosureParam entries
+    /// Rust-style: |a, b| expr also creates multiple ClosureParam entries
     fn parse_morpheme_closure(&mut self) -> ParseResult<Expr> {
-        let params = if self.check(&Token::LParen) {
+        // Track if we're using Rust-style |params| syntax (already consumed the delimiter)
+        let is_rust_style = self.check(&Token::Pipe);
+
+        let params = if is_rust_style {
+            // Rust-style closure: |a, b| expr
+            self.advance(); // consume opening |
+            let mut params = Vec::new();
+            while !self.check(&Token::Pipe) {
+                let name = self.parse_ident()?;
+                params.push(ClosureParam {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name,
+                        evidentiality: None,
+                    },
+                    ty: None,
+                });
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(Token::Pipe)?; // consume closing |
+            params
+        } else if self.check(&Token::LParen) {
             // Tuple pattern: (a, b) => expr - treated as single parameter with tuple pattern
             self.advance();
             let mut patterns = Vec::new();
@@ -8108,8 +8136,11 @@ impl<'a> Parser<'a> {
             params
         };
         // Accept either => or | as the arrow (for closure-style syntax)
-        if !self.consume_if(&Token::FatArrow) {
-            self.expect(Token::Pipe)?;
+        // Skip this for Rust-style closures since we already consumed both |s
+        if !is_rust_style {
+            if !self.consume_if(&Token::FatArrow) {
+                self.expect(Token::Pipe)?;
+            }
         }
         // Skip comments before body (e.g., // explanation after =>)
         self.skip_comments();
