@@ -6133,6 +6133,45 @@ pub mod llvm {
                     }
                     false
                 }
+                // G24: Handle struct field access - check if field type is f64
+                Expr::Field { expr: base_expr, field } => {
+                    // Get the type of the base expression
+                    let base_type = match base_expr.as_ref() {
+                        // For `this`/`self`, use current_self_type
+                        Expr::Path(path) if path.segments.len() == 1 &&
+                            (path.segments[0].ident.name == "this" || path.segments[0].ident.name == "self") => {
+                            self.current_self_type.clone()
+                        }
+                        // For other variables, look up their struct type
+                        _ => self.get_struct_type_from_expr(base_expr, scope),
+                    };
+
+                    // If we know the base type, look up the field type
+                    if let Some(struct_name) = base_type {
+                        let field_name = &field.name;
+                        // Look up field type in field_type_names
+                        if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field_name.clone())) {
+                            // Check if the field type is f64 or contains f64
+                            if field_type == "f64" || field_type.contains("f64") {
+                                return true;
+                            }
+                        }
+                    }
+
+                    // Fallback: use heuristic based on field name
+                    let field_name = &field.name.to_lowercase();
+                    let float_field_patterns = [
+                        "lambda", "rate", "energy", "loss", "weight", "scale", "bias",
+                        "grad", "lr", "epsilon", "alpha", "beta", "gamma", "momentum",
+                        "decay", "factor", "ratio", "threshold", "temp", "sigma", "eps",
+                    ];
+                    for pattern in &float_field_patterns {
+                        if field_name.contains(pattern) {
+                            return true;
+                        }
+                    }
+                    false
+                }
                 _ => false,
             }
         }
