@@ -1030,11 +1030,23 @@ pub mod llvm {
                 ast::TypeExpr::Path(path) => {
                     if let Some(segment) = path.segments.first() {
                         let name = &segment.ident.name;
-                        // Skip primitive types
+                        // Skip primitive types (but keep generic types like Vec<T>)
                         match name.as_str() {
                             "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
                             | "isize" | "usize" | "f32" | "f64" | "bool" | "str" | "String"
-                            | "Vec" | "Option" | "Result" => None,
+                            | "Option" | "Result" => None,
+                            // G15 fix: Include Vec<T> with element type for method dispatch
+                            "Vec" => {
+                                if let Some(ref generics) = segment.generics {
+                                    if let Some(first_arg) = generics.first() {
+                                        // Get element type name
+                                        if let Some(elem_type) = self.get_field_struct_type(first_arg) {
+                                            return Some(format!("Vec<{}>", elem_type));
+                                        }
+                                    }
+                                }
+                                None
+                            }
                             _ => Some(name.clone()),
                         }
                     } else {
@@ -6002,7 +6014,39 @@ pub mod llvm {
                 Expr::Path(path) => {
                     if path.segments.len() == 1 {
                         let var_name = &path.segments[0].ident.name;
+                        // G15 fix: Handle this/self specially to use current_self_type
+                        if var_name == "this" || var_name == "self" {
+                            return self.current_self_type.clone();
+                        }
                         return scope.get_struct_type(var_name).cloned();
+                    }
+                    None
+                }
+                // Index access: vec[i] - get element type from Vec<T>
+                // G15 fix: Enable correct method dispatch on indexed Vec elements
+                Expr::Index { expr: container, .. } => {
+                    // Check if container is a field access (e.g., model.layers[0])
+                    if let Expr::Field { expr: base_expr, field } = container.as_ref() {
+                        // Get the base type (e.g., Model)
+                        let base_type = self.get_struct_type_from_expr(base_expr, scope);
+                        if let Some(struct_name) = base_type {
+                            // Look up field type (e.g., layers -> Vec<Layer>)
+                            if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field.name.clone())) {
+                                // Extract element type from Vec<T>
+                                if field_type.starts_with("Vec<") && field_type.ends_with(">") {
+                                    let elem_type = &field_type[4..field_type.len()-1];
+                                    return Some(elem_type.to_string());
+                                }
+                            }
+                        }
+                    }
+                    // Also try recursively for nested containers
+                    if let Some(container_type) = self.get_struct_type_from_expr(container, scope) {
+                        // Check if container_type is Vec<T>
+                        if container_type.starts_with("Vec<") && container_type.ends_with(">") {
+                            let elem_type = &container_type[4..container_type.len()-1];
+                            return Some(elem_type.to_string());
+                        }
                     }
                     None
                 }
@@ -7011,6 +7055,35 @@ pub mod llvm {
                 .build_alloca(self.context.i64_type(), var_name)
                 .map_err(|e| e.to_string())?;
             scope.vars.insert(var_name.to_string(), var_ptr);
+
+            // G15 fix: Register element type for loop variable to enable correct method dispatch
+            // Extract element type from iterator (Vec<T> -> T)
+            if let Some(iter_type) = self.get_struct_type_from_expr(iter, scope) {
+                if iter_type.starts_with("Vec<") && iter_type.ends_with(">") {
+                    let elem_type = &iter_type[4..iter_type.len()-1];
+                    scope.register_struct_type(var_name.to_string(), elem_type.to_string());
+                }
+            }
+            // Also check if iter is a reference to a field access (&this.layers or &vary this.layers)
+            // Handle both Expr::AddrOf and Expr::Unary { op: Ref/RefMut } forms
+            let inner_expr = match iter {
+                Expr::AddrOf { expr: inner, .. } => Some(inner.as_ref()),
+                Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => Some(inner.as_ref()),
+                _ => None,
+            };
+            if let Some(inner) = inner_expr {
+                if let Expr::Field { expr: base_expr, field } = inner {
+                    let base_type = self.get_struct_type_from_expr(base_expr, scope);
+                    if let Some(struct_name) = base_type {
+                        if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field.name.clone())) {
+                            if field_type.starts_with("Vec<") && field_type.ends_with(">") {
+                                let elem_type = &field_type[4..field_type.len()-1];
+                                scope.register_struct_type(var_name.to_string(), elem_type.to_string());
+                            }
+                        }
+                    }
+                }
+            }
 
             // Get array length from Vec struct (field 0)
             let len_val = self.get_vec_length(iter_val)?;
