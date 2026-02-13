@@ -5406,9 +5406,10 @@ pub mod llvm {
             Ok(ptr_as_int)
         }
 
-        /// Compile array/slice indexing: arr[idx]
+        /// Compile array/slice indexing: arr[idx] or arr[start..end]
         /// Vec layout is: {len: i64, cap: i64, data[]} where data is inline at offset 2
         /// Uses cached data base pointer when available to avoid repeated +2 offset calculations
+        /// Range indexing (arr[start..end]) creates a new Vec with copied elements
         fn compile_index(
             &mut self,
             fn_value: FunctionValue<'ctx>,
@@ -5416,8 +5417,14 @@ pub mod llvm {
             expr: &Expr,
             index: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
-            let idx = self.compile_expr(fn_value, scope, index)?;
             let i64_type = self.context.i64_type();
+
+            // Check if this is a range index (slice operation)
+            if let Expr::Range { start, end, inclusive } = index {
+                return self.compile_range_index(fn_value, scope, expr, start.as_deref(), end.as_deref(), *inclusive);
+            }
+
+            let idx = self.compile_expr(fn_value, scope, index)?;
             let ptr_type = self.context.ptr_type(AddressSpace::default());
 
             // Try to get the variable name for caching
@@ -5483,6 +5490,154 @@ pub mod llvm {
                 .map_err(|e| e.to_string())?;
 
             Ok(value.into_int_value())
+        }
+
+        /// Compile range indexing (slicing): arr[start..end]
+        /// Creates a new Vec containing copied elements from the range
+        fn compile_range_index(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            expr: &Expr,
+            start: Option<&Expr>,
+            end: Option<&Expr>,
+            _inclusive: bool,
+        ) -> Result<IntValue<'ctx>, String> {
+            let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+            // Get the source vec pointer
+            let src_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+            let src_ptr = self
+                .builder
+                .build_int_to_ptr(src_ptr_int, ptr_type, "src_ptr")
+                .map_err(|e| e.to_string())?;
+
+            // Get source length via sigil_vec_len
+            let len_fn = self
+                .module
+                .get_function("sigil_vec_len")
+                .ok_or("sigil_vec_len not declared")?;
+            let len_call = self
+                .builder
+                .build_call(len_fn, &[src_ptr_int.into()], "src_len")
+                .map_err(|e| e.to_string())?;
+            let src_len = len_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+            // Get start index (default: 0)
+            let start_idx = if let Some(s) = start {
+                self.compile_expr(fn_value, scope, s)?
+            } else {
+                i64_type.const_int(0, false)
+            };
+
+            // Get end index (default: src_len)
+            let end_idx = if let Some(e) = end {
+                self.compile_expr(fn_value, scope, e)?
+            } else {
+                src_len
+            };
+
+            // Calculate slice length: end - start
+            let slice_len = self
+                .builder
+                .build_int_sub(end_idx, start_idx, "slice_len")
+                .map_err(|e| e.to_string())?;
+
+            // Get runtime functions
+            let new_fn = self
+                .module
+                .get_function("sigil_vec_new")
+                .ok_or("sigil_vec_new not declared")?;
+            let get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+            let push_fn = self
+                .module
+                .get_function("sigil_vec_push")
+                .ok_or("sigil_vec_push not declared")?;
+
+            // Create new vec with calculated capacity
+            let new_call = self
+                .builder
+                .build_call(new_fn, &[slice_len.into()], "new_vec")
+                .map_err(|e| e.to_string())?;
+            let new_vec = new_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+            // Build loop to copy elements from start_idx to end_idx
+            let loop_header = self.context.append_basic_block(fn_value, "slice_header");
+            let loop_body = self.context.append_basic_block(fn_value, "slice_body");
+            let loop_end = self.context.append_basic_block(fn_value, "slice_end");
+
+            // Initialize counter to start_idx
+            let counter_ptr = self
+                .builder
+                .build_alloca(i64_type, "slice_i")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, start_idx)
+                .map_err(|e| e.to_string())?;
+
+            // Jump to header
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Loop header: check if i < end_idx
+            self.builder.position_at_end(loop_header);
+            let i = self
+                .builder
+                .build_load(i64_type, counter_ptr, "i")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let cmp = self
+                .builder
+                .build_int_compare(inkwell::IntPredicate::SLT, i, end_idx, "cmp")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cmp, loop_body, loop_end)
+                .map_err(|e| e.to_string())?;
+
+            // Loop body: get element from source at index i, push to new vec
+            self.builder.position_at_end(loop_body);
+            let get_call = self
+                .builder
+                .build_call(get_fn, &[src_ptr_int.into(), i.into()], "elem")
+                .map_err(|e| e.to_string())?;
+            let elem = get_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+            self.builder
+                .build_call(push_fn, &[new_vec.into(), elem.into()], "")
+                .map_err(|e| e.to_string())?;
+
+            // Increment counter
+            let next_i = self
+                .builder
+                .build_int_add(i, i64_type.const_int(1, false), "next_i")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, next_i)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Position at end and return new vec pointer
+            self.builder.position_at_end(loop_end);
+
+            Ok(new_vec)
         }
 
         /// Compile a binary operation
