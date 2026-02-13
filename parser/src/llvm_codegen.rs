@@ -9166,44 +9166,19 @@ pub mod llvm {
         }
 
         /// Parse a simple expression from a string (for macro arguments)
+        /// G16 fix: Use full parser for complex expressions like method calls
         fn parse_simple_expr(&self, s: &str) -> Result<Expr, String> {
             let s = s.trim();
+
+            // Use the full parser to handle complex expressions like method calls
+            // This properly handles "source.len()", "a + b", "foo.bar.baz()", etc.
+            let mut parser = Parser::new(s);
+            if let Ok(expr) = parser.parse_expr() {
+                return Ok(expr);
+            }
+
+            // Fallback for edge cases: treat as a simple path
             let default_span = Span { start: 0, end: 0 };
-
-            // Try to parse as float literal (check for '.' to distinguish from int)
-            if s.contains('.') || s.contains('e') || s.contains('E') {
-                if let Ok(_f) = s.parse::<f64>() {
-                    return Ok(Expr::Literal(Literal::Float {
-                        value: s.to_string(),
-                        suffix: None,
-                    }));
-                }
-            }
-
-            // Try to parse as integer literal
-            if let Ok(_i) = s.parse::<i64>() {
-                return Ok(Expr::Literal(Literal::Int {
-                    value: s.to_string(),
-                    base: NumBase::Decimal,
-                    suffix: None,
-                }));
-            }
-
-            // Try as boolean
-            if s == "true" {
-                return Ok(Expr::Literal(Literal::Bool(true)));
-            }
-            if s == "false" {
-                return Ok(Expr::Literal(Literal::Bool(false)));
-            }
-
-            // Try as string literal
-            if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-                let inner = &s[1..s.len()-1];
-                return Ok(Expr::Literal(Literal::String(inner.to_string())));
-            }
-
-            // Otherwise treat as a variable path
             Ok(Expr::Path(TypePath {
                 segments: vec![PathSegment {
                     ident: Ident {
