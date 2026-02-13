@@ -186,9 +186,11 @@ fn main() -> ExitCode {
                 OptLevel::Standard
             } else if args.iter().any(|a| a == "-Os" || a == "-Osize") {
                 OptLevel::Size
-            } else {
-                // Default: Aggressive (-O3)
+            } else if args.iter().any(|a| a == "-O3" || a == "-Oaggressive") {
                 OptLevel::Aggressive
+            } else {
+                // Default: Standard (-O2) - O3 can crash LLVM on complex nested loops
+                OptLevel::Standard
             };
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
