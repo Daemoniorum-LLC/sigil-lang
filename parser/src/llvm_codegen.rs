@@ -1422,7 +1422,16 @@ pub mod llvm {
 
                     self.functions.insert(mangled_name.clone(), fn_value);
                     self.impl_methods
-                        .insert((type_name.clone(), method_name.clone()), mangled_name);
+                        .insert((type_name.clone(), method_name.clone()), mangled_name.clone());
+
+                    // G21b: Track methods that return f64 for float detection in println!
+                    if let Some(ref return_type) = func.return_type {
+                        if self.type_contains_f64(return_type) {
+                            self.float_funcs.insert(mangled_name);
+                            // Also store the short method name for MethodCall lookups
+                            self.float_funcs.insert(method_name.clone());
+                        }
+                    }
                 }
             }
             Ok(())
@@ -1452,6 +1461,8 @@ pub mod llvm {
 
                     // Set up variable scope
                     let mut scope = CompileScope::new();
+                    // G23: Copy global float_funcs registry to scope for float detection in impl methods
+                    scope.float_funcs = self.float_funcs.clone();
 
                     // Add all parameters to scope - no implicit self for any method
                     // (Static methods have no self, instance methods have explicit self/this)
@@ -1476,7 +1487,12 @@ pub mod llvm {
                         self.builder
                             .build_store(alloca, param_value)
                             .map_err(|e| e.to_string())?;
-                        scope.vars.insert(param_name, alloca);
+                        scope.vars.insert(param_name.clone(), alloca);
+
+                        // G23: Track float parameters for float detection
+                        if self.type_contains_f64(&param.ty) {
+                            scope.float_vars.insert(param_name);
+                        }
                     }
 
                     // Compile function body
@@ -6062,6 +6078,10 @@ pub mod llvm {
                     if matches!(name, "len" | "capacity" | "is_empty" | "first" | "last" | "get") {
                         return false;
                     }
+                    // G21b: Check if this method is known to return f64
+                    if scope.float_funcs.contains(name) {
+                        return true;
+                    }
                     // For other methods, check if receiver is a scalar float (not a container)
                     if let Expr::Path(path) = receiver.as_ref() {
                         if let Some(seg) = path.segments.last() {
@@ -9643,6 +9663,21 @@ pub mod llvm {
             if arg_str.ends_with(".len()") || arg_str.ends_with(".capacity()") ||
                arg_str.ends_with(".is_empty()") {
                 return false;
+            }
+
+            // G23: Check for method calls that return f64
+            // Pattern: receiver.method_name(args) - extract method_name and check float_funcs
+            if arg_str.ends_with(')') && arg_str.contains('.') {
+                // Find the method name between the last '.' before '(' and the '('
+                if let Some(paren_pos) = arg_str.rfind('(') {
+                    let before_paren = &arg_str[..paren_pos];
+                    if let Some(dot_pos) = before_paren.rfind('.') {
+                        let method_name = &before_paren[dot_pos + 1..];
+                        if scope.float_funcs.contains(method_name) {
+                            return true;
+                        }
+                    }
+                }
             }
 
             // Check if it's a float literal (contains decimal point)
