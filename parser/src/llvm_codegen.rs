@@ -99,6 +99,8 @@ pub mod llvm {
         global_vars: HashMap<String, inkwell::values::GlobalValue<'ctx>>,
         /// Libraries to link from #[link("lib")] attributes
         link_libraries: Vec<String>,
+        /// Field type names: maps (struct_name, field_name) -> field_type_name (for method dispatch)
+        field_type_names: HashMap<(String, String), String>,
     }
 
     // ============================================
@@ -394,6 +396,7 @@ pub mod llvm {
                 current_self_type: None,
                 global_vars: HashMap::new(),
                 link_libraries: Vec::new(),
+                field_type_names: HashMap::new(),
             })
         }
 
@@ -891,6 +894,14 @@ pub mod llvm {
                         let llvm_type = self.type_expr_to_llvm(&field.ty, type_substitutions);
                         field_types.push(llvm_type);
                         field_indices.insert(field.name.name.clone(), idx as u32);
+
+                        // G11 fix: Track field type names for method dispatch
+                        if let Some(field_type_name) = self.get_field_struct_type(&field.ty) {
+                            self.field_type_names.insert(
+                                (base_name.clone(), field.name.name.clone()),
+                                field_type_name,
+                            );
+                        }
                     }
                 }
                 ast::StructFields::Tuple(types) => {
@@ -1009,6 +1020,32 @@ pub mod llvm {
                 "f64" => self.context.f64_type().into(),
                 "bool" => self.context.bool_type().into(),
                 _ => self.context.i64_type().into(),
+            }
+        }
+
+        /// Extract the struct type name from a TypeExpr (for method dispatch)
+        /// Returns the struct/type name if it's a user-defined type, None for primitives
+        fn get_field_struct_type(&self, ty: &ast::TypeExpr) -> Option<String> {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(segment) = path.segments.first() {
+                        let name = &segment.ident.name;
+                        // Skip primitive types
+                        match name.as_str() {
+                            "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
+                            | "isize" | "usize" | "f32" | "f64" | "bool" | "str" | "String"
+                            | "Vec" | "Option" | "Result" => None,
+                            _ => Some(name.clone()),
+                        }
+                    } else {
+                        None
+                    }
+                }
+                ast::TypeExpr::Reference { inner, .. } | ast::TypeExpr::Pointer { inner, .. } => {
+                    // For references/pointers, get the inner type name
+                    self.get_field_struct_type(inner)
+                }
+                _ => None,
             }
         }
 
@@ -1676,6 +1713,13 @@ pub mod llvm {
                             false
                         };
 
+                        // Check if init is a struct type for method dispatch
+                        let struct_type = if let Some(ref expr) = init {
+                            self.get_struct_type_from_expr(expr, scope)
+                        } else {
+                            None
+                        };
+
                         let init_val = if let Some(ref expr) = init {
                             self.compile_expr(fn_value, scope, expr)?
                         } else {
@@ -1695,6 +1739,11 @@ pub mod llvm {
                         // Track float variables
                         if is_float {
                             scope.float_vars.insert(ident.name.clone());
+                        }
+
+                        // Track struct type for method dispatch (G11 fix)
+                        if let Some(ty) = struct_type {
+                            scope.register_struct_type(ident.name.clone(), ty);
                         }
                         // eprintln!("DEBUG: Added {} to scope, scope now: {:?}", ident.name, scope.vars.keys().collect::<Vec<_>>());
                     }
@@ -2965,7 +3014,38 @@ pub mod llvm {
                     let receiver_val = self.compile_expr(fn_value, scope, receiver)?;
                     let method_name = method.name.as_str();
 
-                    // Handle built-in Vec methods
+                    // G11 fix: Check user-defined methods BEFORE built-in methods
+                    // This ensures struct methods like `get` don't conflict with Vec.get()
+                    let receiver_type = self.get_struct_type_from_expr(receiver, scope);
+                    if let Some(ref recv_type) = receiver_type {
+                        // Check if we have an impl method for this type
+                        if let Some(mangled_name) = self.impl_methods.get(&(recv_type.clone(), method_name.to_string())) {
+                            if let Some(callee) = self.module.get_function(mangled_name) {
+                                // Compile arguments
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> =
+                                    vec![receiver_val.into()];
+                                for arg in args {
+                                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                    compiled_args.push(arg_val.into());
+                                }
+
+                                let call = self
+                                    .builder
+                                    .build_call(callee, &compiled_args, "method_call")
+                                    .map_err(|e| e.to_string())?;
+
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    }));
+                            }
+                        }
+                    }
+
+                    // Handle built-in Vec methods (fallback when no user-defined method matches)
                     match method_name {
                         "push" => {
                             // v.push(val) -> sigil_vec_push(v, val)
@@ -3375,8 +3455,41 @@ pub mod llvm {
                         _ => {}
                     }
 
-                    // Look up the method by trying all registered impl methods
-                    // For now, try each type until we find a match
+                    // G11 fix: Look up the method by type AND method name
+                    // First, try to determine the receiver's struct type
+                    let receiver_type = self.get_struct_type_from_expr(receiver, scope);
+
+                    // First pass: Try to find method matching both type and name
+                    if let Some(ref recv_type) = receiver_type {
+                        for ((type_name, meth_name), mangled_name) in &self.impl_methods {
+                            if type_name == recv_type && meth_name == method_name {
+                                if let Some(callee) = self.module.get_function(mangled_name) {
+                                    // Compile arguments
+                                    let mut compiled_args: Vec<BasicMetadataValueEnum> =
+                                        vec![receiver_val.into()];
+                                    for arg in args {
+                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                        compiled_args.push(arg_val.into());
+                                    }
+
+                                    let call = self
+                                        .builder
+                                        .build_call(callee, &compiled_args, "method_call")
+                                        .map_err(|e| e.to_string())?;
+
+                                    return Ok(call
+                                        .try_as_basic_value()
+                                        .left()
+                                        .map(|v| v.into_int_value())
+                                        .unwrap_or_else(|| {
+                                            self.context.i64_type().const_int(0, false)
+                                        }));
+                                }
+                            }
+                        }
+                    }
+
+                    // Second pass: Fallback to matching by method name only (for unknown types)
                     for ((_type_name, meth_name), mangled_name) in &self.impl_methods {
                         if meth_name == method_name {
                             if let Some(callee) = self.module.get_function(mangled_name) {
@@ -5542,6 +5655,65 @@ pub mod llvm {
                     self.is_float_expr_with_scope(expr, scope)
                 }
                 _ => false,
+            }
+        }
+
+        /// Extract the struct type name from an expression, if it can be determined
+        /// Returns Some(type_name) for struct literals, constructor calls, and known variables
+        fn get_struct_type_from_expr(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> Option<String> {
+            match expr {
+                // Struct literal: StructName { field: value, ... }
+                Expr::Struct { path, .. } => {
+                    // path is a TypePath, get the last segment
+                    if let Some(seg) = path.segments.last() {
+                        return Some(seg.ident.name.clone());
+                    }
+                    None
+                }
+                // Constructor call: StructName·new() or StructName·method()
+                Expr::Call { func, .. } => {
+                    if let Expr::Path(path) = func.as_ref() {
+                        // Look for Type·method pattern (2 or more segments with middledot)
+                        if path.segments.len() >= 2 {
+                            // First segment is likely the type name
+                            return Some(path.segments[0].ident.name.clone());
+                        }
+                    }
+                    None
+                }
+                // Variable reference: look up its known type
+                Expr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let var_name = &path.segments[0].ident.name;
+                        return scope.get_struct_type(var_name).cloned();
+                    }
+                    None
+                }
+                // Field access: this.field or var.field - get the field's type from struct definition
+                Expr::Field { expr: base_expr, field } => {
+                    // Get the type of the base expression
+                    let base_type = match base_expr.as_ref() {
+                        // For `this`/`self`, use current_self_type
+                        // Note: Sigil parser normalizes `this` to `self` in AST
+                        Expr::Path(path) if path.segments.len() == 1 &&
+                            (path.segments[0].ident.name == "this" || path.segments[0].ident.name == "self") => {
+                            self.current_self_type.clone()
+                        }
+                        // For other variables, look up their struct type
+                        _ => self.get_struct_type_from_expr(base_expr, scope),
+                    };
+
+                    // If we know the base type, look up the field type
+                    if let Some(struct_name) = base_type {
+                        let field_name = &field.name;
+                        // Look up field type in field_type_names
+                        if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field_name.clone())) {
+                            return Some(field_type.clone());
+                        }
+                    }
+                    None
+                }
+                _ => None,
             }
         }
 
@@ -9209,6 +9381,8 @@ pub mod llvm {
         var_types: HashMap<String, SigilType>,
         /// Cache Vec data base pointers (ptr to element 0) for faster indexing
         vec_bases: HashMap<String, PointerValue<'ctx>>,
+        /// Track struct type names for method dispatch (var_name -> struct_type_name)
+        struct_types: HashMap<String, String>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -9218,6 +9392,7 @@ pub mod llvm {
                 float_vars: std::collections::HashSet::new(),
                 var_types: HashMap::new(),
                 vec_bases: HashMap::new(),
+                struct_types: HashMap::new(),
             }
         }
 
@@ -9248,6 +9423,16 @@ pub mod llvm {
         /// Check if a variable is a float
         fn is_float_var(&self, name: &str) -> bool {
             self.get_var_type(name) == SigilType::Float
+        }
+
+        /// Register the struct type of a variable for method dispatch
+        fn register_struct_type(&mut self, var_name: String, struct_type: String) {
+            self.struct_types.insert(var_name, struct_type);
+        }
+
+        /// Get the struct type of a variable (if known)
+        fn get_struct_type(&self, name: &str) -> Option<&String> {
+            self.struct_types.get(name)
         }
     }
 
