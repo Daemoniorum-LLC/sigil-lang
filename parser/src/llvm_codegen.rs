@@ -3041,6 +3041,111 @@ pub mod llvm {
                             // TODO: Implement proper deep clone via runtime
                             return Ok(receiver_val);
                         }
+                        "to_vec" => {
+                            // slice.to_vec() or vec.to_vec() - create a copy of the vector
+                            let i64_type = self.context.i64_type();
+
+                            // Get runtime functions
+                            let len_fn = self
+                                .module
+                                .get_function("sigil_vec_len")
+                                .ok_or("sigil_vec_len not declared")?;
+                            let new_fn = self
+                                .module
+                                .get_function("sigil_vec_new")
+                                .ok_or("sigil_vec_new not declared")?;
+                            let get_fn = self
+                                .module
+                                .get_function("sigil_vec_get")
+                                .ok_or("sigil_vec_get not declared")?;
+                            let push_fn = self
+                                .module
+                                .get_function("sigil_vec_push")
+                                .ok_or("sigil_vec_push not declared")?;
+
+                            // Get length of source
+                            let len_call = self
+                                .builder
+                                .build_call(len_fn, &[receiver_val.into()], "src_len")
+                                .map_err(|e| e.to_string())?;
+                            let src_len = len_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                            // Create new vec with same capacity
+                            let new_call = self
+                                .builder
+                                .build_call(new_fn, &[src_len.into()], "new_vec")
+                                .map_err(|e| e.to_string())?;
+                            let new_vec = new_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                            // Build loop to copy elements
+                            let loop_header = self.context.append_basic_block(fn_value, "to_vec_header");
+                            let loop_body = self.context.append_basic_block(fn_value, "to_vec_body");
+                            let loop_end = self.context.append_basic_block(fn_value, "to_vec_end");
+
+                            // Initialize counter
+                            let counter_ptr = self.builder
+                                .build_alloca(i64_type, "to_vec_i")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(counter_ptr, i64_type.const_int(0, false))
+                                .map_err(|e| e.to_string())?;
+
+                            // Jump to header
+                            self.builder
+                                .build_unconditional_branch(loop_header)
+                                .map_err(|e| e.to_string())?;
+
+                            // Loop header: check if i < len
+                            self.builder.position_at_end(loop_header);
+                            let i = self.builder
+                                .build_load(i64_type, counter_ptr, "i")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+                            let cmp = self.builder
+                                .build_int_compare(inkwell::IntPredicate::SLT, i, src_len, "cmp")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_conditional_branch(cmp, loop_body, loop_end)
+                                .map_err(|e| e.to_string())?;
+
+                            // Loop body: get element from source, push to new vec
+                            self.builder.position_at_end(loop_body);
+                            let get_call = self.builder
+                                .build_call(get_fn, &[receiver_val.into(), i.into()], "elem")
+                                .map_err(|e| e.to_string())?;
+                            let elem = get_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| i64_type.const_int(0, false));
+                            self.builder
+                                .build_call(push_fn, &[new_vec.into(), elem.into()], "")
+                                .map_err(|e| e.to_string())?;
+
+                            // Increment counter
+                            let next_i = self.builder
+                                .build_int_add(i, i64_type.const_int(1, false), "next_i")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(counter_ptr, next_i)
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_unconditional_branch(loop_header)
+                                .map_err(|e| e.to_string())?;
+
+                            // Position at end
+                            self.builder.position_at_end(loop_end);
+
+                            return Ok(new_vec);
+                        }
                         "is_empty" => {
                             // v.is_empty() -> v.len() == 0
                             let len_fn = self
