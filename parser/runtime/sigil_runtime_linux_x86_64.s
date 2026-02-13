@@ -463,6 +463,8 @@ sigil_alloc:
     push rbx
     push r12
 
+    mov r12, rdi             # Save requested size BEFORE arena_init
+
     # Ensure arena is initialized
     mov rax, [rip + arena_current]
     test rax, rax
@@ -472,7 +474,7 @@ sigil_alloc:
     jz .alloc_failed_arena
 
 .arena_ready:
-    mov r12, rdi             # Save requested size
+    # r12 already has size (saved at entry)
 
     # Align size to 16 bytes
     add r12, 15
