@@ -2425,9 +2425,32 @@ pub mod llvm {
                         .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
                         .map_err(|e| e.to_string())?;
 
-                    // Try to find struct type from expression
-                    // For now, search all struct types for the field
                     let field_name = &field.name;
+
+                    // G13 fix: First try to get the struct type from the expression
+                    // This ensures we use the correct struct when multiple structs share field names
+                    if let Some(struct_type_name) = self.get_struct_type_from_expr(expr, scope) {
+                        if let Some(struct_info) = self.struct_types.get(&struct_type_name) {
+                            if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
+                                let field_ptr = self
+                                    .builder
+                                    .build_struct_gep(
+                                        struct_info.llvm_type,
+                                        struct_ptr,
+                                        field_idx,
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                let field_value = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), field_ptr, field_name)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(field_value.into_int_value());
+                            }
+                        }
+                    }
+
+                    // Fallback: search all struct types for the field (less accurate)
                     for (_name, struct_info) in &self.struct_types {
                         if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
                             let field_ptr = self
@@ -5977,6 +6000,17 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?
                             .into_float_value();
                         Ok(f_val)
+                    } else if let Some(global) = self.global_vars.get(name) {
+                        // Load from global/static variable
+                        let val = self.builder
+                            .build_load(self.context.i64_type(), global.as_pointer_value(), name)
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        let f_val = self.builder
+                            .build_bit_cast(val, f64_type, "load_f64")
+                            .map_err(|e| e.to_string())?
+                            .into_float_value();
+                        Ok(f_val)
                     } else {
                         Err(format!("Variable not found: {}", name))
                     }
@@ -8650,15 +8684,23 @@ pub mod llvm {
             // to allow proper impl method dispatch.
 
             // Get the function - try resolved path first, then various lookups
+            // Also try mangled name (Type_method format) for impl methods
+            let mangled_resolved = resolved_path.replace("::", "_").replace("·", "_");
+            let mangled_full = full_path.replace("::", "_").replace("·", "_");
+
             let callee = if let Some(f) = self.functions.get(&resolved_path) {
                 *f
             } else if let Some(f) = self.functions.get(&full_path) {
                 *f
+            } else if let Some(f) = self.functions.get(&mangled_resolved) {
+                *f
+            } else if let Some(f) = self.functions.get(&mangled_full) {
+                *f
             } else if let Some(f) = self.functions.get(fn_name) {
                 *f
-            } else if let Some(f) = self.module.get_function(&resolved_path.replace("::", "_")) {
+            } else if let Some(f) = self.module.get_function(&mangled_resolved) {
                 f
-            } else if let Some(f) = self.module.get_function(&full_path.replace("::", "_")) {
+            } else if let Some(f) = self.module.get_function(&mangled_full) {
                 f
             } else if let Some(f) = self.module.get_function(fn_name) {
                 f
