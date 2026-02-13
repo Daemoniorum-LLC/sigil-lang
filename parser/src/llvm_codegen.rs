@@ -101,6 +101,8 @@ pub mod llvm {
         link_libraries: Vec<String>,
         /// Field type names: maps (struct_name, field_name) -> field_type_name (for method dispatch)
         field_type_names: HashMap<(String, String), String>,
+        /// G21: Functions that return f64 (for float detection in println!)
+        float_funcs: std::collections::HashSet<String>,
     }
 
     // ============================================
@@ -397,6 +399,7 @@ pub mod llvm {
                 global_vars: HashMap::new(),
                 link_libraries: Vec::new(),
                 field_type_names: HashMap::new(),
+                float_funcs: std::collections::HashSet::new(),
             })
         }
 
@@ -1599,6 +1602,14 @@ pub mod llvm {
                 let full_path = format!("{}::{}", self.current_module[1..].join("::"), name);
                 self.functions.insert(full_path, fn_value);
             }
+
+            // G21: Track functions that return f64 for float detection in println!
+            if let Some(ref return_type) = func.return_type {
+                if self.type_contains_f64(return_type) {
+                    self.float_funcs.insert(name.clone());
+                }
+            }
+
             Ok(fn_value)
         }
 
@@ -1614,6 +1625,8 @@ pub mod llvm {
 
             // Set up variable scope
             let mut scope = CompileScope::new();
+            // G21: Copy global float_funcs registry to scope for float detection
+            scope.float_funcs = self.float_funcs.clone();
 
             // Add parameters to scope
             for (i, param) in func.params.iter().enumerate() {
@@ -6002,7 +6015,12 @@ pub mod llvm {
         fn is_float_expr_with_scope(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> bool {
             match expr {
                 Expr::Literal(Literal::Float { .. }) => true,
-                Expr::Binary { left, right, .. } => {
+                Expr::Binary { op, left, right } => {
+                    // G20: Comparison operators always return integers, even with float operands
+                    if matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::Eq | BinOp::Ne) {
+                        return false;
+                    }
+                    // Arithmetic/logical operators: float if either operand is float
                     self.is_float_expr_with_scope(left, scope) || self.is_float_expr_with_scope(right, scope)
                 }
                 Expr::Unary { expr: inner, .. } => self.is_float_expr_with_scope(inner, scope),
@@ -6018,11 +6036,18 @@ pub mod llvm {
                     if let Expr::Path(path) = func.as_ref() {
                         if let Some(seg) = path.segments.last() {
                             let name = seg.ident.name.as_str();
-                            return matches!(
+                            // Built-in math functions
+                            if matches!(
                                 name,
                                 "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "PI" |
                                 "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan"
-                            );
+                            ) {
+                                return true;
+                            }
+                            // G21: User-defined functions that return f64
+                            if scope.float_funcs.contains(name) {
+                                return true;
+                            }
                         }
                     }
                     false
@@ -9594,6 +9619,13 @@ pub mod llvm {
         fn is_float_expression(&self, arg_str: &str, scope: &CompileScope<'ctx>) -> bool {
             let arg_str = arg_str.trim();
 
+            // G20: Comparison operators always return integers, even with float operands
+            if arg_str.contains(" < ") || arg_str.contains(" > ") ||
+               arg_str.contains(" <= ") || arg_str.contains(" >= ") ||
+               arg_str.contains(" == ") || arg_str.contains(" != ") {
+                return false;
+            }
+
             // Check if it's a simple variable name in float_vars
             if scope.float_vars.contains(arg_str) {
                 return true;
@@ -10038,6 +10070,8 @@ pub mod llvm {
         vec_bases: HashMap<String, PointerValue<'ctx>>,
         /// Track struct type names for method dispatch (var_name -> struct_type_name)
         struct_types: HashMap<String, String>,
+        /// G21: Track functions that return f64 for float detection
+        float_funcs: std::collections::HashSet<String>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -10048,6 +10082,7 @@ pub mod llvm {
                 var_types: HashMap::new(),
                 vec_bases: HashMap::new(),
                 struct_types: HashMap::new(),
+                float_funcs: std::collections::HashSet::new(),
             }
         }
 
