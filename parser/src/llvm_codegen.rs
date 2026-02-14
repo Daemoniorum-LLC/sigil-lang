@@ -2126,13 +2126,18 @@ pub mod llvm {
 
                         // G27: Check if init is a function call that returns C string (&str)
                         // These are less common - mostly for functions returning static strings
-                        let is_string_from_call = if let Some(ref expr) = init {
+                        // G37: Don't apply heuristic if ret_types proves it returns Rust String
+                        let is_string_from_call = if is_rust_string_from_call {
+                            // Already known to return Rust String, not C string
+                            false
+                        } else if let Some(ref expr) = init {
                             if let Expr::Call { func, .. } = expr {
                                 if let Expr::Path(path) = &**func {
                                     if let Some(seg) = path.segments.last() {
                                         let name = &seg.ident.name;
                                         // Heuristic: functions that return C strings
-                                        name.contains("_str") || name.starts_with("get_")
+                                        // G37: Use more specific pattern to avoid "make_string" matching "_str"
+                                        name.ends_with("_str") || name.starts_with("get_")
                                     } else {
                                         false
                                     }
