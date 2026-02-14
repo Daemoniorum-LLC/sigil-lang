@@ -124,6 +124,14 @@ pub mod llvm {
             .unwrap_or(0)
     }
 
+    // Runtime helper: allocate memory (for struct construction)
+    extern "C" fn sigil_alloc(size: i64) -> *mut u8 {
+        use std::alloc::{alloc, Layout};
+        let size = size.max(8) as usize; // Minimum 8 bytes
+        let layout = Layout::from_size_align(size, 8).unwrap();
+        unsafe { alloc(layout) }
+    }
+
     // Runtime helper: print an integer with newline (for JIT mode)
     extern "C" fn sigil_print_int(value: i64) {
         println!("{}", value);
@@ -234,6 +242,18 @@ pub mod llvm {
             return 0;
         }
         unsafe { (*vec_ptr).len() as i64 }
+    }
+
+    extern "C" fn sigil_vec_set(vec_ptr: *mut Vec<i64>, index: i64, value: i64) {
+        if vec_ptr.is_null() {
+            return;
+        }
+        unsafe {
+            let vec_ref = &mut *vec_ptr;
+            if (index as usize) < vec_ref.len() {
+                vec_ref[index as usize] = value;
+            }
+        }
     }
 
     // String runtime functions
@@ -608,6 +628,12 @@ pub mod llvm {
             let vec_len_type = i64_type.fn_type(&[ptr_type.into()], false);
             self.module
                 .add_function("sigil_vec_len", vec_len_type, None);
+
+            // sigil_vec_set(vec: ptr, index: i64, value: i64) -> void
+            let vec_set_type =
+                void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_vec_set", vec_set_type, None);
 
             // String functions
             // sigil_string_new() -> ptr (empty string)
@@ -1527,7 +1553,15 @@ pub mod llvm {
 
                         // G23: Track float parameters for float detection
                         if self.type_contains_f64(&param.ty) {
-                            scope.float_vars.insert(param_name);
+                            scope.float_vars.insert(param_name.clone());
+                        }
+
+                        // G26: Track struct type from parameter type annotation for method dispatch
+                        // For self/this parameters, use the impl block's type
+                        if param_name == "this" || param_name == "self" {
+                            scope.register_struct_type(param_name, type_name.clone());
+                        } else if let Some(struct_type) = self.extract_struct_type_from_type_expr(&param.ty) {
+                            scope.register_struct_type(param_name, struct_type);
                         }
                     }
 
@@ -1708,7 +1742,12 @@ pub mod llvm {
                     // Check if parameter type contains f64 (for Vec<f64> or f64 params)
                     // This enables float detection for indexing operations
                     if self.type_contains_f64(&param.ty) {
-                        scope.float_vars.insert(param_name);
+                        scope.float_vars.insert(param_name.clone());
+                    }
+
+                    // G26: Track struct type from parameter type annotation for method dispatch
+                    if let Some(struct_type) = self.extract_struct_type_from_type_expr(&param.ty) {
+                        scope.register_struct_type(param_name, struct_type);
                     }
                 }
             }
@@ -2263,66 +2302,25 @@ pub mod llvm {
                         }
                         Expr::Index { expr, index } => {
                             // Index assignment: arr[i] = val
-                            // Uses cached Vec base pointer when available
+                            // G25 Fix: Use sigil_vec_set for proper Vec access
+                            // The Rust Vec memory layout (ptr, len, cap) doesn't match
+                            // the inline data assumption. Call the runtime function.
                             let idx = self.compile_expr(fn_value, scope, index)?;
-                            let i64_type = self.context.i64_type();
-                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let vec_ptr = self.compile_expr(fn_value, scope, expr)?;
 
-                            // Try to get the variable name for caching
-                            let var_name = if let Expr::Path(path) = expr.as_ref() {
-                                path.segments.last().map(|s| s.ident.name.clone())
-                            } else {
-                                None
-                            };
-
-                            // Check if we have a cached data base pointer for this Vec
-                            let data_base = if let Some(ref name) = var_name {
-                                if let Some(cached_base) = scope.get_vec_base(name) {
-                                    cached_base
-                                } else {
-                                    // Compute and cache the data base pointer
-                                    let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
-                                    let base_ptr = self
-                                        .builder
-                                        .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
-                                        .map_err(|e| e.to_string())?;
-
-                                    let offset_2 = i64_type.const_int(2, false);
-                                    let data_base = unsafe {
-                                        self.builder
-                                            .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
-                                    }
-                                    .map_err(|e| e.to_string())?;
-
-                                    scope.register_vec_base(name.clone(), data_base);
-                                    data_base
-                                }
-                            } else {
-                                // Not a simple variable, compute directly
-                                let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
-                                let base_ptr = self
-                                    .builder
-                                    .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
-                                    .map_err(|e| e.to_string())?;
-
-                                let offset_2 = i64_type.const_int(2, false);
-                                unsafe {
-                                    self.builder
-                                        .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
-                                }
-                                .map_err(|e| e.to_string())?
-                            };
-
-                            // GEP from data base using just the index
-                            let elem_ptr = unsafe {
-                                self.builder
-                                    .build_gep(i64_type, data_base, &[idx], "elem_ptr")
-                            }
-                            .map_err(|e| e.to_string())?;
+                            let vec_set_fn = self
+                                .module
+                                .get_function("sigil_vec_set")
+                                .ok_or("sigil_vec_set not declared")?;
 
                             self.builder
-                                .build_store(elem_ptr, val)
+                                .build_call(
+                                    vec_set_fn,
+                                    &[vec_ptr.into(), idx.into(), val.into()],
+                                    "",
+                                )
                                 .map_err(|e| e.to_string())?;
+
                             Ok(val)
                         }
                         Expr::Deref(inner) => {
@@ -4298,6 +4296,33 @@ pub mod llvm {
             }
         }
 
+        /// Extract struct type name from a TypeExpr (e.g., &SimpleLM -> SimpleLM)
+        /// Returns None for primitive types, Some(name) for user-defined structs
+        fn extract_struct_type_from_type_expr(&self, ty: &ast::TypeExpr) -> Option<String> {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        let name = &seg.ident.name;
+                        // Exclude primitive types
+                        if !matches!(name.as_str(),
+                            "i8" | "i16" | "i32" | "i64" | "i128" |
+                            "u8" | "u16" | "u32" | "u64" | "u128" |
+                            "f32" | "f64" | "bool" | "char" | "str" | "String"
+                        ) && !name.starts_with("Vec<") {
+                            // Check if this is a known struct
+                            if self.struct_types.contains_key(name) {
+                                return Some(name.clone());
+                            }
+                        }
+                    }
+                    None
+                }
+                ast::TypeExpr::Reference { inner, .. } => self.extract_struct_type_from_type_expr(inner),
+                ast::TypeExpr::Pointer { inner, .. } => self.extract_struct_type_from_type_expr(inner),
+                _ => None,
+            }
+        }
+
         /// Check if a TypeExpr contains f64 (including in generics like Vec<f64>)
         fn type_contains_f64(&self, ty: &ast::TypeExpr) -> bool {
             match ty {
@@ -5704,40 +5729,27 @@ pub mod llvm {
             }
 
             let idx = self.compile_expr(fn_value, scope, index)?;
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
 
-            // G24 Fix: Don't cache Vec base pointers across basic blocks
-            // Caching a getelementptr instruction and reusing it in other blocks
-            // causes domination issues. Recompute each time for safety.
-            // LLVM's optimizer will handle CSE (Common Subexpression Elimination) anyway.
-            let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
-            let base_ptr = self
+            // G25 Fix: Use sigil_vec_get for proper Vec access
+            // The Rust Vec memory layout (ptr, len, cap) doesn't match the
+            // inline data assumption. Call the runtime function instead.
+            let vec_ptr = self.compile_expr(fn_value, scope, expr)?;
+
+            let vec_get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+
+            let call = self
                 .builder
-                .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
+                .build_call(vec_get_fn, &[vec_ptr.into(), idx.into()], "vec_elem")
                 .map_err(|e| e.to_string())?;
 
-            // Data starts at offset 2 (after len and cap)
-            let offset_2 = i64_type.const_int(2, false);
-            let data_base = unsafe {
-                self.builder
-                    .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
-            }
-            .map_err(|e| e.to_string())?;
-
-            // GEP from data base using just the index (no +2 needed)
-            let elem_ptr = unsafe {
-                self.builder
-                    .build_gep(i64_type, data_base, &[idx], "elem_ptr")
-            }
-            .map_err(|e| e.to_string())?;
-
-            // Load and return the value
-            let value = self
-                .builder
-                .build_load(i64_type, elem_ptr, "elem")
-                .map_err(|e| e.to_string())?;
-
-            Ok(value.into_int_value())
+            Ok(call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false)))
         }
 
         /// Compile range indexing (slicing): arr[start..end]
@@ -10028,6 +10040,9 @@ pub mod llvm {
             if let Some(f) = self.module.get_function("sigil_now") {
                 ee.add_global_mapping(&f, sigil_now as usize);
             }
+            if let Some(f) = self.module.get_function("sigil_alloc") {
+                ee.add_global_mapping(&f, sigil_alloc as usize);
+            }
             if let Some(f) = self.module.get_function("sigil_print_int") {
                 ee.add_global_mapping(&f, sigil_print_int as usize);
             }
@@ -10097,6 +10112,9 @@ pub mod llvm {
             }
             if let Some(f) = self.module.get_function("sigil_vec_len") {
                 ee.add_global_mapping(&f, sigil_vec_len as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_vec_set") {
+                ee.add_global_mapping(&f, sigil_vec_set as usize);
             }
 
             // String runtime mappings
