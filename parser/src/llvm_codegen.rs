@@ -168,6 +168,15 @@ pub mod llvm {
         let _ = std::io::stdout().flush();
     }
 
+    // Runtime helper: get string length (C string)
+    extern "C" fn sigil_strlen(ptr: *const i8) -> i64 {
+        if ptr.is_null() {
+            return 0;
+        }
+        let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+        c_str.to_bytes().len() as i64
+    }
+
     // Math runtime helpers (JIT mode) - operate on i64 bits representing f64
     extern "C" fn sigil_sqrt(x: i64) -> i64 {
         f64::to_bits(f64::from_bits(x as u64).sqrt()) as i64
@@ -605,6 +614,11 @@ pub mod llvm {
             // sigil_write_str(const char*) -> void
             self.module
                 .add_function("sigil_write_str", print_str_type, None);
+
+            // sigil_strlen(const char*) -> i64
+            let strlen_type = i64_type.fn_type(&[ptr_type_generic.into()], false);
+            self.module
+                .add_function("sigil_strlen", strlen_type, None);
 
             // Jormungandr-compatible print functions (const char*) -> void
             self.module.add_function("print", print_str_type, None);
@@ -1804,7 +1818,12 @@ pub mod llvm {
 
                     // G26: Track struct type from parameter type annotation for method dispatch
                     if let Some(struct_type) = self.extract_struct_type_from_type_expr(&param.ty) {
-                        scope.register_struct_type(param_name, struct_type);
+                        scope.register_struct_type(param_name.clone(), struct_type);
+                    }
+
+                    // G28: Track byte slice parameters (&[u8], &str, &[T]) for direct pointer indexing
+                    if self.type_is_byte_slice(&param.ty) {
+                        scope.var_types.insert(param_name.clone(), SigilType::String);
                     }
                 }
             }
@@ -1952,12 +1971,56 @@ pub mod llvm {
                             false
                         };
 
-                        // G27: Check if init is a string literal or fs_read call
-                        let is_string = if let Some(ref expr) = init {
+                        // G27: Check if type annotation indicates string
+                        let is_string_from_ty = if let Some(ref type_expr) = ty {
+                            let ty_str = self.type_expr_to_string(type_expr);
+                            ty_str.contains("str") || ty_str.contains("String")
+                        } else {
+                            false
+                        };
+
+                        // G27: Check if init is a string literal
+                        let is_string_literal = if let Some(ref expr) = init {
                             matches!(expr, Expr::Literal(Literal::String(_)))
                         } else {
                             false
                         };
+
+                        // G27: Check if init is a function call that might return a string
+                        let is_string_from_call = if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = &**func {
+                                    if let Some(seg) = path.segments.last() {
+                                        let name = &seg.ident.name;
+                                        // Heuristic: functions that likely return strings
+                                        name.contains("_str") || name.contains("_corpus")
+                                            || name.starts_with("get_")
+                                            || name == "to_string" || name == "format"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G27: Check if init is a method call that returns bytes (as_bytes)
+                        let is_string_from_method = if let Some(ref expr) = init {
+                            if let Expr::MethodCall { method, .. } = expr {
+                                method.name == "as_bytes"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        let is_string = is_string_from_ty || is_string_literal || is_string_from_call || is_string_from_method;
 
                         // G27: Check if init is a fs_read call (returns Rust String)
                         let is_rust_string = if let Some(ref expr) = init {
@@ -3339,6 +3402,41 @@ pub mod llvm {
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
                         "len" => {
+                            // Check if receiver is a string literal or string variable
+                            let is_string_receiver =
+                                matches!(receiver.as_ref(), Expr::Literal(Literal::String(_)))
+                                    || if let Expr::Path(path) = receiver.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            scope.is_string_var(&seg.ident.name)
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+
+                            if is_string_receiver {
+                                // s.len() -> sigil_strlen(s)
+                                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                let str_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(receiver_val, ptr_type, "str_ptr")
+                                    .map_err(|e| e.to_string())?;
+                                let strlen_fn = self
+                                    .module
+                                    .get_function("sigil_strlen")
+                                    .ok_or("sigil_strlen not declared")?;
+                                let call = self
+                                    .builder
+                                    .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
                             // v.len() -> sigil_vec_len(v)
                             let len_fn = self
                                 .module
@@ -3383,6 +3481,13 @@ pub mod llvm {
                         "clone" => {
                             // For now, clone is identity (shallow copy semantics)
                             // TODO: Implement proper deep clone via runtime
+                            return Ok(receiver_val);
+                        }
+                        "as_bytes" => {
+                            // s.as_bytes() -> returns the string pointer as a byte slice
+                            // For C strings, the pointer already points to bytes
+                            // Mark the result as coming from a string so .len() works correctly
+                            // The returned value IS the string pointer - same representation
                             return Ok(receiver_val);
                         }
                         "repeat" => {
@@ -4029,11 +4134,27 @@ pub mod llvm {
                         return Ok(bits.into_int_value());
                     }
 
-                    // f64 -> i64: bitcast i64 to f64, then fptosi
-                    if target_type_str == "i64" || target_type_str == "isize" {
-                        // Assume the value might be a float stored as bits
-                        // This is a heuristic - proper type tracking would be better
-                        // For now, just return the value as-is since ints are already i64
+                    // f64 -> integer: bitcast i64 to f64, then fptosi
+                    if target_type_str == "i64" || target_type_str == "isize" || target_type_str == "usize" {
+                        // Check if source is a float expression
+                        if self.is_float_expr_with_scope(expr, scope) {
+                            // Bitcast i64 (float bits) back to f64, then convert to int
+                            let f64_val = self
+                                .builder
+                                .build_bit_cast(val, self.context.f64_type(), "bits_to_f64")
+                                .map_err(|e| e.to_string())?
+                                .into_float_value();
+                            let int_val = self
+                                .builder
+                                .build_float_to_signed_int(
+                                    f64_val,
+                                    self.context.i64_type(),
+                                    "f64_to_i64",
+                                )
+                                .map_err(|e| e.to_string())?;
+                            return Ok(int_val);
+                        }
+                        // Source is already an integer, return as-is
                         return Ok(val);
                     }
 
@@ -4438,6 +4559,37 @@ pub mod llvm {
                 ast::TypeExpr::Array { element, .. } => self.type_contains_f64(element),
                 ast::TypeExpr::Slice(inner) => self.type_contains_f64(inner),
                 ast::TypeExpr::Tuple(elements) => elements.iter().any(|e| self.type_contains_f64(e)),
+                _ => false,
+            }
+        }
+
+        /// G28: Check if type is a byte slice (&[u8], &str, &[T]) for direct pointer indexing
+        fn type_is_byte_slice(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    // Check for &str
+                    if let Some(seg) = path.segments.last() {
+                        if seg.ident.name == "str" {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                ast::TypeExpr::Reference { inner, .. } => {
+                    // &[u8], &[T], &str
+                    match inner.as_ref() {
+                        ast::TypeExpr::Slice(_) => true,  // &[T] - any slice reference
+                        ast::TypeExpr::Path(path) => {
+                            if let Some(seg) = path.segments.last() {
+                                seg.ident.name == "str"  // &str
+                            } else {
+                                false
+                            }
+                        }
+                        _ => false,
+                    }
+                }
+                ast::TypeExpr::Slice(_) => true,  // [u8] without &
                 _ => false,
             }
         }
@@ -5819,6 +5971,48 @@ pub mod llvm {
             }
 
             let idx = self.compile_expr(fn_value, scope, index)?;
+
+            // G28: Check if this is a byte slice (from as_bytes)
+            // Byte slices use direct pointer indexing, not Vec runtime functions
+            let is_byte_slice = if let Expr::Path(path) = expr {
+                if let Some(seg) = path.segments.last() {
+                    scope.is_string_var(&seg.ident.name)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if is_byte_slice {
+                // Direct pointer indexing for byte slices
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let ptr_val = self.compile_expr(fn_value, scope, expr)?;
+                let ptr = self
+                    .builder
+                    .build_int_to_ptr(ptr_val, ptr_type, "byte_slice_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                // GEP to get byte at index
+                let byte_ptr = unsafe {
+                    self.builder
+                        .build_gep(self.context.i8_type(), ptr, &[idx], "byte_ptr")
+                        .map_err(|e| e.to_string())?
+                };
+
+                // Load the byte
+                let byte_val = self
+                    .builder
+                    .build_load(self.context.i8_type(), byte_ptr, "byte_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+
+                // Zero-extend to i64
+                return self
+                    .builder
+                    .build_int_z_extend(byte_val, i64_type, "byte_i64")
+                    .map_err(|e| e.to_string());
+            }
 
             // G25 Fix: Use sigil_vec_get for proper Vec access
             // The Rust Vec memory layout (ptr, len, cap) doesn't match the
@@ -10262,6 +10456,9 @@ pub mod llvm {
             }
             if let Some(f) = self.module.get_function("sigil_write_str") {
                 ee.add_global_mapping(&f, sigil_write_str as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_strlen") {
+                ee.add_global_mapping(&f, sigil_strlen as usize);
             }
             if let Some(f) = self.module.get_function("sigil_write_float") {
                 ee.add_global_mapping(&f, sigil_write_float as usize);
