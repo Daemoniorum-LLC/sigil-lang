@@ -2366,7 +2366,30 @@ pub mod llvm {
                                 .map_err(|e| e.to_string())?;
 
                             let field_name = &field.name;
-                            // Find the struct type and field index
+
+                            // G29 fix: First try to get the struct type from the expression
+                            // This ensures we use the correct struct when multiple structs share field names
+                            if let Some(struct_type_name) = self.get_struct_type_from_expr(expr, scope) {
+                                if let Some(struct_info) = self.struct_types.get(&struct_type_name) {
+                                    if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
+                                        let field_ptr = self
+                                            .builder
+                                            .build_struct_gep(
+                                                struct_info.llvm_type,
+                                                struct_ptr,
+                                                field_idx,
+                                                &format!("{}_ptr", field_name),
+                                            )
+                                            .map_err(|e| e.to_string())?;
+                                        self.builder
+                                            .build_store(field_ptr, val)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(val);
+                                    }
+                                }
+                            }
+
+                            // Fallback: search all struct types for the field (less accurate)
                             for (_name, struct_info) in &self.struct_types {
                                 if let Some(&field_idx) = struct_info.field_indices.get(field_name)
                                 {
