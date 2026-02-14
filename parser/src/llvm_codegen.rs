@@ -300,6 +300,42 @@ pub mod llvm {
         }
     }
 
+    // G27: File system runtime functions
+    extern "C" fn sigil_fs_read(path_ptr: *const i8) -> *mut String {
+        if path_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        let path = unsafe { std::ffi::CStr::from_ptr(path_ptr) };
+        match path.to_str() {
+            Ok(path_str) => match std::fs::read_to_string(path_str) {
+                Ok(contents) => Box::into_raw(Box::new(contents)),
+                Err(_) => Box::into_raw(Box::new(String::new())),
+            },
+            Err(_) => Box::into_raw(Box::new(String::new())),
+        }
+    }
+
+    // Get string data as C string pointer (for printing Rust Strings)
+    extern "C" fn sigil_string_data(str_ptr: *mut String) -> *const i8 {
+        if str_ptr.is_null() {
+            return b"\0".as_ptr() as *const i8;
+        }
+        let s = unsafe { &*str_ptr };
+        s.as_ptr() as *const i8
+    }
+
+    // sigil_string_len is already defined above
+
+    // Print a Rust String directly
+    extern "C" fn sigil_print_rust_string(str_ptr: *mut String) {
+        if str_ptr.is_null() {
+            println!();
+            return;
+        }
+        let s = unsafe { &*str_ptr };
+        println!("{}", s);
+    }
+
     // Option runtime functions
     extern "C" fn sigil_option_some(value: i64) -> *mut i64 {
         Box::into_raw(Box::new(value))
@@ -666,6 +702,27 @@ pub mod llvm {
             let string_repeat_type = ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
             self.module
                 .add_function("sigil_string_repeat", string_repeat_type, None);
+
+            // G27: File system functions
+            // sigil_fs_read(path: *const i8) -> *mut String (real C pointers)
+            let fs_read_type = ptr_type_generic.fn_type(&[ptr_type_generic.into()], false);
+            self.module
+                .add_function("sigil_fs_read", fs_read_type, None);
+
+            // sigil_string_data(str: *mut String) -> *const i8
+            let string_data_type = ptr_type_generic.fn_type(&[ptr_type_generic.into()], false);
+            self.module
+                .add_function("sigil_string_data", string_data_type, None);
+
+            // sigil_string_len(str: *mut String) -> i64
+            let string_len_type = i64_type.fn_type(&[ptr_type_generic.into()], false);
+            self.module
+                .add_function("sigil_string_len", string_len_type, None);
+
+            // sigil_print_rust_string(str: *mut String) -> void
+            let print_rust_string_type = void_type.fn_type(&[ptr_type_generic.into()], false);
+            self.module
+                .add_function("sigil_print_rust_string", print_rust_string_type, None);
 
             // Option functions
             // sigil_option_some(value: i64) -> ptr
@@ -1895,6 +1952,32 @@ pub mod llvm {
                             false
                         };
 
+                        // G27: Check if init is a string literal or fs_read call
+                        let is_string = if let Some(ref expr) = init {
+                            matches!(expr, Expr::Literal(Literal::String(_)))
+                        } else {
+                            false
+                        };
+
+                        // G27: Check if init is a fs_read call (returns Rust String)
+                        let is_rust_string = if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = &**func {
+                                    if let Some(seg) = path.segments.last() {
+                                        seg.ident.name == "fs_read"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
                         // Check if init is a struct type for method dispatch
                         let struct_type = if let Some(ref expr) = init {
                             self.get_struct_type_from_expr(expr, scope)
@@ -1921,6 +2004,13 @@ pub mod llvm {
                         // Track float variables
                         if is_float {
                             scope.float_vars.insert(ident.name.clone());
+                        }
+
+                        // G27: Track string variables for print handling
+                        if is_string {
+                            scope.var_types.insert(ident.name.clone(), SigilType::String);
+                        } else if is_rust_string {
+                            scope.var_types.insert(ident.name.clone(), SigilType::RustString);
                         }
 
                         // Track struct type for method dispatch (G11 fix)
@@ -7618,9 +7708,31 @@ pub mod llvm {
 
                 if !args.is_empty() {
                     // Check if argument is a string literal
-                    let is_string = matches!(&args[0], Expr::Literal(Literal::String(_)));
+                    let is_string_literal = matches!(&args[0], Expr::Literal(Literal::String(_)));
 
-                    if is_string {
+                    // G27: Also check if argument is a string variable
+                    let is_string_var = if let Expr::Path(path) = &args[0] {
+                        if let Some(seg) = path.segments.last() {
+                            scope.is_string_var(&seg.ident.name)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    // G27: Check if argument is a Rust String variable (from fs_read)
+                    let is_rust_string_var = if let Expr::Path(path) = &args[0] {
+                        if let Some(seg) = path.segments.last() {
+                            scope.is_rust_string_var(&seg.ident.name)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if is_string_literal {
                         // For string literals, compile to get pointer and call print_str
                         if let Expr::Literal(Literal::String(s)) = &args[0] {
                             let str_ptr = self.create_global_string(s, "print_str");
@@ -7659,6 +7771,46 @@ pub mod llvm {
                                             .map_err(|e| e.to_string())?;
                                     }
                                 }
+                            }
+                        }
+                    } else if is_rust_string_var {
+                        // G27: For Rust String variables (from fs_read), use sigil_print_rust_string
+                        let arg = self.compile_expr(fn_value, scope, &args[0])?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let str_ptr = self
+                            .builder
+                            .build_int_to_ptr(arg, ptr_type, "rust_str_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(print_fn) =
+                            self.module.get_function("sigil_print_rust_string")
+                        {
+                            self.builder
+                                .build_call(print_fn, &[str_ptr.into()], "print_rust_str")
+                                .map_err(|e| e.to_string())?;
+                        }
+                        // Note: sigil_print_rust_string already adds newline
+                    } else if is_string_var {
+                        // G27: For C string variables, compile to get pointer and call write_str
+                        let arg = self.compile_expr(fn_value, scope, &args[0])?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let str_ptr = self
+                            .builder
+                            .build_int_to_ptr(arg, ptr_type, "str_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(write_fn) = self.module.get_function("sigil_write_str") {
+                            self.builder
+                                .build_call(write_fn, &[str_ptr.into()], "print_str")
+                                .map_err(|e| e.to_string())?;
+                        }
+                        // Add newline for println/eprintln
+                        if with_newline {
+                            let nl_ptr = self.create_global_string("\n", "newline");
+                            if let Some(write_fn) = self.module.get_function("sigil_write_str") {
+                                self.builder
+                                    .build_call(write_fn, &[nl_ptr.into()], "nl_call")
+                                    .map_err(|e| e.to_string())?;
                             }
                         }
                     } else {
@@ -7720,6 +7872,40 @@ pub mod llvm {
                     self.compile_expr(fn_value, scope, arg)?;
                 }
                 return Ok(self.context.i64_type().const_int(0, false));
+            }
+
+            // G27: File system functions
+            if full_path == "fs_read" {
+                if args.is_empty() {
+                    return Err("fs_read requires a path argument".to_string());
+                }
+                // Compile the path argument - should be a string pointer
+                let path_val = self.compile_expr(fn_value, scope, &args[0])?;
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let path_ptr = self.builder
+                    .build_int_to_ptr(path_val, ptr_type, "path_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                let fs_read_fn = self
+                    .module
+                    .get_function("sigil_fs_read")
+                    .ok_or("sigil_fs_read not declared")?;
+                let call = self
+                    .builder
+                    .build_call(fs_read_fn, &[path_ptr.into()], "fs_read_result")
+                    .map_err(|e| e.to_string())?;
+
+                // Function returns real pointer, convert to i64 for sigil
+                let result_ptr = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("sigil_fs_read returned void")?
+                    .into_pointer_value();
+                let result_int = self
+                    .builder
+                    .build_ptr_to_int(result_ptr, self.context.i64_type(), "fs_read_int")
+                    .map_err(|e| e.to_string())?;
+                return Ok(result_int);
             }
 
             // Handle qualified type paths (e.g., Vec::new, Box::new)
@@ -9622,8 +9808,8 @@ pub mod llvm {
                         let arg_str = args[i];
                         let spec = if i < format_specs.len() { &format_specs[i] } else { "" };
 
-                        // Check if this is a string
-                        let is_string = self.is_string_expression(arg_str);
+                        // G27: Check if this is a string (including string variables)
+                        let is_string = self.is_string_expression_with_scope(arg_str, scope);
 
                         // Check if this is a float - either by variable type or format spec
                         // Format specs with .N (like :.2, :>10.4) indicate float formatting
@@ -9858,6 +10044,28 @@ pub mod llvm {
             // String method that returns string
             if arg_str.contains(".repeat(") {
                 return true;
+            }
+
+            false
+        }
+
+        /// G27: Check if an expression string will produce a string value (with scope lookup)
+        fn is_string_expression_with_scope(&self, arg_str: &str, scope: &CompileScope<'ctx>) -> bool {
+            let arg_str = arg_str.trim();
+
+            // String literal
+            if arg_str.starts_with('"') && arg_str.ends_with('"') {
+                return true;
+            }
+
+            // String method that returns string
+            if arg_str.contains(".repeat(") {
+                return true;
+            }
+
+            // Check if it's a simple variable name that's a string
+            if !arg_str.contains('.') && !arg_str.contains('(') && !arg_str.contains('[') {
+                return scope.is_string_var(arg_str);
             }
 
             false
@@ -10133,6 +10341,18 @@ pub mod llvm {
             if let Some(f) = self.module.get_function("sigil_string_concat") {
                 ee.add_global_mapping(&f, sigil_string_concat as usize);
             }
+            if let Some(f) = self.module.get_function("sigil_fs_read") {
+                ee.add_global_mapping(&f, sigil_fs_read as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_string_data") {
+                ee.add_global_mapping(&f, sigil_string_data as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_string_len") {
+                ee.add_global_mapping(&f, sigil_string_len as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_print_rust_string") {
+                ee.add_global_mapping(&f, sigil_print_rust_string as usize);
+            }
 
             // Option runtime mappings
             if let Some(f) = self.module.get_function("sigil_option_some") {
@@ -10224,6 +10444,8 @@ pub mod llvm {
         Integer,
         Float,
         Pointer,
+        String,     // C string literal (null-terminated)
+        RustString, // Rust String pointer (from fs_read, etc.)
     }
 
     /// Variable info in compile scope
@@ -10287,6 +10509,16 @@ pub mod llvm {
         /// Check if a variable is a float
         fn is_float_var(&self, name: &str) -> bool {
             self.get_var_type(name) == SigilType::Float
+        }
+
+        /// Check if a variable is a C string
+        fn is_string_var(&self, name: &str) -> bool {
+            self.get_var_type(name) == SigilType::String
+        }
+
+        /// Check if a variable is a Rust String (from fs_read, etc.)
+        fn is_rust_string_var(&self, name: &str) -> bool {
+            self.get_var_type(name) == SigilType::RustString
         }
 
         /// Register the struct type of a variable for method dispatch
