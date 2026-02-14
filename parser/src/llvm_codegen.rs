@@ -1709,9 +1709,10 @@ pub mod llvm {
                             scope.register_struct_type(param_name.clone(), struct_type);
                         }
 
-                        // G32: Track byte slice parameters (&[u8], &str) for direct pointer indexing
-                        // This was missing from impl methods, causing .len() on &[u8] params to fail
-                        if self.type_is_byte_slice(&param.ty) {
+                        // G32: Track byte slice parameters (&str only) for C-string length handling
+                        // G40: Do NOT register &[u8] as String - it breaks .len() by using sigil_strlen
+                        // Only &str needs C-string handling; &[u8] should use sigil_vec_len
+                        if self.type_is_str_ref(&param.ty) {
                             scope.var_types.insert(param_name, SigilType::String);
                         }
                     }
@@ -1903,8 +1904,10 @@ pub mod llvm {
                         scope.register_struct_type(param_name.clone(), struct_type);
                     }
 
-                    // G28: Track byte slice parameters (&[u8], &str, &[T]) for direct pointer indexing
-                    if self.type_is_byte_slice(&param.ty) {
+                    // G28: Track byte slice parameters (&str only) for C-string length handling
+                    // G40: Do NOT register &[u8] as String - it breaks .len() by using sigil_strlen
+                    // Only &str needs C-string handling; &[u8] should use sigil_vec_len
+                    if self.type_is_str_ref(&param.ty) {
                         scope.var_types.insert(param_name.clone(), SigilType::String);
                     }
                 }
@@ -4909,6 +4912,32 @@ pub mod llvm {
                     if let ast::TypeExpr::Path(path) = elem_ty.as_ref() {
                         if let Some(seg) = path.segments.last() {
                             seg.ident.name == "u8"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        }
+
+        /// G40: Check if type is specifically &str (C-string reference)
+        /// This is separate from type_is_byte_slice to distinguish &str (C-string) from &[u8] (Vec)
+        fn type_is_str_ref(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        seg.ident.name == "str"
+                    } else {
+                        false
+                    }
+                }
+                ast::TypeExpr::Reference { inner, .. } => {
+                    if let ast::TypeExpr::Path(path) = inner.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            seg.ident.name == "str"
                         } else {
                             false
                         }
