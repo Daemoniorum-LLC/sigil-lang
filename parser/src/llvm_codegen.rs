@@ -103,6 +103,8 @@ pub mod llvm {
         field_type_names: HashMap<(String, String), String>,
         /// G21: Functions that return f64 (for float detection in println!)
         float_funcs: std::collections::HashSet<String>,
+        /// G31: Function return types for tuple destructuring type inference
+        ret_types: HashMap<String, ast::TypeExpr>,
     }
 
     // ============================================
@@ -496,6 +498,7 @@ pub mod llvm {
                 link_libraries: Vec::new(),
                 field_type_names: HashMap::new(),
                 float_funcs: std::collections::HashSet::new(),
+                ret_types: HashMap::new(),
             })
         }
 
@@ -1765,6 +1768,8 @@ pub mod llvm {
                 if self.type_contains_f64(return_type) {
                     self.float_funcs.insert(name.clone());
                 }
+                // G31: Store return type for tuple destructuring type inference
+                self.ret_types.insert(name.clone(), return_type.clone());
             }
 
             Ok(fn_value)
@@ -1917,6 +1922,28 @@ pub mod llvm {
                             )
                             .map_err(|e| e.to_string())?;
 
+                        // G31: Determine if tuple elements are floats based on function return type
+                        let mut elem_is_float = vec![false; patterns.len()];
+                        if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = func.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        // Look up function return type in ret_types
+                                        if let Some(ret_ty) = self.ret_types.get(&seg.ident.name) {
+                                            // Check if return type is tuple with f64 elements
+                                            if let ast::TypeExpr::Tuple(elem_types) = ret_ty {
+                                                for (i, ty) in elem_types.iter().enumerate() {
+                                                    if i < elem_is_float.len() && self.type_contains_f64(ty) {
+                                                        elem_is_float[i] = true;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Extract each element and bind to pattern variables
                         for (idx, pat) in patterns.iter().enumerate() {
                             if let ast::Pattern::Ident { name: ident, .. } = pat {
@@ -1947,6 +1974,11 @@ pub mod llvm {
                                     .build_store(alloca, elem_val)
                                     .map_err(|e| e.to_string())?;
                                 scope.vars.insert(ident.name.clone(), alloca);
+
+                                // G31: Track float types for tuple elements
+                                if idx < elem_is_float.len() && elem_is_float[idx] {
+                                    scope.float_vars.insert(ident.name.clone());
+                                }
                             }
                         }
                         return Ok(None);
@@ -4599,9 +4631,20 @@ pub mod llvm {
                     false
                 }
                 ast::TypeExpr::Reference { inner, .. } => {
-                    // &[u8], &[T], &str
+                    // &[u8] or &str only - NOT &[f64], &[i64] etc.
                     match inner.as_ref() {
-                        ast::TypeExpr::Slice(_) => true,  // &[T] - any slice reference
+                        ast::TypeExpr::Slice(elem_ty) => {
+                            // Only &[u8] counts as byte slice
+                            if let ast::TypeExpr::Path(path) = elem_ty.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    seg.ident.name == "u8"
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        }
                         ast::TypeExpr::Path(path) => {
                             if let Some(seg) = path.segments.last() {
                                 seg.ident.name == "str"  // &str
@@ -4612,7 +4655,18 @@ pub mod llvm {
                         _ => false,
                     }
                 }
-                ast::TypeExpr::Slice(_) => true,  // [u8] without &
+                ast::TypeExpr::Slice(elem_ty) => {
+                    // [u8] without & - only byte arrays
+                    if let ast::TypeExpr::Path(path) = elem_ty.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            seg.ident.name == "u8"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
                 _ => false,
             }
         }
@@ -6395,7 +6449,7 @@ pub mod llvm {
                 Expr::MethodCall { receiver, method, .. } => {
                     let name = method.name.as_str();
                     // Methods that always return float
-                    if matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "pow") {
+                    if matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "ln" | "pow") {
                         return true;
                     }
                     // G19: Methods that return integers even if receiver is float-containing
@@ -10197,6 +10251,12 @@ pub mod llvm {
                     let before_paren = &arg_str[..paren_pos];
                     if let Some(dot_pos) = before_paren.rfind('.') {
                         let method_name = &before_paren[dot_pos + 1..];
+                        // G30: Built-in math methods that always return f64
+                        if matches!(method_name, "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "ln" |
+                                                 "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan") {
+                            return true;
+                        }
+                        // User-defined float functions
                         if scope.float_funcs.contains(method_name) {
                             return true;
                         }
