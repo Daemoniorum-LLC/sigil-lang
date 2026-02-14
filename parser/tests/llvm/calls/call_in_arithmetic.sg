@@ -1,0 +1,32 @@
+//! Test: Function call result in arithmetic expression (G25)
+//!
+//! This tests that LLVM codegen properly handles function calls
+//! whose results are used in arithmetic operations.
+//!
+//! Bug G25: "Both operands to a binary operator are not of the same type!"
+//! Trigger: get_value() * 2 returns pointer instead of i64
+
+rite get_value() → i64 {
+    42
+}
+
+rite double_it(x: i64) → i64 {
+    x * 2
+}
+
+rite main() → i64 {
+    // Direct call result in arithmetic
+    ≔ x = get_value() * 2;
+    println(x);  // Should print 84
+
+    // Nested call in arithmetic
+    ≔ y = double_it(get_value()) + 10;
+    println(y);  // Should print 94
+
+    // Chain of operations
+    ≔ z = get_value() + get_value() * 3;
+    println(z);  // Should print 168
+
+    // Return sum as exit code for verification
+    x + y + z  // 84 + 94 + 168 = 346
+}

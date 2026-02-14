@@ -1,0 +1,35 @@
+//! Test: Nested loops with outer variable indexing (G24)
+//!
+//! This tests that LLVM codegen handles nested loops where the inner loop
+//! uses variables from the outer loop in index expressions.
+//!
+//! Bug G24: "Instruction does not dominate all uses!"
+//! Trigger: output[v * outf + j] where v is outer loop var, j is inner
+
+rite main() → i64 {
+    ≔ nv = 3;
+    ≔ outf = 4;
+    ≔ vary output = vec![0; 12];
+
+    // Nested loop with outer variable in inner index expression
+    ∀ v ∈ 0..nv {
+        ∀ j ∈ 0..outf {
+            // This expression uses v (outer) and j (inner)
+            output[v * outf + j] = v * 10 + j;
+        }
+    }
+
+    // Expected output: 0,1,2,3, 10,11,12,13, 20,21,22,23
+    // Print each element
+    ∀ i ∈ 0..12 {
+        println(output[i]);
+    }
+
+    // Return checksum for verification (sum of first 12 elements)
+    // Expected: 0+1+2+3+10+11+12+13+20+21+22+23 = 138
+    ≔ vary sum = 0;
+    ∀ i ∈ 0..12 {
+        sum = sum + output[i];
+    }
+    sum
+}

@@ -1,0 +1,7 @@
+// Test println! without format string
+
+☉ rite main() → i64 {
+    ≔ x = 42;
+    println(x);
+    0
+}

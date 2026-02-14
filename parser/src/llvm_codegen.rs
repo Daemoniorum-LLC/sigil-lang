@@ -124,9 +124,40 @@ pub mod llvm {
             .unwrap_or(0)
     }
 
-    // Runtime helper: print an integer (for JIT mode)
+    // Runtime helper: print an integer with newline (for JIT mode)
     extern "C" fn sigil_print_int(value: i64) {
         println!("{}", value);
+    }
+
+    // Runtime helper: print a newline (for JIT mode)
+    extern "C" fn sigil_print_newline() {
+        println!();
+    }
+
+    // Runtime helper: write an integer without newline (for format strings)
+    extern "C" fn sigil_write_int(value: i64) {
+        use std::io::Write;
+        print!("{}", value);
+        let _ = std::io::stdout().flush();
+    }
+
+    // Runtime helper: write a string without newline (for format strings)
+    extern "C" fn sigil_write_str(ptr: *const i8) {
+        use std::io::Write;
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                print!("{}", s);
+                let _ = std::io::stdout().flush();
+            }
+        }
+    }
+
+    // Runtime helper: write a float without newline (for format strings)
+    extern "C" fn sigil_write_float(value: f64) {
+        use std::io::Write;
+        print!("{}", value);
+        let _ = std::io::stdout().flush();
     }
 
     // Math runtime helpers (JIT mode) - operate on i64 bits representing f64
@@ -504,6 +535,11 @@ pub mod llvm {
             let print_float_type = void_type.fn_type(&[f64_type.into()], false);
             self.module
                 .add_function("sigil_print_float", print_float_type, None);
+
+            // sigil_print_newline() -> void
+            let newline_type = void_type.fn_type(&[], false);
+            self.module
+                .add_function("sigil_print_newline", newline_type, None);
 
             // Write functions (no newline) for format strings
             // sigil_write_int(i64) -> void
@@ -5670,54 +5706,23 @@ pub mod llvm {
             let idx = self.compile_expr(fn_value, scope, index)?;
             let ptr_type = self.context.ptr_type(AddressSpace::default());
 
-            // Try to get the variable name for caching
-            let var_name = if let Expr::Path(path) = expr {
-                path.segments.last().map(|s| s.ident.name.clone())
-            } else {
-                None
-            };
+            // G24 Fix: Don't cache Vec base pointers across basic blocks
+            // Caching a getelementptr instruction and reusing it in other blocks
+            // causes domination issues. Recompute each time for safety.
+            // LLVM's optimizer will handle CSE (Common Subexpression Elimination) anyway.
+            let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+            let base_ptr = self
+                .builder
+                .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
+                .map_err(|e| e.to_string())?;
 
-            // Check if we have a cached data base pointer for this Vec
-            let data_base = if let Some(ref name) = var_name {
-                if let Some(cached_base) = scope.get_vec_base(name) {
-                    // Use cached base directly
-                    cached_base
-                } else {
-                    // Compute and cache the data base pointer
-                    let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
-                    let base_ptr = self
-                        .builder
-                        .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
-                        .map_err(|e| e.to_string())?;
-
-                    // Data starts at offset 2 (after len and cap)
-                    let offset_2 = i64_type.const_int(2, false);
-                    let data_base = unsafe {
-                        self.builder
-                            .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
-                    }
-                    .map_err(|e| e.to_string())?;
-
-                    // Cache the data base pointer
-                    scope.register_vec_base(name.clone(), data_base);
-                    data_base
-                }
-            } else {
-                // Not a simple variable, fall back to uncached path
-                let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
-                let base_ptr = self
-                    .builder
-                    .build_int_to_ptr(base_ptr_int, ptr_type, "base_ptr")
-                    .map_err(|e| e.to_string())?;
-
-                // Data starts at offset 2 (after len and cap)
-                let offset_2 = i64_type.const_int(2, false);
-                unsafe {
-                    self.builder
-                        .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
-                }
-                .map_err(|e| e.to_string())?
-            };
+            // Data starts at offset 2 (after len and cap)
+            let offset_2 = i64_type.const_int(2, false);
+            let data_base = unsafe {
+                self.builder
+                    .build_gep(i64_type, base_ptr, &[offset_2], "data_base")
+            }
+            .map_err(|e| e.to_string())?;
 
             // GEP from data base using just the index (no +2 needed)
             let elem_ptr = unsafe {
@@ -7104,19 +7109,35 @@ pub mod llvm {
             inclusive: bool,
             body: &ast::Block,
         ) -> Result<IntValue<'ctx>, String> {
-            // Compile start and end values
+            // G24 Fix: Compile start/end values and store in allocas.
+            // This ensures the values are safely accessible from all loop blocks
+            // without domination issues from complex expressions like vec.len().
+
+            // Compile start value in current block
             let start_val = if let Some(s) = start {
                 self.compile_expr(fn_value, scope, s)?
             } else {
                 self.context.i64_type().const_int(0, false)
             };
 
+            // Compile end value in current block
             let end_val = if let Some(e) = end {
                 self.compile_expr(fn_value, scope, e)?
             } else {
                 // No end means infinite - use max i64 (shouldn't happen in practice)
                 self.context.i64_type().const_int(i64::MAX as u64, false)
             };
+
+            // Store end value in an alloca so it can be loaded from loop blocks
+            // This prevents domination issues when end_val computation involves
+            // getelementptr or other non-constant expressions
+            let end_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), "loop_end")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(end_ptr, end_val)
+                .map_err(|e| e.to_string())?;
 
             // Create blocks
             let init_bb = self.context.append_basic_block(fn_value, "range_init");
@@ -7153,6 +7174,13 @@ pub mod llvm {
                 .map_err(|e| e.to_string())?
                 .into_int_value();
 
+            // Load end value from alloca (safe in any block)
+            let end_val_loaded = self
+                .builder
+                .build_load(self.context.i64_type(), end_ptr, "end_val")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+
             let predicate = if inclusive {
                 IntPredicate::SLE // signed less than or equal
             } else {
@@ -7161,7 +7189,7 @@ pub mod llvm {
 
             let cond = self
                 .builder
-                .build_int_compare(predicate, var_val, end_val, "range_cond")
+                .build_int_compare(predicate, var_val, end_val_loaded, "range_cond")
                 .map_err(|e| e.to_string())?;
             self.builder
                 .build_conditional_branch(cond, body_bb, after_bb)
@@ -7221,8 +7249,17 @@ pub mod llvm {
             iter: &Expr,
             body: &ast::Block,
         ) -> Result<IntValue<'ctx>, String> {
-            // Evaluate iterator to get array
+            // G24 Fix: Evaluate iterator and store in alloca to ensure domination
             let iter_val = self.compile_expr(fn_value, scope, iter)?;
+
+            // Store iterator value in alloca to safely access from all loop blocks
+            let iter_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), "iter_ptr")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(iter_ptr, iter_val)
+                .map_err(|e| e.to_string())?;
 
             // Create blocks
             let init_bb = self.context.append_basic_block(fn_value, "for_init");
@@ -7282,8 +7319,23 @@ pub mod llvm {
                 }
             }
 
-            // Get array length from Vec struct (field 0)
-            let len_val = self.get_vec_length(iter_val)?;
+            // G24 Fix: Get length and store in alloca to ensure domination
+            // Load iter from alloca first (safe in init block)
+            let iter_for_len = self
+                .builder
+                .build_load(self.context.i64_type(), iter_ptr, "iter_for_len")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let len_val = self.get_vec_length(iter_for_len)?;
+
+            // Store length in alloca
+            let len_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), "len_ptr")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(len_ptr, len_val)
+                .map_err(|e| e.to_string())?;
 
             self.builder
                 .build_unconditional_branch(cond_bb)
@@ -7296,9 +7348,15 @@ pub mod llvm {
                 .build_load(self.context.i64_type(), idx_ptr, "idx")
                 .map_err(|e| e.to_string())?
                 .into_int_value();
+            // Load length from alloca (safe in any block)
+            let len_loaded = self
+                .builder
+                .build_load(self.context.i64_type(), len_ptr, "len")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
             let cond = self
                 .builder
-                .build_int_compare(IntPredicate::ULT, idx_val, len_val, "for_cond")
+                .build_int_compare(IntPredicate::ULT, idx_val, len_loaded, "for_cond")
                 .map_err(|e| e.to_string())?;
             self.builder
                 .build_conditional_branch(cond, body_bb, after_bb)
@@ -7306,7 +7364,19 @@ pub mod llvm {
 
             // Body block: get element, store in var, execute body
             self.builder.position_at_end(body_bb);
-            let elem_val = self.get_vec_element(iter_val, idx_val)?;
+            // Load iter from alloca for element access (safe in any block)
+            let iter_for_elem = self
+                .builder
+                .build_load(self.context.i64_type(), iter_ptr, "iter_for_elem")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            // Reload idx for body
+            let idx_for_elem = self
+                .builder
+                .build_load(self.context.i64_type(), idx_ptr, "idx_for_elem")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let elem_val = self.get_vec_element(iter_for_elem, idx_for_elem)?;
             self.builder
                 .build_store(var_ptr, elem_val)
                 .map_err(|e| e.to_string())?;
@@ -9960,6 +10030,18 @@ pub mod llvm {
             }
             if let Some(f) = self.module.get_function("sigil_print_int") {
                 ee.add_global_mapping(&f, sigil_print_int as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_print_newline") {
+                ee.add_global_mapping(&f, sigil_print_newline as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_write_int") {
+                ee.add_global_mapping(&f, sigil_write_int as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_write_str") {
+                ee.add_global_mapping(&f, sigil_write_str as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_write_float") {
+                ee.add_global_mapping(&f, sigil_write_float as usize);
             }
 
             // Register math functions (only if declared/used in the program)
