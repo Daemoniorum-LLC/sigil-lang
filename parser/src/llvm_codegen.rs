@@ -127,11 +127,12 @@ pub mod llvm {
     }
 
     // Runtime helper: allocate memory (for struct construction)
-    extern "C" fn sigil_alloc(size: i64) -> *mut u8 {
+    // Returns i64 to match LLVM's optimized function signature (ptr gets converted to i64)
+    extern "C" fn sigil_alloc(size: i64) -> i64 {
         use std::alloc::{alloc, Layout};
         let size = size.max(8) as usize; // Minimum 8 bytes
         let layout = Layout::from_size_align(size, 8).unwrap();
-        unsafe { alloc(layout) }
+        unsafe { alloc(layout) as i64 }
     }
 
     // Runtime helper: print an integer with newline (for JIT mode)
@@ -864,8 +865,8 @@ pub mod llvm {
             self.module.add_function("sigil_exit", exit_type, None);
 
             // Memory functions
-            // sigil_alloc(size: i64) -> ptr
-            let alloc_type = ptr_type.fn_type(&[i64_type.into()], false);
+            // sigil_alloc(size: i64) -> i64 (returns pointer as i64 to match LLVM optimization behavior)
+            let alloc_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module.add_function("sigil_alloc", alloc_type, None);
 
             // sigil_realloc(ptr: ptr, new_size: i64) -> ptr
