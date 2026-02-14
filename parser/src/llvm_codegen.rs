@@ -337,6 +337,56 @@ pub mod llvm {
 
     // sigil_string_len is already defined above
 
+    // G32: String slice - create substring from start to end indices
+    extern "C" fn sigil_string_slice(str_ptr: *const i8, start: i64, end: i64) -> *mut String {
+        if str_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        let cstr = unsafe { std::ffi::CStr::from_ptr(str_ptr) };
+        let s = cstr.to_string_lossy();
+        let start_idx = start.max(0) as usize;
+        let end_idx = end.max(0) as usize;
+        let end_idx = end_idx.min(s.len());
+        let substring = if start_idx < end_idx {
+            s[start_idx..end_idx].to_string()
+        } else {
+            String::new()
+        };
+        Box::into_raw(Box::new(substring))
+    }
+
+    // G32: Rust String slice - create substring from Rust String
+    extern "C" fn sigil_rust_string_slice(str_ptr: *mut String, start: i64, end: i64) -> *mut String {
+        if str_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        let s = unsafe { &*str_ptr };
+        let start_idx = start.max(0) as usize;
+        let end_idx = end.max(0) as usize;
+        let end_idx = end_idx.min(s.len());
+        let substring = if start_idx < end_idx {
+            s[start_idx..end_idx].to_string()
+        } else {
+            String::new()
+        };
+        Box::into_raw(Box::new(substring))
+    }
+
+    // G32: Get bytes from a Rust String with null terminator for strlen compatibility
+    // Returns a pointer to a copy of the string's bytes with a null terminator appended
+    extern "C" fn sigil_rust_string_as_bytes(str_ptr: *mut String) -> *const i8 {
+        if str_ptr.is_null() {
+            return b"\0".as_ptr() as *const i8;
+        }
+        let s = unsafe { &*str_ptr };
+        // Create a copy with null terminator so strlen works
+        let mut bytes = s.as_bytes().to_vec();
+        bytes.push(0); // Add null terminator
+        let ptr = bytes.as_ptr() as *const i8;
+        std::mem::forget(bytes); // Leak - current design doesn't track/free these
+        ptr
+    }
+
     // Print a Rust String directly
     extern "C" fn sigil_print_rust_string(str_ptr: *mut String) {
         if str_ptr.is_null() {
@@ -731,10 +781,30 @@ pub mod llvm {
             self.module
                 .add_function("sigil_string_data", string_data_type, None);
 
-            // sigil_string_len(str: *mut String) -> i64
-            let string_len_type = i64_type.fn_type(&[ptr_type_generic.into()], false);
+            // sigil_string_len(str: i64) -> i64
+            // Uses i64 for pointer representation like other functions
+            let string_len_type = i64_type.fn_type(&[ptr_type.into()], false);
             self.module
                 .add_function("sigil_string_len", string_len_type, None);
+
+            // G32: sigil_string_slice(str: i64, start: i64, end: i64) -> i64
+            // Uses i64 for pointer representation like other functions
+            let string_slice_type = ptr_type.fn_type(
+                &[ptr_type.into(), i64_type.into(), i64_type.into()],
+                false,
+            );
+            self.module
+                .add_function("sigil_string_slice", string_slice_type, None);
+
+            // G32: sigil_rust_string_slice(str: i64, start: i64, end: i64) -> i64
+            self.module
+                .add_function("sigil_rust_string_slice", string_slice_type, None);
+
+            // G32: sigil_rust_string_as_bytes(str: i64) -> i64 (C string pointer)
+            // Takes Rust String pointer, returns byte pointer with null terminator
+            let rust_string_as_bytes_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            self.module
+                .add_function("sigil_rust_string_as_bytes", rust_string_as_bytes_type, None);
 
             // sigil_print_rust_string(str: *mut String) -> void
             let print_rust_string_type = void_type.fn_type(&[ptr_type_generic.into()], false);
@@ -1633,9 +1703,15 @@ pub mod llvm {
                         // G26: Track struct type from parameter type annotation for method dispatch
                         // For self/this parameters, use the impl block's type
                         if param_name == "this" || param_name == "self" {
-                            scope.register_struct_type(param_name, type_name.clone());
+                            scope.register_struct_type(param_name.clone(), type_name.clone());
                         } else if let Some(struct_type) = self.extract_struct_type_from_type_expr(&param.ty) {
-                            scope.register_struct_type(param_name, struct_type);
+                            scope.register_struct_type(param_name.clone(), struct_type);
+                        }
+
+                        // G32: Track byte slice parameters (&[u8], &str) for direct pointer indexing
+                        // This was missing from impl methods, causing .len() on &[u8] params to fail
+                        if self.type_is_byte_slice(&param.ty) {
+                            scope.var_types.insert(param_name, SigilType::String);
                         }
                     }
 
@@ -2018,16 +2094,22 @@ pub mod llvm {
                             false
                         };
 
-                        // G27: Check if init is a function call that might return a string
-                        let is_string_from_call = if let Some(ref expr) = init {
+                        // G32: Check if init is a function call that returns Rust String
+                        // Functions returning String type return heap-allocated Rust Strings
+                        let is_rust_string_from_call = if let Some(ref expr) = init {
                             if let Expr::Call { func, .. } = expr {
                                 if let Expr::Path(path) = &**func {
                                     if let Some(seg) = path.segments.last() {
                                         let name = &seg.ident.name;
-                                        // Heuristic: functions that likely return strings
-                                        name.contains("_str") || name.contains("_corpus")
-                                            || name.starts_with("get_")
-                                            || name == "to_string" || name == "format"
+                                        // Check ret_types for String return type
+                                        let ret_is_string = if let Some(ret_ty) = self.ret_types.get(name) {
+                                            self.type_contains_string(ret_ty)
+                                        } else {
+                                            false
+                                        };
+                                        // Heuristic: functions that likely return Rust Strings
+                                        ret_is_string || name.contains("_corpus")
+                                            || name == "format"
                                     } else {
                                         false
                                     }
@@ -2041,7 +2123,30 @@ pub mod llvm {
                             false
                         };
 
-                        // G27: Check if init is a method call that returns bytes (as_bytes)
+                        // G27: Check if init is a function call that returns C string (&str)
+                        // These are less common - mostly for functions returning static strings
+                        let is_string_from_call = if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = &**func {
+                                    if let Some(seg) = path.segments.last() {
+                                        let name = &seg.ident.name;
+                                        // Heuristic: functions that return C strings
+                                        name.contains("_str") || name.starts_with("get_")
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G27/G32: Check if init is a method call that returns bytes
+                        // Note: as_bytes returns &[u8] which is C-string-like, NOT a Rust String
                         let is_string_from_method = if let Some(ref expr) = init {
                             if let Expr::MethodCall { method, .. } = expr {
                                 method.name == "as_bytes"
@@ -2052,10 +2157,23 @@ pub mod llvm {
                             false
                         };
 
+                        // G32: Check if init is a method call that returns Rust String
+                        let is_rust_string_from_method = if let Some(ref expr) = init {
+                            if let Expr::MethodCall { method, .. } = expr {
+                                // to_string() returns a heap-allocated Rust String
+                                method.name == "to_string"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // C strings: literals, as_bytes, and C-string returning functions
                         let is_string = is_string_from_ty || is_string_literal || is_string_from_call || is_string_from_method;
 
-                        // G27: Check if init is a fs_read call (returns Rust String)
-                        let is_rust_string = if let Some(ref expr) = init {
+                        // G32: Rust Strings: to_string(), fs_read(), and String-returning functions
+                        let is_fs_read = if let Some(ref expr) = init {
                             if let Expr::Call { func, .. } = expr {
                                 if let Expr::Path(path) = &**func {
                                     if let Some(seg) = path.segments.last() {
@@ -2072,6 +2190,7 @@ pub mod llvm {
                         } else {
                             false
                         };
+                        let is_rust_string = is_rust_string_from_method || is_rust_string_from_call || is_fs_read;
 
                         // Check if init is a struct type for method dispatch
                         let struct_type = if let Some(ref expr) = init {
@@ -2903,6 +3022,8 @@ pub mod llvm {
                         "failure" => Some(1u64),
                         "text" | "string" | "str" => Some(0u64),
                         "len" | "length" | "count" | "size" => Some(1u64),
+                        // G33: Common struct fields that need specific offsets
+                        "vocab_size" => Some(2u64),  // BPETokenizer: vocab(0), merges(1), vocab_size(2)
                         "pos" | "position" => Some(0u64),
                         "offset" => Some(0u64),
                         "range" => Some(0u64),
@@ -3457,21 +3578,26 @@ pub mod llvm {
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
                         "len" => {
-                            // Check if receiver is a string literal or string variable
-                            let is_string_receiver =
-                                matches!(receiver.as_ref(), Expr::Literal(Literal::String(_)))
-                                    || if let Expr::Path(path) = receiver.as_ref() {
-                                        if let Some(seg) = path.segments.last() {
-                                            scope.is_string_var(&seg.ident.name)
-                                        } else {
-                                            false
+                            // G32: Check receiver type for appropriate len function
+                            let (is_c_string, is_rust_string) =
+                                if matches!(receiver.as_ref(), Expr::Literal(Literal::String(_))) {
+                                    (true, false)
+                                } else if let Expr::Path(path) = receiver.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        match scope.var_types.get(&seg.ident.name) {
+                                            Some(SigilType::String) => (true, false),
+                                            Some(SigilType::RustString) => (false, true),
+                                            _ => (false, false),
                                         }
                                     } else {
-                                        false
-                                    };
+                                        (false, false)
+                                    }
+                                } else {
+                                    (false, false)
+                                };
 
-                            if is_string_receiver {
-                                // s.len() -> sigil_strlen(s)
+                            if is_c_string {
+                                // C string: s.len() -> sigil_strlen(s)
                                 let ptr_type = self.context.ptr_type(AddressSpace::default());
                                 let str_ptr = self
                                     .builder
@@ -3484,6 +3610,24 @@ pub mod llvm {
                                 let call = self
                                     .builder
                                     .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
+                            if is_rust_string {
+                                // Rust String: s.len() -> sigil_string_len(s)
+                                // Functions use i64 as pointer type, so pass receiver_val directly
+                                let strlen_fn = self
+                                    .module
+                                    .get_function("sigil_string_len")
+                                    .ok_or("sigil_string_len not declared")?;
+                                let call = self
+                                    .builder
+                                    .build_call(strlen_fn, &[receiver_val.into()], "rust_str_len")
                                     .map_err(|e| e.to_string())?;
                                 return Ok(call
                                     .try_as_basic_value()
@@ -3539,10 +3683,39 @@ pub mod llvm {
                             return Ok(receiver_val);
                         }
                         "as_bytes" => {
-                            // s.as_bytes() -> returns the string pointer as a byte slice
-                            // For C strings, the pointer already points to bytes
-                            // Mark the result as coming from a string so .len() works correctly
-                            // The returned value IS the string pointer - same representation
+                            // G32: Check receiver type for appropriate as_bytes handling
+                            let is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    matches!(
+                                        scope.var_types.get(&seg.ident.name),
+                                        Some(SigilType::RustString)
+                                    )
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+
+                            if is_rust_string {
+                                // Rust String: call sigil_rust_string_as_bytes to get
+                                // byte pointer with null terminator (so strlen works)
+                                let as_bytes_fn = self
+                                    .module
+                                    .get_function("sigil_rust_string_as_bytes")
+                                    .ok_or("sigil_rust_string_as_bytes not declared")?;
+                                let call = self
+                                    .builder
+                                    .build_call(as_bytes_fn, &[receiver_val.into()], "bytes_ptr")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
+                            // C string: pointer already points to bytes
                             return Ok(receiver_val);
                         }
                         "repeat" => {
@@ -3781,9 +3954,62 @@ pub mod llvm {
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
                         "to_string" => {
-                            // For primitives, convert to string representation
-                            // For now, return the value itself (strings are already strings)
-                            return Ok(receiver_val);
+                            // G32: Check if receiver is already a Rust String (slice, method call, etc.)
+                            // In these cases, to_string() is a no-op since the result is already a String
+                            let is_already_rust_string = match receiver.as_ref() {
+                                // Index on a Rust String (slice) already returns a String
+                                Expr::Index { expr, .. } => {
+                                    if let Expr::Path(path) = expr.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            matches!(
+                                                scope.var_types.get(&seg.ident.name),
+                                                Some(SigilType::RustString)
+                                            )
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                }
+                                // Method call results (like another .to_string()) are already Strings
+                                Expr::MethodCall { method, .. } => {
+                                    method.name == "to_string"
+                                }
+                                // Path to a Rust String variable
+                                Expr::Path(path) => {
+                                    if let Some(seg) = path.segments.last() {
+                                        matches!(
+                                            scope.var_types.get(&seg.ident.name),
+                                            Some(SigilType::RustString)
+                                        )
+                                    } else {
+                                        false
+                                    }
+                                }
+                                _ => false,
+                            };
+
+                            if is_already_rust_string {
+                                // Already a Rust String, just return the receiver
+                                return Ok(receiver_val);
+                            }
+
+                            // Convert C string to heap-allocated Rust String
+                            // Call sigil_string_from(i64_as_ptr) -> i64_as_ptr
+                            let string_from_fn = self
+                                .module
+                                .get_function("sigil_string_from")
+                                .ok_or("sigil_string_from not declared")?;
+                            let call = self
+                                .builder
+                                .build_call(string_from_fn, &[receiver_val.into()], "rust_string")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
                         "as_str" | "as_ref" => {
                             // String -> &str conversion is identity in our representation
@@ -4614,6 +4840,23 @@ pub mod llvm {
                 ast::TypeExpr::Array { element, .. } => self.type_contains_f64(element),
                 ast::TypeExpr::Slice(inner) => self.type_contains_f64(inner),
                 ast::TypeExpr::Tuple(elements) => elements.iter().any(|e| self.type_contains_f64(e)),
+                _ => false,
+            }
+        }
+
+        /// G32: Check if a TypeExpr is or contains String/str
+        fn type_contains_string(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        if seg.ident.name == "String" || seg.ident.name == "str" {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                ast::TypeExpr::Reference { inner, .. } => self.type_contains_string(inner),
+                ast::TypeExpr::Pointer { inner, .. } => self.type_contains_string(inner),
                 _ => false,
             }
         }
@@ -6115,6 +6358,7 @@ pub mod llvm {
 
         /// Compile range indexing (slicing): arr[start..end]
         /// Creates a new Vec containing copied elements from the range
+        /// G32: Also handles string slicing using sigil_string_slice
         fn compile_range_index(
             &mut self,
             fn_value: FunctionValue<'ctx>,
@@ -6126,6 +6370,90 @@ pub mod llvm {
         ) -> Result<IntValue<'ctx>, String> {
             let i64_type = self.context.i64_type();
             let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+            // G32: Check if this is a C string literal (direct literal in expression)
+            let is_c_string_literal = matches!(expr, Expr::Literal(Literal::String(_)));
+
+            // G32: Check variable types for string handling
+            let (is_c_string_var, is_rust_string) = if let Expr::Path(path) = expr {
+                if let Some(seg) = path.segments.last() {
+                    let var_type = scope.var_types.get(&seg.ident.name);
+                    match var_type {
+                        // SigilType::RustString: from to_string(), fs_read(), etc.
+                        Some(SigilType::RustString) => (false, true),
+                        // SigilType::String: C string literal stored in variable
+                        Some(SigilType::String) => (true, false),
+                        _ => (false, false),
+                    }
+                } else {
+                    (false, false)
+                }
+            } else {
+                (false, false)
+            };
+
+            let is_c_string = is_c_string_literal || is_c_string_var;
+
+            // G32: Handle string slicing
+            if is_c_string || is_rust_string {
+                let src_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                let start_idx = if let Some(s) = start {
+                    self.compile_expr(fn_value, scope, s)?
+                } else {
+                    i64_type.const_int(0, false)
+                };
+                // For end, we need to get length first if not specified
+                let end_idx = if let Some(e) = end {
+                    self.compile_expr(fn_value, scope, e)?
+                } else {
+                    // Get string length - use appropriate function
+                    let strlen_fn_name = if is_rust_string {
+                        "sigil_string_len"
+                    } else {
+                        "sigil_strlen"
+                    };
+                    let strlen_fn = self
+                        .module
+                        .get_function(strlen_fn_name)
+                        .ok_or(format!("{} not declared", strlen_fn_name))?;
+                    let len_call = self
+                        .builder
+                        .build_call(strlen_fn, &[src_ptr_int.into()], "str_len")
+                        .map_err(|e| e.to_string())?;
+                    len_call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| i64_type.const_int(0, false))
+                };
+
+                // Use appropriate slice function
+                let slice_fn_name = if is_rust_string {
+                    "sigil_rust_string_slice"
+                } else {
+                    "sigil_string_slice"
+                };
+                let slice_fn = self
+                    .module
+                    .get_function(slice_fn_name)
+                    .ok_or(format!("{} not declared", slice_fn_name))?;
+
+                // Functions use i64 for pointers, so pass directly
+                let call = self
+                    .builder
+                    .build_call(
+                        slice_fn,
+                        &[src_ptr_int.into(), start_idx.into(), end_idx.into()],
+                        "str_slice",
+                    )
+                    .map_err(|e| e.to_string())?;
+                // Result is i64 (pointer as integer)
+                return Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_int_value())
+                    .unwrap_or_else(|| i64_type.const_int(0, false)));
+            }
 
             // Get the source vec pointer
             let src_ptr_int = self.compile_expr(fn_value, scope, expr)?;
@@ -6567,12 +6895,23 @@ pub mod llvm {
                     None
                 }
                 // Constructor call: StructName·new() or StructName·method()
+                // G33: Also check ret_types for standalone function calls
                 Expr::Call { func, .. } => {
                     if let Expr::Path(path) = func.as_ref() {
                         // Look for Type·method pattern (2 or more segments with middledot)
                         if path.segments.len() >= 2 {
                             // First segment is likely the type name
                             return Some(path.segments[0].ident.name.clone());
+                        }
+                        // G33: Check if standalone function returns a struct type
+                        if path.segments.len() == 1 {
+                            let func_name = &path.segments[0].ident.name;
+                            if let Some(ret_ty) = self.ret_types.get(func_name) {
+                                // Extract struct name from return type
+                                if let Some(type_name) = self.extract_struct_type_from_type_expr(ret_ty) {
+                                    return Some(type_name);
+                                }
+                            }
                         }
                     }
                     None
@@ -10632,6 +10971,17 @@ pub mod llvm {
             }
             if let Some(f) = self.module.get_function("sigil_print_rust_string") {
                 ee.add_global_mapping(&f, sigil_print_rust_string as usize);
+            }
+            // G32: String slice functions
+            if let Some(f) = self.module.get_function("sigil_string_slice") {
+                ee.add_global_mapping(&f, sigil_string_slice as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_rust_string_slice") {
+                ee.add_global_mapping(&f, sigil_rust_string_slice as usize);
+            }
+            // G32: Rust String as_bytes
+            if let Some(f) = self.module.get_function("sigil_rust_string_as_bytes") {
+                ee.add_global_mapping(&f, sigil_rust_string_as_bytes as usize);
             }
 
             // Option runtime mappings
