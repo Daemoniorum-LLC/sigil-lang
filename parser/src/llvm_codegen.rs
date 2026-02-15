@@ -3163,6 +3163,24 @@ pub mod llvm {
                     }
                 }
                 Expr::Unary { op, expr: inner } => {
+                    // G44 fix: Handle address-of (&x) specially - must get address before compiling inner
+                    if matches!(op, ast::UnaryOp::Ref | ast::UnaryOp::RefMut) {
+                        if let Expr::Path(path) = inner.as_ref() {
+                            let name = path
+                                .segments
+                                .last()
+                                .map(|s| s.ident.name.as_str())
+                                .ok_or("Empty path")?;
+                            if let Some(&ptr) = scope.vars.get(name) {
+                                // ptr is the alloca address - convert to i64
+                                return self
+                                    .builder
+                                    .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
+                                    .map_err(|e| e.to_string());
+                            }
+                        }
+                        // Fallback: compile inner (may not be correct for all cases)
+                    }
                     // Special case: *( ptr + offset ) needs GEP for proper pointer arithmetic
                     if matches!(op, ast::UnaryOp::Deref) {
                         if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
@@ -5613,7 +5631,27 @@ pub mod llvm {
                 }
 
                 // Address-of: &expr, &mut expr
-                Expr::AddrOf { expr, .. } => self.compile_expr(fn_value, scope, expr),
+                // G44 fix: Actually return the address, not the value!
+                Expr::AddrOf { expr, .. } => {
+                    // For &path, we need to return the address of the variable
+                    if let Expr::Path(path) = expr.as_ref() {
+                        let name = path
+                            .segments
+                            .last()
+                            .map(|s| s.ident.name.as_str())
+                            .ok_or("Empty path")?;
+                        if let Some(&ptr) = scope.vars.get(name) {
+                            // ptr is already the alloca address - convert to i64
+                            return self
+                                .builder
+                                .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
+                                .map_err(|e| e.to_string());
+                        }
+                    }
+                    // Fallback for other expressions: compile and hope it's an lvalue
+                    // This is incorrect but maintains backwards compatibility
+                    self.compile_expr(fn_value, scope, expr)
+                }
 
                 // Dereference: *ptr or *(ptr + offset)
                 Expr::Deref(inner) => {
@@ -9657,25 +9695,26 @@ pub mod llvm {
             }
 
             // Handle common enum/type constructors explicitly (match statement has mysterious issues)
-            if full_path == "Result::Ok" || full_path == "Result·Ok" {
+            // G43 fix: Also handle bare Ok/Err/Some/None without Result::/Option:: prefix
+            if full_path == "Result::Ok" || full_path == "Result·Ok" || full_path == "Ok" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Result::Err" || full_path == "Result·Err" {
+            if full_path == "Result::Err" || full_path == "Result·Err" || full_path == "Err" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Option::Some" || full_path == "Option·Some" {
+            if full_path == "Option::Some" || full_path == "Option·Some" || full_path == "Some" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Option::None" || full_path == "Option·None" {
+            if full_path == "Option::None" || full_path == "Option·None" || full_path == "None" {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
             if full_path == "String::new" || full_path == "String·new" {
@@ -11245,8 +11284,8 @@ pub mod llvm {
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
-                // Result enum constructors
-                "Result::Ok" | "Result·Ok" => {
+                // Result enum constructors - G43 fix: also handle bare Ok/Err
+                "Result::Ok" | "Result·Ok" | "Ok" => {
                     // Result::Ok(value) - for now, just return the value
                     // In a full implementation, we'd tag it as Ok variant
                     if args.is_empty() {
@@ -11254,26 +11293,23 @@ pub mod llvm {
                     }
                     return self.compile_expr(fn_value, scope, &args[0]);
                 }
-                "Result::Err" | "Result·Err" => {
+                "Result::Err" | "Result·Err" | "Err" => {
                     // Result::Err(error) - for now, return the error value
                     // In a full implementation, we'd tag it as Err variant
-                    // eprintln!("DEBUG: Handling Result::Err with {} args", args.len());
                     if args.is_empty() {
                         return Ok(self.context.i64_type().const_int(0, false));
                     }
-                    // eprintln!("DEBUG: Compiling Result::Err arg");
                     let result = self.compile_expr(fn_value, scope, &args[0]);
-                    // eprintln!("DEBUG: Result::Err arg compiled: {:?}", result.is_ok());
                     return result;
                 }
-                // Option enum constructors
-                "Option::Some" | "Option·Some" => {
+                // Option enum constructors - G43 fix: also handle bare Some/None
+                "Option::Some" | "Option·Some" | "Some" => {
                     if args.is_empty() {
                         return Ok(self.context.i64_type().const_int(0, false));
                     }
                     return self.compile_expr(fn_value, scope, &args[0]);
                 }
-                "Option::None" | "Option·None" => {
+                "Option::None" | "Option·None" | "None" => {
                     // None is represented as null/0
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
