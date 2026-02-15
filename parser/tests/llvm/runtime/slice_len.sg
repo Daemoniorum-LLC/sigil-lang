@@ -1,0 +1,34 @@
+// G52: Slice length test
+
+rite test_str_len() {
+    println!("=== String length test ===");
+    ≔ s = "Hello";
+    println!("s = '{}'", s);
+    println!("s.len() = {}", s.len());
+}
+
+rite test_as_bytes() {
+    println!("");
+    println!("=== as_bytes test ===");
+    ≔ s = "Hello";
+    println!("s = '{}'", s);
+    ≔ bytes = s.as_bytes();
+    println!("Got bytes");
+    // This might crash - let's see
+    println!("bytes.len() = {}", bytes.len());
+}
+
+rite test_slice_param(data: &[u8]) {
+    println!("In test_slice_param...");
+    println!("data.len() = {}", data.len());
+}
+
+rite main() {
+    test_str_len();
+    test_as_bytes();
+    println!("");
+    println!("=== Slice param test ===");
+    ≔ s = "World";
+    test_slice_param(s.as_bytes());
+    println!("Done!");
+}

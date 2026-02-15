@@ -526,6 +526,7 @@ pub enum Evidentiality {
     Uncertain, // ? - unverified input
     Reported,  // ~ - EMA, eventually consistent
     Predicted, // ◊ - model output, speculative
+    Chaos,     // ⁂ - intentional randomness, entropic
     Paradox,   // ‽ - contradiction detected
 }
 
@@ -968,6 +969,7 @@ pub struct ActorDef {
     pub generics: Option<Generics>,
     pub state: Vec<FieldDef>,
     pub handlers: Vec<MessageHandler>,
+    pub methods: Vec<Function>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

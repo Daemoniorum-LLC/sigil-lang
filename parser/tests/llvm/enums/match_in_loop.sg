@@ -1,0 +1,28 @@
+// G45: Match expressions inside loop - mimics nihil-core pattern
+
+ᛈ Dim {
+    Const { val: i64 },
+    Dyn,
+}
+
+rite test_match_in_loop() → i64 {
+    ≔ vary sum = 0;
+    ∀ i ∈ 0..5 {
+        ≔ d = ⎇ i >= 2 { Dim·Const { val: i } } ⎉ { Dim·Dyn };
+        ≔ val = ⌥ d {
+            Dim·Const { val } => val,
+            Dim·Dyn => 1,
+        };
+        sum = sum + val;
+    }
+    sum
+}
+
+rite main() {
+    println!("Testing match in loop...");
+
+    ≔ r1 = test_match_in_loop();
+    println!("test_match_in_loop() = {}", r1);
+
+    println!("Done!");
+}

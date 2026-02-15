@@ -113,6 +113,12 @@ impl ImportRegistry {
         Some(params.as_slice())
     }
 
+    /// Get the type index for an import function by function index.
+    pub fn get_func_type(&self, func_idx: u32) -> Option<u32> {
+        let import = self.imports.get(func_idx as usize)?;
+        Some(import.type_idx)
+    }
+
     /// Register standard JS runtime imports.
     fn register_standard_imports(&mut self) {
         self.register_console_imports();
@@ -157,6 +163,11 @@ impl ImportRegistry {
         self.add_import("console", "log_str", vec![I32, I32], vec![]);
         // Register 'print' as a builtin with direct lookup alias
         self.add_import_with_alias("console", "print", "print", vec![I64], vec![]);
+        // Register console_log/warn/error aliases for string output (used by macros)
+        // These take a string pointer (i64 with ptr in low bits) and log it
+        self.add_import_with_alias("console", "log", "console_log", vec![I64], vec![]);
+        self.add_import_with_alias("console", "warn", "console_warn", vec![I64], vec![]);
+        self.add_import_with_alias("console", "error", "console_error", vec![I64], vec![]);
     }
 
     fn register_string_imports(&mut self) {
@@ -287,6 +298,8 @@ impl ImportRegistry {
         self.add_import_with_alias("morpheme", "array_all", "array_all", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_any", "array_any", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
+        // Vec::join - concatenate elements with separator
+        self.add_import_with_alias("morpheme", "vec_join", "vec_join", vec![I32, I32], vec![I32]);
     }
 
     fn register_math_imports(&mut self) {

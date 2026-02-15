@@ -1,0 +1,67 @@
+// G51: Minimal zero_grad crash reproduction
+// Issue: Iterating over mutable Vec<Struct> and calling methods
+
+Σ Linear {
+    grad_weights: Vec<f64>,
+}
+
+⊢ Linear {
+    rite new(size: i64) → Self {
+        Self { grad_weights: vec![0.0; size as usize] }
+    }
+
+    rite zero_grad(&vary this) {
+        println!("  Linear.zero_grad - len: {}", this.grad_weights.len());
+        ∀ i ∈ 0..this.grad_weights.len() {
+            this.grad_weights[i] = 0.0;
+        }
+        println!("  Linear.zero_grad done");
+    }
+}
+
+Σ Layer {
+    proj: Linear,
+}
+
+⊢ Layer {
+    rite new(size: i64) → Self {
+        Self { proj: Linear·new(size) }
+    }
+
+    rite zero_grad(&vary this) {
+        println!("  Layer.zero_grad");
+        this.proj.zero_grad();
+        println!("  Layer.zero_grad done");
+    }
+}
+
+rite test_single_layer() {
+    println!("=== Test: Single layer ===");
+    ≔ vary layer = Layer·new(4);
+    println!("Calling zero_grad...");
+    layer.zero_grad();
+    println!("Single layer OK!");
+}
+
+rite test_vec_of_layers() {
+    println!("=== Test: Vec of layers ===");
+    ≔ vary layers: Vec<Layer> = vec![];
+    layers.push(Layer·new(4));
+    layers.push(Layer·new(4));
+    println!("Created {} layers", layers.len());
+
+    println!("Iterating mutably...");
+    ∀ layer ∈ &vary layers {
+        println!("Calling layer.zero_grad()...");
+        layer.zero_grad();
+    }
+    println!("Vec of layers OK!");
+}
+
+rite main() {
+    test_single_layer();
+    println!("");
+    test_vec_of_layers();
+    println!("");
+    println!("All tests passed!");
+}

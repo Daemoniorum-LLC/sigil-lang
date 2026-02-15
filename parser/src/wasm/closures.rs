@@ -427,6 +427,21 @@ impl WasmCompiler {
                     }
                 }
 
+                // =================================================================
+                // VNode Builder Pattern - Static Constructors
+                // =================================================================
+                // Handle VNode·div(), VNode·span(), VNode·fragment(), etc.
+                if resolved_segments.len() >= 2 {
+                    let type_name = &resolved_segments[resolved_segments.len() - 2];
+                    let method_name = &resolved_segments[resolved_segments.len() - 1];
+
+                    if type_name == "VNode" {
+                        if let Some(result) = self.try_compile_vnode_constructor(method_name, args) {
+                            return result;
+                        }
+                    }
+                }
+
                 // Handle std library functions
                 // std::cmp::max, std::cmp::min, etc.
                 if name == "std_cmp_max" && args.len() == 2 {
@@ -1095,9 +1110,99 @@ impl WasmCompiler {
         method: &str,
         args: &[Expr],
     ) -> WasmResult<()> {
+        // Check for actor self·method() calls
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 && path.segments[0].ident.name == "self" {
+                // Inside an actor, self·method() -> ActorName::method()
+                if let Some(actor_name) = &self.current_actor.clone() {
+                    let qualified = format!("{}::{}", actor_name, method);
+                    if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        // Compile arguments (no receiver for actor methods)
+                        for arg in args {
+                            self.compile_expr(arg)?;
+                        }
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        // Check for enum variant access: EnumType·Variant
+        if let Expr::Path(path) = receiver {
+            if let Some(first_seg) = path.segments.first() {
+                let enum_name = &first_seg.ident.name;
+                if let Some(layout) = self.enum_layouts.get(enum_name).cloned() {
+                    if let Some(tag) = layout.variant_tag(method) {
+                        // This is an enum variant access without arguments (unit variant)
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(tag as i64));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         // Try builtin method dispatch first (to_string, clone, unwrap, etc.)
         if self.try_compile_builtin_method(receiver, method, args)? {
             return Ok(());
+        }
+
+        // Try VNode builder method dispatch (·child, ·attr, ·style, etc.)
+        if self.try_compile_vnode_builder_method(receiver, method, args)? {
+            return Ok(());
+        }
+
+        // Check for module-prefixed import calls: module·function(args)
+        // e.g., vdom·mount_vnode(vnode, "#app") → vdom_mount_vnode import
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let module_name = &path.segments[0].ident.name;
+                let import_name = format!("{}_{}", module_name, method);
+
+                if let Some(func_idx) = self.imports.get_func(&import_name) {
+                    // Get parameter types for proper conversion
+                    let param_types: Vec<ValType> = self
+                        .imports
+                        .get_param_types(func_idx)
+                        .map(|p| p.to_vec())
+                        .unwrap_or_default();
+                    let return_type = self.imports.get_return_type(func_idx);
+
+                    // Compile arguments with type conversion
+                    for (i, arg) in args.iter().enumerate() {
+                        self.compile_expr(arg)?;
+
+                        // Convert I64 to I32 if parameter expects I32
+                        if let Some(ValType::I32) = param_types.get(i) {
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::I32WrapI64);
+                        }
+                    }
+
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::Call(func_idx));
+
+                    // Handle return type conversion
+                    match return_type {
+                        Some(ValType::I32) => {
+                            func.push(Instruction::I64ExtendI32U);
+                        }
+                        None => {
+                            func.push(Instruction::I64Const(0));
+                        }
+                        _ => {}
+                    }
+
+                    return Ok(());
+                }
+            }
         }
 
         // Compile receiver as first argument
@@ -1108,7 +1213,19 @@ impl WasmCompiler {
             self.compile_expr(arg)?;
         }
 
-        // Look up method as function
+        // Try type-qualified lookup: infer receiver type and try Type::method
+        if let Some(receiver_type) = self.infer_receiver_type(receiver) {
+            let qualified = format!("{}::{}", receiver_type, method);
+            if let Some(&func_idx) = self.func_map.get(&qualified) {
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(func_idx));
+                return Ok(());
+            }
+        }
+
+        // Look up method as simple function name
         if let Some(func_idx) = self.get_func(method) {
             let func = self
                 .current_function_mut()
@@ -1117,6 +1234,47 @@ impl WasmCompiler {
             Ok(())
         } else {
             Err(WasmError::undefined_function(method))
+        }
+    }
+
+    /// Infer the type of a receiver expression for method resolution.
+    /// Used to resolve method chains like VNode::div().child() -> VNode::child
+    fn infer_receiver_type(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Path(path) => {
+                // Check if the path is a known type (struct or enum)
+                let name = path.segments.first()?.ident.name.as_str();
+                if self.struct_layouts.contains_key(name) || self.enum_layouts.contains_key(name) {
+                    return Some(name.to_string());
+                }
+                None
+            }
+            Expr::Call { func, .. } => {
+                // For a call like VNode::div(), infer the return type
+                if let Expr::MethodCall { receiver, .. } = &**func {
+                    // Nested call: receiver.method(...) -> check receiver type
+                    return self.infer_receiver_type(receiver);
+                }
+                if let Expr::Path(path) = &**func {
+                    // Static method call like VNode::div() or VNode·div()
+                    // The first segment might be the type
+                    if let Some(first_seg) = path.segments.first() {
+                        let type_name = &first_seg.ident.name;
+                        if self.struct_layouts.contains_key(type_name.as_str())
+                            || self.enum_layouts.contains_key(type_name.as_str())
+                        {
+                            return Some(type_name.clone());
+                        }
+                    }
+                }
+                None
+            }
+            Expr::MethodCall { receiver, .. } => {
+                // Method chain: receiver.method() - if method returns Self (builder pattern)
+                // For now, assume builder pattern preserves type
+                self.infer_receiver_type(receiver)
+            }
+            _ => None,
         }
     }
 
@@ -1263,6 +1421,36 @@ impl WasmCompiler {
                 // For now, compile receiver and ignore the closure (simplified)
                 self.compile_expr(receiver)?;
                 // TODO: Implement proper unwrap_or_else with closure evaluation
+                Ok(true)
+            }
+
+            // Option::ok_or_else - convert Option<T> to Result<T, E>
+            // Some(v) -> Ok(v), None -> Err(closure())
+            "ok_or_else" => {
+                self.compile_ok_or_else(receiver, args)?;
+                Ok(true)
+            }
+
+            // Option::ok_or - convert Option<T> to Result<T, E>
+            // Some(v) -> Ok(v), None -> Err(default)
+            "ok_or" => {
+                self.compile_ok_or(receiver, args)?;
+                Ok(true)
+            }
+
+            // Result::map_err - transform the error value
+            "map_err" => {
+                self.compile_map_err(receiver, args)?;
+                Ok(true)
+            }
+
+            // Result::is_ok / is_err
+            "is_ok" => {
+                self.compile_is_ok(receiver)?;
+                Ok(true)
+            }
+            "is_err" => {
+                self.compile_is_err(receiver)?;
                 Ok(true)
             }
 
@@ -1521,6 +1709,26 @@ impl WasmCompiler {
             "iter" => {
                 // iter() just returns the array handle for morpheme pipeline
                 self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            "join" => {
+                // Vec::join(separator) -> concatenate elements with separator
+                // Stack: [vec_ptr, separator_ptr] -> [result_str_ptr]
+                self.compile_expr(receiver)?;
+                if let Some(sep) = args.first() {
+                    self.compile_expr(sep)?;
+                } else {
+                    // Default separator: empty string
+                    let empty = self.add_string("");
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I32Const(empty as i32));
+                }
+                let join_idx = self.get_func("vec_join")
+                    .ok_or_else(|| WasmError::internal("vec_join import missing"))?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(join_idx));
                 Ok(true)
             }
 
@@ -1940,6 +2148,475 @@ impl WasmCompiler {
         }
     }
 
+    // ==========================================================================
+    // VNode Builder Pattern Support
+    // ==========================================================================
+
+    /// Try to compile a VNode static constructor (e.g., VNode·div(), VNode·span()).
+    /// Returns None if not a recognized VNode constructor.
+    fn try_compile_vnode_constructor(
+        &mut self,
+        method: &str,
+        args: &[Expr],
+    ) -> Option<WasmResult<()>> {
+        // HTML element constructors
+        let tag = match method {
+            // Standard HTML elements
+            "div" | "span" | "p" | "a" | "button" | "form" | "input" | "label" |
+            "select" | "option" | "textarea" | "img" | "video" | "audio" | "canvas" |
+            "table" | "thead" | "tbody" | "tfoot" | "tr" | "th" | "td" |
+            "ul" | "ol" | "li" | "dl" | "dt" | "dd" |
+            "nav" | "header" | "footer" | "section" | "article" | "aside" |
+            "h1" | "h2" | "h3" | "h4" | "h5" | "h6" |
+            "pre" | "code" | "blockquote" | "hr" | "br" |
+            "strong" | "em" | "b" | "i" | "u" | "small" | "sub" | "sup" |
+            "svg" | "path" | "circle" | "rect" | "line" | "polygon" | "polyline" => method,
+
+            // main_elem for <main> (avoiding keyword conflict)
+            "main_elem" => "main",
+
+            // Fragment - no element, just a container for children
+            "fragment" => {
+                return Some(self.compile_vnode_fragment());
+            }
+
+            // Text node
+            "text" if args.len() == 1 => {
+                return Some(self.compile_vnode_text(&args[0]));
+            }
+
+            // Empty placeholder
+            "Empty" => {
+                return Some(self.compile_vnode_empty());
+            }
+
+            _ => return None,
+        };
+
+        Some(self.compile_vnode_element(tag))
+    }
+
+    /// Compile VNode element creation: vdom_create_vnode(tag) -> handle
+    fn compile_vnode_element(&mut self, tag: &str) -> WasmResult<()> {
+        let tag_offset = self.add_string(tag);
+        let create_idx = self.imports.get_func("vdom_create_vnode")
+            .ok_or_else(|| WasmError::internal("vdom_create_vnode import not found"))?;
+
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Pass string offset as i64 (VDOM imports expect i64 for string refs)
+        func.push(Instruction::I64Const(tag_offset as i64));
+        func.push(Instruction::Call(create_idx));
+        // Extend i32 result to i64 (Sigil's uniform type)
+        func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile VNode fragment creation
+    fn compile_vnode_fragment(&mut self) -> WasmResult<()> {
+        let create_idx = self.imports.get_func("vdom_create_fragment")
+            .ok_or_else(|| WasmError::internal("vdom_create_fragment import not found"))?;
+
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        func.push(Instruction::Call(create_idx));
+        // Extend i32 result to i64 (Sigil's uniform type)
+        func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile VNode text node creation
+    fn compile_vnode_text(&mut self, text_expr: &Expr) -> WasmResult<()> {
+        // Compile the text expression (should produce string handle as i64)
+        self.compile_expr(text_expr)?;
+
+        // VDOM import expects i64 for string ref - don't wrap
+        let create_idx = self.imports.get_func("vdom_create_text_vnode")
+            .ok_or_else(|| WasmError::internal("vdom_create_text_vnode import not found"))?;
+
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Text expression already produces i64 string ref
+        func.push(Instruction::Call(create_idx));
+        // Extend i32 result back to i64
+        func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile VNode::Empty - returns a null/empty vnode handle
+    fn compile_vnode_empty(&mut self) -> WasmResult<()> {
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Return 0 as empty vnode handle
+        func.push(Instruction::I64Const(0));
+
+        Ok(())
+    }
+
+    /// Try to compile a VNode builder method (·child, ·attr, ·style, etc.).
+    /// Returns true if handled.
+    fn try_compile_vnode_builder_method(
+        &mut self,
+        receiver: &Expr,
+        method: &str,
+        args: &[Expr],
+    ) -> WasmResult<bool> {
+        // Check if receiver is VNode-typed
+        if !self.is_vnode_expression(receiver) {
+            return Ok(false);
+        }
+
+        match method {
+            // ·child(vnode) - append a child and return self
+            "child" if args.len() == 1 => {
+                self.compile_vnode_child(receiver, &args[0])?;
+                Ok(true)
+            }
+
+            // ·children(vec) - append multiple children
+            "children" if args.len() == 1 => {
+                self.compile_vnode_children(receiver, &args[0])?;
+                Ok(true)
+            }
+
+            // ·attr(name, value) - set attribute
+            "attr" if args.len() == 2 => {
+                self.compile_vnode_attr(receiver, &args[0], &args[1])?;
+                Ok(true)
+            }
+
+            // ·style(prop, value) - set inline style
+            "style" if args.len() == 2 => {
+                self.compile_vnode_style(receiver, &args[0], &args[1])?;
+                Ok(true)
+            }
+
+            // ·class(name) - set class attribute
+            "class" if args.len() == 1 => {
+                self.compile_vnode_class(receiver, &args[0])?;
+                Ok(true)
+            }
+
+            // ·text_child(text) - add text content as child
+            "text_child" if args.len() == 1 => {
+                self.compile_vnode_text_child(receiver, &args[0])?;
+                Ok(true)
+            }
+
+            _ => Ok(false),
+        }
+    }
+
+    /// Check if an expression is VNode-typed (for builder method dispatch)
+    fn is_vnode_expression(&self, expr: &Expr) -> bool {
+        match expr {
+            // VNode·div() - static constructor call
+            Expr::Call { func, .. } => {
+                if let Expr::Path(path) = &**func {
+                    let segments: Vec<&str> = path.segments.iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect();
+                    if segments.len() >= 2 && segments[segments.len() - 2] == "VNode" {
+                        return true;
+                    }
+                }
+                // Nested method call on VNode (chained builders)
+                if let Expr::MethodCall { receiver, .. } = &**func {
+                    return self.is_vnode_expression(receiver);
+                }
+                false
+            }
+            // expr·method() - chained method call
+            Expr::MethodCall { receiver, .. } => {
+                self.is_vnode_expression(receiver)
+            }
+            // Path like VNode
+            Expr::Path(path) => {
+                if let Some(first) = path.segments.first() {
+                    first.ident.name == "VNode"
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    /// Compile ·child(child_vnode) - append child and return parent
+    fn compile_vnode_child(&mut self, receiver: &Expr, child: &Expr) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        // Get import index first (before mutable borrows)
+        let append_idx = self.imports.get_func("vdom_append_vnode_child")
+            .ok_or_else(|| WasmError::internal("vdom_append_vnode_child import not found"))?;
+
+        // Compile receiver (parent vnode)
+        self.compile_expr(receiver)?;
+
+        // Store parent handle to local (don't leave on stack during child compilation)
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let parent_local = func.alloc_local("__vnode_parent".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(parent_local));
+        drop(func);
+
+        // Compile child expression (this may involve complex calls with their own args)
+        self.compile_expr(child)?;
+
+        // Now set up the append_child call:
+        // Stack currently has child result (i64)
+        // Need: parent (i32), child (i32)
+        let func = self.current_function_mut().unwrap();
+        let child_local = func.alloc_local("__vnode_child".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(child_local));
+
+        // Push parent, wrap to i32
+        func.push(Instruction::LocalGet(parent_local));
+        func.push(Instruction::I32WrapI64);
+
+        // Push child, wrap to i32
+        func.push(Instruction::LocalGet(child_local));
+        func.push(Instruction::I32WrapI64);
+
+        // Call append_child
+        func.push(Instruction::Call(append_idx));
+
+        // Return parent handle for chaining
+        func.push(Instruction::LocalGet(parent_local));
+
+        Ok(())
+    }
+
+    /// Compile ·children(vec) - append multiple children
+    fn compile_vnode_children(&mut self, receiver: &Expr, children_vec: &Expr) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        // Get import index first (before mutable borrows)
+        let append_children_idx = self.imports.get_func("vdom_append_children");
+
+        // Compile receiver (parent vnode)
+        self.compile_expr(receiver)?;
+
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let parent_local = func.alloc_local("__vnode_parent_c".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(parent_local));
+        drop(func);
+
+        // Compile children vector
+        self.compile_expr(children_vec)?;
+
+        // Call vdom_append_children(parent, children_array)
+        let func = self.current_function_mut().unwrap();
+        let children_local = func.alloc_local("__vnode_children".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(children_local));
+
+        // Get parent, wrap to i32
+        func.push(Instruction::LocalGet(parent_local));
+        func.push(Instruction::I32WrapI64);
+
+        // Get children array handle
+        func.push(Instruction::LocalGet(children_local));
+        func.push(Instruction::I32WrapI64);
+
+        // Call append_children if available, otherwise drop args (stub)
+        if let Some(idx) = append_children_idx {
+            func.push(Instruction::Call(idx));
+        } else {
+            // Fallback: drop children (stub)
+            func.push(Instruction::Drop);
+            func.push(Instruction::Drop);
+        }
+
+        // Return parent handle
+        func.push(Instruction::LocalGet(parent_local));
+
+        Ok(())
+    }
+
+    /// Compile ·attr(name, value) - set attribute
+    /// Import signature: set_vnode_str_prop(vnodeId: i32, nameStrRef: i64, valueStrRef: i64)
+    fn compile_vnode_attr(&mut self, receiver: &Expr, name: &Expr, value: &Expr) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        // Get import index first (before mutable borrows)
+        let set_prop_idx = self.imports.get_func("vdom_set_vnode_str_prop")
+            .ok_or_else(|| WasmError::internal("vdom_set_vnode_str_prop import not found"))?;
+
+        // Compile receiver and store (clear stack for subsequent expressions)
+        self.compile_expr(receiver)?;
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let vnode_local = func.alloc_local("__vnode_attr".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(vnode_local));
+        drop(func);
+
+        // Compile name expression and store
+        self.compile_expr(name)?;
+        let func = self.current_function_mut().unwrap();
+        let name_local = func.alloc_local("__attr_name".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(name_local));
+        drop(func);
+
+        // Compile value expression and store
+        self.compile_expr(value)?;
+        let func = self.current_function_mut().unwrap();
+        let value_local = func.alloc_local("__attr_value".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(value_local));
+
+        // Now push args in order: vnode (i32), name (i64), value (i64)
+        func.push(Instruction::LocalGet(vnode_local));
+        func.push(Instruction::I32WrapI64);  // vnode handle wrapped to i32
+        func.push(Instruction::LocalGet(name_local));   // name stays i64
+        func.push(Instruction::LocalGet(value_local));  // value stays i64
+        func.push(Instruction::Call(set_prop_idx));
+
+        // Return vnode for chaining
+        func.push(Instruction::LocalGet(vnode_local));
+
+        Ok(())
+    }
+
+    /// Compile ·style(prop, value) - set inline style
+    /// Import signature: set_vnode_str_prop(vnodeId: i32, nameStrRef: i64, valueStrRef: i64)
+    fn compile_vnode_style(&mut self, receiver: &Expr, prop: &Expr, value: &Expr) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        // Get import indices first (before mutable borrows)
+        let style_idx = self.imports.get_func("vdom_set_vnode_style");
+        let fallback_idx = self.imports.get_func("vdom_set_vnode_str_prop");
+
+        // Compile receiver and store (clear stack for subsequent expressions)
+        self.compile_expr(receiver)?;
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let vnode_local = func.alloc_local("__vnode_style".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(vnode_local));
+        drop(func);
+
+        // Compile property name and store
+        self.compile_expr(prop)?;
+        let func = self.current_function_mut().unwrap();
+        let prop_local = func.alloc_local("__style_prop".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(prop_local));
+        drop(func);
+
+        // Compile value and store
+        self.compile_expr(value)?;
+        let func = self.current_function_mut().unwrap();
+        let value_local = func.alloc_local("__style_value".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(value_local));
+
+        // Push args in order: vnode (i32), prop (i64), value (i64)
+        func.push(Instruction::LocalGet(vnode_local));
+        func.push(Instruction::I32WrapI64);  // vnode handle wrapped to i32
+        func.push(Instruction::LocalGet(prop_local));    // prop stays i64
+        func.push(Instruction::LocalGet(value_local));   // value stays i64
+
+        // Call vdom_set_vnode_style or fallback to str_prop
+        if let Some(idx) = style_idx {
+            func.push(Instruction::Call(idx));
+        } else if let Some(idx) = fallback_idx {
+            func.push(Instruction::Call(idx));
+        } else {
+            return Err(WasmError::internal("vdom_set_vnode_style import not found"));
+        }
+
+        // Return vnode handle for chaining
+        func.push(Instruction::LocalGet(vnode_local));
+
+        Ok(())
+    }
+
+    /// Compile ·class(name) - set class attribute
+    /// Import signature: set_vnode_str_prop(vnodeId: i32, nameStrRef: i64, valueStrRef: i64)
+    fn compile_vnode_class(&mut self, receiver: &Expr, class_name: &Expr) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        // Get import index and string offset first (before mutable borrows)
+        let set_prop_idx = self.imports.get_func("vdom_set_vnode_str_prop")
+            .ok_or_else(|| WasmError::internal("vdom_set_vnode_str_prop import not found"))?;
+        let class_str_offset = self.add_string("class");
+
+        // Compile receiver and store (clear stack for subsequent expressions)
+        self.compile_expr(receiver)?;
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let vnode_local = func.alloc_local("__vnode_class".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(vnode_local));
+        drop(func);
+
+        // Compile class name value and store
+        self.compile_expr(class_name)?;
+        let func = self.current_function_mut().unwrap();
+        let class_local = func.alloc_local("__class_name".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(class_local));
+
+        // Push args in order: vnode (i32), "class" (i64), className (i64)
+        func.push(Instruction::LocalGet(vnode_local));
+        func.push(Instruction::I32WrapI64);  // vnode handle wrapped to i32
+        func.push(Instruction::I64Const(class_str_offset as i64));  // "class" as i64
+        func.push(Instruction::LocalGet(class_local));  // className stays i64
+        func.push(Instruction::Call(set_prop_idx));
+
+        // Return vnode for chaining
+        func.push(Instruction::LocalGet(vnode_local));
+
+        Ok(())
+    }
+
+    /// Compile ·text_child(text) - add text content as child
+    /// create_text_vnode(textStrRef: i64) -> i32
+    /// append_vnode_child(parent: i32, child: i32) -> ()
+    fn compile_vnode_text_child(&mut self, receiver: &Expr, text: &Expr) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        // Get import indices first (before mutable borrows)
+        let create_text_idx = self.imports.get_func("vdom_create_text_vnode")
+            .ok_or_else(|| WasmError::internal("vdom_create_text_vnode import not found"))?;
+        let append_idx = self.imports.get_func("vdom_append_vnode_child")
+            .ok_or_else(|| WasmError::internal("vdom_append_vnode_child import not found"))?;
+
+        // Compile receiver and store (clear stack)
+        self.compile_expr(receiver)?;
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let vnode_local = func.alloc_local("__vnode_text_p".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(vnode_local));
+        drop(func);
+
+        // Compile text expression and store
+        self.compile_expr(text)?;
+        let func = self.current_function_mut().unwrap();
+        let text_local = func.alloc_local("__text_str".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(text_local));
+
+        // Create text vnode: text stays i64 for create_text_vnode
+        func.push(Instruction::LocalGet(text_local));
+        func.push(Instruction::Call(create_text_idx));
+        // Result is i32, store it
+        let text_vnode_local = func.alloc_local("__text_vnode".to_string(), ValType::I32);
+        func.push(Instruction::LocalSet(text_vnode_local));
+
+        // Append: parent (i32), child (i32)
+        func.push(Instruction::LocalGet(vnode_local));
+        func.push(Instruction::I32WrapI64);  // parent wrapped to i32
+        func.push(Instruction::LocalGet(text_vnode_local));  // child already i32
+        func.push(Instruction::Call(append_idx));
+
+        // Return parent for chaining
+        func.push(Instruction::LocalGet(vnode_local));
+
+        Ok(())
+    }
+
     /// Compile a collection method call (Vec, HashMap, etc.).
     fn compile_collection_method(
         &mut self,
@@ -2100,6 +2777,343 @@ impl WasmCompiler {
         func.push(Instruction::I64Eqz);
         // Extend bool (i32) to i64
         func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile is_ok() for Result - returns true if Ok variant.
+    ///
+    /// Result representation: struct with (discriminant: i64, payload: i64)
+    /// where discriminant 0 = Ok, 1 = Err
+    fn compile_is_ok(&mut self, receiver: &Expr) -> WasmResult<()> {
+        // Compile receiver (Result pointer)
+        self.compile_expr(receiver)?;
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Load discriminant from offset 0
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3, // 8-byte alignment
+            memory_index: 0,
+        }));
+
+        // is_ok = discriminant == 0
+        func.push(Instruction::I64Eqz);
+        func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile is_err() for Result - returns true if Err variant.
+    fn compile_is_err(&mut self, receiver: &Expr) -> WasmResult<()> {
+        // Compile receiver (Result pointer)
+        self.compile_expr(receiver)?;
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Load discriminant from offset 0
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+
+        // is_err = discriminant != 0 (i.e., == 1)
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::I64Ne);
+        func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Compile ok_or_else() for Option - convert to Result.
+    ///
+    /// Option representation: struct at heap pointer with:
+    ///   offset 0: discriminant (i64) - 0 = None, 1 = Some
+    ///   offset 8: payload (i64) - the Some value (undefined for None)
+    ///
+    /// Result representation: struct at heap pointer with:
+    ///   offset 0: discriminant (i64) - 0 = Ok, 1 = Err
+    ///   offset 8: payload (i64) - the Ok or Err value
+    ///
+    /// Semantics:
+    ///   - Some(v).ok_or_else(f) = Ok(v)
+    ///   - None.ok_or_else(f) = Err(f())
+    fn compile_ok_or_else(&mut self, receiver: &Expr, args: &[Expr]) -> WasmResult<()> {
+        // Compile receiver (Option pointer)
+        self.compile_expr(receiver)?;
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Store Option pointer
+        let opt_ptr = func.alloc_local("__ok_or_else_opt".to_string(), wasm_encoder::ValType::I64);
+        func.push(Instruction::LocalTee(opt_ptr));
+
+        // Load discriminant
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+
+        // Store discriminant
+        let disc = func.alloc_local("__ok_or_else_disc".to_string(), wasm_encoder::ValType::I64);
+        func.push(Instruction::LocalSet(disc));
+
+        // Allocate Result struct (16 bytes)
+        func.push(Instruction::I64Const(16));
+
+        // Get heap_alloc
+        drop(func);
+        let alloc_idx = self.get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::Call(alloc_idx));
+
+        let result_ptr = func.alloc_local("__ok_or_else_result".to_string(), wasm_encoder::ValType::I64);
+        func.push(Instruction::LocalTee(result_ptr));
+
+        // Check discriminant: if disc == 1 (Some), write Ok
+        // if disc == 0 (None), write Err with closure result
+        func.push(Instruction::LocalGet(disc));
+        func.push(Instruction::I64Const(1));
+        func.push(Instruction::I64Eq);
+
+        func.push(Instruction::If(BlockType::Empty));
+        {
+            // Some case: write Ok (discriminant 0, copy payload)
+            func.push(Instruction::LocalGet(result_ptr));
+            func.push(Instruction::I32WrapI64);
+            func.push(Instruction::I64Const(0)); // Ok discriminant
+            func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+
+            // Copy payload from Option to Result
+            func.push(Instruction::LocalGet(result_ptr));
+            func.push(Instruction::I32WrapI64);
+            func.push(Instruction::LocalGet(opt_ptr));
+            func.push(Instruction::I32WrapI64);
+            func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                offset: 8,
+                align: 3,
+                memory_index: 0,
+            }));
+            func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: 8,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
+        func.push(Instruction::Else);
+        {
+            // None case: write Err (discriminant 1)
+            func.push(Instruction::LocalGet(result_ptr));
+            func.push(Instruction::I32WrapI64);
+            func.push(Instruction::I64Const(1)); // Err discriminant
+            func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: 0,
+                align: 3,
+                memory_index: 0,
+            }));
+
+            // For payload, we need to call the closure
+            // For now, use a simple placeholder (the closure would provide the error)
+            drop(func);
+            if args.len() == 1 {
+                if let Expr::Closure { body, .. } = &args[0] {
+                    self.compile_expr(body)?;
+                    let func = self.current_function_mut().unwrap();
+                    let err_val = func.alloc_local("__ok_or_else_err".to_string(), wasm_encoder::ValType::I64);
+                    func.push(Instruction::LocalSet(err_val));
+
+                    // Store error value
+                    func.push(Instruction::LocalGet(result_ptr));
+                    func.push(Instruction::I32WrapI64);
+                    func.push(Instruction::LocalGet(err_val));
+                    func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                        offset: 8,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                } else {
+                    // Non-closure argument - just compile it
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    let err_val = func.alloc_local("__ok_or_else_err".to_string(), wasm_encoder::ValType::I64);
+                    func.push(Instruction::LocalSet(err_val));
+
+                    func.push(Instruction::LocalGet(result_ptr));
+                    func.push(Instruction::I32WrapI64);
+                    func.push(Instruction::LocalGet(err_val));
+                    func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                        offset: 8,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                }
+            } else {
+                // No argument - store 0 as error
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::LocalGet(result_ptr));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::I64Const(0));
+                func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                    offset: 8,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+        }
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::End);
+
+        // Return Result pointer
+        func.push(Instruction::LocalGet(result_ptr));
+
+        Ok(())
+    }
+
+    /// Compile ok_or() for Option - convert to Result with default error.
+    ///
+    /// Semantics:
+    ///   - Some(v).ok_or(e) = Ok(v)
+    ///   - None.ok_or(e) = Err(e)
+    fn compile_ok_or(&mut self, receiver: &Expr, args: &[Expr]) -> WasmResult<()> {
+        // Simplified implementation: reuse ok_or_else logic
+        // The error value is evaluated eagerly, but semantics are the same
+        self.compile_ok_or_else(receiver, args)
+    }
+
+    /// Compile map_err() for Result - transform the error value.
+    ///
+    /// Result representation: struct at heap pointer with:
+    ///   offset 0: discriminant (i64) - 0 = Ok, 1 = Err
+    ///   offset 8: payload (i64) - the Ok or Err value
+    ///
+    /// Semantics:
+    ///   - Ok(v).map_err(f) = Ok(v)  (unchanged)
+    ///   - Err(e).map_err(f) = Err(f(e))  (transform error)
+    fn compile_map_err(&mut self, receiver: &Expr, args: &[Expr]) -> WasmResult<()> {
+        // Need exactly one argument (the closure)
+        if args.is_empty() {
+            return Err(WasmError::internal("map_err requires a closure argument"));
+        }
+
+        let closure_expr = &args[0];
+
+        // Check if this is a closure expression we can inline
+        match closure_expr {
+            Expr::Closure { params, body, .. } => {
+                // Inline closure compilation
+                if params.len() != 1 {
+                    return Err(WasmError::internal("map_err closure must take exactly 1 argument"));
+                }
+
+                // Compile receiver to get Result pointer
+                self.compile_expr(receiver)?;
+
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+                // Store Result pointer in temp local
+                let result_ptr = func.alloc_local("__map_err_result".to_string(), wasm_encoder::ValType::I64);
+                func.push(Instruction::LocalTee(result_ptr));
+
+                // Load discriminant
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
+
+                // Store discriminant in temp
+                let disc = func.alloc_local("__map_err_disc".to_string(), wasm_encoder::ValType::I64);
+                func.push(Instruction::LocalSet(disc));
+
+                // Check if Err (discriminant == 1)
+                func.push(Instruction::LocalGet(disc));
+                func.push(Instruction::I64Const(1));
+                func.push(Instruction::I64Eq);
+
+                // If Err, transform the error value using the closure
+                func.push(Instruction::If(wasm_encoder::BlockType::Empty));
+
+                // Load error value
+                func.push(Instruction::LocalGet(result_ptr));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                    offset: 8,
+                    align: 3,
+                    memory_index: 0,
+                }));
+
+                // Create temp local for the closure parameter
+                let param_name = match &params[0].pattern {
+                    crate::ast::Pattern::Ident { name, .. } => name.name.clone(),
+                    _ => "__closure_param".to_string(),
+                };
+                let param_local = func.alloc_local(param_name.clone(), wasm_encoder::ValType::I64);
+                func.push(Instruction::LocalSet(param_local));
+
+                // Release func borrow to compile body
+                drop(func);
+
+                // Push the parameter to scope
+                self.scope_vars.push(std::collections::HashMap::new());
+                if let Some(scope) = self.scope_vars.last_mut() {
+                    scope.insert(param_name, param_local);
+                }
+
+                // Compile closure body - this puts the transformed error on stack
+                self.compile_expr(body)?;
+
+                // Pop scope
+                self.scope_vars.pop();
+
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+                // Store transformed error back to payload
+                let new_err = func.alloc_local("__new_err".to_string(), wasm_encoder::ValType::I64);
+                func.push(Instruction::LocalSet(new_err));
+
+                func.push(Instruction::LocalGet(result_ptr));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::LocalGet(new_err));
+                func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                    offset: 8,
+                    align: 3,
+                    memory_index: 0,
+                }));
+
+                func.push(Instruction::End); // End if
+
+                // Return the (possibly modified) Result pointer
+                func.push(Instruction::LocalGet(result_ptr));
+            }
+            _ => {
+                // Not an inline closure - fall back to pass-through behavior
+                // TODO: Handle function references and captured closures
+                self.compile_expr(receiver)?;
+            }
+        }
 
         Ok(())
     }
@@ -2358,6 +3372,36 @@ impl WasmCompiler {
 
     /// Compile field access.
     pub fn compile_field_access(&mut self, expr: &Expr, field: &str) -> WasmResult<()> {
+        // Check for actor self.field access
+        if let Expr::Path(path) = expr {
+            if path.segments.len() == 1 {
+                let name = &path.segments[0].ident.name;
+                if name == "self" {
+                    // Inside an actor method, self.field -> load from actor global
+                    if let Some(actor_name) = &self.current_actor {
+                        let global_name = format!("{}_{}", actor_name, field);
+                        if let Some(idx) = self.get_global(&global_name) {
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::GlobalGet(idx));
+                            return Ok(());
+                        }
+                        // Fall through to try qualified name
+                        let qualified = self.qualify_name(&global_name);
+                        if let Some(idx) = self.get_global(&qualified) {
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::GlobalGet(idx));
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Regular struct field access
         // Compile expression to get struct pointer
         self.compile_expr(expr)?;
 
@@ -2380,7 +3424,18 @@ impl WasmCompiler {
     }
 
     /// Compile index access.
+    ///
+    /// Handles both single-element indexing and range-based slicing:
+    /// - `arr[i]` → single element access
+    /// - `arr[start..end]` → slice operation
+    /// - `str[1..]` → substring from index 1 to end
     pub fn compile_index(&mut self, expr: &Expr, index: &Expr) -> WasmResult<()> {
+        // Check if this is a range index (slicing operation)
+        if let Expr::Range { start, end, inclusive } = index {
+            return self.compile_slice(expr, start.as_deref(), end.as_deref(), *inclusive);
+        }
+
+        // Single-element indexing
         // Compile array pointer
         self.compile_expr(expr)?;
 
@@ -2391,9 +3446,8 @@ impl WasmCompiler {
         let arr_idx = func.alloc_local("__index_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-
-
         // Compile index
+        drop(func);
         self.compile_expr(index)?;
 
         let func = self.current_function_mut().unwrap();
@@ -2416,6 +3470,94 @@ impl WasmCompiler {
             align: 3,
             memory_index: 0,
         }));
+
+        Ok(())
+    }
+
+    /// Compile slice operation: `arr[start..end]` or `str[start..]`
+    ///
+    /// Generates a call to string_slice or array_slice depending on context.
+    /// For unbounded end (..end missing), uses the string/array length.
+    fn compile_slice(
+        &mut self,
+        expr: &Expr,
+        start: Option<&Expr>,
+        end: Option<&Expr>,
+        inclusive: bool,
+    ) -> WasmResult<()> {
+        // Compile the base expression (string or array pointer)
+        self.compile_expr(expr)?;
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Store base pointer in local
+        let base_ptr = func.alloc_local("__slice_base".to_string(), ValType::I64);
+        func.push(Instruction::LocalTee(base_ptr));
+
+        // Convert to i32 for string functions
+        func.push(Instruction::I32WrapI64);
+
+        // Compile start index (default 0)
+        drop(func);
+        if let Some(s) = start {
+            self.compile_expr(s)?;
+        } else {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::I64Const(0));
+        }
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::I32WrapI64);
+
+        // Compile end index
+        drop(func);
+        if let Some(e) = end {
+            self.compile_expr(e)?;
+
+            if inclusive {
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64Const(1));
+                func.push(Instruction::I64Add);
+            }
+        } else {
+            // Unbounded end: use string length
+            // Look up imports first to avoid borrow conflicts
+            let len_idx = self.imports.get_func("string_length");
+
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(base_ptr));
+            func.push(Instruction::I32WrapI64);
+
+            // Call string_length to get the end
+            if let Some(idx) = len_idx {
+                func.push(Instruction::Call(idx));
+                // Result is i32, extend to i64 then back to i32
+                func.push(Instruction::I64ExtendI32U);
+            } else {
+                // Fallback: use a large constant
+                func.push(Instruction::I64Const(i32::MAX as i64));
+            }
+        }
+
+        // Look up slice import first to avoid borrow conflicts
+        let slice_idx = self.imports.get_func("string_slice");
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::I32WrapI64);
+
+        // Call string_slice(str_ptr, start, end) -> new_str_ptr
+        if let Some(idx) = slice_idx {
+            func.push(Instruction::Call(idx));
+            // Result is i32 (pointer), extend to i64
+            func.push(Instruction::I64ExtendI32U);
+        } else {
+            // Fallback: just return the base pointer (no slice available)
+            func.push(Instruction::Drop);
+            func.push(Instruction::Drop);
+            func.push(Instruction::LocalGet(base_ptr));
+        }
 
         Ok(())
     }
@@ -2462,6 +3604,73 @@ impl WasmCompiler {
     
 
             self.compile_expr(elem)?;
+
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: (4 + i * 8) as u64,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
+
+        // Return array pointer
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::LocalGet(arr_idx));
+
+        Ok(())
+    }
+
+    /// Compile array repeat literal: `[value; count]`
+    pub fn compile_array_repeat(&mut self, value: &Expr, count: &Expr) -> WasmResult<()> {
+        // Extract count as a constant integer
+        let len = match count {
+            Expr::Literal(crate::ast::Literal::Int { value, .. }) => {
+                value.parse::<usize>().map_err(|_| {
+                    WasmError::internal("array repeat count must be a valid integer")
+                })?
+            }
+            _ => {
+                return Err(WasmError::unsupported(
+                    "array repeat with non-constant count",
+                ));
+            }
+        };
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Allocate: 4 bytes for length + 8 bytes per element
+        let size = 4 + (len * 8);
+        func.push(Instruction::I64Const(size as i64));
+
+        let alloc_idx = self
+            .get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::Call(alloc_idx));
+
+        let arr_idx = func.alloc_local("__array_repeat".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(arr_idx));
+
+        // Write length
+        func.push(Instruction::LocalGet(arr_idx));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I32Const(len as i32));
+        func.push(Instruction::I32Store(wasm_encoder::MemArg {
+            offset: 0,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // Write elements (same value repeated)
+        for i in 0..len {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(arr_idx));
+            func.push(Instruction::I32WrapI64);
+
+            self.compile_expr(value)?;
 
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::I64Store(wasm_encoder::MemArg {

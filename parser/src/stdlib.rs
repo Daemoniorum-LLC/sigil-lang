@@ -223,6 +223,10 @@ use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
 #[cfg(feature = "native")]
 use whatlang::{detect, Lang, Script as WhatLangScript};
 
+// Tree-sitter parsing infrastructure (native-only)
+#[cfg(feature = "native")]
+use tree_sitter::{Language as TsLanguage, Parser as TsParser, Node as TsNode, Tree as TsTree};
+
 // Cryptographic primitives for experimental crypto
 use rand::Rng;
 
@@ -315,6 +319,9 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_sgdoc(interp);
     // Phase 26: Qliphoth - Component framework VNode system
     register_qliphoth(interp);
+    // Phase 27: Tree-sitter - Incremental parsing for multi-language analysis
+    #[cfg(feature = "native")]
+    register_tree_sitter(interp);
 }
 
 // Helper to define a builtin
@@ -509,8 +516,9 @@ fn register_core(interp: &mut Interpreter) {
                 Evidence::Known => "known",
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
-                Evidence::Paradox => "paradox",
                 Evidence::Predicted => "predicted",
+                Evidence::Chaos => "chaos",
+                Evidence::Paradox => "paradox",
             }.to_string(),
             Value::Affective { .. } => "affective".to_string(),
             Value::Map(_) => "map".to_string(),
@@ -2855,8 +2863,9 @@ fn register_evidence(interp: &mut Interpreter) {
                     Evidence::Known => "known",
                     Evidence::Uncertain => "uncertain",
                     Evidence::Reported => "reported",
-                    Evidence::Paradox => "paradox",
                     Evidence::Predicted => "predicted",
+                    Evidence::Chaos => "chaos",
+                    Evidence::Paradox => "paradox",
                 };
                 Ok(Value::String(Rc::new(level.to_string())))
             }
@@ -2963,8 +2972,9 @@ fn register_evidence(interp: &mut Interpreter) {
                 Evidence::Known => "known",
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
-                Evidence::Paradox => "paradox",
                 Evidence::Predicted => "predicted",
+                Evidence::Chaos => "chaos",
+                Evidence::Paradox => "paradox",
             }
             .to_string(),
         )))
@@ -5740,6 +5750,31 @@ fn register_concurrency(interp: &mut Interpreter) {
                 Ok(Value::Map(Rc::new(RefCell::new(map))))
             }
             _ => Err(RuntimeError::new("std::thread::spawn requires a closure")),
+        }
+    });
+
+    // std::thread::available_parallelism - get number of available CPU cores
+    // Returns Result<NonZeroUsize, io::Error> as a Variant
+    define(interp, "std·thread·available_parallelism", Some(0), |_, _args| {
+        match std::thread::available_parallelism() {
+            Ok(n) => {
+                // Create NonZeroUsize-like struct with get() method capability
+                // For now, just return the inner value directly wrapped in Ok
+                let inner = Value::Int(n.get() as i64);
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![inner])),
+                })
+            }
+            Err(e) => {
+                // Return Err variant with error message
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                })
+            }
         }
     });
 
@@ -39690,6 +39725,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                                 Evidence::Reported => "reported",
                                 Evidence::Uncertain => "uncertain",
                                 Evidence::Predicted => "predicted",
+                                Evidence::Chaos => "chaos",
                                 Evidence::Paradox => "paradox",
                             };
                             format!("{{\"__evidential__\": \"{}\", \"value\": {}}}", ev_str, value_to_json(value, depth + 1))
@@ -39801,6 +39837,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => "reported",
                 AstEvidentiality::Uncertain => "uncertain",
                 AstEvidentiality::Predicted => "predicted",
+                AstEvidentiality::Chaos => "chaos",
                 AstEvidentiality::Paradox => "paradox",
             }
         }
@@ -39812,6 +39849,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => Evidence::Reported,
                 AstEvidentiality::Uncertain => Evidence::Uncertain,
                 AstEvidentiality::Predicted => Evidence::Predicted,
+                AstEvidentiality::Chaos => Evidence::Chaos,
                 AstEvidentiality::Paradox => Evidence::Paradox,
             }
         }
@@ -40012,6 +40050,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => "reported",
                 AstEvidentiality::Uncertain => "uncertain",
                 AstEvidentiality::Predicted => "predicted",
+                AstEvidentiality::Chaos => "chaos",
                 AstEvidentiality::Paradox => "paradox",
             }
         }
@@ -40023,6 +40062,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => Evidence::Reported,
                 AstEvidentiality::Uncertain => Evidence::Uncertain,
                 AstEvidentiality::Predicted => Evidence::Predicted,
+                AstEvidentiality::Chaos => Evidence::Chaos,
                 AstEvidentiality::Paradox => Evidence::Paradox,
             }
         }
@@ -42717,6 +42757,197 @@ fn render_nav_dropdown(item: &Value) -> Value {
     let menu = create_vnode("div", vec!["nav-dropdown-menu".to_string()], HashMap::new(), menu_children, None, vec![]);
 
     create_vnode("div", classes, HashMap::new(), vec![trigger, menu], None, vec![])
+}
+
+// =============================================================================
+// Phase 27: Tree-sitter - Incremental parsing for multi-language analysis
+// =============================================================================
+
+/// Register tree-sitter parsing builtins
+#[cfg(feature = "native")]
+fn register_tree_sitter(interp: &mut Interpreter) {
+    // tree_sitter_parse(language: &str, source: &str) -> Result<ParsedTree, ParseError>
+    // Parses source code using tree-sitter and returns a map representing the AST
+    define(interp, "tree_sitter_parse", Some(2), |_interp, args| {
+        let lang_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tree_sitter_parse: language must be a string")),
+        };
+        let source = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tree_sitter_parse: source must be a string")),
+        };
+
+        // Get the tree-sitter language
+        let language = match get_tree_sitter_language(&lang_name) {
+            Some(l) => l,
+            None => {
+                return Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new({
+                        let mut m = HashMap::new();
+                        m.insert("message".to_string(), Value::String(Rc::new(format!("Unsupported language: {}", lang_name))));
+                        m
+                    })))])),
+                });
+            }
+        };
+
+        // Create parser and parse
+        let mut parser = TsParser::new();
+        if parser.set_language(language).is_err() {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new({
+                    let mut m = HashMap::new();
+                    m.insert("message".to_string(), Value::String(Rc::new("Failed to set parser language".to_string())));
+                    m
+                })))])),
+            });
+        }
+
+        match parser.parse(&source, None) {
+            Some(tree) => {
+                // Convert tree-sitter tree to Sigil Value
+                let root = ts_node_to_value(tree.root_node(), &source);
+                let mut result = HashMap::new();
+                result.insert("root".to_string(), root);
+                result.insert("source".to_string(), Value::String(Rc::new(source)));
+
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(result)))])),
+                })
+            }
+            None => {
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new({
+                        let mut m = HashMap::new();
+                        m.insert("message".to_string(), Value::String(Rc::new("Parse failed".to_string())));
+                        m
+                    })))])),
+                })
+            }
+        }
+    });
+
+    // tree_sitter_node_text(node: Map, source: &str) -> String
+    // Extracts the text content of a tree-sitter node
+    define(interp, "tree_sitter_node_text", Some(2), |_interp, args| {
+        let node = match &args[0] {
+            Value::Map(m) => m.borrow(),
+            _ => return Err(RuntimeError::new("tree_sitter_node_text: node must be a map")),
+        };
+        let source = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tree_sitter_node_text: source must be a string")),
+        };
+
+        // Get start and end byte positions
+        let start_byte = match node.get("start_byte") {
+            Some(Value::Int(n)) => *n as usize,
+            _ => return Ok(Value::String(Rc::new(String::new()))),
+        };
+        let end_byte = match node.get("end_byte") {
+            Some(Value::Int(n)) => *n as usize,
+            _ => return Ok(Value::String(Rc::new(String::new()))),
+        };
+
+        // Extract text from source
+        let text = if end_byte <= source.len() && start_byte <= end_byte {
+            &source[start_byte..end_byte]
+        } else {
+            ""
+        };
+
+        Ok(Value::String(Rc::new(text.to_string())))
+    });
+
+    // tree_sitter_languages() -> Vec<String>
+    // Returns list of supported tree-sitter languages
+    define(interp, "tree_sitter_languages", Some(0), |_interp, _args| {
+        let languages = vec![
+            "rust", "python", "javascript", "typescript", "go",
+            "c", "cpp", "java", "json", "css", "bash"
+        ];
+        let values: Vec<Value> = languages.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
+    });
+}
+
+/// Get tree-sitter language by name
+#[cfg(feature = "native")]
+fn get_tree_sitter_language(name: &str) -> Option<TsLanguage> {
+    match name.to_lowercase().as_str() {
+        "rust" => Some(tree_sitter_rust::language()),
+        "python" => Some(tree_sitter_python::language()),
+        "javascript" | "js" => Some(tree_sitter_javascript::language()),
+        "typescript" | "ts" => Some(tree_sitter_typescript::language_typescript()),
+        "tsx" => Some(tree_sitter_typescript::language_tsx()),
+        "go" => Some(tree_sitter_go::language()),
+        "c" => Some(tree_sitter_c::language()),
+        "cpp" | "c++" => Some(tree_sitter_cpp::language()),
+        "java" => Some(tree_sitter_java::language()),
+        "json" => Some(tree_sitter_json::language()),
+        "css" => Some(tree_sitter_css::language()),
+        "bash" | "shell" | "sh" => Some(tree_sitter_bash::language()),
+        _ => None,
+    }
+}
+
+/// Convert a tree-sitter node to a Sigil Value (Map)
+#[cfg(feature = "native")]
+fn ts_node_to_value(node: TsNode, source: &str) -> Value {
+    let mut map = HashMap::new();
+
+    // Basic node information
+    map.insert("kind".to_string(), Value::String(Rc::new(node.kind().to_string())));
+    map.insert("start_byte".to_string(), Value::Int(node.start_byte() as i64));
+    map.insert("end_byte".to_string(), Value::Int(node.end_byte() as i64));
+
+    // Position information
+    let start = node.start_position();
+    let end = node.end_position();
+    let mut start_map = HashMap::new();
+    start_map.insert("row".to_string(), Value::Int(start.row as i64));
+    start_map.insert("column".to_string(), Value::Int(start.column as i64));
+    map.insert("start".to_string(), Value::Map(Rc::new(RefCell::new(start_map))));
+
+    let mut end_map = HashMap::new();
+    end_map.insert("row".to_string(), Value::Int(end.row as i64));
+    end_map.insert("column".to_string(), Value::Int(end.column as i64));
+    map.insert("end".to_string(), Value::Map(Rc::new(RefCell::new(end_map))));
+
+    // Named status
+    map.insert("is_named".to_string(), Value::Bool(node.is_named()));
+    map.insert("is_error".to_string(), Value::Bool(node.is_error()));
+
+    // Children (recursive)
+    let mut children = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        children.push(ts_node_to_value(child, source));
+    }
+    map.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+    // Field children (for named fields)
+    let child_count = node.named_child_count();
+    for i in 0..child_count {
+        if let Some(field_name) = node.field_name_for_child(i as u32) {
+            if let Some(child) = node.named_child(i) {
+                map.insert(format!("field_{}", field_name), ts_node_to_value(child, source));
+            }
+        }
+    }
+
+    Value::Map(Rc::new(RefCell::new(map)))
 }
 
 #[cfg(test)]

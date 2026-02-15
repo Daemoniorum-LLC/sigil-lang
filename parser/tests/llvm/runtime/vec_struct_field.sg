@@ -1,0 +1,33 @@
+// G51: Simplest nested field access crash
+
+Σ Inner {
+    val: i64,
+}
+
+Σ Outer {
+    inner: Inner,
+}
+
+⊢ Outer {
+    rite new(v: i64) → Self {
+        Self { inner: Inner { val: v } }
+    }
+
+    rite get_inner_val(&this) → i64 {
+        this.inner.val
+    }
+}
+
+rite main() {
+    println!("Creating vec...");
+    ≔ items = vec![Outer·new(10), Outer·new(20)];
+    println!("Vec created with {} items", items.len());
+
+    println!("About to iterate...");
+    ∀ item ∈ &items {
+        println!("  In loop body");
+        ≔ v = item.get_inner_val();
+        println!("  val = {}", v);
+    }
+    println!("Done!");
+}

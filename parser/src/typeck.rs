@@ -173,7 +173,14 @@ impl EvidenceLevel {
     pub fn from_ast(e: Evidentiality) -> Self {
         match e {
             Evidentiality::Known => EvidenceLevel::Known,
-            Evidentiality::Uncertain | Evidentiality::Predicted => EvidenceLevel::Uncertain,
+            // Uncertain, Predicted, and Chaos all share the same trust level
+            // but have distinct semantic meanings:
+            // - ? (Uncertain): existence uncertainty
+            // - ◊ (Predicted): inference uncertainty (AI/ML)
+            // - ⁂ (Chaos): entropic uncertainty (intentional randomness)
+            Evidentiality::Uncertain | Evidentiality::Predicted | Evidentiality::Chaos => {
+                EvidenceLevel::Uncertain
+            }
             Evidentiality::Reported => EvidenceLevel::Reported,
             Evidentiality::Paradox => EvidenceLevel::Paradox,
         }

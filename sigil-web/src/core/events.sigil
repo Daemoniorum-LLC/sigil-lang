@@ -503,14 +503,9 @@ impl EventHandler {
 
 impl Clone for EventHandler {
     fn clone(&self) -> Self! {
-        // Handlers are reference-counted internally
-        match self {
-            EventHandler::Simple(f) => EventHandler::Simple(f·clone()),
-            EventHandler::WithEvent(f) => EventHandler::WithEvent(f·clone()),
-            EventHandler::WithValue(f) => EventHandler::WithValue(f·clone()),
-            EventHandler::WithKeyboard(f) => EventHandler::WithKeyboard(f·clone()),
-            EventHandler::WithMouse(f) => EventHandler::WithMouse(f·clone()),
-        }
+        // In WASM, handlers are function pointers (i64 handles) with Copy semantics.
+        // Cloning returns the same handle value - no heap allocation needed.
+        *self
     }
 }
 

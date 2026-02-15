@@ -58,10 +58,16 @@ impl WasmCompiler {
                     } else {
                         // File-based module - load and process
                         let module_name = module.name.name.clone();
+                        // Load the module file FIRST, using current source_dir
                         let items = self.load_module_file(&module_name)?;
+                        // THEN update source_dir for nested module resolution
+                        let new_source_dir = self.get_module_source_dir(&module_name)
+                            .unwrap_or_else(|| self.source_dir.clone());
+                        let old_source_dir = std::mem::replace(&mut self.source_dir, new_source_dir);
                         self.module_path.push(module_name);
                         self.collect_use_declarations(&items)?;
                         self.module_path.pop();
+                        self.source_dir = old_source_dir;
                     }
                 }
                 _ => {}
@@ -82,10 +88,16 @@ impl WasmCompiler {
                     } else {
                         // File-based module - load and process
                         let module_name = module.name.name.clone();
+                        // Load the module file FIRST, using current source_dir
                         let items = self.load_module_file(&module_name)?;
+                        // THEN update source_dir for nested module resolution
+                        let new_source_dir = self.get_module_source_dir(&module_name)
+                            .unwrap_or_else(|| self.source_dir.clone());
+                        let old_source_dir = std::mem::replace(&mut self.source_dir, new_source_dir);
                         self.module_path.push(module_name);
                         self.collect_all_type_defs(&items)?;
                         self.module_path.pop();
+                        self.source_dir = old_source_dir;
                     }
                 }
                 _ => {
@@ -113,10 +125,16 @@ impl WasmCompiler {
                     } else {
                         // File-based module - load and process
                         let module_name = module.name.name.clone();
+                        // Load the module file FIRST, using current source_dir
                         let items = self.load_module_file(&module_name)?;
+                        // THEN update source_dir for nested module resolution
+                        let new_source_dir = self.get_module_source_dir(&module_name)
+                            .unwrap_or_else(|| self.source_dir.clone());
+                        let old_source_dir = std::mem::replace(&mut self.source_dir, new_source_dir);
                         self.module_path.push(module_name);
                         self.prescan_all_functions(&items)?;
                         self.module_path.pop();
+                        self.source_dir = old_source_dir;
                     }
                 }
                 _ => {}
@@ -150,13 +168,46 @@ impl WasmCompiler {
     /// Load a file-based module and collect its function signatures.
     fn load_and_collect_module_sigs(&mut self, module: &Module) -> WasmResult<()> {
         let module_name = &module.name.name;
+
+        // Load the module file FIRST, using current source_dir
         let items = self.load_module_file(module_name)?;
+
+        // THEN update source_dir for nested module resolution
+        let new_source_dir = self.get_module_source_dir(module_name)
+            .unwrap_or_else(|| self.source_dir.clone());
+        let old_source_dir = std::mem::replace(&mut self.source_dir, new_source_dir);
 
         self.module_path.push(module_name.clone());
         self.collect_all_function_sigs(&items)?;
         self.module_path.pop();
 
+        self.source_dir = old_source_dir;
         Ok(())
+    }
+
+    /// Get the directory that should become source_dir for a module.
+    /// For foo.sigil, returns the current source_dir.
+    /// For foo/mod.sigil, returns the foo/ directory.
+    fn get_module_source_dir(&self, module_name: &str) -> Option<std::path::PathBuf> {
+        if self.source_dir.as_os_str().is_empty() {
+            return None;
+        }
+
+        // Try foo.sigil first
+        let file_path = self.source_dir.join(format!("{}.sigil", module_name));
+        if file_path.exists() {
+            // File-style module: source_dir stays the same
+            return Some(self.source_dir.clone());
+        }
+
+        // Then try foo/mod.sigil
+        let dir_path = self.source_dir.join(module_name).join("mod.sigil");
+        if dir_path.exists() {
+            // Directory-style module: source_dir becomes the module's directory
+            return Some(self.source_dir.join(module_name));
+        }
+
+        None
     }
 
     /// Load a file-based module and return its parsed items.
@@ -507,9 +558,141 @@ impl WasmCompiler {
                 }
                 self.module_path.pop();
             }
+            Item::ExternBlock(extern_block) => {
+                // Register extern functions as WASM imports
+                self.register_extern_block(extern_block)?;
+            }
+            Item::Actor(actor) => {
+                // Register actor handlers and methods with qualified names
+                let actor_name = actor.name.name.clone();
+                self.module_path.push(actor_name.clone());
+
+                // Register message handlers as ActorName::on_MessageName
+                for handler in &actor.handlers {
+                    let handler_name = format!("on_{}", handler.message.name);
+                    self.register_handler_sig(&handler_name, handler)?;
+                }
+
+                // Register methods as ActorName::method_name
+                for method in &actor.methods {
+                    self.register_function_sig(method)?;
+                }
+
+                self.module_path.pop();
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    /// Register an extern block's functions as WASM imports.
+    fn register_extern_block(&mut self, extern_block: &crate::ast::ExternBlock) -> WasmResult<()> {
+        use crate::ast::ExternItem;
+
+        // The ABI determines the import module name (e.g., "js" -> "env" or "js")
+        let module_name = match extern_block.abi.as_str() {
+            "js" | "JavaScript" => "env", // Standard WASM import module for JS
+            "C" | "system" => "env",
+            other => other,
+        };
+
+        for item in &extern_block.items {
+            match item {
+                ExternItem::Function(func) => {
+                    self.register_extern_function(module_name, func)?;
+                }
+                ExternItem::Type(ty) => {
+                    // Extern types are opaque - just track the name
+                    // They're typically used as handles (represented as i64)
+                    self.extern_types.insert(ty.name.name.clone());
+                }
+                ExternItem::Static(_) => {
+                    // Extern statics could be global imports - not yet supported
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Register a single extern function as a WASM import.
+    fn register_extern_function(
+        &mut self,
+        module_name: &str,
+        func: &crate::ast::ExternFunction,
+    ) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
+        let func_name = &func.name.name;
+
+        // Build parameter types - all extern params are i64 (handles/values)
+        // Special case: &str params need i32 (pointer) + i32 (length) in some ABIs
+        let param_count = func.params.len();
+        let params: Vec<ValType> = vec![ValType::I64; param_count];
+
+        // Return type - i64 for values, empty for void
+        let results: Vec<ValType> = if func.return_type.is_some() {
+            vec![ValType::I64]
+        } else {
+            vec![]
+        };
+
+        // Check if this is a method (first param is &self or &mut self)
+        let is_method = func.params.first().map_or(false, |p| {
+            match &p.pattern {
+                crate::ast::Pattern::Ident { name, .. } => {
+                    name.name == "this" || name.name == "self"
+                }
+                _ => false,
+            }
+        });
+
+        // Register the import
+        let import_idx = self.imports.add_import(module_name, func_name, params, results);
+
+        // Also register with qualified name for method resolution
+        // e.g., "Storage::get_item" for extern method
+        if is_method {
+            // Extract type name from first param (e.g., "&Storage" -> "Storage")
+            if let Some(first_param) = func.params.first() {
+                if let Some(type_name) = self.extract_type_name_from_param(first_param) {
+                    let qualified_name = format!("{}::{}", type_name, func_name);
+                    self.func_map.insert(qualified_name, import_idx);
+                }
+            }
+        }
+
+        // Register by simple name too
+        self.func_map.insert(func_name.clone(), import_idx);
+
+        Ok(())
+    }
+
+    /// Extract type name from a parameter (e.g., "&Storage" -> "Storage").
+    fn extract_type_name_from_param(&self, param: &crate::ast::Param) -> Option<String> {
+        use crate::ast::TypeExpr;
+
+        let ty = &param.ty;
+        match ty {
+            TypeExpr::Reference { inner, .. } => {
+                self.extract_type_name_from_type(inner)
+            }
+            _ => self.extract_type_name_from_type(ty),
+        }
+    }
+
+    /// Extract type name from a type expression.
+    fn extract_type_name_from_type(&self, ty: &crate::ast::TypeExpr) -> Option<String> {
+        use crate::ast::TypeExpr;
+
+        match ty {
+            TypeExpr::Path(path) => {
+                path.segments.last().map(|s| s.ident.name.clone())
+            }
+            TypeExpr::Reference { inner, .. } => {
+                self.extract_type_name_from_type(inner)
+            }
+            _ => None,
+        }
     }
 
     /// Convert a type path to a string for use in qualified names.
@@ -549,7 +732,7 @@ impl WasmCompiler {
             Item::TypeAlias(_) => Ok(()), // Type aliases are compile-time only
             Item::Module(module) => self.compile_module(module),
             Item::Use(_) => Ok(()), // Use declarations are resolved during parsing
-            Item::Actor(_) => Err(WasmError::unsupported("actors")),
+            Item::Actor(actor) => self.compile_actor(actor),
             Item::ExternBlock(_) => Ok(()), // Extern functions are imports
             Item::Macro(_) => Ok(()), // Macro definitions are compile-time only
             Item::MacroInvocation(mac) => self.compile_macro_invocation(mac),
@@ -575,7 +758,12 @@ impl WasmCompiler {
             StructFields::Unit => {}
         }
 
-        self.struct_layouts.insert(def.name.name.clone(), layout);
+        // Register with both simple and qualified names
+        self.struct_layouts.insert(def.name.name.clone(), layout.clone());
+        let qualified_name = self.qualify_name(&def.name.name);
+        if qualified_name != def.name.name {
+            self.struct_layouts.insert(qualified_name, layout);
+        }
         Ok(())
     }
 
@@ -611,7 +799,12 @@ impl WasmCompiler {
             }
         }
 
-        self.enum_layouts.insert(def.name.name.clone(), layout);
+        // Register with both simple and qualified names
+        self.enum_layouts.insert(def.name.name.clone(), layout.clone());
+        let qualified_name = self.qualify_name(&def.name.name);
+        if qualified_name != def.name.name {
+            self.enum_layouts.insert(qualified_name, layout);
+        }
         Ok(())
     }
 
@@ -644,6 +837,14 @@ impl WasmCompiler {
         // Also register simple name for backwards compatibility
         if !self.module_path.is_empty() {
             self.func_map.insert(func.name.name.clone(), func_idx);
+
+            // For impl methods, also register with short Type::method format
+            // This allows method resolution when the type is known without full path
+            // e.g., VNode::attr in addition to qliphoth::core::vdom::VNode::attr
+            if let Some(type_name) = self.module_path.last() {
+                let short_qualified = format!("{}::{}", type_name, func.name.name);
+                self.func_map.insert(short_qualified, func_idx);
+            }
         }
 
         // Create function (body will be compiled later)
@@ -662,6 +863,61 @@ impl WasmCompiler {
             params_with_names,
             result_types,
             is_exported,
+        );
+
+        self.functions.push(compiled_func);
+
+        Ok(())
+    }
+
+    /// Register a message handler signature (for actors).
+    fn register_handler_sig(&mut self, handler_name: &str, handler: &crate::ast::MessageHandler) -> WasmResult<()> {
+        // Build qualified name
+        let qualified_name = self.qualify_name(handler_name);
+
+        // Skip if already registered
+        if self.func_map.contains_key(&qualified_name) {
+            return Ok(());
+        }
+
+        // Handler has implicit self parameter + explicit params
+        // For WASM, we pass actor state as globals, so params are just the message params
+        let param_types: Vec<ValType> = handler.params.iter().map(|_| ValType::I64).collect();
+
+        // Result type
+        let result_types = if handler.return_type.is_some() {
+            vec![ValType::I64]
+        } else {
+            vec![] // Unit return
+        };
+
+        let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
+        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+
+        // Record function index with both qualified and simple names
+        self.func_map.insert(qualified_name.clone(), func_idx);
+        self.func_map.insert(handler_name.to_string(), func_idx);
+
+        // Also register short qualified name (ActorName::on_Message)
+        if let Some(actor_name) = self.module_path.last() {
+            let short_qualified = format!("{}::{}", actor_name, handler_name);
+            self.func_map.insert(short_qualified, func_idx);
+        }
+
+        // Create function placeholder
+        let params_with_names: Vec<(String, ValType)> = handler
+            .params
+            .iter()
+            .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64))
+            .collect();
+
+        let compiled_func = CompiledFunction::new(
+            handler_name.to_string(),
+            type_idx,
+            func_idx,
+            params_with_names,
+            result_types,
+            false, // Handlers are not exported directly
         );
 
         self.functions.push(compiled_func);
@@ -823,9 +1079,15 @@ impl WasmCompiler {
             let offset = self.add_string(s);
             let idx = self.globals.len() as u32;
             self.globals.push((ValType::I64, false, offset as i64));
+            // Register with both simple and qualified names
             self.global_map.insert(def.name.name.clone(), idx);
+            let qualified_name = self.qualify_name(&def.name.name);
+            if qualified_name != def.name.name {
+                self.global_map.insert(qualified_name.clone(), idx);
+            }
             // Also track this as a string constant for proper access
             self.string_consts.insert(def.name.name.clone(), offset);
+            self.string_consts.insert(qualified_name, offset);
             return Ok(());
         }
 
@@ -841,8 +1103,14 @@ impl WasmCompiler {
                 let offset = self.add_string(s);
                 let idx = self.globals.len() as u32;
                 self.globals.push((ValType::I64, false, offset as i64));
+                // Register with both simple and qualified names
                 self.global_map.insert(def.name.name.clone(), idx);
+                let qualified_name = self.qualify_name(&def.name.name);
+                if qualified_name != def.name.name {
+                    self.global_map.insert(qualified_name.clone(), idx);
+                }
                 self.string_consts.insert(def.name.name.clone(), offset);
+                self.string_consts.insert(qualified_name, offset);
                 return Ok(());
             }
         }
@@ -853,7 +1121,12 @@ impl WasmCompiler {
         // Add as global (immutable)
         let idx = self.globals.len() as u32;
         self.globals.push((ValType::I64, false, const_val));
+        // Register with both simple and qualified names
         self.global_map.insert(def.name.name.clone(), idx);
+        let qualified_name = self.qualify_name(&def.name.name);
+        if qualified_name != def.name.name {
+            self.global_map.insert(qualified_name, idx);
+        }
         Ok(())
     }
 
@@ -875,7 +1148,12 @@ impl WasmCompiler {
             }
         }
 
+        // Register with both simple and qualified names
         self.global_map.insert(def.name.name.clone(), idx);
+        let qualified_name = self.qualify_name(&def.name.name);
+        if qualified_name != def.name.name {
+            self.global_map.insert(qualified_name, idx);
+        }
         Ok(())
     }
 
@@ -952,14 +1230,157 @@ impl WasmCompiler {
         } else {
             // File-based module - load and compile
             let module_name = module.name.name.clone();
+
+            // Load the module file FIRST, using current source_dir
             let items = self.get_or_load_module_items(&module_name)?;
+
+            // THEN update source_dir for nested module resolution
+            let new_source_dir = self.get_module_source_dir(&module_name)
+                .unwrap_or_else(|| self.source_dir.clone());
+            let old_source_dir = std::mem::replace(&mut self.source_dir, new_source_dir);
+
             for item in &items {
                 self.compile_item(&item.node)?;
             }
+
+            self.source_dir = old_source_dir;
         }
 
         // Pop module name from path
         self.module_path.pop();
+
+        Ok(())
+    }
+
+    /// Compile an actor definition.
+    ///
+    /// Actors are compiled as:
+    /// - State fields -> WASM globals (named ActorName_field)
+    /// - Message handlers -> functions (named ActorName::on_Message)
+    /// - Methods -> functions (named ActorName::method)
+    fn compile_actor(&mut self, actor: &crate::ast::ActorDef) -> WasmResult<()> {
+        let actor_name = actor.name.name.clone();
+
+        // 1. Register state fields as globals
+        for field in &actor.state {
+            let global_name = format!("{}_{}", actor_name, field.name.name);
+            let qualified_global = self.qualify_name(&global_name);
+
+            // Get initial value (default to 0 if not provided)
+            let init_val = if let Some(init_expr) = &field.default {
+                self.eval_const_expr(init_expr).unwrap_or(0)
+            } else {
+                0
+            };
+
+            let idx = self.globals.len() as u32;
+            self.globals.push((ValType::I64, true, init_val)); // Actor state is mutable
+
+            // Register with both simple and qualified names
+            self.global_map.insert(global_name.clone(), idx);
+            if qualified_global != global_name {
+                self.global_map.insert(qualified_global, idx);
+            }
+        }
+
+        // 2. Push actor name onto module path for qualified method names
+        self.module_path.push(actor_name.clone());
+
+        // Track the current actor context for self resolution
+        let prev_actor = self.current_actor.take();
+        self.current_actor = Some(actor_name.clone());
+
+        // 3. Compile message handlers
+        for handler in &actor.handlers {
+            let handler_name = format!("on_{}", handler.message.name);
+            self.compile_handler(&actor_name, &handler_name, handler)?;
+        }
+
+        // 4. Compile methods
+        for method in &actor.methods {
+            self.compile_actor_method(&actor_name, method)?;
+        }
+
+        // Restore previous actor context
+        self.current_actor = prev_actor;
+
+        // Pop actor name from path
+        self.module_path.pop();
+
+        Ok(())
+    }
+
+    /// Compile a message handler.
+    fn compile_handler(
+        &mut self,
+        actor_name: &str,
+        handler_name: &str,
+        handler: &crate::ast::MessageHandler,
+    ) -> WasmResult<()> {
+        // Find the handler function index
+        let qualified_name = self.qualify_name(handler_name);
+        let func_idx = self
+            .func_map
+            .get(&qualified_name)
+            .or_else(|| self.func_map.get(handler_name))
+            .copied()
+            .ok_or_else(|| WasmError::internal(format!(
+                "handler not registered: '{}' (qualified: '{}')",
+                handler_name, qualified_name
+            )))?;
+
+        // Get the function list index
+        let import_count = self.imports.import_count();
+        let fn_list_idx = (func_idx - import_count) as usize;
+
+        // Set current function context
+        self.current_fn_idx = Some(fn_list_idx);
+
+        // Track actor name for self.field resolution
+        let prev_actor = self.current_actor.take();
+        self.current_actor = Some(actor_name.to_string());
+
+        // Parameters are already registered in register_handler_sig as params
+        // They will be accessible via get_local by name
+
+        // Compile the handler body
+        self.compile_block(&handler.body)?;
+
+        // If there's no explicit return and no trailing expression, push unit
+        if handler.return_type.is_none() && handler.body.expr.is_none() {
+            // No return value needed
+        } else if handler.body.expr.is_none() {
+            // Handler has return type but no trailing expression - push 0
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
+        }
+
+        // Add end instruction
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::End);
+
+        // Restore previous actor context
+        self.current_actor = prev_actor;
+
+        // Clear function context
+        self.current_fn_idx = None;
+
+        Ok(())
+    }
+
+    /// Compile an actor method.
+    fn compile_actor_method(&mut self, actor_name: &str, method: &Function) -> WasmResult<()> {
+        // Track actor name for self.field resolution
+        let prev_actor = self.current_actor.take();
+        self.current_actor = Some(actor_name.to_string());
+
+        // Compile as regular function - self references will resolve via current_actor
+        self.compile_function(method)?;
+
+        // Restore previous actor context
+        self.current_actor = prev_actor;
 
         Ok(())
     }
@@ -1049,10 +1470,23 @@ trait ParamExt {
 impl ParamExt for Param {
     fn pattern_name(&self) -> Option<String> {
         use crate::ast::Pattern;
-        match &self.pattern {
-            Pattern::Ident { name, .. } => Some(name.name.clone()),
-            _ => None,
-        }
+        extract_pattern_name(&self.pattern)
+    }
+}
+
+/// Recursively extract the binding name from a pattern.
+/// Handles &self, &mut self, ref self, and plain self patterns.
+fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
+    use crate::ast::Pattern;
+    match pattern {
+        // Direct identifier: self, x, etc.
+        Pattern::Ident { name, .. } => Some(name.name.clone()),
+        // Reference pattern: &self, &mut self, &x
+        Pattern::Ref { pattern: inner, .. } => extract_pattern_name(inner),
+        // Ref binding pattern: ref x, ref mut x
+        Pattern::RefBinding { name, .. } => Some(name.name.clone()),
+        // Other patterns don't have simple names
+        _ => None,
     }
 }
 

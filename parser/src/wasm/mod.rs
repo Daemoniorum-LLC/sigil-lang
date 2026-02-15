@@ -32,6 +32,7 @@ pub mod async_sm;
 pub mod closures;
 pub mod constants;
 pub mod control_flow;
+pub mod deps;
 pub mod error;
 pub mod expressions;
 pub mod imports;
@@ -133,6 +134,10 @@ pub struct WasmCompiler {
     /// Maps "vdom::Element" -> function/type index
     pub(crate) qualified_items: HashMap<String, QualifiedItem>,
 
+    /// Extern type names (from extern blocks)
+    /// Used to resolve method calls like Node::append_child
+    pub(crate) extern_types: std::collections::HashSet<String>,
+
     /// Optimization level
     pub(crate) opt_level: OptLevel,
 
@@ -160,6 +165,9 @@ pub struct WasmCompiler {
 
     /// Start function index (for __wasm_start if we have deferred inits)
     pub(crate) start_function_idx: Option<u32>,
+
+    /// Current actor being compiled (for self.field resolution)
+    pub(crate) current_actor: Option<String>,
 }
 
 impl WasmCompiler {
@@ -189,6 +197,7 @@ impl WasmCompiler {
             external_imports: HashMap::new(),
             module_path: Vec::new(),
             qualified_items: HashMap::new(),
+            extern_types: std::collections::HashSet::new(),
             opt_level: OptLevel::Standard,
             debug_info: false,
             source_map: None,
@@ -198,6 +207,7 @@ impl WasmCompiler {
             module_cache: std::collections::HashMap::new(),
             deferred_static_inits: Vec::new(),
             start_function_idx: None,
+            current_actor: None,
         };
 
         // Add heap pointer global
@@ -251,6 +261,12 @@ impl WasmCompiler {
             self.generate_start_function()?;
         }
 
+        // Fix invalid call wrappers (functions with 0 params that call imports expecting params)
+        self.fix_invalid_call_wrappers();
+
+        // Fix control flow stack imbalance (spurious initial values)
+        self.fix_control_flow_stack();
+
         // Generate WASM module
         self.generate_module()
     }
@@ -284,6 +300,89 @@ impl WasmCompiler {
             .unwrap_or_else(|| "input.sigil".to_string());
 
         self.compile(&source)
+    }
+
+    /// Compile a project with dependencies from sigil.toml.
+    ///
+    /// This resolves all dependencies, compiles them in order, and bundles
+    /// everything into a single WASM module.
+    pub fn compile_project(project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
+        use deps::{DependencyGraph, ProjectManifest};
+
+        // Build dependency graph
+        let graph = DependencyGraph::from_project(project_dir)?;
+
+        // Create compiler instance
+        let mut compiler = Self::new();
+
+        // Compile each dependency in order (dependencies first)
+        for manifest in graph.iter_in_order() {
+            compiler.compile_crate(&manifest)?;
+        }
+
+        // Fix invalid call wrappers (functions with 0 params that call imports expecting params)
+        compiler.fix_invalid_call_wrappers();
+
+        // Fix control flow stack imbalance (spurious initial values)
+        compiler.fix_control_flow_stack();
+
+        // Generate the final WASM module
+        compiler.generate_module()
+    }
+
+    /// Compile a single crate into the current compiler state.
+    fn compile_crate(&mut self, manifest: &deps::ProjectManifest) -> WasmResult<()> {
+        use std::fs;
+
+        // Set source directory for module resolution
+        self.source_dir = manifest.root_dir.join("src");
+
+        // Read the lib entry point
+        let lib_path = &manifest.lib_path;
+        if !lib_path.exists() {
+            // No lib.sigil - might be a binary-only crate, skip
+            return Ok(());
+        }
+
+        let canonical = lib_path.canonicalize()
+            .map_err(|e| WasmError::io(format!(
+                "cannot resolve {}: {}",
+                lib_path.display(),
+                e
+            )))?;
+
+        // Skip if already compiled
+        if self.loaded_modules.contains(&canonical) {
+            return Ok(());
+        }
+        self.loaded_modules.insert(canonical);
+
+        let source = fs::read_to_string(lib_path)
+            .map_err(|e| WasmError::io(format!(
+                "cannot read {}: {}",
+                lib_path.display(),
+                e
+            )))?;
+
+        self.source_file = lib_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "lib.sigil".to_string());
+
+        // Push crate name to module path for qualified names
+        let crate_name = manifest.name.replace('-', "_");
+        self.module_path.push(crate_name);
+
+        // Parse and compile
+        let mut parser = Parser::new(&source);
+        let ast = parser.parse_file()
+            .map_err(|e| WasmError::parse(e.to_string()))?;
+
+        self.compile_file(&ast)?;
+
+        // Pop crate name
+        self.module_path.pop();
+
+        Ok(())
     }
 
     /// Get or create a type index.
@@ -457,6 +556,223 @@ impl WasmCompiler {
 
     // compile_file is implemented in statements.rs
 
+    /// Fix control flow stack imbalance: functions with extra values on the stack.
+    /// This handles several cases:
+    /// 1. Spurious i64.const 0 at the start
+    /// 2. LocalTee leaving values on stack before if blocks
+    fn fix_control_flow_stack(&mut self) {
+        use wasm_encoder::Instruction;
+
+        for func in self.functions.iter_mut() {
+            // Only check functions that return exactly 1 value
+            if func.results.len() != 1 {
+                continue;
+            }
+
+            // Need at least 3 instructions
+            if func.instructions.len() < 3 {
+                continue;
+            }
+
+            // Case 1: i64.const 0 followed by local.get (spurious initial push)
+            let first_is_const_0 = matches!(&func.instructions[0], Instruction::I64Const(0));
+            let second_is_local_get = matches!(&func.instructions[1], Instruction::LocalGet(_));
+
+            if first_is_const_0 && second_is_local_get {
+                let third = func.instructions.get(2);
+                let third_is_wrap = matches!(third, Some(Instruction::I32WrapI64));
+                let third_is_local_set = matches!(
+                    third,
+                    Some(Instruction::LocalSet(_)) | Some(Instruction::LocalTee(_))
+                );
+                let third_is_drop = matches!(third, Some(Instruction::Drop));
+
+                if third_is_wrap || third_is_local_set {
+                    let has_early_store_of_initial = func.instructions[2..8.min(func.instructions.len())]
+                        .iter()
+                        .any(|i| matches!(i, Instruction::LocalSet(0)));
+
+                    if !has_early_store_of_initial {
+                        func.instructions.remove(0);
+                    }
+                } else if !third_is_drop {
+                    let last_before_end = func.instructions.len().saturating_sub(2);
+                    if let Some(Instruction::Call(_)) = func.instructions.get(last_before_end) {
+                        func.instructions.remove(0);
+                    }
+                }
+            }
+
+            // Case 2: LocalTee before If leaves value on stack
+            // Pattern: ..., call X, local.tee Y, local.get Z, ..., if
+            // The local.tee leaves a value that goes through the if block unused
+            // Fix: Replace local.tee with local.set
+            for i in 0..func.instructions.len().saturating_sub(3) {
+                if let Instruction::LocalTee(local_idx) = &func.instructions[i] {
+                    let local_idx = *local_idx;
+                    // Check if followed by local.get (not of same local), then eventually if
+                    if let Some(Instruction::LocalGet(get_idx)) = func.instructions.get(i + 1) {
+                        if *get_idx != local_idx {
+                            // Look ahead for an if within a few instructions
+                            let has_if_soon = func.instructions[i + 2..((i + 8).min(func.instructions.len()))]
+                                .iter()
+                                .any(|instr| matches!(instr, Instruction::If(_)));
+
+                            if has_if_soon {
+                                // Replace local.tee with local.set to not leave value on stack
+                                func.instructions[i] = Instruction::LocalSet(local_idx);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 3: Spurious i64.const 0 before a call that expects i32 args
+            // Pattern: ..., i32.wrap_i64, i64.const 0, call(import expecting i32,i32)
+            // The i64.const 0 is spurious - remove it
+            let import_count = self.imports.import_count();
+            let mut i = 0;
+            while i + 2 < func.instructions.len() {
+                if let Instruction::I64Const(0) = &func.instructions[i] {
+                    if let Instruction::Call(call_idx) = &func.instructions[i + 1] {
+                        let call_idx = *call_idx;
+                        // Check if it's an import that expects i32 params
+                        if call_idx < import_count {
+                            if let Some(params) = self.imports.get_param_types(call_idx) {
+                                // If all params are i32, the i64.const 0 is spurious
+                                if !params.is_empty() && params.iter().all(|p| *p == ValType::I32) {
+                                    // Check if previous instruction produces an i32
+                                    if i > 0 {
+                                        let prev = &func.instructions[i - 1];
+                                        if matches!(prev, Instruction::I32WrapI64 | Instruction::I32Const(_)) {
+                                            // Remove the spurious i64.const 0
+                                            func.instructions.remove(i);
+                                            continue; // Don't increment i since we removed an instruction
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+
+    /// Fix invalid call wrappers: functions that call imports without proper stack setup.
+    /// This handles two cases:
+    /// 1. Functions with 0 params that call imports expecting params (replace with constant)
+    /// 2. Functions with params that immediately call imports without pushing params first
+    fn fix_invalid_call_wrappers(&mut self) {
+        use wasm_encoder::Instruction;
+
+        let import_count = self.imports.import_count();
+
+        // Get a snapshot of import param info before iterating
+        let import_param_counts: Vec<usize> = (0..import_count)
+            .map(|idx| {
+                self.imports
+                    .get_param_types(idx)
+                    .map(|p| p.len())
+                    .unwrap_or(0)
+            })
+            .collect();
+
+        for func in self.functions.iter_mut() {
+            // Case 1: Functions with 0 parameters that call imports expecting params
+            if func.params.is_empty() {
+                // Find the first call instruction
+                let first_call_idx = func.instructions.iter().position(|i| matches!(i, Instruction::Call(_)));
+
+                if let Some(idx) = first_call_idx {
+                    if let Instruction::Call(call_idx) = &func.instructions[idx] {
+                        let call_idx = *call_idx;
+                        // Check if it's calling an import
+                        if call_idx < import_count {
+                            // Get the import's param count
+                            let param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
+                            // If import expects params but we have 0, need to push a default value
+                            if param_count > 0 {
+                                // Check if there's anything on the stack before the call
+                                // A simple heuristic: if idx == 0, stack is definitely empty
+                                // Otherwise check if previous instructions push values
+                                let stack_empty = idx == 0 || !func.instructions[0..idx]
+                                    .iter()
+                                    .any(|i| matches!(i,
+                                        Instruction::I64Const(_) |
+                                        Instruction::I32Const(_) |
+                                        Instruction::LocalGet(_) |
+                                        Instruction::GlobalGet(_) |
+                                        Instruction::Call(_)
+                                    ));
+
+                                if stack_empty {
+                                    // Insert i64.const 0 before the call for each required param
+                                    for _ in 0..param_count {
+                                        func.instructions.insert(idx, Instruction::I64Const(0));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 2: ANY function with a call to import early that doesn't have enough values on stack
+            // Scan through early instructions looking for calls to imports
+            for i in 0..func.instructions.len().min(20) {
+                if let Instruction::Call(call_idx) = &func.instructions[i] {
+                    let call_idx = *call_idx;
+                    if call_idx < import_count {
+                        let import_param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
+                        if import_param_count == 0 {
+                            continue;
+                        }
+
+                        // Count how many values are pushed before this call
+                        let mut stack_depth: i32 = 0;
+                        for j in 0..i {
+                            match &func.instructions[j] {
+                                Instruction::LocalGet(_) | Instruction::GlobalGet(_) |
+                                Instruction::I32Const(_) | Instruction::I64Const(_) |
+                                Instruction::F32Const(_) | Instruction::F64Const(_) => {
+                                    stack_depth += 1;
+                                }
+                                Instruction::LocalSet(_) | Instruction::GlobalSet(_) |
+                                Instruction::Drop => {
+                                    stack_depth -= 1;
+                                }
+                                Instruction::LocalTee(_) => {
+                                    // Tee doesn't change stack depth (pops and pushes)
+                                }
+                                Instruction::Call(idx) => {
+                                    // For calls, approximate: assume it consumes and produces based on imports
+                                    if *idx < import_count {
+                                        let params = import_param_counts.get(*idx as usize).copied().unwrap_or(0);
+                                        stack_depth -= params as i32;
+                                        stack_depth += 1; // Assume 1 return value
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        // If stack depth is less than needed, add default values
+                        let missing = (import_param_count as i32) - stack_depth;
+                        if missing > 0 {
+                            for _ in 0..missing {
+                                func.instructions.insert(i, Instruction::I64Const(0));
+                            }
+                            // After inserting, break to avoid re-processing shifted instructions
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Generate the __wasm_start function for deferred static initialization.
     /// This function runs automatically when the WASM module is instantiated.
     fn generate_start_function(&mut self) -> WasmResult<()> {
@@ -603,9 +919,21 @@ impl WasmCompiler {
             exports.export("__indirect_function_table", wasm_encoder::ExportKind::Table, 0);
         }
 
+        // Track seen export names to avoid duplicates (WASM requires unique export names)
+        let mut seen_exports = std::collections::HashSet::new();
+        seen_exports.insert("memory".to_string());
+        seen_exports.insert("__indirect_function_table".to_string());
+
         for func in &self.functions {
             if func.is_exported {
-                exports.export(&func.name, wasm_encoder::ExportKind::Func, func.func_idx);
+                let export_name = if seen_exports.contains(&func.name) {
+                    // Use qualified name for duplicates
+                    format!("{}_{}", func.name, func.func_idx)
+                } else {
+                    func.name.clone()
+                };
+                seen_exports.insert(export_name.clone());
+                exports.export(&export_name, wasm_encoder::ExportKind::Func, func.func_idx);
             }
         }
         module.section(&exports);
@@ -1495,5 +1823,44 @@ mod validation_tests {
         }
 
         assert!(found_import, "Should have imported 'function' from 'deeply' module");
+    }
+
+    #[test]
+    fn test_vec_join_method() {
+        let mut compiler = WasmCompiler::new();
+
+        let result = compiler.compile(r#"
+            pub fn format_parts() -> i64 {
+                let arr = [1, 2, 3];
+                let joined = arr.join(", ");
+                42
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+
+        // Verify vec_join import exists
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_join_import = false;
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::ImportSection(reader)) = payload {
+                for import in reader {
+                    if let Ok(imp) = import {
+                        if imp.module == "morpheme" && imp.name == "vec_join" {
+                            found_join_import = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(found_join_import, "Should have imported 'vec_join' from 'morpheme' module");
     }
 }

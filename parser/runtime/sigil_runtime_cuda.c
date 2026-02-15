@@ -320,3 +320,255 @@ int64_t sigil_cuda_get_total_memory(void) {
     cuDeviceTotalMem(&total, g_cuda_device);
     return (int64_t)total;
 }
+
+/* ============================================================================
+ * Nihil-compatible aliases (cuda_* instead of sigil_cuda_*)
+ * These match the extern "C" declarations in nihil-cuda
+ * ============================================================================ */
+
+void cuda_init(size_t device) {
+    (void)device;  /* Currently single-device */
+    sigil_cuda_init();
+}
+
+uint8_t* cuda_malloc(size_t size) {
+    return (uint8_t*)sigil_cuda_malloc((int64_t)size);
+}
+
+void cuda_free(uint8_t* ptr) {
+    sigil_cuda_free((int64_t)(uintptr_t)ptr);
+}
+
+void cuda_memset(uint8_t* ptr, int32_t value, size_t size) {
+    if (!g_cuda_initialized) return;
+    cuMemsetD8((CUdeviceptr)ptr, (unsigned char)value, size);
+}
+
+void cuda_memcpy_htod(uint8_t* dst, const uint8_t* src, size_t size) {
+    sigil_cuda_memcpy_h2d((int64_t)(uintptr_t)dst, (void*)src, (int64_t)size);
+}
+
+void cuda_memcpy_dtoh(uint8_t* dst, const uint8_t* src, size_t size) {
+    sigil_cuda_memcpy_d2h(dst, (int64_t)(uintptr_t)src, (int64_t)size);
+}
+
+void cuda_memcpy_dtod(uint8_t* dst, const uint8_t* src, size_t size) {
+    sigil_cuda_memcpy_d2d((int64_t)(uintptr_t)dst, (int64_t)(uintptr_t)src, (int64_t)size);
+}
+
+void cuda_device_synchronize(void) {
+    sigil_cuda_sync();
+}
+
+/* Returns (free, total) memory - packed as two size_t values */
+typedef struct { size_t free; size_t total; } CudaMemInfo;
+CudaMemInfo cuda_mem_get_info(void) {
+    CudaMemInfo info = {0, 0};
+    if (g_cuda_initialized) {
+        cuMemGetInfo(&info.free, &info.total);
+    }
+    return info;
+}
+
+/* Device properties structure matching Nihil's CudaDeviceProperties */
+typedef struct {
+    char name[256];
+    size_t total_memory;
+    int32_t compute_major;
+    int32_t compute_minor;
+    int32_t multiprocessor_count;
+    int32_t max_threads_per_block;
+    int32_t warp_size;
+} CudaDeviceProperties;
+
+CudaDeviceProperties cuda_get_device_properties(size_t device) {
+    CudaDeviceProperties props = {0};
+    if (!g_cuda_initialized && !sigil_cuda_init()) return props;
+
+    CUdevice dev;
+    if (cuDeviceGet(&dev, (int)device) != CUDA_SUCCESS) return props;
+
+    cuDeviceGetName(props.name, sizeof(props.name), dev);
+    cuDeviceTotalMem(&props.total_memory, dev);
+    cuDeviceGetAttribute(&props.compute_major, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, dev);
+    cuDeviceGetAttribute(&props.compute_minor, CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, dev);
+    cuDeviceGetAttribute(&props.multiprocessor_count, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, dev);
+    cuDeviceGetAttribute(&props.max_threads_per_block, CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK, dev);
+    cuDeviceGetAttribute(&props.warp_size, CU_DEVICE_ATTRIBUTE_WARP_SIZE, dev);
+
+    return props;
+}
+
+/* Forward declarations for functions from sigil_runtime.c */
+extern void* sigil_vec_new(int64_t capacity);
+extern void sigil_vec_push(void* vec_ptr, int64_t value);
+
+/* Compile PTX string to cubin - returns Vec<u8> (as SigilVec*) */
+void* cuda_compile_ptx(const uint8_t* ptx, size_t len) {
+    if (!g_cuda_initialized && !sigil_cuda_init()) return NULL;
+
+    /* For now, just load the PTX directly - cuModuleLoadDataEx handles PTX */
+    /* In a full implementation, we'd use nvJitLink or similar */
+
+    /* Create a Vec to hold the PTX (which can be loaded as-is) */
+    /* This is a simplified version - real impl would compile to cubin */
+    void* vec = sigil_vec_new((int64_t)len);
+    if (!vec) return NULL;
+
+    for (size_t i = 0; i < len; i++) {
+        sigil_vec_push(vec, (int64_t)ptx[i]);
+    }
+    return vec;
+}
+
+/* CudaModule structure */
+typedef struct {
+    uint64_t handle;  /* CUmodule */
+} CudaModule;
+
+/* Load cubin/PTX and return module handle */
+CudaModule cuda_load_module(const uint8_t* data, size_t len) {
+    CudaModule mod = {0};
+    if (!g_cuda_initialized && !sigil_cuda_init()) return mod;
+
+    CUmodule module;
+    CUresult err = cuModuleLoadDataEx(&module, data, 0, NULL, NULL);
+    if (err == CUDA_SUCCESS) {
+        mod.handle = (uint64_t)module;
+    }
+    return mod;
+}
+
+/* ============================================================================
+ * Kernel Launch Stubs (for Nihil integration)
+ * These are placeholder implementations - real kernels would be CUDA code
+ * ============================================================================ */
+
+/* GEMM kernel stubs */
+void launch_gemm_fp16_kernel(
+    const void* a, const void* b, void* c, const void* d,
+    float alpha, float beta,
+    int64_t m, int64_t n, int64_t k,
+    int64_t lda, int64_t ldb, int64_t ldc,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_gemm_fp16_kernel called (M=%lld, N=%lld, K=%lld)\n",
+            (long long)m, (long long)n, (long long)k);
+    /* TODO: Implement actual CUDA kernel */
+}
+
+void launch_gemm_fp8_kernel(
+    const void* a, const void* b, void* c, const void* d,
+    float alpha, float beta,
+    int64_t m, int64_t n, int64_t k,
+    int64_t lda, int64_t ldb, int64_t ldc,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_gemm_fp8_kernel called\n");
+}
+
+void launch_batch_gemm_fp16_kernel(
+    const void* a, const void* b, void* c, const void* d,
+    float alpha, float beta,
+    int64_t m, int64_t n, int64_t k,
+    int64_t batch, int64_t stride_a, int64_t stride_b, int64_t stride_c,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_batch_gemm_fp16_kernel called\n");
+}
+
+void launch_gemm_fused_kernel(
+    const void* a, const void* b, const void* bias, const void* residual,
+    void* output,
+    int64_t m, int64_t n, int64_t k,
+    int64_t activation, float alpha, float beta,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_gemm_fused_kernel called\n");
+}
+
+/* Flash Attention kernel stubs */
+void launch_flash_attn_fwd_kernel(
+    const void* q, const void* k, const void* v, void* out,
+    int64_t batch, int64_t heads, int64_t seq_len, int64_t head_dim,
+    float scale, int64_t causal,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_flash_attn_fwd_kernel called (B=%lld, H=%lld, S=%lld, D=%lld)\n",
+            (long long)batch, (long long)heads, (long long)seq_len, (long long)head_dim);
+}
+
+void launch_flash_attn_bwd_kernel(
+    const void* dout, const void* q, const void* k, const void* v,
+    const void* out, const void* softmax_lse,
+    void* dq, void* dk, void* dv,
+    int64_t batch, int64_t heads, int64_t seq_len, int64_t head_dim,
+    float scale, int64_t causal,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_flash_attn_bwd_kernel called\n");
+}
+
+void launch_flash_attn_varlen_kernel(
+    const void* q, const void* k, const void* v, void* out,
+    const void* cu_seqlens_q, const void* cu_seqlens_k,
+    int64_t max_seqlen_q, int64_t max_seqlen_k,
+    int64_t batch, int64_t heads, int64_t head_dim,
+    float scale, int64_t causal,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_flash_attn_varlen_kernel called\n");
+}
+
+void launch_flash_attn_gqa_kernel(
+    const void* q, const void* k, const void* v, void* out,
+    int64_t batch, int64_t q_heads, int64_t kv_heads,
+    int64_t seq_len, int64_t head_dim,
+    float scale, int64_t causal,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_flash_attn_gqa_kernel called\n");
+}
+
+void launch_paged_attention_kernel(
+    const void* q, const void* k_cache, const void* v_cache,
+    const void* block_tables, const void* seq_lens,
+    void* out,
+    int64_t batch, int64_t heads, int64_t head_dim,
+    int64_t block_size, int64_t max_blocks,
+    float scale,
+    const void* config
+) {
+    fprintf(stderr, "STUB: launch_paged_attention_kernel called\n");
+}
+
+/* FP8 kernel stubs */
+void launch_fp8_e4m3_gemm_kernel(
+    const void* a, const void* b, void* c,
+    int64_t m, int64_t n, int64_t k,
+    float scale_a, float scale_b
+) {
+    fprintf(stderr, "STUB: launch_fp8_e4m3_gemm_kernel called\n");
+}
+
+void launch_fp8_e5m2_gemm_kernel(
+    const void* a, const void* b, void* c,
+    int64_t m, int64_t n, int64_t k,
+    float scale_a, float scale_b
+) {
+    fprintf(stderr, "STUB: launch_fp8_e5m2_gemm_kernel called\n");
+}
+
+void launch_quantize_e4m3_kernel(
+    const void* input, void* output, void* scale,
+    int64_t numel
+) {
+    fprintf(stderr, "STUB: launch_quantize_e4m3_kernel called\n");
+}
+
+void launch_quantize_e5m2_kernel(
+    const void* input, void* output, void* scale,
+    int64_t numel
+) {
+    fprintf(stderr, "STUB: launch_quantize_e5m2_kernel called\n");
+}

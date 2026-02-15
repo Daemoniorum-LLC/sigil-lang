@@ -6,7 +6,7 @@ use wasm_encoder::{BlockType, Instruction, ValType};
 
 use super::error::{WasmError, WasmResult};
 use super::WasmCompiler;
-use crate::ast::{Expr, TypePath};
+use crate::ast::{Expr, TypePath, UnaryOp};
 
 impl WasmCompiler {
     /// Compile an expression, pushing the result onto the WASM stack.
@@ -168,9 +168,27 @@ impl WasmCompiler {
                 evidentiality,
             } => self.compile_evidential(expr, *evidentiality),
 
+            // Macro invocation - route to macro compiler
+            Expr::Macro { path, tokens } => {
+                let macro_name = path.segments
+                    .last()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
+
+                // Try to compile as known macro
+                if self.compile_macro(macro_name, tokens)? {
+                    Ok(())
+                } else {
+                    // Unknown macro - check if it's a procedural macro attribute
+                    Err(WasmError::unsupported(&format!(
+                        "macro '{}!' (procedural macros like #[component] require pre-expansion)",
+                        macro_name
+                    )))
+                }
+            }
+
             // Unsupported for now
             Expr::Incorporation { .. } => Err(WasmError::unsupported("incorporation expressions")),
-            Expr::Macro { .. } => Err(WasmError::unsupported("macro expressions")),
             Expr::Unsafe(_) => Err(WasmError::unsupported("unsafe blocks")),
             Expr::Deref(_) => Err(WasmError::unsupported("raw pointer dereference")),
             Expr::AddrOf { .. } => Err(WasmError::unsupported("address-of expressions")),
@@ -192,8 +210,11 @@ impl WasmCompiler {
             Expr::KafkaOp { .. } => Err(WasmError::unsupported("Kafka operations")),
             Expr::GraphQLOp { .. } => Err(WasmError::unsupported("GraphQL operations")),
             Expr::ProtocolStream { .. } => Err(WasmError::unsupported("protocol streams")),
-            Expr::ArrayRepeat { .. } => Err(WasmError::unsupported("array repeat [value; count]")),
-            Expr::Async { .. } => Err(WasmError::unsupported("async blocks")),
+            Expr::ArrayRepeat { value, count } => self.compile_array_repeat(value, count),
+            Expr::Async { block, .. } => {
+                // Stub: compile block synchronously (proper async/await needs JS promise integration)
+                self.compile_block(block)
+            }
             Expr::LegionFieldVar { .. } => Err(WasmError::unsupported("Legion field variables")),
             Expr::LegionSuperposition { .. } => Err(WasmError::unsupported("Legion superposition")),
             Expr::LegionInterference { .. } => Err(WasmError::unsupported("Legion interference")),
@@ -217,6 +238,67 @@ impl WasmCompiler {
             .first()
             .map(|s| s.ident.name.as_str())
             .unwrap_or("");
+
+        // Handle Option/Result builtins
+        match name {
+            "None" => {
+                // Create Option::None (discriminant 0, no payload)
+                // Allocate 16 bytes for Option struct
+                let alloc_idx = self.get_func("heap_alloc")
+                    .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I64Const(16));
+                func.push(Instruction::Call(alloc_idx));
+
+                // Store in temp and write discriminant 0
+                let ptr = func.alloc_local("__none_ptr".to_string(), ValType::I64);
+                func.push(Instruction::LocalTee(ptr));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::I64Const(0)); // None discriminant
+                func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
+                // Return pointer
+                func.push(Instruction::LocalGet(ptr));
+                return Ok(());
+            }
+            "true" => {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I64Const(1));
+                return Ok(());
+            }
+            "false" => {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I64Const(0));
+                return Ok(());
+            }
+            _ => {}
+        }
+
+        // Check for enum type reference (for method chaining like WebSocketState·Connecting)
+        // Return a placeholder value that will be used by the method chain
+        if self.enum_layouts.contains_key(name) {
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            // Return 0 as placeholder - variant construction happens in method chain
+            func.push(Instruction::I64Const(0));
+            return Ok(());
+        }
+
+        // VNode type reference (for builder pattern chaining)
+        // When VNode is referenced directly, return a placeholder for type-level operations
+        if name == "VNode" {
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            // Return 0 as placeholder - actual construction happens via VNode·div() etc.
+            func.push(Instruction::I64Const(0));
+            return Ok(());
+        }
 
         // Check local variables first
         if let Some(func) = self.current_function() {
@@ -257,6 +339,92 @@ impl WasmCompiler {
         if let Some(_func_idx) = self.get_func(name) {
             // Return function table index for indirect calls
             return Err(WasmError::unsupported("function references"));
+        }
+
+        // Handle multi-segment paths like typography·FONT_SANS or api·ConnectionState·Connected
+        // Try building qualified names and looking them up
+        if path.segments.len() > 1 {
+            let segments: Vec<&str> = path.segments.iter()
+                .map(|s| s.ident.name.as_str())
+                .collect();
+
+            // For 3+ segment paths like api·ConnectionState·Connected:
+            // - Last segment is the variant name
+            // - Second-to-last is the enum name
+            // - Rest are module path
+            if segments.len() >= 2 {
+                let variant_name = segments[segments.len() - 1];
+                let enum_name = segments[segments.len() - 2];
+
+                // Try to find the enum by various qualified paths
+                // First: direct enum name (if enum was imported)
+                if let Some(layout) = self.enum_layouts.get(enum_name).cloned() {
+                    if let Some(tag) = layout.variant_tag(variant_name) {
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(tag as i64));
+                        return Ok(());
+                    }
+                }
+
+                // Second: module-qualified enum (e.g., api::ConnectionState)
+                let enum_qualified = segments[..segments.len()-1].join("::");
+                if let Some(layout) = self.enum_layouts.get(&enum_qualified).cloned() {
+                    if let Some(tag) = layout.variant_tag(variant_name) {
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(tag as i64));
+                        return Ok(());
+                    }
+                }
+
+                // Third: try with full current module prefix
+                if !self.module_path.is_empty() {
+                    let full_enum = format!("{}::{}", self.current_module_prefix(), enum_qualified);
+                    if let Some(layout) = self.enum_layouts.get(&full_enum).cloned() {
+                        if let Some(tag) = layout.variant_tag(variant_name) {
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::I64Const(tag as i64));
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            // Try full path as global (e.g., typography::FONT_SANS)
+            let qualified = segments.join("::");
+            if let Some(idx) = self.get_global(&qualified) {
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::GlobalGet(idx));
+                return Ok(());
+            }
+
+            // Try with current module prefix
+            if !self.module_path.is_empty() {
+                let full_path = format!("{}::{}", self.current_module_prefix(), qualified);
+                if let Some(idx) = self.get_global(&full_path) {
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::GlobalGet(idx));
+                    return Ok(());
+                }
+            }
+
+            // Try as function call (for static methods like VNode::div)
+            if let Some(func_idx) = self.get_func(&qualified) {
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(func_idx));
+                return Ok(());
+            }
         }
 
         Err(WasmError::undefined_variable(name))
@@ -398,12 +566,76 @@ impl WasmCompiler {
             // Index assignment
             Expr::Index { expr: array, index } => self.compile_index_assign(array, index, value),
 
+            // Dereference assignment: *ptr = value
+            Expr::Unary { op: UnaryOp::Deref, expr } => {
+                // Compile the pointer expression (the thing being dereferenced)
+                self.compile_expr(expr)?;
+
+                // Convert to i32 for memory addressing
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I32WrapI64);
+
+                // Compile the value
+                self.compile_expr(value)?;
+
+                // Store at the dereferenced address
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                    offset: 0,
+                    align: 3,
+                    memory_index: 0,
+                }));
+
+                // Assignment is an expression, return unit (0)
+                func.push(Instruction::I64Const(0));
+                Ok(())
+            }
+
             _ => Err(WasmError::invalid_assignment_target()),
         }
     }
 
     /// Compile field assignment.
     fn compile_field_assign(&mut self, target: &Expr, field: &str, value: &Expr) -> WasmResult<()> {
+        // Check for actor self.field assignment
+        if let Expr::Path(path) = target {
+            if path.segments.len() == 1 {
+                let name = &path.segments[0].ident.name;
+                if name == "self" {
+                    // Inside an actor method, self.field = value -> store to actor global
+                    if let Some(actor_name) = &self.current_actor.clone() {
+                        let global_name = format!("{}_{}", actor_name, field);
+                        if let Some(idx) = self.get_global(&global_name) {
+                            // Compile value
+                            self.compile_expr(value)?;
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::GlobalSet(idx));
+                            // Assignment returns unit
+                            func.push(Instruction::I64Const(0));
+                            return Ok(());
+                        }
+                        // Try qualified name
+                        let qualified = self.qualify_name(&global_name);
+                        if let Some(idx) = self.get_global(&qualified) {
+                            // Compile value
+                            self.compile_expr(value)?;
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::GlobalSet(idx));
+                            // Assignment returns unit
+                            func.push(Instruction::I64Const(0));
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Regular struct field assignment
         // Get struct pointer
         self.compile_expr(target)?;
 
@@ -616,6 +848,7 @@ impl WasmCompiler {
             Evidentiality::Reported => 0x2 << 60,  // ~ - external/untrusted
             Evidentiality::Paradox => 0x3 << 60,   // ‽ - trust boundary
             Evidentiality::Predicted => 0x4 << 60, // ◊ - model output, speculative
+            Evidentiality::Chaos => 0x5 << 60,     // ⁂ - intentional randomness, entropic
         };
 
         let func = self
@@ -631,13 +864,48 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// Compile a range expression.
+    ///
+    /// Range expressions compile to two i64 values on the stack: (start, end).
+    /// For unbounded ends, we use -1 as a sentinel (meaning "to end").
+    /// Inclusive ranges have end adjusted by +1 at compile time.
     fn compile_range(
         &mut self,
-        _start: Option<&Expr>,
-        _end: Option<&Expr>,
-        _inclusive: bool,
+        start: Option<&Expr>,
+        end: Option<&Expr>,
+        inclusive: bool,
     ) -> WasmResult<()> {
-        Err(WasmError::unsupported("range expressions"))
+        // Compile start value (default to 0)
+        if let Some(s) = start {
+            self.compile_expr(s)?;
+        } else {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
+        }
+
+        // Compile end value (use -1 as sentinel for "to end")
+        if let Some(e) = end {
+            self.compile_expr(e)?;
+
+            if inclusive {
+                // For inclusive ranges, add 1 to end
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I64Const(1));
+                func.push(Instruction::I64Add);
+            }
+        } else {
+            // Unbounded end: use -1 sentinel
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(-1));
+        }
+
+        Ok(())
     }
 
     fn compile_cast(&mut self, expr: &Expr, _ty: &crate::ast::TypeExpr) -> WasmResult<()> {
@@ -645,12 +913,194 @@ impl WasmCompiler {
         self.compile_expr(expr)
     }
 
+    /// Compile a let expression (pattern matching expression).
+    /// Used in `if let Some(x) = value { ... }` patterns.
+    /// Returns 1 (true) if pattern matches, 0 (false) otherwise.
+    /// Also binds matched values to locals for use in subsequent code.
     fn compile_let_expr(
         &mut self,
-        _pattern: &crate::ast::Pattern,
-        _value: &Expr,
+        pattern: &crate::ast::Pattern,
+        value: &Expr,
     ) -> WasmResult<()> {
-        Err(WasmError::unsupported("let expressions"))
+        use crate::ast::Pattern;
+
+        // Compile the value being matched
+        self.compile_expr(value)?;
+
+        match pattern {
+            // if let Some(x) = value - check Option discriminant
+            Pattern::TupleStruct { path, fields, .. } => {
+                let type_name = path.segments.last()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
+
+                match type_name {
+                    "Some" => {
+                        // Option: discriminant 1 = Some
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+                        // Store Option pointer
+                        let opt_ptr = func.alloc_local("__let_opt".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(opt_ptr));
+
+                        // Load discriminant
+                        func.push(Instruction::I32WrapI64);
+                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+
+                        // Store discriminant for later
+                        let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(disc));
+
+                        // If pattern has bindings, extract the value
+                        if let Some(first_field) = fields.first() {
+                            if let Pattern::Ident { name, .. } = first_field {
+                                // Load payload from Option (offset 8)
+                                func.push(Instruction::LocalGet(opt_ptr));
+                                func.push(Instruction::I32WrapI64);
+                                func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                                    offset: 8,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+
+                                // Bind to local variable
+                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                func.push(Instruction::LocalSet(binding));
+                            }
+                        }
+
+                        // Return match result: discriminant == 1
+                        func.push(Instruction::LocalGet(disc));
+                        func.push(Instruction::I64Const(1));
+                        func.push(Instruction::I64Eq);
+                        func.push(Instruction::I64ExtendI32U);
+                    }
+                    "Ok" => {
+                        // Result::Ok: discriminant 0
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+                        let result_ptr = func.alloc_local("__let_result".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(result_ptr));
+                        func.push(Instruction::I32WrapI64);
+                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+
+                        let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(disc));
+
+                        if let Some(first_field) = fields.first() {
+                            if let Pattern::Ident { name, .. } = first_field {
+                                func.push(Instruction::LocalGet(result_ptr));
+                                func.push(Instruction::I32WrapI64);
+                                func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                                    offset: 8,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                func.push(Instruction::LocalSet(binding));
+                            }
+                        }
+
+                        // Ok = discriminant 0
+                        func.push(Instruction::LocalGet(disc));
+                        func.push(Instruction::I64Eqz);
+                        func.push(Instruction::I64ExtendI32U);
+                    }
+                    "Err" => {
+                        // Result::Err: discriminant 1
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+                        let result_ptr = func.alloc_local("__let_result".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(result_ptr));
+                        func.push(Instruction::I32WrapI64);
+                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                            offset: 0,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+
+                        let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
+                        func.push(Instruction::LocalTee(disc));
+
+                        if let Some(first_field) = fields.first() {
+                            if let Pattern::Ident { name, .. } = first_field {
+                                func.push(Instruction::LocalGet(result_ptr));
+                                func.push(Instruction::I32WrapI64);
+                                func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                                    offset: 8,
+                                    align: 3,
+                                    memory_index: 0,
+                                }));
+                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                func.push(Instruction::LocalSet(binding));
+                            }
+                        }
+
+                        // Err = discriminant != 0
+                        func.push(Instruction::LocalGet(disc));
+                        func.push(Instruction::I64Const(0));
+                        func.push(Instruction::I64Ne);
+                        func.push(Instruction::I64ExtendI32U);
+                    }
+                    _ => {
+                        // Other enum variants - check enum layouts
+                        if let Some(layout) = self.enum_layouts.get(type_name).cloned() {
+                            if let Some(tag) = layout.variant_tag(type_name) {
+                                let func = self.current_function_mut()
+                                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                                func.push(Instruction::I64Const(tag as i64));
+                                func.push(Instruction::I64Eq);
+                                func.push(Instruction::I64ExtendI32U);
+                            } else {
+                                // Fallback: always match
+                                let func = self.current_function_mut()
+                                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                                func.push(Instruction::Drop);
+                                func.push(Instruction::I64Const(1));
+                            }
+                        } else {
+                            // Unknown variant, always match
+                            let func = self.current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Drop);
+                            func.push(Instruction::I64Const(1));
+                        }
+                    }
+                }
+            }
+            // Simple binding: let x = value (always matches)
+            Pattern::Ident { name, .. } => {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let local = func.alloc_local(name.name.clone(), ValType::I64);
+                func.push(Instruction::LocalSet(local));
+                func.push(Instruction::I64Const(1)); // Always matches
+            }
+            // Wildcard: _ = value (always matches)
+            Pattern::Wildcard => {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Drop);
+                func.push(Instruction::I64Const(1));
+            }
+            _ => {
+                // Other patterns not yet supported
+                return Err(WasmError::unsupported("complex let patterns"));
+            }
+        }
+
+        Ok(())
     }
 
     fn compile_evidential(

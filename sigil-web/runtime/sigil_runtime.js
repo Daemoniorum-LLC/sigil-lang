@@ -124,6 +124,135 @@ export class SigilRuntime {
       signal: this._signalImports(),
       async: this._asyncImports(),
       browser: this._browserImports(),
+      env: this._envImports(),
+      crate: this._crateImports(),
+    };
+  }
+
+  // ========== Environment Imports ==========
+  _envImports() {
+    return {
+      document: () => 1, // Placeholder document handle
+      local_storage: () => 1, // Storage handle
+      session_storage: () => 2, // Storage handle
+      location: () => this.allocString(window.location?.href || ''),
+      history: () => 1, // History handle
+      navigator: () => 1, // Navigator handle
+      inner_width: () => BigInt(window.innerWidth || 800),
+      inner_height: () => BigInt(window.innerHeight || 600),
+      outer_width: () => BigInt(window.outerWidth || 800),
+      outer_height: () => BigInt(window.outerHeight || 600),
+      scroll_x: () => BigInt(window.scrollX || 0),
+      scroll_y: () => BigInt(window.scrollY || 0),
+      device_pixel_ratio: () => window.devicePixelRatio || 1,
+      alert: (msgPtr) => {
+        const msg = this.strings.get(Number(msgPtr)) || this.readString(Number(msgPtr));
+        window.alert?.(msg);
+      },
+      confirm: (msgPtr) => {
+        const msg = this.strings.get(Number(msgPtr)) || this.readString(Number(msgPtr));
+        return window.confirm?.(msg) ? 1 : 0;
+      },
+      prompt: (msgPtr, defaultPtr) => {
+        const msg = this.strings.get(Number(msgPtr)) || this.readString(Number(msgPtr));
+        const def = this.strings.get(Number(defaultPtr)) || this.readString(Number(defaultPtr));
+        const result = window.prompt?.(msg, def) || '';
+        return this.allocString(result);
+      },
+      open: (urlPtr, targetPtr, featuresPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        const target = this.strings.get(Number(targetPtr)) || this.readString(Number(targetPtr));
+        const features = this.strings.get(Number(featuresPtr)) || this.readString(Number(featuresPtr));
+        window.open?.(url, target, features);
+        return BigInt(0);
+      },
+      close: () => window.close?.(),
+      match_media: (queryPtr) => {
+        const query = this.strings.get(Number(queryPtr)) || this.readString(Number(queryPtr));
+        return window.matchMedia?.(query).matches ? 1 : 0;
+      },
+      user_agent: () => this.allocString(navigator.userAgent || ''),
+      language: () => this.allocString(navigator.language || 'en'),
+      languages: () => {
+        const arr = ++this.arrayCounter;
+        this.arrays.set(arr, (navigator.languages || ['en']).map(l => this.allocString(l)));
+        return arr;
+      },
+      online: () => navigator.onLine ? 1 : 0,
+      platform: () => this.allocString(navigator.platform || ''),
+      hardware_concurrency: () => BigInt(navigator.hardwareConcurrency || 1),
+      cookie_enabled: () => navigator.cookieEnabled ? 1 : 0,
+      do_not_track: () => navigator.doNotTrack === '1' ? 1 : 0,
+      orientation: () => BigInt(screen.orientation?.angle || 0),
+      screen_width: () => BigInt(screen.width || 800),
+      screen_height: () => BigInt(screen.height || 600),
+      color_depth: () => BigInt(screen.colorDepth || 24),
+      focus: () => window.focus?.(),
+      blur: () => window.blur?.(),
+      print: () => window.print?.(),
+      scroll_to: (x, y) => window.scrollTo?.(Number(x), Number(y)),
+      scroll_by: (x, y) => window.scrollBy?.(Number(x), Number(y)),
+      hostname: () => this.allocString(window.location?.hostname || ''),
+      port: () => this.allocString(window.location?.port || ''),
+      protocol: () => this.allocString(window.location?.protocol || ''),
+      pathname: () => this.allocString(window.location?.pathname || ''),
+      search: () => this.allocString(window.location?.search || ''),
+      hash: () => this.allocString(window.location?.hash || ''),
+      origin: () => this.allocString(window.location?.origin || ''),
+      href: () => this.allocString(window.location?.href || ''),
+      set_href: (urlPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        if (window.location) window.location.href = url;
+      },
+      reload: () => window.location?.reload?.(),
+      back: () => window.history?.back?.(),
+      forward: () => window.history?.forward?.(),
+      go: (delta) => window.history?.go?.(Number(delta)),
+      push_state: (statePtr, titlePtr, urlPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        const title = this.strings.get(Number(titlePtr)) || this.readString(Number(titlePtr));
+        window.history?.pushState?.({}, title, url);
+      },
+      replace_state: (statePtr, titlePtr, urlPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        const title = this.strings.get(Number(titlePtr)) || this.readString(Number(titlePtr));
+        window.history?.replaceState?.({}, title, url);
+      },
+      history_length: () => BigInt(window.history?.length || 0),
+      copy_to_clipboard: (textPtr) => {
+        const text = this.strings.get(Number(textPtr)) || this.readString(Number(textPtr));
+        navigator.clipboard?.writeText?.(text);
+      },
+      read_clipboard: () => {
+        // Async, returns empty string synchronously
+        return this.allocString('');
+      },
+      vibrate: (pattern) => navigator.vibrate?.(Number(pattern)),
+      share: (titlePtr, textPtr, urlPtr) => {
+        const title = this.strings.get(Number(titlePtr)) || this.readString(Number(titlePtr));
+        const text = this.strings.get(Number(textPtr)) || this.readString(Number(textPtr));
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        navigator.share?.({ title, text, url });
+      },
+      entry_type: () => BigInt(0), // Navigation type
+      domain: () => this.allocString(window.location?.hostname || ''),
+      time_remaining: () => BigInt(1000), // Idle callback time
+      set_start: (typePtr, namePtr, timePtr) => {}, // Performance mark
+      // Clone operations
+      clone: (ptr) => ptr, // Identity clone for reference types
+      clone_contents: (ptr) => ptr, // Clone contents (shallow)
+      get_item: (collectionPtr, index) => {
+        // Get item from collection - placeholder
+        return BigInt(0);
+      },
+    };
+  }
+
+  // ========== Crate Imports ==========
+  _crateImports() {
+    return {
+      Window: () => BigInt(1), // Window handle placeholder
+      Closure: () => BigInt(1), // Closure handle placeholder
     };
   }
 
@@ -578,6 +707,14 @@ export class SigilRuntime {
         const arr = this.arrays.get(arrId);
         if (!arr || arr.length === 0) return BigInt(0);
         return BigInt(arr[Math.floor(Math.random() * arr.length)]);
+      },
+      vec_join: (arrId, sepPtr) => {
+        // Join array of string pointers with separator
+        const arr = this.arrays.get(arrId);
+        if (!arr || arr.length === 0) return this.allocString('');
+        const sep = this.strings.get(Number(sepPtr)) || this.readString(Number(sepPtr));
+        const strings = arr.map(ptr => this.strings.get(Number(ptr)) || this.readString(Number(ptr)));
+        return this.allocString(strings.join(sep));
       },
     };
   }

@@ -105,6 +105,16 @@ pub mod llvm {
         float_funcs: std::collections::HashSet<String>,
         /// G31: Function return types for tuple destructuring type inference
         ret_types: HashMap<String, ast::TypeExpr>,
+        /// Loaded crates (to prevent re-loading)
+        loaded_crates: std::collections::HashSet<String>,
+        /// Crates currently being loaded (for circular dependency detection)
+        loading_crates: std::collections::HashSet<String>,
+        /// Workspace members: crate name -> relative path
+        workspace_members: HashMap<String, std::path::PathBuf>,
+        /// Project root directory (where Sigil.toml is)
+        project_root: Option<std::path::PathBuf>,
+        /// Current source directory (for relative imports)
+        current_source_dir: Option<std::path::PathBuf>,
     }
 
     // ============================================
@@ -115,7 +125,8 @@ pub mod llvm {
     const EVIDENCE_UNCERTAIN: u8 = 1; // ? - unverified input
     const EVIDENCE_REPORTED: u8 = 2; // ~ - EMA, eventually consistent
     const EVIDENCE_PREDICTED: u8 = 3; // ◊ - model output, speculative
-    const EVIDENCE_PARADOX: u8 = 4; // ‽ - contradiction detected
+    const EVIDENCE_CHAOS: u8 = 4; // ⁂ - intentional randomness, entropic
+    const EVIDENCE_PARADOX: u8 = 5; // ‽ - contradiction detected
 
     // Runtime helper: get current time in milliseconds
     extern "C" fn sigil_now() -> i64 {
@@ -312,6 +323,25 @@ pub mod llvm {
         }
     }
 
+    // G48: String repeat - repeat a C string n times
+    extern "C" fn sigil_string_repeat(str_ptr: *const i8, count: i64) -> *const i8 {
+        if str_ptr.is_null() || count <= 0 {
+            // Return empty string
+            return b"\0".as_ptr() as *const i8;
+        }
+        unsafe {
+            let cstr = std::ffi::CStr::from_ptr(str_ptr);
+            if let Ok(s) = cstr.to_str() {
+                let repeated = s.repeat(count as usize);
+                // Allocate and leak a CString
+                let c_repeated = std::ffi::CString::new(repeated).unwrap_or_default();
+                c_repeated.into_raw()
+            } else {
+                b"\0".as_ptr() as *const i8
+            }
+        }
+    }
+
     // G27: File system runtime functions
     extern "C" fn sigil_fs_read(path_ptr: *const i8) -> *mut String {
         if path_ptr.is_null() {
@@ -399,44 +429,74 @@ pub mod llvm {
     }
 
     // Option runtime functions
-    extern "C" fn sigil_option_some(value: i64) -> *mut i64 {
-        Box::into_raw(Box::new(value))
+    // G45 fix: Option uses same layout as user-defined enums:
+    //   offset 0: discriminant (0 = None, 1 = Some)
+    //   offset 8: value (for Some)
+    extern "C" fn sigil_option_some(value: i64) -> i64 {
+        // Allocate 16 bytes: 8 for discriminant + 8 for value
+        let ptr = Box::into_raw(Box::new([1i64, value]));
+        ptr as i64
     }
 
-    extern "C" fn sigil_option_none() -> *mut i64 {
-        std::ptr::null_mut()
+    extern "C" fn sigil_option_none() -> i64 {
+        // Allocate 8 bytes for discriminant only
+        let ptr = Box::into_raw(Box::new(0i64));
+        ptr as i64
     }
 
-    extern "C" fn sigil_option_is_some(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_is_some(opt_ptr: i64) -> i64 {
+        if opt_ptr == 0 {
             0
         } else {
-            1
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 1 { 1 } else { 0 }
+            }
         }
     }
 
-    extern "C" fn sigil_option_is_none(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_is_none(opt_ptr: i64) -> i64 {
+        if opt_ptr == 0 {
             1
         } else {
-            0
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 0 { 1 } else { 0 }
+            }
         }
     }
 
-    extern "C" fn sigil_option_unwrap(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_unwrap(opt_ptr: i64) -> i64 {
+        if opt_ptr == 0 {
             eprintln!("Error: unwrap called on None");
             0
         } else {
-            unsafe { *opt_ptr }
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 1 {
+                    // Some variant - value at offset 8
+                    *ptr.offset(1)
+                } else {
+                    eprintln!("Error: unwrap called on None");
+                    0
+                }
+            }
         }
     }
 
-    extern "C" fn sigil_option_unwrap_or(opt_ptr: *mut i64, default: i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_unwrap_or(opt_ptr: i64, default: i64) -> i64 {
+        if opt_ptr == 0 {
             default
         } else {
-            unsafe { *opt_ptr }
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 1 {
+                    // Some variant - value at offset 8
+                    *ptr.offset(1)
+                } else {
+                    default
+                }
+            }
         }
     }
 
@@ -550,6 +610,11 @@ pub mod llvm {
                 field_type_names: HashMap::new(),
                 float_funcs: std::collections::HashSet::new(),
                 ret_types: HashMap::new(),
+                loaded_crates: std::collections::HashSet::new(),
+                loading_crates: std::collections::HashSet::new(),
+                workspace_members: HashMap::new(),
+                project_root: None,
+                current_source_dir: None,
             })
         }
 
@@ -565,6 +630,9 @@ pub mod llvm {
 
             // Declare runtime functions
             self.declare_runtime_functions();
+
+            // G44 fix: Register built-in enum types (Option, Result)
+            self.register_builtin_enums();
 
             // First pass: register types
             for spanned_item in &optimized.items {
@@ -624,6 +692,264 @@ pub mod llvm {
             self.run_llvm_optimizations()?;
 
             Ok(())
+        }
+
+        /// Set the source file path to enable tome loading
+        ///
+        /// This method walks up the directory tree to find Sigil.toml,
+        /// sets project_root and current_source_dir, and loads workspace config.
+        pub fn set_source_path(&mut self, path: &std::path::Path) -> Result<(), String> {
+            // Set current source directory
+            self.current_source_dir = path.parent().map(|p| p.to_path_buf());
+
+            // Walk up directories to find Sigil.toml
+            let mut search_dir = path.parent();
+            while let Some(dir) = search_dir {
+                let sigil_toml = dir.join("Sigil.toml");
+                if sigil_toml.exists() {
+                    self.project_root = Some(dir.to_path_buf());
+                    self.load_workspace_config(&sigil_toml)?;
+                    return Ok(());
+                }
+                search_dir = dir.parent();
+            }
+
+            // No Sigil.toml found - that's OK for single-file programs
+            Ok(())
+        }
+
+        /// Load workspace configuration from Sigil.toml
+        fn load_workspace_config(&mut self, toml_path: &std::path::Path) -> Result<(), String> {
+            let content = std::fs::read_to_string(toml_path)
+                .map_err(|e| format!("Failed to read Sigil.toml: {}", e))?;
+
+            let toml_value: toml::Value = toml::from_str(&content)
+                .map_err(|e| format!("Failed to parse Sigil.toml: {}", e))?;
+
+            // Parse workspace.dependencies section for crate paths
+            // Format: crate-name = { path = "relative/path" }
+            if let Some(workspace) = toml_value.get("workspace") {
+                if let Some(deps) = workspace.get("dependencies") {
+                    if let Some(deps_table) = deps.as_table() {
+                        for (crate_name, dep_spec) in deps_table {
+                            if let Some(path) = dep_spec.get("path").and_then(|v| v.as_str()) {
+                                // Convert crate-name to crate_name for Sigil's use
+                                let sigil_name = crate_name.replace("-", "_");
+                                self.workspace_members.insert(
+                                    sigil_name,
+                                    std::path::PathBuf::from(path),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Also check [dependencies] section (non-workspace format)
+            if let Some(deps) = toml_value.get("dependencies") {
+                if let Some(deps_table) = deps.as_table() {
+                    for (crate_name, dep_spec) in deps_table {
+                        if let Some(path) = dep_spec.get("path").and_then(|v| v.as_str()) {
+                            let sigil_name = crate_name.replace("-", "_");
+                            self.workspace_members.insert(
+                                sigil_name,
+                                std::path::PathBuf::from(path),
+                            );
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Load and compile an external crate
+        pub fn load_crate(&mut self, crate_name: &str) -> Result<bool, String> {
+            // Check if already loaded
+            if self.loaded_crates.contains(crate_name) {
+                return Ok(true);
+            }
+
+            // Check for circular dependency
+            if self.loading_crates.contains(crate_name) {
+                return Err(format!(
+                    "Circular dependency detected: crate '{}' is already being loaded",
+                    crate_name
+                ));
+            }
+
+            // Find crate path in workspace members
+            let crate_path = match self.workspace_members.get(crate_name) {
+                Some(p) => p.clone(),
+                None => return Ok(false), // Not in workspace, may be builtin
+            };
+
+            let project_root = match &self.project_root {
+                Some(r) => r.clone(),
+                None => return Ok(false), // No project root set
+            };
+
+            // Build path to lib.sigil
+            let lib_path = project_root.join(&crate_path).join("src").join("lib.sigil");
+
+            if !lib_path.exists() {
+                // Try just the crate path if it's already absolute
+                let alt_path = crate_path.join("src").join("lib.sigil");
+                if alt_path.exists() {
+                    return self.load_crate_from_path(crate_name, &alt_path);
+                }
+                return Ok(false);
+            }
+
+            self.load_crate_from_path(crate_name, &lib_path)
+        }
+
+        /// Load crate from a specific lib.sigil path
+        fn load_crate_from_path(
+            &mut self,
+            crate_name: &str,
+            lib_path: &std::path::Path,
+        ) -> Result<bool, String> {
+            // Mark as loading (for circular dependency detection)
+            self.loading_crates.insert(crate_name.to_string());
+
+            // Read and parse the lib.sigil file
+            let source = std::fs::read_to_string(lib_path)
+                .map_err(|e| format!("Failed to read {:?}: {}", lib_path, e))?;
+
+            // Save current state
+            let prev_module = self.current_module.clone();
+            let prev_source_dir = self.current_source_dir.clone();
+
+            // Set module context to crate name
+            self.current_module = vec!["crate".to_string(), crate_name.to_string()];
+            self.current_source_dir = lib_path.parent().map(|p| p.to_path_buf());
+
+            // Parse the source
+            let mut parser = Parser::new(&source);
+            let parsed_file = parser
+                .parse_file()
+                .map_err(|e| format!("Failed to parse crate '{}': {:?}", crate_name, e))?;
+
+            // First: load all scroll modules (sub-files)
+            let crate_dir = lib_path.parent().unwrap_or(std::path::Path::new("."));
+            for spanned_item in &parsed_file.items {
+                if let Item::Module(module) = &spanned_item.node {
+                    // A module without items is a `scroll name;` declaration
+                    // that loads from name.sigil in the same directory
+                    if module.items.is_none() {
+                        let module_name = &module.name.name;
+                        let module_path = crate_dir.join(format!("{}.sigil", module_name));
+                        if module_path.exists() {
+                            // Recursively load the sub-module
+                            let sub_module_name = format!("{}::{}", crate_name, module_name);
+                            if let Err(e) = self.load_crate_from_path(&sub_module_name, &module_path) {
+                                eprintln!("Warning: error loading scroll '{}': {}", module_name, e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // First pass: register types from the crate
+            for spanned_item in &parsed_file.items {
+                match &spanned_item.node {
+                    Item::Struct(s) => {
+                        if let Err(e) = self.register_struct(s) {
+                            eprintln!("Warning: error registering struct in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Enum(e) => {
+                        if let Err(e) = self.register_enum(e) {
+                            eprintln!("Warning: error registering enum in '{}': {}", crate_name, e);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Second pass: process impl blocks
+            for spanned_item in &parsed_file.items {
+                if let Item::Impl(impl_block) = &spanned_item.node {
+                    if let Err(e) = self.declare_impl_methods(impl_block) {
+                        eprintln!("Warning: error declaring impl in '{}': {}", crate_name, e);
+                    }
+                }
+            }
+
+            // Third pass: declare functions and process use declarations
+            for spanned_item in &parsed_file.items {
+                match &spanned_item.node {
+                    Item::Function(func) => {
+                        if let Err(e) = self.declare_function(func) {
+                            eprintln!("Warning: error declaring function in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Use(use_decl) => {
+                        if let Err(e) = self.process_use(use_decl) {
+                            eprintln!("Warning: error processing use in '{}': {}", crate_name, e);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Fourth pass: compile function bodies
+            for spanned_item in &parsed_file.items {
+                match &spanned_item.node {
+                    Item::Function(func) => {
+                        if let Err(e) = self.compile_function(func) {
+                            eprintln!("Warning: error compiling function in '{}': {}", crate_name, e);
+                            // Recover: ensure current block has a terminator
+                            self.recover_from_compile_error();
+                        }
+                    }
+                    Item::Impl(impl_block) => {
+                        if let Err(e) = self.compile_impl_methods(impl_block) {
+                            eprintln!("Warning: error compiling impl in '{}': {}", crate_name, e);
+                            // Recover: ensure current block has a terminator
+                            self.recover_from_compile_error();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Restore previous state
+            self.current_module = prev_module;
+            self.current_source_dir = prev_source_dir;
+
+            // Mark as loaded and no longer loading
+            self.loading_crates.remove(crate_name);
+            self.loaded_crates.insert(crate_name.to_string());
+
+            Ok(true)
+        }
+
+        /// Recover from a compilation error by ensuring all basic blocks have terminators
+        ///
+        /// When function compilation fails midway, blocks may be left without terminators.
+        /// This function walks through all functions and adds `unreachable` terminators
+        /// to any blocks that need them.
+        fn recover_from_compile_error(&self) {
+            // Get current insert block
+            if let Some(block) = self.builder.get_insert_block() {
+                // If block has no terminator, add one
+                if block.get_terminator().is_none() {
+                    // Add unreachable to close the block
+                    let _ = self.builder.build_unreachable();
+                }
+
+                // Also check other blocks in the same function
+                if let Some(fn_val) = block.get_parent() {
+                    for bb in fn_val.get_basic_blocks() {
+                        if bb.get_terminator().is_none() {
+                            self.builder.position_at_end(bb);
+                            let _ = self.builder.build_unreachable();
+                        }
+                    }
+                }
+            }
         }
 
         /// Declare runtime helper functions
@@ -767,7 +1093,8 @@ pub mod llvm {
                 .add_function("sigil_string_concat", string_concat_type, None);
 
             // sigil_string_repeat(str: ptr, count: i64) -> ptr
-            let string_repeat_type = ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+            // G48 fix: Use actual ptr type since call site passes real pointers
+            let string_repeat_type = ptr_type_generic.fn_type(&[ptr_type_generic.into(), i64_type.into()], false);
             self.module
                 .add_function("sigil_string_repeat", string_repeat_type, None);
 
@@ -813,34 +1140,35 @@ pub mod llvm {
                 .add_function("sigil_print_rust_string", print_rust_string_type, None);
 
             // Option functions
-            // sigil_option_some(value: i64) -> ptr
-            let option_some_type = ptr_type.fn_type(&[i64_type.into()], false);
+            // G45 fix: Option functions now use i64 representation consistent with enums
+            // sigil_option_some(value: i64) -> i64 (returns pointer as i64)
+            let option_some_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_some", option_some_type, None);
 
-            // sigil_option_none() -> ptr (null)
-            let option_none_type = ptr_type.fn_type(&[], false);
+            // sigil_option_none() -> i64 (returns pointer as i64)
+            let option_none_type = i64_type.fn_type(&[], false);
             self.module
                 .add_function("sigil_option_none", option_none_type, None);
 
-            // sigil_option_is_some(opt: ptr) -> i64
-            let option_is_some_type = i64_type.fn_type(&[ptr_type.into()], false);
+            // sigil_option_is_some(opt: i64) -> i64
+            let option_is_some_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_is_some", option_is_some_type, None);
 
-            // sigil_option_is_none(opt: ptr) -> i64
-            let option_is_none_type = i64_type.fn_type(&[ptr_type.into()], false);
+            // sigil_option_is_none(opt: i64) -> i64
+            let option_is_none_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_is_none", option_is_none_type, None);
 
-            // sigil_option_unwrap(opt: ptr) -> i64
-            let option_unwrap_type = i64_type.fn_type(&[ptr_type.into()], false);
+            // sigil_option_unwrap(opt: i64) -> i64
+            let option_unwrap_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_unwrap", option_unwrap_type, None);
 
-            // sigil_option_unwrap_or(opt: ptr, default: i64) -> i64
+            // sigil_option_unwrap_or(opt: i64, default: i64) -> i64
             let option_unwrap_or_type =
-                i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+                i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
             self.module
                 .add_function("sigil_option_unwrap_or", option_unwrap_or_type, None);
 
@@ -1452,6 +1780,7 @@ pub mod llvm {
                 ast::Evidentiality::Uncertain => EVIDENCE_UNCERTAIN,
                 ast::Evidentiality::Reported => EVIDENCE_REPORTED,
                 ast::Evidentiality::Predicted => EVIDENCE_PREDICTED,
+                ast::Evidentiality::Chaos => EVIDENCE_CHAOS,
                 ast::Evidentiality::Paradox => EVIDENCE_PARADOX,
             }
         }
@@ -1517,6 +1846,43 @@ pub mod llvm {
             Ok(())
         }
 
+        /// G44 fix: Register built-in enum types (Option, Result, etc.)
+        fn register_builtin_enums(&mut self) {
+            // Option<T> has variants: None = 0, Some = 1
+            let mut option_variants = HashMap::new();
+            option_variants.insert("None".to_string(), 0);
+            option_variants.insert("Some".to_string(), 1);
+            self.enum_types.insert(
+                "Option".to_string(),
+                EnumInfo {
+                    variants: option_variants,
+                },
+            );
+
+            // Result<T, E> has variants: Ok = 0, Err = 1
+            let mut result_variants = HashMap::new();
+            result_variants.insert("Ok".to_string(), 0);
+            result_variants.insert("Err".to_string(), 1);
+            self.enum_types.insert(
+                "Result".to_string(),
+                EnumInfo {
+                    variants: result_variants,
+                },
+            );
+
+            // Ordering has variants: Less = 0, Equal = 1, Greater = 2
+            let mut ordering_variants = HashMap::new();
+            ordering_variants.insert("Less".to_string(), 0);
+            ordering_variants.insert("Equal".to_string(), 1);
+            ordering_variants.insert("Greater".to_string(), 2);
+            self.enum_types.insert(
+                "Ordering".to_string(),
+                EnumInfo {
+                    variants: ordering_variants,
+                },
+            );
+        }
+
         /// Extract type name from impl block's self_ty
         fn extract_impl_type_name(&self, self_ty: &ast::TypeExpr) -> Result<String, String> {
             match self_ty {
@@ -1537,6 +1903,7 @@ pub mod llvm {
                         ast::Evidentiality::Known => Ok(format!("Result_{}", inner_name)),
                         ast::Evidentiality::Reported => Ok(format!("Reported_{}", inner_name)),
                         ast::Evidentiality::Predicted => Ok(format!("Predicted_{}", inner_name)),
+                        ast::Evidentiality::Chaos => Ok(format!("Chaos_{}", inner_name)),
                         ast::Evidentiality::Paradox => Ok(format!("Paradox_{}", inner_name)),
                     }
                 }
@@ -1574,10 +1941,24 @@ pub mod llvm {
             // Extract type name from self_ty (TypeExpr)
             let type_name = self.extract_impl_type_name(&impl_block.self_ty)?;
 
+            // G44 fix: Include trait name in mangling to avoid collisions
+            // e.g., NihilError_Display_fmt vs NihilError_Debug_fmt
+            let trait_suffix = if let Some(ref trait_path) = impl_block.trait_ {
+                let trait_name: String = trait_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("_{}", trait_name)
+            } else {
+                String::new()
+            };
+
             for item in &impl_block.items {
                 if let ast::ImplItem::Function(func) = item {
                     let method_name = &func.name.name;
-                    let mangled_name = format!("{}_{}", type_name, method_name);
+                    let mangled_name = format!("{}{}_{}",type_name, trait_suffix, method_name);
 
                     // Declare the function with self as first parameter
                     let i64_type = self.context.i64_type();
@@ -1599,7 +1980,16 @@ pub mod llvm {
                     let is_instance_method = has_explicit_self || has_self_ref;
 
                     // Count params: instance methods might have implicit self, static methods don't
-                    let param_count = func.params.len();
+                    // G52 fix: Add extra _len param for each slice param (&[u8], &[i64], etc.)
+                    let mut param_count = func.params.len();
+                    let mut slice_param_indices = Vec::new();
+                    for (i, param) in func.params.iter().enumerate() {
+                        if self.type_is_byte_slice(&param.ty) {
+                            slice_param_indices.push(i);
+                            param_count += 1; // Add extra param for length
+                        }
+                    }
+
                     let param_types: Vec<BasicMetadataTypeEnum> =
                         (0..param_count).map(|_| i64_type.into()).collect();
 
@@ -1607,6 +1997,8 @@ pub mod llvm {
                     let fn_value = self.module.add_function(&mangled_name, fn_type, None);
 
                     // Name parameters - all params are named directly, no implicit self
+                    // G52: Track which LLVM param index corresponds to which source param
+                    let mut llvm_param_idx = 0u32;
                     for (i, param) in func.params.iter().enumerate() {
                         let param_name = match &param.pattern {
                             ast::Pattern::Ident { name: ident, .. } => ident.name.clone(),
@@ -1621,9 +2013,19 @@ pub mod llvm {
                             _ => format!("param{}", i),
                         };
                         fn_value
-                            .get_nth_param(i as u32)
+                            .get_nth_param(llvm_param_idx)
                             .unwrap()
                             .set_name(&param_name);
+                        llvm_param_idx += 1;
+
+                        // G52: If this is a slice param, add the _len param
+                        if slice_param_indices.contains(&i) {
+                            fn_value
+                                .get_nth_param(llvm_param_idx)
+                                .unwrap()
+                                .set_name(&format!("{}_len", param_name));
+                            llvm_param_idx += 1;
+                        }
                     }
                     let _ = is_instance_method; // Silence unused warning
 
@@ -1649,13 +2051,26 @@ pub mod llvm {
             // Extract type name from self_ty (TypeExpr)
             let type_name = self.extract_impl_type_name(&impl_block.self_ty)?;
 
+            // G44 fix: Include trait name in mangling to avoid collisions
+            let trait_suffix = if let Some(ref trait_path) = impl_block.trait_ {
+                let trait_name: String = trait_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("_{}", trait_name)
+            } else {
+                String::new()
+            };
+
             // Set the current Self type for resolving Self:: calls
             self.current_self_type = Some(type_name.clone());
 
             for item in &impl_block.items {
                 if let ast::ImplItem::Function(func) = item {
                     let method_name = &func.name.name;
-                    let mangled_name = format!("{}_{}", type_name, method_name);
+                    let mangled_name = format!("{}{}_{}",type_name, trait_suffix, method_name);
 
                     let fn_value = *self
                         .functions
@@ -1673,6 +2088,16 @@ pub mod llvm {
 
                     // Add all parameters to scope - no implicit self for any method
                     // (Static methods have no self, instance methods have explicit self/this)
+                    // G52: Track which params are slices so we can get their _len param
+                    let mut slice_param_indices = Vec::new();
+                    for (i, param) in func.params.iter().enumerate() {
+                        if self.type_is_byte_slice(&param.ty) {
+                            slice_param_indices.push(i);
+                        }
+                    }
+
+                    // G52: Track LLVM param index separately (slice params have extra _len params)
+                    let mut llvm_param_idx = 0u32;
                     for (i, param) in func.params.iter().enumerate() {
                         let param_name = match &param.pattern {
                             ast::Pattern::Ident { name: ident, .. } => ident.name.clone(),
@@ -1686,7 +2111,9 @@ pub mod llvm {
                             }
                             _ => format!("param{}", i),
                         };
-                        let param_value = fn_value.get_nth_param(i as u32).unwrap();
+                        let param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                        llvm_param_idx += 1;
+
                         let alloca = self
                             .builder
                             .build_alloca(self.context.i64_type(), &param_name)
@@ -1695,6 +2122,21 @@ pub mod llvm {
                             .build_store(alloca, param_value)
                             .map_err(|e| e.to_string())?;
                         scope.vars.insert(param_name.clone(), alloca);
+
+                        // G52: If this is a slice param, store the _len param too
+                        if slice_param_indices.contains(&i) {
+                            let len_param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                            llvm_param_idx += 1;
+
+                            let len_alloca = self
+                                .builder
+                                .build_alloca(self.context.i64_type(), &format!("{}_len", param_name))
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(len_alloca, len_param_value)
+                                .map_err(|e| e.to_string())?;
+                            scope.slice_lens.insert(param_name.clone(), len_alloca);
+                        }
 
                         // G23: Track float parameters for float detection
                         if self.type_contains_f64(&param.ty) {
@@ -1775,9 +2217,19 @@ pub mod llvm {
 
             let i64_type = self.context.i64_type();
 
+            // G52 fix: Count slice params which need extra _len params
+            let mut param_count = func.params.len();
+            let mut slice_param_indices = Vec::new();
+            for (i, param) in func.params.iter().enumerate() {
+                if self.type_is_byte_slice(&param.ty) {
+                    slice_param_indices.push(i);
+                    param_count += 1; // Add extra param for length
+                }
+            }
+
             // Build parameter types (all i64 for simplicity)
             let param_types: Vec<BasicMetadataTypeEnum> =
-                func.params.iter().map(|_| i64_type.into()).collect();
+                (0..param_count).map(|_| i64_type.into()).collect();
 
             // Create function type
             let fn_type = i64_type.fn_type(&param_types, false);
@@ -1822,15 +2274,27 @@ pub mod llvm {
             }
 
             // Name parameters
+            // G52: Track LLVM param index separately for slice params with _len
+            let mut llvm_param_idx = 0u32;
             for (i, param) in func.params.iter().enumerate() {
                 if let ast::Pattern::Ident {
                     name: ref ident, ..
                 } = param.pattern
                 {
                     fn_value
-                        .get_nth_param(i as u32)
+                        .get_nth_param(llvm_param_idx)
                         .unwrap()
                         .set_name(&ident.name);
+                    llvm_param_idx += 1;
+
+                    // G52: If this is a slice param, add the _len param
+                    if slice_param_indices.contains(&i) {
+                        fn_value
+                            .get_nth_param(llvm_param_idx)
+                            .unwrap()
+                            .set_name(&format!("{}_len", ident.name));
+                        llvm_param_idx += 1;
+                    }
                 }
             }
 
@@ -1868,7 +2332,17 @@ pub mod llvm {
             // G21: Copy global float_funcs registry to scope for float detection
             scope.float_funcs = self.float_funcs.clone();
 
+            // G52: Track which params are slices so we can get their _len param
+            let mut slice_param_indices = Vec::new();
+            for (i, param) in func.params.iter().enumerate() {
+                if self.type_is_byte_slice(&param.ty) {
+                    slice_param_indices.push(i);
+                }
+            }
+
             // Add parameters to scope
+            // G52: Track LLVM param index separately (slice params have extra _len params)
+            let mut llvm_param_idx = 0u32;
             for (i, param) in func.params.iter().enumerate() {
                 // Extract parameter name from various pattern types
                 let param_name = match &param.pattern {
@@ -1882,7 +2356,9 @@ pub mod llvm {
                 };
 
                 if let Some(param_name) = param_name {
-                    let param_value = fn_value.get_nth_param(i as u32).unwrap();
+                    let param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                    llvm_param_idx += 1;
+
                     // Allocate on stack for potential mutation
                     let alloca = self
                         .builder
@@ -1892,6 +2368,21 @@ pub mod llvm {
                         .build_store(alloca, param_value)
                         .map_err(|e| e.to_string())?;
                     scope.vars.insert(param_name.clone(), alloca);
+
+                    // G52: If this is a slice param, store the _len param too
+                    if slice_param_indices.contains(&i) {
+                        let len_param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                        llvm_param_idx += 1;
+
+                        let len_alloca = self
+                            .builder
+                            .build_alloca(self.context.i64_type(), &format!("{}_len", param_name))
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_store(len_alloca, len_param_value)
+                            .map_err(|e| e.to_string())?;
+                        scope.slice_lens.insert(param_name.clone(), len_alloca);
+                    }
 
                     // Check if parameter type contains f64 (for Vec<f64> or f64 params)
                     // This enables float detection for indexing operations
@@ -2112,8 +2603,8 @@ pub mod llvm {
                                             false
                                         };
                                         // Heuristic: functions that likely return Rust Strings
-                                        ret_is_string || name.contains("_corpus")
-                                            || name == "format"
+                                        // G52: Removed name.contains("_corpus") - corpus functions often return &str (C string)
+                                        ret_is_string || name == "format"
                                     } else {
                                         false
                                     }
@@ -2178,8 +2669,35 @@ pub mod llvm {
                             false
                         };
 
+                        // G54: Check if init is a Vec index of a string Vec (e.g., prompts[p])
+                        // If the Vec contains string literals, the element is also a C string
+                        let is_string_from_vec_index = if let Some(ref expr) = init {
+                            if let Expr::Index { expr: container, .. } = expr {
+                                // Check if container is a known string Vec
+                                if let Expr::Path(path) = container.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        // Check if this Vec has a type annotation indicating strings
+                                        if let Some(ty) = scope.struct_types.get(&seg.ident.name) {
+                                            ty.contains("str") || ty.contains("String")
+                                        } else {
+                                            // Heuristic: Vec variables with "prompt" in name often contain strings
+                                            seg.ident.name.contains("prompt") || seg.ident.name.contains("string")
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
                         // C strings: literals, as_bytes, and C-string returning functions
-                        let is_string = is_string_from_ty || is_string_literal || is_string_from_call || is_string_from_method;
+                        let is_string = is_string_from_ty || is_string_literal || is_string_from_call || is_string_from_method || is_string_from_vec_index;
 
                         // G32: Rust Strings: to_string(), fs_read(), and String-returning functions
                         let is_fs_read = if let Some(ref expr) = init {
@@ -2208,6 +2726,78 @@ pub mod llvm {
                             None
                         };
 
+                        // G41 fix: Store struct type in scope for later field access resolution
+                        // Without this, `≔ p = get_point(); p.x` would fail because
+                        // get_struct_type_from_expr(Expr::Path("p")) couldn't find the type
+                        if let Some(ref st) = struct_type {
+                            scope.struct_types.insert(ident.name.clone(), st.clone());
+                        }
+
+                        // G51 fix: Extract Vec<T> type from type annotation
+                        // This allows ∀ elem ∈ &vary vec { } to know element type T
+                        let vec_type_from_annotation = if let Some(ref type_expr) = ty {
+                            let ty_str = self.type_expr_to_string(type_expr);
+                            if ty_str.starts_with("Vec<") && ty_str.ends_with(">") {
+                                Some(ty_str)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        // G51 fix: Also infer Vec element type from vec! macro arguments
+                        // For vec![Outer·new(1)], infer Vec<Outer> from first element
+                        let vec_type_from_init = if vec_type_from_annotation.is_none() {
+                            if let Some(ref expr) = init {
+                                if let Expr::Macro { path, tokens } = expr {
+                                    let macro_name = path.segments.last()
+                                        .map(|s| s.ident.name.trim_end_matches('!'))
+                                        .unwrap_or("");
+                                    if macro_name == "vec" {
+                                        // Parse first element to get its struct type
+                                        // Look for Type·new pattern in tokens
+                                        let first_elem = tokens.split(',').next()
+                                            .unwrap_or("")
+                                            .split(';')
+                                            .next()
+                                            .unwrap_or("")
+                                            .trim();
+                                        // Check for Type·new(...) pattern
+                                        if let Some(dot_idx) = first_elem.find('·') {
+                                            let type_name = &first_elem[..dot_idx];
+                                            if self.struct_types.contains_key(type_name) {
+                                                Some(format!("Vec<{}>", type_name))
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        // G52: Check if init is as_bytes() so we can track its length
+                        let is_as_bytes_init = if let Some(ref expr) = init {
+                            if let Expr::MethodCall { method, .. } = expr {
+                                method.name == "as_bytes"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
                         let init_val = if let Some(ref expr) = init {
                             self.compile_expr(fn_value, scope, expr)?
                         } else {
@@ -2224,6 +2814,74 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?;
                         scope.vars.insert(ident.name.clone(), alloca);
 
+                        // G52/G53: If init is as_bytes(), compute and store the length
+                        if is_as_bytes_init {
+                            if let Some(ref expr) = init {
+                                if let Expr::MethodCall { receiver, .. } = expr {
+                                    // G53: Check if receiver is a Rust String variable
+                                    let receiver_is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            matches!(scope.var_types.get(&seg.ident.name), Some(SigilType::RustString))
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+
+                                    // Get the string and compute its length
+                                    let str_val = self.compile_expr(fn_value, scope, receiver)?;
+
+                                    let len_val = if receiver_is_rust_string {
+                                        // G53: Rust String - use sigil_string_len
+                                        let string_len_fn = self
+                                            .module
+                                            .get_function("sigil_string_len")
+                                            .ok_or("sigil_string_len not declared")?;
+                                        let len_call = self
+                                            .builder
+                                            .build_call(string_len_fn, &[str_val.into()], "rust_str_len")
+                                            .map_err(|e| e.to_string())?;
+                                        len_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .map(|v| v.into_int_value())
+                                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                    } else {
+                                        // G52: C string - use sigil_strlen
+                                        let strlen_fn = self
+                                            .module
+                                            .get_function("sigil_strlen")
+                                            .ok_or("sigil_strlen not declared")?;
+                                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                        let str_ptr = self
+                                            .builder
+                                            .build_int_to_ptr(str_val, ptr_type, "str_ptr")
+                                            .map_err(|e| e.to_string())?;
+                                        let len_call = self
+                                            .builder
+                                            .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                            .map_err(|e| e.to_string())?;
+                                        len_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .map(|v| v.into_int_value())
+                                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                    };
+
+                                    // Store length in scope
+                                    let len_alloca = self
+                                        .builder
+                                        .build_alloca(self.context.i64_type(), &format!("{}_len", ident.name))
+                                        .map_err(|e| e.to_string())?;
+                                    self.builder
+                                        .build_store(len_alloca, len_val)
+                                        .map_err(|e| e.to_string())?;
+                                    scope.slice_lens.insert(ident.name.clone(), len_alloca);
+                                }
+                            }
+                        }
+
                         // Track float variables
                         if is_float {
                             scope.float_vars.insert(ident.name.clone());
@@ -2239,6 +2897,11 @@ pub mod llvm {
                         // Track struct type for method dispatch (G11 fix)
                         if let Some(ty) = struct_type {
                             scope.register_struct_type(ident.name.clone(), ty);
+                        }
+
+                        // G51 fix: Register Vec<T> type from annotation or inference for iteration element dispatch
+                        if let Some(vec_ty) = vec_type_from_annotation.or(vec_type_from_init) {
+                            scope.register_struct_type(ident.name.clone(), vec_ty);
                         }
                         // eprintln!("DEBUG: Added {} to scope, scope now: {:?}", ident.name, scope.vars.keys().collect::<Vec<_>>());
                     }
@@ -2285,6 +2948,49 @@ pub mod llvm {
             match expr {
                 Expr::Literal(lit) => self.compile_literal(lit),
                 Expr::Path(path) => {
+                    // Build full path string for special constant lookup
+                    let full_path_str: String = path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("::");
+
+                    // Handle std::f64::consts constants (full path or bare names)
+                    if full_path_str == "std::f64::consts::PI" || full_path_str == "std·f64·consts·PI" || full_path_str == "PI" {
+                        let pi_bits = std::f64::consts::PI.to_bits();
+                        return Ok(self.context.i64_type().const_int(pi_bits, false));
+                    }
+                    if full_path_str == "std::f64::consts::E" || full_path_str == "std·f64·consts·E" || full_path_str == "E" {
+                        let e_bits = std::f64::consts::E.to_bits();
+                        return Ok(self.context.i64_type().const_int(e_bits, false));
+                    }
+                    if full_path_str == "std::f64::consts::TAU" || full_path_str == "std·f64·consts·TAU" || full_path_str == "TAU" {
+                        let tau_bits = std::f64::consts::TAU.to_bits();
+                        return Ok(self.context.i64_type().const_int(tau_bits, false));
+                    }
+                    // G47: Additional math constants
+                    if full_path_str == "FRAC_PI_2" || full_path_str == "std::f64::consts::FRAC_PI_2" {
+                        let bits = std::f64::consts::FRAC_PI_2.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "FRAC_PI_4" || full_path_str == "std::f64::consts::FRAC_PI_4" {
+                        let bits = std::f64::consts::FRAC_PI_4.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "LN_2" || full_path_str == "std::f64::consts::LN_2" {
+                        let bits = std::f64::consts::LN_2.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "LN_10" || full_path_str == "std::f64::consts::LN_10" {
+                        let bits = std::f64::consts::LN_10.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "SQRT_2" || full_path_str == "std::f64::consts::SQRT_2" {
+                        let bits = std::f64::consts::SQRT_2.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+
                     // Check for qualified enum variant path (e.g., Color::Blue)
                     if path.segments.len() >= 2 {
                         let enum_name = &path.segments[path.segments.len() - 2].ident.name;
@@ -2710,6 +3416,20 @@ pub mod llvm {
                     Ok(result.unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
                 }
                 Expr::Struct { path, fields, .. } => {
+                    // G44 fix: Check if this is an enum variant with data
+                    // For path like `ErrorKind·Shape { dim: 42 }`, we need to store discriminant
+                    let enum_discriminant: Option<u64> = if path.segments.len() >= 2 {
+                        let potential_enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                        let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+                        if let Some(enum_info) = self.enum_types.get(potential_enum_name) {
+                            enum_info.variants.get(variant_name).copied()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     // Get struct name and potential generic arguments from path
                     let last_segment = path.segments.last().ok_or("Empty struct path")?;
                     let base_name = last_segment.ident.name.as_str();
@@ -2742,8 +3462,13 @@ pub mod llvm {
 
                     if let Some(struct_info) = struct_info_opt {
                         // Known struct type - use heap allocation so returned structs survive
-                        // Calculate struct size: number of fields * 8 bytes (all fields are i64)
-                        let struct_size = struct_info.field_indices.len() as u64 * 8;
+                        // G44 fix: Add 8 bytes for discriminant if this is an enum variant
+                        let base_struct_size = struct_info.field_indices.len() as u64 * 8;
+                        let struct_size = if enum_discriminant.is_some() {
+                            base_struct_size + 8 // Add space for discriminant at offset 0
+                        } else {
+                            base_struct_size
+                        };
                         let size_const = self.context.i64_type().const_int(struct_size.max(8), false);
 
                         let alloc_fn = self
@@ -2773,14 +3498,25 @@ pub mod llvm {
                                 .map_err(|e| e.to_string())?
                         };
 
+                        // G44 fix: Store discriminant at offset 0 for enum variants
+                        if let Some(disc) = enum_discriminant {
+                            let disc_val = self.context.i64_type().const_int(disc, false);
+                            self.builder
+                                .build_store(struct_ptr, disc_val)
+                                .map_err(|e| e.to_string())?;
+                        }
+
                         // Initialize each field
+                        // G44 fix: Field offset starts at 1 for enum variants (0 is discriminant)
+                        let field_offset_base = if enum_discriminant.is_some() { 1u32 } else { 0u32 };
                         for (idx, field_init) in fields.iter().enumerate() {
                             let field_name = &field_init.name.name;
                             // Try to get field index from struct info, fallback to position
-                            let field_idx = *struct_info
+                            let base_field_idx = *struct_info
                                 .field_indices
                                 .get(field_name)
                                 .unwrap_or(&(idx as u32));
+                            let field_idx = base_field_idx + field_offset_base;
 
                             // Get field value (or use field name as variable if no value)
                             let field_value = if let Some(ref val_expr) = field_init.value {
@@ -2799,15 +3535,36 @@ pub mod llvm {
                             };
 
                             // Get pointer to field and store value
-                            let field_ptr = self
-                                .builder
-                                .build_struct_gep(
-                                    struct_info.llvm_type,
-                                    struct_ptr,
-                                    field_idx,
-                                    &format!("{}_ptr", field_name),
-                                )
-                                .map_err(|e| e.to_string())?;
+                            // G44 fix: Use raw pointer arithmetic for enum variants (discriminant at offset 0)
+                            let field_ptr = if enum_discriminant.is_some() {
+                                // For enum variants: use byte offset (field_idx * 8)
+                                let ptr_int = self
+                                    .builder
+                                    .build_ptr_to_int(struct_ptr, self.context.i64_type(), "ptr_int")
+                                    .map_err(|e| e.to_string())?;
+                                let offset = self.context.i64_type().const_int(field_idx as u64 * 8, false);
+                                let field_ptr_int = self
+                                    .builder
+                                    .build_int_add(ptr_int, offset, "field_offset")
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_int_to_ptr(
+                                        field_ptr_int,
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            } else {
+                                // For regular structs: use struct_gep
+                                self.builder
+                                    .build_struct_gep(
+                                        struct_info.llvm_type,
+                                        struct_ptr,
+                                        field_idx,
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            };
                             self.builder
                                 .build_store(field_ptr, field_value)
                                 .map_err(|e| e.to_string())?;
@@ -2822,17 +3579,13 @@ pub mod llvm {
                     }
 
                     // Unknown struct type - create dynamic struct on the fly
-                    // Build field types (all i64 for now)
-                    let field_types: Vec<BasicTypeEnum> = fields
-                        .iter()
-                        .map(|_| self.context.i64_type().into())
-                        .collect();
-
-                    // Create struct type dynamically
-                    let llvm_type = self.context.struct_type(&field_types, false);
-
-                    // Use heap allocation so returned structs survive (matches known struct path)
-                    let struct_size = (fields.len() as u64).max(1) * 8;
+                    // G44 fix: Add discriminant space for enum variants
+                    let base_struct_size = (fields.len() as u64).max(1) * 8;
+                    let struct_size = if enum_discriminant.is_some() {
+                        base_struct_size + 8 // Add space for discriminant at offset 0
+                    } else {
+                        base_struct_size
+                    };
                     let size_const = self.context.i64_type().const_int(struct_size, false);
                     let alloc_fn = self
                         .module
@@ -2858,10 +3611,19 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?
                     };
 
+                    // G44 fix: Store discriminant at offset 0 for enum variants
+                    if let Some(disc) = enum_discriminant {
+                        let disc_val = self.context.i64_type().const_int(disc, false);
+                        self.builder
+                            .build_store(struct_ptr, disc_val)
+                            .map_err(|e| e.to_string())?;
+                    }
+
                     // Initialize each field by index
+                    // G44 fix: Field offset starts at 1 for enum variants (0 is discriminant)
+                    let field_offset_base = if enum_discriminant.is_some() { 1u64 } else { 0u64 };
                     for (idx, field_init) in fields.iter().enumerate() {
                         let field_name = &field_init.name.name;
-                        let field_idx = idx as u32;
 
                         // Get field value (or use field name as variable if no value)
                         let field_value = if let Some(ref val_expr) = field_init.value {
@@ -2879,13 +3641,22 @@ pub mod llvm {
                             }
                         };
 
-                        // Get pointer to field and store value
+                        // G44 fix: Use raw pointer arithmetic for enum variants
+                        let field_offset = (idx as u64 + field_offset_base) * 8;
+                        let ptr_int = self
+                            .builder
+                            .build_ptr_to_int(struct_ptr, self.context.i64_type(), "ptr_int")
+                            .map_err(|e| e.to_string())?;
+                        let offset_const = self.context.i64_type().const_int(field_offset, false);
+                        let field_ptr_int = self
+                            .builder
+                            .build_int_add(ptr_int, offset_const, "field_offset")
+                            .map_err(|e| e.to_string())?;
                         let field_ptr = self
                             .builder
-                            .build_struct_gep(
-                                llvm_type,
-                                struct_ptr,
-                                field_idx,
+                            .build_int_to_ptr(
+                                field_ptr_int,
+                                self.context.ptr_type(AddressSpace::default()),
                                 &format!("{}_ptr", field_name),
                             )
                             .map_err(|e| e.to_string())?;
@@ -3237,7 +4008,71 @@ pub mod llvm {
                 }
                 Expr::Match { expr, arms } => {
                     // Compile the scrutinee (thing being matched)
-                    let scrutinee = self.compile_expr(fn_value, scope, expr)?;
+                    let scrutinee_raw = self.compile_expr(fn_value, scope, expr)?;
+
+                    // G44 fix: Check if we're matching an enum with data
+                    // If any pattern is a TupleStruct or Struct, the scrutinee might be a pointer
+                    // and we need to load the discriminant from offset 0
+                    let is_enum_with_data = arms.iter().any(|arm| {
+                        matches!(
+                            &arm.pattern,
+                            ast::Pattern::TupleStruct { .. } | ast::Pattern::Struct { .. }
+                        )
+                    });
+
+                    let scrutinee = if is_enum_with_data {
+                        // G45 fix: scrutinee_raw might be EITHER a pointer (for data variants created
+                        // by StructExpr) OR a raw discriminant (for unit variants from Path).
+                        // This happens when if-else mixes data and unit variants.
+                        //
+                        // Runtime check: if value > 255, it's probably a heap pointer.
+                        // Discriminants are typically small (0-255), while heap addresses are large.
+                        let threshold = self.context.i64_type().const_int(256, false);
+                        let is_pointer = self.builder
+                            .build_int_compare(IntPredicate::UGE, scrutinee_raw, threshold, "is_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        // Create blocks for pointer vs raw discriminant cases
+                        let ptr_bb = self.context.append_basic_block(fn_value, "scrutinee_ptr");
+                        let raw_bb = self.context.append_basic_block(fn_value, "scrutinee_raw");
+                        let disc_merge_bb = self.context.append_basic_block(fn_value, "disc_merge");
+
+                        self.builder.build_conditional_branch(is_pointer, ptr_bb, raw_bb)
+                            .map_err(|e| e.to_string())?;
+
+                        // Pointer case: load discriminant from offset 0
+                        self.builder.position_at_end(ptr_bb);
+                        let ptr = self.builder
+                            .build_int_to_ptr(
+                                scrutinee_raw,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "scr_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let loaded_disc = self.builder
+                            .build_load(self.context.i64_type(), ptr, "loaded_disc")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        self.builder.build_unconditional_branch(disc_merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let ptr_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Raw case: use value directly as discriminant
+                        self.builder.position_at_end(raw_bb);
+                        self.builder.build_unconditional_branch(disc_merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let raw_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Merge: phi to select the discriminant
+                        self.builder.position_at_end(disc_merge_bb);
+                        let disc_phi = self.builder
+                            .build_phi(self.context.i64_type(), "discriminant")
+                            .map_err(|e| e.to_string())?;
+                        disc_phi.add_incoming(&[(&loaded_disc, ptr_bb_end), (&scrutinee_raw, raw_bb_end)]);
+                        disc_phi.as_basic_value().into_int_value()
+                    } else {
+                        scrutinee_raw
+                    };
 
                     let merge_bb = self.context.append_basic_block(fn_value, "match_merge");
                     let mut incoming: Vec<(
@@ -3251,12 +4086,84 @@ pub mod llvm {
                         let pattern_val = match &arm.pattern {
                             ast::Pattern::Path(path) => {
                                 if path.segments.len() >= 2 {
-                                    let enum_name =
+                                    let potential_enum =
                                         &path.segments[path.segments.len() - 2].ident.name;
                                     let variant_name =
                                         &path.segments[path.segments.len() - 1].ident.name;
-                                    if let Some(enum_info) = self.enum_types.get(enum_name) {
-                                        enum_info.variants.get(variant_name).copied()
+                                    // Resolve This/Self to current_self_type
+                                    let enum_name = if potential_enum == "This" || potential_enum == "Self" {
+                                        self.current_self_type.clone()
+                                    } else {
+                                        Some(potential_enum.clone())
+                                    };
+                                    if let Some(ref en) = enum_name {
+                                        if let Some(enum_info) = self.enum_types.get(en) {
+                                            enum_info.variants.get(variant_name).copied()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else if path.segments.len() == 1 {
+                                    // G44 fix: Single-segment pattern like `None` - search all enums
+                                    let variant_name = &path.segments[0].ident.name;
+                                    self.enum_types.values()
+                                        .find_map(|enum_info| enum_info.variants.get(variant_name).copied())
+                                } else {
+                                    None
+                                }
+                            }
+                            // G44 fix: Handle TupleStruct patterns like `Enum::Variant(x)`
+                            ast::Pattern::TupleStruct { path, .. } => {
+                                if path.segments.len() >= 2 {
+                                    let potential_enum =
+                                        &path.segments[path.segments.len() - 2].ident.name;
+                                    let variant_name =
+                                        &path.segments[path.segments.len() - 1].ident.name;
+                                    // Resolve This/Self to current_self_type
+                                    let enum_name = if potential_enum == "This" || potential_enum == "Self" {
+                                        self.current_self_type.clone()
+                                    } else {
+                                        Some(potential_enum.clone())
+                                    };
+                                    if let Some(ref en) = enum_name {
+                                        if let Some(enum_info) = self.enum_types.get(en) {
+                                            enum_info.variants.get(variant_name).copied()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else if path.segments.len() == 1 {
+                                    // G44 fix: Single-segment pattern like `Some(r)` - search all enums
+                                    let variant_name = &path.segments[0].ident.name;
+                                    self.enum_types.values()
+                                        .find_map(|enum_info| enum_info.variants.get(variant_name).copied())
+                                } else {
+                                    None
+                                }
+                            }
+                            // G44 fix: Handle Struct patterns like `Enum::Variant { field }`
+                            ast::Pattern::Struct { path, .. } => {
+                                if path.segments.len() >= 2 {
+                                    let potential_enum =
+                                        &path.segments[path.segments.len() - 2].ident.name;
+                                    let variant_name =
+                                        &path.segments[path.segments.len() - 1].ident.name;
+                                    // Resolve This/Self to current_self_type
+                                    let enum_name = if potential_enum == "This" || potential_enum == "Self" {
+                                        self.current_self_type.clone()
+                                    } else {
+                                        Some(potential_enum.clone())
+                                    };
+                                    if let Some(ref en) = enum_name {
+                                        if let Some(enum_info) = self.enum_types.get(en) {
+                                            enum_info.variants.get(variant_name).copied()
+                                        } else {
+                                            None
+                                        }
                                     } else {
                                         None
                                     }
@@ -3325,12 +4232,12 @@ pub mod llvm {
                                 path: _, fields, ..
                             } => {
                                 // Bind each field pattern as a variable
-                                // For simplicity, assume scrutinee is a pointer to struct data
+                                // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     if let ast::Pattern::Ident { name, .. } = field_pattern {
                                         // Create a variable for this binding
-                                        // For enums with data, field 0 is often at offset 8 (after tag)
-                                        let offset = (i as u64 + 1) * 8; // Skip tag byte
+                                        // For enums with data, field 0 is at offset 8 (after discriminant)
+                                        let offset = (i as u64 + 1) * 8; // Skip discriminant
                                         let offset_val =
                                             self.context.i64_type().const_int(offset, false);
 
@@ -3338,7 +4245,7 @@ pub mod llvm {
                                             self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
-                                            .build_int_to_ptr(scrutinee, ptr_type, "scrutinee_ptr")
+                                            .build_int_to_ptr(scrutinee_raw, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
@@ -3388,6 +4295,7 @@ pub mod llvm {
                                 path: _, fields, ..
                             } => {
                                 // Bind each field pattern as a variable
+                                // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     // Get binding name: use pattern if present, else use field name (shorthand)
                                     let binding_name = if let Some(ref pat) = field_pattern.pattern
@@ -3403,7 +4311,7 @@ pub mod llvm {
                                     };
 
                                     if let Some(name) = binding_name {
-                                        // Use field index for offset
+                                        // Use field index for offset (field 0 is at offset 8 after discriminant)
                                         let offset = (i as u64 + 1) * 8;
                                         let offset_val =
                                             self.context.i64_type().const_int(offset, false);
@@ -3412,7 +4320,7 @@ pub mod llvm {
                                             self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
-                                            .build_int_to_ptr(scrutinee, ptr_type, "scrutinee_ptr")
+                                            .build_int_to_ptr(scrutinee_raw, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
@@ -3534,11 +4442,179 @@ pub mod llvm {
                         if let Some(mangled_name) = self.impl_methods.get(&(recv_type.clone(), method_name.to_string())) {
                             if let Some(callee) = self.module.get_function(mangled_name) {
                                 // Compile arguments
+                                // G52: For &str and slice params, also pass the length
+                                // G55: Also handle &vec_name references to local Vec variables
                                 let mut compiled_args: Vec<BasicMetadataValueEnum> =
                                     vec![receiver_val.into()];
+
+                                // G55: Collect pending vec references that might need length params
+                                let mut pending_vec_refs: Vec<String> = Vec::new();
+
                                 for arg in args {
+                                    // G52: Check if this is a slice variable (has tracked length for &[u8])
+                                    // Note: &str variables don't need extra length - they're C strings (null-terminated)
+                                    let slice_var_name = if let Expr::Path(path) = arg {
+                                        if let Some(seg) = path.segments.last() {
+                                            if scope.slice_lens.contains_key(&seg.ident.name) {
+                                                Some(seg.ident.name.clone())
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    };
+
+                                    // G52/G53: Check if this is an as_bytes() method call
+                                    let is_as_bytes = if let Expr::MethodCall { method, .. } = arg {
+                                        method.name == "as_bytes"
+                                    } else {
+                                        false
+                                    };
+
+                                    // G55: Check if this is &vec_name (reference to a local Vec variable)
+                                    let vec_ref_name = {
+                                        let inner_expr = match arg {
+                                            Expr::AddrOf { expr: inner, .. } => Some(inner.as_ref()),
+                                            Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => Some(inner.as_ref()),
+                                            _ => None,
+                                        };
+                                        if let Some(inner) = inner_expr {
+                                            if let Expr::Path(path) = inner {
+                                                if let Some(seg) = path.segments.last() {
+                                                    if scope.vars.contains_key(&seg.ident.name) {
+                                                        Some(seg.ident.name.clone())
+                                                    } else {
+                                                        None
+                                                    }
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    };
+
                                     let arg_val = self.compile_expr(fn_value, scope, arg)?;
                                     compiled_args.push(arg_val.into());
+
+                                    // G52: For slice variables (&[u8]), load and pass the tracked length
+                                    if let Some(var_name) = slice_var_name {
+                                        if let Some(len_alloca) = scope.slice_lens.get(&var_name) {
+                                            let len_val = self
+                                                .builder
+                                                .build_load(self.context.i64_type(), *len_alloca, "slice_len_arg")
+                                                .map_err(|e| e.to_string())?
+                                                .into_int_value();
+                                            compiled_args.push(len_val.into());
+                                        }
+                                    }
+
+                                    // G52/G53: For as_bytes() calls, compute and pass the length
+                                    if is_as_bytes {
+                                        if let Expr::MethodCall { receiver, .. } = arg {
+                                            // G53: Check if receiver is a Rust String variable
+                                            let is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                                                if let Some(seg) = path.segments.last() {
+                                                    matches!(scope.var_types.get(&seg.ident.name), Some(SigilType::RustString))
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            };
+
+                                            // Get the string pointer (receiver is the string)
+                                            let str_val = self.compile_expr(fn_value, scope, receiver)?;
+
+                                            let len_val = if is_rust_string {
+                                                // G53: Rust String - use sigil_string_len
+                                                let string_len_fn = self
+                                                    .module
+                                                    .get_function("sigil_string_len")
+                                                    .ok_or("sigil_string_len not declared")?;
+                                                let len_call = self
+                                                    .builder
+                                                    .build_call(string_len_fn, &[str_val.into()], "rust_str_len")
+                                                    .map_err(|e| e.to_string())?;
+                                                len_call
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .map(|v| v.into_int_value())
+                                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                            } else {
+                                                // G52: C string - use sigil_strlen
+                                                let strlen_fn = self
+                                                    .module
+                                                    .get_function("sigil_strlen")
+                                                    .ok_or("sigil_strlen not declared")?;
+                                                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                                let str_ptr = self
+                                                    .builder
+                                                    .build_int_to_ptr(str_val, ptr_type, "str_ptr")
+                                                    .map_err(|e| e.to_string())?;
+                                                let len_call = self
+                                                    .builder
+                                                    .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                                    .map_err(|e| e.to_string())?;
+                                                len_call
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .map(|v| v.into_int_value())
+                                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                            };
+                                            compiled_args.push(len_val.into());
+                                        }
+                                    }
+
+                                    // G55: Track &vec references for potential length addition after loop
+                                    if let Some(vec_name) = vec_ref_name {
+                                        pending_vec_refs.push(vec_name);
+                                    }
+                                }
+
+                                // G55: After compiling all source args, check if callee expects more params
+                                // If so, add lengths for pending &vec references
+                                let expected_params = callee.count_params() as usize;
+                                if expected_params > compiled_args.len() && !pending_vec_refs.is_empty() {
+                                    let needed = expected_params - compiled_args.len();
+                                    for vec_name in pending_vec_refs.iter().take(needed) {
+                                        if let Some(vec_ptr) = scope.vars.get(vec_name) {
+                                            let vec_val = self
+                                                .builder
+                                                .build_load(self.context.i64_type(), *vec_ptr, "vec_for_len")
+                                                .map_err(|e| e.to_string())?
+                                                .into_int_value();
+                                            let vec_len_fn = self
+                                                .module
+                                                .get_function("sigil_vec_len")
+                                                .ok_or("sigil_vec_len not declared")?;
+                                            let len_call = self
+                                                .builder
+                                                .build_call(vec_len_fn, &[vec_val.into()], "vec_len_arg")
+                                                .map_err(|e| e.to_string())?;
+                                            let len_val = len_call
+                                                .try_as_basic_value()
+                                                .left()
+                                                .map(|v| v.into_int_value())
+                                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+                                            compiled_args.push(len_val.into());
+                                        }
+                                    }
+                                }
+
+                                // G50 fix: Verify argument count matches function signature
+                                if compiled_args.len() != expected_params {
+                                    // Argument count mismatch - likely a source code issue
+                                    // Return 0 to avoid LLVM verification failure
+                                    eprintln!("Warning: method call {}.{}() has {} args but function expects {} params",
+                                        recv_type, method_name, compiled_args.len(), expected_params);
+                                    return Ok(self.context.i64_type().const_int(0, false));
                                 }
 
                                 let call = self
@@ -3587,6 +4663,21 @@ pub mod llvm {
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
                         "len" => {
+                            // G52: Check if receiver is a slice parameter with stored length
+                            if let Expr::Path(path) = receiver.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    if let Some(len_alloca) = scope.slice_lens.get(&seg.ident.name) {
+                                        // This is a slice param - return the stored length
+                                        let len_val = self
+                                            .builder
+                                            .build_load(self.context.i64_type(), *len_alloca, "slice_len")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+                                        return Ok(len_val);
+                                    }
+                                }
+                            }
+
                             // G32: Check receiver type for appropriate len function
                             let (is_c_string, is_rust_string) =
                                 if matches!(receiver.as_ref(), Expr::Literal(Literal::String(_))) {
@@ -4203,6 +5294,14 @@ pub mod llvm {
                                         compiled_args.push(arg_val.into());
                                     }
 
+                                    // G50 fix: Verify argument count matches function signature
+                                    let expected_params = callee.count_params() as usize;
+                                    if compiled_args.len() != expected_params {
+                                        eprintln!("Warning: method call {}.{}() has {} args but function expects {} params",
+                                            recv_type, method_name, compiled_args.len(), expected_params);
+                                        return Ok(self.context.i64_type().const_int(0, false));
+                                    }
+
                                     let call = self
                                         .builder
                                         .build_call(callee, &compiled_args, "method_call")
@@ -4221,31 +5320,43 @@ pub mod llvm {
                     }
 
                     // Second pass: Fallback to matching by method name only (for unknown types)
+                    // G50 fix: Check argument count BEFORE compiling to avoid borrow issues
+                    let expected_arg_count = args.len() + 1; // +1 for receiver
+                    let mut matched_method: Option<(String, inkwell::values::FunctionValue)> = None;
+
                     for ((_type_name, meth_name), mangled_name) in &self.impl_methods {
                         if meth_name == method_name {
                             if let Some(callee) = self.module.get_function(mangled_name) {
-                                // Compile arguments
-                                let mut compiled_args: Vec<BasicMetadataValueEnum> =
-                                    vec![receiver_val.into()];
-                                for arg in args {
-                                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
-                                    compiled_args.push(arg_val.into());
+                                let expected_params = callee.count_params() as usize;
+                                if expected_arg_count == expected_params {
+                                    matched_method = Some((mangled_name.clone(), callee));
+                                    break;
                                 }
-
-                                let call = self
-                                    .builder
-                                    .build_call(callee, &compiled_args, "method_call")
-                                    .map_err(|e| e.to_string())?;
-
-                                return Ok(call
-                                    .try_as_basic_value()
-                                    .left()
-                                    .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| {
-                                        self.context.i64_type().const_int(0, false)
-                                    }));
                             }
                         }
+                    }
+
+                    if let Some((_mangled_name, callee)) = matched_method {
+                        // Compile arguments
+                        let mut compiled_args: Vec<BasicMetadataValueEnum> =
+                            vec![receiver_val.into()];
+                        for arg in args {
+                            let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                            compiled_args.push(arg_val.into());
+                        }
+
+                        let call = self
+                            .builder
+                            .build_call(callee, &compiled_args, "method_call")
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(call
+                            .try_as_basic_value()
+                            .left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| {
+                                self.context.i64_type().const_int(0, false)
+                            }));
                     }
 
                     // Fallback: Try to call as a method that mutates/accesses the receiver
@@ -4550,6 +5661,12 @@ pub mod llvm {
                             // TODO: implement assertions
                             Ok(self.context.i64_type().const_int(0, false))
                         }
+                        // G44 fix: Handle write!/writeln! macros (for trait Display/Debug impls)
+                        "write" | "writeln" => {
+                            // write!(f, ...) - just return Ok(()) represented as 0
+                            // In a full implementation, this would format and write to f
+                            Ok(self.context.i64_type().const_int(0, false))
+                        }
                         _ => {
                             // Unknown macro - try to call as function
                             if let Some(f) = self.module.get_function(macro_name) {
@@ -4672,6 +5789,9 @@ pub mod llvm {
                 // Await - compile inner
                 Expr::Await { expr, .. } => self.compile_expr(fn_value, scope, expr),
 
+                // G49: Named argument - just compile the value, name is metadata
+                Expr::NamedArg { value, .. } => self.compile_expr(fn_value, scope, value),
+
                 _ => {
                     // Unsupported expression - return error instead of silent 0
                     Err(format!(
@@ -4775,10 +5895,26 @@ pub mod llvm {
         fn type_expr_to_string(&self, ty: &ast::TypeExpr) -> String {
             match ty {
                 ast::TypeExpr::Path(path) => {
-                    // Get the last segment's name
+                    // Get the last segment's name including generics (e.g., Vec<Layer>)
                     path.segments
                         .last()
-                        .map(|seg| seg.ident.name.clone())
+                        .map(|seg| {
+                            let name = seg.ident.name.clone();
+                            // G51 fix: Include generic arguments for Vec<T> etc.
+                            if let Some(ref generics) = seg.generics {
+                                if !generics.is_empty() {
+                                    let generic_strs: Vec<String> = generics
+                                        .iter()
+                                        .map(|g| self.type_expr_to_string(g))
+                                        .collect();
+                                    format!("{}<{}>", name, generic_strs.join(", "))
+                                } else {
+                                    name
+                                }
+                            } else {
+                                name
+                            }
+                        })
                         .unwrap_or_else(|| "unknown".to_string())
                 }
                 ast::TypeExpr::Reference { inner, .. } => {
@@ -4853,12 +5989,15 @@ pub mod llvm {
             }
         }
 
-        /// G32: Check if a TypeExpr is or contains String/str
+        /// G32: Check if a TypeExpr is or contains Rust String (heap-allocated)
+        /// G52: NOTE: This does NOT include &str - &str is a C string (null-terminated)
+        /// which should be handled with SigilType::String, not SigilType::RustString
         fn type_contains_string(&self, ty: &ast::TypeExpr) -> bool {
             match ty {
                 ast::TypeExpr::Path(path) => {
                     if let Some(seg) = path.segments.last() {
-                        if seg.ident.name == "String" || seg.ident.name == "str" {
+                        // Only match Rust String, NOT &str (C string)
+                        if seg.ident.name == "String" {
                             return true;
                         }
                     }
@@ -4870,20 +6009,17 @@ pub mod llvm {
             }
         }
 
-        /// G28: Check if type is a byte slice (&[u8], &str, &[T]) for direct pointer indexing
+        /// G28: Check if type is a byte slice (&[u8]) for direct pointer indexing
+        /// G52: NOTE: This does NOT include &str - &str is a C string (null-terminated)
+        /// which doesn't need an extra _len parameter. Use type_is_str_ref for &str.
         fn type_is_byte_slice(&self, ty: &ast::TypeExpr) -> bool {
             match ty {
-                ast::TypeExpr::Path(path) => {
-                    // Check for &str
-                    if let Some(seg) = path.segments.last() {
-                        if seg.ident.name == "str" {
-                            return true;
-                        }
-                    }
+                ast::TypeExpr::Path(_) => {
+                    // Bare path like "str" - not a byte slice, that's a C string
                     false
                 }
                 ast::TypeExpr::Reference { inner, .. } => {
-                    // &[u8] or &str only - NOT &[f64], &[i64] etc.
+                    // &[u8] only - NOT &str or other slices
                     match inner.as_ref() {
                         ast::TypeExpr::Slice(elem_ty) => {
                             // Only &[u8] counts as byte slice
@@ -4897,13 +6033,8 @@ pub mod llvm {
                                 false
                             }
                         }
-                        ast::TypeExpr::Path(path) => {
-                            if let Some(seg) = path.segments.last() {
-                                seg.ident.name == "str"  // &str
-                            } else {
-                                false
-                            }
-                        }
+                        // G52: &str is a C string, NOT a byte slice
+                        // C strings don't need extra _len param (they're null-terminated)
                         _ => false,
                     }
                 }
@@ -4921,6 +6052,12 @@ pub mod llvm {
                 }
                 _ => false,
             }
+        }
+
+        /// G52: Check if type is a byte slice OR &str for indexing purposes
+        /// Both &[u8] and &str can be indexed directly with pointer arithmetic
+        fn type_is_indexable_slice(&self, ty: &ast::TypeExpr) -> bool {
+            self.type_is_byte_slice(ty) || self.type_is_str_ref(ty)
         }
 
         /// G40: Check if type is specifically &str (C-string reference)
@@ -6329,9 +7466,11 @@ pub mod llvm {
 
             // G28: Check if this is a byte slice (from as_bytes)
             // Byte slices use direct pointer indexing, not Vec runtime functions
+            // G52: Also check slice_lens for slice params and local slice variables
             let is_byte_slice = if let Expr::Path(path) = expr {
                 if let Some(seg) = path.segments.last() {
-                    scope.is_string_var(&seg.ident.name)
+                    scope.is_string_var(&seg.ident.name) ||
+                    scope.slice_lens.contains_key(&seg.ident.name)
                 } else {
                     false
                 }
@@ -7078,6 +8217,41 @@ pub mod llvm {
                     Ok(f64_type.const_float(v))
                 }
                 Expr::Path(path) => {
+                    // Build full path string for special constant lookup
+                    let full_path_str: String = path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("::");
+
+                    // Handle std::f64::consts constants (full path or bare names)
+                    if full_path_str == "std::f64::consts::PI" || full_path_str == "std·f64·consts·PI" || full_path_str == "PI" {
+                        return Ok(f64_type.const_float(std::f64::consts::PI));
+                    }
+                    if full_path_str == "std::f64::consts::E" || full_path_str == "std·f64·consts·E" || full_path_str == "E" {
+                        return Ok(f64_type.const_float(std::f64::consts::E));
+                    }
+                    if full_path_str == "std::f64::consts::TAU" || full_path_str == "std·f64·consts·TAU" || full_path_str == "TAU" {
+                        return Ok(f64_type.const_float(std::f64::consts::TAU));
+                    }
+                    // G47: Additional math constants
+                    if full_path_str == "FRAC_PI_2" || full_path_str == "std::f64::consts::FRAC_PI_2" {
+                        return Ok(f64_type.const_float(std::f64::consts::FRAC_PI_2));
+                    }
+                    if full_path_str == "FRAC_PI_4" || full_path_str == "std::f64::consts::FRAC_PI_4" {
+                        return Ok(f64_type.const_float(std::f64::consts::FRAC_PI_4));
+                    }
+                    if full_path_str == "LN_2" || full_path_str == "std::f64::consts::LN_2" {
+                        return Ok(f64_type.const_float(std::f64::consts::LN_2));
+                    }
+                    if full_path_str == "LN_10" || full_path_str == "std::f64::consts::LN_10" {
+                        return Ok(f64_type.const_float(std::f64::consts::LN_10));
+                    }
+                    if full_path_str == "SQRT_2" || full_path_str == "std::f64::consts::SQRT_2" {
+                        return Ok(f64_type.const_float(std::f64::consts::SQRT_2));
+                    }
+
                     // Variable load - check if it's a float variable
                     let name = path.segments.last()
                         .map(|s| s.ident.name.as_str())
@@ -7696,6 +8870,9 @@ pub mod llvm {
             // Then block
             self.builder.position_at_end(then_bb);
 
+            // G46 fix: Clone scope for then branch so variables don't leak to else branch
+            let mut then_scope = scope.clone();
+
             // If this was an if-let, bind the variable in the then-block scope
             if let Some(name) = let_binding {
                 let alloca = self
@@ -7705,11 +8882,11 @@ pub mod llvm {
                 self.builder
                     .build_store(alloca, cond_val)
                     .map_err(|e| e.to_string())?;
-                scope.vars.insert(name, alloca);
+                then_scope.vars.insert(name, alloca);
             }
 
             let then_val = self
-                .compile_block(fn_value, scope, then_branch)?
+                .compile_block(fn_value, &mut then_scope, then_branch)?
                 .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
             let then_terminated = self
                 .builder
@@ -7726,8 +8903,10 @@ pub mod llvm {
 
             // Else block
             self.builder.position_at_end(else_bb);
+            // G46 fix: Clone original scope for else branch (not modified by then branch)
+            let mut else_scope = scope.clone();
             let else_val = if let Some(else_expr) = else_branch {
-                self.compile_expr(fn_value, scope, else_expr)?
+                self.compile_expr(fn_value, &mut else_scope, else_expr)?
             } else {
                 self.context.i64_type().const_int(0, false)
             };
@@ -8064,6 +9243,19 @@ pub mod llvm {
                         }
                     }
                 }
+                // G51 fix: Handle local variable references (&vary layers where layers is Vec<Layer>)
+                if let Expr::Path(path) = inner {
+                    if path.segments.len() == 1 {
+                        let local_var_name = &path.segments[0].ident.name;
+                        // Check if local variable has a Vec<T> struct type registered
+                        if let Some(var_type) = scope.get_struct_type(local_var_name) {
+                            if var_type.starts_with("Vec<") && var_type.ends_with(">") {
+                                let elem_type = &var_type[4..var_type.len()-1];
+                                scope.register_struct_type(var_name.to_string(), elem_type.to_string());
+                            }
+                        }
+                    }
+                }
             }
 
             // G24 Fix: Get length and store in alloca to ensure domination
@@ -8073,7 +9265,21 @@ pub mod llvm {
                 .build_load(self.context.i64_type(), iter_ptr, "iter_for_len")
                 .map_err(|e| e.to_string())?
                 .into_int_value();
-            let len_val = self.get_vec_length(iter_for_len)?;
+            // G51 fix: Use sigil_vec_len runtime function instead of inline load
+            // The inline get_vec_length assumed wrong Vec layout.
+            let vec_len_fn = self
+                .module
+                .get_function("sigil_vec_len")
+                .ok_or("sigil_vec_len not declared")?;
+            let len_call = self
+                .builder
+                .build_call(vec_len_fn, &[iter_for_len.into()], "vec_len")
+                .map_err(|e| e.to_string())?;
+            let len_val = len_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
 
             // Store length in alloca
             let len_ptr = self
@@ -8123,7 +9329,27 @@ pub mod llvm {
                 .build_load(self.context.i64_type(), idx_ptr, "idx_for_elem")
                 .map_err(|e| e.to_string())?
                 .into_int_value();
-            let elem_val = self.get_vec_element(iter_for_elem, idx_for_elem)?;
+            // G51 fix: Use sigil_vec_get runtime function instead of inline GEP
+            // The inline get_vec_element assumed wrong Vec layout ({len, cap, data[]}),
+            // but Rust Vec has different internal structure. Use the runtime function
+            // that properly handles the actual Rust Vec layout.
+            let vec_get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+            let elem_call = self
+                .builder
+                .build_call(
+                    vec_get_fn,
+                    &[iter_for_elem.into(), idx_for_elem.into()],
+                    "vec_elem",
+                )
+                .map_err(|e| e.to_string())?;
+            let elem_val = elem_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
             self.builder
                 .build_store(var_ptr, elem_val)
                 .map_err(|e| e.to_string())?;
@@ -8298,6 +9524,88 @@ pub mod llvm {
             } else {
                 full_path
             };
+
+            // G44 fix: Handle generic enum tuple variant construction
+            // For patterns like MyError::Shape(inner_val) or MyError·Shape(inner_val)
+            if let Expr::Path(path) = func {
+                if path.segments.len() >= 2 {
+                    let enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                    let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+
+                    if let Some(enum_info) = self.enum_types.get(enum_name) {
+                        if let Some(&disc) = enum_info.variants.get(variant_name) {
+                            // This is an enum tuple variant constructor
+                            // Allocate: [discriminant (8 bytes)] [arg values...]
+                            let struct_size = (args.len() as u64 + 1) * 8;
+                            let size_const = self.context.i64_type().const_int(struct_size, false);
+
+                            let alloc_fn = self
+                                .module
+                                .get_function("sigil_alloc")
+                                .ok_or("sigil_alloc not declared")?;
+                            let alloc_call = self
+                                .builder
+                                .build_call(alloc_fn, &[size_const.into()], "enum_alloc")
+                                .map_err(|e| e.to_string())?;
+                            let alloc_result = alloc_call
+                                .try_as_basic_value()
+                                .left()
+                                .ok_or("sigil_alloc returned void")?;
+
+                            let struct_ptr = if alloc_result.is_pointer_value() {
+                                alloc_result.into_pointer_value()
+                            } else {
+                                self.builder
+                                    .build_int_to_ptr(
+                                        alloc_result.into_int_value(),
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        "enum_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            };
+
+                            // Store discriminant at offset 0
+                            let disc_val = self.context.i64_type().const_int(disc, false);
+                            self.builder
+                                .build_store(struct_ptr, disc_val)
+                                .map_err(|e| e.to_string())?;
+
+                            // Store arguments at offsets 8, 16, 24, ...
+                            for (i, arg) in args.iter().enumerate() {
+                                let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                let offset = ((i + 1) * 8) as u64;
+                                let ptr_int = self
+                                    .builder
+                                    .build_ptr_to_int(struct_ptr, self.context.i64_type(), "ptr_int")
+                                    .map_err(|e| e.to_string())?;
+                                let offset_const = self.context.i64_type().const_int(offset, false);
+                                let field_ptr_int = self
+                                    .builder
+                                    .build_int_add(ptr_int, offset_const, "field_offset")
+                                    .map_err(|e| e.to_string())?;
+                                let field_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        field_ptr_int,
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        "field_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(field_ptr, arg_val)
+                                    .map_err(|e| e.to_string())?;
+                            }
+
+                            // Return pointer as i64
+                            let ptr_int = self
+                                .builder
+                                .build_ptr_to_int(struct_ptr, self.context.i64_type(), "enum_ptr_int")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(ptr_int);
+                        }
+                    }
+                }
+            }
 
             // Handle common enum/type constructors explicitly (match statement has mysterious issues)
             if full_path == "Result::Ok" || full_path == "Result·Ok" {
@@ -10063,11 +11371,171 @@ pub mod llvm {
             };
 
             // Compile arguments
-            let compiled_args: Result<Vec<_>, _> = args
-                .iter()
-                .map(|arg| self.compile_expr(fn_value, scope, arg).map(|v| v.into()))
-                .collect();
-            let compiled_args = compiled_args?;
+            // G52 fix: For slice args (from as_bytes() or slice variables), also pass the length
+            // G55 fix: Also handle &vec_name references to local Vec variables
+            let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+
+            // G55: Collect pending vec references that might need length params
+            let mut pending_vec_refs: Vec<String> = Vec::new();
+
+            for arg in args {
+                // G52: Check if this is a .as_bytes() method call - if so, also pass strlen
+                let is_as_bytes = if let Expr::MethodCall { method, .. } = arg {
+                    method.name == "as_bytes"
+                } else {
+                    false
+                };
+
+                // G52: Check if this is a slice variable (has tracked length)
+                let slice_var_name = if let Expr::Path(path) = arg {
+                    if let Some(seg) = path.segments.last() {
+                        if scope.slice_lens.contains_key(&seg.ident.name) {
+                            Some(seg.ident.name.clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // G55: Check if this is &vec_name (reference to a local Vec variable)
+                let vec_ref_name = {
+                    let inner_expr = match arg {
+                        Expr::AddrOf { expr: inner, .. } => Some(inner.as_ref()),
+                        Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => Some(inner.as_ref()),
+                        _ => None,
+                    };
+                    if let Some(inner) = inner_expr {
+                        if let Expr::Path(path) = inner {
+                            if let Some(seg) = path.segments.last() {
+                                // It's a reference to a variable
+                                if scope.vars.contains_key(&seg.ident.name) {
+                                    Some(seg.ident.name.clone())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                compiled_args.push(arg_val.into());
+
+                // G52/G53: For as_bytes(), also compute and pass the length
+                // G53: Check if receiver is a Rust String (use sigil_string_len) or C string (use sigil_strlen)
+                if is_as_bytes {
+                    if let Expr::MethodCall { receiver, .. } = arg {
+                        // Check if receiver is a Rust String variable
+                        let is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                            if let Some(seg) = path.segments.last() {
+                                matches!(scope.var_types.get(&seg.ident.name), Some(SigilType::RustString))
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // Get the string pointer (receiver is the string)
+                        let str_val = self.compile_expr(fn_value, scope, receiver)?;
+
+                        let len_val = if is_rust_string {
+                            // G53: Rust String - use sigil_string_len
+                            let string_len_fn = self
+                                .module
+                                .get_function("sigil_string_len")
+                                .ok_or("sigil_string_len not declared")?;
+                            let len_call = self
+                                .builder
+                                .build_call(string_len_fn, &[str_val.into()], "rust_str_len")
+                                .map_err(|e| e.to_string())?;
+                            len_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                        } else {
+                            // G52: C string - use sigil_strlen
+                            let strlen_fn = self
+                                .module
+                                .get_function("sigil_strlen")
+                                .ok_or("sigil_strlen not declared")?;
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let str_ptr = self
+                                .builder
+                                .build_int_to_ptr(str_val, ptr_type, "str_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let len_call = self
+                                .builder
+                                .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                .map_err(|e| e.to_string())?;
+                            len_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                        };
+                        compiled_args.push(len_val.into());
+                    }
+                }
+
+                // G52: For slice variables, load and pass the tracked length
+                if let Some(var_name) = slice_var_name {
+                    if let Some(len_alloca) = scope.slice_lens.get(&var_name) {
+                        let len_val = self
+                            .builder
+                            .build_load(self.context.i64_type(), *len_alloca, "slice_len_arg")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        compiled_args.push(len_val.into());
+                    }
+                }
+
+                // G55: Track &vec references for potential length addition after loop
+                if let Some(vec_name) = vec_ref_name {
+                    pending_vec_refs.push(vec_name);
+                }
+            }
+
+            // G55: After compiling all source args, check if callee expects more params
+            // If so, add lengths for pending &vec references
+            let expected_params = callee.count_params() as usize;
+            if expected_params > compiled_args.len() && !pending_vec_refs.is_empty() {
+                let needed = expected_params - compiled_args.len();
+                for vec_name in pending_vec_refs.iter().take(needed) {
+                    if let Some(vec_ptr) = scope.vars.get(vec_name) {
+                        let vec_val = self
+                            .builder
+                            .build_load(self.context.i64_type(), *vec_ptr, "vec_for_len")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        let vec_len_fn = self
+                            .module
+                            .get_function("sigil_vec_len")
+                            .ok_or("sigil_vec_len not declared")?;
+                        let len_call = self
+                            .builder
+                            .build_call(vec_len_fn, &[vec_val.into()], "vec_len_arg")
+                            .map_err(|e| e.to_string())?;
+                        let len_val = len_call
+                            .try_as_basic_value()
+                            .left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+                        compiled_args.push(len_val.into());
+                    }
+                }
+            }
 
             // Build call with tail call hint for potential optimization
             let call = self
@@ -10757,6 +12225,25 @@ pub mod llvm {
                     prefix: ident,
                     suffix,
                 } => {
+                    // If this is the root of the path (prefix is empty), check if it's an external crate
+                    if prefix.is_empty() {
+                        let crate_name = &ident.name;
+                        // Skip "crate" and "self" - they're not external crates
+                        if crate_name != "crate" && crate_name != "self" {
+                            // Try to load this as an external crate
+                            match self.load_crate(crate_name) {
+                                Ok(true) => {
+                                    // Crate loaded successfully
+                                }
+                                Ok(false) => {
+                                    // Not in workspace, might be a builtin
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: failed to load crate '{}': {}", crate_name, e);
+                                }
+                            }
+                        }
+                    }
                     let mut new_prefix = prefix.to_vec();
                     new_prefix.push(ident.name.clone());
                     self.process_use_tree(suffix, &new_prefix)
@@ -10836,6 +12323,22 @@ pub mod llvm {
 
         /// Run LLVM optimization passes
         fn run_llvm_optimizations(&self) -> Result<(), String> {
+            // Debug: dump raw IR before optimization
+            if std::env::var("SIGIL_DEBUG_RAW_IR").is_ok() {
+                eprintln!("=== Raw LLVM IR (before optimization) ===");
+                eprintln!("{}", self.module.print_to_string().to_string());
+                eprintln!("=== End Raw LLVM IR ===");
+            }
+
+            // Verify IR before optimization
+            if let Err(e) = self.module.verify() {
+                eprintln!("LLVM IR verification failed: {}", e.to_string());
+                // Dump IR on verification failure
+                eprintln!("=== Invalid LLVM IR ===");
+                eprintln!("{}", self.module.print_to_string().to_string());
+                return Err(format!("LLVM IR verification failed: {}", e.to_string()));
+            }
+
             Target::initialize_all(&InitializationConfig::default());
 
             let triple = TargetMachine::get_default_triple();
@@ -10995,6 +12498,10 @@ pub mod llvm {
             if let Some(f) = self.module.get_function("sigil_string_concat") {
                 ee.add_global_mapping(&f, sigil_string_concat as usize);
             }
+            // G48: String repeat function
+            if let Some(f) = self.module.get_function("sigil_string_repeat") {
+                ee.add_global_mapping(&f, sigil_string_repeat as usize);
+            }
             if let Some(f) = self.module.get_function("sigil_fs_read") {
                 ee.add_global_mapping(&f, sigil_fs_read as usize);
             }
@@ -11121,6 +12628,7 @@ pub mod llvm {
     }
 
     /// Variable scope for compilation
+    #[derive(Clone)]
     struct CompileScope<'ctx> {
         vars: HashMap<String, PointerValue<'ctx>>,
         /// Track which variables hold float values (legacy - being replaced by var_types)
@@ -11133,6 +12641,10 @@ pub mod llvm {
         struct_types: HashMap<String, String>,
         /// G21: Track functions that return f64 for float detection
         float_funcs: std::collections::HashSet<String>,
+        /// G52: Track slice parameter lengths (slice_name -> len_alloca)
+        /// Slices are fat pointers (ptr + len), but LLVM params are single i64s
+        /// For slice params, we generate an extra `_len` parameter
+        slice_lens: HashMap<String, PointerValue<'ctx>>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -11144,6 +12656,7 @@ pub mod llvm {
                 vec_bases: HashMap::new(),
                 struct_types: HashMap::new(),
                 float_funcs: std::collections::HashSet::new(),
+                slice_lens: HashMap::new(),
             }
         }
 

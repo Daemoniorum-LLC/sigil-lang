@@ -1213,6 +1213,14 @@ fn llvm_file(path: &str) -> ExitCode {
         }
     };
 
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
     // Compile
     if let Err(e) = compiler.compile(&source) {
         eprintln!("Compilation error in '{}': {}", path, e);
@@ -1263,6 +1271,14 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
                 return ExitCode::from(1);
             }
         };
+
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
 
     // Compile
     if let Err(e) = compiler.compile(&source) {
@@ -2081,39 +2097,84 @@ codegen-units = 1
     )
 }
 
-/// Compile a Sigil source file to WebAssembly.
+/// Compile a Sigil source file or project to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
     use std::path::Path;
 
-    println!("Compiling {} -> {} (WebAssembly)", path, output);
+    let path = Path::new(path);
 
-    // Create WASM compiler and compile from path (enables multi-file module resolution)
-    let mut compiler = WasmCompiler::new();
-    match compiler.compile_from_path(Path::new(path)) {
-        Ok(wasm_bytes) => {
-            // Write the WASM bytes to output file
-            if let Err(e) = fs::write(output, &wasm_bytes) {
-                eprintln!("Error writing output file '{}': {}", output, e);
-                return ExitCode::from(1);
+    // Check if this is a directory with sigil.toml or Sigil.toml (project compilation)
+    let is_project = if path.is_dir() {
+        path.join("sigil.toml").exists() || path.join("Sigil.toml").exists()
+    } else if let Some(parent) = path.parent() {
+        parent.join("sigil.toml").exists() || parent.join("Sigil.toml").exists()
+    } else {
+        false
+    };
+
+    if is_project {
+        // Project compilation with dependencies
+        let project_dir = if path.is_dir() {
+            path.to_path_buf()
+        } else {
+            path.parent().unwrap().to_path_buf()
+        };
+
+        println!("Compiling project {} -> {} (WebAssembly with dependencies)",
+                 project_dir.display(), output);
+
+        match WasmCompiler::compile_project(&project_dir) {
+            Ok(wasm_bytes) => {
+                if let Err(e) = fs::write(output, &wasm_bytes) {
+                    eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                let size = wasm_bytes.len();
+                let size_str = format_size(size);
+                println!("Successfully compiled to: {} ({})", output, size_str);
+                ExitCode::SUCCESS
             }
-
-            let size = wasm_bytes.len();
-            let size_str = if size < 1024 {
-                format!("{} bytes", size)
-            } else if size < 1024 * 1024 {
-                format!("{:.1} KB", size as f64 / 1024.0)
-            } else {
-                format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-            };
-
-            println!("Successfully compiled to: {} ({})", output, size_str);
-            ExitCode::SUCCESS
+            Err(e) => {
+                eprintln!("Compilation error: {}", e);
+                ExitCode::from(1)
+            }
         }
-        Err(e) => {
-            eprintln!("Compilation error in '{}': {}", path, e);
-            ExitCode::from(1)
+    } else {
+        // Single file compilation
+        println!("Compiling {} -> {} (WebAssembly)", path.display(), output);
+
+        let mut compiler = WasmCompiler::new();
+        match compiler.compile_from_path(path) {
+            Ok(wasm_bytes) => {
+                if let Err(e) = fs::write(output, &wasm_bytes) {
+                    eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                let size = wasm_bytes.len();
+                let size_str = format_size(size);
+                println!("Successfully compiled to: {} ({})", output, size_str);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("Compilation error in '{}': {}", path.display(), e);
+                ExitCode::from(1)
+            }
         }
+    }
+}
+
+/// Format file size for display.
+#[cfg(feature = "wasm")]
+fn format_size(size: usize) -> String {
+    if size < 1024 {
+        format!("{} bytes", size)
+    } else if size < 1024 * 1024 {
+        format!("{:.1} KB", size as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
     }
 }
 
@@ -2753,6 +2814,7 @@ fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode 
             Evidentiality::Reported => "reported",
             Evidentiality::Uncertain => "uncertain",
             Evidentiality::Predicted => "predicted",
+            Evidentiality::Chaos => "chaotic",
             Evidentiality::Paradox => "paradox",
         }
     }
@@ -4811,6 +4873,14 @@ fn compile_file_with_deps(path: &str, output: &str, dep_libs: &[std::path::PathB
             }
         };
 
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
     // Compile
     if let Err(e) = compiler.compile(&source) {
         eprintln!("Compilation error in '{}': {}", path, e);
@@ -4905,6 +4975,14 @@ fn compile_library(path: &str, name: &str, target_dir: &std::path::Path) -> Exit
             return ExitCode::from(1);
         }
     };
+
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
 
     // Compile (generates LLVM IR without requiring main)
     if let Err(e) = compiler.compile(&source) {

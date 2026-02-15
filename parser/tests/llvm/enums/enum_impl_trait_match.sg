@@ -1,0 +1,40 @@
+// G44b: Match inside trait impl with side effects only
+// Mimics NihilError::fmt which does write! and doesn't return values
+
+ᛈ TestError {
+    Shape { dim: i64 },
+    Device { message: String },
+    Internal { message: String },
+}
+
+// Trait-like impl (using pseudo-trait syntax)
+⊢ TestError : Printable {
+    rite fmt(&this) → i64 {
+        ⌥ this {
+            Self·Shape { dim } => {
+                println!("Shape: {}", dim);
+                0
+            }
+            Self·Device { message } => {
+                println!("Device");
+                1
+            }
+            Self·Internal { message } => {
+                println!("Internal");
+                2
+            }
+        }
+    }
+}
+
+rite main() {
+    println!("Testing trait impl match...");
+
+    ≔ e1 = TestError·Shape { dim: 42 };
+    e1.fmt();
+
+    ≔ e2 = TestError·Internal { message: String·from("test") };
+    e2.fmt();
+
+    println!("Done!");
+}

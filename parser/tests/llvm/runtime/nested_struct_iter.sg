@@ -1,0 +1,71 @@
+// G51: Nested struct field access through mutable Vec iteration
+
+Σ Inner {
+    data: Vec<f64>,
+}
+
+⊢ Inner {
+    rite new() → Self {
+        Self { data: vec![1.0, 2.0, 3.0] }
+    }
+
+    rite get_len(&this) → i64 {
+        this.data.len() as i64
+    }
+}
+
+Σ Outer {
+    inner: Inner,
+}
+
+⊢ Outer {
+    rite new() → Self {
+        Self { inner: Inner·new() }
+    }
+
+    rite call_inner(&this) → i64 {
+        this.inner.get_len()
+    }
+}
+
+rite test1_direct() {
+    println!("Test 1: Direct Outer access");
+    ≔ outer = Outer·new();
+    ≔ len = outer.call_inner();
+    println!("  len = {}", len);
+}
+
+rite test2_vary_direct() {
+    println!("Test 2: Vary Outer access");
+    ≔ vary outer = Outer·new();
+    ≔ len = outer.call_inner();
+    println!("  len = {}", len);
+}
+
+rite test3_vec_immut() {
+    println!("Test 3: Vec immut iteration");
+    ≔ outers = vec![Outer·new(), Outer·new()];
+    ∀ outer ∈ &outers {
+        ≔ len = outer.call_inner();
+        println!("  len = {}", len);
+    }
+}
+
+rite test4_vec_mut() {
+    println!("Test 4: Vec mut iteration");
+    ≔ vary outers = vec![Outer·new(), Outer·new()];
+    println!("  created vec");
+    ∀ outer ∈ &vary outers {
+        println!("  about to call call_inner");
+        ≔ len = outer.call_inner();
+        println!("  len = {}", len);
+    }
+}
+
+rite main() {
+    test1_direct();
+    test2_vary_direct();
+    test3_vec_immut();
+    test4_vec_mut();
+    println!("All done!");
+}

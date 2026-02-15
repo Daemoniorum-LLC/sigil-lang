@@ -174,6 +174,7 @@ pub enum Evidence {
     Uncertain, // ?
     Reported,  // ~
     Predicted, // ◊
+    Chaos,     // ⁂
     Paradox,   // ‽
 }
 
@@ -319,6 +320,7 @@ impl fmt::Debug for Value {
                     Evidence::Uncertain => write!(f, "?"),
                     Evidence::Reported => write!(f, "~"),
                     Evidence::Predicted => write!(f, "◊"),
+                    Evidence::Chaos => write!(f, "⁂"),
                     Evidence::Paradox => write!(f, "‽"),
                 }
             }
@@ -4140,8 +4142,9 @@ impl Interpreter {
                     }
                     Some(Evidentiality::Reported)
                     | Some(Evidentiality::Paradox)
-                    | Some(Evidentiality::Predicted) => {
-                        // ⌛~ or ⌛‽ or ⌛◊ - mark as external/reported/predicted, unwrap if Result/Option
+                    | Some(Evidentiality::Predicted)
+                    | Some(Evidentiality::Chaos) => {
+                        // ⌛~ or ⌛‽ or ⌛◊ or ⌛⁂ - mark as external/reported/predicted/chaotic, unwrap if Result/Option
                         self.unwrap_result_or_option(awaited, false, false)
                     }
                     None => Ok(awaited),
@@ -20796,6 +20799,7 @@ impl Interpreter {
                                 Evidence::Uncertain
                             }
                             Evidentiality::Reported => Evidence::Reported,
+                            Evidentiality::Chaos => Evidence::Chaos,
                             Evidentiality::Paradox => Evidence::Paradox,
                         };
                         let inner = match value {
@@ -20836,6 +20840,7 @@ impl Interpreter {
                         Evidentiality::Known => "!",
                         Evidentiality::Uncertain | Evidentiality::Predicted => "?",
                         Evidentiality::Reported => "~",
+                        Evidentiality::Chaos => "⁂",
                         Evidentiality::Paradox => "‽",
                     },
                     reason_str
@@ -20845,6 +20850,7 @@ impl Interpreter {
                     Evidentiality::Known => Evidence::Known,
                     Evidentiality::Uncertain | Evidentiality::Predicted => Evidence::Uncertain,
                     Evidentiality::Reported => Evidence::Reported,
+                    Evidentiality::Chaos => Evidence::Chaos,
                     Evidentiality::Paradox => Evidence::Paradox,
                 };
 
@@ -20870,6 +20876,7 @@ impl Interpreter {
                     Evidentiality::Known => Evidence::Known,
                     Evidentiality::Uncertain | Evidentiality::Predicted => Evidence::Uncertain,
                     Evidentiality::Reported => Evidence::Reported,
+                    Evidentiality::Chaos => Evidence::Chaos,
                     Evidentiality::Paradox => Evidence::Paradox,
                 };
 
@@ -23269,7 +23276,8 @@ impl Interpreter {
                     Evidence::Uncertain => 1,
                     Evidence::Predicted => 2,
                     Evidence::Reported => 3,
-                    Evidence::Paradox => 4,
+                    Evidence::Chaos => 4,
+                    Evidence::Paradox => 5,
                 };
                 if rank(a) >= rank(b) {
                     Some(a)
@@ -23370,6 +23378,7 @@ impl Interpreter {
             Evidentiality::Known => Evidence::Known,
             Evidentiality::Uncertain | Evidentiality::Predicted => Evidence::Uncertain,
             Evidentiality::Reported => Evidence::Reported,
+            Evidentiality::Chaos => Evidence::Chaos,
             Evidentiality::Paradox => Evidence::Paradox,
         };
         Ok(Value::Evidential {
