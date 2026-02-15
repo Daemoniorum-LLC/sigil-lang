@@ -1346,15 +1346,22 @@ impl WasmCompiler {
         // Compile the handler body
         self.compile_block(&handler.body)?;
 
-        // If there's no explicit return and no trailing expression, push unit
-        if handler.return_type.is_none() && handler.body.expr.is_none() {
-            // No return value needed
+        // Handle return value based on return type and trailing expression
+        if handler.return_type.is_none() {
+            // No return type - drop any trailing expression result
+            if handler.body.expr.is_some() {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Drop);
+            }
+            // No trailing expression = nothing to drop
         } else if handler.body.expr.is_none() {
             // Handler has return type but no trailing expression - push 0
             let func = self.current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             func.push(Instruction::I64Const(0));
         }
+        // Handler has return type and trailing expression - value already on stack
 
         // Add end instruction
         let func = self.current_function_mut()

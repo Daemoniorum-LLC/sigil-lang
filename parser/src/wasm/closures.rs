@@ -561,8 +561,9 @@ impl WasmCompiler {
                     if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
                         let func = self.current_function_mut()
                             .ok_or_else(|| WasmError::internal("not in function context"))?;
-                        func.push(Instruction::I64Const(0)); // initial capacity hint
                         func.push(Instruction::Call(func_idx));
+                        // array_new returns i32, extend to i64 for Sigil's uniform type system
+                        func.push(Instruction::I64ExtendI32U);
                         return Ok(());
                     }
                 }
@@ -1117,7 +1118,14 @@ impl WasmCompiler {
                 if let Some(actor_name) = &self.current_actor.clone() {
                     let qualified = format!("{}::{}", actor_name, method);
                     if let Some(&func_idx) = self.func_map.get(&qualified) {
-                        // Compile arguments (no receiver for actor methods)
+                        // Push dummy self reference (actor state is in globals, not passed)
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(0));
+                        drop(func);
+
+                        // Compile explicit arguments
                         for arg in args {
                             self.compile_expr(arg)?;
                         }
@@ -1205,6 +1213,20 @@ impl WasmCompiler {
             }
         }
 
+        // Try type-qualified lookup first to determine if we need receiver
+        let qualified_func = if let Some(receiver_type) = self.infer_receiver_type(receiver) {
+            let qualified = format!("{}::{}", receiver_type, method);
+            self.func_map.get(&qualified).copied()
+        } else {
+            None
+        };
+
+        // Also check simple function name
+        let simple_func = self.get_func(method);
+
+        let func_idx = qualified_func.or(simple_func)
+            .ok_or_else(|| WasmError::undefined_function(method))?;
+
         // Compile receiver as first argument
         self.compile_expr(receiver)?;
 
@@ -1213,28 +1235,12 @@ impl WasmCompiler {
             self.compile_expr(arg)?;
         }
 
-        // Try type-qualified lookup: infer receiver type and try Type::method
-        if let Some(receiver_type) = self.infer_receiver_type(receiver) {
-            let qualified = format!("{}::{}", receiver_type, method);
-            if let Some(&func_idx) = self.func_map.get(&qualified) {
-                let func = self
-                    .current_function_mut()
-                    .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Call(func_idx));
-                return Ok(());
-            }
-        }
-
-        // Look up method as simple function name
-        if let Some(func_idx) = self.get_func(method) {
-            let func = self
-                .current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::Call(func_idx));
-            Ok(())
-        } else {
-            Err(WasmError::undefined_function(method))
-        }
+        // Call the method
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::Call(func_idx));
+        Ok(())
     }
 
     /// Infer the type of a receiver expression for method resolution.
@@ -2760,6 +2766,8 @@ impl WasmCompiler {
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             func.push(Instruction::Call(func_idx));
+            // array_len returns i32, extend to i64
+            func.push(Instruction::I64ExtendI32U);
             Ok(())
         } else {
             Err(WasmError::internal("no len import found"))

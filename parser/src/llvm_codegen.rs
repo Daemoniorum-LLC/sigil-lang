@@ -1836,13 +1836,62 @@ pub mod llvm {
         /// Process a const declaration
         fn process_const(&mut self, const_decl: &ast::ConstDef) -> Result<(), String> {
             let name = &const_decl.name.name;
-            // Create a global constant
             let i64_type = self.context.i64_type();
-            let global = self.module.add_global(i64_type, None, name);
-            // Initialize to 0 for now (could evaluate const expr)
-            global.set_initializer(&i64_type.const_int(0, false));
+            let f64_type = self.context.f64_type();
+
+            // G42 fix: Evaluate const expression at compile time
+            let (global, is_float) = match &const_decl.value {
+                Expr::Literal(Literal::Int { value, .. }) => {
+                    let n: i64 = value.replace('_', "").parse().unwrap_or(0);
+                    let global = self.module.add_global(i64_type, None, name);
+                    global.set_initializer(&i64_type.const_int(n as u64, false));
+                    (global, false)
+                }
+                Expr::Literal(Literal::Float { value, .. }) => {
+                    let f: f64 = value.replace('_', "").parse().unwrap_or(0.0);
+                    let global = self.module.add_global(f64_type, None, name);
+                    global.set_initializer(&f64_type.const_float(f));
+                    (global, true)
+                }
+                Expr::Unary { op: ast::UnaryOp::Neg, expr } => {
+                    // Handle negative literals like -1 or -0.5
+                    match expr.as_ref() {
+                        Expr::Literal(Literal::Int { value, .. }) => {
+                            let n: i64 = value.replace('_', "").parse().unwrap_or(0);
+                            let global = self.module.add_global(i64_type, None, name);
+                            global.set_initializer(&i64_type.const_int((-n) as u64, true));
+                            (global, false)
+                        }
+                        Expr::Literal(Literal::Float { value, .. }) => {
+                            let f: f64 = value.replace('_', "").parse().unwrap_or(0.0);
+                            let global = self.module.add_global(f64_type, None, name);
+                            global.set_initializer(&f64_type.const_float(-f));
+                            (global, true)
+                        }
+                        _ => {
+                            // Fallback to 0
+                            let global = self.module.add_global(i64_type, None, name);
+                            global.set_initializer(&i64_type.const_int(0, false));
+                            (global, false)
+                        }
+                    }
+                }
+                _ => {
+                    // For complex expressions, fallback to 0 (could implement const eval later)
+                    let global = self.module.add_global(i64_type, None, name);
+                    global.set_initializer(&i64_type.const_int(0, false));
+                    (global, false)
+                }
+            };
+
             global.set_constant(true);
             self.global_vars.insert(name.clone(), global);
+
+            // Track float consts for type checking
+            if is_float {
+                self.float_funcs.insert(name.clone());
+            }
+
             Ok(())
         }
 

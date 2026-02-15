@@ -1117,25 +1117,30 @@ impl WasmCompiler {
         let func = self.current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
         func.push(Instruction::Call(array_new_idx));
+        // array_new returns i32, extend to i64 for Sigil's uniform type system
+        func.push(Instruction::I64ExtendI32U);
 
         // Push each element
         for arg in args {
-            // Save array reference
+            // Save array reference (i64)
             let array_local = self.allocate_temp_local()?;
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalSet(array_local));
+            // Push array ref wrapped to i32 for array_push
             func.push(Instruction::LocalGet(array_local));
+            func.push(Instruction::I32WrapI64);
             drop(func);
 
-            // Compile element
+            // Compile element (leaves i64 on stack)
             let mut parser = Parser::new(&arg);
             let expr = parser.parse_expr()
                 .map_err(|e| WasmError::parse(&format!("in vec! element: {}", e)))?;
             self.compile_expr(&expr)?;
 
-            // Push to array
+            // Push to array: array_push(i32 arr, i64 elem)
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::Call(array_push_idx));
+            // Leave array ref (i64) on stack for next iteration or return
             func.push(Instruction::LocalGet(array_local));
         }
 
