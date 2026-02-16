@@ -784,8 +784,54 @@ impl<'a> SpecGenerator<'a> {
 // =============================================================================
 
 fn chrono_now() -> String {
-    // Simple timestamp - would use chrono in production
-    "2026-02-16T00:00:00Z".to_string()
+    // Use std::time for UTC timestamp
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+
+    let secs = now.as_secs();
+
+    // Calculate UTC datetime components
+    let days_since_epoch = secs / 86400;
+    let time_of_day = secs % 86400;
+    let hours = time_of_day / 3600;
+    let minutes = (time_of_day % 3600) / 60;
+    let seconds = time_of_day % 60;
+
+    // Simple year/month/day calculation (doesn't handle leap years perfectly but close enough)
+    let mut year = 1970;
+    let mut remaining_days = days_since_epoch as i64;
+
+    loop {
+        let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    let is_leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_months = if is_leap {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut month = 1;
+    for days in days_in_months.iter() {
+        if remaining_days < *days {
+            break;
+        }
+        remaining_days -= *days;
+        month += 1;
+    }
+
+    let day = remaining_days + 1;
+
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hours, minutes, seconds)
 }
 
 fn to_snake_case(s: &str) -> String {
@@ -820,26 +866,88 @@ fn to_pascal_case(s: &str) -> String {
 }
 
 fn infer_type_from_value(value: &str) -> (String, String) {
-    // Simple type inference from initial value
+    // Enhanced type inference from initial value
     let trimmed = value.trim();
 
-    if trimmed == "0" || trimmed.parse::<i64>().is_ok() {
-        ("i64".to_string(), "!".to_string())
-    } else if trimmed == "0.0" || trimmed.parse::<f64>().is_ok() {
-        ("f64".to_string(), "!".to_string())
-    } else if trimmed == "true" || trimmed == "false" {
-        ("bool".to_string(), "!".to_string())
-    } else if trimmed.starts_with('"') && trimmed.ends_with('"') {
-        ("String".to_string(), "!".to_string())
-    } else if trimmed == "null" || trimmed == "∅" {
-        ("Option<Any>".to_string(), "~".to_string())
-    } else if trimmed == "[]" {
-        ("Vec<Any>".to_string(), "!".to_string())
-    } else if trimmed == "{}" {
-        ("Map<String, Any>".to_string(), "!".to_string())
-    } else {
-        ("Any".to_string(), "~".to_string())
+    // Integer literals
+    if trimmed == "0" || (trimmed.starts_with(|c: char| c.is_ascii_digit() || c == '-')
+        && !trimmed.contains('.') && trimmed.parse::<i64>().is_ok()) {
+        return ("i64".to_string(), "!".to_string());
     }
+
+    // Float literals
+    if trimmed == "0.0" || (trimmed.contains('.') && trimmed.parse::<f64>().is_ok()) {
+        return ("f64".to_string(), "!".to_string());
+    }
+
+    // Boolean literals
+    if trimmed == "true" || trimmed == "false" {
+        return ("bool".to_string(), "!".to_string());
+    }
+
+    // String literals
+    if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
+       (trimmed.starts_with('\'') && trimmed.ends_with('\'')) ||
+       (trimmed.starts_with('`') && trimmed.ends_with('`')) {
+        return ("String".to_string(), "!".to_string());
+    }
+
+    // Null/undefined
+    if trimmed == "null" || trimmed == "undefined" || trimmed == "∅" {
+        return ("Option<Any>".to_string(), "~".to_string());
+    }
+
+    // Empty array
+    if trimmed == "[]" {
+        return ("Vec<Any>".to_string(), "!".to_string());
+    }
+
+    // Empty object
+    if trimmed == "{}" {
+        return ("Map<String, Any>".to_string(), "!".to_string());
+    }
+
+    // Array with elements - try to infer element type
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        let inner = trimmed[1..trimmed.len()-1].trim();
+        if !inner.is_empty() {
+            // Get first element
+            let first = inner.split(',').next().unwrap_or("").trim();
+            if !first.is_empty() {
+                let (elem_type, _) = infer_type_from_value(first);
+                return (format!("Vec<{}>", elem_type), "!".to_string());
+            }
+        }
+        return ("Vec<Any>".to_string(), "!".to_string());
+    }
+
+    // Function call results - often need inference from context
+    if trimmed.contains('(') && trimmed.ends_with(')') {
+        // Common patterns
+        if trimmed.starts_with("Date.now") || trimmed.contains("getTime") {
+            return ("i64".to_string(), "!".to_string());
+        }
+        if trimmed.starts_with("new Date") {
+            return ("DateTime".to_string(), "!".to_string());
+        }
+        if trimmed.starts_with("new Map") || trimmed.starts_with("new Set") {
+            return ("Map<String, Any>".to_string(), "!".to_string());
+        }
+        // Unknown function - uncertain type
+        return ("Any".to_string(), "~".to_string());
+    }
+
+    // Property access - often prop values, uncertain
+    if trimmed.contains('.') {
+        // Check for common suffixes
+        if trimmed.ends_with(".length") {
+            return ("i64".to_string(), "!".to_string());
+        }
+        return ("Any".to_string(), "~".to_string());
+    }
+
+    // Default: uncertain
+    ("Any".to_string(), "~".to_string())
 }
 
 fn map_ts_type_to_sigil(ts_type: &str) -> String {

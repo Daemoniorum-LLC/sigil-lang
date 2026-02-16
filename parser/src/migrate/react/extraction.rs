@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use swc_common::{SourceMap, FilePathMapping, FileName};
+use swc_common::{SourceMap, FilePathMapping, FileName, Spanned};
 use swc_ecma_parser::{parse_file_as_module, Syntax, TsSyntax, EsSyntax};
 use swc_ecma_ast::*;
 
@@ -384,7 +384,7 @@ pub fn extract_source(source: &str, path: &std::path::Path, relative_path: &str)
         &mut vec![],
     ).map_err(|e| ExtractionError::ParseError(format!("{:?}", e)))?;
 
-    let extractor = Extractor::new(&cm, language, path.to_path_buf(), relative_path.to_string());
+    let extractor = Extractor::new(&cm, source, language, path.to_path_buf(), relative_path.to_string());
     extractor.extract_module(&module)
 }
 
@@ -394,6 +394,7 @@ pub fn extract_source(source: &str, path: &std::path::Path, relative_path: &str)
 
 struct Extractor<'a> {
     cm: &'a SourceMap,
+    source: &'a str,
     language: Language,
     path: PathBuf,
     relative_path: String,
@@ -401,14 +402,50 @@ struct Extractor<'a> {
 }
 
 impl<'a> Extractor<'a> {
-    fn new(cm: &'a SourceMap, language: Language, path: PathBuf, relative_path: String) -> Self {
+    fn new(cm: &'a SourceMap, source: &'a str, language: Language, path: PathBuf, relative_path: String) -> Self {
         Self {
             cm,
+            source,
             language,
             path,
             relative_path,
             has_jsx: false,
         }
+    }
+
+    /// Extract source code for a span. This is the key method for preserving expression content.
+    fn span_to_source(&self, span: swc_common::Span) -> String {
+        // Get byte positions from the span
+        let start = span.lo.0 as usize;
+        let end = span.hi.0 as usize;
+
+        // Adjust for the source file offset (spans are 1-indexed from file start)
+        // swc spans include a base offset, so we need to find the actual position
+        let source_file = self.cm.lookup_byte_offset(span.lo);
+        let file_start = source_file.sf.start_pos.0 as usize;
+        let local_start = start.saturating_sub(file_start);
+        let local_end = end.saturating_sub(file_start);
+
+        if local_end <= self.source.len() && local_start <= local_end {
+            return self.source[local_start..local_end].to_string();
+        }
+
+        // Fallback: try direct byte positions (works for single-file parsing)
+        if end <= self.source.len() + 1 && start >= 1 {
+            let adjusted_start = start.saturating_sub(1);
+            let adjusted_end = end.saturating_sub(1);
+            if adjusted_end <= self.source.len() {
+                return self.source[adjusted_start..adjusted_end].to_string();
+            }
+        }
+
+        "/* source unavailable */".to_string()
+    }
+
+    /// Get span from an expression (handles Box<Expr>)
+    fn expr_span(&self, expr: &Expr) -> swc_common::Span {
+        use swc_common::Spanned;
+        expr.span()
     }
 
     fn extract_module(mut self, module: &Module) -> Result<ReactExtraction, ExtractionError> {
@@ -681,9 +718,9 @@ impl<'a> Extractor<'a> {
             props_type: None, // TODO: extract from type annotation
             hooks,
             class_info: None,
-            jsx,
+            jsx: jsx.clone(),
             handlers,
-            child_components: Vec::new(), // TODO: extract from JSX
+            child_components: self.extract_child_components_from_jsx(&jsx),
         })
     }
 
@@ -696,7 +733,7 @@ impl<'a> Extractor<'a> {
         self.has_jsx = true;
 
         let hooks = self.extract_hooks_from_arrow_body(&arrow.body);
-        let handlers = Vec::new(); // TODO: extract from arrow body
+        let handlers = self.extract_handlers_from_arrow_body(&arrow.body);
         let props = self.extract_props_from_arrow_params(&arrow.params);
 
         Some(ComponentExtraction {
@@ -709,10 +746,17 @@ impl<'a> Extractor<'a> {
             props_type: None,
             hooks,
             class_info: None,
-            jsx,
+            jsx: jsx.clone(),
             handlers,
-            child_components: Vec::new(),
+            child_components: self.extract_child_components_from_jsx(&jsx),
         })
+    }
+
+    fn extract_handlers_from_arrow_body(&self, body: &BlockStmtOrExpr) -> Vec<HandlerExtraction> {
+        match body {
+            BlockStmtOrExpr::BlockStmt(block) => self.extract_handlers_from_body(&Some(block.clone())),
+            BlockStmtOrExpr::Expr(_) => Vec::new(), // Arrow expressions don't have local handlers
+        }
     }
 
     fn try_extract_class_component(
@@ -771,10 +815,54 @@ impl<'a> Extractor<'a> {
                 state_initializer: None,
                 lifecycle_methods,
             }),
-            jsx,
+            jsx: jsx.clone(),
             handlers: Vec::new(),
-            child_components: Vec::new(),
+            child_components: self.extract_child_components_from_jsx(&jsx),
         })
+    }
+
+    /// Extract child component references from JSX tree
+    fn extract_child_components_from_jsx(&self, jsx: &JsxTree) -> Vec<String> {
+        let mut components = Vec::new();
+
+        if let Some(root) = &jsx.root {
+            self.collect_child_components(root, &mut components);
+        }
+
+        // Remove duplicates and sort
+        components.sort();
+        components.dedup();
+        components
+    }
+
+    fn collect_child_components(&self, node: &JsxNode, components: &mut Vec<String>) {
+        match &node.node_type {
+            JsxNodeType::Element { tag, is_component, children, .. } => {
+                if *is_component {
+                    // Extract base component name (handle Namespace.Component)
+                    let base_name = tag.split('.').next().unwrap_or(tag);
+                    components.push(base_name.to_string());
+                }
+                for child in children {
+                    self.collect_child_components(child, components);
+                }
+            }
+            JsxNodeType::Fragment { children } => {
+                for child in children {
+                    self.collect_child_components(child, components);
+                }
+            }
+            JsxNodeType::Conditional { consequent, alternate, .. } => {
+                self.collect_child_components(consequent, components);
+                if let Some(alt) = alternate {
+                    self.collect_child_components(alt, components);
+                }
+            }
+            JsxNodeType::Map { body, .. } => {
+                self.collect_child_components(body, components);
+            }
+            _ => {}
+        }
     }
 
     fn is_react_component_superclass(&self, expr: &Expr) -> bool {
@@ -883,18 +971,18 @@ impl<'a> Extractor<'a> {
                         Some(JSXAttrValue::JSXExprContainer(container)) => {
                             match &container.expr {
                                 JSXExpr::Expr(expr) => JsxAttributeValue::Expression {
-                                    code: "/* expression */".to_string() // TODO: serialize expr
+                                    code: self.span_to_source((*expr).span())
                                 },
                                 JSXExpr::JSXEmptyExpr(_) => JsxAttributeValue::Expression {
                                     code: "".to_string()
                                 },
                             }
                         }
-                        Some(JSXAttrValue::JSXElement(_)) => {
-                            JsxAttributeValue::Expression { code: "/* JSX element */".to_string() }
+                        Some(JSXAttrValue::JSXElement(el)) => {
+                            JsxAttributeValue::Expression { code: self.span_to_source(el.span) }
                         }
-                        Some(JSXAttrValue::JSXFragment(_)) => {
-                            JsxAttributeValue::Expression { code: "/* JSX fragment */".to_string() }
+                        Some(JSXAttrValue::JSXFragment(frag)) => {
+                            JsxAttributeValue::Expression { code: self.span_to_source(frag.span) }
                         }
                         None => JsxAttributeValue::True,
                     };
@@ -908,7 +996,7 @@ impl<'a> Extractor<'a> {
                 JSXAttrOrSpread::SpreadElement(spread) => {
                     Some(JsxAttribute {
                         name: "...".to_string(),
-                        value: JsxAttributeValue::Spread { name: "/* spread */".to_string() },
+                        value: JsxAttributeValue::Spread { name: self.span_to_source((*spread.expr).span()) },
                         is_event_handler: false,
                     })
                 }
@@ -932,12 +1020,10 @@ impl<'a> Extractor<'a> {
                 }
                 JSXElementChild::JSXExprContainer(container) => {
                     match &container.expr {
-                        JSXExpr::Expr(expr) => Some(JsxNode {
-                            node_type: JsxNodeType::Expression {
-                                code: "/* expression */".to_string()
-                            },
-                            location: self.span_to_location(container.span),
-                        }),
+                        JSXExpr::Expr(expr) => {
+                            // Try to detect special expression patterns
+                            Some(self.classify_jsx_expression(expr, container.span))
+                        },
                         JSXExpr::JSXEmptyExpr(_) => None,
                     }
                 }
@@ -974,12 +1060,7 @@ impl<'a> Extractor<'a> {
                 }
                 JSXElementChild::JSXExprContainer(container) => {
                     match &container.expr {
-                        JSXExpr::Expr(_) => Some(JsxNode {
-                            node_type: JsxNodeType::Expression {
-                                code: "/* expression */".to_string()
-                            },
-                            location: self.span_to_location(container.span),
-                        }),
+                        JSXExpr::Expr(expr) => Some(self.classify_jsx_expression(expr, container.span)),
                         JSXExpr::JSXEmptyExpr(_) => None,
                     }
                 }
@@ -991,6 +1072,153 @@ impl<'a> Extractor<'a> {
             node_type: JsxNodeType::Fragment { children },
             location: self.span_to_location(frag.span),
         }
+    }
+
+    /// Classify a JSX expression into specific patterns (conditional, map, plain expression)
+    fn classify_jsx_expression(&self, expr: &Expr, span: swc_common::Span) -> JsxNode {
+        let location = self.span_to_location(span);
+
+        // Check for conditional: {cond && <X/>} or {cond ? <A/> : <B/>}
+        match expr {
+            // Logical AND: {cond && <JSX/>}
+            Expr::Bin(bin) if bin.op == BinaryOp::LogicalAnd => {
+                let condition = self.span_to_source((*bin.left).span());
+                if let Some(jsx_node) = self.try_extract_jsx_from_expr(&bin.right) {
+                    return JsxNode {
+                        node_type: JsxNodeType::Conditional {
+                            condition,
+                            consequent: Box::new(jsx_node),
+                            alternate: None,
+                        },
+                        location,
+                    };
+                }
+            }
+            // Ternary: {cond ? <A/> : <B/>}
+            Expr::Cond(cond) => {
+                let condition = self.span_to_source((*cond.test).span());
+                if let Some(cons) = self.try_extract_jsx_from_expr(&cond.cons) {
+                    let alt = self.try_extract_jsx_from_expr(&cond.alt);
+                    return JsxNode {
+                        node_type: JsxNodeType::Conditional {
+                            condition,
+                            consequent: Box::new(cons),
+                            alternate: alt.map(Box::new),
+                        },
+                        location,
+                    };
+                }
+            }
+            // Map: {items.map(item => <X/>)}
+            Expr::Call(call) => {
+                if let Some((iterable, item_name, key_expr, body)) = self.try_extract_map_pattern(call) {
+                    return JsxNode {
+                        node_type: JsxNodeType::Map {
+                            iterable,
+                            item_name,
+                            key_expr,
+                            body: Box::new(body),
+                        },
+                        location,
+                    };
+                }
+            }
+            _ => {}
+        }
+
+        // Default: plain expression
+        JsxNode {
+            node_type: JsxNodeType::Expression {
+                code: self.span_to_source(expr.span())
+            },
+            location,
+        }
+    }
+
+    /// Try to extract JSX from an expression (for conditional branches)
+    fn try_extract_jsx_from_expr(&self, expr: &Expr) -> Option<JsxNode> {
+        match expr {
+            Expr::JSXElement(el) => Some(self.extract_jsx_element(el)),
+            Expr::JSXFragment(frag) => Some(self.extract_jsx_fragment(frag)),
+            Expr::Paren(p) => self.try_extract_jsx_from_expr(&p.expr),
+            _ => None,
+        }
+    }
+
+    /// Try to extract a .map() pattern: items.map(item => <X/>)
+    fn try_extract_map_pattern(&self, call: &CallExpr) -> Option<(String, String, Option<String>, JsxNode)> {
+        // Check if callee is xxx.map
+        let (obj_span, method_name) = match &call.callee {
+            Callee::Expr(expr) => {
+                if let Expr::Member(member) = expr.as_ref() {
+                    if let MemberProp::Ident(prop) = &member.prop {
+                        if prop.sym.as_ref() == "map" {
+                            ((*member.obj).span(), "map")
+                        } else {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+
+        if method_name != "map" {
+            return None;
+        }
+
+        let iterable = self.span_to_source(obj_span);
+
+        // Get the callback argument
+        let callback = call.args.first()?;
+
+        // Extract item name and body from callback
+        let (item_name, body_expr) = match callback.expr.as_ref() {
+            Expr::Arrow(arrow) => {
+                let item = match arrow.params.first()? {
+                    Pat::Ident(ident) => ident.id.sym.to_string(),
+                    _ => return None,
+                };
+                let body = match &*arrow.body {
+                    BlockStmtOrExpr::Expr(e) => e.as_ref(),
+                    BlockStmtOrExpr::BlockStmt(block) => {
+                        // Look for return statement
+                        for stmt in &block.stmts {
+                            if let Stmt::Return(ret) = stmt {
+                                if let Some(arg) = &ret.arg {
+                                    // Can't easily get ref here, just return None
+                                    return None;
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                };
+                (item, body)
+            }
+            _ => return None,
+        };
+
+        // Try to extract JSX from body
+        let jsx_body = self.try_extract_jsx_from_expr(body_expr)?;
+
+        // Try to find key prop
+        let key_expr = if let JsxNode { node_type: JsxNodeType::Element { attributes, .. }, .. } = &jsx_body {
+            attributes.iter()
+                .find(|a| a.name == "key")
+                .and_then(|a| match &a.value {
+                    JsxAttributeValue::Expression { code } => Some(code.clone()),
+                    _ => None,
+                })
+        } else {
+            None
+        };
+
+        Some((iterable, item_name, key_expr, jsx_body))
     }
 
     fn jsx_object_to_string(&self, obj: &JSXObject) -> String {
@@ -1369,18 +1597,262 @@ impl<'a> Extractor<'a> {
     }
 
     fn extract_handlers_from_body(&self, body: &Option<BlockStmt>) -> Vec<HandlerExtraction> {
-        // TODO: Implement handler extraction
-        Vec::new()
+        let body = match body {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+
+        let mut handlers = Vec::new();
+
+        for stmt in &body.stmts {
+            // Look for: const handleX = () => { ... }
+            // or: const handleX = function() { ... }
+            // or: function handleX() { ... }
+            match stmt {
+                Stmt::Decl(Decl::Var(var_decl)) => {
+                    for decl in &var_decl.decls {
+                        if let Pat::Ident(ident) = &decl.name {
+                            let name = ident.id.sym.to_string();
+                            // Convention: handlers start with "handle" or are event-like
+                            if name.starts_with("handle") || name.starts_with("on") {
+                                if let Some(init) = &decl.init {
+                                    if let Some(handler) = self.extract_handler_from_expr(&name, init) {
+                                        handlers.push(handler);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Stmt::Decl(Decl::Fn(fn_decl)) => {
+                    let name = fn_decl.ident.sym.to_string();
+                    if name.starts_with("handle") || name.starts_with("on") {
+                        handlers.push(self.extract_handler_from_function(&name, &fn_decl.function));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        handlers
+    }
+
+    fn extract_handler_from_expr(&self, name: &str, expr: &Expr) -> Option<HandlerExtraction> {
+        match expr {
+            Expr::Arrow(arrow) => {
+                let is_async = arrow.is_async;
+                let body_summary = self.span_to_source(arrow.span);
+                let (state_mutations, api_calls) = self.analyze_handler_body_arrow(&arrow.body);
+
+                Some(HandlerExtraction {
+                    name: name.to_string(),
+                    event_type: None,
+                    is_async,
+                    body_summary,
+                    state_mutations,
+                    api_calls,
+                })
+            }
+            Expr::Fn(fn_expr) => {
+                Some(self.extract_handler_from_function(name, &fn_expr.function))
+            }
+            _ => None,
+        }
+    }
+
+    fn extract_handler_from_function(&self, name: &str, func: &Function) -> HandlerExtraction {
+        let is_async = func.is_async;
+        let body_summary = func.body.as_ref()
+            .map(|b| self.span_to_source(b.span))
+            .unwrap_or_default();
+        let (state_mutations, api_calls) = self.analyze_handler_body(&func.body);
+
+        HandlerExtraction {
+            name: name.to_string(),
+            event_type: None,
+            is_async,
+            body_summary,
+            state_mutations,
+            api_calls,
+        }
+    }
+
+    fn analyze_handler_body(&self, body: &Option<BlockStmt>) -> (Vec<String>, Vec<String>) {
+        let body = match body {
+            Some(b) => b,
+            None => return (Vec::new(), Vec::new()),
+        };
+
+        let mut state_mutations = Vec::new();
+        let mut api_calls = Vec::new();
+
+        for stmt in &body.stmts {
+            self.find_mutations_and_calls_in_stmt(stmt, &mut state_mutations, &mut api_calls);
+        }
+
+        (state_mutations, api_calls)
+    }
+
+    fn analyze_handler_body_arrow(&self, body: &BlockStmtOrExpr) -> (Vec<String>, Vec<String>) {
+        match body {
+            BlockStmtOrExpr::BlockStmt(block) => self.analyze_handler_body(&Some(block.clone())),
+            BlockStmtOrExpr::Expr(expr) => {
+                let mut state_mutations = Vec::new();
+                let mut api_calls = Vec::new();
+                self.find_mutations_and_calls_in_expr(expr, &mut state_mutations, &mut api_calls);
+                (state_mutations, api_calls)
+            }
+        }
+    }
+
+    fn find_mutations_and_calls_in_stmt(&self, stmt: &Stmt, state_mutations: &mut Vec<String>, api_calls: &mut Vec<String>) {
+        match stmt {
+            Stmt::Expr(expr_stmt) => {
+                self.find_mutations_and_calls_in_expr(&expr_stmt.expr, state_mutations, api_calls);
+            }
+            Stmt::Return(ret) => {
+                if let Some(arg) = &ret.arg {
+                    self.find_mutations_and_calls_in_expr(arg, state_mutations, api_calls);
+                }
+            }
+            Stmt::If(if_stmt) => {
+                self.find_mutations_and_calls_in_expr(&if_stmt.test, state_mutations, api_calls);
+                if let Stmt::Block(block) = &*if_stmt.cons {
+                    for s in &block.stmts {
+                        self.find_mutations_and_calls_in_stmt(s, state_mutations, api_calls);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn find_mutations_and_calls_in_expr(&self, expr: &Expr, state_mutations: &mut Vec<String>, api_calls: &mut Vec<String>) {
+        match expr {
+            Expr::Call(call) => {
+                if let Some(name) = self.get_callee_name(&call.callee) {
+                    // Check for setState calls
+                    if name.starts_with("set") && name.len() > 3 && name.chars().nth(3).map_or(false, |c| c.is_uppercase()) {
+                        state_mutations.push(self.span_to_source(call.span));
+                    }
+                    // Check for API calls
+                    if name == "fetch" || name == "axios" || name.contains("Api") || name.contains("api") {
+                        api_calls.push(self.span_to_source(call.span));
+                    }
+                }
+                // Also check member expression calls like api.get()
+                if let Callee::Expr(callee_expr) = &call.callee {
+                    if let Expr::Member(member) = callee_expr.as_ref() {
+                        if let Expr::Ident(obj) = member.obj.as_ref() {
+                            let obj_name = obj.sym.as_ref();
+                            if obj_name == "fetch" || obj_name == "axios" || obj_name.contains("api") || obj_name.contains("Api") {
+                                api_calls.push(self.span_to_source(call.span));
+                            }
+                        }
+                    }
+                }
+            }
+            Expr::Await(await_expr) => {
+                self.find_mutations_and_calls_in_expr(&await_expr.arg, state_mutations, api_calls);
+            }
+            _ => {}
+        }
     }
 
     fn extract_props_from_params(&self, params: &[Param]) -> Vec<PropExtraction> {
-        // TODO: Implement props extraction from function params
-        Vec::new()
+        let mut props = Vec::new();
+
+        for param in params {
+            self.extract_props_from_pattern(&param.pat, &mut props);
+        }
+
+        props
     }
 
     fn extract_props_from_arrow_params(&self, params: &[Pat]) -> Vec<PropExtraction> {
-        // TODO: Implement props extraction from arrow params
-        Vec::new()
+        let mut props = Vec::new();
+
+        for pat in params {
+            self.extract_props_from_pattern(pat, &mut props);
+        }
+
+        props
+    }
+
+    fn extract_props_from_pattern(&self, pat: &Pat, props: &mut Vec<PropExtraction>) {
+        match pat {
+            // Destructuring: ({ name, value, onChange })
+            Pat::Object(obj) => {
+                for prop in &obj.props {
+                    match prop {
+                        ObjectPatProp::KeyValue(kv) => {
+                            if let PropName::Ident(key) = &kv.key {
+                                let name = key.sym.to_string();
+                                let is_callback = name.starts_with("on") && name.len() > 2 &&
+                                    name.chars().nth(2).map_or(false, |c| c.is_uppercase());
+                                let is_children = name == "children";
+
+                                props.push(PropExtraction {
+                                    name,
+                                    type_annotation: None, // Would need type info from context
+                                    required: true,
+                                    default_value: None,
+                                    is_callback,
+                                    is_children,
+                                });
+                            }
+                        }
+                        ObjectPatProp::Assign(assign) => {
+                            let name = assign.key.sym.to_string();
+                            let default_value = assign.value.as_ref()
+                                .map(|v| self.span_to_source((**v).span()));
+                            let is_callback = name.starts_with("on") && name.len() > 2 &&
+                                name.chars().nth(2).map_or(false, |c| c.is_uppercase());
+                            let is_children = name == "children";
+
+                            props.push(PropExtraction {
+                                name,
+                                type_annotation: None,
+                                required: default_value.is_none(),
+                                default_value,
+                                is_callback,
+                                is_children,
+                            });
+                        }
+                        ObjectPatProp::Rest(rest) => {
+                            if let Pat::Ident(ident) = &*rest.arg {
+                                props.push(PropExtraction {
+                                    name: format!("...{}", ident.id.sym),
+                                    type_annotation: None,
+                                    required: false,
+                                    default_value: None,
+                                    is_callback: false,
+                                    is_children: false,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            // Simple parameter: (props)
+            Pat::Ident(ident) => {
+                // If first param is named "props", we can't know individual props
+                // But we note it exists
+                let name = ident.id.sym.to_string();
+                if name == "props" || name == "p" {
+                    // This is a props object, not destructured
+                    props.push(PropExtraction {
+                        name: "props".to_string(),
+                        type_annotation: ident.type_ann.as_ref().map(|ann| self.span_to_source(ann.span)),
+                        required: true,
+                        default_value: None,
+                        is_callback: false,
+                        is_children: false,
+                    });
+                }
+            }
+            _ => {}
+        }
     }
 
     fn try_extract_type_from_decl(&self, decl: &Decl, exported: bool) -> Option<TypeExtraction> {

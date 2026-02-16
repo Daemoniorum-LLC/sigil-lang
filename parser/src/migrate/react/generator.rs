@@ -27,11 +27,26 @@ pub struct GeneratedSigil {
 pub struct QliphothGenerator<'a> {
     spec: &'a ComponentMigrationSpec,
     indent: usize,
+    /// Whether we're generating for an actor (true) or pure function (false)
+    is_actor: bool,
+    /// Parameter names for pure functions (used for expression interpolation)
+    param_names: Vec<String>,
 }
 
 impl<'a> QliphothGenerator<'a> {
     pub fn new(spec: &'a ComponentMigrationSpec) -> Self {
-        Self { spec, indent: 0 }
+        let is_actor = spec.target.pattern == TargetPattern::Actor;
+        let param_names: Vec<String> = spec.recommendations.props_handling.fields
+            .iter()
+            .map(|f| f.name.clone())
+            .collect();
+
+        Self {
+            spec,
+            indent: 0,
+            is_actor,
+            param_names,
+        }
     }
 
     /// Generate complete Sigil file for the component.
@@ -300,28 +315,28 @@ impl<'a> QliphothGenerator<'a> {
             }
             JsxNodeType::Expression { code } => {
                 // Expression interpolation - convert to text_child with to_string
-                if code.contains("/*") {
-                    format!("{}·text_child(/* expression */)", pad)
-                } else {
-                    format!("{}·text_child(self.{}·to_string())", pad, code)
-                }
+                let expr = self.transform_expression(code);
+                format!("{}·text_child({}·to_string())", pad, expr)
             }
             JsxNodeType::Conditional { condition, consequent, alternate } => {
+                let cond_expr = self.transform_expression(condition);
                 let cons = self.generate_vnode(consequent, indent);
                 if let Some(alt) = alternate {
                     let alt_code = self.generate_vnode(alt, indent);
-                    format!("{}·when_else({}, {}, {})", pad, condition, cons.trim(), alt_code.trim())
+                    format!("{}·when_else({}, {}, {})", pad, cond_expr, cons.trim(), alt_code.trim())
                 } else {
-                    format!("{}·when({}, {})", pad, condition, cons.trim())
+                    format!("{}·when({}, {})", pad, cond_expr, cons.trim())
                 }
             }
             JsxNodeType::Map { iterable, item_name, body, .. } => {
+                let iter_expr = self.transform_expression(iterable);
                 let body_code = self.generate_vnode(body, indent + 1);
                 format!(
-                    "{pad}// Map: ∀ {item} ∈ {iter}\n{pad}·children(self.{iter}.iter().map(|{item}| {body}).collect())",
+                    "{pad}// Map: ∀ {item} ∈ {iter}\n{pad}·children({iter_expr}.iter().map(|{item}| {body}).collect())",
                     pad = pad,
                     item = item_name,
                     iter = iterable,
+                    iter_expr = iter_expr,
                     body = body_code.trim()
                 )
             }
@@ -471,6 +486,85 @@ pub fn generate_all(spec: &MigrationSpec) -> Vec<GeneratedSigil> {
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+impl<'a> QliphothGenerator<'a> {
+    /// Transform a React expression into Sigil syntax.
+    /// For actors: prefix state with `self.`
+    /// For pure functions: use parameters directly
+    fn transform_expression(&self, code: &str) -> String {
+        // Handle placeholder/invalid expressions
+        if code.contains("/*") || code.is_empty() {
+            return "/* expression */".to_string();
+        }
+
+        // Clean up the expression
+        let code = code.trim();
+
+        if self.is_actor {
+            // For actors, simple identifiers become self.identifier
+            // More complex expressions need smarter handling
+            if is_simple_identifier(code) {
+                format!("self.{}", code)
+            } else {
+                // For complex expressions, try to prefix state variables
+                self.prefix_state_variables(code)
+            }
+        } else {
+            // For pure functions, check if it's a prop parameter
+            if self.param_names.iter().any(|p| code == p || code.starts_with(&format!("{}.", p))) {
+                code.to_string()
+            } else if is_simple_identifier(code) {
+                // Might be a prop - just use as-is
+                code.to_string()
+            } else {
+                // Complex expression - use as-is
+                code.to_string()
+            }
+        }
+    }
+
+    /// For actors, prefix state field references with self.
+    fn prefix_state_variables(&self, code: &str) -> String {
+        let state_fields: Vec<String> = self.spec.recommendations.state_fields
+            .iter()
+            .map(|f| f.to_field.clone())
+            .collect();
+
+        let mut result = code.to_string();
+
+        // Simple approach: prefix known state fields with self.
+        // This is a basic implementation - a real one would parse the expression
+        for field in &state_fields {
+            // Replace field name when it appears as a word boundary
+            let patterns = [
+                (format!("{}", field), format!("self.{}", field)),
+            ];
+            for (from, to) in &patterns {
+                // Only replace if it's a standalone identifier (not part of a larger word)
+                if result == *from {
+                    result = to.clone();
+                } else if result.starts_with(&format!("{}.", from)) {
+                    result = format!("self.{}", result);
+                    break;
+                }
+            }
+        }
+
+        // If no state field was found and it's a simple identifier, prefix with self
+        if !result.starts_with("self.") && is_simple_identifier(&result) {
+            result = format!("self.{}", result);
+        }
+
+        result
+    }
+}
+
+/// Check if a string is a simple identifier (no operators, dots, etc.)
+fn is_simple_identifier(s: &str) -> bool {
+    !s.is_empty() &&
+    s.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') &&
+    s.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
 
 fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
