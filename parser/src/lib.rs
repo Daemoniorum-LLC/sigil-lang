@@ -49,10 +49,13 @@ macro_rules! sigil_warn {
 pub mod ast;
 pub mod diagnostic;
 pub mod ffi;
+pub mod impl_registry;
 pub mod interpreter;
 pub mod ir;
 pub mod lexer;
 pub mod lower;
+pub mod monomorph;
+pub mod const_eval;
 pub mod optimize;
 pub mod parser;
 pub mod plurality;
@@ -92,6 +95,9 @@ pub mod websocket;
 
 #[cfg(feature = "playground")]
 pub mod playground_api;
+
+#[cfg(feature = "react-migrate")]
+pub mod migrate;
 
 pub use ast::*;
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, FixSuggestion, Severity};

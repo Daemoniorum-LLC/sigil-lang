@@ -13397,7 +13397,9 @@ fn register_format(interp: &mut Interpreter) {
                 match chars.next() {
                     None => String::new(),
                     Some(first) => {
-                        first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                        let mut result = first.to_uppercase().collect::<String>();
+                        result.push_str(&chars.as_str().to_lowercase());
+                        result
                     }
                 }
             })
