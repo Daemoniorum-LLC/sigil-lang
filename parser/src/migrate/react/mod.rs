@@ -12,7 +12,9 @@
 //! See docs/specs/REACT-MIGRATION.md for full specification.
 
 mod extraction;
+mod spec;
 #[cfg(test)]
 mod tests;
 
 pub use extraction::*;
+pub use spec::*;

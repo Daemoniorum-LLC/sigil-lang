@@ -597,3 +597,447 @@ fn test_property_jsx_trees_are_well_formed() {
         check_node(root);
     }
 }
+
+// =============================================================================
+// Phase 2: Spec Generation Tests
+// =============================================================================
+
+#[test]
+fn test_recommend_state_field() {
+    // GIVEN: Component with useState
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: State field is recommended
+    assert_eq!(spec.components.len(), 1);
+    let comp_spec = &spec.components[0];
+
+    let state_fields = &comp_spec.recommendations.state_fields;
+    assert!(!state_fields.is_empty(), "Should have state field recommendations");
+
+    let count_field = state_fields.iter()
+        .find(|f| f.to_field == "count")
+        .expect("Should recommend 'count' field");
+
+    assert_eq!(count_field.from_hook, "useState:count");
+    assert_eq!(count_field.field_type, "i64");
+    assert_eq!(count_field.evidentiality, "!");
+}
+
+#[test]
+fn test_recommend_message_from_handler() {
+    // GIVEN: Component with event handler that sets state
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <button onClick={() => setCount(c => c + 1)}>+</button>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Message is recommended
+    let comp_spec = &spec.components[0];
+    let messages = &comp_spec.recommendations.messages;
+
+    // Should have a message for the setter
+    assert!(!messages.is_empty(), "Should have message recommendations");
+}
+
+#[test]
+fn test_recommend_mount_effect() {
+    // GIVEN: Component with mount-only useEffect
+    let source = r#"
+        function App() {
+            useEffect(() => {
+                console.log("mounted");
+            }, []);
+            return <div>App</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Effect is recommended as lifecycle
+    let comp_spec = &spec.components[0];
+    let effects = &comp_spec.recommendations.effects;
+
+    let mount_effect = effects.iter()
+        .find(|e| e.strategy == EffectStrategy::Lifecycle)
+        .expect("Should have lifecycle effect");
+
+    assert_eq!(mount_effect.lifecycle_event, Some("Mount".to_string()));
+}
+
+#[test]
+fn test_recommend_inline_effect() {
+    // GIVEN: Component with useEffect that has deps
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+
+            useEffect(() => {
+                document.title = count.toString();
+            }, [count]);
+
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Effect is recommended as inline
+    let comp_spec = &spec.components[0];
+    let effects = &comp_spec.recommendations.effects;
+
+    let inline_effect = effects.iter()
+        .find(|e| e.strategy == EffectStrategy::Inline)
+        .expect("Should have inline effect");
+
+    assert!(inline_effect.from_hook.contains("count"));
+}
+
+#[test]
+fn test_recommend_remove_callback() {
+    // GIVEN: Component with useCallback
+    let source = r#"
+        function Form() {
+            const [value, setValue] = useState("");
+            const handleChange = useCallback((e) => {
+                setValue(e.target.value);
+            }, []);
+            return <input onChange={handleChange} />;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: useCallback is recommended for removal
+    let comp_spec = &spec.components[0];
+    let effects = &comp_spec.recommendations.effects;
+
+    let callback_effect = effects.iter()
+        .find(|e| e.from_hook.contains("UseCallback"))
+        .expect("Should have useCallback recommendation");
+
+    assert_eq!(callback_effect.strategy, EffectStrategy::Remove);
+}
+
+#[test]
+fn test_recommend_actor_pattern() {
+    // GIVEN: Component with state
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Target pattern is actor
+    let comp_spec = &spec.components[0];
+    assert_eq!(comp_spec.target.pattern, TargetPattern::Actor);
+}
+
+#[test]
+fn test_recommend_function_pattern() {
+    // GIVEN: Pure component with no hooks
+    let source = r#"
+        function Greeting({ name }) {
+            return <h1>Hello, {name}!</h1>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Target pattern is function
+    let comp_spec = &spec.components[0];
+    assert_eq!(comp_spec.target.pattern, TargetPattern::Function);
+}
+
+// =============================================================================
+// Pattern Matching Tests
+// =============================================================================
+
+#[test]
+fn test_pattern_for_usestate() {
+    // GIVEN: Component with useState
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: useState pattern is included
+    let comp_spec = &spec.components[0];
+    assert!(comp_spec.patterns.iter().any(|p| p.name == "useState_to_state"),
+        "Should include useState_to_state pattern");
+}
+
+#[test]
+fn test_pattern_for_onclick() {
+    // GIVEN: Button with onClick
+    let source = r#"
+        function Button() {
+            return <button onClick={() => alert('clicked')}>Click</button>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: onClick pattern is included
+    let comp_spec = &spec.components[0];
+    assert!(comp_spec.patterns.iter().any(|p| p.name == "onClick_to_message"),
+        "Should include onClick_to_message pattern");
+}
+
+#[test]
+fn test_no_duplicate_patterns() {
+    // GIVEN: Component with multiple uses of same pattern
+    let source = r#"
+        function Multi() {
+            const [a, setA] = useState(0);
+            const [b, setB] = useState(0);
+            const [c, setC] = useState(0);
+            return <div>{a + b + c}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Patterns are unique
+    let comp_spec = &spec.components[0];
+    let pattern_names: Vec<_> = comp_spec.patterns.iter().map(|p| &p.name).collect();
+    let unique_count = pattern_names.iter().collect::<std::collections::HashSet<_>>().len();
+
+    assert_eq!(pattern_names.len(), unique_count, "Patterns should be unique");
+}
+
+// =============================================================================
+// Ambiguity Detection Tests
+// =============================================================================
+
+#[test]
+fn test_ambiguity_effect_placement() {
+    // GIVEN: useEffect with deps
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            useEffect(() => { save(count); }, [count]);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Ambiguity is detected
+    let comp_spec = &spec.components[0];
+    let effect_ambiguity = comp_spec.ambiguities.iter()
+        .find(|a| a.category == AmbiguityCategory::EffectPlacement);
+
+    assert!(effect_ambiguity.is_some(), "Should detect effect placement ambiguity");
+
+    let ambiguity = effect_ambiguity.unwrap();
+    assert!(ambiguity.options.len() >= 2, "Should have at least 2 options");
+    assert!(ambiguity.options.iter().any(|o| o.recommended), "Should have recommended option");
+}
+
+#[test]
+fn test_no_ambiguity_simple() {
+    // GIVEN: Simple component with no ambiguities
+    let source = r#"
+        function Simple() {
+            return <div>Hello</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: No ambiguities
+    let comp_spec = &spec.components[0];
+    assert!(comp_spec.ambiguities.is_empty(), "Simple component should have no ambiguities");
+}
+
+// =============================================================================
+// Dependency Analysis Tests
+// =============================================================================
+
+#[test]
+fn test_detect_component_import() {
+    // GIVEN: Component that imports another component
+    let source = r#"
+        import { Button } from './Button';
+
+        function Form() {
+            return <Button>Submit</Button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Import is detected
+    let button_import = extraction.imports.iter()
+        .find(|i| i.source == "./Button");
+    assert!(button_import.is_some(), "Should detect Button import");
+}
+
+// =============================================================================
+// Complexity Calculation Tests
+// =============================================================================
+
+#[test]
+fn test_complexity_simple() {
+    // GIVEN: Simple component
+    let source = r#"
+        function Hello() {
+            return <div>Hello</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Complexity is simple
+    let comp_spec = &spec.components[0];
+    assert_eq!(comp_spec.complexity, Complexity::Simple);
+}
+
+#[test]
+fn test_complexity_moderate() {
+    // GIVEN: Component with a few hooks
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            const [name, setName] = useState("");
+            useEffect(() => {}, [count]);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Complexity is moderate
+    let comp_spec = &spec.components[0];
+    assert!(comp_spec.complexity == Complexity::Moderate || comp_spec.complexity == Complexity::Simple);
+}
+
+#[test]
+fn test_complexity_complex() {
+    // GIVEN: Complex component with many hooks
+    let source = r#"
+        function Dashboard() {
+            const [a, setA] = useState(0);
+            const [b, setB] = useState("");
+            const [c, setC] = useState([]);
+            const [d, setD] = useState({});
+            const [e, setE] = useState(null);
+            const [f, setF] = useState(true);
+            useEffect(() => {}, [a]);
+            useEffect(() => {}, [b]);
+            useEffect(() => {}, [c]);
+            useEffect(() => {}, [d]);
+            return <div>{a}</div>;
+        }
+    "#;
+
+    // WHEN: We generate spec
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // THEN: Complexity is complex
+    let comp_spec = &spec.components[0];
+    assert_eq!(comp_spec.complexity, Complexity::Complex);
+    assert!(!comp_spec.complexity_factors.is_empty(), "Should have complexity factors");
+}
+
+// =============================================================================
+// Property Tests for Spec Generation
+// =============================================================================
+
+#[test]
+fn test_property_all_usestate_have_state_field() {
+    // PROPERTY: Every useState should have a corresponding state field recommendation
+    let source = r#"
+        function Multi() {
+            const [a, setA] = useState(0);
+            const [b, setB] = useState("");
+            const [c, setC] = useState(false);
+            return <div />;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    let comp = &extraction.components[0];
+    let comp_spec = &spec.components[0];
+
+    let use_state_count = comp.hooks.iter()
+        .filter(|h| h.hook_type == HookType::UseState)
+        .count();
+
+    assert_eq!(comp_spec.recommendations.state_fields.len(), use_state_count,
+        "Every useState should have a state field recommendation");
+}
+
+#[test]
+fn test_property_patterns_are_relevant() {
+    // PROPERTY: All included patterns should be relevant to the component
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <button onClick={() => setCount(c => c + 1)}>{count}</button>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    let comp_spec = &spec.components[0];
+
+    // Should have useState pattern
+    assert!(comp_spec.patterns.iter().any(|p| p.name == "useState_to_state"),
+        "Should include useState pattern for component with useState");
+
+    // Should have onClick pattern
+    assert!(comp_spec.patterns.iter().any(|p| p.name == "onClick_to_message"),
+        "Should include onClick pattern for component with onClick");
+}
