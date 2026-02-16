@@ -1041,3 +1041,336 @@ fn test_property_patterns_are_relevant() {
     assert!(comp_spec.patterns.iter().any(|p| p.name == "onClick_to_message"),
         "Should include onClick pattern for component with onClick");
 }
+
+// =============================================================================
+// Phase 3: Qliphoth Code Generation Tests
+// =============================================================================
+
+#[test]
+fn test_generate_pure_function() {
+    // GIVEN: A simple component with no state (pure function)
+    let source = r#"
+        function Empty() {
+            return <div>Empty</div>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: We get a function (not an actor) with prelude import
+    assert!(generated.code.contains("invoke qliphoth·prelude·*;"),
+        "Should include qliphoth prelude import");
+    assert!(generated.code.contains("rite empty("),
+        "Should generate function with snake_case name: {}", generated.code);
+    assert!(generated.code.contains("-> VNode!"),
+        "Should return VNode!");
+    assert!(generated.code.contains("VNode·div()"),
+        "Should generate VNode·div()");
+}
+
+#[test]
+fn test_generate_actor_with_state() {
+    // GIVEN: Component with useState
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Actor with state field is generated
+    assert!(generated.code.contains("☉ actor Counter"),
+        "Should generate actor declaration");
+    assert!(generated.code.contains("state count:"),
+        "Should have state field");
+    assert!(generated.code.contains("i64"),
+        "Should infer i64 type from 0");
+}
+
+#[test]
+fn test_generate_message_enum() {
+    // GIVEN: Component with click handler
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <button onClick={() => setCount(c => c + 1)}>+</button>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Message enum is generated if there are messages
+    if !spec.components[0].recommendations.messages.is_empty() {
+        assert!(generated.code.contains("ᛈ CounterMsg"),
+            "Should generate message enum");
+    }
+}
+
+#[test]
+fn test_generate_message_handlers() {
+    // GIVEN: Component with event handler
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            const increment = () => setCount(c => c + 1);
+            return <button onClick={increment}>+</button>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Message handlers are generated
+    // The handler should be present in the actor
+    assert!(generated.code.contains("☉ actor Counter"),
+        "Should generate actor");
+}
+
+#[test]
+fn test_gen_simple_div() {
+    // GIVEN: Simple div element
+    let source = r#"
+        function Simple() {
+            return <div>Hello</div>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: VNode builder is generated
+    assert!(generated.code.contains("VNode·div()"),
+        "Should generate VNode·div()");
+    assert!(generated.code.contains("text_child(\"Hello\")"),
+        "Should generate text_child");
+}
+
+#[test]
+fn test_gen_with_class() {
+    // GIVEN: Element with className
+    let source = r#"
+        function Styled() {
+            return <div className="container">Content</div>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Class attribute is generated
+    assert!(generated.code.contains("·class(\"container\")"),
+        "Should generate ·class() method: {}", generated.code);
+}
+
+#[test]
+fn test_gen_nested() {
+    // GIVEN: Nested elements
+    let source = r#"
+        function Layout() {
+            return (
+                <div>
+                    <header>Title</header>
+                    <main>Content</main>
+                </div>
+            );
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Nested structure is generated with ·child()
+    assert!(generated.code.contains("VNode·div()"),
+        "Should generate parent div");
+    assert!(generated.code.contains("VNode·header()"),
+        "Should generate header child");
+    assert!(generated.code.contains("VNode·main()"),
+        "Should generate main child");
+    assert!(generated.code.contains("·child("),
+        "Should use ·child() for nesting");
+}
+
+#[test]
+fn test_gen_event_handler() {
+    // GIVEN: Element with onClick
+    let source = r#"
+        function Button() {
+            return <button onClick={handleClick}>Click</button>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Event handler is converted to message dispatch
+    assert!(generated.code.contains("·on_click("),
+        "Should generate ·on_click() method: {}", generated.code);
+}
+
+#[test]
+fn test_gen_function_component() {
+    // GIVEN: Pure component (no hooks)
+    let source = r#"
+        function Greeting({ name }) {
+            return <h1>Hello, {name}!</h1>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Function is generated (not actor)
+    assert!(generated.code.contains("rite greeting("),
+        "Should generate function with snake_case name: {}", generated.code);
+    assert!(generated.code.contains("-> VNode!"),
+        "Should return VNode!");
+}
+
+#[test]
+fn test_gen_fragment() {
+    // GIVEN: JSX Fragment
+    let source = r#"
+        function List() {
+            return (
+                <>
+                    <li>One</li>
+                    <li>Two</li>
+                </>
+            );
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Fragment is generated
+    assert!(generated.code.contains("VNode·fragment()"),
+        "Should generate VNode·fragment(): {}", generated.code);
+}
+
+#[test]
+fn test_gen_component_name_in_output() {
+    // GIVEN: Named component
+    let source = r#"
+        function MyComponent() {
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Component name is preserved
+    assert_eq!(generated.component_name, "MyComponent");
+}
+
+#[test]
+fn test_gen_suggested_path() {
+    // GIVEN: Component
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Path is suggested
+    assert!(!generated.path.is_empty(), "Should have suggested path");
+    assert!(generated.path.ends_with(".sigil"), "Path should end with .sigil");
+}
+
+#[test]
+fn test_gen_attributes() {
+    // GIVEN: Element with various attributes
+    let source = r#"
+        function Link() {
+            return <a href="/home" id="main-link">Home</a>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Attributes are generated
+    assert!(generated.code.contains("·attr(\"href\", \"/home\")"),
+        "Should generate href attr: {}", generated.code);
+    assert!(generated.code.contains("·id(\"main-link\")"),
+        "Should generate id attr: {}", generated.code);
+}
+
+#[test]
+fn test_gen_disabled_attr() {
+    // GIVEN: Element with disabled attribute
+    let source = r#"
+        function Button() {
+            return <button disabled>Disabled</button>;
+        }
+    "#;
+
+    // WHEN: We generate Sigil code
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    // THEN: Boolean attribute is generated
+    assert!(generated.code.contains("·attr(\"disabled\", \"true\")"),
+        "Should generate disabled attr: {}", generated.code);
+}
+
+#[test]
+fn test_generate_all_components() {
+    // GIVEN: File with multiple components
+    let source = r#"
+        function Header() {
+            return <header>Header</header>;
+        }
+
+        function Footer() {
+            return <footer>Footer</footer>;
+        }
+    "#;
+
+    // WHEN: We generate all
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_all(&spec);
+
+    // THEN: All components are generated
+    assert_eq!(generated.len(), 2, "Should generate 2 components");
+    assert!(generated.iter().any(|g| g.component_name == "Header"));
+    assert!(generated.iter().any(|g| g.component_name == "Footer"));
+}
