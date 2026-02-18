@@ -1656,12 +1656,12 @@ mod tests {
     #[test]
     fn test_lifetime_labels() {
         // Test loop labels
-        let mut lexer = Lexer::new("'outer: loop { break 'outer }");
+        let mut lexer = Lexer::new("'outer: loop { ⊗ 'outer }");
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::Colon, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Loop, _))));
         assert!(matches!(lexer.next_token(), Some((Token::LBrace, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::DeprecatedRustKeyword(s), _)) if s == "break"));
+        assert!(matches!(lexer.next_token(), Some((Token::Tensor, _))));  // ⊗ is native Sigil break
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::RBrace, _))));
     }

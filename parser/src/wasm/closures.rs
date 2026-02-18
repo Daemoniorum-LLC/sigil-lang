@@ -1811,11 +1811,21 @@ impl WasmCompiler {
             "join" => {
                 // Vec::join(separator) -> concatenate elements with separator
                 // Stack: [vec_ptr, separator_ptr] -> [result_str_ptr]
+                // Note: Internal pointers are i64, but vec_join import expects i32 params
                 self.compile_expr(receiver)?;
+                // Wrap array pointer from i64 to i32 for vec_join import
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I32WrapI64);
+
                 if let Some(sep) = args.first() {
                     self.compile_expr(sep)?;
+                    // Wrap separator pointer from i64 to i32
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I32WrapI64);
                 } else {
-                    // Default separator: empty string
+                    // Default separator: empty string (already i32)
                     let empty = self.add_string("");
                     let func = self.current_function_mut()
                         .ok_or_else(|| WasmError::internal("not in function context"))?;
@@ -1826,6 +1836,8 @@ impl WasmCompiler {
                 let func = self.current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                 func.push(Instruction::Call(join_idx));
+                // vec_join returns i32, extend to i64 for internal consistency
+                func.push(Instruction::I64ExtendI32U);
                 Ok(true)
             }
 
@@ -3401,7 +3413,74 @@ impl WasmCompiler {
                 continue;
             }
 
-            // Not a builtin - compile as method call
+            // Check for module-prefixed import calls: module·function(args)
+            // e.g., vdom·mount_vnode(vnode, "#app") → vdom_mount_vnode import
+            if let Expr::Path(path) = &current_expr {
+                if path.segments.len() == 1 {
+                    let module_name = &path.segments[0].ident.name;
+                    let import_name = format!("{}_{}", module_name, method_name);
+
+                    if let Some(func_idx) = self.imports.get_func(&import_name) {
+                        // Get parameter types for proper conversion
+                        let param_types: Vec<ValType> = self
+                            .imports
+                            .get_param_types(func_idx)
+                            .map(|p| p.to_vec())
+                            .unwrap_or_default();
+                        let return_type = self.imports.get_return_type(func_idx);
+
+                        // Compile arguments with type conversion
+                        for (arg_idx, arg) in method_args.iter().enumerate() {
+                            self.compile_expr(arg)?;
+
+                            // Convert I64 to I32 if parameter expects I32
+                            if let Some(ValType::I32) = param_types.get(arg_idx) {
+                                let func = self.current_function_mut().unwrap();
+                                func.push(Instruction::I32WrapI64);
+                            }
+                        }
+
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+
+                        // Handle return type conversion
+                        match return_type {
+                            Some(ValType::I32) => {
+                                func.push(Instruction::I64ExtendI32U);
+                            }
+                            None => {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            _ => {}
+                        }
+
+                        if !is_last {
+                            // Store for next iteration
+                            let temp_local = func.alloc_local(
+                                format!("__chain_{}", i),
+                                ValType::I64,
+                            );
+                            func.push(Instruction::LocalSet(temp_local));
+                            current_expr = Expr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: crate::ast::Ident {
+                                        name: format!("__chain_{}", i),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: crate::span::Span::new(0, 0),
+                                    },
+                                    generics: None,
+                                }],
+                            });
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // Not a builtin or import - compile as method call
             // For the first iteration (i==1), use pre-computed local index if available
             if i == 1 && first_local_idx.is_some() {
                 let func = self.current_function_mut()

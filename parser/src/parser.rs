@@ -6230,7 +6230,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Return(value))
             }
-            Some(Token::Tensor) | Some(Token::Tensor) => {
+            Some(Token::Tensor) => {
                 // ⊗ (Tensor) is contextually break at statement start, tensor product in binary position
                 self.advance();
                 // Check for optional label: break 'label or break 'label value
@@ -6258,7 +6258,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Break { label, value })
             }
-            Some(Token::CycleArrow) | Some(Token::CycleArrow) => {
+            Some(Token::CycleArrow) => {
                 // ↻ (CycleArrow) is contextually continue at statement start
                 self.advance();
                 // Check for optional label: continue 'label

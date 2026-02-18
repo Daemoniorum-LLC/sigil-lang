@@ -1235,7 +1235,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn answer() -> i64 {
+            ☉ rite answer() -> i64 {
                 42
             }
         "#);
@@ -1252,7 +1252,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn add(a: i64, b: i64) -> i64 {
+            ☉ rite add(a: i64, b: i64) -> i64 {
                 a + b
             }
         "#);
@@ -1269,10 +1269,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn compute() -> i64 {
-                let x = 10;
-                let y = 20;
-                let z = x + y;
+            ☉ rite compute() -> i64 {
+                ≔ x = 10;
+                ≔ y = 20;
+                ≔ z = x + y;
                 z * 2
             }
         "#);
@@ -1289,8 +1289,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn max(a: i64, b: i64) -> i64 {
-                if a > b { a } else { b }
+            ☉ rite max(a: i64, b: i64) -> i64 {
+                ⎇ a > b { a } ⎉ { b }
             }
         "#);
 
@@ -1306,10 +1306,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn sum_to_n(n: i64) -> i64 {
-                let mut sum = 0;
-                let mut i = 1;
-                while i <= n {
+            ☉ rite sum_to_n(n: i64) -> i64 {
+                ≔ Δ sum = 0;
+                ≔ Δ i = 1;
+                ⟳ i <= n {
                     sum = sum + i;
                     i = i + 1;
                 }
@@ -1329,11 +1329,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn double(x: i64) -> i64 {
+            ☉ rite double(x: i64) -> i64 {
                 x * 2
             }
 
-            pub fn quadruple(x: i64) -> i64 {
+            ☉ rite quadruple(x: i64) -> i64 {
                 double(double(x))
             }
         "#);
@@ -1350,8 +1350,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn greeting() -> i64 {
-                let s = "Hello, World!";
+            ☉ rite greeting() -> i64 {
+                ≔ s = "Hello, World!";
                 42
             }
         "#);
@@ -1368,9 +1368,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn nested(x: i64) -> i64 {
-                let a = {
-                    let b = x + 1;
+            ☉ rite nested(x: i64) -> i64 {
+                ≔ a = {
+                    ≔ b = x + 1;
                     b * 2
                 };
                 a + 10
@@ -1389,10 +1389,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn compare(a: i64, b: i64) -> i64 {
-                if a == b { 0 }
-                else if a < b { -1 }
-                else { 1 }
+            ☉ rite compare(a: i64, b: i64) -> i64 {
+                ⎇ a == b { 0 }
+                ⎉ ⎇ a < b { -1 }
+                ⎉ { 1 }
             }
         "#);
 
@@ -1408,7 +1408,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn check(a: bool, b: bool) -> bool {
+            ☉ rite check(a: bool, b: bool) -> bool {
                 (a && b) || (!a && !b)
             }
         "#);
@@ -1427,11 +1427,11 @@ mod validation_tests {
         // Note: Using decimal literals to avoid parser issues with hex
         // Testing bitwise AND, XOR, shift operators
         let result = compiler.compile(r#"
-            pub fn bits(x: i64) -> i64 {
-                let a = x & 255;
-                let c = x ^ 85;
-                let d = x << 4;
-                let e = x >> 2;
+            ☉ rite bits(x: i64) -> i64 {
+                ≔ a = x & 255;
+                ≔ c = x ^ 85;
+                ≔ d = x << 4;
+                ≔ e = x >> 2;
                 a + c + d + e
             }
         "#);
@@ -1450,7 +1450,7 @@ mod validation_tests {
         let result = compiler.compile(r#"
             const MAX: i64 = 100;
 
-            pub fn get_max() -> i64 {
+            ☉ rite get_max() -> i64 {
                 MAX
             }
         "#);
@@ -1467,9 +1467,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            static mut COUNTER: i64 = 0;
+            static Δ COUNTER: i64 = 0;
 
-            pub fn get_counter() -> i64 {
+            ☉ rite get_counter() -> i64 {
                 COUNTER
             }
         "#);
@@ -1486,9 +1486,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn early(x: i64) -> i64 {
-                if x < 0 {
-                    return -1;
+            ☉ rite early(x: i64) -> i64 {
+                ⎇ x < 0 {
+                    ⤺ -1;
                 }
                 x * 2
             }
@@ -1506,14 +1506,14 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn find_first_even(n: i64) -> i64 {
-                let mut i = 0;
-                while i < n {
-                    if i % 2 == 0 {
-                        break;
+            ☉ rite find_first_even(n: i64) -> i64 {
+                ≔ Δ i = 0;
+                ⟳ i < n {
+                    ⎇ i % 2 == 0 {
+                        ⊗;
                     }
                     i = i + 1;
-                    continue;
+                    ↻;
                 }
                 i
             }
@@ -1567,8 +1567,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         compiler.compile(r#"
-            pub fn public_fn() -> i64 { 1 }
-            fn private_fn() -> i64 { 2 }
+            ☉ rite public_fn() -> i64 { 1 }
+            rite private_fn() -> i64 { 2 }
         "#).unwrap();
 
         let bytes = compiler.generate_module().unwrap();
@@ -1599,11 +1599,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn negate(x: i64) -> i64 {
+            ☉ rite negate(x: i64) -> i64 {
                 -x
             }
 
-            pub fn logical_not(x: bool) -> bool {
+            ☉ rite logical_not(x: bool) -> bool {
                 !x
             }
         "#);
@@ -1620,7 +1620,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn complex(a: i64, b: i64, c: i64) -> i64 {
+            ☉ rite complex(a: i64, b: i64, c: i64) -> i64 {
                 ((a + b) * c - a / b) % (c + 1)
             }
         "#);
@@ -1638,9 +1638,9 @@ mod validation_tests {
 
         // For loop iterates over an array
         let result = compiler.compile(r#"
-            pub fn sum_array(arr: [i64]) -> i64 {
-                let mut sum = 0;
-                for x in arr {
+            ☉ rite sum_array(arr: [i64]) -> i64 {
+                ≔ Δ sum = 0;
+                ∀ x ∈ arr {
                     sum = sum + x;
                 }
                 sum
@@ -1659,8 +1659,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn describe(x: i64) -> i64 {
-                match x {
+            ☉ rite describe(x: i64) -> i64 {
+                ⌥ x {
                     0 => 100,
                     1 => 200,
                     _ => 300
@@ -1684,7 +1684,7 @@ mod validation_tests {
 
         // Test function parameter that accesses struct-like data
         let result = compiler.compile(r#"
-            pub fn identity(x: i64) -> i64 {
+            ☉ rite identity(x: i64) -> i64 {
                 x
             }
         "#);
@@ -1701,10 +1701,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn factorial(n: i64) -> i64 {
-                if n <= 1 {
+            ☉ rite factorial(n: i64) -> i64 {
+                ⎇ n <= 1 {
                     1
-                } else {
+                } ⎉ {
                     n * factorial(n - 1)
                 }
             }
@@ -1722,14 +1722,14 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn classify(x: i64) -> i64 {
-                if x < 0 {
+            ☉ rite classify(x: i64) -> i64 {
+                ⎇ x < 0 {
                     -1
-                } else if x == 0 {
+                } ⎉ ⎇ x == 0 {
                     0
-                } else if x < 10 {
+                } ⎉ ⎇ x < 10 {
                     1
-                } else {
+                } ⎉ {
                     2
                 }
             }
@@ -1747,10 +1747,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn count_up(n: i64) -> i64 {
-                let mut count = 0;
-                let mut i = 0;
-                while i < n {
+            ☉ rite count_up(n: i64) -> i64 {
+                ≔ Δ count = 0;
+                ≔ Δ i = 0;
+                ⟳ i < n {
                     count = count + 1;
                     i = i + 1;
                 }
@@ -1770,11 +1770,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new().with_debug_info();
 
         let result = compiler.compile(r#"
-            pub fn add(a: i64, b: i64) -> i64 {
+            ☉ rite add(a: i64, b: i64) -> i64 {
                 a + b
             }
 
-            pub fn multiply(x: i64, y: i64) -> i64 {
+            ☉ rite multiply(x: i64, y: i64) -> i64 {
                 x * y
             }
         "#);
@@ -1823,9 +1823,9 @@ mod validation_tests {
 
         // Compile code that imports from an external module
         let result = compiler.compile(r#"
-            invoke math_utils::helper;
+            invoke math_utils·helper;
 
-            pub fn caller() -> i64 {
+            ☉ rite caller() -> i64 {
                 helper(10, 20)
             }
         "#);
@@ -1864,9 +1864,9 @@ mod validation_tests {
 
         // Compile code that imports with a rename
         let result = compiler.compile(r#"
-            invoke external::original as renamed;
+            invoke external·original as renamed;
 
-            pub fn use_renamed() -> i64 {
+            ☉ rite use_renamed() -> i64 {
                 renamed(42)
             }
         "#);
@@ -1884,9 +1884,9 @@ mod validation_tests {
 
         // Compile code with nested module path
         let result = compiler.compile(r#"
-            invoke deeply::nested::module::function;
+            invoke deeply·nested·module·function;
 
-            pub fn call_nested() -> i64 {
+            ☉ rite call_nested() -> i64 {
                 function()
             }
         "#);
@@ -1923,9 +1923,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn format_parts() -> i64 {
-                let arr = [1, 2, 3];
-                let joined = arr.join(", ");
+            ☉ rite format_parts() -> i64 {
+                ≔ arr = [1, 2, 3];
+                ≔ joined = arr.join(", ");
                 42
             }
         "#);
