@@ -1,0 +1,46 @@
+// Test: fs_mtime - file modification time
+// Spec: Phase 1.0 - HMR prerequisites
+// Priority: P1
+//
+// Purpose:
+// Validates fs_mtime returns epoch milliseconds for existing files
+// and -1 for nonexistent files.
+
+rite main() {
+    // Setup: create a test file so we have a known path
+    fs_write("/tmp/sigil_mtime_test_existing.txt", "hello");
+
+    // Test 1: mtime on existing file returns positive value
+    ≔ mtime = fs_mtime("/tmp/sigil_mtime_test_existing.txt");
+    ⎇ mtime > 0 {
+        println("fs_mtime_existing: OK");
+    } ⎉ {
+        println("fs_mtime_existing: FAILED");
+    }
+
+    // Test 2: mtime on nonexistent file returns -1
+    ≔ mtime_bad = fs_mtime("/tmp/nonexistent_file_sigil_test_12345.sg");
+    ⎇ mtime_bad == -1 {
+        println("fs_mtime_nonexistent: OK");
+    } ⎉ {
+        println("fs_mtime_nonexistent: FAILED");
+    }
+
+    // Test 3: two calls to same file return same value (no modification between)
+    ≔ mtime_a = fs_mtime("/tmp/sigil_mtime_test_existing.txt");
+    ≔ mtime_b = fs_mtime("/tmp/sigil_mtime_test_existing.txt");
+    ⎇ mtime_a == mtime_b {
+        println("fs_mtime_stable: OK");
+    } ⎉ {
+        println("fs_mtime_stable: FAILED");
+    }
+
+    // Test 4: mtime on a freshly written file returns positive value
+    fs_write("/tmp/sigil_mtime_test.txt", "hello");
+    ≔ mtime_fresh = fs_mtime("/tmp/sigil_mtime_test.txt");
+    ⎇ mtime_fresh > 0 {
+        println("fs_mtime_fresh_file: OK");
+    } ⎉ {
+        println("fs_mtime_fresh_file: FAILED");
+    }
+}

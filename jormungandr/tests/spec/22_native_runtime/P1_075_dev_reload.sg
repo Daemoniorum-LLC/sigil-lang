@@ -1,0 +1,55 @@
+// Test: Dev·reload - hot module reload
+// Spec: Phase 1.0 - HMR
+// Priority: P1
+//
+// Purpose:
+// Validates that Dev·reload re-parses a Sigil source file and
+// overwrites function definitions in the running interpreter.
+
+rite main() {
+    // Test 1: Write a .sg file defining foo(), reload it, call foo()
+    ≔ src_v1 = "rite foo() { ↩ 1; }";
+    fs_write("/tmp/sigil_hmr_test.sg", src_v1);
+    ≔ rc1 = Dev·reload("/tmp/sigil_hmr_test.sg");
+    ⎇ rc1 == 0 {
+        println("dev_reload_success: OK");
+    } ⎉ {
+        println("dev_reload_success: FAILED");
+    }
+
+    // Test 2: Call the loaded function
+    ≔ val1 = foo();
+    ⎇ val1 == 1 {
+        println("dev_reload_call_v1: OK");
+    } ⎉ {
+        println("dev_reload_call_v1: FAILED");
+    }
+
+    // Test 3: Write new version, reload, verify updated behavior
+    ≔ src_v2 = "rite foo() { ↩ 42; }";
+    fs_write("/tmp/sigil_hmr_test.sg", src_v2);
+    ≔ rc2 = Dev·reload("/tmp/sigil_hmr_test.sg");
+    ≔ val2 = foo();
+    ⎇ val2 == 42 {
+        println("dev_reload_call_v2: OK");
+    } ⎉ {
+        println("dev_reload_call_v2: FAILED");
+    }
+
+    // Test 4: Reload nonexistent file returns -1
+    ≔ rc_bad = Dev·reload("/tmp/nonexistent_sigil_hmr_99999.sg");
+    ⎇ rc_bad == -1 {
+        println("dev_reload_missing: OK");
+    } ⎉ {
+        println("dev_reload_missing: FAILED");
+    }
+
+    // Test 5: Reload file with syntax error returns -2
+    fs_write("/tmp/sigil_hmr_bad.sg", "this is not valid sigil {{{{");
+    ≔ rc_parse = Dev·reload("/tmp/sigil_hmr_bad.sg");
+    ⎇ rc_parse == -2 {
+        println("dev_reload_parse_error: OK");
+    } ⎉ {
+        println("dev_reload_parse_error: FAILED");
+    }
+}

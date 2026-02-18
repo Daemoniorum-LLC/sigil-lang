@@ -9639,6 +9639,27 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
+    // fs_mtime - get file modification time as epoch milliseconds
+    define(interp, "fs_mtime", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_mtime() requires string path")),
+        };
+
+        match std::fs::metadata(&path) {
+            Ok(meta) => match meta.modified() {
+                Ok(mtime) => {
+                    let duration = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or(std::time::Duration::ZERO);
+                    Ok(Value::Int(duration.as_millis() as i64))
+                }
+                Err(_) => Ok(Value::Int(-1)),
+            },
+            Err(_) => Ok(Value::Int(-1)),
+        }
+    });
+
     // path_join - join path components
     define(interp, "path_join", None, |_, args| {
         let mut path = std::path::PathBuf::new();
@@ -14887,6 +14908,36 @@ fn register_devex(interp: &mut Interpreter) {
             Value::String(Rc::new("Phase 7 - DevEx".to_string())),
         );
         Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+
+    // Dev·reload - hot-reload a Sigil source file by re-parsing and re-registering definitions
+    // Returns 0 on success, -1 on IO error, -2 on parse error
+    define(interp, "Dev·reload", Some(1), |interpreter, args| {
+        use crate::Parser;
+
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Dev·reload() requires string path")),
+        };
+
+        // Read the source file
+        let source = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => return Ok(Value::Int(-1)),
+        };
+
+        // Parse it
+        let mut parser = Parser::new(&source);
+        let file = match parser.parse_file() {
+            Ok(f) => f,
+            Err(_) => return Ok(Value::Int(-2)),
+        };
+
+        // Re-register all definitions (overwrites existing)
+        match interpreter.execute_definitions(&file) {
+            Ok(_) => Ok(Value::Int(0)),
+            Err(_) => Ok(Value::Int(-2)),
+        }
     });
 }
 
