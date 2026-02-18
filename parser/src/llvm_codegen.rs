@@ -1672,6 +1672,7 @@ pub mod llvm {
 
         /// Declare runtime helper functions
         fn declare_runtime_functions(&self) {
+            eprintln!("[RUNTIME-FUNCS] Starting declare_runtime_functions");
             let i64_type = self.context.i64_type();
             let void_type = self.context.void_type();
 
@@ -1848,30 +1849,90 @@ pub mod llvm {
             }
 
             // Math functions: (i64) -> i64
+            // G92-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            eprintln!("[G92-DEBUG] is_aot = {}", is_aot);
             let unary_math_type = i64_type.fn_type(&[i64_type.into()], false);
-            for name in [
-                "sigil_sqrt",
-                "sigil_sin",
-                "sigil_cos",
-                "sigil_tan",
-                "sigil_exp",
-                "sigil_ln",
-                "sigil_floor",
-                "sigil_ceil",
-                "sigil_abs",
-            ] {
-                self.module.add_function(name, unary_math_type, None);
+            let math_funcs: &[(&str, extern "C" fn(i64) -> i64)] = &[
+                ("sigil_sqrt", sigil_sqrt),
+                ("sigil_sin", sigil_sin),
+                ("sigil_cos", sigil_cos),
+                ("sigil_tan", sigil_tan),
+                ("sigil_exp", sigil_exp),
+                ("sigil_ln", sigil_ln),
+                ("sigil_floor", sigil_floor),
+                ("sigil_ceil", sigil_ceil),
+                ("sigil_abs", sigil_abs),
+            ];
+            for (name, fn_ptr) in math_funcs {
+                if is_aot {
+                    // AOT: external declaration, resolved at link time
+                    self.module.add_function(name, unary_math_type, None);
+                } else {
+                    // JIT: wrapper with embedded Rust function address
+                    let wrapper = self.module.add_function(name, unary_math_type, None);
+                    let entry = self.context.append_basic_block(wrapper, "entry");
+                    self.builder.position_at_end(entry);
+                    let addr_const = self.context.i64_type().const_int(*fn_ptr as usize as u64, false);
+                    let fn_ptr_val = self.builder.build_int_to_ptr(
+                        addr_const,
+                        unary_math_type.ptr_type(inkwell::AddressSpace::default()),
+                        &format!("{}_fn_ptr", name)
+                    ).unwrap();
+                    let arg = wrapper.get_first_param().unwrap();
+                    let call = self.builder.build_indirect_call(unary_math_type, fn_ptr_val, &[arg.into()], "math_call").unwrap();
+                    let result = call.try_as_basic_value().left().unwrap();
+                    let _ = self.builder.build_return(Some(&result));
+                }
             }
 
             // Math functions: (i64, i64) -> i64
+            // G92-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let binary_math_type = i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
-            for name in ["sigil_pow", "sigil_min", "sigil_max"] {
-                self.module.add_function(name, binary_math_type, None);
+            let binary_math_funcs: &[(&str, extern "C" fn(i64, i64) -> i64)] = &[
+                ("sigil_pow", sigil_pow),
+                ("sigil_min", sigil_min),
+                ("sigil_max", sigil_max),
+            ];
+            for (name, fn_ptr) in binary_math_funcs {
+                if is_aot {
+                    self.module.add_function(name, binary_math_type, None);
+                } else {
+                    let wrapper = self.module.add_function(name, binary_math_type, None);
+                    let entry = self.context.append_basic_block(wrapper, "entry");
+                    self.builder.position_at_end(entry);
+                    let addr_const = self.context.i64_type().const_int(*fn_ptr as usize as u64, false);
+                    let fn_ptr_val = self.builder.build_int_to_ptr(
+                        addr_const,
+                        binary_math_type.ptr_type(inkwell::AddressSpace::default()),
+                        &format!("{}_fn_ptr", name)
+                    ).unwrap();
+                    let arg1 = wrapper.get_nth_param(0).unwrap();
+                    let arg2 = wrapper.get_nth_param(1).unwrap();
+                    let call = self.builder.build_indirect_call(binary_math_type, fn_ptr_val, &[arg1.into(), arg2.into()], "math_call").unwrap();
+                    let result = call.try_as_basic_value().left().unwrap();
+                    let _ = self.builder.build_return(Some(&result));
+                }
             }
 
             // Math constants: () -> i64
+            // G92-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let const_type = i64_type.fn_type(&[], false);
-            self.module.add_function("sigil_pi", const_type, None);
+            if is_aot {
+                self.module.add_function("sigil_pi", const_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_pi", const_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_pi as usize as u64, false);
+                let fn_ptr_val = self.builder.build_int_to_ptr(
+                    addr_const,
+                    const_type.ptr_type(inkwell::AddressSpace::default()),
+                    "sigil_pi_fn_ptr"
+                ).unwrap();
+                let call = self.builder.build_indirect_call(const_type, fn_ptr_val, &[], "pi_call").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
 
             // Vec functions - use ptr type (i64 as opaque pointer)
             // Use inttoptr wrappers to bypass MCJIT add_global_mapping issues (JIT only)
@@ -4547,7 +4608,11 @@ pub mod llvm {
                             // G56: No type annotation - try to infer RichType from init expression
                             // This handles cases like: let s = FixedSize·<4>·new();
                             eprintln!("[G60] Let binding for '{}', trying to infer type from init", ident.name);
-                            if let Some(rich_ty) = self.infer_rich_type_from_expr(init_expr) {
+                            // G101: First try get_rich_type_from_expr (has scope access for variable lookups)
+                            // This handles cases like: let x = result? (where result is Result<T, E>)
+                            let rich_ty = self.get_rich_type_from_expr(init_expr, scope)
+                                .or_else(|| self.infer_rich_type_from_expr(init_expr));
+                            if let Some(rich_ty) = rich_ty {
                                 eprintln!("[G60] Let binding for '{}' inferred: {:?}", ident.name, rich_ty);
                                 scope.register_rich_type(ident.name.clone(), rich_ty);
                             }
@@ -4690,13 +4755,23 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?;
                         Ok(val.into_int_value())
                     } else if path.segments.len() > 1 {
-                        // Qualified path like Token::LParen or Type::Variant
-                        // Check if it's a qualified enum variant
+                        // Qualified path like Token::LParen or Type::Variant or S::RANK (associated const)
                         let type_name = path
                             .segments
                             .first()
                             .map(|s| s.ident.name.as_str())
                             .unwrap_or("");
+
+                        // G87: Check if first segment is a type parameter bound to a concrete type
+                        // This handles S::RANK! where S is bound to Shape2<4, 4>
+                        if let Some(rich_type) = scope.rich_types.get(type_name) {
+                            eprintln!("[G87-ASSOC] type param '{}' bound to {:?}, looking for '{}'", type_name, rich_type, name);
+                            // Look up the associated constant on the concrete type
+                            if let Some(const_val) = self.lookup_associated_constant(rich_type, name) {
+                                eprintln!("[G87-ASSOC] Found {}::{} = {}", type_name, name, const_val);
+                                return Ok(self.context.i64_type().const_int(const_val as u64, false));
+                            }
+                        }
 
                         // Try to find in registered enum types
                         if let Some(enum_info) = self.enum_types.get(type_name) {
@@ -4705,8 +4780,20 @@ pub mod llvm {
                             }
                         }
 
+                        // G91: Check for primitive type associated constants (f32::SIZE, etc.)
+                        // These aren't in scope.rich_types because they're primitives, not type parameters
+                        let primitive_rich_type = RichType::Named {
+                            name: type_name.to_string(),
+                            generics: vec![],
+                        };
+                        if let Some(const_val) = self.lookup_associated_constant(&primitive_rich_type, name) {
+                            eprintln!("[G91] Found primitive {}::{} = {}", type_name, name, const_val);
+                            return Ok(self.context.i64_type().const_int(const_val as u64, false));
+                        }
+
                         // Fallback: treat as a constant enum value (use hash of name as discriminant)
                         // This handles cases like Token::LParen, TokenKind::Fn, etc.
+                        eprintln!("[G87-WARN] Using hash fallback for path '{}'", full_path);
                         let hash = full_path
                             .bytes()
                             .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
@@ -4883,11 +4970,27 @@ pub mod llvm {
                                 .map(|s| s.ident.name.as_str())
                                 .ok_or("Empty path")?;
                             if let Some(&ptr) = scope.vars.get(name) {
-                                // ptr is the alloca address - convert to i64
-                                return self
-                                    .builder
-                                    .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
-                                    .map_err(|e| e.to_string());
+                                // G102: Check if this is a struct type
+                                // Structs are stored as pointers, so &struct_var should return
+                                // the VALUE stored in the alloca (the struct pointer),
+                                // not the alloca address itself.
+                                let is_struct = self.get_struct_type_from_expr(inner, scope).is_some();
+                                eprintln!("[G102-REF] name='{}', is_struct={}", name, is_struct);
+
+                                if is_struct {
+                                    // For structs: load the struct pointer value from alloca
+                                    let val = self
+                                        .builder
+                                        .build_load(self.context.i64_type(), ptr, name)
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(val.into_int_value());
+                                } else {
+                                    // For primitives: return the alloca address
+                                    return self
+                                        .builder
+                                        .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
+                                        .map_err(|e| e.to_string());
+                                }
                             }
                         }
                         // Fallback: compile inner (may not be correct for all cases)
@@ -5249,9 +5352,98 @@ pub mod llvm {
                         // Monomorphize the generic struct
                         self.monomorphize_struct(&base_name, type_args)?
                     } else if self.generic_structs.contains_key(&base_name) {
-                        // Generic struct used without type args - use default monomorphization
-                        // Assume i64 for all type parameters
-                        format!("{}_i64", base_name)
+                        // G102 fix: Generic struct used without type args - try to infer from field values
+                        // For `Wrapper { shape: s }` where s: DynShape, infer Wrapper<DynShape>
+                        let generic_def = self.generic_structs.get(&base_name).cloned();
+                        let mut inferred_name = None;
+
+                        if let Some(ref def) = generic_def {
+                            // G102 Part 2: First check if scope has type bindings from monomorphized method
+                            // When inside `Tensor::randn`, scope has S, D, Dev bindings that we should use
+                            let mut type_bindings: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+                            // G102 Debug: Show what we're looking for
+                            eprintln!("[G102-DEBUG] Struct '{}' type_params: {:?}", base_name, def.type_params);
+                            eprintln!("[G102-DEBUG] scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
+
+                            for param in &def.type_params {
+                                if let Some(rich_type) = scope.rich_types.get(param) {
+                                    let concrete = match rich_type {
+                                        RichType::Named { name, .. } => name.clone(),
+                                        RichType::Float(crate::typeck::FloatSize::F32) => "f32".to_string(),
+                                        RichType::Float(crate::typeck::FloatSize::F64) => "f64".to_string(),
+                                        RichType::Int(crate::typeck::IntSize::I32) => "i32".to_string(),
+                                        RichType::Int(crate::typeck::IntSize::I64) => "i64".to_string(),
+                                        RichType::Int(crate::typeck::IntSize::USize) => "usize".to_string(),
+                                        RichType::ConstGeneric(v) => format!("{}", v),
+                                        _ => continue,
+                                    };
+                                    type_bindings.insert(param.clone(), concrete);
+                                }
+                            }
+
+                            // If we got all bindings from scope, use them
+                            if type_bindings.len() == def.type_params.len() && !type_bindings.is_empty() {
+                                let mut name_parts = vec![base_name.clone()];
+                                for param in &def.type_params {
+                                    name_parts.push(type_bindings.get(param).unwrap().clone());
+                                }
+                                inferred_name = Some(name_parts.join("_"));
+                                eprintln!("[G102] Inferred from scope bindings: {}", inferred_name.as_ref().unwrap());
+                            }
+
+                            // Fall back to field value inference if scope didn't have all bindings
+                            if inferred_name.is_none() {
+                                if let ast::StructFields::Named(field_defs) = &def.def.fields {
+                                    type_bindings.clear();
+
+                                    for field_init in fields.iter() {
+                                        // Find the corresponding field definition
+                                        for field_def in field_defs.iter() {
+                                            if field_def.name.name == field_init.name.name {
+                                                // Check if the field type is a generic parameter
+                                                if let ast::TypeExpr::Path(type_path) = &field_def.ty {
+                                                    if let Some(seg) = type_path.segments.last() {
+                                                        let type_param_name = &seg.ident.name;
+                                                        // Check if this is a type parameter
+                                                        if def.type_params.iter().any(|p| p == type_param_name) {
+                                                            // Try to get the concrete type from the field value
+                                                            if let Some(ref val_expr) = field_init.value {
+                                                                if let Some(concrete_type) = self.get_struct_type_from_expr(val_expr, scope) {
+                                                                    type_bindings.insert(type_param_name.clone(), concrete_type);
+                                                                }
+                                                            } else {
+                                                                // Shorthand: field name is variable name
+                                                                if let Some(concrete_type) = scope.get_struct_type(&field_init.name.name) {
+                                                                    type_bindings.insert(type_param_name.clone(), concrete_type.clone());
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    // If we found type bindings, construct the monomorphized name
+                                    if !type_bindings.is_empty() {
+                                        let mut name_parts = vec![base_name.clone()];
+                                        for param in &def.type_params {
+                                            if let Some(concrete) = type_bindings.get(param) {
+                                                name_parts.push(concrete.clone());
+                                            } else {
+                                                name_parts.push("i64".to_string()); // fallback
+                                            }
+                                        }
+                                        inferred_name = Some(name_parts.join("_"));
+                                        eprintln!("[G102] Inferred from field values: {}", inferred_name.as_ref().unwrap());
+                                    }
+                                }
+                            }
+                        }
+
+                        inferred_name.unwrap_or_else(|| format!("{}_i64", base_name))
                     } else {
                         base_name
                     };
@@ -5385,14 +5577,36 @@ pub mod llvm {
                     }
 
                     // Unknown struct type - create dynamic struct on the fly
+                    // G102 fix: For monomorphized generics like Tensor_DynShape_f32_Cpu,
+                    // look up the base struct's field indices from generic_structs
+                    // Extract base name from monomorphized struct_name (e.g., "Tensor" from "Tensor_DynShape_f32_Cpu")
+                    let base_struct_name = struct_name.split('_').next().unwrap_or(&struct_name);
+                    let generic_field_indices: Option<std::collections::HashMap<String, u32>> =
+                        self.generic_structs.get(base_struct_name).map(|gdef| {
+                            if let ast::StructFields::Named(named_fields) = &gdef.def.fields {
+                                named_fields.iter().enumerate()
+                                    .map(|(i, f)| (f.name.name.clone(), i as u32))
+                                    .collect()
+                            } else {
+                                std::collections::HashMap::new()
+                            }
+                        });
+
+                    // Determine actual field count from generic struct definition if available
+                    let actual_field_count = generic_field_indices.as_ref()
+                        .map(|m| m.len())
+                        .unwrap_or(fields.len());
+
                     // G44 fix: Add discriminant space for enum variants
-                    let base_struct_size = (fields.len() as u64).max(1) * 8;
+                    let base_struct_size = (actual_field_count as u64).max(1) * 8;
                     let struct_size = if enum_discriminant.is_some() {
                         base_struct_size + 8 // Add space for discriminant at offset 0
                     } else {
                         base_struct_size
                     };
                     let size_const = self.context.i64_type().const_int(struct_size, false);
+                    eprintln!("[G102-MONO-STRUCT] struct_name='{}', base='{}', actual_field_count={}, struct_size={}",
+                             struct_name, base_struct_name, actual_field_count, struct_size);
 
                     // G55 fix: Compile ALL field values FIRST before allocating the struct.
                     let field_offset_base = if enum_discriminant.is_some() { 1u64 } else { 0u64 };
@@ -5400,7 +5614,12 @@ pub mod llvm {
 
                     for (idx, field_init) in fields.iter().enumerate() {
                         let field_name = field_init.name.name.clone();
-                        let field_offset = (idx as u64 + field_offset_base) * 8;
+                        // G102 fix: Use correct field index from generic struct definition
+                        let field_idx = generic_field_indices.as_ref()
+                            .and_then(|m| m.get(&field_name))
+                            .copied()
+                            .unwrap_or(idx as u32) as u64;
+                        let field_offset = (field_idx + field_offset_base) * 8;
 
                         // Compile field value BEFORE struct allocation
                         let field_value = if let Some(ref val_expr) = field_init.value {
@@ -6485,21 +6704,38 @@ pub mod llvm {
                                         if let Some((method_def, bindings)) = self.impl_registry.resolve_method(&receiver_rich_type, method_name) {
                                             eprintln!("[G70-INSTANCE] Found method, bindings={:?}", bindings);
 
-                                            // Convert bindings to RichType
-                                            let rich_bindings: std::collections::HashMap<String, RichType> = bindings.iter()
+                                            // Convert bindings to RichType, with scope fallback for unresolved generics
+                                            let mut rich_bindings: std::collections::HashMap<String, RichType> = bindings.iter()
                                                 .map(|(k, v)| (k.clone(), v.clone()))
                                                 .collect();
 
-                                            // Generate mangled name with type bindings
-                                            let binding_suffix: String = rich_bindings.iter()
-                                                .map(|(_, v)| match v {
-                                                    RichType::Named { name, .. } => format!("_{}", name),
-                                                    RichType::Float(crate::typeck::FloatSize::F32) => "_f32".to_string(),
-                                                    RichType::Float(crate::typeck::FloatSize::F64) => "_f64".to_string(),
-                                                    RichType::Int(crate::typeck::IntSize::I32) => "_i32".to_string(),
-                                                    RichType::Int(crate::typeck::IntSize::I64) => "_i64".to_string(),
-                                                    RichType::Int(crate::typeck::IntSize::USize) => "_usize".to_string(),
-                                                    _ => "_unknown".to_string(),
+                                            // G86: Add Self/This binding from receiver type
+                                            rich_bindings.insert("Self".to_string(), receiver_rich_type.clone());
+                                            rich_bindings.insert("This".to_string(), receiver_rich_type.clone());
+
+                                            // G86: For method-level generics, try scope lookup
+                                            for generic_info in &method_def.generics {
+                                                let generic_name = &generic_info.name;
+                                                if !rich_bindings.contains_key(generic_name) {
+                                                    if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                                        eprintln!("[G86-INSTANCE] Found '{}' in scope: {:?}", generic_name, scope_type);
+                                                        rich_bindings.insert(generic_name.clone(), scope_type.clone());
+                                                    }
+                                                }
+                                            }
+
+                                            // G87: Generate mangled name using the same scheme as monomorph_cache
+                                            // Format: TypeName_method__Param1_Type1__Param2_Type2
+                                            // Skip Self/This as they're not part of the method's generic signature
+                                            // G90: Sort by param name to ensure deterministic order (HashMap iteration is non-deterministic)
+                                            let mut sorted_bindings: Vec<_> = rich_bindings.iter()
+                                                .filter(|(param_name, _)| *param_name != "Self" && *param_name != "This")
+                                                .collect();
+                                            sorted_bindings.sort_by_key(|(k, _)| k.as_str());
+                                            let binding_suffix: String = sorted_bindings.iter()
+                                                .map(|(param_name, v)| {
+                                                    let type_str = Self::rich_type_to_mangle_string(v);
+                                                    format!("__{}_{}", param_name, type_str)
                                                 })
                                                 .collect();
                                             let mono_name = format!("{}_{}{}", type_name, method_name, binding_suffix);
@@ -6840,7 +7076,19 @@ pub mod llvm {
 
                                 // G56: Add const generic values as arguments
                                 // The monomorphized function expects const generics after self
-                                if let RichType::Named { generics, .. } = &rich_type {
+                                // G87: Handle both Named and Ref { inner: Named } types
+                                let type_generics = match &rich_type {
+                                    RichType::Named { generics, .. } => Some(generics),
+                                    RichType::Ref { inner, .. } => {
+                                        if let RichType::Named { generics, .. } = inner.as_ref() {
+                                            Some(generics)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(generics) = type_generics {
                                     for generic in generics {
                                         if let RichType::ConstGeneric(val) = generic {
                                             let const_val = self.context.i64_type().const_int(*val as u64, false);
@@ -7439,13 +7687,68 @@ pub mod llvm {
                             return Ok(receiver_val);
                         }
                         "unwrap" => {
-                            // Option/Result unwrap - return inner value
-                            // In our simplified model, just return the value
-                            return Ok(receiver_val);
+                            // G93 fix: Option/Result unwrap - properly extract inner value
+                            // For Result: discriminant at offset 0 (Ok=0, Err=1), value at offset 8
+                            // For Option: discriminant at offset 0 (None=0, Some=1), value at offset 8
+                            // Both store their payload at offset 8 when they have data
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let result_ptr = self.builder
+                                .build_int_to_ptr(receiver_val, ptr_type, "unwrap_ptr")
+                                .map_err(|e| e.to_string())?;
+
+                            // Load value from offset 8 (where the payload is stored)
+                            let value_ptr_int = self.builder
+                                .build_int_add(
+                                    receiver_val,
+                                    self.context.i64_type().const_int(8, false),
+                                    "value_offset"
+                                )
+                                .map_err(|e| e.to_string())?;
+                            let value_ptr = self.builder
+                                .build_int_to_ptr(value_ptr_int, ptr_type, "value_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let value = self.builder
+                                .build_load(self.context.i64_type(), value_ptr, "unwrapped_value")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+
+                            return Ok(value);
                         }
                         "unwrap_or" => {
                             // Option/Result unwrap_or(default) - simplified
                             return Ok(receiver_val);
+                        }
+                        // G93 fix: Layout accessor methods
+                        "size" => {
+                            // Layout.size() - returns size field at offset 0
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let layout_ptr = self.builder
+                                .build_int_to_ptr(receiver_val, ptr_type, "layout_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let size = self.builder
+                                .build_load(self.context.i64_type(), layout_ptr, "layout_size")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+                            return Ok(size);
+                        }
+                        "align" => {
+                            // Layout.align() - returns align field at offset 8
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let align_ptr_int = self.builder
+                                .build_int_add(
+                                    receiver_val,
+                                    self.context.i64_type().const_int(8, false),
+                                    "align_offset"
+                                )
+                                .map_err(|e| e.to_string())?;
+                            let align_ptr = self.builder
+                                .build_int_to_ptr(align_ptr_int, ptr_type, "align_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let align = self.builder
+                                .build_load(self.context.i64_type(), align_ptr, "layout_align")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+                            return Ok(align);
                         }
                         "is_some" | "is_ok" => {
                             // For simplicity, return true (1)
@@ -7748,6 +8051,7 @@ pub mod llvm {
 
                 // Evidentiality markers with runtime semantics
                 // Known (!) unwraps evidential values
+                // Uncertain (?) unwraps Result/Option types AND marks as uncertain
                 // Other markers wrap values with evidence tags
                 Expr::Evidential {
                     expr,
@@ -7761,8 +8065,14 @@ pub mod llvm {
                             // The type checker ensures this is safe
                             Ok(inner_val)
                         }
+                        ast::Evidentiality::Uncertain => {
+                            // G100: Since Ok() returns value directly (no Result struct wrapping),
+                            // the ? operator should just pass through the value
+                            // NOTE: If proper Result wrapping is implemented later, this needs updating
+                            Ok(inner_val)
+                        }
                         _ => {
-                            // For ?, ~, ◊, ‽: Create evidential struct and return value
+                            // For ~, ◊, ‽: Create evidential struct and return value
                             // The struct stores {tag, value} for runtime evidence tracking
                             let tag = Self::evidentiality_to_tag(evidentiality);
                             let evidential = self.create_evidential_value(
@@ -7887,11 +8197,27 @@ pub mod llvm {
                             .map(|s| s.ident.name.as_str())
                             .ok_or("Empty path")?;
                         if let Some(&ptr) = scope.vars.get(name) {
-                            // ptr is already the alloca address - convert to i64
-                            return self
-                                .builder
-                                .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
-                                .map_err(|e| e.to_string());
+                            // G102: Check if this is a struct type
+                            // Structs are stored as pointers, so &struct_var should return
+                            // the VALUE stored in the alloca (the struct pointer),
+                            // not the alloca address itself.
+                            let is_struct = self.get_struct_type_from_expr(expr, scope).is_some();
+                            eprintln!("[G102-ADDROF] name='{}', is_struct={}", name, is_struct);
+
+                            if is_struct {
+                                // For structs: load the struct pointer value from alloca
+                                let val = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), ptr, name)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val.into_int_value());
+                            } else {
+                                // For primitives: return the alloca address
+                                return self
+                                    .builder
+                                    .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
+                                    .map_err(|e| e.to_string());
+                            }
                         }
                     }
 
@@ -8075,8 +8401,12 @@ pub mod llvm {
                 }
 
                 // Try expression: expr?
+                // G100: Need to check if Result is properly wrapped or just passed through
+                // Currently Ok() returns value directly without wrapping, so ? should pass through
                 Expr::Try(inner) => {
-                    // Types erased, just compile inner
+                    eprintln!("[G100-TRY] Compiling ? operator on {:?}", inner);
+                    // Compile inner expression to get Result value
+                    // Since Ok() returns value directly (no wrapping), just pass through
                     self.compile_expr(fn_value, scope, inner)
                 }
 
@@ -8271,6 +8601,7 @@ pub mod llvm {
 
                 _ => {
                     // Unsupported expression - return error instead of silent 0
+                    eprintln!("[G87-DEBUG] Unsupported expression: {:?}", expr);
                     Err(format!(
                         "LLVM codegen: unsupported expression {:?}",
                         std::mem::discriminant(expr)
@@ -8664,6 +8995,46 @@ pub mod llvm {
                                 generics: vec![],
                             });
                         }
+
+                        // GAP-2026-02-18 fix: Handle standalone function calls like make_tensor()
+                        // Look up the function's return type from ret_types
+                        if path.segments.len() == 1 {
+                            let func_name = &path.segments[0].ident.name;
+                            eprintln!("[G60] Standalone function call '{}', looking up return type", func_name);
+                            if let Some(ret_ty) = self.ret_types.get(func_name) {
+                                eprintln!("[G60] Found return type for '{}': {:?}", func_name, ret_ty);
+                                let rich_type = self.type_expr_to_rich_type(ret_ty);
+                                eprintln!("[G60] Converted to RichType: {:?}", rich_type);
+                                return Some(rich_type);
+                            }
+                        }
+                    }
+                    None
+                }
+                // G85: Handle Path expressions with generics (unit struct construction like Shape2·<4, 64>)
+                Expr::Path(path) => {
+                    eprintln!("[G85] infer_rich_type_from_expr: Path expression");
+                    // Look for a segment with generics
+                    for seg in &path.segments {
+                        if let Some(ref generics) = seg.generics {
+                            let type_name = seg.ident.name.clone();
+                            let generic_types: Vec<RichType> = generics.iter()
+                                .map(|g| self.type_expr_to_rich_type(g))
+                                .collect();
+                            eprintln!("[G85] Path with generics: {} {:?}", type_name, generic_types);
+                            return Some(RichType::Named {
+                                name: type_name,
+                                generics: generic_types,
+                            });
+                        }
+                    }
+                    // No generics found - just use the type name
+                    if let Some(seg) = path.segments.last() {
+                        eprintln!("[G85] Path without generics: {}", seg.ident.name);
+                        return Some(RichType::Named {
+                            name: seg.ident.name.clone(),
+                            generics: vec![],
+                        });
                     }
                     None
                 }
@@ -8720,6 +9091,66 @@ pub mod llvm {
                     }
                 }
             }
+            None
+        }
+
+        /// G87: Look up an associated constant on a concrete type
+        /// E.g., lookup_associated_constant(Shape2<4, 4>, "RANK") -> Some(2)
+        /// E.g., lookup_associated_constant(f32, "SIZE") -> Some(4)
+        fn lookup_associated_constant(&self, rich_type: &RichType, const_name: &str) -> Option<i64> {
+            let type_name = match rich_type {
+                RichType::Named { name, .. } => name.as_str(),
+                _ => return None,
+            };
+
+            // Shape trait associated constants
+            if const_name == "RANK" {
+                return match type_name {
+                    "Scalar" => Some(0),
+                    "Shape1" => Some(1),
+                    "Shape2" => Some(2),
+                    "Shape3" => Some(3),
+                    "Shape4" => Some(4),
+                    "DynShape" => Some(0), // Runtime-determined
+                    _ => None,
+                };
+            }
+
+            // Shape trait NUMEL - requires const generic values
+            if const_name == "NUMEL" {
+                if let RichType::Named { generics, .. } = rich_type {
+                    // Calculate product of all const generic dimensions
+                    let product: i64 = generics.iter()
+                        .filter_map(|g| {
+                            if let RichType::ConstGeneric(v) = g { Some(*v) } else { None }
+                        })
+                        .product();
+                    if product > 0 {
+                        return Some(product);
+                    }
+                }
+                return None;
+            }
+
+            // DType trait associated constants
+            if const_name == "SIZE" {
+                return match type_name {
+                    "f32" => Some(4),
+                    "f64" => Some(8),
+                    "f16" => Some(2),
+                    "bf16" => Some(2),
+                    "i8" => Some(1),
+                    "i16" => Some(2),
+                    "i32" => Some(4),
+                    "i64" => Some(8),
+                    "u8" => Some(1),
+                    "u16" => Some(2),
+                    "u32" => Some(4),
+                    "u64" => Some(8),
+                    _ => None,
+                };
+            }
+
             None
         }
 
@@ -8830,11 +9261,18 @@ pub mod llvm {
                         if seg.ident.name == "f64" || seg.ident.name == "f32" {
                             return true;
                         }
-                        // Check generic arguments (e.g., Vec<f64>)
-                        if let Some(ref generics) = seg.generics {
-                            for inner_ty in generics {
-                                if self.type_contains_f64(inner_ty) {
-                                    return true;
+                        // G101: Only check generic arguments for known collection types
+                        // that actually produce float values when accessed (Vec<f64>, Option<f64>, etc.)
+                        // Do NOT mark struct types with float generic params (e.g., Tensor<DynShape, f32, Cpu>)
+                        // as float - these are pointers to structs, not scalar floats
+                        let type_name = seg.ident.name.as_str();
+                        let is_float_collection = matches!(type_name, "Vec" | "Option" | "Result");
+                        if is_float_collection {
+                            if let Some(ref generics) = seg.generics {
+                                for inner_ty in generics {
+                                    if self.type_contains_f64(inner_ty) {
+                                        return true;
+                                    }
                                 }
                             }
                         }
@@ -10897,11 +11335,28 @@ pub mod llvm {
         /// Phase 3: Returns the full Type including generic parameters.
         fn get_rich_type_from_expr(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> Option<RichType> {
             match expr {
+                // G101: Handle Try and Evidential expressions (x?) - unwrap Result type
+                Expr::Try(inner) | Expr::Evidential { expr: inner, .. } => {
+                    let inner_type = self.get_rich_type_from_expr(inner, scope)?;
+                    // If inner type is Result<T, E>, unwrap to T
+                    if let RichType::Named { name, generics } = &inner_type {
+                        if name == "Result" && !generics.is_empty() {
+                            eprintln!("[G101] Unwrapping Result type: {:?} -> {:?}", inner_type, generics[0]);
+                            return Some(generics[0].clone());
+                        }
+                    }
+                    // Otherwise just return the inner type (in case Ok() didn't wrap)
+                    Some(inner_type)
+                }
                 // Variable reference: look up in scope's rich_types
                 Expr::Path(path) => {
                     if path.segments.len() == 1 {
                         let var_name = &path.segments[0].ident.name;
-                        return scope.get_rich_type(var_name).cloned();
+                        let result = scope.get_rich_type(var_name).cloned();
+                        if var_name == "self" || var_name == "this" {
+                            eprintln!("[G87-SELF] get_rich_type_from_expr for '{}': {:?}", var_name, result);
+                        }
+                        return result;
                     }
                     None
                 }
@@ -10937,6 +11392,15 @@ pub mod llvm {
                             if idx < generics.len() {
                                 return Some(generics[idx].clone());
                             }
+                        }
+
+                        // G86: Handle fields with parameterized types that use multiple generics
+                        // For Tensor.storage (StoragePtr<D, Dev>), substitute D=generics[1], Dev=generics[2]
+                        if name == "Tensor" && field.name == "storage" && generics.len() >= 3 {
+                            return Some(RichType::Named {
+                                name: "StoragePtr".to_string(),
+                                generics: vec![generics[1].clone(), generics[2].clone()],
+                            });
                         }
 
                         // Check if field type name is a generic param registered in scope
@@ -10983,6 +11447,25 @@ pub mod llvm {
                         }
                     }
                 }
+                // G101: Handle function calls - look up return type
+                // Only handle standalone function calls; return None for static method calls
+                // so that infer_rich_type_from_expr can handle them (has better heuristics)
+                Expr::Call { func, .. } => {
+                    if let Expr::Path(path) = func.as_ref() {
+                        // Standalone function call: make_tensor_result()
+                        if path.segments.len() == 1 {
+                            let func_name = &path.segments[0].ident.name;
+                            if let Some(ret_ty) = self.ret_types.get(func_name) {
+                                let rich_type = self.type_expr_to_rich_type(ret_ty);
+                                eprintln!("[G101] Function call '{}' -> RichType: {:?}", func_name, rich_type);
+                                return Some(rich_type);
+                            }
+                        }
+                    }
+                    // Return None to allow fallback to infer_rich_type_from_expr
+                    // which has better heuristics for static method calls like Tensor·randn
+                    None
+                }
                 // For other expressions, fall back to struct_types and wrap in Named
                 _ => {
                     self.get_struct_type_from_expr(expr, scope).map(|name| {
@@ -11008,8 +11491,15 @@ pub mod llvm {
             if let Some((method_def, bindings)) = self.impl_registry.resolve_method(receiver_type, method_name) {
                 eprintln!("[G60] try_resolve_generic_method: resolved! bindings = {:?}", bindings);
                 // Get or create monomorphized instance
+                // G85: Handle Ref types by extracting the inner type name
                 let impl_id = match receiver_type {
                     RichType::Named { name, .. } => name.clone(),
+                    RichType::Ref { inner, .. } => {
+                        match inner.as_ref() {
+                            RichType::Named { name, .. } => name.clone(),
+                            _ => "unknown".to_string(),
+                        }
+                    }
                     _ => "unknown".to_string(),
                 };
 
@@ -11039,7 +11529,7 @@ pub mod llvm {
             bindings: &TypeBindings,
             fn_name: &str,
         ) -> Result<(), String> {
-            eprintln!("[G63-MONO] compile_monomorphized_method: fn_name='{}', method_name='{}'", fn_name, method_def.name);
+            eprintln!("[G63-MONO] compile_monomorphized_method: fn_name='{}', method_name='{}', has_body={}", fn_name, method_def.name, method_def.body.is_some());
             // G56: Save current builder position so we can restore after compiling
             // the monomorphized method. This is critical because we're called during
             // expression compilation in another function (e.g., main).
@@ -11054,11 +11544,15 @@ pub mod llvm {
 
             // Check if method has a body
             let body = match &method_def.body {
-                Some(b) => b,
+                Some(b) => {
+                    eprintln!("[G87-TRACE] Method '{}' has body with {} stmts, expr={}", fn_name, b.stmts.len(), b.expr.is_some());
+                    b
+                }
                 None => {
                     // No body available - this is likely an extern or trait method
                     // Just declare the function as a stub
                     // G63: Restore current_self_type before early return
+                    eprintln!("[G87-TRACE] Method '{}' has NO body - creating stub", fn_name);
                     self.current_self_type = saved_self_type;
                     return self.declare_monomorphized_stub(method_def, bindings, fn_name);
                 }
@@ -11106,8 +11600,12 @@ pub mod llvm {
                 scope.rich_types.insert(name.clone(), ty.clone());
                 // G56: Extract const generic values for direct identifier lookup
                 // When method body uses `N`, this makes it resolve to the concrete value
+                // G85: Only insert non-zero values - 0 indicates unresolved const generic
+                // that should be loaded from runtime parameter instead
                 if let RichType::ConstGeneric(val) = ty {
-                    scope.const_generics.insert(name.clone(), *val);
+                    if *val != 0 {
+                        scope.const_generics.insert(name.clone(), *val);
+                    }
                 }
             }
 
@@ -11136,23 +11634,28 @@ pub mod llvm {
                 name: self_type_name.to_string(),
                 generics,
             };
+            eprintln!("[G87-REG] Registering self type for '{}': {:?}", fn_name, receiver_type);
             scope.register_rich_type("self".to_string(), receiver_type.clone());
             scope.register_rich_type("this".to_string(), receiver_type);
+            eprintln!("[G87-REG] scope.rich_types after: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
 
             // G56: Add const generic parameters (after self, before other params)
             // These are passed as runtime values to enable compile-time constant usage
+            // G85: Store in scope.vars so lookup can find them if const_generics is empty
             let mut param_idx = 1u32;
             for (name, ty) in bindings.iter() {
                 if let RichType::ConstGeneric(_) = ty {
                     let param_value = fn_value.get_nth_param(param_idx)
                         .ok_or_else(|| format!("Missing const generic param {} at index {}", name, param_idx))?;
                     let alloca = self.builder
-                        .build_alloca(i64_type, "_")
+                        .build_alloca(i64_type, name)  // G85: Use actual name for debugging
                         .map_err(|e| e.to_string())?;
                     self.builder
                         .build_store(alloca, param_value)
                         .map_err(|e| e.to_string())?;
-                    // Don't insert in vars - const_generics lookup handles this
+                    // G85: Insert in vars as fallback - if const_generics has the value,
+                    // it takes precedence (compile-time). If not, vars provides runtime value.
+                    scope.vars.insert(name.clone(), alloca);
                     param_idx += 1;
                 }
             }
@@ -11181,18 +11684,21 @@ pub mod llvm {
             }
 
             // Compile the method body statements
+            eprintln!("[G87-MONO] Method '{}' has {} stmts, expr={}", fn_name, body.stmts.len(), body.expr.is_some());
             for stmt in &body.stmts {
                 self.compile_stmt(fn_value, &mut scope, stmt)?;
             }
 
             // Handle trailing expression as return value
             if let Some(expr) = &body.expr {
+                eprintln!("[G87-MONO-BODY] Method '{}' body expr: {:?}", fn_name, expr);
                 let ret_val = self.compile_expr(fn_value, &mut scope, expr)?;
                 self.builder
                     .build_return(Some(&ret_val))
                     .map_err(|e| e.to_string())?;
             } else {
                 // No trailing expression - return 0
+                eprintln!("[G87-MONO-NO-BODY] Method '{}' has NO trailing expression!", fn_name);
                 self.builder
                     .build_return(Some(&i64_type.const_int(0, false)))
                     .map_err(|e| e.to_string())?;
@@ -11319,13 +11825,31 @@ pub mod llvm {
 
                 // G81: Register RichType for parameter - CRUCIAL for method dispatch
                 // If the parameter type is a generic, substitute with the concrete type
+                // G85: Handle reference types - &S should look up S and wrap result in Ref
                 let param_type_name = self.type_expr_to_string(&param.ty);
-                let param_rich_type = if let Some(concrete) = bindings.get(&param_type_name) {
-                    concrete.clone()
+                let (is_ref, inner_type_name) = if param_type_name.starts_with('&') {
+                    let inner = param_type_name.trim_start_matches('&').trim_start_matches("mut ").to_string();
+                    (true, inner)
+                } else {
+                    (false, param_type_name.clone())
+                };
+
+                let param_rich_type = if let Some(concrete) = bindings.get(&inner_type_name) {
+                    // G85: If param was &S, wrap the concrete type in Ref
+                    if is_ref {
+                        RichType::Ref {
+                            lifetime: None,
+                            mutable: param_type_name.contains("mut"),
+                            inner: Box::new(concrete.clone()),
+                        }
+                    } else {
+                        concrete.clone()
+                    }
                 } else {
                     // Not a generic param, use the type directly
                     self.type_expr_to_rich_type(&param.ty)
                 };
+                eprintln!("[G85-GEN] param '{}' registered with type {:?}", param_name, param_rich_type);
                 scope.register_rich_type(param_name.clone(), param_rich_type);
 
                 param_idx += 1;
@@ -11370,6 +11894,34 @@ pub mod llvm {
         /// RichType is just an alias for crate::typeck::Type, so this is a simple clone.
         fn impl_type_to_rich_type(ty: &crate::typeck::Type) -> RichType {
             ty.clone()
+        }
+
+        /// G87: Convert RichType to a string suitable for mangled symbol names
+        /// This matches the format used by MonomorphKey::mangle() in monomorph.rs
+        fn rich_type_to_mangle_string(rich: &RichType) -> String {
+            match rich {
+                RichType::Named { name, generics } => {
+                    if generics.is_empty() {
+                        name.clone()
+                    } else {
+                        // Include const generics in the mangled name
+                        let generic_suffixes: Vec<String> = generics.iter()
+                            .map(|g| match g {
+                                RichType::ConstGeneric(val) => format!("c{}", val),
+                                _ => Self::rich_type_to_mangle_string(g),
+                            })
+                            .collect();
+                        format!("{}__{}", name, generic_suffixes.join("_"))
+                    }
+                }
+                RichType::Float(crate::typeck::FloatSize::F32) => "f32".to_string(),
+                RichType::Float(crate::typeck::FloatSize::F64) => "f64".to_string(),
+                RichType::Int(crate::typeck::IntSize::I32) => "i32".to_string(),
+                RichType::Int(crate::typeck::IntSize::I64) => "i64".to_string(),
+                RichType::Int(crate::typeck::IntSize::USize) => "usize".to_string(),
+                RichType::ConstGeneric(val) => format!("c{}", val),
+                _ => "unknown".to_string(),
+            }
         }
 
         /// G78: Convert TypePattern to Type for default parameter handling
@@ -11550,12 +12102,14 @@ pub mod llvm {
             scope.float_funcs = self.float_funcs.clone();
 
             // Store type bindings in scope
+            eprintln!("[G102-MONO-STATIC] Storing {} type bindings for method '{}': {:?}", bindings.len(), fn_name, bindings.keys().collect::<Vec<_>>());
             for (name, ty) in bindings.iter() {
                 scope.rich_types.insert(name.clone(), ty.clone());
                 if let RichType::ConstGeneric(val) = ty {
                     scope.const_generics.insert(name.clone(), *val);
                 }
             }
+            eprintln!("[G102-MONO-STATIC] After binding insertion, scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
 
             // Add parameters and register their RichTypes
             for (i, (param_name, param_pattern)) in method_def.params.iter().enumerate() {
@@ -11660,12 +12214,14 @@ pub mod llvm {
             scope.float_funcs = self.float_funcs.clone();
 
             // Store type bindings in scope
+            eprintln!("[G102-MONO-INSTANCE] Storing {} type bindings for method '{}': {:?}", bindings.len(), fn_name, bindings.keys().collect::<Vec<_>>());
             for (name, ty) in bindings.iter() {
                 scope.rich_types.insert(name.clone(), ty.clone());
                 if let RichType::ConstGeneric(val) = ty {
                     scope.const_generics.insert(name.clone(), *val);
                 }
             }
+            eprintln!("[G102-MONO-INSTANCE] After binding insertion, scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
 
             // Add self parameter (param 0)
             if let Some(self_param) = fn_value.get_nth_param(0) {
@@ -11682,7 +12238,13 @@ pub mod llvm {
 
                 // Register the self type - it's the concrete type with bindings applied
                 // Build the full concrete type with generics
-                let concrete_generics: Vec<RichType> = bindings.values().cloned().collect();
+                // G87: Filter out Self/This bindings - they're not type parameters
+                // G90: Keep bindings in HashMap to preserve param->type mapping for inner method calls
+                // DON'T convert to Vec - the param names are needed for correct binding reconstruction
+                let concrete_generics: Vec<RichType> = bindings.iter()
+                    .filter(|(k, _)| *k != "Self" && *k != "This")
+                    .map(|(_, v)| v.clone())
+                    .collect();
                 let self_rich_type = RichType::Named {
                     name: type_name.to_string(),
                     generics: concrete_generics,
@@ -11711,12 +12273,14 @@ pub mod llvm {
             }
 
             // Compile the method body statements
+            eprintln!("[G87-INSTANCE] Method '{}' has {} stmts, expr={}", fn_name, body.stmts.len(), body.expr.is_some());
             for stmt in &body.stmts {
                 self.compile_stmt(fn_value, &mut scope, stmt)?;
             }
 
             // Handle trailing expression as return value
             if let Some(expr) = &body.expr {
+                eprintln!("[G87-INSTANCE-BODY] Method '{}' body expr: {:?}", fn_name, expr);
                 let ret_val = self.compile_expr(fn_value, &mut scope, expr)?;
                 self.builder
                     .build_return(Some(&ret_val))
@@ -11948,7 +12512,17 @@ pub mod llvm {
                         if var_name == "this" || var_name == "self" {
                             return self.current_self_type.clone();
                         }
-                        return scope.get_struct_type(var_name).cloned();
+                        // First try struct_types
+                        if let Some(ty) = scope.get_struct_type(var_name) {
+                            return Some(ty.clone());
+                        }
+                        // G102 fix: Also check rich_types and extract struct name from it
+                        if let Some(rich_type) = scope.rich_types.get(var_name) {
+                            if let RichType::Named { name, .. } = rich_type {
+                                return Some(name.clone());
+                            }
+                        }
+                        return None;
                     }
                     None
                 }
@@ -13534,6 +14108,11 @@ pub mod llvm {
                             // Build bindings from explicit type args and argument inference
                             let mut bindings = crate::impl_registry::TypeBindings::new();
 
+                            // G86: Add Self/This binding to the concrete type name
+                            let self_type = RichType::Named { name: type_name.to_string(), generics: vec![] };
+                            bindings.insert("Self".to_string(), self_type.clone());
+                            bindings.insert("This".to_string(), self_type);
+
                             // G67: First, add bindings from explicit type args for impl-level generics
                             for (i, generic_info) in impl_generics.iter().enumerate() {
                                 if i < explicit_type_args.len() {
@@ -13602,6 +14181,20 @@ pub mod llvm {
                                 }
                             }
 
+                            // G86: For method-level generics that couldn't be inferred,
+                            // try to look them up in the current scope
+                            for generic_info in method_def.generics.iter() {
+                                let generic_name = &generic_info.name;
+                                if !bindings.contains_key(generic_name) {
+                                    if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                        eprintln!("[G86-EARLY] Found '{}' in scope: {:?}", generic_name, scope_type);
+                                        if let Some(concrete) = Self::rich_type_to_impl_type(&scope_type) {
+                                            bindings.insert(generic_name.clone(), concrete);
+                                        }
+                                    }
+                                }
+                            }
+
                             eprintln!("[G66/G67-EARLY] Inferred bindings: {:?}", bindings);
 
                             // Convert to RichType bindings
@@ -13611,7 +14204,10 @@ pub mod llvm {
 
                             // Generate mangled name
                             // G70: Handle all RichType variants for proper name mangling
-                            let binding_suffix: String = rich_bindings.iter()
+                            // G99: Sort bindings by key for deterministic name generation
+                            let mut sorted_bindings: Vec<_> = rich_bindings.iter().collect();
+                            sorted_bindings.sort_by_key(|(k, _)| k.clone());
+                            let binding_suffix: String = sorted_bindings.iter()
                                 .map(|(_, v)| match v {
                                     RichType::Named { name, .. } => format!("_{}", name),
                                     RichType::Float(crate::typeck::FloatSize::F32) => "_f32".to_string(),
@@ -13655,6 +14251,7 @@ pub mod llvm {
 
                             // Try to call the monomorphized function
                             if let Some(callee) = self.module.get_function(&mangled_name) {
+                                eprintln!("[G99-MONO] Found function '{}' with {} blocks", mangled_name, callee.count_basic_blocks());
                                 if callee.count_basic_blocks() > 0 {
                                     let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
                                     for arg in args {
@@ -15450,6 +16047,8 @@ pub mod llvm {
             let mangled_full = full_path.replace("::", "_").replace("·", "_");
 
             // Get the function - try resolved path first, then various lookups
+            eprintln!("[G99-DEBUG] Looking up function: fn_name='{}', full_path='{}', resolved_path='{}'", fn_name, full_path, resolved_path);
+            eprintln!("[G99-DEBUG] self.functions keys: {:?}", self.functions.keys().filter(|k| k.contains("make") || k.contains("tensor") || k.contains("Tensor")).collect::<Vec<_>>());
             let callee = if let Some(f) = self.functions.get(&resolved_path) {
                 *f
             } else if let Some(f) = self.functions.get(&full_path) {
@@ -15506,6 +16105,12 @@ pub mod llvm {
                                 // Infer type bindings from arguments
                                 let mut bindings = crate::impl_registry::TypeBindings::new();
 
+                                // G86: Add Self/This binding to the concrete type name
+                                // For Cpu::fill(), Self/This = Cpu
+                                let self_type = RichType::Named { name: type_name.to_string(), generics: vec![] };
+                                bindings.insert("Self".to_string(), self_type.clone());
+                                bindings.insert("This".to_string(), self_type);
+
                                 // Try to infer generic bindings from argument types
                                 // For each method parameter that uses a generic, match against argument type
                                 for (i, (param_name, param_pattern)) in method_def.params.iter().enumerate() {
@@ -15529,13 +16134,29 @@ pub mod llvm {
 
                                 eprintln!("[G66] Inferred bindings: {:?}", bindings);
 
+                                // G86: For method-level generics that couldn't be inferred,
+                                // try to look them up in the current scope (if we're in a monomorphized context)
+                                for generic_info in &method_def.generics {
+                                    let generic_name = &generic_info.name;
+                                    if !bindings.contains_key(generic_name) {
+                                        // Check if scope has a concrete type for this generic
+                                        if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                            eprintln!("[G86] Found '{}' in scope: {:?}", generic_name, scope_type);
+                                            bindings.insert(generic_name.clone(), scope_type.clone());
+                                        }
+                                    }
+                                }
+
                                 // Convert bindings to RichType bindings for monomorphization
                                 let rich_bindings: std::collections::HashMap<String, RichType> = bindings.iter()
                                     .map(|(k, v)| (k.clone(), Self::impl_type_to_rich_type(v)))
                                     .collect();
 
                                 // Generate mangled name
-                                let binding_suffix: String = rich_bindings.iter()
+                                // G99: Sort bindings by key for deterministic name generation
+                                let mut sorted_bindings: Vec<_> = rich_bindings.iter().collect();
+                                sorted_bindings.sort_by_key(|(k, _)| k.clone());
+                                let binding_suffix: String = sorted_bindings.iter()
                                     .map(|(_, v)| match v {
                                         RichType::Named { name, .. } => format!("_{}", name),
                                         RichType::ConstGeneric(val) => format!("_{}", val),
@@ -15590,6 +16211,7 @@ pub mod llvm {
 
                 // G81: Check if this is a generic function that needs monomorphization
                 // This MUST be checked BEFORE heuristic patterns (like starts_with("test"))
+                eprintln!("[G85-GEN] Checking generic_functions for '{}', exists={}", fn_name, self.generic_functions.contains_key(fn_name));
                 if let Some(generic_fn) = self.generic_functions.get(fn_name).cloned() {
                     // Get the generic parameters
                     if let Some(ref generics) = generic_fn.generics {
@@ -15606,15 +16228,38 @@ pub mod llvm {
                         for (_i, (param, arg)) in generic_fn.params.iter().zip(args.iter()).enumerate() {
                             // Get the parameter's declared type
                             let param_type_name = self.type_expr_to_string(&param.ty);
+                            eprintln!("[G85-GEN] param type='{}', type_param_names={:?}", param_type_name, type_param_names);
+
+                            // G85: Handle reference types - extract inner type for generic matching
+                            // For &S where S is a generic param, we need to match S, not &S
+                            let inner_type_name = if param_type_name.starts_with('&') {
+                                param_type_name.trim_start_matches('&').trim_start_matches("mut ").to_string()
+                            } else {
+                                param_type_name.clone()
+                            };
+                            eprintln!("[G85-GEN] inner_type_name='{}'", inner_type_name);
 
                             // Check if this parameter's type is a generic type parameter
-                            if type_param_names.contains(&param_type_name) {
+                            if type_param_names.contains(&inner_type_name) {
                                 // Infer the concrete type from the argument
                                 if let Some(arg_type) = self.get_rich_type_from_expr(arg, scope) {
-                                    rich_bindings.insert(param_type_name.clone(), arg_type);
+                                    // G85: If param is &S and arg is &T, extract T for binding S
+                                    let binding_type = if param_type_name.starts_with('&') {
+                                        // Unwrap Ref type if needed
+                                        match &arg_type {
+                                            RichType::Ref { inner, .. } => (**inner).clone(),
+                                            _ => arg_type.clone(),
+                                        }
+                                    } else {
+                                        arg_type
+                                    };
+                                    eprintln!("[G85-GEN] binding '{}' = {:?}", inner_type_name, binding_type);
+                                    rich_bindings.insert(inner_type_name.clone(), binding_type);
                                 }
                             }
                         }
+
+                        eprintln!("[G85-GEN] rich_bindings for '{}': {:?}", fn_name, rich_bindings);
 
                         if !rich_bindings.is_empty() {
                             // Generate mangled name for this instantiation
@@ -15686,6 +16331,178 @@ pub mod llvm {
                                 }
                             }
                         }
+                    }
+                }
+
+                // G93 fix: Handle std::alloc::Layout static methods
+                // These create Layout structs with proper memory layout
+                if full_path.contains("Layout") && full_path.contains("from_size_align") {
+                    // Layout::from_size_align(size, align) -> Result<Layout, LayoutError>
+                    // Layout struct: 16 bytes (size at offset 0, align at offset 8)
+                    // Result struct: 16 bytes (discriminant at offset 0, value at offset 8)
+                    if args.len() >= 2 {
+                        let size_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        let align_val = self.compile_expr(fn_value, scope, &args[1])?;
+
+                        let alloc_fn = self.module.get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+                        // Allocate Layout struct (16 bytes: size + align)
+                        let layout_size = self.context.i64_type().const_int(16, false);
+                        let layout_alloc = self.builder
+                            .build_call(alloc_fn, &[layout_size.into()], "layout_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let layout_ptr_int = layout_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store size at offset 0
+                        let layout_ptr = self.builder
+                            .build_int_to_ptr(layout_ptr_int, ptr_type, "layout_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(layout_ptr, size_val)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store align at offset 8
+                        let align_offset = self.builder
+                            .build_int_add(layout_ptr_int, self.context.i64_type().const_int(8, false), "align_off")
+                            .map_err(|e| e.to_string())?;
+                        let align_ptr = self.builder
+                            .build_int_to_ptr(align_offset, ptr_type, "align_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(align_ptr, align_val)
+                            .map_err(|e| e.to_string())?;
+
+                        // Allocate Result<Layout> struct (16 bytes: discriminant + value)
+                        let result_alloc = self.builder
+                            .build_call(alloc_fn, &[layout_size.into()], "result_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let result_ptr_int = result_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store Ok discriminant (0) at offset 0
+                        let result_ptr = self.builder
+                            .build_int_to_ptr(result_ptr_int, ptr_type, "result_ptr")
+                            .map_err(|e| e.to_string())?;
+                        let ok_disc = self.context.i64_type().const_int(0, false);
+                        self.builder.build_store(result_ptr, ok_disc)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store Layout pointer at offset 8
+                        let value_offset = self.builder
+                            .build_int_add(result_ptr_int, self.context.i64_type().const_int(8, false), "value_off")
+                            .map_err(|e| e.to_string())?;
+                        let value_ptr = self.builder
+                            .build_int_to_ptr(value_offset, ptr_type, "value_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(value_ptr, layout_ptr_int)
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(result_ptr_int);
+                    }
+                }
+
+                // G93 fix: Handle Layout::array::<T>(count)
+                if full_path.contains("Layout") && full_path.contains("array") {
+                    // Layout::array::<T>(count) -> Result<Layout, LayoutError>
+                    // Compute: size = sizeof(T) * count, align = alignof(T)
+                    if args.len() >= 1 {
+                        let count_val = self.compile_expr(fn_value, scope, &args[0])?;
+
+                        // Extract type argument to determine size/align
+                        // Default to 8 bytes (i64 size/align) if type not determinable
+                        let (elem_size, elem_align) = if let Expr::Path(path) = func {
+                            // Look for type args on the method segment (e.g., array::<i64>)
+                            let mut type_size = 8u64;
+                            let mut type_align = 8u64;
+                            for seg in &path.segments {
+                                if let Some(ref generics) = seg.generics {
+                                    if let Some(type_expr) = generics.first() {
+                                        // Map type to size/align
+                                        match self.type_expr_to_string(type_expr).as_str() {
+                                            "i8" | "u8" => { type_size = 1; type_align = 1; }
+                                            "i16" | "u16" => { type_size = 2; type_align = 2; }
+                                            "i32" | "u32" | "f32" => { type_size = 4; type_align = 4; }
+                                            "i64" | "u64" | "f64" | "usize" | "isize" => { type_size = 8; type_align = 8; }
+                                            "i128" | "u128" => { type_size = 16; type_align = 16; }
+                                            _ => { type_size = 8; type_align = 8; } // Default for unknown types
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            (type_size, type_align)
+                        } else {
+                            (8u64, 8u64)
+                        };
+
+                        let elem_size_const = self.context.i64_type().const_int(elem_size, false);
+                        let elem_align_const = self.context.i64_type().const_int(elem_align, false);
+
+                        // Compute total size = elem_size * count
+                        let total_size = self.builder
+                            .build_int_mul(elem_size_const, count_val, "array_size")
+                            .map_err(|e| e.to_string())?;
+
+                        let alloc_fn = self.module.get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let sixteen = self.context.i64_type().const_int(16, false);
+
+                        // Allocate Layout struct
+                        let layout_alloc = self.builder
+                            .build_call(alloc_fn, &[sixteen.into()], "layout_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let layout_ptr_int = layout_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store size at offset 0
+                        let layout_ptr = self.builder
+                            .build_int_to_ptr(layout_ptr_int, ptr_type, "layout_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(layout_ptr, total_size)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store align at offset 8
+                        let align_offset = self.builder
+                            .build_int_add(layout_ptr_int, self.context.i64_type().const_int(8, false), "align_off")
+                            .map_err(|e| e.to_string())?;
+                        let align_ptr = self.builder
+                            .build_int_to_ptr(align_offset, ptr_type, "align_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(align_ptr, elem_align_const)
+                            .map_err(|e| e.to_string())?;
+
+                        // Allocate Result<Layout> struct
+                        let result_alloc = self.builder
+                            .build_call(alloc_fn, &[sixteen.into()], "result_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let result_ptr_int = result_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store Ok discriminant at offset 0
+                        let result_ptr = self.builder
+                            .build_int_to_ptr(result_ptr_int, ptr_type, "result_ptr")
+                            .map_err(|e| e.to_string())?;
+                        let ok_disc = self.context.i64_type().const_int(0, false);
+                        self.builder.build_store(result_ptr, ok_disc)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store Layout pointer at offset 8
+                        let value_offset = self.builder
+                            .build_int_add(result_ptr_int, self.context.i64_type().const_int(8, false), "value_off")
+                            .map_err(|e| e.to_string())?;
+                        let value_ptr = self.builder
+                            .build_int_to_ptr(value_offset, ptr_type, "value_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(value_ptr, layout_ptr_int)
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(result_ptr_int);
                     }
                 }
 
@@ -16002,6 +16819,7 @@ pub mod llvm {
             }
 
             // Build call with tail call hint for potential optimization
+            eprintln!("[G99-CALL] Calling function '{}' with {} args", callee.get_name().to_str().unwrap_or("unknown"), compiled_args.len());
             let call = self
                 .builder
                 .build_call(callee, &compiled_args, "call")
@@ -16012,11 +16830,13 @@ pub mod llvm {
             call.set_tail_call(true);
 
             // Get return value
-            Ok(call
+            let result = call
                 .try_as_basic_value()
                 .left()
                 .map(|v| v.into_int_value())
-                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+            eprintln!("[G99-CALL] Function '{}' call compiled", callee.get_name().to_str().unwrap_or("unknown"));
+            Ok(result)
         }
 
         /// Compile __intrinsic_* function calls - emit LLVM IR directly
