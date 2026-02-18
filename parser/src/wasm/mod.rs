@@ -642,7 +642,7 @@ impl WasmCompiler {
             }
 
             // Case 3: Spurious i64.const 0 before a call that expects i32 args
-            // Pattern: ..., i32.wrap_i64, i64.const 0, call(import expecting i32,i32)
+            // Pattern: ..., i32.wrap_i64, i64.const 0, call(import)
             // The i64.const 0 is spurious - remove it
             let import_count = self.imports.import_count();
             let mut i = 0;
@@ -650,11 +650,17 @@ impl WasmCompiler {
                 if let Instruction::I64Const(0) = &func.instructions[i] {
                     if let Instruction::Call(call_idx) = &func.instructions[i + 1] {
                         let call_idx = *call_idx;
-                        // Check if it's an import that expects i32 params
+                        // Check if it's an import
                         if call_idx < import_count {
                             if let Some(params) = self.imports.get_param_types(call_idx) {
-                                // If all params are i32, the i64.const 0 is spurious
-                                if !params.is_empty() && params.iter().all(|p| *p == ValType::I32) {
+                                // The i64.const 0 is spurious if:
+                                // 1. All params are i32 (classic case), OR
+                                // 2. Last param is i32 (i64.const 0 can't be for it)
+                                let all_i32 = !params.is_empty()
+                                    && params.iter().all(|p| *p == ValType::I32);
+                                let last_is_i32 = params.last() == Some(&ValType::I32);
+
+                                if all_i32 || last_is_i32 {
                                     // Check if previous instruction produces an i32
                                     if i > 0 {
                                         let prev = &func.instructions[i - 1];
@@ -691,6 +697,13 @@ impl WasmCompiler {
                     .map(|p| p.len())
                     .unwrap_or(0)
             })
+            .collect();
+
+        // Pre-calculate local function param counts (to avoid borrow conflicts in loop)
+        let local_func_param_counts: Vec<usize> = self
+            .functions
+            .iter()
+            .map(|f| f.params.len())
             .collect();
 
         for func in self.functions.iter_mut() {
@@ -768,11 +781,71 @@ impl WasmCompiler {
                                         stack_depth -= params as i32;
                                         stack_depth += 1; // Assume 1 return value
                                     } else {
-                                        // Local function: in Sigil, all functions return i64
-                                        // We don't know param count, but assume it consumes some and produces 1
-                                        // Most local functions return a value, so add 1 to stack
+                                        // Local function: look up param count from pre-calculated vector
+                                        let local_idx = (*idx - import_count) as usize;
+                                        if let Some(&param_count) = local_func_param_counts.get(local_idx) {
+                                            stack_depth -= param_count as i32;
+                                        }
+                                        // All Sigil functions return i64
                                         stack_depth += 1;
                                     }
+                                }
+                                // Binary operations: consume 2, produce 1 → net -1
+                                Instruction::I32Add | Instruction::I32Sub |
+                                Instruction::I32Mul | Instruction::I32DivS | Instruction::I32DivU |
+                                Instruction::I32RemS | Instruction::I32RemU |
+                                Instruction::I32And | Instruction::I32Or | Instruction::I32Xor |
+                                Instruction::I32Shl | Instruction::I32ShrS | Instruction::I32ShrU |
+                                Instruction::I64Add | Instruction::I64Sub |
+                                Instruction::I64Mul | Instruction::I64DivS | Instruction::I64DivU |
+                                Instruction::I64RemS | Instruction::I64RemU |
+                                Instruction::I64And | Instruction::I64Or | Instruction::I64Xor |
+                                Instruction::I64Shl | Instruction::I64ShrS | Instruction::I64ShrU |
+                                Instruction::F32Add | Instruction::F32Sub |
+                                Instruction::F32Mul | Instruction::F32Div |
+                                Instruction::F64Add | Instruction::F64Sub |
+                                Instruction::F64Mul | Instruction::F64Div |
+                                // Comparison operations also consume 2, produce 1
+                                Instruction::I32Eq | Instruction::I32Ne |
+                                Instruction::I32LtS | Instruction::I32LtU |
+                                Instruction::I32GtS | Instruction::I32GtU |
+                                Instruction::I32LeS | Instruction::I32LeU |
+                                Instruction::I32GeS | Instruction::I32GeU |
+                                Instruction::I64Eq | Instruction::I64Ne |
+                                Instruction::I64LtS | Instruction::I64LtU |
+                                Instruction::I64GtS | Instruction::I64GtU |
+                                Instruction::I64LeS | Instruction::I64LeU |
+                                Instruction::I64GeS | Instruction::I64GeU |
+                                Instruction::F32Eq | Instruction::F32Ne |
+                                Instruction::F32Lt | Instruction::F32Gt |
+                                Instruction::F32Le | Instruction::F32Ge |
+                                Instruction::F64Eq | Instruction::F64Ne |
+                                Instruction::F64Lt | Instruction::F64Gt |
+                                Instruction::F64Le | Instruction::F64Ge => {
+                                    stack_depth -= 1; // Net effect: -2 + 1 = -1
+                                }
+                                // Unary operations: consume 1, produce 1 → net 0
+                                Instruction::I32Eqz | Instruction::I64Eqz |
+                                Instruction::I32Clz | Instruction::I32Ctz | Instruction::I32Popcnt |
+                                Instruction::I64Clz | Instruction::I64Ctz | Instruction::I64Popcnt |
+                                Instruction::F32Abs | Instruction::F32Neg |
+                                Instruction::F32Sqrt | Instruction::F32Ceil | Instruction::F32Floor |
+                                Instruction::F64Abs | Instruction::F64Neg |
+                                Instruction::F64Sqrt | Instruction::F64Ceil | Instruction::F64Floor |
+                                // Conversions: consume 1, produce 1
+                                Instruction::I32WrapI64 | Instruction::I64ExtendI32S | Instruction::I64ExtendI32U |
+                                Instruction::F32ConvertI32S | Instruction::F32ConvertI32U |
+                                Instruction::F32ConvertI64S | Instruction::F32ConvertI64U |
+                                Instruction::F64ConvertI32S | Instruction::F64ConvertI32U |
+                                Instruction::F64ConvertI64S | Instruction::F64ConvertI64U |
+                                Instruction::I32TruncF32S | Instruction::I32TruncF32U |
+                                Instruction::I32TruncF64S | Instruction::I32TruncF64U |
+                                Instruction::I64TruncF32S | Instruction::I64TruncF32U |
+                                Instruction::I64TruncF64S | Instruction::I64TruncF64U |
+                                Instruction::F32DemoteF64 | Instruction::F64PromoteF32 |
+                                Instruction::I32ReinterpretF32 | Instruction::I64ReinterpretF64 |
+                                Instruction::F32ReinterpretI32 | Instruction::F64ReinterpretI64 => {
+                                    // Net 0 - no change to stack depth
                                 }
                                 _ => {}
                             }
