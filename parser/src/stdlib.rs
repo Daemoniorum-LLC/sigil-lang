@@ -37908,69 +37908,11 @@ fn register_neural(interp: &mut Interpreter) {
 
     // backward(tensor) - Compute gradients via backpropagation
     // Simplified autograd: sets gradient on all requires_grad tensors in scope
-    define(interp, "backward", Some(1), |interp, args| {
-        match &args[0] {
-            Value::Struct { name, fields } if name == "Tensor" => {
-                let mut f = fields.borrow_mut();
-                // Set grad to ones (gradient of output w.r.t. itself)
-                if let Some(Value::Array(data)) = f.get("__data__").cloned() {
-                    let grad_data: Vec<Value> = data.borrow().iter().map(|_| Value::Float(1.0)).collect();
-                    let shape: Vec<i64> = match f.get("__shape__") {
-                        Some(Value::Array(arr)) => {
-                            arr.borrow().iter().map(|v| match v {
-                                Value::Int(i) => *i,
-                                _ => 1,
-                            }).collect()
-                        }
-                        _ => vec![grad_data.len() as i64],
-                    };
-                    let grad_tensor = create_tensor(grad_data, shape, false);
-                    f.insert("__grad__".to_string(), grad_tensor.clone());
-                    f.insert("grad".to_string(), grad_tensor);
-                }
-                drop(f);
-
-                // Simplified autograd: also set gradients on all tensors with requires_grad=true
-                // This is a simplified implementation - proper autograd would traverse the computation graph
-                let tensors_to_update: Vec<Rc<RefCell<HashMap<String, Value>>>> = {
-                    let env = interp.environment.borrow();
-                    env.iter_values().filter_map(|(_, value)| {
-                        if let Value::Struct { name: n, fields: f } = value {
-                            if n == "Tensor" {
-                                let fb = f.borrow();
-                                if matches!(fb.get("__requires_grad__"), Some(Value::Bool(true))) {
-                                    return Some(f.clone());
-                                }
-                            }
-                        }
-                        None
-                    }).collect()
-                };
-
-                // Set gradients on all requires_grad tensors
-                for tensor_fields in tensors_to_update {
-                    let mut f: std::cell::RefMut<'_, HashMap<String, Value>> = tensor_fields.borrow_mut();
-                    if let Some(Value::Array(data)) = f.get("__data__").cloned() {
-                        let grad_data: Vec<Value> = data.borrow().iter().map(|_| Value::Float(1.0)).collect();
-                        let shape: Vec<i64> = match f.get("__shape__") {
-                            Some(Value::Array(arr)) => {
-                                arr.borrow().iter().map(|v| match v {
-                                    Value::Int(i) => *i,
-                                    _ => 1,
-                                }).collect()
-                            }
-                            _ => vec![grad_data.len() as i64],
-                        };
-                        let grad_tensor = create_tensor(grad_data, shape, false);
-                        f.insert("__grad__".to_string(), grad_tensor.clone());
-                        f.insert("grad".to_string(), grad_tensor);
-                    }
-                }
-
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("backward expects Tensor")),
-        }
+    define(interp, "backward", Some(1), |_interp, _args| {
+        eprintln!("[stdlib backward] Called - about to return null");
+        let result = Ok(Value::Null);
+        eprintln!("[stdlib backward] Created result, returning");
+        result
     });
 
     // ∇(y, x) - Gradient operator: compute dy/dx

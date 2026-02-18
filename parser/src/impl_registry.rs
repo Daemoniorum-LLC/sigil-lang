@@ -178,9 +178,16 @@ impl ImplRegistry {
         receiver_type: &Type,
         method_name: &str,
     ) -> Option<(MethodDef, TypeBindings)> {
+        // G85: Auto-deref references for method resolution
+        // Methods defined on T should be callable on &T
+        let derefed_type = match receiver_type {
+            Type::Ref { inner, .. } => inner.as_ref(),
+            _ => receiver_type,
+        };
+
         // First, check concrete impls for exact match
         for impl_def in &self.concrete_impls {
-            if &impl_def.self_type == receiver_type {
+            if &impl_def.self_type == derefed_type {
                 if let Some(method) = impl_def.methods.get(method_name) {
                     return Some((method.clone(), TypeBindings::new()));
                 }
@@ -189,7 +196,7 @@ impl ImplRegistry {
 
         // Then, check generic impls
         for impl_def in &self.generic_impls {
-            if let Some(bindings) = self.match_type(&impl_def.self_type, receiver_type) {
+            if let Some(bindings) = self.match_type(&impl_def.self_type, derefed_type) {
                 if let Some(method) = impl_def.methods.get(method_name) {
                     // TODO: Verify where clauses are satisfied
                     return Some((method.clone(), bindings));
