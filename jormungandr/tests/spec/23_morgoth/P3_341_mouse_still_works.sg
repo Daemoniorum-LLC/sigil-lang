@@ -53,7 +53,7 @@ rite main() {
     ≔ m7 = process_input(input, 48, 1);   // 0
     ≔ m8 = process_input(input, 59, 1);   // ;
     ≔ m9 = process_input(input, 53, 1);   // 5
-    ≔ res = "" + process_input(input, 77, 1);  // M
+    ≔ res = process_input(input, 77, 1);  // M
 
     ⎇ starts_with(res, "mouse:") == true {
         println("mouse_sgr_detected: OK");
@@ -71,7 +71,7 @@ rite main() {
     ≔ r7 = process_input(input, 48, 1);
     ≔ r8 = process_input(input, 59, 1);
     ≔ r9 = process_input(input, 53, 1);
-    ≔ res2 = "" + process_input(input, 109, 1);  // m
+    ≔ res2 = process_input(input, 109, 1);  // m
 
     ⎇ starts_with(res2, "mouse:") == true {
         println("mouse_release_detected: OK");

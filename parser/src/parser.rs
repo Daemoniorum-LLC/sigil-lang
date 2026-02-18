@@ -1584,6 +1584,14 @@ impl<'a> Parser<'a> {
 
         let mut name = self.parse_ident()?;
 
+        // Parse optional middledot-separated compound name: rite Cell·new(...)
+        // Produces a single function named "Cell·new"
+        while self.consume_if(&Token::MiddleDot) {
+            let part = self.parse_ident()?;
+            name.name = format!("{}·{}", name.name, part.name);
+            name.span = Span { start: name.span.start, end: part.span.end };
+        }
+
         // Parse optional evidentiality marker on function name: fn load~<T>() or fn predict◊()
         // parse_ident only consumes unambiguous markers (~, ◊, ‽), so we also check for ! and ?
         if let Some(ev) = self.parse_evidentiality_opt() {

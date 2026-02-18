@@ -17147,6 +17147,42 @@ impl Interpreter {
                 )));
             }
         } else {
+            // Try compound function name: Cell·new(args) → call "Cell·new" as single function
+            let mut compound_resolved = false;
+            let mut compound_value = Value::Null;
+            if segments.len() >= 2 {
+                // Build compound name from first segment through last argless segment + first with-args segment
+                let mut compound_name = first.name.name.clone();
+                for (i, seg) in segments.iter().enumerate().skip(1) {
+                    compound_name = format!("{}·{}", compound_name, seg.name.name);
+                    if seg.args.is_some() {
+                        // Found the segment with args — try this compound name
+                        if self.environment.borrow().get(&compound_name).is_some() {
+                            let arg_values: Vec<Value> = seg.args.as_ref().unwrap()
+                                .iter()
+                                .map(|a| self.evaluate(a))
+                                .collect::<Result<_, _>>()?;
+                            compound_value = self.call_function_by_name(&compound_name, arg_values)?;
+                            // Process remaining segments after the compound call
+                            let mut val = compound_value;
+                            for remaining in segments.iter().skip(i + 1) {
+                                let rem_args: Vec<Value> = remaining.args.as_ref()
+                                    .map(|args| args.iter().map(|a| self.evaluate(a)).collect::<Result<Vec<_>, _>>())
+                                    .transpose()?
+                                    .unwrap_or_default();
+                                val = self.call_incorporation_method(&val, &remaining.name.name, rem_args)?;
+                            }
+                            compound_value = val;
+                            compound_resolved = true;
+                        }
+                        break;
+                    }
+                }
+            }
+            if compound_resolved {
+                return Ok(compound_value);
+            }
+
             // First segment is a variable: var·next·...
             self.environment
                 .borrow()
