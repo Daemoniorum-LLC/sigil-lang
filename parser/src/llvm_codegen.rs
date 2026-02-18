@@ -5882,8 +5882,77 @@ pub mod llvm {
                     Ok(field_value.into_int_value())
                 }
                 Expr::Match { expr, arms } => {
-                    // Compile the scrutinee (thing being matched)
-                    let scrutinee_raw = self.compile_expr(fn_value, scope, expr)?;
+                    // G82 fix: If the match expression is `*ptr`, we need to track the pointer
+                    // separately for field extraction. The dereference gives us the discriminant,
+                    // but we need the original pointer to extract enum payload fields.
+                    //
+                    // HOWEVER: Vec.get() returns the element VALUE directly. For data variants
+                    // this is a pointer, but for unit variants this is the discriminant.
+                    // So we need a runtime check similar to G45.
+                    let (scrutinee_raw, scrutinee_ptr_for_fields) = if let Expr::Unary { op: ast::UnaryOp::Deref, expr: inner_expr, .. } = expr.as_ref() {
+                        // Match on `*ptr` - compile the inner expression
+                        let inner_val = self.compile_expr(fn_value, scope, inner_expr)?;
+
+                        // G82+G45: Runtime check - is inner_val a pointer or a discriminant?
+                        let threshold = self.context.i64_type().const_int(256, false);
+                        let is_pointer = self.builder
+                            .build_int_compare(IntPredicate::UGE, inner_val, threshold, "g82_is_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        // Create blocks for pointer vs discriminant cases
+                        let ptr_bb = self.context.append_basic_block(fn_value, "g82_ptr");
+                        let disc_bb = self.context.append_basic_block(fn_value, "g82_disc");
+                        let merge_bb = self.context.append_basic_block(fn_value, "g82_merge");
+
+                        self.builder.build_conditional_branch(is_pointer, ptr_bb, disc_bb)
+                            .map_err(|e| e.to_string())?;
+
+                        // Pointer case: dereference to get discriminant, keep pointer for fields
+                        self.builder.position_at_end(ptr_bb);
+                        let ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                inner_val,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "g82_deref_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let loaded_disc = self
+                            .builder
+                            .build_load(self.context.i64_type(), ptr, "g82_discriminant")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        self.builder.build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let ptr_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Discriminant case: use inner_val directly, no pointer for fields
+                        self.builder.position_at_end(disc_bb);
+                        self.builder.build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let disc_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Merge: phi nodes for discriminant and pointer
+                        self.builder.position_at_end(merge_bb);
+                        let disc_phi = self.builder
+                            .build_phi(self.context.i64_type(), "g82_disc_phi")
+                            .map_err(|e| e.to_string())?;
+                        disc_phi.add_incoming(&[(&loaded_disc, ptr_bb_end), (&inner_val, disc_bb_end)]);
+
+                        // For pointer: inner_val is the base for field extraction
+                        // For discriminant: use 0 as a sentinel (won't be used since no data fields)
+                        let zero = self.context.i64_type().const_int(0, false);
+                        let ptr_phi = self.builder
+                            .build_phi(self.context.i64_type(), "g82_ptr_phi")
+                            .map_err(|e| e.to_string())?;
+                        ptr_phi.add_incoming(&[(&inner_val, ptr_bb_end), (&zero, disc_bb_end)]);
+
+                        (disc_phi.as_basic_value().into_int_value(), Some(ptr_phi.as_basic_value().into_int_value()))
+                    } else {
+                        // Normal case - compile the scrutinee
+                        let val = self.compile_expr(fn_value, scope, expr)?;
+                        (val, None)
+                    };
 
                     // G44 fix: Check if we're matching an enum with data
                     // If any pattern is a TupleStruct or Struct, the scrutinee might be a pointer
@@ -5895,7 +5964,11 @@ pub mod llvm {
                         )
                     });
 
-                    let scrutinee = if is_enum_with_data {
+                    // G82 fix: If we already have the pointer from a Deref expression, use it directly
+                    let scrutinee = if scrutinee_ptr_for_fields.is_some() {
+                        // G82: scrutinee_raw is already the discriminant, use it directly
+                        scrutinee_raw
+                    } else if is_enum_with_data {
                         // G45 fix: scrutinee_raw might be EITHER a pointer (for data variants created
                         // by StructExpr) OR a raw discriminant (for unit variants from Path).
                         // This happens when if-else mixes data and unit variants.
@@ -6108,6 +6181,8 @@ pub mod llvm {
                             } => {
                                 // Bind each field pattern as a variable
                                 // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
+                                // G82 fix: Use scrutinee_ptr_for_fields if available (from Deref case)
+                                let base_ptr_val = scrutinee_ptr_for_fields.unwrap_or(scrutinee_raw);
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     if let ast::Pattern::Ident { name, .. } = field_pattern {
                                         // Create a variable for this binding
@@ -6120,7 +6195,7 @@ pub mod llvm {
                                             self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
-                                            .build_int_to_ptr(scrutinee_raw, ptr_type, "scrutinee_ptr")
+                                            .build_int_to_ptr(base_ptr_val, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
@@ -6171,6 +6246,8 @@ pub mod llvm {
                             } => {
                                 // Bind each field pattern as a variable
                                 // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
+                                // G82 fix: Use scrutinee_ptr_for_fields if available (from Deref case)
+                                let base_ptr_val = scrutinee_ptr_for_fields.unwrap_or(scrutinee_raw);
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     // Get binding name: use pattern if present, else use field name (shorthand)
                                     let binding_name = if let Some(ref pat) = field_pattern.pattern
@@ -6195,7 +6272,7 @@ pub mod llvm {
                                             self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
-                                            .build_int_to_ptr(scrutinee_raw, ptr_type, "scrutinee_ptr")
+                                            .build_int_to_ptr(base_ptr_val, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
