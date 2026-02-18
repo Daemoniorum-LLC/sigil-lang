@@ -1,0 +1,2 @@
+rite make_list() { ↩ [1, 2, 3]; }
+rite main() { println(to_string(len(make_list()))); }

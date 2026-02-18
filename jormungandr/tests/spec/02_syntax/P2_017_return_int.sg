@@ -1,0 +1,2 @@
+rite double(x) { ↩ x * 2; }
+rite main() { println(to_string(double(21))); }
