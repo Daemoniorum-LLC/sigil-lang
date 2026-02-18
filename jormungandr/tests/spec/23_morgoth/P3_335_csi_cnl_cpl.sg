@@ -1,0 +1,125 @@
+// Test: CSI E/F move to next/prev line at column 0
+// Spec: Phase 3.3 - Additional CSI Sequences
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_parse_params(buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut i = 0;
+        ⟳ i < len(parts) {
+            ⎇ parts[i] == "" { push(params, 0); } ⎉ { push(params, to_int(parts[i])); }
+            i = i + 1;
+        }
+    }
+    params
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ≔ params = vterm_parse_params(buf);
+    ≔ mut n = 0;
+    ⎇ len(params) > 0 { n = params[0]; }
+
+    ⎇ cmd == "E" {
+        ≔ mut amount = 1;
+        ⎇ n > 0 { amount = n; }
+        vt.cursor_row = vt.cursor_row + amount;
+        ⎇ vt.cursor_row >= vt.rows { vt.cursor_row = vt.rows - 1; }
+        vt.cursor_col = 0;
+    }
+
+    ⎇ cmd == "F" {
+        ≔ mut amount = 1;
+        ⎇ n > 0 { amount = n; }
+        vt.cursor_row = vt.cursor_row - amount;
+        ⎇ vt.cursor_row < 0 { vt.cursor_row = 0; }
+        vt.cursor_col = 0;
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+            }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(10, 20);
+
+    // Position cursor at row 3, col 10
+    vt.cursor_row = 3;
+    vt.cursor_col = 10;
+
+    // CSI 2E — move down 2 lines, column 0
+    vterm_feed(vt, "\x1b[2E");
+    ⎇ vt.cursor_row == 5 ∧ vt.cursor_col == 0 {
+        println("cnl_move: OK");
+    } ⎉ {
+        println("cnl_move: FAILED row=" + to_string(vt.cursor_row) + " col=" + to_string(vt.cursor_col));
+    }
+
+    // Position at row 5, col 7
+    vt.cursor_col = 7;
+
+    // CSI 3F — move up 3 lines, column 0
+    vterm_feed(vt, "\x1b[3F");
+    ⎇ vt.cursor_row == 2 ∧ vt.cursor_col == 0 {
+        println("cpl_move: OK");
+    } ⎉ {
+        println("cpl_move: FAILED row=" + to_string(vt.cursor_row) + " col=" + to_string(vt.cursor_col));
+    }
+
+    // Test clamping: move up from row 2 by 10 — clamps to 0
+    vterm_feed(vt, "\x1b[10F");
+    ⎇ vt.cursor_row == 0 {
+        println("cpl_clamp: OK");
+    } ⎉ {
+        println("cpl_clamp: FAILED row=" + to_string(vt.cursor_row));
+    }
+}

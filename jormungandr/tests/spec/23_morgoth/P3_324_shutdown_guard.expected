@@ -1,0 +1,2 @@
+shutdown_skip_neg_fd: OK
+shutdown_skip_dead: OK

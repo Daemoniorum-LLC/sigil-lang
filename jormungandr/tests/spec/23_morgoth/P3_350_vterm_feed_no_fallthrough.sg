@@ -1,0 +1,337 @@
+// Test: vterm_feed state machine has no fall-through between states
+// Spec: Phase 3 - Integration (validates production ⎇/⎉ chain pattern)
+// Priority: P3
+//
+// This test uses the EXACT same ⎇/⎉ chain structure as morgoth.sg's
+// vterm_feed to catch fall-through bugs that standalone tests miss.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        ⎇ vt.auto_wrap == true {
+            vt.cursor_col = 0;
+            vt.cursor_row = vt.cursor_row + 1;
+        } ⎉ {
+            vt.cursor_col = vt.cols - 1;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            ≔ dst = row * vt.cols + col;
+            ≔ src = (row + 1) * vt.cols + col;
+            vt.cells[dst] = vt.cells[src];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        ≔ idx = vt.scroll_bottom * vt.cols + col;
+        vt.cells[idx] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_parse_params(buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut i = 0;
+        ⟳ i < len(parts) {
+            ⎇ parts[i] == "" { push(params, 0); } ⎉ { push(params, to_int(parts[i])); }
+            i = i + 1;
+        }
+    }
+    params
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ≔ params = vterm_parse_params(buf);
+    ≔ mut n = 0;
+    ⎇ len(params) > 0 { n = params[0]; }
+
+    // CUP
+    ⎇ cmd == "H" {
+        ≔ mut row = 0;
+        ≔ mut col = 0;
+        ⎇ len(params) >= 1 ∧ params[0] > 0 { row = params[0] - 1; }
+        ⎇ len(params) >= 2 ∧ params[1] > 0 { col = params[1] - 1; }
+        ⎇ row >= vt.rows { row = vt.rows - 1; }
+        ⎇ col >= vt.cols { col = vt.cols - 1; }
+        vt.cursor_row = row;
+        vt.cursor_col = col;
+    }
+    // SGR
+    ⎇ cmd == "m" {
+        ⎇ len(params) == 0 {
+            vt.attr_fg = 7;
+            vt.attr_bg = 0;
+        } ⎉ {
+            ≔ mut pi = 0;
+            ⟳ pi < len(params) {
+                ≔ p = params[pi];
+                ⎇ p == 0 { vt.attr_fg = 7; vt.attr_bg = 0; }
+                ⎇ p >= 30 ∧ p <= 37 { vt.attr_fg = p - 30; }
+                ⎇ p >= 40 ∧ p <= 47 { vt.attr_bg = p - 40; }
+                pi = pi + 1;
+            }
+        }
+    }
+    // DEC private mode
+    ⎇ len(buf) > 0 ∧ starts_with(buf, "?") == true {
+        ≔ stripped = substring(buf, 1, len(buf));
+        ≔ mode_params = vterm_parse_params(stripped);
+        ≔ mut enabled = false;
+        ⎇ cmd == "h" { enabled = true; }
+        ≔ mut mi = 0;
+        ⟳ mi < len(mode_params) {
+            ⎇ mode_params[mi] == 25 { vt.cursor_visible = enabled; }
+            mi = mi + 1;
+        }
+    }
+}
+
+rite vterm_osc_dispatch(vt, buf) {
+    ≔ mut sep_idx = -1;
+    ≔ mut si = 0;
+    ⟳ si < len(buf) {
+        ⎇ to_string(char_at(buf, si)) == ";" {
+            ⎇ sep_idx == -1 { sep_idx = si; }
+        }
+        si = si + 1;
+    }
+    ⎇ sep_idx >= 0 {
+        ≔ cmd_str = substring(buf, 0, sep_idx);
+        ≔ payload = substring(buf, sep_idx + 1, len(buf));
+        ⎇ cmd_str == "0" ∨ cmd_str == "2" {
+            vt.title = payload;
+        }
+    }
+}
+
+rite vterm_reverse_index(vt) {
+    ⎇ vt.cursor_row > 0 {
+        vt.cursor_row = vt.cursor_row - 1;
+    }
+}
+
+// Production-faithful vterm_feed with ⎇/⎉ chain (mirrors morgoth.sg)
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ { ⎇ vt.esc_state == "osc" {
+            ⎇ code == 7 {
+                vterm_osc_dispatch(vt, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ { ⎇ code == 27 {
+                vt.esc_state = "osc_esc";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            } }
+        } ⎉ { ⎇ vt.esc_state == "osc_esc" {
+            ⎇ ch == "\\" {
+                vterm_osc_dispatch(vt, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vterm_osc_dispatch(vt, vt.esc_buf);
+                vt.esc_state = "escape";
+                vt.esc_buf = "";
+            }
+        } ⎉ { ⎇ vt.esc_state == "dcs" {
+            ⎇ code == 27 {
+                vt.esc_state = "dcs_esc";
+            }
+        } ⎉ { ⎇ vt.esc_state == "dcs_esc" {
+            ⎇ ch == "\\" {
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_state = "dcs";
+            }
+        } ⎉ { ⎇ vt.esc_state == "charset" {
+            vt.esc_state = "normal";
+        } ⎉ { ⎇ vt.esc_state == "escape" {
+            ⎇ ch == "[" {
+                vt.esc_state = "csi";
+                vt.esc_buf = "";
+            } ⎉ { ⎇ ch == "]" {
+                vt.esc_state = "osc";
+                vt.esc_buf = "";
+            } ⎉ { ⎇ ch == "P" {
+                vt.esc_state = "dcs";
+                vt.esc_buf = "";
+            } ⎉ { ⎇ ch == "(" ∨ ch == ")" ∨ ch == "*" ∨ ch == "+" {
+                vt.esc_state = "charset";
+            } ⎉ { ⎇ ch == "7" {
+                vt.saved_row = vt.cursor_row;
+                vt.saved_col = vt.cursor_col;
+                vt.esc_state = "normal";
+            } ⎉ { ⎇ ch == "8" {
+                vt.cursor_row = vt.saved_row;
+                vt.cursor_col = vt.saved_col;
+                vt.esc_state = "normal";
+            } ⎉ { ⎇ ch == "M" {
+                vterm_reverse_index(vt);
+                vt.esc_state = "normal";
+            } ⎉ {
+                vt.esc_state = "normal";
+            } } } } } } }
+        } ⎉ {
+            // Normal state
+            ⎇ code == 27 {
+                vt.esc_state = "escape";
+                vt.esc_buf = "";
+            }
+            ⎇ code == 13 { vt.cursor_col = 0; }
+            ⎇ code == 10 {
+                vt.cursor_row = vt.cursor_row + 1;
+                ⎇ vt.cursor_row > vt.scroll_bottom {
+                    vterm_scroll_up(vt);
+                    vt.cursor_row = vt.scroll_bottom;
+                }
+            }
+            ⎇ code == 8 {
+                ⎇ vt.cursor_col > 0 { vt.cursor_col = vt.cursor_col - 1; }
+            }
+            ⎇ code == 9 {
+                vt.cursor_col = ((vt.cursor_col / 8) + 1) * 8;
+                ⎇ vt.cursor_col >= vt.cols { vt.cursor_col = vt.cols - 1; }
+            }
+            ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        } } } } } } }
+
+        i = i + 1;
+    }
+    vt.scroll_offset = 0;
+}
+
+rite main() {
+    ≔ vt = VTerm_new(5, 20);
+
+    // Test 1: ESC doesn't fall through to escape handler in same iteration
+    // If flat ⎇ blocks: ESC sets state=escape, then escape handler fires
+    // and resets to normal. CSI sequence would be broken.
+    vterm_feed(vt, "\x1b[2;5H");
+    ⎇ vt.cursor_row == 1 ∧ vt.cursor_col == 4 {
+        println("csi_cup_works: OK");
+    } ⎉ {
+        println("csi_cup_works: FAILED row=" + to_string(vt.cursor_row) + " col=" + to_string(vt.cursor_col));
+    }
+
+    // Test 2: Text after CSI works (state properly returns to normal)
+    vt.cursor_row = 0;
+    vt.cursor_col = 0;
+    vterm_feed(vt, "AB\x1b[2;1HXY");
+    ⎇ vt.cells[0].ch == "A" ∧ vt.cells[1].ch == "B" {
+        println("text_before_csi: OK");
+    } ⎉ {
+        println("text_before_csi: FAILED c0=" + vt.cells[0].ch);
+    }
+    // XY at row 1, col 0 (CUP 2;1 = row 1, col 0)
+    ⎇ vt.cells[20].ch == "X" ∧ vt.cells[21].ch == "Y" {
+        println("text_after_csi: OK");
+    } ⎉ {
+        println("text_after_csi: FAILED c20=" + vt.cells[20].ch + " c21=" + vt.cells[21].ch);
+    }
+
+    // Test 3: OSC doesn't leak into cells
+    ≔ vt2 = VTerm_new(5, 20);
+    vterm_feed(vt2, "\x1b]0;my-title\x07Hello");
+    ⎇ vt2.title == "my-title" {
+        println("osc_title_set: OK");
+    } ⎉ {
+        println("osc_title_set: FAILED title=" + vt2.title);
+    }
+    ⎇ vt2.cells[0].ch == "H" ∧ vt2.cells[1].ch == "e" {
+        println("osc_no_leak: OK");
+    } ⎉ {
+        println("osc_no_leak: FAILED c0=" + vt2.cells[0].ch);
+    }
+
+    // Test 4: DCS absorbed, text after works
+    ≔ vt3 = VTerm_new(5, 20);
+    vterm_feed(vt3, "\x1bPsome;dcs;data\x1b\\OK");
+    ⎇ vt3.cells[0].ch == "O" ∧ vt3.cells[1].ch == "K" {
+        println("dcs_then_text: OK");
+    } ⎉ {
+        println("dcs_then_text: FAILED c0=" + vt3.cells[0].ch + " c1=" + vt3.cells[1].ch);
+    }
+
+    // Test 5: Charset designation consumed, text after works
+    ≔ vt4 = VTerm_new(5, 20);
+    vterm_feed(vt4, "\x1b(BHi");
+    ⎇ vt4.cells[0].ch == "H" ∧ vt4.cells[1].ch == "i" {
+        println("charset_then_text: OK");
+    } ⎉ {
+        println("charset_then_text: FAILED c0=" + vt4.cells[0].ch);
+    }
+
+    // Test 6: Mixed sequence — ESC 7 (save) + CSI + ESC 8 (restore) + text
+    ≔ vt5 = VTerm_new(5, 20);
+    vt5.cursor_row = 2;
+    vt5.cursor_col = 3;
+    vterm_feed(vt5, "\x1b7\x1b[1;1HX\x1b8Y");
+    // After ESC 7: saved_row=2, saved_col=3
+    // After CSI 1;1H: cursor at 0,0
+    // X written at 0,0, cursor now at 0,1
+    // After ESC 8: cursor restored to 2,3
+    // Y written at 2,3
+    ⎇ vt5.cells[0].ch == "X" {
+        println("save_restore_x: OK");
+    } ⎉ {
+        println("save_restore_x: FAILED c0=" + vt5.cells[0].ch);
+    }
+    ≔ y_idx = 2 * 20 + 3;
+    ⎇ vt5.cells[y_idx].ch == "Y" {
+        println("save_restore_y: OK");
+    } ⎉ {
+        println("save_restore_y: FAILED c43=" + vt5.cells[y_idx].ch);
+    }
+}

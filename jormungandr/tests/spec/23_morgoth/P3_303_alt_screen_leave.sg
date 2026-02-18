@@ -1,0 +1,182 @@
+// Test: Mode 1049l leaves alternate screen, restores saved cells
+// Spec: Phase 3.0 - DEC Private Modes
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_parse_params(buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut i = 0;
+        ⟳ i < len(parts) {
+            ⎇ parts[i] == "" { push(params, 0); } ⎉ { push(params, to_int(parts[i])); }
+            i = i + 1;
+        }
+    }
+    params
+}
+
+rite vterm_enter_alt_screen(vt) {
+    ≔ mut saved = [];
+    ≔ mut i = 0;
+    ⟳ i < len(vt.cells) {
+        push(saved, {ch: vt.cells[i].ch, fg: vt.cells[i].fg, bg: vt.cells[i].bg});
+        i = i + 1;
+    }
+    vt.alt_cells = saved;
+    vt.alt_cursor_row = vt.cursor_row;
+    vt.alt_cursor_col = vt.cursor_col;
+    vt.alt_attr_fg = vt.attr_fg;
+    vt.alt_attr_bg = vt.attr_bg;
+    ≔ mut ci = 0;
+    ⟳ ci < len(vt.cells) {
+        vt.cells[ci] = {ch: " ", fg: 7, bg: 0};
+        ci = ci + 1;
+    }
+    vt.cursor_row = 0;
+    vt.cursor_col = 0;
+    vt.in_alt_screen = true;
+}
+
+rite vterm_leave_alt_screen(vt) {
+    ⎇ len(vt.alt_cells) > 0 {
+        ≔ mut i = 0;
+        ⟳ i < len(vt.alt_cells) ∧ i < len(vt.cells) {
+            vt.cells[i] = vt.alt_cells[i];
+            i = i + 1;
+        }
+    }
+    vt.cursor_row = vt.alt_cursor_row;
+    vt.cursor_col = vt.alt_cursor_col;
+    vt.attr_fg = vt.alt_attr_fg;
+    vt.attr_bg = vt.alt_attr_bg;
+    vt.alt_cells = [];
+    vt.in_alt_screen = false;
+}
+
+rite vterm_set_dec_mode(vt, mode, enabled) {
+    ⎇ mode == 1049 {
+        ⎇ enabled == true { vterm_enter_alt_screen(vt); } ⎉ { vterm_leave_alt_screen(vt); }
+    }
+}
+
+rite vterm_dec_private_dispatch(vt, cmd, buf) {
+    ≔ params = vterm_parse_params(buf);
+    ≔ mut enabled = false;
+    ⎇ cmd == "h" { enabled = true; }
+    ≔ mut i = 0;
+    ⟳ i < len(params) { vterm_set_dec_mode(vt, params[i], enabled); i = i + 1; }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ⎇ len(buf) > 0 ∧ starts_with(buf, "?") == true {
+        ≔ stripped = substring(buf, 1, len(buf));
+        vterm_dec_private_dispatch(vt, cmd, stripped);
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+                ⎇ code >= 32 { vterm_put_char(vt, ch); }
+            }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(3, 5);
+
+    // Write content then enter alt screen
+    vterm_feed(vt, "ABCDE");
+    vterm_feed(vt, "\x1b[?1049h");
+
+    // Write different content in alt screen
+    vterm_feed(vt, "XXXXX");
+
+    // Leave alt screen
+    vterm_feed(vt, "\x1b[?1049l");
+
+    // Test 1: in_alt_screen flag cleared
+    ⎇ vt.in_alt_screen == false {
+        println("alt_screen_left: OK");
+    } ⎉ {
+        println("alt_screen_left: FAILED");
+    }
+
+    // Test 2: Original content restored
+    ⎇ vt.cells[0].ch == "A" ∧ vt.cells[1].ch == "B" ∧ vt.cells[4].ch == "E" {
+        println("content_restored: OK");
+    } ⎉ {
+        println("content_restored: FAILED ch0=" + vt.cells[0].ch);
+    }
+
+    // Test 3: Cursor restored
+    ⎇ vt.cursor_row == 0 ∧ vt.cursor_col == 5 {
+        println("cursor_restored: OK");
+    } ⎉ {
+        println("cursor_restored: FAILED row=" + to_string(vt.cursor_row) + " col=" + to_string(vt.cursor_col));
+    }
+
+    // Test 4: alt_cells cleared
+    ⎇ len(vt.alt_cells) == 0 {
+        println("alt_cells_cleared: OK");
+    } ⎉ {
+        println("alt_cells_cleared: FAILED");
+    }
+}

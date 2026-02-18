@@ -1,0 +1,103 @@
+// Test: Charset designation (ESC (B) consumed in 1 byte
+// Spec: Phase 3.1 - OSC/DCS Handling
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "charset" {
+            vt.esc_state = "normal";
+        } ⎉ {
+        ⎇ vt.esc_state == "escape" {
+            ⎇ ch == "(" ∨ ch == ")" ∨ ch == "*" ∨ ch == "+" { vt.esc_state = "charset"; }
+            ⎉ {
+                vt.esc_state = "normal";
+            }
+        } ⎉ {
+            // normal state
+            ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+            ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(4, 20);
+
+    // ESC (B — designate ASCII charset for G0
+    // The B should be consumed, not written to cells
+    vterm_feed(vt, "\x1b(B");
+
+    ⎇ vt.esc_state == "normal" {
+        println("charset_state_normal: OK");
+    } ⎉ {
+        println("charset_state_normal: FAILED state=" + vt.esc_state);
+    }
+
+    // B should not be in cells
+    ⎇ vt.cells[0].ch == " " {
+        println("charset_no_cell: OK");
+    } ⎉ {
+        println("charset_no_cell: FAILED ch=" + vt.cells[0].ch);
+    }
+
+    // Text after charset should render normally
+    vterm_feed(vt, "Hi");
+    ⎇ vt.cells[0].ch == "H" ∧ vt.cells[1].ch == "i" {
+        println("charset_then_text: OK");
+    } ⎉ {
+        println("charset_then_text: FAILED");
+    }
+
+    // ESC )0 — designate DEC Special Graphics for G1
+    vterm_feed(vt, "\x1b)0Z");
+    // Z should be written to cells (after charset consumed "0")
+    ⎇ vt.cells[2].ch == "Z" {
+        println("charset_g1_then_text: OK");
+    } ⎉ {
+        println("charset_g1_then_text: FAILED ch=" + vt.cells[2].ch);
+    }
+}

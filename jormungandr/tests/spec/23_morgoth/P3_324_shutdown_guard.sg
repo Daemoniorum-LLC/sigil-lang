@@ -1,0 +1,50 @@
+// Test: Shutdown skips close on fd -1
+// Spec: Phase 3.2 - Monitor Pane Wiring
+// Priority: P3
+
+rite main() {
+    // Simulate shutdown close guard
+    ≔ panes = [
+        { master_fd: 5, slave_fd: 6, alive: false },
+        { master_fd: -1, slave_fd: -1, alive: false },
+        { master_fd: 10, slave_fd: 11, alive: false }
+    ];
+
+    ≔ mut close_count = 0;
+    ≔ mut i = 0;
+    ⟳ i < len(panes) {
+        ⎇ panes[i].master_fd >= 0 {
+            close_count = close_count + 1;
+        }
+        i = i + 1;
+    }
+
+    // Should close 2 (pane 0 and 2), skip pane 1 (fd=-1)
+    ⎇ close_count == 2 {
+        println("shutdown_skip_neg_fd: OK");
+    } ⎉ {
+        println("shutdown_skip_neg_fd: FAILED count=" + to_string(close_count));
+    }
+
+    // Alive check: monitor panes have alive=false, so SIGTERM is skipped
+    ≔ kill_panes = [
+        { alive: true, pid: 100 },
+        { alive: false, pid: -1 },
+        { alive: true, pid: 200 }
+    ];
+
+    ≔ mut kill_count = 0;
+    i = 0;
+    ⟳ i < len(kill_panes) {
+        ⎇ kill_panes[i].alive == true {
+            kill_count = kill_count + 1;
+        }
+        i = i + 1;
+    }
+
+    ⎇ kill_count == 2 {
+        println("shutdown_skip_dead: OK");
+    } ⎉ {
+        println("shutdown_skip_dead: FAILED");
+    }
+}

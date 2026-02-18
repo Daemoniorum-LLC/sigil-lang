@@ -1,0 +1,95 @@
+// Test: Config routing — "monitor" type creates monitor pane
+// Spec: Phase 3.2 - Monitor Pane Wiring
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite MonitorPane_new(id, region) {
+    ≔ vt = VTerm_new(region.h - 2, region.w - 2);
+    ↩ {
+        id: id, region: region,
+        master_fd: -1, slave_fd: -1, pid: -1,
+        alive: false, title: "monitor",
+        vterm: vt, pane_type: "monitor"
+    }
+}
+
+rite TerminalPane_new(id, region) {
+    ≔ vt = VTerm_new(region.h - 2, region.w - 2);
+    ↩ {
+        id: id, region: region,
+        master_fd: 99, slave_fd: 100, pid: 1234,
+        alive: true, title: "bash",
+        vterm: vt, pane_type: "terminal"
+    }
+}
+
+rite main() {
+    ≔ pane_types = ["terminal", "monitor", "terminal"];
+    ≔ regions = [
+        Region_new(0, 0, 40, 12),
+        Region_new(40, 0, 40, 12),
+        Region_new(0, 12, 40, 12)
+    ];
+
+    ≔ mut panes = [];
+    ≔ mut i = 0;
+    ⟳ i < len(regions) {
+        ≔ mut ptype = "terminal";
+        ⎇ i < len(pane_types) { ptype = pane_types[i]; }
+        ⎇ ptype == "monitor" {
+            push(panes, MonitorPane_new(i, regions[i]));
+        } ⎉ {
+            push(panes, TerminalPane_new(i, regions[i]));
+        }
+        i = i + 1;
+    }
+
+    // Pane 0: terminal
+    ⎇ panes[0].pane_type == "terminal" ∧ panes[0].master_fd == 99 {
+        println("pane0_terminal: OK");
+    } ⎉ {
+        println("pane0_terminal: FAILED type=" + panes[0].pane_type);
+    }
+
+    // Pane 1: monitor
+    ⎇ panes[1].pane_type == "monitor" ∧ panes[1].master_fd == -1 {
+        println("pane1_monitor: OK");
+    } ⎉ {
+        println("pane1_monitor: FAILED type=" + panes[1].pane_type);
+    }
+
+    // Pane 2: terminal
+    ⎇ panes[2].pane_type == "terminal" {
+        println("pane2_terminal: OK");
+    } ⎉ {
+        println("pane2_terminal: FAILED");
+    }
+}

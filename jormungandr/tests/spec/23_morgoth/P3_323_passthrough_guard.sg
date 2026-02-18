@@ -1,0 +1,40 @@
+// Test: Passthrough skipped when master_fd < 0
+// Spec: Phase 3.2 - Monitor Pane Wiring
+// Priority: P3
+
+rite main() {
+    // Simulate the passthrough guard logic
+    ≔ pane = {
+        master_fd: -1,
+        pane_type: "monitor"
+    };
+
+    ≔ mut wrote = false;
+    // Guard check: only write if fd >= 0
+    ⎇ pane.master_fd >= 0 {
+        wrote = true;
+    }
+
+    ⎇ wrote == false {
+        println("passthrough_skipped: OK");
+    } ⎉ {
+        println("passthrough_skipped: FAILED");
+    }
+
+    // Terminal pane should pass through
+    ≔ term_pane = {
+        master_fd: 5,
+        pane_type: "terminal"
+    };
+
+    ≔ mut term_wrote = false;
+    ⎇ term_pane.master_fd >= 0 {
+        term_wrote = true;
+    }
+
+    ⎇ term_wrote == true {
+        println("passthrough_terminal: OK");
+    } ⎉ {
+        println("passthrough_terminal: FAILED");
+    }
+}

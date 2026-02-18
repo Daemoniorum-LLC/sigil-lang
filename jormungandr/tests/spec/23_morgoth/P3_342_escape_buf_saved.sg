@@ -1,0 +1,87 @@
+// Test: last_escape_buf contains sequence bytes after forward_esc
+// Spec: Phase 3.4 - Input Escape Forwarding
+// Priority: P3
+
+rite InputState_new() {
+    ↩ {
+        leader_active: false,
+        mouse_mode: true,
+        escape_buf: "",
+        in_escape: false,
+        last_escape_buf: ""
+    }
+}
+
+rite process_input(input_state, byte, pane_count) {
+    ≔ mut result = "none";
+    ⎇ input_state.in_escape == true {
+        input_state.escape_buf = input_state.escape_buf + from_char_code(byte);
+        ⎇ (byte == 77 ∨ byte == 109) ∧ len(input_state.escape_buf) > 2 ∧ starts_with(input_state.escape_buf, "[<") == true {
+            result = "mouse:" + input_state.escape_buf;
+            input_state.in_escape = false;
+            input_state.escape_buf = "";
+        } ⎉ {
+            ⎇ byte >= 64 ∧ byte <= 126 ∧ len(input_state.escape_buf) >= 2 {
+                input_state.last_escape_buf = input_state.escape_buf;
+                input_state.in_escape = false;
+                input_state.escape_buf = "";
+                result = "forward_esc";
+            }
+        }
+    } ⎉ {
+        ⎇ byte == 27 {
+            input_state.in_escape = true;
+            input_state.escape_buf = "";
+        } ⎉ {
+            result = "passthrough";
+        }
+    }
+    result
+}
+
+rite main() {
+    ≔ input = InputState_new();
+
+    // Arrow up: ESC [ A -> last_escape_buf should be "[A"
+    process_input(input, 27, 1);
+    process_input(input, 91, 1);
+    process_input(input, 65, 1);
+
+    ⎇ input.last_escape_buf == "[A" {
+        println("escape_buf_arrow_up: OK");
+    } ⎉ {
+        println("escape_buf_arrow_up: FAILED buf=" + input.last_escape_buf);
+    }
+
+    // Home key: ESC [ H -> last_escape_buf should be "[H"
+    process_input(input, 27, 1);
+    process_input(input, 91, 1);
+    process_input(input, 72, 1);
+
+    ⎇ input.last_escape_buf == "[H" {
+        println("escape_buf_home: OK");
+    } ⎉ {
+        println("escape_buf_home: FAILED buf=" + input.last_escape_buf);
+    }
+
+    // F5 key: ESC [ 1 5 ~ -> last_escape_buf should be "[15~"
+    process_input(input, 27, 1);
+    process_input(input, 91, 1);
+    process_input(input, 49, 1);  // 1
+    process_input(input, 53, 1);  // 5
+    process_input(input, 126, 1); // ~
+
+    ⎇ input.last_escape_buf == "[15~" {
+        println("escape_buf_f5: OK");
+    } ⎉ {
+        println("escape_buf_f5: FAILED buf=" + input.last_escape_buf);
+    }
+
+    // Reconstruct full escape: ESC + last_escape_buf
+    ≔ full = from_char_code(27) + input.last_escape_buf;
+    ⎇ len(full) == 5 {
+        println("escape_reconstruct_len: OK");
+    } ⎉ {
+        println("escape_reconstruct_len: FAILED len=" + to_string(len(full)));
+    }
+}

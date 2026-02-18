@@ -1,0 +1,96 @@
+// Test: ESC 7 saves cursor, ESC 8 restores
+// Spec: Phase 3.1 - OSC/DCS Handling
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "escape" {
+            ⎇ ch == "7" { vt.saved_row = vt.cursor_row; vt.saved_col = vt.cursor_col; }
+            ⎇ ch == "8" { vt.cursor_row = vt.saved_row; vt.cursor_col = vt.saved_col; }
+            vt.esc_state = "normal";
+        } ⎉ {
+            // normal state
+            ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+            ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(10, 20);
+
+    // Move cursor by writing text
+    vterm_feed(vt, "ABCDE");
+    // Cursor at row=0, col=5
+
+    // Save cursor: ESC 7
+    vterm_feed(vt, "\x1b7");
+    ⎇ vt.saved_row == 0 ∧ vt.saved_col == 5 {
+        println("decsc_saved: OK");
+    } ⎉ {
+        println("decsc_saved: FAILED row=" + to_string(vt.saved_row) + " col=" + to_string(vt.saved_col));
+    }
+
+    // Move cursor further
+    vterm_feed(vt, "FGH");
+    // Cursor at row=0, col=8
+
+    // Restore cursor: ESC 8
+    vterm_feed(vt, "\x1b8");
+    ⎇ vt.cursor_row == 0 ∧ vt.cursor_col == 5 {
+        println("decrc_restored: OK");
+    } ⎉ {
+        println("decrc_restored: FAILED row=" + to_string(vt.cursor_row) + " col=" + to_string(vt.cursor_col));
+    }
+
+    // Write at restored position
+    vterm_feed(vt, "X");
+    ⎇ vt.cells[5].ch == "X" {
+        println("decrc_write_at_saved: OK");
+    } ⎉ {
+        println("decrc_write_at_saved: FAILED ch=" + vt.cells[5].ch);
+    }
+}

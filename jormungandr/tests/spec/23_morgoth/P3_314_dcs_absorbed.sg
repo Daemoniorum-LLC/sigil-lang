@@ -1,0 +1,109 @@
+// Test: DCS sequence absorbed without cell corruption
+// Spec: Phase 3.1 - OSC/DCS Handling
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "dcs" {
+            ⎇ code == 27 {
+                vt.esc_state = "dcs_esc";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+        ⎇ vt.esc_state == "dcs_esc" {
+            vt.esc_state = "normal";
+            vt.esc_buf = "";
+        } ⎉ {
+        ⎇ vt.esc_state == "escape" {
+            ⎇ ch == "P" { vt.esc_state = "dcs"; vt.esc_buf = ""; }
+            ⎉ {
+                vt.esc_state = "normal";
+            }
+        } ⎉ {
+            // normal state
+            ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+            ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        }
+        }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(4, 20);
+
+    // DCS with payload — should be absorbed
+    vterm_feed(vt, "\x1bPsome+payload+data\x1b\\");
+
+    // All cells should be spaces
+    ≔ mut all_spaces = true;
+    ≔ mut i = 0;
+    ⟳ i < len(vt.cells) {
+        ⎇ vt.cells[i].ch != " " { all_spaces = false; }
+        i = i + 1;
+    }
+
+    ⎇ all_spaces == true {
+        println("dcs_no_corruption: OK");
+    } ⎉ {
+        println("dcs_no_corruption: FAILED");
+    }
+
+    ⎇ vt.esc_state == "normal" {
+        println("dcs_state_reset: OK");
+    } ⎉ {
+        println("dcs_state_reset: FAILED state=" + vt.esc_state);
+    }
+
+    // Text after DCS should render
+    vterm_feed(vt, "XY");
+    ⎇ vt.cells[0].ch == "X" ∧ vt.cells[1].ch == "Y" {
+        println("post_dcs_text: OK");
+    } ⎉ {
+        println("post_dcs_text: FAILED");
+    }
+}

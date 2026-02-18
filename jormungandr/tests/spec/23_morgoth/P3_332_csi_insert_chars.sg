@@ -1,0 +1,132 @@
+// Test: CSI @ inserts blank chars, shifts content right
+// Spec: Phase 3.3 - Additional CSI Sequences
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_parse_params(buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut i = 0;
+        ⟳ i < len(parts) {
+            ⎇ parts[i] == "" { push(params, 0); } ⎉ { push(params, to_int(parts[i])); }
+            i = i + 1;
+        }
+    }
+    params
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ≔ params = vterm_parse_params(buf);
+    ≔ mut n = 0;
+    ⎇ len(params) > 0 { n = params[0]; }
+
+    ⎇ cmd == "@" {
+        ≔ mut count = 1;
+        ⎇ n > 0 { count = n; }
+        ≔ row_base = vt.cursor_row * vt.cols;
+        ≔ mut col = vt.cols - 1;
+        ⟳ col >= vt.cursor_col + count {
+            vt.cells[row_base + col] = vt.cells[row_base + col - count];
+            col = col - 1;
+        }
+        ≔ mut ci = 0;
+        ⟳ ci < count ∧ vt.cursor_col + ci < vt.cols {
+            vt.cells[row_base + vt.cursor_col + ci] = {ch: " ", fg: 7, bg: 0};
+            ci = ci + 1;
+        }
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+                ⎇ code >= 32 { vterm_put_char(vt, ch); }
+            }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(2, 8);
+
+    // Write "ABCDEFGH" to row 0
+    vterm_feed(vt, "ABCDEFGH");
+
+    // Move cursor to col 2
+    vt.cursor_row = 0;
+    vt.cursor_col = 2;
+
+    // Insert 2 blank chars at col 2
+    vterm_feed(vt, "\x1b[2@");
+
+    // Row 0 should be: A B _ _ C D E F (G H pushed off)
+    ⎇ vt.cells[0].ch == "A" ∧ vt.cells[1].ch == "B" {
+        println("ich_left_unchanged: OK");
+    } ⎉ {
+        println("ich_left_unchanged: FAILED");
+    }
+
+    ⎇ vt.cells[2].ch == " " ∧ vt.cells[3].ch == " " {
+        println("ich_blanks_inserted: OK");
+    } ⎉ {
+        println("ich_blanks_inserted: FAILED c2=" + vt.cells[2].ch + " c3=" + vt.cells[3].ch);
+    }
+
+    ⎇ vt.cells[4].ch == "C" ∧ vt.cells[5].ch == "D" {
+        println("ich_content_shifted: OK");
+    } ⎉ {
+        println("ich_content_shifted: FAILED c4=" + vt.cells[4].ch);
+    }
+}

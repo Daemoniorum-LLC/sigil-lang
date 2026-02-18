@@ -1,0 +1,86 @@
+// Test: Arrow key (ESC[A) produces forward_esc action
+// Spec: Phase 3.4 - Input Escape Forwarding
+// Priority: P3
+
+rite InputState_new() {
+    ↩ {
+        leader_active: false,
+        mouse_mode: true,
+        escape_buf: "",
+        in_escape: false,
+        last_escape_buf: ""
+    }
+}
+
+rite process_input(input_state, byte, pane_count) {
+    ≔ mut result = "none";
+    ⎇ input_state.in_escape == true {
+        input_state.escape_buf = input_state.escape_buf + from_char_code(byte);
+        ⎇ (byte == 77 ∨ byte == 109) ∧ len(input_state.escape_buf) > 2 ∧ starts_with(input_state.escape_buf, "[<") == true {
+            result = "mouse:" + input_state.escape_buf;
+            input_state.in_escape = false;
+            input_state.escape_buf = "";
+        } ⎉ {
+            ⎇ byte >= 64 ∧ byte <= 126 ∧ len(input_state.escape_buf) >= 2 {
+                input_state.last_escape_buf = input_state.escape_buf;
+                input_state.in_escape = false;
+                input_state.escape_buf = "";
+                result = "forward_esc";
+            }
+        }
+    } ⎉ {
+        ⎇ byte == 27 {
+            input_state.in_escape = true;
+            input_state.escape_buf = "";
+        } ⎉ {
+            result = "passthrough";
+        }
+    }
+    result
+}
+
+rite main() {
+    ≔ input = InputState_new();
+
+    // Feed arrow up: ESC [ A (bytes 27, 91, 65)
+    ≔ a1 = process_input(input, 27, 1);
+    ⎇ a1 == "none" {
+        println("esc_start: OK");
+    } ⎉ {
+        println("esc_start: FAILED action=" + a1);
+    }
+
+    ≔ a2 = process_input(input, 91, 1);
+    ⎇ a2 == "none" {
+        println("bracket_accumulate: OK");
+    } ⎉ {
+        println("bracket_accumulate: FAILED action=" + a2);
+    }
+
+    ≔ a3 = process_input(input, 65, 1);
+    ⎇ a3 == "forward_esc" {
+        println("arrow_forward_esc: OK");
+    } ⎉ {
+        println("arrow_forward_esc: FAILED action=" + a3);
+    }
+
+    // Arrow down: ESC [ B
+    ≔ b1 = process_input(input, 27, 1);
+    ≔ b2 = process_input(input, 91, 1);
+    ≔ b3 = process_input(input, 66, 1);
+    ⎇ b3 == "forward_esc" {
+        println("arrow_down_forward: OK");
+    } ⎉ {
+        println("arrow_down_forward: FAILED action=" + b3);
+    }
+
+    // Arrow right: ESC [ C
+    ≔ c1 = process_input(input, 27, 1);
+    ≔ c2 = process_input(input, 91, 1);
+    ≔ c3 = process_input(input, 67, 1);
+    ⎇ c3 == "forward_esc" {
+        println("arrow_right_forward: OK");
+    } ⎉ {
+        println("arrow_right_forward: FAILED action=" + c3);
+    }
+}

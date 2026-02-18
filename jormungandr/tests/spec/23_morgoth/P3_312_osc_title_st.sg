@@ -1,0 +1,110 @@
+// Test: OSC 2 sets title via ST (ESC \) terminator
+// Spec: Phase 3.1 - OSC/DCS Handling
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_osc_dispatch(vt, buf) {
+    ≔ mut sep_idx = -1;
+    ≔ mut si = 0;
+    ⟳ si < len(buf) {
+        ⎇ to_string(char_at(buf, si)) == ";" {
+            ⎇ sep_idx == -1 { sep_idx = si; }
+        }
+        si = si + 1;
+    }
+    ⎇ sep_idx >= 0 {
+        ≔ cmd_str = substring(buf, 0, sep_idx);
+        ≔ payload = substring(buf, sep_idx + 1, len(buf));
+        ⎇ cmd_str == "0" ∨ cmd_str == "2" {
+            vt.title = payload;
+        }
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "osc" {
+            ⎇ code == 7 {
+                vterm_osc_dispatch(vt, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                ⎇ code == 27 {
+                    vt.esc_state = "osc_esc";
+                } ⎉ {
+                    vt.esc_buf = vt.esc_buf + ch;
+                }
+            }
+        } ⎉ {
+        ⎇ vt.esc_state == "osc_esc" {
+            ⎇ ch == "\\" {
+                vterm_osc_dispatch(vt, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            }
+        } ⎉ {
+        ⎇ vt.esc_state == "escape" {
+            ⎇ ch == "]" { vt.esc_state = "osc"; vt.esc_buf = ""; }
+            ⎉ {
+                vt.esc_state = "normal";
+            }
+        } ⎉ {
+            // normal state
+            ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+        }
+        }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(4, 20);
+
+    // OSC 2;title ST — set title via ESC backslash
+    vterm_feed(vt, "\x1b]2;htop\x1b\\");
+
+    ⎇ vt.title == "htop" {
+        println("osc2_st_title: OK");
+    } ⎉ {
+        println("osc2_st_title: FAILED title=" + vt.title);
+    }
+
+    ⎇ vt.esc_state == "normal" {
+        println("osc2_st_state: OK");
+    } ⎉ {
+        println("osc2_st_state: FAILED state=" + vt.esc_state);
+    }
+}

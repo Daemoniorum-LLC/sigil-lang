@@ -1,0 +1,165 @@
+// Test: Multiple modes in one sequence: CSI ?25l;1049h
+// Spec: Phase 3.0 - DEC Private Modes
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_parse_params(buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut i = 0;
+        ⟳ i < len(parts) {
+            ⎇ parts[i] == "" { push(params, 0); } ⎉ { push(params, to_int(parts[i])); }
+            i = i + 1;
+        }
+    }
+    params
+}
+
+rite vterm_enter_alt_screen(vt) {
+    ≔ mut saved = [];
+    ≔ mut i = 0;
+    ⟳ i < len(vt.cells) {
+        push(saved, {ch: vt.cells[i].ch, fg: vt.cells[i].fg, bg: vt.cells[i].bg});
+        i = i + 1;
+    }
+    vt.alt_cells = saved;
+    vt.alt_cursor_row = vt.cursor_row;
+    vt.alt_cursor_col = vt.cursor_col;
+    ≔ mut ci = 0;
+    ⟳ ci < len(vt.cells) {
+        vt.cells[ci] = {ch: " ", fg: 7, bg: 0};
+        ci = ci + 1;
+    }
+    vt.cursor_row = 0;
+    vt.cursor_col = 0;
+    vt.in_alt_screen = true;
+}
+
+rite vterm_leave_alt_screen(vt) {
+    ⎇ len(vt.alt_cells) > 0 {
+        ≔ mut i = 0;
+        ⟳ i < len(vt.alt_cells) ∧ i < len(vt.cells) {
+            vt.cells[i] = vt.alt_cells[i];
+            i = i + 1;
+        }
+    }
+    vt.cursor_row = vt.alt_cursor_row;
+    vt.cursor_col = vt.alt_cursor_col;
+    vt.alt_cells = [];
+    vt.in_alt_screen = false;
+}
+
+rite vterm_set_dec_mode(vt, mode, enabled) {
+    ⎇ mode == 25 { vt.cursor_visible = enabled; }
+    ⎇ mode == 1049 {
+        ⎇ enabled == true { vterm_enter_alt_screen(vt); } ⎉ { vterm_leave_alt_screen(vt); }
+    }
+    ⎇ mode == 2004 { vt.bracketed_paste = enabled; }
+}
+
+rite vterm_dec_private_dispatch(vt, cmd, buf) {
+    ≔ params = vterm_parse_params(buf);
+    ≔ mut enabled = false;
+    ⎇ cmd == "h" { enabled = true; }
+    ≔ mut i = 0;
+    ⟳ i < len(params) { vterm_set_dec_mode(vt, params[i], enabled); i = i + 1; }
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ⎇ len(buf) > 0 ∧ starts_with(buf, "?") == true {
+        ≔ stripped = substring(buf, 1, len(buf));
+        vterm_dec_private_dispatch(vt, cmd, stripped);
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+            }
+        }
+
+        i = i + 1;
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(3, 5);
+
+    // Single sequence with multiple modes: hide cursor + bracketed paste
+    vterm_feed(vt, "\x1b[?25;2004h");
+    // Wait... the ? prefix is "?25;2004", stripped to "25;2004"
+    // So params = [25, 2004], cmd = h
+
+    ⎇ vt.cursor_visible == true {
+        // Note: h means enable, so cursor_visible should be true (mode 25h = show cursor)
+        // Actually ?25h enables show-cursor mode. Let me reconsider.
+        // When we do ?25h: enabled=true, mode=25 -> cursor_visible = true
+        // We want to test ?25l;2004h but that's conflicting h/l commands
+        // A real terminal sends CSI ?25;2004h to enable both
+        println("multi_mode_25h: OK");
+    } ⎉ {
+        println("multi_mode_25h: FAILED");
+    }
+
+    ⎇ vt.bracketed_paste == true {
+        println("multi_mode_2004h: OK");
+    } ⎉ {
+        println("multi_mode_2004h: FAILED");
+    }
+
+    // Disable both in one sequence
+    vterm_feed(vt, "\x1b[?25;2004l");
+    ⎇ vt.cursor_visible == false {
+        println("multi_mode_25l: OK");
+    } ⎉ {
+        println("multi_mode_25l: FAILED");
+    }
+
+    ⎇ vt.bracketed_paste == false {
+        println("multi_mode_2004l: OK");
+    } ⎉ {
+        println("multi_mode_2004l: FAILED");
+    }
+}

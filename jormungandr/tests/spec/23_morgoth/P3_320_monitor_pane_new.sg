@@ -1,0 +1,78 @@
+// Test: MonitorPane·new creates pane with master_fd=-1, alive=false
+// Spec: Phase 3.2 - Monitor Pane Wiring
+// Priority: P3
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite MonitorPane_new(id, region) {
+    ≔ vt = VTerm_new(region.h - 2, region.w - 2);
+    ↩ {
+        id: id, region: region,
+        master_fd: -1, slave_fd: -1, pid: -1,
+        alive: false, title: "monitor",
+        vterm: vt, pane_type: "monitor"
+    }
+}
+
+rite main() {
+    ≔ r = Region_new(0, 0, 40, 12);
+    ≔ p = MonitorPane_new(0, r);
+
+    ⎇ p.master_fd == -1 {
+        println("monitor_no_fd: OK");
+    } ⎉ {
+        println("monitor_no_fd: FAILED fd=" + to_string(p.master_fd));
+    }
+
+    ⎇ p.alive == false {
+        println("monitor_not_alive: OK");
+    } ⎉ {
+        println("monitor_not_alive: FAILED");
+    }
+
+    ⎇ p.pane_type == "monitor" {
+        println("monitor_type: OK");
+    } ⎉ {
+        println("monitor_type: FAILED type=" + p.pane_type);
+    }
+
+    ⎇ p.title == "monitor" {
+        println("monitor_title: OK");
+    } ⎉ {
+        println("monitor_title: FAILED");
+    }
+
+    // VTerm should be (12-2) x (40-2) = 10 x 38
+    ⎇ p.vterm.rows == 10 ∧ p.vterm.cols == 38 {
+        println("monitor_vterm_size: OK");
+    } ⎉ {
+        println("monitor_vterm_size: FAILED rows=" + to_string(p.vterm.rows) + " cols=" + to_string(p.vterm.cols));
+    }
+}
