@@ -8,6 +8,7 @@
 //!
 //! See docs/specs/REACT-MIGRATION.md Section 7 for Qliphoth mapping.
 
+use super::ast_transform::{self, TransformConfig};
 use super::extraction::*;
 use super::spec::*;
 
@@ -303,7 +304,15 @@ impl<'a> QliphothGenerator<'a> {
             String::new()
         } else {
             props.fields.iter()
-                .map(|f| format!("{}: {}", f.name, f.field_type))
+                .map(|f| {
+                    // Handle rest parameters: ...props -> props: Vec<Any>
+                    if f.name.starts_with("...") {
+                        let name = &f.name[3..]; // Remove "..." prefix
+                        format!("{}: Vec<Any>", name)
+                    } else {
+                        format!("{}: {}", f.name, f.field_type)
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -621,40 +630,24 @@ impl<'a> QliphothGenerator<'a> {
             return "None".to_string();
         }
 
-        // First, transform JS syntax to Sigil syntax
-        let code = transform_js_to_sigil(code);
+        // Build transformation config
+        let state_fields: Vec<String> = self.spec.recommendations.state_fields
+            .iter()
+            .map(|f| f.to_field.clone())
+            .collect();
 
-        // Check if it's a local/scoped variable (like map iterator)
-        if scope.locals.iter().any(|local| code == *local) {
-            return code;
-        }
+        let config = TransformConfig {
+            prefix_self: self.is_actor,
+            state_fields,
+            locals: scope.locals.clone(),
+            props: self.param_names.clone(),
+        };
 
-        // Check for boolean literals (True, False) - don't prefix these
-        if code == "True" || code == "False" {
-            return code;
-        }
+        // Use AST-based transformation
+        let result = ast_transform::transform_expression(code, &config);
 
-        if self.is_actor {
-            // For actors, simple identifiers become self.identifier
-            // More complex expressions need smarter handling
-            if is_simple_identifier(&code) {
-                format!("self.{}", to_snake_case(&code))
-            } else {
-                // For complex expressions, try to prefix state variables
-                self.prefix_state_variables_scoped(&code, scope)
-            }
-        } else {
-            // For pure functions, check if it's a prop parameter
-            if self.param_names.iter().any(|p| code == *p || code.starts_with(&format!("{}.", p))) {
-                code
-            } else if is_simple_identifier(&code) {
-                // Might be a prop - just use as-is
-                code
-            } else {
-                // Complex expression - use as-is
-                code
-            }
-        }
+        // Note: warnings are available in result.warnings if needed for debugging
+        result.code
     }
 
     /// For actors, prefix state field references with self.

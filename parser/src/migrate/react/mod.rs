@@ -12,6 +12,7 @@
 //!
 //! See docs/specs/REACT-MIGRATION.md for full specification.
 
+mod ast_transform;
 mod cli;
 mod extraction;
 mod generator;
