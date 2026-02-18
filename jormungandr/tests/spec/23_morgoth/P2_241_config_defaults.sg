@@ -1,0 +1,69 @@
+// Test: Missing config file returns sane defaults
+// Spec: Phase 2.3 - Configuration File
+// Priority: P2
+
+rite load_config_from(path) {
+    ≔ mut cfg = {
+        grid_rows: 2,
+        grid_cols: 3,
+        shell: "/bin/bash",
+        scrollback_lines: 1000,
+        leader_key: 2,
+        hmr: true
+    };
+
+    ⎇ fs_exists(path) == true {
+        ≔ raw = fs_read(path);
+        ≔ j = json_parse(raw);
+        ⎇ j.grid != null {
+            ⎇ j.grid.rows != null { cfg.grid_rows = j.grid.rows; }
+            ⎇ j.grid.cols != null { cfg.grid_cols = j.grid.cols; }
+        }
+        ⎇ j.shell != null { cfg.shell = j.shell; }
+        ⎇ j.scrollback_lines != null { cfg.scrollback_lines = j.scrollback_lines; }
+        ⎇ j.leader_key != null { cfg.leader_key = j.leader_key; }
+        ⎇ j.hmr != null { cfg.hmr = j.hmr; }
+    }
+
+    ↩ cfg
+}
+
+rite main() {
+    // Test with a nonexistent config file
+    ≔ cfg = load_config_from("/tmp/nonexistent_morgoth_config_12345.json");
+
+    // Test 1: Default grid rows
+    ⎇ cfg.grid_rows == 2 {
+        println("default_rows: OK");
+    } ⎉ {
+        println("default_rows: FAILED got=" + to_string(cfg.grid_rows));
+    }
+
+    // Test 2: Default grid cols
+    ⎇ cfg.grid_cols == 3 {
+        println("default_cols: OK");
+    } ⎉ {
+        println("default_cols: FAILED");
+    }
+
+    // Test 3: Default shell
+    ⎇ cfg.shell == "/bin/bash" {
+        println("default_shell: OK");
+    } ⎉ {
+        println("default_shell: FAILED");
+    }
+
+    // Test 4: Default scrollback
+    ⎇ cfg.scrollback_lines == 1000 {
+        println("default_scrollback: OK");
+    } ⎉ {
+        println("default_scrollback: FAILED");
+    }
+
+    // Test 5: Default leader key
+    ⎇ cfg.leader_key == 2 {
+        println("default_leader: OK");
+    } ⎉ {
+        println("default_leader: FAILED");
+    }
+}

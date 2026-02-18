@@ -1,0 +1,6 @@
+vterm_cell_count: OK
+vterm_cursor_origin: OK
+vterm_default_attrs: OK
+vterm_esc_state: OK
+vterm_scroll_region: OK
+vterm_custom_size: OK

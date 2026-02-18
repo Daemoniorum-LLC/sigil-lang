@@ -1,0 +1,73 @@
+// Test: VTerm creation
+// Spec: Phase 2.1 - Terminal Emulation
+// Priority: P2
+//
+// Purpose:
+// Validates VTerm creation with correct cell count, default cursor at (0,0),
+// and default attributes.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite main() {
+    ≔ vt = VTerm_new(24, 80);
+
+    // Test 1: Cell count is rows * cols
+    ⎇ len(vt.cells) == 24 * 80 {
+        println("vterm_cell_count: OK");
+    } ⎉ {
+        println("vterm_cell_count: FAILED got=" + to_string(len(vt.cells)));
+    }
+
+    // Test 2: Cursor starts at (0, 0)
+    ⎇ vt.cursor_row == 0 ∧ vt.cursor_col == 0 {
+        println("vterm_cursor_origin: OK");
+    } ⎉ {
+        println("vterm_cursor_origin: FAILED");
+    }
+
+    // Test 3: Default attributes
+    ⎇ vt.attr_fg == 7 ∧ vt.attr_bg == 0 {
+        println("vterm_default_attrs: OK");
+    } ⎉ {
+        println("vterm_default_attrs: FAILED");
+    }
+
+    // Test 4: Escape state is normal
+    ⎇ vt.esc_state == "normal" {
+        println("vterm_esc_state: OK");
+    } ⎉ {
+        println("vterm_esc_state: FAILED");
+    }
+
+    // Test 5: Scroll region defaults to full screen
+    ⎇ vt.scroll_top == 0 ∧ vt.scroll_bottom == 23 {
+        println("vterm_scroll_region: OK");
+    } ⎉ {
+        println("vterm_scroll_region: FAILED");
+    }
+
+    // Test 6: Different dimensions work
+    ≔ vt2 = VTerm_new(10, 40);
+    ⎇ len(vt2.cells) == 400 ∧ vt2.rows == 10 ∧ vt2.cols == 40 {
+        println("vterm_custom_size: OK");
+    } ⎉ {
+        println("vterm_custom_size: FAILED");
+    }
+}

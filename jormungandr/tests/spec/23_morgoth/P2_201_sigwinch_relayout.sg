@@ -1,0 +1,86 @@
+// Test: SIGWINCH relayout simulation
+// Spec: Phase 2.0 - Native Syscalls + Dynamic Terminal Size
+// Priority: P2
+//
+// Purpose:
+// Simulates a terminal resize by changing winsize, then verifies that
+// recalculating layout produces updated regions matching the new dimensions.
+
+rite main() {
+    // Test 1: Initial layout at 80x24 produces 6 regions
+    ≔ screen_w = 80;
+    ≔ screen_h = 24;
+    ≔ grid_rows = 2;
+    ≔ grid_cols = 3;
+    ≔ usable_h = screen_h - 1;
+    ≔ base_w = screen_w / grid_cols;
+    ≔ base_h = usable_h / grid_rows;
+
+    ≔ mut count = 0;
+    ≔ mut r = 0;
+    ⟳ r < grid_rows {
+        ≔ mut c = 0;
+        ⟳ c < grid_cols {
+            count = count + 1;
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    ⎇ count == 6 {
+        println("initial_layout_count: OK");
+    } ⎉ {
+        println("initial_layout_count: FAILED");
+    }
+
+    // Test 2: First region starts at (0,0) with base dimensions
+    ⎇ base_w > 0 ∧ base_h > 0 {
+        println("initial_origin: OK");
+    } ⎉ {
+        println("initial_origin: FAILED");
+    }
+
+    // Test 3: Simulate resize to 160x48 — compute new layout
+    ≔ new_w = 160;
+    ≔ new_h = 48;
+    ≔ new_usable = new_h - 1;
+    ≔ new_base_w = new_w / grid_cols;
+    ≔ new_base_h = new_usable / grid_rows;
+    ≔ new_extra_w = new_w % grid_cols;
+    ≔ new_extra_h = new_usable % grid_rows;
+
+    // Still 6 regions
+    ⎇ grid_rows * grid_cols == 6 {
+        println("resized_layout_count: OK");
+    } ⎉ {
+        println("resized_layout_count: FAILED");
+    }
+
+    // Test 4: Resized regions are larger
+    ⎇ new_base_w > base_w ∧ new_base_h > base_h {
+        println("resized_larger: OK");
+    } ⎉ {
+        println("resized_larger: FAILED");
+    }
+
+    // Test 5: Last region fills to edge (last col gets remainder, last row gets remainder)
+    ≔ last_w = new_base_w + new_extra_w;
+    ≔ last_h = new_base_h + new_extra_h;
+    // x position of last col: 2 * new_base_w
+    ≔ last_x = 2 * new_base_w;
+    // y position of last row: new_base_h (row 0 height)
+    ≔ last_y = new_base_h;
+    ⎇ last_x + last_w == 160 ∧ last_y + last_h == 47 {
+        println("resized_fills_edge: OK");
+    } ⎉ {
+        println("resized_fills_edge: FAILED x+w=" + to_string(last_x + last_w) + " y+h=" + to_string(last_y + last_h));
+    }
+
+    // Test 6: term_set_winsize + re-query simulates SIGWINCH
+    term_set_winsize(1, 48, 160);
+    ≔ ws = term_get_winsize(1);
+    ⎇ ws.rows == 48 ∧ ws.cols == 160 {
+        println("sigwinch_sim: OK");
+    } ⎉ {
+        println("sigwinch_sim: FAILED");
+    }
+}

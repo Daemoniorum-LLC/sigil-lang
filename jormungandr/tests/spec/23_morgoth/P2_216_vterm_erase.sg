@@ -1,0 +1,189 @@
+// Test: VTerm ED (Erase Display) and EL (Erase Line)
+// Spec: Phase 2.1 - Terminal Emulation
+// Priority: P2
+//
+// Purpose:
+// Validates CSI 2J clears all cells and CSI K clears from cursor to end of line.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut pi2 = 0;
+        ⟳ pi2 < len(parts) {
+            ⎇ parts[pi2] == "" {
+                push(params, 0);
+            } ⎉ {
+                push(params, to_int(parts[pi2]));
+            }
+            pi2 = pi2 + 1;
+        }
+    }
+    ≔ mut n = 0;
+    ⎇ len(params) > 0 {
+        n = params[0];
+    }
+
+    // CUP
+    ⎇ cmd == "H" ∨ cmd == "f" {
+        ≔ mut row = 1;
+        ≔ mut col = 1;
+        ⎇ len(params) >= 1 ∧ params[0] > 0 { row = params[0]; }
+        ⎇ len(params) >= 2 ∧ params[1] > 0 { col = params[1]; }
+        vt.cursor_row = row - 1;
+        vt.cursor_col = col - 1;
+        ⎇ vt.cursor_row >= vt.rows { vt.cursor_row = vt.rows - 1; }
+        ⎇ vt.cursor_col >= vt.cols { vt.cursor_col = vt.cols - 1; }
+    }
+    // ED
+    ⎇ cmd == "J" {
+        ⎇ n == 2 ∨ n == 3 {
+            ≔ mut ei = 0;
+            ⟳ ei < len(vt.cells) {
+                vt.cells[ei] = {ch: " ", fg: 7, bg: 0};
+                ei = ei + 1;
+            }
+        }
+    }
+    // EL
+    ⎇ cmd == "K" {
+        ≔ row_start = vt.cursor_row * vt.cols;
+        ⎇ n == 0 {
+            ≔ mut c = vt.cursor_col;
+            ⟳ c < vt.cols {
+                vt.cells[row_start + c] = {ch: " ", fg: 7, bg: 0};
+                c = c + 1;
+            }
+        }
+        ⎇ n == 2 {
+            ≔ mut c = 0;
+            ⟳ c < vt.cols {
+                vt.cells[row_start + c] = {ch: " ", fg: 7, bg: 0};
+                c = c + 1;
+            }
+        }
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+                ⎇ code == 13 { vt.cursor_col = 0; }
+                ⎇ code == 10 {
+                    vt.cursor_row = vt.cursor_row + 1;
+                    ⎇ vt.cursor_row > vt.scroll_bottom {
+                        vterm_scroll_up(vt);
+                        vt.cursor_row = vt.scroll_bottom;
+                    }
+                }
+                ⎇ code >= 32 { vterm_put_char(vt, ch); }
+            }
+        }
+
+        i = i + 1;
+    }
+    vt.scroll_offset = 0;
+}
+
+rite main() {
+    // Test 1: CSI 2J clears all cells
+    ≔ vt = VTerm_new(4, 5);
+    vterm_feed(vt, "ABCDE");
+    vterm_feed(vt, "\x1b[2J");
+    ≔ mut all_clear = true;
+    ≔ mut ci = 0;
+    ⟳ ci < len(vt.cells) {
+        ⎇ vt.cells[ci].ch != " " {
+            all_clear = false;
+        }
+        ci = ci + 1;
+    }
+    ⎇ all_clear {
+        println("erase_display: OK");
+    } ⎉ {
+        println("erase_display: FAILED");
+    }
+
+    // Test 2: CSI K clears from cursor to end of line
+    ≔ vt2 = VTerm_new(4, 5);
+    vterm_feed(vt2, "HELLO");
+    // Move cursor to col 2 on row 0
+    vterm_feed(vt2, "\x1b[1;3H");
+    // Erase to end of line
+    vterm_feed(vt2, "\x1b[K");
+    // Cells 0,1 should still be H,E; cells 2,3,4 should be space
+    ⎇ vt2.cells[0].ch == "H" ∧ vt2.cells[1].ch == "E" ∧ vt2.cells[2].ch == " " ∧ vt2.cells[3].ch == " " ∧ vt2.cells[4].ch == " " {
+        println("erase_line: OK");
+    } ⎉ {
+        println("erase_line: FAILED c0=" + vt2.cells[0].ch + " c1=" + vt2.cells[1].ch + " c2=" + vt2.cells[2].ch + " c3=" + vt2.cells[3].ch + " c4=" + vt2.cells[4].ch);
+    }
+}

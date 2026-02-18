@@ -1,0 +1,4 @@
+scroll_offset_default: OK
+scroll_offset_view: OK
+scroll_offset_clamp: OK
+scrollback_stable: OK

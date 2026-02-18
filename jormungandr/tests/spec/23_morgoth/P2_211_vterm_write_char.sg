@@ -1,0 +1,104 @@
+// Test: VTerm character writing and line wrap
+// Spec: Phase 2.1 - Terminal Emulation
+// Priority: P2
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite main() {
+    ≔ vt = VTerm_new(4, 5);
+
+    // Test 1: Write 'A' — cursor advances
+    vterm_put_char(vt, "A");
+    ⎇ vt.cells[0].ch == "A" ∧ vt.cursor_col == 1 {
+        println("write_char_advance: OK");
+    } ⎉ {
+        println("write_char_advance: FAILED");
+    }
+
+    // Test 2: Write more chars
+    vterm_put_char(vt, "B");
+    vterm_put_char(vt, "C");
+    ⎇ vt.cells[1].ch == "B" ∧ vt.cells[2].ch == "C" ∧ vt.cursor_col == 3 {
+        println("write_multiple: OK");
+    } ⎉ {
+        println("write_multiple: FAILED");
+    }
+
+    // Test 3: Write to end of line, next char wraps
+    vterm_put_char(vt, "D");
+    vterm_put_char(vt, "E");
+    // cursor_col now 5 >= cols(5), next put triggers wrap
+    vterm_put_char(vt, "F");
+    ⎇ vt.cursor_row == 1 ∧ vt.cursor_col == 1 {
+        println("write_wrap: OK");
+    } ⎉ {
+        println("write_wrap: FAILED row=" + to_string(vt.cursor_row) + " col=" + to_string(vt.cursor_col));
+    }
+
+    // Test 4: Wrapped char is at row 1, col 0
+    ⎇ vt.cells[5].ch == "F" {
+        println("wrap_position: OK");
+    } ⎉ {
+        println("wrap_position: FAILED ch=" + vt.cells[5].ch);
+    }
+
+    // Test 5: Color attributes are applied
+    vt.attr_fg = 1;
+    vt.attr_bg = 4;
+    vterm_put_char(vt, "X");
+    ⎇ vt.cells[6].fg == 1 ∧ vt.cells[6].bg == 4 {
+        println("write_color: OK");
+    } ⎉ {
+        println("write_color: FAILED");
+    }
+}

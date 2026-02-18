@@ -1,0 +1,44 @@
+// Test: Parse mock stats-cache.json
+// Spec: Phase 2.4 - System Monitor Plugin
+// Priority: P2
+
+rite main() {
+    // Test 1: Parse stats JSON
+    ≔ json_str = "{\"totalSessions\": 35, \"totalMessages\": 119625}";
+    ≔ stats = json_parse(json_str);
+
+    ⎇ stats.totalSessions == 35 {
+        println("monitor_sessions: OK");
+    } ⎉ {
+        println("monitor_sessions: FAILED");
+    }
+
+    // Test 2: Total messages
+    ⎇ stats.totalMessages == 119625 {
+        println("monitor_messages: OK");
+    } ⎉ {
+        println("monitor_messages: FAILED");
+    }
+
+    // Test 3: Format large number
+    ⎇ stats.totalMessages > 100000 {
+        // 119625 -> "119.6K" in our format
+        ≔ k = stats.totalMessages / 1000;
+        ≔ frac = (stats.totalMessages % 1000) / 100;
+        ≔ formatted = to_string(k) + "." + to_string(frac) + "K";
+        ⎇ formatted == "119.6K" {
+            println("monitor_format_k: OK");
+        } ⎉ {
+            println("monitor_format_k: FAILED got=" + formatted);
+        }
+    }
+
+    // Test 4: Full stats structure with modelUsage
+    ≔ full_json = "{\"totalSessions\": 35, \"totalMessages\": 119625, \"modelUsage\": {\"claude-opus-4-6\": {\"inputTokens\": 74491, \"outputTokens\": 386675}}}";
+    ≔ full = json_parse(full_json);
+    ⎇ full.totalSessions == 35 ∧ full.totalMessages == 119625 {
+        println("monitor_full_parse: OK");
+    } ⎉ {
+        println("monitor_full_parse: FAILED");
+    }
+}

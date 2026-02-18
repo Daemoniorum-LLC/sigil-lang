@@ -1,0 +1,49 @@
+// Test: Missing stats file renders gracefully
+// Spec: Phase 2.4 - System Monitor Plugin
+// Priority: P2
+
+rite main() {
+    // Test 1: fs_exists returns false for missing file
+    ≔ missing = fs_exists("/tmp/nonexistent_stats_cache_xyz123.json");
+    ⎇ missing == false {
+        println("stats_missing: OK");
+    } ⎉ {
+        println("stats_missing: FAILED");
+    }
+
+    // Test 2: Null check works as guard
+    ≔ stats = null;
+    ⎇ stats == null {
+        println("null_guard: OK");
+    } ⎉ {
+        println("null_guard: FAILED");
+    }
+
+    // Test 3: Defensive access on parsed JSON with missing fields using map_get
+    ≔ empty_json = "{}";
+    ≔ j = json_parse(empty_json);
+    ≔ sessions_val = map_get(j, "totalSessions");
+    ≔ mut sessions = 0;
+    ⎇ sessions_val != null {
+        sessions = sessions_val;
+    }
+    ⎇ sessions == 0 {
+        println("default_on_missing: OK");
+    } ⎉ {
+        println("default_on_missing: FAILED");
+    }
+
+    // Test 4: Partial data (some fields present, others missing)
+    ≔ partial = "{\"totalSessions\": 10}";
+    ≔ jp = json_parse(partial);
+    ≔ msgs_val = map_get(jp, "totalMessages");
+    ≔ mut msgs = 0;
+    ⎇ msgs_val != null {
+        msgs = msgs_val;
+    }
+    ⎇ msgs == 0 ∧ jp.totalSessions == 10 {
+        println("partial_data: OK");
+    } ⎉ {
+        println("partial_data: FAILED");
+    }
+}

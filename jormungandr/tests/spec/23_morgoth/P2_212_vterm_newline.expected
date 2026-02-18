@@ -1,0 +1,4 @@
+newline_moves_down: OK
+cr_resets_col: OK
+cr_lf_combo: OK
+scroll_at_bottom: OK

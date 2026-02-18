@@ -1,0 +1,56 @@
+// Test: Alternate screen buffer support
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Alternate screen buffer
+// Priority: P1
+//
+// Purpose:
+// Validates that term_enter_alt_screen() and term_leave_alt_screen() emit
+// the correct xterm escape sequences for switching between main and
+// alternate screen buffers (smcup/rmcup).
+//
+// Expected behavior:
+// - term_enter_alt_screen() returns "\x1b[?1049h"
+// - term_leave_alt_screen() returns "\x1b[?1049l"
+// - term_clear_screen() returns "\x1b[2J\x1b[H"
+// - term_cursor_to(row, col) returns "\x1b[{row};{col}H"
+
+rite main() {
+    // Test 1: Enter alternate screen buffer (smcup)
+    ≔ enter = term_enter_alt_screen();
+    ⎇ enter == "\x1b[?1049h" {
+        println("enter_alt_screen: OK");
+    } ⎉ {
+        println("enter_alt_screen: FAILED");
+    }
+
+    // Test 2: Leave alternate screen buffer (rmcup)
+    ≔ leave = term_leave_alt_screen();
+    ⎇ leave == "\x1b[?1049l" {
+        println("leave_alt_screen: OK");
+    } ⎉ {
+        println("leave_alt_screen: FAILED");
+    }
+
+    // Test 3: Clear screen (full clear + cursor home)
+    ≔ clear = term_clear_screen();
+    ⎇ clear == "\x1b[2J\x1b[H" {
+        println("clear_screen: OK");
+    } ⎉ {
+        println("clear_screen: FAILED");
+    }
+
+    // Test 4: Cursor absolute positioning
+    ≔ pos = term_cursor_to(5, 10);
+    ⎇ pos == "\x1b[5;10H" {
+        println("cursor_to: OK");
+    } ⎉ {
+        println("cursor_to: FAILED");
+    }
+
+    // Test 5: Cursor to origin (1,1)
+    ≔ home = term_cursor_to(1, 1);
+    ⎇ home == "\x1b[1;1H" {
+        println("cursor_home: OK");
+    } ⎉ {
+        println("cursor_home: FAILED");
+    }
+}

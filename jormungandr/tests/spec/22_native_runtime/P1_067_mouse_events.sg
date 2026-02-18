@@ -1,0 +1,56 @@
+// Test: Mouse event protocol (xterm SGR mode)
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Mouse event capture
+// Priority: P1
+//
+// Purpose:
+// Validates that term_enable_mouse() and term_disable_mouse() emit the
+// correct xterm escape sequences for SGR mouse mode, and that
+// term_parse_mouse_event() can decode SGR mouse escape sequences.
+//
+// Expected behavior:
+// - term_enable_mouse() returns the correct escape sequence
+// - term_disable_mouse() returns the correct escape sequence
+// - term_parse_mouse_event(seq) decodes button, row, col, pressed/released
+
+rite main() {
+    // Test 1: Enable mouse capture (SGR mode + all motion tracking)
+    ≔ enable = term_enable_mouse();
+    ⎇ enable == "\x1b[?1003h\x1b[?1006h" {
+        println("enable_mouse: OK");
+    } ⎉ {
+        println("enable_mouse: FAILED");
+    }
+
+    // Test 2: Disable mouse capture
+    ≔ disable = term_disable_mouse();
+    ⎇ disable == "\x1b[?1006l\x1b[?1003l" {
+        println("disable_mouse: OK");
+    } ⎉ {
+        println("disable_mouse: FAILED");
+    }
+
+    // Test 3: Parse SGR mouse press event: CSI < button;col;row M
+    // Button 0 = left press at column 10, row 5
+    ≔ press = term_parse_mouse_event("\x1b[<0;10;5M");
+    ⎇ press.button == 0 ∧ press.col == 10 ∧ press.row == 5 ∧ press.pressed == true {
+        println("parse_press: OK");
+    } ⎉ {
+        println("parse_press: FAILED");
+    }
+
+    // Test 4: Parse SGR mouse release event: CSI < button;col;row m
+    ≔ release = term_parse_mouse_event("\x1b[<0;10;5m");
+    ⎇ release.pressed == false {
+        println("parse_release: OK");
+    } ⎉ {
+        println("parse_release: FAILED");
+    }
+
+    // Test 5: Parse scroll up (button 64)
+    ≔ scroll = term_parse_mouse_event("\x1b[<64;15;20M");
+    ⎇ scroll.button == 64 ∧ scroll.col == 15 ∧ scroll.row == 20 {
+        println("parse_scroll: OK");
+    } ⎉ {
+        println("parse_scroll: FAILED");
+    }
+}

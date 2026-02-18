@@ -36933,6 +36933,17 @@ fn register_terminal(interp: &mut Interpreter) {
             FAKE_WINSIZE_STATE.with(|map| {
                 map.borrow().get(&fd).cloned()
             })
+        }).or_else(|| {
+            // Native fallback: query real terminal via ioctl
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+                let ret = unsafe { libc::ioctl(fd as i32, libc::TIOCGWINSZ, &mut ws) };
+                if ret == 0 && ws.ws_row > 0 {
+                    return Some((ws.ws_row as i64, ws.ws_col as i64));
+                }
+            }
+            None
         }).unwrap_or((24, 80));
 
         let mut fields = HashMap::new();
@@ -39764,7 +39775,16 @@ fn register_sys(interp: &mut Interpreter) {
             return Ok(Value::Bool(ready));
         }
 
+        // Native fallback: use libc::poll() for real fds
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
+            let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
+            return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
+        }
+
         // Unknown fd — not ready
+        #[allow(unreachable_code)]
         Ok(Value::Bool(false))
     });
 

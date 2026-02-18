@@ -1,0 +1,126 @@
+// Test: VTerm scroll behavior
+// Spec: Phase 2.1 - Terminal Emulation
+// Priority: P2
+//
+// Purpose:
+// Validates that writing past the bottom row triggers scroll,
+// content shifts up, and the bottom row is cleared.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "normal" {
+            ⎇ code == 13 { vt.cursor_col = 0; }
+            ⎇ code == 10 {
+                vt.cursor_row = vt.cursor_row + 1;
+                ⎇ vt.cursor_row > vt.scroll_bottom {
+                    vterm_scroll_up(vt);
+                    vt.cursor_row = vt.scroll_bottom;
+                }
+            }
+            ⎇ code == 8 { ⎇ vt.cursor_col > 0 { vt.cursor_col = vt.cursor_col - 1; } }
+            ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        }
+
+        i = i + 1;
+    }
+    vt.scroll_offset = 0;
+}
+
+rite main() {
+    // 3-row, 5-col VTerm
+    ≔ vt = VTerm_new(3, 5);
+
+    // Fill row 0: "AAAAA"
+    vterm_feed(vt, "AAAAA");
+    vterm_feed(vt, "\r\n");
+    // Fill row 1: "BBBBB"
+    vterm_feed(vt, "BBBBB");
+    vterm_feed(vt, "\r\n");
+    // Fill row 2: "CCCCC"
+    vterm_feed(vt, "CCCCC");
+
+    // Now at row 2 (bottom). Feed \n to trigger scroll.
+    vterm_feed(vt, "\n");
+
+    // Test 1: Scroll was triggered, cursor stays at bottom
+    ⎇ vt.cursor_row == 2 {
+        println("scroll_trigger: OK");
+    } ⎉ {
+        println("scroll_trigger: FAILED row=" + to_string(vt.cursor_row));
+    }
+
+    // Test 2: Content shifted up. Row 0 should now have "BBBBB" (was row 1)
+    ⎇ vt.cells[0].ch == "B" ∧ vt.cells[1].ch == "B" ∧ vt.cells[2].ch == "B" {
+        // Row 1 should now have "CCCCC" (was row 2)
+        ⎇ vt.cells[5].ch == "C" ∧ vt.cells[6].ch == "C" {
+            println("scroll_content_shifts: OK");
+        } ⎉ {
+            println("scroll_content_shifts: FAILED row1=" + vt.cells[5].ch);
+        }
+    } ⎉ {
+        println("scroll_content_shifts: FAILED row0=" + vt.cells[0].ch);
+    }
+
+    // Test 3: Bottom row (row 2) should be cleared to spaces
+    ⎇ vt.cells[10].ch == " " ∧ vt.cells[11].ch == " " ∧ vt.cells[12].ch == " " ∧ vt.cells[13].ch == " " ∧ vt.cells[14].ch == " " {
+        println("scroll_bottom_cleared: OK");
+    } ⎉ {
+        println("scroll_bottom_cleared: FAILED ch=" + vt.cells[10].ch);
+    }
+}

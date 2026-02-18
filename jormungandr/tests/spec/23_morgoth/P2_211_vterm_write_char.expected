@@ -1,0 +1,5 @@
+write_char_advance: OK
+write_multiple: OK
+write_wrap: OK
+wrap_position: OK
+write_color: OK

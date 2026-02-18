@@ -1,0 +1,58 @@
+// Test: Extract per-model token counts from modelUsage
+// Spec: Phase 2.4 - System Monitor Plugin
+// Priority: P2
+
+rite main() {
+    // Parse model usage data
+    ≔ json_str = "{\"modelUsage\": {\"claude-opus-4-6\": {\"inputTokens\": 74491, \"outputTokens\": 386675, \"cacheReadInputTokens\": 241526280}}}";
+    ≔ stats = json_parse(json_str);
+
+    // Test 1: Access nested model data
+    ≔ opus = stats.modelUsage;
+    ⎇ opus != null {
+        println("model_usage_exists: OK");
+    } ⎉ {
+        println("model_usage_exists: FAILED");
+    }
+
+    // Test 2: Access specific model via map_get (hyphens in key)
+    ≔ model_data = map_get(opus, "claude-opus-4-6");
+    ⎇ model_data != null {
+        println("model_data_access: OK");
+    } ⎉ {
+        println("model_data_access: FAILED");
+    }
+
+    // Test 3: Token counts
+    ⎇ model_data.inputTokens == 74491 {
+        println("model_input_tokens: OK");
+    } ⎉ {
+        println("model_input_tokens: FAILED");
+    }
+
+    // Test 4: Output tokens
+    ⎇ model_data.outputTokens == 386675 {
+        println("model_output_tokens: OK");
+    } ⎉ {
+        println("model_output_tokens: FAILED");
+    }
+
+    // Test 5: Format total tokens inline
+    ≔ total = model_data.inputTokens + model_data.outputTokens;
+    ≔ k = total / 1000;
+    ≔ frac = (total % 1000) / 100;
+    ≔ formatted = to_string(k) + "." + to_string(frac) + "K";
+    ⎇ formatted == "461.1K" {
+        println("model_total_formatted: OK");
+    } ⎉ {
+        println("model_total_formatted: FAILED got=" + formatted);
+    }
+
+    // Test 6: Enumerate model keys
+    ≔ keys = map_keys(opus);
+    ⎇ len(keys) == 1 ∧ keys[0] == "claude-opus-4-6" {
+        println("model_keys: OK");
+    } ⎉ {
+        println("model_keys: FAILED");
+    }
+}

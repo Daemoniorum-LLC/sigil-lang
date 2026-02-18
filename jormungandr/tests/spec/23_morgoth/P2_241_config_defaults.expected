@@ -1,0 +1,5 @@
+default_rows: OK
+default_cols: OK
+default_shell: OK
+default_scrollback: OK
+default_leader: OK

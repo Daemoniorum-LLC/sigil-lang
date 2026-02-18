@@ -1,0 +1,124 @@
+// Test: Scrollback max limit evicts oldest lines
+// Spec: Phase 2.2 - Scrollback Buffer
+// Priority: P2
+
+rite VTerm_new(rows, cols, max_sb) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: max_sb, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut evicted = [];
+    ≔ mut ec = 0;
+    ⟳ ec < vt.cols {
+        push(evicted, vt.cells[vt.scroll_top * vt.cols + ec]);
+        ec = ec + 1;
+    }
+    push(vt.scrollback, evicted);
+    // Trim if over max
+    ⎇ len(vt.scrollback) > vt.scrollback_max {
+        ≔ mut trimmed = [];
+        ≔ mut ti = 1;
+        ⟳ ti < len(vt.scrollback) {
+            push(trimmed, vt.scrollback[ti]);
+            ti = ti + 1;
+        }
+        vt.scrollback = trimmed;
+    }
+
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+        ⎇ code == 13 { vt.cursor_col = 0; }
+        ⎇ code == 10 {
+            vt.cursor_row = vt.cursor_row + 1;
+            ⎇ vt.cursor_row > vt.scroll_bottom {
+                vterm_scroll_up(vt);
+                vt.cursor_row = vt.scroll_bottom;
+            }
+        }
+        ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        i = i + 1;
+    }
+}
+
+rite main() {
+    // 2-row VTerm with scrollback_max=3
+    ≔ vt = VTerm_new(2, 3, 3);
+
+    // Generate 6 scroll events (write 8 lines to a 2-row terminal)
+    vterm_feed(vt, "AA\r\nBB\r\nCC\r\nDD\r\nEE\r\nFF\r\nGG\r\nHH");
+
+    // Test 1: Scrollback is capped at max (3)
+    ⎇ len(vt.scrollback) == 3 {
+        println("scrollback_max_cap: OK");
+    } ⎉ {
+        println("scrollback_max_cap: FAILED len=" + to_string(len(vt.scrollback)));
+    }
+
+    // Test 2: Oldest lines were evicted — newest 3 scrolled lines remain
+    // Lines that scrolled out: AA, BB, CC, DD, EE, FF (6 scrolls)
+    // With max 3, we keep the last 3: DD, EE, FF
+    ≔ first_line = vt.scrollback[0];
+    ⎇ first_line[0].ch == "D" {
+        println("scrollback_oldest_evicted: OK");
+    } ⎉ {
+        println("scrollback_oldest_evicted: FAILED ch=" + first_line[0].ch);
+    }
+
+    // Test 3: Last scrollback line is correct
+    ≔ last_line = vt.scrollback[2];
+    ⎇ last_line[0].ch == "F" {
+        println("scrollback_newest: OK");
+    } ⎉ {
+        println("scrollback_newest: FAILED ch=" + last_line[0].ch);
+    }
+}

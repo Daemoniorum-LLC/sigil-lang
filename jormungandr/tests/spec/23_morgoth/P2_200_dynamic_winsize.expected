@@ -1,0 +1,4 @@
+winsize_valid: OK
+winsize_default: OK
+winsize_custom: OK
+pty_resize: OK

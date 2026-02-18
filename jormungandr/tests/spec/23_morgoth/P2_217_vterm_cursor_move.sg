@@ -1,0 +1,212 @@
+// Test: VTerm cursor movement sequences (CUU, CUD, CUF, CUB)
+// Spec: Phase 2.1 - Terminal Emulation
+// Priority: P2
+//
+// Purpose:
+// Validates CSI nA (up), CSI nB (down), CSI nC (forward), CSI nD (back),
+// and that cursor is clamped to screen bounds.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut pi2 = 0;
+        ⟳ pi2 < len(parts) {
+            ⎇ parts[pi2] == "" {
+                push(params, 0);
+            } ⎉ {
+                push(params, to_int(parts[pi2]));
+            }
+            pi2 = pi2 + 1;
+        }
+    }
+    ≔ mut n = 0;
+    ⎇ len(params) > 0 {
+        n = params[0];
+    }
+
+    // CUP
+    ⎇ cmd == "H" ∨ cmd == "f" {
+        ≔ mut row = 1;
+        ≔ mut col = 1;
+        ⎇ len(params) >= 1 ∧ params[0] > 0 { row = params[0]; }
+        ⎇ len(params) >= 2 ∧ params[1] > 0 { col = params[1]; }
+        vt.cursor_row = row - 1;
+        vt.cursor_col = col - 1;
+        ⎇ vt.cursor_row >= vt.rows { vt.cursor_row = vt.rows - 1; }
+        ⎇ vt.cursor_col >= vt.cols { vt.cursor_col = vt.cols - 1; }
+    }
+    // CUU
+    ⎇ cmd == "A" {
+        ≔ mut amount = 1;
+        ⎇ n > 0 { amount = n; }
+        vt.cursor_row = vt.cursor_row - amount;
+        ⎇ vt.cursor_row < 0 { vt.cursor_row = 0; }
+    }
+    // CUD
+    ⎇ cmd == "B" {
+        ≔ mut amount = 1;
+        ⎇ n > 0 { amount = n; }
+        vt.cursor_row = vt.cursor_row + amount;
+        ⎇ vt.cursor_row >= vt.rows { vt.cursor_row = vt.rows - 1; }
+    }
+    // CUF
+    ⎇ cmd == "C" {
+        ≔ mut amount = 1;
+        ⎇ n > 0 { amount = n; }
+        vt.cursor_col = vt.cursor_col + amount;
+        ⎇ vt.cursor_col >= vt.cols { vt.cursor_col = vt.cols - 1; }
+    }
+    // CUB
+    ⎇ cmd == "D" {
+        ≔ mut amount = 1;
+        ⎇ n > 0 { amount = n; }
+        vt.cursor_col = vt.cursor_col - amount;
+        ⎇ vt.cursor_col < 0 { vt.cursor_col = 0; }
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+                ⎇ code == 13 { vt.cursor_col = 0; }
+                ⎇ code == 10 {
+                    vt.cursor_row = vt.cursor_row + 1;
+                    ⎇ vt.cursor_row > vt.scroll_bottom {
+                        vterm_scroll_up(vt);
+                        vt.cursor_row = vt.scroll_bottom;
+                    }
+                }
+                ⎇ code >= 32 { vterm_put_char(vt, ch); }
+            }
+        }
+
+        i = i + 1;
+    }
+    vt.scroll_offset = 0;
+}
+
+rite main() {
+    ≔ vt = VTerm_new(10, 20);
+
+    // Position cursor at row 5, col 10
+    vterm_feed(vt, "\x1b[6;11H");
+
+    // Test 1: CSI 3A moves cursor up 3 rows
+    vterm_feed(vt, "\x1b[3A");
+    ⎇ vt.cursor_row == 2 {
+        println("cursor_up: OK");
+    } ⎉ {
+        println("cursor_up: FAILED row=" + to_string(vt.cursor_row));
+    }
+
+    // Test 2: CSI 4B moves cursor down 4 rows
+    vterm_feed(vt, "\x1b[4B");
+    ⎇ vt.cursor_row == 6 {
+        println("cursor_down: OK");
+    } ⎉ {
+        println("cursor_down: FAILED row=" + to_string(vt.cursor_row));
+    }
+
+    // Test 3: CSI 2C moves cursor forward (right) 2 cols
+    vterm_feed(vt, "\x1b[2C");
+    ⎇ vt.cursor_col == 12 {
+        println("cursor_forward: OK");
+    } ⎉ {
+        println("cursor_forward: FAILED col=" + to_string(vt.cursor_col));
+    }
+
+    // Test 4: CSI 5D moves cursor back (left) 5 cols
+    vterm_feed(vt, "\x1b[5D");
+    ⎇ vt.cursor_col == 7 {
+        println("cursor_back: OK");
+    } ⎉ {
+        println("cursor_back: FAILED col=" + to_string(vt.cursor_col));
+    }
+
+    // Test 5: Moving up beyond row 0 clamps to 0
+    vterm_feed(vt, "\x1b[1;1H");
+    vterm_feed(vt, "\x1b[99A");
+    ⎇ vt.cursor_row == 0 {
+        println("cursor_clamp_top: OK");
+    } ⎉ {
+        println("cursor_clamp_top: FAILED row=" + to_string(vt.cursor_row));
+    }
+
+    // Test 6: Moving left beyond col 0 clamps to 0
+    vterm_feed(vt, "\x1b[99D");
+    ⎇ vt.cursor_col == 0 {
+        println("cursor_clamp_left: OK");
+    } ⎉ {
+        println("cursor_clamp_left: FAILED col=" + to_string(vt.cursor_col));
+    }
+}

@@ -1,0 +1,48 @@
+// Test: Raw terminal mode (termios)
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Raw terminal mode
+// Priority: P1
+//
+// Purpose:
+// Validates that term_get_termios(), term_set_raw_mode(), and
+// term_restore_termios() correctly manage terminal mode transitions.
+// In interpreter mode these return simulated values; in native mode
+// they perform real termios syscalls.
+//
+// Expected behavior:
+// - term_get_termios(fd) returns a termios state handle (>= 0 on success)
+// - term_set_raw_mode(fd) enables raw mode and returns 0 on success
+// - term_restore_termios(fd, saved) restores original mode, returns 0
+
+rite main() {
+    // Test 1: Get current termios state (save for restore)
+    ≔ saved = term_get_termios(0);
+    ⎇ saved >= 0 {
+        println("get_termios: OK");
+    } ⎉ {
+        println("get_termios: FAILED");
+    }
+
+    // Test 2: Enable raw mode
+    ≔ raw_result = term_set_raw_mode(0);
+    ⎇ raw_result == 0 {
+        println("set_raw_mode: OK");
+    } ⎉ {
+        println("set_raw_mode: FAILED");
+    }
+
+    // Test 3: Restore original termios
+    ≔ restore_result = term_restore_termios(0, saved);
+    ⎇ restore_result == 0 {
+        println("restore_termios: OK");
+    } ⎉ {
+        println("restore_termios: FAILED");
+    }
+
+    // Test 4: Idempotent restore (calling restore twice should not fail)
+    ≔ restore2 = term_restore_termios(0, saved);
+    ⎇ restore2 == 0 {
+        println("restore_idempotent: OK");
+    } ⎉ {
+        println("restore_idempotent: FAILED");
+    }
+}

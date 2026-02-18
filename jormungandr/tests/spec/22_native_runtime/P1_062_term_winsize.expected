@@ -1,0 +1,5 @@
+get_winsize: OK
+rows_range: OK
+cols_range: OK
+set_winsize: OK
+set_get_roundtrip: OK

@@ -1,0 +1,6 @@
+pty_open: OK
+pty_fds_distinct: OK
+pty_set_size: OK
+pty_get_name: OK
+pty_write: OK
+pty_read: OK

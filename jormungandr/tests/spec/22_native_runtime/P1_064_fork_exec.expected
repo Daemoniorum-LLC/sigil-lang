@@ -1,0 +1,4 @@
+spawn_echo: OK
+spawn_stdout: OK
+spawn_fail: OK
+getpid: OK

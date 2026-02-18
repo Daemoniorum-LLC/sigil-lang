@@ -1,0 +1,50 @@
+// Test: Pane type array from config
+// Spec: Phase 2.3 - Configuration File
+// Priority: P2
+
+rite main() {
+    // Test 1: Parse panes array from JSON
+    ≔ json_str = "{\"panes\": [{\"type\": \"terminal\"}, {\"type\": \"monitor\"}, {\"type\": \"terminal\"}]}";
+    ≔ j = json_parse(json_str);
+
+    ⎇ len(j.panes) == 3 {
+        println("pane_count: OK");
+    } ⎉ {
+        println("pane_count: FAILED");
+    }
+
+    // Test 2: First pane is terminal
+    ⎇ j.panes[0].type == "terminal" {
+        println("pane_0_terminal: OK");
+    } ⎉ {
+        println("pane_0_terminal: FAILED got=" + j.panes[0].type);
+    }
+
+    // Test 3: Second pane is monitor
+    ⎇ j.panes[1].type == "monitor" {
+        println("pane_1_monitor: OK");
+    } ⎉ {
+        println("pane_1_monitor: FAILED got=" + j.panes[1].type);
+    }
+
+    // Test 4: Extract types into array
+    ≔ mut types = [];
+    ≔ mut i = 0;
+    ⟳ i < len(j.panes) {
+        push(types, j.panes[i].type);
+        i = i + 1;
+    }
+    ≔ mut monitor_count = 0;
+    i = 0;
+    ⟳ i < len(types) {
+        ⎇ types[i] == "monitor" {
+            monitor_count = monitor_count + 1;
+        }
+        i = i + 1;
+    }
+    ⎇ monitor_count == 1 {
+        println("pane_type_identify: OK");
+    } ⎉ {
+        println("pane_type_identify: FAILED count=" + to_string(monitor_count));
+    }
+}

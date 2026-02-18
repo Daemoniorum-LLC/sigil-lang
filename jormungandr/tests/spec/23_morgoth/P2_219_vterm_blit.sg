@@ -1,0 +1,215 @@
+// Test: VTerm blit to Grid
+// Spec: Phase 2.1 - Terminal Emulation
+// Priority: P2
+//
+// Purpose:
+// Validates that VTerm cells are correctly copied to a Grid at the
+// correct region offsets, with content and color attributes preserved.
+
+rite Cell_new(ch, fg, bg, dirty) {
+    ↩ {ch: ch, fg: fg, bg: bg, dirty: dirty}
+}
+
+rite Grid_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, Cell_new(" ", 7, 0, true));
+        i = i + 1;
+    }
+    ↩ {rows: rows, cols: cols, cells: cells}
+}
+
+rite Grid_set(grid, row, col, ch, fg, bg) {
+    ⎇ row >= 0 ∧ row < grid.rows ∧ col >= 0 ∧ col < grid.cols {
+        ≔ idx = row * grid.cols + col;
+        grid.cells[idx] = Cell_new(ch, fg, bg, true);
+    }
+}
+
+rite Grid_get(grid, row, col) {
+    ⎇ row >= 0 ∧ row < grid.rows ∧ col >= 0 ∧ col < grid.cols {
+        ≔ idx = row * grid.cols + col;
+        ↩ grid.cells[idx]
+    }
+    ↩ Cell_new(" ", 7, 0, false)
+}
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_csi_dispatch(vt, cmd, buf) {
+    ≔ mut params = [];
+    ⎇ buf != "" {
+        ≔ parts = split(buf, ";");
+        ≔ mut pi2 = 0;
+        ⟳ pi2 < len(parts) {
+            ⎇ parts[pi2] == "" {
+                push(params, 0);
+            } ⎉ {
+                push(params, to_int(parts[pi2]));
+            }
+            pi2 = pi2 + 1;
+        }
+    }
+
+    // SGR
+    ⎇ cmd == "m" {
+        ⎇ len(params) == 0 {
+            vt.attr_fg = 7;
+            vt.attr_bg = 0;
+        } ⎉ {
+            ≔ mut pi = 0;
+            ⟳ pi < len(params) {
+                ≔ p = params[pi];
+                ⎇ p == 0 { vt.attr_fg = 7; vt.attr_bg = 0; }
+                ⎇ p >= 30 ∧ p <= 37 { vt.attr_fg = p - 30; }
+                ⎇ p >= 40 ∧ p <= 47 { vt.attr_bg = p - 40; }
+                pi = pi + 1;
+            }
+        }
+    }
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+
+        ⎇ vt.esc_state == "csi" {
+            ⎇ (code >= 64 ∧ code <= 90) ∨ (code >= 97 ∧ code <= 122) {
+                vterm_csi_dispatch(vt, ch, vt.esc_buf);
+                vt.esc_state = "normal";
+                vt.esc_buf = "";
+            } ⎉ {
+                vt.esc_buf = vt.esc_buf + ch;
+            }
+        } ⎉ {
+            ⎇ vt.esc_state == "escape" {
+                ⎇ ch == "[" { vt.esc_state = "csi"; vt.esc_buf = ""; }
+                ⎉ { vt.esc_state = "normal"; }
+            } ⎉ {
+                ⎇ code == 27 { vt.esc_state = "escape"; vt.esc_buf = ""; }
+                ⎇ code == 13 { vt.cursor_col = 0; }
+                ⎇ code == 10 {
+                    vt.cursor_row = vt.cursor_row + 1;
+                    ⎇ vt.cursor_row > vt.scroll_bottom {
+                        vterm_scroll_up(vt);
+                        vt.cursor_row = vt.scroll_bottom;
+                    }
+                }
+                ⎇ code >= 32 { vterm_put_char(vt, ch); }
+            }
+        }
+
+        i = i + 1;
+    }
+    vt.scroll_offset = 0;
+}
+
+rite vterm_blit(vt, grid, region) {
+    ≔ inner_x = region.x + 1;
+    ≔ inner_y = region.y + 1;
+    ≔ mut row = 0;
+    ⟳ row < vt.rows {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            ≔ idx = row * vt.cols + col;
+            ⎇ idx < len(vt.cells) {
+                Grid_set(grid, inner_y + row, inner_x + col, vt.cells[idx].ch, vt.cells[idx].fg, vt.cells[idx].bg);
+            }
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+}
+
+rite main() {
+    // Create a 3x4 VTerm and a 10x10 Grid
+    ≔ vt = VTerm_new(3, 4);
+    ≔ grid = Grid_new(10, 10);
+
+    // Write "Hi" with red foreground into the VTerm
+    vterm_feed(vt, "\x1b[31m");
+    vterm_feed(vt, "Hi");
+
+    // Blit VTerm to grid at region {x: 2, y: 3}
+    // inner_x = 3, inner_y = 4
+    // So VTerm cell (0,0) -> Grid cell (4, 3)
+    ≔ region = {x: 2, y: 3};
+    vterm_blit(vt, grid, region);
+
+    // Test 1: Blit places content at correct grid position
+    ≔ cell_h = Grid_get(grid, 4, 3);
+    ⎇ cell_h.ch == "H" {
+        println("blit_position: OK");
+    } ⎉ {
+        println("blit_position: FAILED ch=" + cell_h.ch);
+    }
+
+    // Test 2: Both characters are present
+    ≔ cell_i = Grid_get(grid, 4, 4);
+    ⎇ cell_h.ch == "H" ∧ cell_i.ch == "i" {
+        println("blit_content: OK");
+    } ⎉ {
+        println("blit_content: FAILED h=" + cell_h.ch + " i=" + cell_i.ch);
+    }
+
+    // Test 3: Color attributes are preserved
+    ⎇ cell_h.fg == 1 ∧ cell_i.fg == 1 {
+        println("blit_color: OK");
+    } ⎉ {
+        println("blit_color: FAILED fg_h=" + to_string(cell_h.fg) + " fg_i=" + to_string(cell_i.fg));
+    }
+}

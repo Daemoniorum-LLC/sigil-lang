@@ -1,0 +1,122 @@
+// Test: Scrollback captures evicted lines
+// Spec: Phase 2.2 - Scrollback Buffer
+// Priority: P2
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0
+    }
+}
+
+rite vterm_scroll_up(vt) {
+    ≔ mut evicted = [];
+    ≔ mut ec = 0;
+    ⟳ ec < vt.cols {
+        ≔ idx = vt.scroll_top * vt.cols + ec;
+        push(evicted, vt.cells[idx]);
+        ec = ec + 1;
+    }
+    push(vt.scrollback, evicted);
+
+    ≔ mut row = vt.scroll_top;
+    ⟳ row < vt.scroll_bottom {
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            vt.cells[row * vt.cols + col] = vt.cells[(row + 1) * vt.cols + col];
+            col = col + 1;
+        }
+        row = row + 1;
+    }
+    ≔ mut col = 0;
+    ⟳ col < vt.cols {
+        vt.cells[vt.scroll_bottom * vt.cols + col] = {ch: " ", fg: 7, bg: 0};
+        col = col + 1;
+    }
+}
+
+rite vterm_put_char(vt, ch) {
+    ⎇ vt.cursor_col >= vt.cols {
+        vt.cursor_col = 0;
+        vt.cursor_row = vt.cursor_row + 1;
+        ⎇ vt.cursor_row > vt.scroll_bottom {
+            vterm_scroll_up(vt);
+            vt.cursor_row = vt.scroll_bottom;
+        }
+    }
+    ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+    ⎇ idx >= 0 ∧ idx < len(vt.cells) {
+        vt.cells[idx] = {ch: ch, fg: vt.attr_fg, bg: vt.attr_bg};
+    }
+    vt.cursor_col = vt.cursor_col + 1;
+}
+
+rite vterm_feed(vt, data) {
+    ≔ mut i = 0;
+    ⟳ i < len(data) {
+        ≔ ch = to_string(char_at(data, i));
+        ≔ code = char_code_at(data, i);
+        ⎇ code == 13 { vt.cursor_col = 0; }
+        ⎇ code == 10 {
+            vt.cursor_row = vt.cursor_row + 1;
+            ⎇ vt.cursor_row > vt.scroll_bottom {
+                vterm_scroll_up(vt);
+                vt.cursor_row = vt.scroll_bottom;
+            }
+        }
+        ⎇ code >= 32 { vterm_put_char(vt, ch); }
+        i = i + 1;
+    }
+}
+
+rite main() {
+    // 3-row VTerm, 5 cols
+    ≔ vt = VTerm_new(3, 5);
+
+    // Fill 3 rows: row0="AAAAA", row1="BBBBB", row2="CCCCC"
+    vterm_feed(vt, "AAAAA\r\nBBBBB\r\nCCCCC");
+    // Scrollback should be empty (no scroll yet)
+    ⎇ len(vt.scrollback) == 0 {
+        println("scrollback_empty: OK");
+    } ⎉ {
+        println("scrollback_empty: FAILED len=" + to_string(len(vt.scrollback)));
+    }
+
+    // Trigger scroll by moving to next line
+    vterm_feed(vt, "\r\nDDDDD");
+
+    // Test 1: Scrollback captured the evicted line
+    ⎇ len(vt.scrollback) == 1 {
+        println("scrollback_capture: OK");
+    } ⎉ {
+        println("scrollback_capture: FAILED len=" + to_string(len(vt.scrollback)));
+    }
+
+    // Test 2: Evicted line content is "AAAAA"
+    ≔ line = vt.scrollback[0];
+    ⎇ line[0].ch == "A" ∧ line[4].ch == "A" {
+        println("scrollback_content: OK");
+    } ⎉ {
+        println("scrollback_content: FAILED ch0=" + line[0].ch);
+    }
+
+    // Test 3: More scrolls accumulate
+    vterm_feed(vt, "\r\nEEEEE\r\nFFFFF");
+    ⎇ len(vt.scrollback) == 3 {
+        println("scrollback_accumulate: OK");
+    } ⎉ {
+        println("scrollback_accumulate: FAILED len=" + to_string(len(vt.scrollback)));
+    }
+}

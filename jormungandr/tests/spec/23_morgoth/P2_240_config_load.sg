@@ -1,0 +1,45 @@
+// Test: Config file loading and JSON parsing
+// Spec: Phase 2.3 - Configuration File
+// Priority: P2
+
+rite main() {
+    // Test 1: Parse valid config JSON
+    ≔ json_str = "{\"grid\": {\"rows\": 3, \"cols\": 4}, \"shell\": \"/bin/zsh\", \"scrollback_lines\": 2000}";
+    ≔ j = json_parse(json_str);
+
+    ⎇ j.grid.rows == 3 ∧ j.grid.cols == 4 {
+        println("config_grid: OK");
+    } ⎉ {
+        println("config_grid: FAILED");
+    }
+
+    // Test 2: Shell path extraction
+    ⎇ j.shell == "/bin/zsh" {
+        println("config_shell: OK");
+    } ⎉ {
+        println("config_shell: FAILED");
+    }
+
+    // Test 3: Scrollback lines extraction
+    ⎇ j.scrollback_lines == 2000 {
+        println("config_scrollback: OK");
+    } ⎉ {
+        println("config_scrollback: FAILED");
+    }
+
+    // Test 4: Leader key in config
+    ≔ json2 = "{\"leader_key\": 1, \"hmr\": false}";
+    ≔ j2 = json_parse(json2);
+    ⎇ j2.leader_key == 1 {
+        println("config_leader: OK");
+    } ⎉ {
+        println("config_leader: FAILED");
+    }
+
+    // Test 5: HMR flag
+    ⎇ j2.hmr == false {
+        println("config_hmr: OK");
+    } ⎉ {
+        println("config_hmr: FAILED");
+    }
+}

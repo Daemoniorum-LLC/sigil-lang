@@ -1,0 +1,47 @@
+// Test: Dynamic terminal size query
+// Spec: Phase 2.0 - Native Syscalls + Dynamic Terminal Size
+// Priority: P2
+//
+// Purpose:
+// Validates that term_get_winsize returns valid dimensions (from fake state)
+// and that PTY resize propagates correctly.
+
+rite main() {
+    // Test 1: Default winsize returns valid dimensions
+    ≔ ws = term_get_winsize(1);
+    ⎇ ws.rows > 0 ∧ ws.cols > 0 {
+        println("winsize_valid: OK");
+    } ⎉ {
+        println("winsize_valid: FAILED");
+    }
+
+    // Test 2: Default is 24x80 for fake fd
+    ⎇ ws.rows == 24 ∧ ws.cols == 80 {
+        println("winsize_default: OK");
+    } ⎉ {
+        println("winsize_default: FAILED rows=" + to_string(ws.rows) + " cols=" + to_string(ws.cols));
+    }
+
+    // Test 3: Set custom winsize and re-query
+    term_set_winsize(1, 50, 120);
+    ≔ ws2 = term_get_winsize(1);
+    ⎇ ws2.rows == 50 ∧ ws2.cols == 120 {
+        println("winsize_custom: OK");
+    } ⎉ {
+        println("winsize_custom: FAILED rows=" + to_string(ws2.rows) + " cols=" + to_string(ws2.cols));
+    }
+
+    // Test 4: PTY resize propagates via Pty·set_size
+    ≔ pty = Pty·open();
+    Pty·set_size(pty.master_fd, 40, 100);
+    ≔ pty_ws = term_get_winsize(pty.master_fd);
+    ⎇ pty_ws.rows == 40 ∧ pty_ws.cols == 100 {
+        println("pty_resize: OK");
+    } ⎉ {
+        println("pty_resize: FAILED rows=" + to_string(pty_ws.rows) + " cols=" + to_string(pty_ws.cols));
+    }
+
+    // Cleanup
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+}
