@@ -282,6 +282,7 @@ mod tests {
         is_async: bool,
     ) -> Function {
         Function {
+            doc_comments: vec![],
             visibility: Visibility::Private,
             is_async,
             is_const: false,

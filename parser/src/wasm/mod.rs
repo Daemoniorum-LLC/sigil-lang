@@ -761,11 +761,17 @@ impl WasmCompiler {
                                     // Tee doesn't change stack depth (pops and pushes)
                                 }
                                 Instruction::Call(idx) => {
-                                    // For calls, approximate: assume it consumes and produces based on imports
+                                    // For calls, track stack effect
                                     if *idx < import_count {
+                                        // Import function: use known param count
                                         let params = import_param_counts.get(*idx as usize).copied().unwrap_or(0);
                                         stack_depth -= params as i32;
                                         stack_depth += 1; // Assume 1 return value
+                                    } else {
+                                        // Local function: in Sigil, all functions return i64
+                                        // We don't know param count, but assume it consumes some and produces 1
+                                        // Most local functions return a value, so add 1 to stack
+                                        stack_depth += 1;
                                     }
                                 }
                                 _ => {}
@@ -1876,5 +1882,96 @@ mod validation_tests {
         }
 
         assert!(found_join_import, "Should have imported 'vec_join' from 'morpheme' module");
+    }
+
+    /// Regression test for local-function-call-before-import bug.
+    ///
+    /// Bug: When a local function call preceded an import call, the stack depth
+    /// calculation in fix_invalid_call_wrappers didn't account for the local
+    /// function's return value, causing it to spuriously insert i64.const 0
+    /// before the import call, leading to type mismatch errors.
+    ///
+    /// This specifically tests the pattern:
+    ///   let val = local_func();
+    ///   import_func(val, other_arg);
+    ///
+    /// Where import_func has mixed param types (e.g., i32, i64).
+    #[test]
+    fn test_local_function_before_import_call() {
+        let mut compiler = WasmCompiler::new();
+
+        // This pattern triggered the bug:
+        // 1. wrapper() is a local function returning i64
+        // 2. Its result is stored in `val`
+        // 3. vdom·mount_vnode expects (i32, i64) - mixed types
+        // 4. The stack tracker didn't count wrapper()'s return value,
+        //    causing spurious i64.const 0 insertion before mount_vnode
+        let result = compiler.compile(
+r##"rite wrapper() -> i64 {
+    42
+}
+
+rite main() {
+    ≔ val = wrapper();
+    vdom·mount_vnode(val, "#app");
+}"##);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(
+            validation.is_ok(),
+            "Validation failed (likely spurious i64.const 0 before import): {:?}",
+            validation
+        );
+    }
+
+    /// Test variant: multiple local function calls before import
+    #[test]
+    fn test_multiple_local_calls_before_import() {
+        let mut compiler = WasmCompiler::new();
+
+        let result = compiler.compile(
+r##"rite get_id() -> i64 {
+    100
+}
+
+rite get_selector() -> i64 {
+    200
+}
+
+rite main() {
+    ≔ id = get_id();
+    ≔ sel = get_selector();
+    vdom·mount_vnode(id, "#root");
+}"##);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    /// Test variant: local function call result used directly (no let binding)
+    #[test]
+    fn test_local_call_inline_in_import() {
+        let mut compiler = WasmCompiler::new();
+
+        let result = compiler.compile(
+r##"rite create_vnode() -> i64 {
+    42
+}
+
+rite main() {
+    vdom·mount_vnode(create_vnode(), "#app");
+}"##);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
     }
 }

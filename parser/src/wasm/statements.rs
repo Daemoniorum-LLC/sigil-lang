@@ -1527,6 +1527,7 @@ mod tests {
 
     fn make_function(name: &str, body: Option<Block>) -> Function {
         Function {
+            doc_comments: vec![],
             visibility: Visibility::Public,
             is_async: false,
             is_const: false,
@@ -1588,6 +1589,7 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let const_def = ConstDef {
+            doc_comments: vec![],
             visibility: Visibility::Public,
             name: make_ident("MAX"),
             ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),
@@ -1648,6 +1650,7 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let def = StructDef {
+            doc_comments: vec![],
             visibility: Visibility::Public,
             attrs: StructAttrs::default(),
             name: make_ident("Point"),
@@ -1683,6 +1686,7 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let static_def = StaticDef {
+            doc_comments: vec![],
             visibility: Visibility::Public,
             mutable: true,
             name: make_ident("COUNTER"),
@@ -1920,6 +1924,7 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let def = StructDef {
+            doc_comments: vec![],
             visibility: Visibility::Public,
             attrs: StructAttrs::default(),
             name: make_ident("Color"),
@@ -1945,6 +1950,7 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let def = StructDef {
+            doc_comments: vec![],
             visibility: Visibility::Public,
             attrs: StructAttrs::default(),
             name: make_ident("Unit"),
@@ -1963,6 +1969,7 @@ mod tests {
         let mut compiler = WasmCompiler::new();
 
         let func = Function {
+            doc_comments: vec![],
             visibility: Visibility::Private,
             is_async: false,
             is_const: false,
