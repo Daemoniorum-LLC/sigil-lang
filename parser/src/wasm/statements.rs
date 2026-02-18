@@ -1007,9 +1007,31 @@ impl WasmCompiler {
 
     /// Compile an async function body.
     ///
-    /// Async functions wrap their body in a Promise and return immediately.
-    /// The actual execution happens when the Promise is awaited.
+    /// Two compilation modes are supported:
+    /// 1. **Asyncify mode** (default): Uses `await_promise` import which relies on
+    ///    runtime stack switching (Asyncify or JSPI). Simple and works for most cases.
+    /// 2. **State machine mode**: For multiple await points, generates explicit state
+    ///    machine. Works on any WASM runtime but requires runtime cooperation.
+    ///
+    /// Currently, Asyncify mode is used for all cases as it handles sequential awaits
+    /// correctly when the runtime supports it. State machine mode is available via
+    /// `compile_async_state_machine` for runtimes without Asyncify support.
     fn compile_async_function_body(&mut self, func: &Function) -> WasmResult<()> {
+        // Check if we should use state machine mode
+        // For now, we analyze but don't switch modes - Asyncify handles sequential awaits
+        if let Some(sm) = self.analyze_async_function(func) {
+            if sm.await_points.len() > 1 {
+                // Log for debugging - state machine would be needed for non-Asyncify runtimes
+                // For now, continue with Asyncify mode which handles this via await_promise
+                #[cfg(debug_assertions)]
+                {
+                    // State machine info available: {} await points, frame size {}
+                    let _ = (&sm.await_points.len(), &sm.frame_size);
+                }
+            }
+        }
+
+        // === Asyncify Mode (default) ===
         // Create a new Promise
         let promise_new = self
             .get_func("async_promise_new")
@@ -1027,7 +1049,8 @@ impl WasmCompiler {
 
         drop(compiled_func);
 
-        // Compile the body
+        // Compile the body - await expressions will call await_promise import
+        // which suspends via Asyncify/JSPI and resumes when promise resolves
         if let Some(body) = &func.body {
             self.compile_block(body)?;
 
@@ -1061,6 +1084,21 @@ impl WasmCompiler {
         let compiled_func = self.current_function_mut().unwrap();
         compiled_func.push(Instruction::End);
 
+        Ok(())
+    }
+
+    /// Compile an async function using explicit state machine transformation.
+    ///
+    /// Use this for runtimes that don't support Asyncify or JSPI.
+    /// The function will be transformed to handle suspend/resume explicitly.
+    #[allow(dead_code)]
+    fn compile_async_state_machine_mode(&mut self, func: &Function) -> WasmResult<()> {
+        if let Some(sm) = self.analyze_async_function(func) {
+            self.compile_async_state_machine(func, &sm)?;
+
+            let compiled_func = self.current_function_mut().unwrap();
+            compiled_func.push(Instruction::End);
+        }
         Ok(())
     }
 

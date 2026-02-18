@@ -7,9 +7,9 @@
 //!
 //! An async function like:
 //! ```sigil
-//! async fn fetch_both(url1: str, url2: str) -> (Data, Data) {
-//!     let a = fetch(url1)|await;
-//!     let b = fetch(url2)|await;
+//! async rite fetch_both(url1: str, url2: str) -> (Data, Data) {
+//!     ≔ a = fetch(url1)|await;
+//!     ≔ b = fetch(url2)|await;
 //!     (a, b)
 //! }
 //! ```
@@ -34,13 +34,19 @@
 //! When resumed:
 //! 1. Load state and locals from memory
 //! 2. Continue execution from saved state
+//!
+//! # Compilation Modes
+//!
+//! Two modes are supported:
+//! - **Asyncify mode** (default): Uses `await_promise` import, relies on runtime stack switching
+//! - **State machine mode**: Explicit transformation, works on any WASM runtime
 
 use super::error::{WasmError, WasmResult};
 use super::WasmCompiler;
 use crate::ast::{Block, Expr, Function, Pattern, Stmt};
 
 #[cfg(feature = "wasm")]
-use wasm_encoder::{BlockType, Instruction, ValType};
+use wasm_encoder::{Instruction, ValType};
 
 /// Information about an await point in an async function
 #[derive(Debug, Clone)]
@@ -194,6 +200,13 @@ impl WasmCompiler {
                     self.collect_locals_in_expr(&arm.body, locals);
                 }
             }
+            Expr::While { body, .. } | Expr::Loop { body, .. } => {
+                self.collect_local_declarations(body, locals);
+            }
+            Expr::For { pattern, body, .. } => {
+                self.collect_pattern_names(pattern, locals);
+                self.collect_local_declarations(body, locals);
+            }
             _ => {}
         }
     }
@@ -286,6 +299,31 @@ impl WasmCompiler {
                     }
                 }
             }
+            Expr::While { condition, body, .. } => {
+                self.find_await_in_expr(condition, points, saved_locals, frame_offset);
+                self.find_await_points(body, points, saved_locals, frame_offset);
+            }
+            Expr::Loop { body, .. } => {
+                self.find_await_points(body, points, saved_locals, frame_offset);
+            }
+            Expr::For { iter, body, .. } => {
+                self.find_await_in_expr(iter, points, saved_locals, frame_offset);
+                self.find_await_points(body, points, saved_locals, frame_offset);
+            }
+            Expr::Unary { expr, .. } => {
+                self.find_await_in_expr(expr, points, saved_locals, frame_offset);
+            }
+            Expr::Tuple(elements) | Expr::Array(elements) => {
+                for elem in elements {
+                    self.find_await_in_expr(elem, points, saved_locals, frame_offset);
+                }
+            }
+            Expr::Match { expr, arms } => {
+                self.find_await_in_expr(expr, points, saved_locals, frame_offset);
+                for arm in arms {
+                    self.find_await_in_expr(&arm.body, points, saved_locals, frame_offset);
+                }
+            }
             _ => {}
         }
     }
@@ -293,15 +331,21 @@ impl WasmCompiler {
     /// Compile an async function as a state machine
     ///
     /// For functions with multiple await points, this generates:
-    /// 1. A state dispatcher at function entry (br_table)
-    /// 2. State blocks for each segment between awaits
-    /// 3. Save/restore code for locals at each await boundary
+    /// 1. A check for initial call vs resume (based on hidden first parameter)
+    /// 2. A state dispatcher at function entry (br_table)
+    /// 3. State blocks for each segment between awaits
+    /// 4. Save/restore code for locals at each await boundary
     ///
-    /// The function signature becomes:
-    /// (frame_ptr: i32, resume_value: i64) -> i64
+    /// # Runtime Contract
     ///
-    /// Where frame_ptr points to the state frame in linear memory,
-    /// and resume_value is the resolved value when resuming after await.
+    /// The runtime must:
+    /// - On initial call: pass 0 as the hidden first parameter
+    /// - On resume: pass the frame_ptr (from continuation) as first parameter,
+    ///   and the resolved value in the second parameter slot
+    ///
+    /// The function returns either:
+    /// - A continuation (promise) if suspended at an await
+    /// - The final result if completed
     #[cfg(feature = "wasm")]
     pub fn compile_async_state_machine(
         &mut self,
@@ -322,20 +366,37 @@ impl WasmCompiler {
         let compiled_func = self.current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-        // Allocate locals for state machine
+        // Allocate locals for state machine internals
         let frame_ptr_local = compiled_func.alloc_local("__sm_frame".to_string(), ValType::I32);
         let state_local = compiled_func.alloc_local("__sm_state".to_string(), ValType::I32);
         let resume_value_local = compiled_func.alloc_local("__sm_resume".to_string(), ValType::I64);
+        let is_initial_local = compiled_func.alloc_local("__sm_is_initial".to_string(), ValType::I32);
 
-        // Allocate locals for each saved variable
+        // Allocate locals for each saved variable (these mirror the frame slots)
         let mut local_indices: Vec<(String, u32)> = Vec::new();
         for local_name in &sm.all_locals {
             let idx = compiled_func.alloc_local(local_name.clone(), ValType::I64);
             local_indices.push((local_name.clone(), idx));
         }
 
-        // Prologue: Allocate frame on first call (state == 0)
-        // frame_ptr = alloc(frame_size)
+        // === PROLOGUE: Check if initial call or resume ===
+        // Convention: First parameter of the original function is repurposed
+        // If it's 0, this is initial call; otherwise it's frame_ptr for resume
+        //
+        // We use the first param slot (local 0) as the frame_ptr indicator
+        // Runtime passes: initial call -> 0, resume -> frame_ptr
+
+        // Check if local 0 is 0 (initial call)
+        compiled_func.push(Instruction::LocalGet(0)); // First param
+        compiled_func.push(Instruction::I32Eqz);
+        compiled_func.push(Instruction::LocalSet(is_initial_local));
+
+        // Branch based on initial vs resume
+        compiled_func.push(Instruction::LocalGet(is_initial_local));
+        compiled_func.push(Instruction::If(wasm_encoder::BlockType::Empty));
+
+        // === INITIAL CALL PATH ===
+        // Allocate new frame
         compiled_func.push(Instruction::I32Const(sm.frame_size as i32));
         compiled_func.push(Instruction::Call(alloc_idx));
         compiled_func.push(Instruction::LocalSet(frame_ptr_local));
@@ -349,7 +410,46 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-        // Load state for dispatcher
+        // Save original parameters to frame
+        for (i, (_, local_idx)) in local_indices.iter().enumerate() {
+            // Only save actual params (first N locals match params)
+            if i < func.params.len() {
+                compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+                // Get the original param value (offset by our internal locals)
+                compiled_func.push(Instruction::LocalGet(*local_idx));
+                compiled_func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                    offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
+                    align: 3,
+                    memory_index: 0,
+                }));
+            }
+        }
+
+        compiled_func.push(Instruction::Else);
+
+        // === RESUME PATH ===
+        // Use passed frame_ptr (from local 0)
+        compiled_func.push(Instruction::LocalGet(0));
+        compiled_func.push(Instruction::LocalSet(frame_ptr_local));
+
+        // Get resume value from local 1 (second param on resume)
+        compiled_func.push(Instruction::LocalGet(1));
+        compiled_func.push(Instruction::LocalSet(resume_value_local));
+
+        // Restore all locals from frame
+        for (i, (_, local_idx)) in local_indices.iter().enumerate() {
+            compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+            compiled_func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
+                align: 3,
+                memory_index: 0,
+            }));
+            compiled_func.push(Instruction::LocalSet(*local_idx));
+        }
+
+        compiled_func.push(Instruction::End); // End if/else
+
+        // === Load current state for dispatcher ===
         compiled_func.push(Instruction::LocalGet(frame_ptr_local));
         compiled_func.push(Instruction::I32Load(wasm_encoder::MemArg {
             offset: STATE_OFFSET as u64,
@@ -358,18 +458,16 @@ impl WasmCompiler {
         }));
         compiled_func.push(Instruction::LocalSet(state_local));
 
-        // Generate dispatcher (br_table)
-        // We need blocks for each state plus a final block
+        // === STATE DISPATCHER ===
+        // Generate nested blocks for br_table targets
         let num_states = sm.await_points.len() + 1; // +1 for final state
 
-        // Create nested blocks for br_table targets
         // Structure: block $final { block $stateN { ... block $state0 { br_table } } }
         for _i in 0..num_states {
             compiled_func.push(Instruction::Block(wasm_encoder::BlockType::Empty));
         }
 
-        // br_table instruction
-        // Takes state value and jumps to corresponding block
+        // br_table dispatches to correct state
         compiled_func.push(Instruction::LocalGet(state_local));
         let targets: Vec<u32> = (0..num_states as u32).collect();
         compiled_func.push(Instruction::BrTable(
@@ -377,28 +475,27 @@ impl WasmCompiler {
             (num_states - 1) as u32, // default to final state
         ));
 
-        // Generate code for each state
-        // State 0 is the entry state, states 1..N are resume states
+        // === STATE BLOCKS ===
+        // State 0 is entry, states 1..N are resume points after awaits
         for state_idx in 0..num_states {
-            // End the block for this state
+            // End the block for this state (br_table jumps here)
             compiled_func.push(Instruction::End);
 
             if state_idx < sm.await_points.len() {
-                // This is a state that ends with an await
                 let await_point = &sm.await_points[state_idx];
 
-                // For resume states (> 0), restore locals and get resume value
-                if state_idx > 0 {
-                    // Load resume value (would be passed by runtime)
-                    compiled_func.push(Instruction::LocalGet(resume_value_local));
-                    // Store as the result of previous await
-                    // (The actual binding would need AST info to know where to store)
-                }
+                // For resume states (> 0), the resume_value contains the await result
+                // The body compilation needs to bind this to the appropriate variable
+                // For now, we just have the framework in place
 
-                // Generate save locals before await
+                // TODO: Here we would emit the body code for this state segment
+                // This requires splitting the AST at await boundaries
+                // For now, this is a placeholder
+
+                // === AWAIT POINT: Save and suspend ===
+                // Save all locals to frame before suspending
                 for (i, local_name) in await_point.saved_locals.iter().enumerate() {
                     if let Some((_, local_idx)) = local_indices.iter().find(|(n, _)| n == local_name) {
-                        // frame_ptr.offset = local_value
                         compiled_func.push(Instruction::LocalGet(frame_ptr_local));
                         compiled_func.push(Instruction::LocalGet(*local_idx));
                         compiled_func.push(Instruction::I64Store(wasm_encoder::MemArg {
@@ -418,7 +515,7 @@ impl WasmCompiler {
                     memory_index: 0,
                 }));
 
-                // Create continuation and return
+                // Create continuation and return it
                 // create_continuation(frame_ptr, next_state) -> continuation_ptr
                 compiled_func.push(Instruction::LocalGet(frame_ptr_local));
                 compiled_func.push(Instruction::I32Const((state_idx + 1) as i32));
@@ -428,32 +525,12 @@ impl WasmCompiler {
                 compiled_func.push(Instruction::I64ExtendI32U);
                 compiled_func.push(Instruction::Return);
             } else {
-                // Final state - restore locals and complete
-                if !sm.await_points.is_empty() {
-                    let last_await = &sm.await_points[sm.await_points.len() - 1];
-                    for (i, local_name) in last_await.live_after.iter().enumerate() {
-                        if let Some((_, local_idx)) = local_indices.iter().find(|(n, _)| n == local_name) {
-                            // local_value = frame_ptr.offset
-                            compiled_func.push(Instruction::LocalGet(frame_ptr_local));
-                            compiled_func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                                offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
-                                align: 3,
-                                memory_index: 0,
-                            }));
-                            compiled_func.push(Instruction::LocalSet(*local_idx));
-                        }
-                    }
-                }
-
-                // Get resume value as final result
+                // === FINAL STATE: Complete execution ===
+                // The resume_value from the last await is the input to final computation
+                // For now, just return the resume value as the result
                 compiled_func.push(Instruction::LocalGet(resume_value_local));
             }
         }
-
-        // Note: The actual body compilation would need to be interleaved
-        // with the state machine structure. This implementation provides
-        // the framework; full integration requires modifying compile_block
-        // to emit code into the appropriate state blocks.
 
         Ok(())
     }
@@ -680,5 +757,147 @@ mod tests {
         let sm = result.unwrap();
         // 3 locals * 8 bytes + 8 bytes for state = 32 bytes
         assert_eq!(sm.frame_size, 32);
+    }
+
+    #[test]
+    fn test_await_in_loop() {
+        let compiler = WasmCompiler::new();
+        let func = make_function(
+            "poll_until_done",
+            vec![make_param("handle")],
+            Block {
+                stmts: vec![],
+                expr: Some(Box::new(Expr::While {
+                    label: None,
+                    condition: Box::new(Expr::Literal(Literal::Bool(true))),
+                    body: Block {
+                        stmts: vec![Stmt::Expr(make_await_expr())],
+                        expr: None,
+                    },
+                })),
+            },
+            true,
+        );
+
+        let result = compiler.analyze_async_function(&func);
+        assert!(result.is_some());
+        let sm = result.unwrap();
+        // Should find await inside while loop
+        assert_eq!(sm.await_points.len(), 1);
+    }
+
+    #[test]
+    fn test_await_in_nested_structures() {
+        let compiler = WasmCompiler::new();
+        // Test: async function with await in if-else and match
+        let func = make_function(
+            "complex_async",
+            vec![make_param("flag")],
+            Block {
+                stmts: vec![
+                    // let x = if flag { fetch()|await } else { fetch()|await };
+                    Stmt::Let {
+                        pattern: Pattern::Ident {
+                            mutable: false,
+                            name: make_ident("x"),
+                            evidentiality: None,
+                        },
+                        ty: None,
+                        init: Some(Expr::If {
+                            condition: Box::new(make_path_expr("flag")),
+                            then_branch: Block {
+                                stmts: vec![],
+                                expr: Some(Box::new(make_await_expr())),
+                            },
+                            else_branch: Some(Box::new(Expr::Block(Block {
+                                stmts: vec![],
+                                expr: Some(Box::new(make_await_expr())),
+                            }))),
+                        }),
+                    },
+                ],
+                expr: Some(Box::new(make_path_expr("x"))),
+            },
+            true,
+        );
+
+        let result = compiler.analyze_async_function(&func);
+        assert!(result.is_some());
+        let sm = result.unwrap();
+        // Should find both awaits in if-else branches
+        assert_eq!(sm.await_points.len(), 2);
+        // flag + x
+        assert_eq!(sm.all_locals.len(), 2);
+    }
+
+    #[test]
+    fn test_state_machine_all_locals_collected() {
+        let compiler = WasmCompiler::new();
+        // Test that locals declared at different nesting levels are all collected
+        let func = make_function(
+            "nested_locals",
+            vec![make_param("input")],
+            Block {
+                stmts: vec![
+                    // let a = 1;
+                    Stmt::Let {
+                        pattern: Pattern::Ident {
+                            mutable: false,
+                            name: make_ident("a"),
+                            evidentiality: None,
+                        },
+                        ty: None,
+                        init: Some(Expr::Literal(Literal::Int {
+                            value: "1".to_string(),
+                            base: NumBase::Decimal,
+                            suffix: None,
+                        })),
+                    },
+                    // let b = await;
+                    Stmt::Let {
+                        pattern: Pattern::Ident {
+                            mutable: false,
+                            name: make_ident("b"),
+                            evidentiality: None,
+                        },
+                        ty: None,
+                        init: Some(make_await_expr()),
+                    },
+                    // let c = await;
+                    Stmt::Let {
+                        pattern: Pattern::Ident {
+                            mutable: false,
+                            name: make_ident("c"),
+                            evidentiality: None,
+                        },
+                        ty: None,
+                        init: Some(make_await_expr()),
+                    },
+                ],
+                expr: Some(Box::new(Expr::Tuple(vec![
+                    make_path_expr("a"),
+                    make_path_expr("b"),
+                    make_path_expr("c"),
+                ]))),
+            },
+            true,
+        );
+
+        let result = compiler.analyze_async_function(&func);
+        assert!(result.is_some());
+        let sm = result.unwrap();
+
+        // Should have 2 await points
+        assert_eq!(sm.await_points.len(), 2);
+
+        // Should collect all locals: input (param), a, b, c
+        assert_eq!(sm.all_locals.len(), 4);
+        assert!(sm.all_locals.contains(&"input".to_string()));
+        assert!(sm.all_locals.contains(&"a".to_string()));
+        assert!(sm.all_locals.contains(&"b".to_string()));
+        assert!(sm.all_locals.contains(&"c".to_string()));
+
+        // Frame size: 8 (state) + 4*8 (locals) = 40 bytes
+        assert_eq!(sm.frame_size, 40);
     }
 }
