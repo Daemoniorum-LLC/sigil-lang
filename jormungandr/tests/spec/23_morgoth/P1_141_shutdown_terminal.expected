@@ -1,0 +1,6 @@
+shutdown_init_raw: OK
+shutdown_init_alt: OK
+shutdown_mouse_disabled: OK
+shutdown_alt_exited: OK
+shutdown_termios_restored: OK
+shutdown_full_cycle: OK

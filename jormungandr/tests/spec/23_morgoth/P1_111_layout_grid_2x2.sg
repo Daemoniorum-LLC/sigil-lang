@@ -1,0 +1,98 @@
+// Test: 2x2 grid layout with 4 panes
+// Spec: MORGOTH-SPEC.md § Phase 1.2 - Layout Engine
+// Priority: P1
+//
+// Purpose:
+// Validates that a 2x2 grid layout correctly computes regions for all 4
+// panes within an 80x24 screen (23 usable rows after status bar).
+// Integer division distributes space; remainder goes to last row/col.
+//
+// Expected behavior:
+// - Pane 0: {x:0,  y:0,  w:40, h:11}
+// - Pane 1: {x:40, y:0,  w:40, h:11}
+// - Pane 2: {x:0,  y:11, w:40, h:12}
+// - Pane 3: {x:40, y:11, w:40, h:12}
+
+rite main() {
+    ≔ screen_w = 80;
+    ≔ screen_h = 24;
+    ≔ usable_h = screen_h - 1;  // 23 rows (status bar takes 1)
+    ≔ grid_rows = 2;
+    ≔ grid_cols = 2;
+
+    // Compute base cell dimensions
+    ≔ base_w = screen_w / grid_cols;    // 40
+    ≔ base_h = usable_h / grid_rows;    // 11
+    ≔ extra_w = screen_w % grid_cols;    // 0
+    ≔ extra_h = usable_h % grid_rows;   // 1
+
+    // Compute pane regions using the layout algorithm:
+    // last row gets remainder height, last col gets remainder width
+    ≔ mut pane_x = [0, 0, 0, 0];
+    ≔ mut pane_y = [0, 0, 0, 0];
+    ≔ mut pane_w = [0, 0, 0, 0];
+    ≔ mut pane_h = [0, 0, 0, 0];
+
+    ≔ mut idx = 0;
+    ≔ mut cy = 0;
+    ≔ mut r = 0;
+    ⟳ r < grid_rows {
+        ≔ mut cx = 0;
+        ≔ mut c = 0;
+        ≔ mut h = base_h;
+        ⎇ r == grid_rows - 1 {
+            h = base_h + extra_h;
+        }
+        ⟳ c < grid_cols {
+            ≔ mut w = base_w;
+            ⎇ c == grid_cols - 1 {
+                w = base_w + extra_w;
+            }
+            pane_x[idx] = cx;
+            pane_y[idx] = cy;
+            pane_w[idx] = w;
+            pane_h[idx] = h;
+            cx = cx + w;
+            idx = idx + 1;
+            c = c + 1;
+        }
+        cy = cy + h;
+        r = r + 1;
+    }
+
+    // Test Pane 0: top-left
+    ⎇ pane_x[0] == 0 ∧ pane_y[0] == 0 ∧ pane_w[0] == 40 ∧ pane_h[0] == 11 {
+        println("pane_0_region: OK");
+    } ⎉ {
+        println("pane_0_region: FAILED");
+    }
+
+    // Test Pane 1: top-right
+    ⎇ pane_x[1] == 40 ∧ pane_y[1] == 0 ∧ pane_w[1] == 40 ∧ pane_h[1] == 11 {
+        println("pane_1_region: OK");
+    } ⎉ {
+        println("pane_1_region: FAILED");
+    }
+
+    // Test Pane 2: bottom-left (gets extra row)
+    ⎇ pane_x[2] == 0 ∧ pane_y[2] == 11 ∧ pane_w[2] == 40 ∧ pane_h[2] == 12 {
+        println("pane_2_region: OK");
+    } ⎉ {
+        println("pane_2_region: FAILED");
+    }
+
+    // Test Pane 3: bottom-right (gets extra row)
+    ⎇ pane_x[3] == 40 ∧ pane_y[3] == 11 ∧ pane_w[3] == 40 ∧ pane_h[3] == 12 {
+        println("pane_3_region: OK");
+    } ⎉ {
+        println("pane_3_region: FAILED");
+    }
+
+    // Test: Total coverage equals usable area
+    ≔ total_area = pane_w[0] * pane_h[0] + pane_w[1] * pane_h[1] + pane_w[2] * pane_h[2] + pane_w[3] * pane_h[3];
+    ⎇ total_area == screen_w * usable_h {
+        println("total_coverage: OK");
+    } ⎉ {
+        println("total_coverage: FAILED");
+    }
+}

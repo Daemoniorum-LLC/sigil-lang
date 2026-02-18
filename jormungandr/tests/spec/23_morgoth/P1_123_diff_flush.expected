@@ -1,0 +1,5 @@
+dirty_initial_zero: OK
+dirty_after_write: OK
+flush_emits_dirty_only: OK
+dirty_after_flush_zero: OK
+dirty_same_value: OK

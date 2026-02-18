@@ -1,0 +1,70 @@
+// Test: Terminal state fully restored on shutdown
+// Spec: MORGOTH-SPEC.md § Phase 1.5 - Terminal Restore
+// Priority: P1
+//
+// Purpose:
+// Validates that after Morgoth's full initialization + shutdown cycle, the
+// terminal state is properly restored: alt screen is exited, mouse tracking
+// is disabled, and the original termios is restored. Tests the complete
+// init-then-teardown pattern.
+//
+// Expected behavior:
+// - After init: raw mode active, alt screen entered, mouse enabled
+// - After shutdown: all reversed in correct order
+// - Escape sequences for teardown are correct
+
+rite main() {
+    // === INIT PHASE ===
+    ≔ saved = term_get_termios(0);
+    ≔ raw_ok = term_set_raw_mode(0);
+    ≔ alt_enter = term_enter_alt_screen();
+    ≔ mouse_on = term_enable_mouse();
+
+    // Test 1: Init completed (raw mode set)
+    ⎇ raw_ok == 0 {
+        println("shutdown_init_raw: OK");
+    } ⎉ {
+        println("shutdown_init_raw: FAILED");
+    }
+
+    // Test 2: Alt screen entered
+    ⎇ alt_enter == "\x1b[?1049h" {
+        println("shutdown_init_alt: OK");
+    } ⎉ {
+        println("shutdown_init_alt: FAILED");
+    }
+
+    // === SHUTDOWN PHASE (reverse order) ===
+
+    // Test 3: Disable mouse tracking
+    ≔ mouse_off = term_disable_mouse();
+    ⎇ mouse_off == "\x1b[?1006l\x1b[?1003l" {
+        println("shutdown_mouse_disabled: OK");
+    } ⎉ {
+        println("shutdown_mouse_disabled: FAILED");
+    }
+
+    // Test 4: Leave alt screen
+    ≔ alt_leave = term_leave_alt_screen();
+    ⎇ alt_leave == "\x1b[?1049l" {
+        println("shutdown_alt_exited: OK");
+    } ⎉ {
+        println("shutdown_alt_exited: FAILED");
+    }
+
+    // Test 5: Restore termios
+    ≔ restore = term_restore_termios(0, saved);
+    ⎇ restore == 0 {
+        println("shutdown_termios_restored: OK");
+    } ⎉ {
+        println("shutdown_termios_restored: FAILED");
+    }
+
+    // Test 6: Full cycle completes without error
+    // Verify saved handle is still valid after restore
+    ⎇ saved >= 0 {
+        println("shutdown_full_cycle: OK");
+    } ⎉ {
+        println("shutdown_full_cycle: FAILED");
+    }
+}

@@ -1,0 +1,5 @@
+input_write: OK
+input_read: OK
+input_forward_to_pty: OK
+input_arrives_at_slave: OK
+input_data_integrity: OK

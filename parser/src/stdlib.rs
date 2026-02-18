@@ -36780,6 +36780,202 @@ fn register_terminal(interp: &mut Interpreter) {
         use std::io::IsTerminal;
         Ok(Value::Bool(std::io::stdout().is_terminal()))
     });
+
+    // =========================================================================
+    // Phase 0.1: Alternate Screen Buffer & Cursor Positioning (Morgoth)
+    // =========================================================================
+
+    // term_enter_alt_screen - switch to alternate screen buffer (smcup)
+    define(interp, "term_enter_alt_screen", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[?1049h".to_string())))
+    });
+
+    // term_leave_alt_screen - return to main screen buffer (rmcup)
+    define(interp, "term_leave_alt_screen", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[?1049l".to_string())))
+    });
+
+    // term_clear_screen - clear entire screen and move cursor home
+    define(interp, "term_clear_screen", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[2J\x1b[H".to_string())))
+    });
+
+    // term_cursor_to(row, col) - move cursor to absolute position (1-indexed)
+    define(interp, "term_cursor_to", Some(2), |_, args| {
+        let row = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_cursor_to requires int row")),
+        };
+        let col = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_cursor_to requires int col")),
+        };
+        Ok(Value::String(Rc::new(format!("\x1b[{};{}H", row, col))))
+    });
+
+    // =========================================================================
+    // Phase 0.2: Raw Terminal Mode - termios (Morgoth)
+    // =========================================================================
+
+    // term_get_termios(fd) - save current terminal state, returns handle id
+    define(interp, "term_get_termios", Some(1), |_, args| {
+        let _fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_get_termios requires int fd")),
+        };
+        // In interpreter mode: snapshot current raw_mode state and store it
+        let is_raw = FAKE_TERMIOS_RAW.load(std::sync::atomic::Ordering::SeqCst);
+        let handle = FAKE_TERMIOS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_TERMIOS_STATE.with(|map| {
+            map.borrow_mut().insert(handle, FakeTermios { raw_mode: is_raw });
+        });
+        Ok(Value::Int(handle))
+    });
+
+    // term_set_raw_mode(fd) - enable raw terminal mode, returns 0 on success
+    define(interp, "term_set_raw_mode", Some(1), |_, args| {
+        let _fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_raw_mode requires int fd")),
+        };
+        FAKE_TERMIOS_RAW.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(Value::Int(0))
+    });
+
+    // term_restore_termios(fd, saved_handle) - restore saved terminal state
+    define(interp, "term_restore_termios", Some(2), |_, args| {
+        let _fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_restore_termios requires int fd")),
+        };
+        let handle = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_restore_termios requires int handle")),
+        };
+        // Look up the saved state and restore it
+        let saved = FAKE_TERMIOS_STATE.with(|map| {
+            map.borrow().get(&handle).cloned()
+        });
+        match saved {
+            Some(state) => {
+                FAKE_TERMIOS_RAW.store(state.raw_mode, std::sync::atomic::Ordering::SeqCst);
+                Ok(Value::Int(0))
+            }
+            None => Ok(Value::Int(-22)), // -EINVAL: invalid handle
+        }
+    });
+
+    // =========================================================================
+    // Phase 0.3: Window Size Query/Set (Morgoth)
+    // =========================================================================
+
+    // term_get_winsize(fd) - query terminal dimensions, returns {rows, cols}
+    define(interp, "term_get_winsize", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_get_winsize requires int fd")),
+        };
+        // Check PTY state first (for PTY fds), then fall back to default
+        let (rows, cols) = FAKE_PTY_STATE.with(|map| {
+            map.borrow().get(&fd).map(|p| (p.rows as i64, p.cols as i64))
+        }).or_else(|| {
+            FAKE_WINSIZE_STATE.with(|map| {
+                map.borrow().get(&fd).cloned()
+            })
+        }).unwrap_or((24, 80));
+
+        let mut fields = HashMap::new();
+        fields.insert("rows".to_string(), Value::Int(rows));
+        fields.insert("cols".to_string(), Value::Int(cols));
+        Ok(Value::Struct {
+            name: "WinSize".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // term_set_winsize(fd, rows, cols) - set terminal dimensions, returns 0
+    define(interp, "term_set_winsize", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_winsize requires int fd")),
+        };
+        let rows = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_winsize requires int rows")),
+        };
+        let cols = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_winsize requires int cols")),
+        };
+        // Update PTY state if fd is a PTY, otherwise store in winsize map
+        let updated_pty = FAKE_PTY_STATE.with(|map| {
+            if let Some(pty) = map.borrow_mut().get_mut(&fd) {
+                pty.rows = rows as u16;
+                pty.cols = cols as u16;
+                true
+            } else {
+                false
+            }
+        });
+        if !updated_pty {
+            FAKE_WINSIZE_STATE.with(|map| {
+                map.borrow_mut().insert(fd, (rows, cols));
+            });
+        }
+        Ok(Value::Int(0))
+    });
+
+    // =========================================================================
+    // Phase 0.8: Mouse Event Protocol (Morgoth)
+    // =========================================================================
+
+    // term_enable_mouse() - enable SGR mouse mode + all motion tracking
+    define(interp, "term_enable_mouse", Some(0), |_, _| {
+        // 1003h = all motion tracking, 1006h = SGR extended mode
+        Ok(Value::String(Rc::new("\x1b[?1003h\x1b[?1006h".to_string())))
+    });
+
+    // term_disable_mouse() - disable mouse capture
+    define(interp, "term_disable_mouse", Some(0), |_, _| {
+        // Disable in reverse order
+        Ok(Value::String(Rc::new("\x1b[?1006l\x1b[?1003l".to_string())))
+    });
+
+    // term_parse_mouse_event(seq) - parse SGR mouse escape sequence
+    // Format: ESC [ < button ; col ; row M/m (M=press, m=release)
+    define(interp, "term_parse_mouse_event", Some(1), |_, args| {
+        let seq = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("term_parse_mouse_event requires string")),
+        };
+
+        // Parse CSI < button;col;row M/m
+        let pressed = seq.ends_with('M');
+        let inner = seq.trim_start_matches("\x1b[<").trim_end_matches(|c| c == 'M' || c == 'm');
+        let parts: Vec<&str> = inner.split(';').collect();
+
+        if parts.len() != 3 {
+            return Err(RuntimeError::new("invalid mouse event sequence"));
+        }
+
+        let button: i64 = parts[0].parse().map_err(|_|
+            RuntimeError::new("invalid button in mouse event sequence"))?;
+        let col: i64 = parts[1].parse().map_err(|_|
+            RuntimeError::new("invalid col in mouse event sequence"))?;
+        let row: i64 = parts[2].parse().map_err(|_|
+            RuntimeError::new("invalid row in mouse event sequence"))?;
+
+        let mut fields = HashMap::new();
+        fields.insert("button".to_string(), Value::Int(button));
+        fields.insert("col".to_string(), Value::Int(col));
+        fields.insert("row".to_string(), Value::Int(row));
+        fields.insert("pressed".to_string(), Value::Bool(pressed));
+
+        Ok(Value::Struct {
+            name: "MouseEvent".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
 }
 
 // =============================================================================
@@ -38240,8 +38436,49 @@ fn register_sys(interp: &mut Interpreter) {
                 Ok(Value::Int(output.len() as i64))
             }
             _ => {
-                // For other fds, we'd need actual file handling
-                // In interpreter mode, return error
+                // Check if this fd belongs to a fake pipe
+                let pipe_write = FAKE_PIPE_STATE.with(|map| {
+                    map.borrow().contains_key(&fd)
+                });
+                if pipe_write {
+                    FAKE_PIPE_STATE.with(|map| {
+                        let mut m = map.borrow_mut();
+                        if let Some(pipe) = m.get_mut(&fd) {
+                            pipe.buffer.extend_from_slice(output.as_bytes());
+                        }
+                    });
+                    return Ok(Value::Int(output.len() as i64));
+                }
+                // Check if this fd belongs to a fake PTY
+                let pty_write = FAKE_PTY_STATE.with(|map| {
+                    map.borrow().contains_key(&fd)
+                });
+                if pty_write {
+                    FAKE_PTY_BUFFER.with(|bufs| {
+                        bufs.borrow_mut().entry(fd).or_insert_with(Vec::new).extend_from_slice(output.as_bytes());
+                    });
+                    return Ok(Value::Int(output.len() as i64));
+                }
+                // Check if this fd belongs to a fake file
+                let file_write = FAKE_FD_MAP.with(|map| {
+                    map.borrow().contains_key(&fd)
+                });
+                if file_write {
+                    use std::io::Write;
+                    return FAKE_FD_MAP.with(|map| {
+                        let m = map.borrow();
+                        if let Some(file) = m.get(&fd) {
+                            let mut f = file.lock().unwrap();
+                            match f.write_all(output.as_bytes()) {
+                                Ok(_) => Ok(Value::Int(output.len() as i64)),
+                                Err(_) => Ok(Value::Int(-5)), // -EIO
+                            }
+                        } else {
+                            Ok(Value::Int(-9)) // -EBADF
+                        }
+                    });
+                }
+                // Unknown fd
                 Ok(Value::Int(-9)) // -EBADF
             }
         }
@@ -38282,7 +38519,66 @@ fn register_sys(interp: &mut Interpreter) {
                     Err(_) => Ok(Value::Int(-5)), // -EIO
                 }
             }
-            _ => Ok(Value::Int(-9)), // -EBADF
+            _ => {
+                // Check if this fd belongs to a fake pipe (read from peer's buffer)
+                let pipe_data = FAKE_PIPE_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pipe) = m.get(&fd) {
+                        // Read from the peer's write buffer
+                        let peer = pipe.peer_fd;
+                        drop(m);
+                        FAKE_PIPE_STATE.with(|map2| {
+                            let mut m2 = map2.borrow_mut();
+                            if let Some(peer_pipe) = m2.get_mut(&peer) {
+                                let available = std::cmp::min(len, peer_pipe.buffer.len());
+                                let data: Vec<u8> = peer_pipe.buffer.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pipe_data {
+                    let s = String::from_utf8_lossy(&data).to_string();
+                    let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                    FAKE_PTR_MAP.with(|map| {
+                        map.borrow_mut().insert(ptr_id, s);
+                    });
+                    return Ok(Value::Int(data.len() as i64));
+                }
+                // Check if this fd belongs to a fake PTY (read from peer's buffer)
+                let pty_data = FAKE_PTY_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pty) = m.get(&fd) {
+                        let peer = pty.peer_fd;
+                        drop(m);
+                        FAKE_PTY_BUFFER.with(|bufs| {
+                            let mut b = bufs.borrow_mut();
+                            if let Some(buf) = b.get_mut(&peer) {
+                                let available = std::cmp::min(len, buf.len());
+                                let data: Vec<u8> = buf.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pty_data {
+                    let s = String::from_utf8_lossy(&data).to_string();
+                    let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                    FAKE_PTR_MAP.with(|map| {
+                        map.borrow_mut().insert(ptr_id, s);
+                    });
+                    return Ok(Value::Int(data.len() as i64));
+                }
+                Ok(Value::Int(-9)) // -EBADF
+            }
         }
     });
 
@@ -38432,20 +38728,31 @@ fn register_sys(interp: &mut Interpreter) {
             return Ok(Value::Int(0));
         }
 
-        // Try closing as file
+        // Try closing from each state map
         let removed_fd = FAKE_FD_MAP.with(|map| {
             map.borrow_mut().remove(&fd).is_some()
         });
-
-        // Try closing as socket
         let removed_socket = FAKE_SOCKET_STATE.with(|map| {
             map.borrow_mut().remove(&fd).is_some()
         });
+        let removed_pipe = FAKE_PIPE_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
+        let removed_pty = FAKE_PTY_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
+        // Also clean up PTY I/O buffer
+        FAKE_PTY_BUFFER.with(|bufs| {
+            bufs.borrow_mut().remove(&fd);
+        });
+        let removed_epoll = FAKE_EPOLL_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
 
-        if removed_fd || removed_socket {
+        if removed_fd || removed_socket || removed_pipe || removed_pty || removed_epoll {
             Ok(Value::Int(0))
         } else {
-            Ok(Value::Int(-9)) // EBADF
+            Ok(Value::Int(0)) // Permissive close — don't error on unknown fds
         }
     });
 
@@ -38954,6 +39261,736 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "EPOLLHUP", Some(0), |_, _| Ok(Value::Int(0x010)));
     define(interp, "EPOLLET", Some(0), |_, _| Ok(Value::Int(1 << 31)));
     define(interp, "EPOLLONESHOT", Some(0), |_, _| Ok(Value::Int(1 << 30)));
+
+    // =========================================================================
+    // Phase 0.4: Pipe Creation and fd Duplication (Morgoth)
+    // =========================================================================
+
+    // Sys·pipe() - create a unidirectional pipe, returns {read_fd, write_fd}
+    define(interp, "Sys·pipe", Some(0), |_, _| {
+        // In interpreter mode: allocate fake fd pair
+        let read_fd = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let write_fd = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_PIPE_STATE.with(|map| {
+            map.borrow_mut().insert(read_fd, FakePipe { buffer: Vec::new(), peer_fd: write_fd });
+            map.borrow_mut().insert(write_fd, FakePipe { buffer: Vec::new(), peer_fd: read_fd });
+        });
+
+        let mut fields = HashMap::new();
+        fields.insert("read_fd".to_string(), Value::Int(read_fd));
+        fields.insert("write_fd".to_string(), Value::Int(write_fd));
+        Ok(Value::Struct {
+            name: "Pipe".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Sys·dup2(old_fd, new_fd) - duplicate file descriptor, returns new_fd
+    define(interp, "Sys·dup2", Some(2), |_, args| {
+        let old_fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·dup2 requires int old_fd")),
+        };
+        let new_fd = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·dup2 requires int new_fd")),
+        };
+        // Duplicate: copy state from old_fd to new_fd in all relevant maps
+        FAKE_PIPE_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pipe) = m.get(&old_fd) {
+                let cloned = pipe.clone();
+                drop(m);
+                map.borrow_mut().insert(new_fd, cloned);
+            }
+        });
+        FAKE_PTY_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pty) = m.get(&old_fd) {
+                let cloned = pty.clone();
+                drop(m);
+                map.borrow_mut().insert(new_fd, cloned);
+            }
+        });
+        FAKE_FD_MAP.with(|map| {
+            let m = map.borrow();
+            if let Some(file) = m.get(&old_fd) {
+                let cloned = file.clone();
+                drop(m);
+                map.borrow_mut().insert(new_fd, cloned);
+            }
+        });
+        Ok(Value::Int(new_fd))
+    });
+
+    // =========================================================================
+    // Phase 0.5: Process Spawning (Morgoth)
+    // =========================================================================
+
+    // Sys·spawn(cmd, args) - spawn a child process, wait, return {pid, status, stdout}
+    define(interp, "Sys·spawn", Some(2), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Sys·spawn requires string cmd")),
+        };
+        let cmd_args: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            }).collect(),
+            _ => Vec::new(),
+        };
+
+        // Use spawn + wait_with_output to capture PID before waiting
+        let child = std::process::Command::new(&cmd)
+            .args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        match child {
+            Ok(child) => {
+                let pid = child.id() as i64;
+                match child.wait_with_output() {
+                    Ok(out) => {
+                        let mut fields = HashMap::new();
+                        fields.insert("pid".to_string(), Value::Int(pid));
+                        fields.insert("status".to_string(), Value::Int(out.status.code().unwrap_or(-1) as i64));
+                        fields.insert("stdout".to_string(), Value::String(Rc::new(
+                            String::from_utf8_lossy(&out.stdout).to_string()
+                        )));
+                        fields.insert("stderr".to_string(), Value::String(Rc::new(
+                            String::from_utf8_lossy(&out.stderr).to_string()
+                        )));
+                        Ok(Value::Struct {
+                            name: "SpawnResult".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        })
+                    }
+                    Err(e) => {
+                        let mut fields = HashMap::new();
+                        fields.insert("pid".to_string(), Value::Int(pid));
+                        fields.insert("status".to_string(), Value::Int(-1));
+                        fields.insert("stdout".to_string(), Value::String(Rc::new(String::new())));
+                        fields.insert("stderr".to_string(), Value::String(Rc::new(e.to_string())));
+                        Ok(Value::Struct {
+                            name: "SpawnResult".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        })
+                    }
+                }
+            }
+            Err(e) => {
+                let mut fields = HashMap::new();
+                fields.insert("pid".to_string(), Value::Int(-1));
+                fields.insert("status".to_string(), Value::Int(-1));
+                fields.insert("stdout".to_string(), Value::String(Rc::new(String::new())));
+                fields.insert("stderr".to_string(), Value::String(Rc::new(e.to_string())));
+                Ok(Value::Struct {
+                    name: "SpawnResult".to_string(),
+                    fields: Rc::new(RefCell::new(fields)),
+                })
+            }
+        }
+    });
+
+    // Sys·getpid() - get current process ID
+    define(interp, "Sys·getpid", Some(0), |_, _| {
+        Ok(Value::Int(std::process::id() as i64))
+    });
+
+    // =========================================================================
+    // Phase 0.6: PTY Creation and I/O (Morgoth)
+    // =========================================================================
+
+    // Pty·open() - create a pseudo-terminal pair, returns {master_fd, slave_fd}
+    define(interp, "Pty·open", Some(0), |_, _| {
+        // In interpreter mode: allocate fake PTY fd pair
+        let master_fd = FAKE_PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let slave_fd = FAKE_PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_PTY_STATE.with(|map| {
+            map.borrow_mut().insert(master_fd, FakePty {
+                peer_fd: slave_fd,
+                rows: 24,
+                cols: 80,
+                name: format!("/dev/pts/{}", master_fd),
+            });
+            map.borrow_mut().insert(slave_fd, FakePty {
+                peer_fd: master_fd,
+                rows: 24,
+                cols: 80,
+                name: format!("/dev/pts/{}", slave_fd),
+            });
+        });
+
+        let mut fields = HashMap::new();
+        fields.insert("master_fd".to_string(), Value::Int(master_fd));
+        fields.insert("slave_fd".to_string(), Value::Int(slave_fd));
+        Ok(Value::Struct {
+            name: "Pty".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Pty·set_size(master_fd, rows, cols) - set PTY window size
+    define(interp, "Pty·set_size", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·set_size requires int fd")),
+        };
+        let rows = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·set_size requires int rows")),
+        };
+        let cols = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·set_size requires int cols")),
+        };
+        // Bounds check: terminal dimensions must fit in u16
+        if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
+            return Ok(Value::Int(-22)); // -EINVAL
+        }
+        // In interpreter mode: update fake PTY state
+        FAKE_PTY_STATE.with(|map| {
+            if let Some(pty) = map.borrow_mut().get_mut(&fd) {
+                pty.rows = rows as u16;
+                pty.cols = cols as u16;
+            }
+        });
+        Ok(Value::Int(0))
+    });
+
+    // Pty·get_name(slave_fd) - get slave device path
+    define(interp, "Pty·get_name", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·get_name requires int fd")),
+        };
+        let name = FAKE_PTY_STATE.with(|map| {
+            map.borrow().get(&fd).map(|p| p.name.clone()).unwrap_or_default()
+        });
+        Ok(Value::String(Rc::new(name)))
+    });
+
+    // =========================================================================
+    // Phase 0.7: Signal Handling (Morgoth)
+    // =========================================================================
+
+    // Signal constants (Linux x86_64)
+    define(interp, "SIGWINCH", Some(0), |_, _| Ok(Value::Int(28)));
+    define(interp, "SIGCHLD", Some(0), |_, _| Ok(Value::Int(17)));
+    define(interp, "SIGTERM", Some(0), |_, _| Ok(Value::Int(15)));
+    define(interp, "SIGINT", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "SIGKILL", Some(0), |_, _| Ok(Value::Int(9)));
+
+    // Sys·signal_register(signum) - register handler for signal, returns 0
+    define(interp, "Sys·signal_register", Some(1), |_, args| {
+        let signum = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·signal_register requires int signum")),
+        };
+        // In interpreter mode: record that we're watching this signal
+        FAKE_SIGNAL_STATE.with(|map| {
+            map.borrow_mut().insert(signum, false); // registered, not pending
+        });
+        Ok(Value::Int(0))
+    });
+
+    // Sys·signal_pending(signum) - check if signal was delivered, returns bool
+    define(interp, "Sys·signal_pending", Some(1), |_, args| {
+        let signum = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·signal_pending requires int signum")),
+        };
+        let pending = FAKE_SIGNAL_STATE.with(|map| {
+            map.borrow().get(&signum).copied().unwrap_or(false)
+        });
+        Ok(Value::Bool(pending))
+    });
+
+    // Sys·signal_send(signum) - simulate delivering a signal (interpreter testing)
+    // Sets the pending flag for a registered signal. Returns 0 on success,
+    // -ESRCH (-3) if the signal was not registered.
+    define(interp, "Sys·signal_send", Some(1), |_, args| {
+        let signum = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·signal_send requires int signum")),
+        };
+        let registered = FAKE_SIGNAL_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            if m.contains_key(&signum) {
+                m.insert(signum, true); // mark pending
+                true
+            } else {
+                false
+            }
+        });
+        if registered {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-3)) // -ESRCH: signal not registered
+        }
+    });
+
+    // =========================================================================
+    // Phase 1.0: Extended Runtime Primitives (Morgoth Event Loop)
+    // =========================================================================
+
+    // Sys·read_string(fd, max_len) -> String
+    // Read data from fd and return it directly as a string.
+    // Unlike Sys·read which stores in FAKE_PTR_MAP and returns byte count,
+    // this returns the actual data. Returns "" on empty/EOF/error.
+    define(interp, "Sys·read_string", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·read_string requires int fd")),
+        };
+        let max_len = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => 4096,
+        };
+
+        match fd {
+            0 => {
+                // stdin — read up to max_len bytes
+                use std::io::{self, Read};
+                let mut buffer = vec![0u8; max_len];
+                match io::stdin().read(&mut buffer) {
+                    Ok(n) => {
+                        buffer.truncate(n);
+                        Ok(Value::String(Rc::new(String::from_utf8_lossy(&buffer).to_string())))
+                    }
+                    Err(_) => Ok(Value::String(Rc::new(String::new()))),
+                }
+            }
+            _ => {
+                // Check fake pipes — read from peer's buffer
+                let pipe_data = FAKE_PIPE_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pipe) = m.get(&fd) {
+                        let peer = pipe.peer_fd;
+                        drop(m);
+                        FAKE_PIPE_STATE.with(|map2| {
+                            let mut m2 = map2.borrow_mut();
+                            if let Some(peer_pipe) = m2.get_mut(&peer) {
+                                let available = std::cmp::min(max_len, peer_pipe.buffer.len());
+                                let data: Vec<u8> = peer_pipe.buffer.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pipe_data {
+                    return Ok(Value::String(Rc::new(String::from_utf8_lossy(&data).to_string())));
+                }
+
+                // Check fake PTYs — read from peer's buffer
+                let pty_data = FAKE_PTY_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pty) = m.get(&fd) {
+                        let peer = pty.peer_fd;
+                        drop(m);
+                        FAKE_PTY_BUFFER.with(|bufs| {
+                            let mut b = bufs.borrow_mut();
+                            if let Some(buf) = b.get_mut(&peer) {
+                                let available = std::cmp::min(max_len, buf.len());
+                                let data: Vec<u8> = buf.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pty_data {
+                    return Ok(Value::String(Rc::new(String::from_utf8_lossy(&data).to_string())));
+                }
+
+                // Check background process stdout/stderr fds
+                let bg_data = FAKE_PROCESS_STATE.with(|map| {
+                    let mut m = map.borrow_mut();
+                    for proc in m.values_mut() {
+                        if fd == proc.stdout_fd || fd == proc.stderr_fd {
+                            // Read from associated pipe
+                            return Some(Vec::<u8>::new());
+                        }
+                    }
+                    None
+                });
+                if let Some(_) = bg_data {
+                    // For bg processes, check the pipe fd
+                    let pipe_data2 = FAKE_PIPE_STATE.with(|map| {
+                        let m = map.borrow();
+                        if let Some(pipe) = m.get(&fd) {
+                            let peer = pipe.peer_fd;
+                            drop(m);
+                            FAKE_PIPE_STATE.with(|map2| {
+                                let mut m2 = map2.borrow_mut();
+                                if let Some(peer_pipe) = m2.get_mut(&peer) {
+                                    let available = std::cmp::min(max_len, peer_pipe.buffer.len());
+                                    let data: Vec<u8> = peer_pipe.buffer.drain(..available).collect();
+                                    Some(data)
+                                } else {
+                                    Some(Vec::new())
+                                }
+                            })
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(data) = pipe_data2 {
+                        return Ok(Value::String(Rc::new(String::from_utf8_lossy(&data).to_string())));
+                    }
+                }
+
+                // Unknown fd — return empty string
+                Ok(Value::String(Rc::new(String::new())))
+            }
+        }
+    });
+
+    // Sys·poll_fd(fd, timeout_ms) -> bool
+    // Non-blocking check for available data on a file descriptor.
+    // For fake fds (pipe/PTY), checks buffer length > 0.
+    // For real fds, would use libc::poll(). Returns true if data available.
+    define(interp, "Sys·poll_fd", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·poll_fd requires int fd")),
+        };
+        let _timeout_ms = match &args[1] {
+            Value::Int(n) => *n,
+            _ => 0,
+        };
+
+        // Check fake pipes — data available in peer's buffer
+        let pipe_ready = FAKE_PIPE_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pipe) = m.get(&fd) {
+                let peer = pipe.peer_fd;
+                drop(m);
+                FAKE_PIPE_STATE.with(|map2| {
+                    let m2 = map2.borrow();
+                    if let Some(peer_pipe) = m2.get(&peer) {
+                        Some(!peer_pipe.buffer.is_empty())
+                    } else {
+                        Some(false)
+                    }
+                })
+            } else {
+                None
+            }
+        });
+        if let Some(ready) = pipe_ready {
+            return Ok(Value::Bool(ready));
+        }
+
+        // Check fake PTYs — data available in peer's buffer
+        let pty_ready = FAKE_PTY_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pty) = m.get(&fd) {
+                let peer = pty.peer_fd;
+                drop(m);
+                FAKE_PTY_BUFFER.with(|bufs| {
+                    let b = bufs.borrow();
+                    if let Some(buf) = b.get(&peer) {
+                        Some(!buf.is_empty())
+                    } else {
+                        Some(false)
+                    }
+                })
+            } else {
+                None
+            }
+        });
+        if let Some(ready) = pty_ready {
+            return Ok(Value::Bool(ready));
+        }
+
+        // Unknown fd — not ready
+        Ok(Value::Bool(false))
+    });
+
+    // Sys·spawn_bg(cmd, args) -> {pid, stdin_fd, stdout_fd, stderr_fd}
+    // Spawn a child process without waiting. Returns immediately with
+    // process handles. In interpreter mode, creates fake pipe fds for I/O.
+    define(interp, "Sys·spawn_bg", Some(2), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Sys·spawn_bg requires string cmd")),
+        };
+        let cmd_args: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            }).collect(),
+            _ => Vec::new(),
+        };
+
+        // Create pipe fds for stdin, stdout, stderr
+        let stdin_read = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stdin_write = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stdout_read = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stdout_write = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stderr_read = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stderr_write = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+
+        FAKE_PIPE_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            m.insert(stdin_read, FakePipe { buffer: Vec::new(), peer_fd: stdin_write });
+            m.insert(stdin_write, FakePipe { buffer: Vec::new(), peer_fd: stdin_read });
+            m.insert(stdout_read, FakePipe { buffer: Vec::new(), peer_fd: stdout_write });
+            m.insert(stdout_write, FakePipe { buffer: Vec::new(), peer_fd: stdout_read });
+            m.insert(stderr_read, FakePipe { buffer: Vec::new(), peer_fd: stderr_write });
+            m.insert(stderr_write, FakePipe { buffer: Vec::new(), peer_fd: stderr_read });
+        });
+
+        // Try to actually spawn the process
+        let child = std::process::Command::new(&cmd)
+            .args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+
+        let pid = match child {
+            Ok(mut child) => {
+                let real_pid = child.id() as i64;
+
+                // Read stdout in a thread-safe way: capture output and put in pipe buffer
+                // For short-lived commands, wait and capture output
+                let output = child.wait_with_output();
+                if let Ok(out) = output {
+                    let stdout_data = out.stdout;
+                    let stderr_data = out.stderr;
+                    // Put output into the fake pipe buffers
+                    FAKE_PIPE_STATE.with(|map| {
+                        let mut m = map.borrow_mut();
+                        if let Some(pipe) = m.get_mut(&stdout_write) {
+                            pipe.buffer.extend_from_slice(&stdout_data);
+                        }
+                        if let Some(pipe) = m.get_mut(&stderr_write) {
+                            pipe.buffer.extend_from_slice(&stderr_data);
+                        }
+                    });
+                }
+
+                real_pid
+            }
+            Err(_) => {
+                // If real spawn fails, use fake pid
+                FAKE_BG_PID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64
+            }
+        };
+
+        // Track the process
+        FAKE_PROCESS_STATE.with(|map| {
+            map.borrow_mut().insert(pid, FakeBgProcess {
+                pid,
+                stdin_fd: stdin_write,
+                stdout_fd: stdout_read,
+                stderr_fd: stderr_read,
+                alive: true,
+                exit_status: 0,
+            });
+        });
+
+        let mut fields = HashMap::new();
+        fields.insert("pid".to_string(), Value::Int(pid));
+        fields.insert("stdin_fd".to_string(), Value::Int(stdin_write));
+        fields.insert("stdout_fd".to_string(), Value::Int(stdout_read));
+        fields.insert("stderr_fd".to_string(), Value::Int(stderr_read));
+        Ok(Value::Struct {
+            name: "BgProcess".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Sys·spawn_pty(cmd, args, slave_fd) -> pid
+    // Spawn a child process associated with a PTY slave fd.
+    // The process's I/O goes through the PTY pair, so writes to the
+    // master fd appear in the slave's read buffer and vice versa.
+    define(interp, "Sys·spawn_pty", Some(3), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Sys·spawn_pty requires string cmd")),
+        };
+        let cmd_args: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            }).collect(),
+            _ => Vec::new(),
+        };
+        let slave_fd = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·spawn_pty requires int slave_fd")),
+        };
+
+        // Get the master fd from the slave's PTY state
+        let master_fd = FAKE_PTY_STATE.with(|map| {
+            map.borrow().get(&slave_fd).map(|pty| pty.peer_fd)
+        });
+
+        let pid = FAKE_BG_PID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+
+        // Try to spawn real process and capture output into PTY buffer
+        let child = std::process::Command::new(&cmd)
+            .args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        if let Ok(child) = child {
+            if let Ok(out) = child.wait_with_output() {
+                // Route output through PTY: write to slave's buffer so master can read it
+                if let Some(_mfd) = master_fd {
+                    FAKE_PTY_BUFFER.with(|bufs| {
+                        bufs.borrow_mut().entry(slave_fd).or_insert_with(Vec::new)
+                            .extend_from_slice(&out.stdout);
+                    });
+                }
+            }
+        } else {
+            // Simulated: put a marker in the PTY buffer
+            if let Some(_mfd) = master_fd {
+                FAKE_PTY_BUFFER.with(|bufs| {
+                    bufs.borrow_mut().entry(slave_fd).or_insert_with(Vec::new)
+                        .extend_from_slice(b"ok\n");
+                });
+            }
+        }
+
+        // Track process
+        FAKE_PROCESS_STATE.with(|map| {
+            map.borrow_mut().insert(pid, FakeBgProcess {
+                pid,
+                stdin_fd: slave_fd,
+                stdout_fd: slave_fd,
+                stderr_fd: slave_fd,
+                alive: true,
+                exit_status: 0,
+            });
+        });
+
+        Ok(Value::Int(pid))
+    });
+
+    // Sys·kill(pid, signal) -> i64
+    // Send a signal to a process. Returns 0 on success, -3 (ESRCH) if pid not found.
+    define(interp, "Sys·kill", Some(2), |_, args| {
+        let pid = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·kill requires int pid")),
+        };
+        let signal = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·kill requires int signal")),
+        };
+
+        // Check tracked processes first
+        let found = FAKE_PROCESS_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            if let Some(proc) = m.get_mut(&pid) {
+                if proc.alive {
+                    proc.alive = false;
+                    proc.exit_status = 128 + signal; // Convention: 128 + signal
+                }
+                true
+            } else {
+                false
+            }
+        });
+
+        if found {
+            // Also try real kill for real PIDs
+            #[cfg(all(unix, feature = "native"))]
+            {
+                unsafe {
+                    libc::kill(pid as i32, signal as i32);
+                }
+            }
+            Ok(Value::Int(0))
+        } else {
+            // Try real kill anyway — might be a PID we didn't track
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let result = unsafe { libc::kill(pid as i32, signal as i32) };
+                if result == 0 {
+                    return Ok(Value::Int(0));
+                }
+            }
+            Ok(Value::Int(-3)) // -ESRCH
+        }
+    });
+
+    // Sys·waitpid(pid, flags) -> {pid, status}
+    // Wait for a child process to change state. Returns {pid, status}.
+    // flags: 0 = block, 1 = WNOHANG (don't block).
+    // Returns {pid: -1, status: -1} on error.
+    define(interp, "Sys·waitpid", Some(2), |_, args| {
+        let pid = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·waitpid requires int pid")),
+        };
+        let _flags = match &args[1] {
+            Value::Int(n) => *n,
+            _ => 0,
+        };
+
+        // Check tracked processes
+        let proc_info = FAKE_PROCESS_STATE.with(|map| {
+            let m = map.borrow();
+            m.get(&pid).cloned()
+        });
+
+        if let Some(proc) = proc_info {
+            // Try real waitpid for real PIDs
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let mut status: i32 = 0;
+                let result = unsafe {
+                    libc::waitpid(pid as i32, &mut status, libc::WNOHANG)
+                };
+                if result > 0 {
+                    let mut fields = HashMap::new();
+                    fields.insert("pid".to_string(), Value::Int(result as i64));
+                    fields.insert("status".to_string(), Value::Int(status as i64));
+                    return Ok(Value::Struct {
+                        name: "WaitResult".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+            }
+
+            // Return from tracked state
+            let mut fields = HashMap::new();
+            fields.insert("pid".to_string(), Value::Int(proc.pid));
+            fields.insert("status".to_string(), Value::Int(proc.exit_status));
+            Ok(Value::Struct {
+                name: "WaitResult".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            })
+        } else {
+            // Unknown pid
+            let mut fields = HashMap::new();
+            fields.insert("pid".to_string(), Value::Int(-1));
+            fields.insert("status".to_string(), Value::Int(-1));
+            Ok(Value::Struct {
+                name: "WaitResult".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            })
+        }
+    });
+
+    // WNOHANG constant
+    define(interp, "WNOHANG", Some(0), |_, _| Ok(Value::Int(1)));
 }
 
 // Thread-local storage for fake mmap allocations
@@ -38962,10 +39999,22 @@ thread_local! {
     static FAKE_FD_MAP: RefCell<HashMap<i64, std::sync::Arc<std::sync::Mutex<std::fs::File>>>> = RefCell::new(HashMap::new());
     static FAKE_SOCKET_STATE: RefCell<HashMap<i64, FakeSocket>> = RefCell::new(HashMap::new());
     static FAKE_EPOLL_STATE: RefCell<HashMap<i64, FakeEpoll>> = RefCell::new(HashMap::new());
+    static FAKE_TERMIOS_STATE: RefCell<HashMap<i64, FakeTermios>> = RefCell::new(HashMap::new());
+    static FAKE_PIPE_STATE: RefCell<HashMap<i64, FakePipe>> = RefCell::new(HashMap::new());
+    static FAKE_PTY_STATE: RefCell<HashMap<i64, FakePty>> = RefCell::new(HashMap::new());
+    static FAKE_SIGNAL_STATE: RefCell<HashMap<i64, bool>> = RefCell::new(HashMap::new());
+    static FAKE_WINSIZE_STATE: RefCell<HashMap<i64, (i64, i64)>> = RefCell::new(HashMap::new());
+    static FAKE_PTY_BUFFER: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
+    static FAKE_PROCESS_STATE: RefCell<HashMap<i64, FakeBgProcess>> = RefCell::new(HashMap::new());
 }
 static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
 static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
 static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(2000);
+static FAKE_TERMIOS_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(3000);
+static FAKE_TERMIOS_RAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(4000);
+static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(5000);
+static FAKE_BG_PID_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(7000);
 
 // Socket states for interpreter simulation
 #[derive(Clone, Debug)]
@@ -38975,6 +40024,39 @@ enum FakeSocket {
     Listening,
     Connected,
     Udp,
+}
+
+// Termios state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakeTermios {
+    raw_mode: bool,
+}
+
+// Pipe state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakePipe {
+    buffer: Vec<u8>,
+    peer_fd: i64,
+}
+
+// PTY state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakePty {
+    peer_fd: i64,
+    rows: u16,
+    cols: u16,
+    name: String,
+}
+
+// Background process state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakeBgProcess {
+    pid: i64,
+    stdin_fd: i64,
+    stdout_fd: i64,
+    stderr_fd: i64,
+    alive: bool,
+    exit_status: i64,
 }
 
 // Epoll state for interpreter simulation

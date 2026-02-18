@@ -1,0 +1,74 @@
+// Test: Terminal shutdown sequence for Morgoth
+// Spec: MORGOTH-SPEC.md § Phase 1.1 - Terminal Shutdown
+// Priority: P1
+//
+// Purpose:
+// Validates the terminal shutdown sequence that Morgoth performs on exit:
+// disabling mouse tracking, leaving alternate screen, and restoring the
+// original termios state. The reverse of initialization.
+//
+// Expected behavior:
+// - Mouse disable sequence is "\x1b[?1006l\x1b[?1003l"
+// - Alt screen leave sequence is "\x1b[?1049l"
+// - term_restore_termios succeeds (returns 0)
+// - Sequences can be written to a pipe
+
+rite main() {
+    // Setup: save termios so we can test restore
+    ≔ saved = term_get_termios(0);
+    term_set_raw_mode(0);
+
+    // Test 1: Disable mouse tracking escape sequence
+    ≔ mouse_off = term_disable_mouse();
+    ⎇ mouse_off == "\x1b[?1006l\x1b[?1003l" {
+        println("shutdown_mouse_seq: OK");
+    } ⎉ {
+        println("shutdown_mouse_seq: FAILED");
+    }
+
+    // Test 2: Write mouse disable to a pipe (not stdout)
+    ≔ pipe1 = Sys·pipe();
+    ≔ mouse_written = Sys·write(pipe1.write_fd, mouse_off, 16);
+    ⎇ mouse_written > 0 {
+        println("shutdown_mouse_write: OK");
+    } ⎉ {
+        println("shutdown_mouse_write: FAILED");
+    }
+    Sys·close(pipe1.read_fd);
+    Sys·close(pipe1.write_fd);
+
+    // Test 3: Leave alt screen escape sequence
+    ≔ leave_alt = term_leave_alt_screen();
+    ⎇ leave_alt == "\x1b[?1049l" {
+        println("shutdown_alt_screen_seq: OK");
+    } ⎉ {
+        println("shutdown_alt_screen_seq: FAILED");
+    }
+
+    // Test 4: Write alt screen leave to a pipe (not stdout)
+    ≔ pipe2 = Sys·pipe();
+    ≔ alt_written = Sys·write(pipe2.write_fd, leave_alt, 8);
+    ⎇ alt_written > 0 {
+        println("shutdown_alt_screen_write: OK");
+    } ⎉ {
+        println("shutdown_alt_screen_write: FAILED");
+    }
+    Sys·close(pipe2.read_fd);
+    Sys·close(pipe2.write_fd);
+
+    // Test 5: Restore termios succeeds
+    ≔ restore = term_restore_termios(0, saved);
+    ⎇ restore == 0 {
+        println("shutdown_restore_termios: OK");
+    } ⎉ {
+        println("shutdown_restore_termios: FAILED");
+    }
+
+    // Test 6: Restore is idempotent (safe to call twice)
+    ≔ restore2 = term_restore_termios(0, saved);
+    ⎇ restore2 == 0 {
+        println("shutdown_restore_idempotent: OK");
+    } ⎉ {
+        println("shutdown_restore_idempotent: FAILED");
+    }
+}

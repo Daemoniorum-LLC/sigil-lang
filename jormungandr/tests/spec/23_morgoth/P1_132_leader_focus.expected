@@ -1,0 +1,6 @@
+leader_next_0_to_1: OK
+leader_next_1_to_2: OK
+leader_prev_2_to_1: OK
+leader_prev_wrap: OK
+leader_next_wrap: OK
+no_leader_no_change: OK

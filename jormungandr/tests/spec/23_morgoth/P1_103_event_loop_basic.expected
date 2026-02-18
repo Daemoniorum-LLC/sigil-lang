@@ -1,0 +1,6 @@
+poll_stdin_empty: OK
+poll_pty_after_write: OK
+signal_register_winch: OK
+signal_not_pending: OK
+signal_pending_in_loop: OK
+signal_register_chld: OK

@@ -1,0 +1,62 @@
+// Test: PTY creation + process spawn for Morgoth panes
+// Spec: MORGOTH-SPEC.md § Phase 1.1 - PTY + Process Spawn
+// Priority: P1
+//
+// Purpose:
+// Validates the core pane creation pattern: open a PTY pair, set its window
+// size, spawn a shell process attached to the PTY slave, and verify that the
+// master fd has data available after the child writes output.
+//
+// Expected behavior:
+// - Pty·open() returns valid master/slave fds
+// - Pty·set_size() succeeds on the PTY
+// - Sys·spawn_pty() returns a valid pid
+// - Master fd has data available after spawn
+
+rite main() {
+    // Test 1: Open PTY pair
+    ≔ pty = Pty·open();
+    ⎇ pty.master_fd >= 0 ∧ pty.slave_fd >= 0 {
+        println("pty_open: OK");
+    } ⎉ {
+        println("pty_open: FAILED");
+    }
+
+    // Test 2: Set PTY window size (typical 80x24)
+    ≔ sz = Pty·set_size(pty.master_fd, 24, 80);
+    ⎇ sz == 0 {
+        println("pty_set_size: OK");
+    } ⎉ {
+        println("pty_set_size: FAILED");
+    }
+
+    // Test 3: Spawn a simple command on the PTY
+    ≔ pid = Sys·spawn_pty("/bin/sh", ["-c", "echo pane_ready"], pty.slave_fd);
+    ⎇ pid >= 0 {
+        println("pty_spawn: OK");
+    } ⎉ {
+        println("pty_spawn: FAILED");
+    }
+
+    // Test 4: Master fd should have data available after child output
+    ≔ has_data = Sys·poll_fd(pty.master_fd, 100);
+    ⎇ has_data == true {
+        println("pty_master_has_data: OK");
+    } ⎉ {
+        println("pty_master_has_data: FAILED");
+    }
+
+    // Test 5: Read output from master
+    ≔ output = Sys·read_string(pty.master_fd, 256);
+    ⎇ output != "" {
+        println("pty_master_read: OK");
+    } ⎉ {
+        println("pty_master_read: FAILED");
+    }
+
+    // Cleanup
+    Sys·kill(pid, SIGTERM());
+    Sys·waitpid(pid, 0);
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+}

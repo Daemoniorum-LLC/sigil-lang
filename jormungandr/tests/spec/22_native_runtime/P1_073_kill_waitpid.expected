@@ -1,0 +1,5 @@
+kill_valid: OK
+waitpid_killed: OK
+kill_invalid: OK
+waitpid_unknown: OK
+kill_sigkill: OK

@@ -1,0 +1,63 @@
+// Test: Sys·spawn_bg and Sys·spawn_pty — async process spawning
+// Spec: MORGOTH-SPEC.md § Phase 1.0 Gap 3 - async spawn
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·spawn_bg spawns a process without waiting, returning
+// {pid, stdin_fd, stdout_fd, stderr_fd}, and that Sys·spawn_pty associates
+// a spawned process with a PTY fd pair.
+//
+// Expected behavior:
+// - Sys·spawn_bg returns struct with pid >= 0 and valid fds
+// - Sys·spawn_pty returns pid >= 0 and associates with PTY
+// - Writing to stdin_fd of spawn_bg process is possible
+// - Reading from stdout_fd of spawn_bg process is possible
+
+rite main() {
+    // Test 1: spawn_bg returns valid struct
+    ≔ bg = Sys·spawn_bg("/bin/echo", ["hello"]);
+    ⎇ bg.pid >= 0 {
+        println("spawn_bg_pid: OK");
+    } ⎉ {
+        println("spawn_bg_pid: FAILED");
+    }
+
+    // Test 2: spawn_bg fds are valid
+    ⎇ bg.stdin_fd >= 0 ∧ bg.stdout_fd >= 0 ∧ bg.stderr_fd >= 0 {
+        println("spawn_bg_fds: OK");
+    } ⎉ {
+        println("spawn_bg_fds: FAILED");
+    }
+
+    // Test 3: spawn_bg stdout readable (echo wrote "hello")
+    ≔ output = Sys·read_string(bg.stdout_fd, 256);
+    ⎇ output != "" {
+        println("spawn_bg_read: OK");
+    } ⎉ {
+        println("spawn_bg_read: FAILED");
+    }
+
+    // Test 4: spawn_pty returns valid pid
+    ≔ pty = Pty·open();
+    ≔ pty_pid = Sys·spawn_pty("/bin/sh", ["-c", "echo ok"], pty.slave_fd);
+    ⎇ pty_pid >= 0 {
+        println("spawn_pty_pid: OK");
+    } ⎉ {
+        println("spawn_pty_pid: FAILED");
+    }
+
+    // Test 5: spawn_pty output goes through PTY master
+    ≔ pty_out = Sys·read_string(pty.master_fd, 256);
+    ⎇ pty_out != "" {
+        println("spawn_pty_output: OK");
+    } ⎉ {
+        println("spawn_pty_output: FAILED");
+    }
+
+    // Cleanup
+    Sys·close(bg.stdin_fd);
+    Sys·close(bg.stdout_fd);
+    Sys·close(bg.stderr_fd);
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+}

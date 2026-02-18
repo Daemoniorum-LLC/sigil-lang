@@ -1,0 +1,5 @@
+pty_open: OK
+pty_set_size: OK
+pty_spawn: OK
+pty_master_has_data: OK
+pty_master_read: OK

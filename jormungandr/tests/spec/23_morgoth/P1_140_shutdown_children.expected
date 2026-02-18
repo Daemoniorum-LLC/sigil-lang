@@ -1,0 +1,6 @@
+shutdown_pids_valid: OK
+shutdown_pids_distinct: OK
+shutdown_kill_child1: OK
+shutdown_kill_child2: OK
+shutdown_reap_child1: OK
+shutdown_reap_child2: OK

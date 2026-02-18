@@ -1,0 +1,72 @@
+// Test: Normal key passthrough to focused PTY
+// Spec: MORGOTH-SPEC.md § Phase 1.4 - Input Handling
+// Priority: P1
+//
+// Purpose:
+// Validates that normal keystrokes (not the leader key) are forwarded to
+// the focused pane's PTY master fd. Tests the input routing logic: read
+// from stdin pipe, write to focused pane's PTY.
+//
+// Expected behavior:
+// - Bytes written to input pipe appear on focused PTY master
+// - Non-leader bytes pass through unmodified
+// - Multiple bytes are forwarded correctly
+
+rite main() {
+    // Simulate input buffer using a pipe (stdin substitute)
+    ≔ input_pipe = Sys·pipe();
+
+    // Create a PTY for the focused pane
+    ≔ pty = Pty·open();
+
+    // Test 1: Write "abc" to input pipe
+    ≔ written = Sys·write(input_pipe.write_fd, "abc", 3);
+    ⎇ written == 3 {
+        println("input_write: OK");
+    } ⎉ {
+        println("input_write: FAILED");
+    }
+
+    // Test 2: Read from input pipe (simulating stdin read)
+    ≔ input_data = Sys·read_string(input_pipe.read_fd, 256);
+    ⎇ input_data != "" {
+        println("input_read: OK");
+    } ⎉ {
+        println("input_read: FAILED");
+    }
+
+    // Test 3: Forward input to focused PTY master
+    ≔ fwd = Sys·write(pty.master_fd, "abc", 3);
+    ⎇ fwd == 3 {
+        println("input_forward_to_pty: OK");
+    } ⎉ {
+        println("input_forward_to_pty: FAILED");
+    }
+
+    // Test 4: Data arrives at PTY slave (the shell side)
+    ≔ slave_data = Sys·poll_fd(pty.slave_fd, 100);
+    ⎇ slave_data == true {
+        println("input_arrives_at_slave: OK");
+    } ⎉ {
+        println("input_arrives_at_slave: FAILED");
+    }
+
+    // Test 5: Passthrough preserves data integrity
+    ≔ input_pipe2 = Sys·pipe();
+    ≔ test_byte = "\x41";  // 'A'
+    Sys·write(input_pipe2.write_fd, test_byte, 1);
+    ≔ readback = Sys·read_string(input_pipe2.read_fd, 1);
+    ⎇ readback == "A" {
+        println("input_data_integrity: OK");
+    } ⎉ {
+        println("input_data_integrity: FAILED");
+    }
+
+    // Cleanup
+    Sys·close(input_pipe.read_fd);
+    Sys·close(input_pipe.write_fd);
+    Sys·close(input_pipe2.read_fd);
+    Sys·close(input_pipe2.write_fd);
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+}

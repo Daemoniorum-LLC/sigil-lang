@@ -1,0 +1,104 @@
+// Test: Status bar renders at bottom row of grid
+// Spec: MORGOTH-SPEC.md § Phase 1.3 - Status Bar Rendering
+// Priority: P1
+//
+// Purpose:
+// Validates that the status bar text is written to the bottom row of the
+// grid (the last row, reserved for status). The status bar should fill
+// the entire width, padding with spaces if the text is shorter.
+//
+// Expected behavior:
+// - Status bar occupies the last row of the grid
+// - Text is placed starting at column 0 of the status row
+// - Remaining columns are filled with spaces
+// - Status bar row index is (screen_h - 1)
+
+rite main() {
+    ≔ SPACE = 32;
+    ≔ grid_cols = 20;
+    ≔ grid_rows = 6;
+    ≔ total = grid_rows * grid_cols;
+    ≔ status_row = grid_rows - 1;  // row 5
+
+    ≔ mut grid = [0; 120];
+    // Initialize grid to spaces
+    ≔ mut i = 0;
+    ⟳ i < total {
+        grid[i] = SPACE;
+        i = i + 1;
+    }
+
+    // Test 1: Status bar row index
+    ⎇ status_row == 5 {
+        println("status_bar_row: OK");
+    } ⎉ {
+        println("status_bar_row: FAILED");
+    }
+
+    // Write status text: "Pane 0 | 80x24" — using char codes
+    // P=80, a=97, n=110, e=101, ' '=32, 0=48, ' '=32, |=124, ' '=32,
+    // 8=56, 0=48, x=120, 2=50, 4=52
+    ≔ status_text = [80, 97, 110, 101, 32, 48, 32, 124, 32, 56, 48, 120, 50, 52];
+    ≔ status_len = 14;
+
+    // Write status text to the bottom row
+    ≔ mut t = 0;
+    ⟳ t < status_len {
+        ≔ flat = status_row * grid_cols + t;
+        grid[flat] = status_text[t];
+        t = t + 1;
+    }
+
+    // Pad rest of status row with spaces
+    t = status_len;
+    ⟳ t < grid_cols {
+        ≔ flat = status_row * grid_cols + t;
+        grid[flat] = SPACE;
+        t = t + 1;
+    }
+
+    // Test 2: First char of status bar
+    ⎇ grid[status_row * grid_cols] == 80 {
+        println("status_bar_first_char: OK");
+    } ⎉ {
+        println("status_bar_first_char: FAILED");
+    }
+
+    // Test 3: Pipe separator in status bar
+    ⎇ grid[status_row * grid_cols + 7] == 124 {
+        println("status_bar_separator: OK");
+    } ⎉ {
+        println("status_bar_separator: FAILED");
+    }
+
+    // Test 4: Padding after text is spaces
+    ⎇ grid[status_row * grid_cols + 14] == SPACE ∧ grid[status_row * grid_cols + 19] == SPACE {
+        println("status_bar_padding: OK");
+    } ⎉ {
+        println("status_bar_padding: FAILED");
+    }
+
+    // Test 5: Row above status bar is not affected
+    ≔ above_row = status_row - 1;
+    ⎇ grid[above_row * grid_cols] == SPACE {
+        println("status_bar_no_bleed: OK");
+    } ⎉ {
+        println("status_bar_no_bleed: FAILED");
+    }
+
+    // Test 6: Status bar fills full width
+    ≔ mut all_filled = true;
+    i = 0;
+    ⟳ i < grid_cols {
+        ≔ flat = status_row * grid_cols + i;
+        ⎇ grid[flat] == 0 {
+            all_filled = false;
+        }
+        i = i + 1;
+    }
+    ⎇ all_filled == true {
+        println("status_bar_full_width: OK");
+    } ⎉ {
+        println("status_bar_full_width: FAILED");
+    }
+}

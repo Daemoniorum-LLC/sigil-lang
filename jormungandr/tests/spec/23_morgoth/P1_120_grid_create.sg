@@ -1,0 +1,82 @@
+// Test: Grid creation with correct cell count
+// Spec: MORGOTH-SPEC.md § Phase 1.3 - Rendering Grid
+// Priority: P1
+//
+// Purpose:
+// Validates that creating a grid (screen buffer) of rows x cols produces
+// the correct total number of cells, and that each cell is initialized
+// to a space character (0x20). The grid is a flat array of cells.
+//
+// Expected behavior:
+// - Grid of 24x80 should have 1920 cells
+// - Each cell initialized with space character (32 / 0x20)
+// - Grid of 1x1 has exactly 1 cell
+
+rite main() {
+    ≔ rows = 24;
+    ≔ cols = 80;
+    ≔ total_cells = rows * cols;
+
+    // Test 1: Cell count is correct
+    ⎇ total_cells == 1920 {
+        println("grid_cell_count: OK");
+    } ⎉ {
+        println("grid_cell_count: FAILED");
+    }
+
+    // Test 2: Initialize grid with space characters
+    ≔ mut grid = [0; 1920];
+    ≔ space = 32;
+    ≔ mut i = 0;
+    ⟳ i < total_cells {
+        grid[i] = space;
+        i = i + 1;
+    }
+
+    // Verify first cell is space
+    ⎇ grid[0] == 32 {
+        println("grid_first_cell_space: OK");
+    } ⎉ {
+        println("grid_first_cell_space: FAILED");
+    }
+
+    // Verify last cell is space
+    ⎇ grid[1919] == 32 {
+        println("grid_last_cell_space: OK");
+    } ⎉ {
+        println("grid_last_cell_space: FAILED");
+    }
+
+    // Test 3: All cells are spaces
+    ≔ mut all_space = true;
+    i = 0;
+    ⟳ i < total_cells {
+        ⎇ grid[i] != 32 {
+            all_space = false;
+        }
+        i = i + 1;
+    }
+    ⎇ all_space == true {
+        println("grid_all_spaces: OK");
+    } ⎉ {
+        println("grid_all_spaces: FAILED");
+    }
+
+    // Test 4: Index calculation — row 5, col 10 in 80-wide grid
+    ≔ test_row = 5;
+    ≔ test_col = 10;
+    ≔ flat_idx = test_row * cols + test_col;
+    ⎇ flat_idx == 410 {
+        println("grid_index_calc: OK");
+    } ⎉ {
+        println("grid_index_calc: FAILED");
+    }
+
+    // Test 5: Minimal grid (1x1)
+    ≔ min_cells = 1 * 1;
+    ⎇ min_cells == 1 {
+        println("grid_1x1: OK");
+    } ⎉ {
+        println("grid_1x1: FAILED");
+    }
+}

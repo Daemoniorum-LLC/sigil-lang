@@ -1,0 +1,122 @@
+// Test: Mouse click on pane region changes focus
+// Spec: MORGOTH-SPEC.md § Phase 1.4 - Mouse Input
+// Priority: P1
+//
+// Purpose:
+// Validates that a mouse click at screen coordinates within a pane's
+// region correctly identifies that pane and switches focus to it. Tests
+// the hit-testing algorithm that maps (x, y) to pane index.
+//
+// Expected behavior:
+// - Click in pane 0's region focuses pane 0
+// - Click in pane 1's region focuses pane 1
+// - Click in status bar region does not change focus
+
+rite main() {
+    // 2x2 layout on 80x24 screen (23 usable rows)
+    ≔ pane_count = 4;
+    ≔ mut focus = 0;
+
+    // Pane regions (from P1_111 layout)
+    ≔ px = [0, 40, 0, 40];
+    ≔ py = [0, 0, 11, 11];
+    ≔ pw = [40, 40, 40, 40];
+    ≔ ph = [11, 11, 12, 12];
+
+    // Hit test function: find which pane contains (click_x, click_y)
+    // Test 1: Click at (5, 3) — should be pane 0
+    ≔ click_x = 5;
+    ≔ click_y = 3;
+    ≔ mut hit = -1;
+    ≔ mut i = 0;
+    ⟳ i < pane_count {
+        ⎇ click_x >= px[i] ∧ click_x < px[i] + pw[i] ∧ click_y >= py[i] ∧ click_y < py[i] + ph[i] {
+            hit = i;
+        }
+        i = i + 1;
+    }
+    ⎇ hit == 0 {
+        focus = hit;
+        println("mouse_click_pane0: OK");
+    } ⎉ {
+        println("mouse_click_pane0: FAILED");
+    }
+
+    // Test 2: Click at (50, 3) — should be pane 1
+    ≔ click_x2 = 50;
+    ≔ click_y2 = 3;
+    hit = -1;
+    i = 0;
+    ⟳ i < pane_count {
+        ⎇ click_x2 >= px[i] ∧ click_x2 < px[i] + pw[i] ∧ click_y2 >= py[i] ∧ click_y2 < py[i] + ph[i] {
+            hit = i;
+        }
+        i = i + 1;
+    }
+    ⎇ hit == 1 {
+        focus = hit;
+        println("mouse_click_pane1: OK");
+    } ⎉ {
+        println("mouse_click_pane1: FAILED");
+    }
+
+    // Test 3: Verify focus actually changed to pane 1
+    ⎇ focus == 1 {
+        println("mouse_focus_changed: OK");
+    } ⎉ {
+        println("mouse_focus_changed: FAILED");
+    }
+
+    // Test 4: Click at (10, 15) — should be pane 2
+    ≔ click_x4 = 10;
+    ≔ click_y4 = 15;
+    hit = -1;
+    i = 0;
+    ⟳ i < pane_count {
+        ⎇ click_x4 >= px[i] ∧ click_x4 < px[i] + pw[i] ∧ click_y4 >= py[i] ∧ click_y4 < py[i] + ph[i] {
+            hit = i;
+        }
+        i = i + 1;
+    }
+    ⎇ hit == 2 {
+        focus = hit;
+        println("mouse_click_pane2: OK");
+    } ⎉ {
+        println("mouse_click_pane2: FAILED");
+    }
+
+    // Test 5: Click at (60, 20) — should be pane 3
+    ≔ click_x5 = 60;
+    ≔ click_y5 = 20;
+    hit = -1;
+    i = 0;
+    ⟳ i < pane_count {
+        ⎇ click_x5 >= px[i] ∧ click_x5 < px[i] + pw[i] ∧ click_y5 >= py[i] ∧ click_y5 < py[i] + ph[i] {
+            hit = i;
+        }
+        i = i + 1;
+    }
+    ⎇ hit == 3 {
+        focus = hit;
+        println("mouse_click_pane3: OK");
+    } ⎉ {
+        println("mouse_click_pane3: FAILED");
+    }
+
+    // Test 6: Click on status bar row (y=23) — no pane hit
+    ≔ click_x6 = 40;
+    ≔ click_y6 = 23;
+    hit = -1;
+    i = 0;
+    ⟳ i < pane_count {
+        ⎇ click_x6 >= px[i] ∧ click_x6 < px[i] + pw[i] ∧ click_y6 >= py[i] ∧ click_y6 < py[i] + ph[i] {
+            hit = i;
+        }
+        i = i + 1;
+    }
+    ⎇ hit == -1 {
+        println("mouse_click_status_bar: OK");
+    } ⎉ {
+        println("mouse_click_status_bar: FAILED");
+    }
+}

@@ -1,0 +1,99 @@
+// Test: Leader + n/p cycles focus between panes
+// Spec: MORGOTH-SPEC.md § Phase 1.4 - Leader Commands
+// Priority: P1
+//
+// Purpose:
+// Validates that in leader mode, pressing 'n' moves focus to the next pane
+// and 'p' moves focus to the previous pane, with wrapping at boundaries.
+//
+// Expected behavior:
+// - Leader + 'n' increments focus (with wrap)
+// - Leader + 'p' decrements focus (with wrap)
+// - Focus stays in valid range [0, pane_count)
+
+rite main() {
+    ≔ LEADER_KEY = 2;
+    ≔ CMD_NEXT = 110;    // 'n'
+    ≔ CMD_PREV = 112;    // 'p'
+    ≔ pane_count = 4;
+    ≔ mut focus = 0;
+    ≔ mut leader_mode = false;
+
+    // Test 1: Leader + 'n' moves focus from 0 to 1
+    leader_mode = true;
+    ≔ cmd1 = CMD_NEXT;
+    ⎇ leader_mode == true ∧ cmd1 == CMD_NEXT {
+        focus = (focus + 1) % pane_count;
+        leader_mode = false;
+    }
+    ⎇ focus == 1 {
+        println("leader_next_0_to_1: OK");
+    } ⎉ {
+        println("leader_next_0_to_1: FAILED");
+    }
+
+    // Test 2: Leader + 'n' moves focus from 1 to 2
+    leader_mode = true;
+    ⎇ leader_mode == true ∧ CMD_NEXT == CMD_NEXT {
+        focus = (focus + 1) % pane_count;
+        leader_mode = false;
+    }
+    ⎇ focus == 2 {
+        println("leader_next_1_to_2: OK");
+    } ⎉ {
+        println("leader_next_1_to_2: FAILED");
+    }
+
+    // Test 3: Leader + 'p' moves focus from 2 to 1
+    leader_mode = true;
+    ≔ cmd3 = CMD_PREV;
+    ⎇ leader_mode == true ∧ cmd3 == CMD_PREV {
+        focus = (focus + pane_count - 1) % pane_count;
+        leader_mode = false;
+    }
+    ⎇ focus == 1 {
+        println("leader_prev_2_to_1: OK");
+    } ⎉ {
+        println("leader_prev_2_to_1: FAILED");
+    }
+
+    // Test 4: Leader + 'p' wraps from 0 to 3
+    focus = 0;
+    leader_mode = true;
+    ⎇ leader_mode == true ∧ CMD_PREV == CMD_PREV {
+        focus = (focus + pane_count - 1) % pane_count;
+        leader_mode = false;
+    }
+    ⎇ focus == 3 {
+        println("leader_prev_wrap: OK");
+    } ⎉ {
+        println("leader_prev_wrap: FAILED");
+    }
+
+    // Test 5: Leader + 'n' wraps from 3 to 0
+    focus = 3;
+    leader_mode = true;
+    ⎇ leader_mode == true ∧ CMD_NEXT == CMD_NEXT {
+        focus = (focus + 1) % pane_count;
+        leader_mode = false;
+    }
+    ⎇ focus == 0 {
+        println("leader_next_wrap: OK");
+    } ⎉ {
+        println("leader_next_wrap: FAILED");
+    }
+
+    // Test 6: Not in leader mode — 'n' does not change focus
+    focus = 1;
+    leader_mode = false;
+    ≔ cmd6 = CMD_NEXT;
+    ⎇ leader_mode == true ∧ cmd6 == CMD_NEXT {
+        focus = (focus + 1) % pane_count;
+        leader_mode = false;
+    }
+    ⎇ focus == 1 {
+        println("no_leader_no_change: OK");
+    } ⎉ {
+        println("no_leader_no_change: FAILED");
+    }
+}

@@ -1,0 +1,5 @@
+escalate_sigterm: OK
+escalate_sigkill: OK
+escalate_reap: OK
+escalate_signal_values: OK
+escalate_multi_child: OK

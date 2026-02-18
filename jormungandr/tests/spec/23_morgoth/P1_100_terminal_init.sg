@@ -1,0 +1,77 @@
+// Test: Terminal initialization sequence for Morgoth
+// Spec: MORGOTH-SPEC.md § Phase 1.1 - Terminal Init
+// Priority: P1
+//
+// Purpose:
+// Validates the terminal initialization sequence that Morgoth performs on
+// startup: saving termios, entering raw mode, switching to alternate screen,
+// enabling mouse tracking, and configuring PTY window size. Tests the
+// underlying primitives and their correct ordering.
+//
+// Expected behavior:
+// - term_get_termios(fd) returns a valid handle (>= 0)
+// - term_set_raw_mode(fd) returns 0 on success
+// - Alt screen escape sequence is "\x1b[?1049h"
+// - Mouse enable sequence is "\x1b[?1003h\x1b[?1006h"
+// - Pty·set_size on a valid PTY returns 0
+
+rite main() {
+    // Test 1: Get termios state (simulated — save for later restore)
+    ≔ saved_termios = term_get_termios(0);
+    ⎇ saved_termios >= 0 {
+        println("init_get_termios: OK");
+    } ⎉ {
+        println("init_get_termios: FAILED");
+    }
+
+    // Test 2: Set raw mode on stdin
+    ≔ raw = term_set_raw_mode(0);
+    ⎇ raw == 0 {
+        println("init_raw_mode: OK");
+    } ⎉ {
+        println("init_raw_mode: FAILED");
+    }
+
+    // Test 3: Alt screen escape sequence is correct
+    ≔ alt_seq = term_enter_alt_screen();
+    ⎇ alt_seq == "\x1b[?1049h" {
+        println("init_alt_screen_seq: OK");
+    } ⎉ {
+        println("init_alt_screen_seq: FAILED");
+    }
+
+    // Test 4: Alt screen sequence can be written to a pipe (not stdout, to avoid mixing)
+    ≔ pipe = Sys·pipe();
+    ≔ alt_written = Sys·write(pipe.write_fd, alt_seq, 8);
+    ⎇ alt_written > 0 {
+        println("init_alt_screen_write: OK");
+    } ⎉ {
+        println("init_alt_screen_write: FAILED");
+    }
+    Sys·close(pipe.read_fd);
+    Sys·close(pipe.write_fd);
+
+    // Test 5: Mouse enable escape sequence is correct
+    ≔ mouse_seq = term_enable_mouse();
+    ⎇ mouse_seq == "\x1b[?1003h\x1b[?1006h" {
+        println("init_mouse_seq: OK");
+    } ⎉ {
+        println("init_mouse_seq: FAILED");
+    }
+
+    // Test 6: PTY window size can be set
+    ≔ pty = Pty·open();
+    ≔ size_ok = Pty·set_size(pty.master_fd, 24, 80);
+    ⎇ size_ok == 0 {
+        println("init_pty_winsize: OK");
+    } ⎉ {
+        println("init_pty_winsize: FAILED");
+    }
+
+    // Restore terminal state
+    term_restore_termios(0, saved_termios);
+
+    // Cleanup
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+}

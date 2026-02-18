@@ -1,0 +1,69 @@
+// Test: Sys·kill and Sys·waitpid — process lifecycle management
+// Spec: MORGOTH-SPEC.md § Phase 1.0 Gap 4 - kill/waitpid
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·kill(pid, signal) sends signals to child processes
+// and Sys·waitpid(pid, flags) reaps them. In interpreter mode, these
+// operate on FAKE_PROCESS_STATE tracking simulated processes.
+//
+// Expected behavior:
+// - Sys·kill(valid_pid, SIGTERM) returns 0
+// - Sys·kill(invalid_pid, SIGTERM) returns -3 (ESRCH)
+// - Sys·waitpid(pid, 0) returns {pid, status}
+// - Sys·waitpid on unknown pid returns {pid: -1, status: -1}
+
+rite main() {
+    // Spawn a background process to kill
+    ≔ bg = Sys·spawn_bg("/bin/sleep", ["10"]);
+
+    // Test 1: Kill a valid process
+    ≔ kill_result = Sys·kill(bg.pid, SIGTERM());
+    ⎇ kill_result == 0 {
+        println("kill_valid: OK");
+    } ⎉ {
+        println("kill_valid: FAILED");
+    }
+
+    // Test 2: Waitpid on the killed process
+    ≔ wait_result = Sys·waitpid(bg.pid, 0);
+    ⎇ wait_result.pid >= 0 {
+        println("waitpid_killed: OK");
+    } ⎉ {
+        println("waitpid_killed: FAILED");
+    }
+
+    // Test 3: Kill an invalid PID
+    ≔ bad_kill = Sys·kill(999999, SIGTERM());
+    ⎇ bad_kill == -3 {
+        println("kill_invalid: OK");
+    } ⎉ {
+        println("kill_invalid: FAILED");
+    }
+
+    // Test 4: Waitpid on unknown pid returns sentinel
+    ≔ bad_wait = Sys·waitpid(999999, 0);
+    ⎇ bad_wait.pid == -1 {
+        println("waitpid_unknown: OK");
+    } ⎉ {
+        println("waitpid_unknown: FAILED");
+    }
+
+    // Test 5: Kill with SIGKILL
+    ≔ bg2 = Sys·spawn_bg("/bin/sleep", ["10"]);
+    ≔ kill9 = Sys·kill(bg2.pid, SIGKILL());
+    ⎇ kill9 == 0 {
+        println("kill_sigkill: OK");
+    } ⎉ {
+        println("kill_sigkill: FAILED");
+    }
+    Sys·waitpid(bg2.pid, 0);
+
+    // Cleanup
+    Sys·close(bg.stdin_fd);
+    Sys·close(bg.stdout_fd);
+    Sys·close(bg.stderr_fd);
+    Sys·close(bg2.stdin_fd);
+    Sys·close(bg2.stdout_fd);
+    Sys·close(bg2.stderr_fd);
+}

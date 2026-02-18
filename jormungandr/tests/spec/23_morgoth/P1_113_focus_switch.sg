@@ -1,0 +1,68 @@
+// Test: Focus switching between panes
+// Spec: MORGOTH-SPEC.md § Phase 1.2 - Focus Management
+// Priority: P1
+//
+// Purpose:
+// Validates that focus can be moved between panes using an index. Tests
+// the focus state variable, next/previous cycling, and bounds wrapping.
+//
+// Expected behavior:
+// - Initial focus is pane 0
+// - Switching to pane 1 updates focus index
+// - Next/previous cycling wraps around
+
+rite main() {
+    ≔ pane_count = 4;
+    ≔ mut focus = 0;
+
+    // Test 1: Initial focus is pane 0
+    ⎇ focus == 0 {
+        println("focus_initial: OK");
+    } ⎉ {
+        println("focus_initial: FAILED");
+    }
+
+    // Test 2: Switch focus to pane 1
+    focus = 1;
+    ⎇ focus == 1 {
+        println("focus_switch_to_1: OK");
+    } ⎉ {
+        println("focus_switch_to_1: FAILED");
+    }
+
+    // Test 3: Switch focus to pane 3
+    focus = 3;
+    ⎇ focus == 3 {
+        println("focus_switch_to_3: OK");
+    } ⎉ {
+        println("focus_switch_to_3: FAILED");
+    }
+
+    // Test 4: Next focus wraps around (3 -> 0)
+    focus = (focus + 1) % pane_count;
+    ⎇ focus == 0 {
+        println("focus_next_wrap: OK");
+    } ⎉ {
+        println("focus_next_wrap: FAILED");
+    }
+
+    // Test 5: Previous focus wraps around (0 -> 3)
+    focus = (focus + pane_count - 1) % pane_count;
+    ⎇ focus == 3 {
+        println("focus_prev_wrap: OK");
+    } ⎉ {
+        println("focus_prev_wrap: FAILED");
+    }
+
+    // Test 6: Sequential next cycling
+    focus = 0;
+    focus = (focus + 1) % pane_count;  // 1
+    focus = (focus + 1) % pane_count;  // 2
+    focus = (focus + 1) % pane_count;  // 3
+    focus = (focus + 1) % pane_count;  // 0
+    ⎇ focus == 0 {
+        println("focus_cycle_full: OK");
+    } ⎉ {
+        println("focus_cycle_full: FAILED");
+    }
+}

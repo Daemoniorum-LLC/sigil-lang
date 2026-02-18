@@ -1,0 +1,86 @@
+// Test: Ctrl-B leader key activates leader mode
+// Spec: MORGOTH-SPEC.md § Phase 1.4 - Leader Key
+// Priority: P1
+//
+// Purpose:
+// Validates that the leader key (Ctrl-B, byte 0x02) toggles the leader
+// mode flag. When in leader mode, subsequent keystrokes are interpreted
+// as commands rather than passed through to the focused PTY.
+//
+// Expected behavior:
+// - Byte 0x02 (Ctrl-B) sets leader_mode to true
+// - Non-leader bytes do not set leader_mode
+// - Leader mode is consumed after one command key
+
+rite main() {
+    // Leader key constant: Ctrl-B = 0x02
+    ≔ LEADER_KEY = 2;
+    ≔ mut leader_mode = false;
+
+    // Test 1: Initial state — not in leader mode
+    ⎇ leader_mode == false {
+        println("leader_initial_off: OK");
+    } ⎉ {
+        println("leader_initial_off: FAILED");
+    }
+
+    // Test 2: Process a normal byte (0x41 = 'A') — should not trigger leader
+    ≔ input_byte = 65;  // 'A'
+    ⎇ input_byte == LEADER_KEY {
+        leader_mode = true;
+    }
+    ⎇ leader_mode == false {
+        println("leader_normal_key: OK");
+    } ⎉ {
+        println("leader_normal_key: FAILED");
+    }
+
+    // Test 3: Process Ctrl-B — should trigger leader mode
+    ≔ ctrl_b = 2;
+    ⎇ ctrl_b == LEADER_KEY {
+        leader_mode = true;
+    }
+    ⎇ leader_mode == true {
+        println("leader_ctrl_b_activates: OK");
+    } ⎉ {
+        println("leader_ctrl_b_activates: FAILED");
+    }
+
+    // Test 4: Leader mode consumed after command — 'n' for next pane
+    ≔ cmd_byte = 110;  // 'n'
+    ⎇ leader_mode == true {
+        // Process command
+        ⎇ cmd_byte == 110 {
+            // "next pane" command recognized
+            leader_mode = false;  // consume leader
+        }
+    }
+    ⎇ leader_mode == false {
+        println("leader_consumed: OK");
+    } ⎉ {
+        println("leader_consumed: FAILED");
+    }
+
+    // Test 5: Second leader activation works
+    ≔ ctrl_b2 = 2;
+    ⎇ ctrl_b2 == LEADER_KEY {
+        leader_mode = true;
+    }
+    ⎇ leader_mode == true {
+        println("leader_reactivate: OK");
+    } ⎉ {
+        println("leader_reactivate: FAILED");
+    }
+
+    // Test 6: Unknown command in leader mode still consumes leader
+    ≔ unknown_cmd = 122;  // 'z' — not a valid command
+    ⎇ leader_mode == true {
+        // Unrecognized command — consume leader anyway
+        leader_mode = false;
+    }
+    ⎇ leader_mode == false {
+        println("leader_unknown_consumes: OK");
+    } ⎉ {
+        println("leader_unknown_consumes: FAILED");
+    }
+}

@@ -1,0 +1,6 @@
+shutdown_mouse_seq: OK
+shutdown_mouse_write: OK
+shutdown_alt_screen_seq: OK
+shutdown_alt_screen_write: OK
+shutdown_restore_termios: OK
+shutdown_restore_idempotent: OK

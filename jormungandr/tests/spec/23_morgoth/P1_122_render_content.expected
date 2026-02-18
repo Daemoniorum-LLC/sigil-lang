@@ -1,0 +1,6 @@
+content_first_char: OK
+content_last_char: OK
+content_after_space: OK
+content_second_row: OK
+content_border_intact: OK
+content_clip_check: OK

@@ -1,0 +1,6 @@
+init_get_termios: OK
+init_raw_mode: OK
+init_alt_screen_seq: OK
+init_alt_screen_write: OK
+init_mouse_seq: OK
+init_pty_winsize: OK

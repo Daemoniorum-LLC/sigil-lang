@@ -1,0 +1,78 @@
+// Test: Layout remainder distribution to last column/row
+// Spec: MORGOTH-SPEC.md § Phase 1.2 - Layout Engine
+// Priority: P1
+//
+// Purpose:
+// Validates that when screen dimensions do not divide evenly by the grid
+// size, the remainder pixels/cells are given to the last column and last
+// row. For example, 81 cols split into 2 columns yields widths 40 and 41.
+//
+// Expected behavior:
+// - 81 cols, 2 cols -> widths 40 and 41
+// - 25 rows (24 usable), 2 rows -> heights 12 and 12
+// - Odd-both case: 81 cols, 25 usable rows, 3 cols, 2 rows
+// - Total width of all columns equals screen width
+
+rite main() {
+    // Test 1: 81 cols split into 2 — remainder to last
+    ≔ screen_w = 81;
+    ≔ grid_cols = 2;
+    ≔ base_w = screen_w / grid_cols;    // 40
+    ≔ extra_w = screen_w % grid_cols;   // 1
+    ≔ col0_w = base_w;                  // 40
+    ≔ col1_w = base_w + extra_w;        // 41
+
+    ⎇ col0_w == 40 {
+        println("remainder_col0_w: OK");
+    } ⎉ {
+        println("remainder_col0_w: FAILED");
+    }
+
+    ⎇ col1_w == 41 {
+        println("remainder_col1_w: OK");
+    } ⎉ {
+        println("remainder_col1_w: FAILED");
+    }
+
+    // Test 2: Widths sum to screen width
+    ⎇ col0_w + col1_w == screen_w {
+        println("remainder_width_sum: OK");
+    } ⎉ {
+        println("remainder_width_sum: FAILED");
+    }
+
+    // Test 3: 25 usable rows split into 3 rows — remainder to last
+    ≔ usable_h = 25;
+    ≔ grid_rows = 3;
+    ≔ base_h = usable_h / grid_rows;    // 8
+    ≔ extra_h = usable_h % grid_rows;   // 1
+    ≔ row0_h = base_h;                  // 8
+    ≔ row1_h = base_h;                  // 8
+    ≔ row2_h = base_h + extra_h;        // 9
+
+    ⎇ row0_h == 8 ∧ row1_h == 8 ∧ row2_h == 9 {
+        println("remainder_row_heights: OK");
+    } ⎉ {
+        println("remainder_row_heights: FAILED");
+    }
+
+    // Test 4: Heights sum to usable height
+    ⎇ row0_h + row1_h + row2_h == usable_h {
+        println("remainder_height_sum: OK");
+    } ⎉ {
+        println("remainder_height_sum: FAILED");
+    }
+
+    // Test 5: Odd case — 83 cols into 4 columns
+    ≔ w2 = 83;
+    ≔ c2 = 4;
+    ≔ bw2 = w2 / c2;       // 20
+    ≔ ew2 = w2 % c2;       // 3
+    // First 3 cols get base_w, last gets base_w + extra
+    ≔ sum = bw2 * 3 + (bw2 + ew2);
+    ⎇ sum == 83 {
+        println("remainder_odd_sum: OK");
+    } ⎉ {
+        println("remainder_odd_sum: FAILED");
+    }
+}

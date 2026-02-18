@@ -1,0 +1,129 @@
+// Test: Lilith's 2x3 reference layout (6 panes)
+// Spec: MORGOTH-SPEC.md § Phase 1.2 - Layout Engine (2x3 grid)
+// Priority: P1
+//
+// Purpose:
+// Validates the 2-row by 3-column pane layout that Lilith uses as the
+// reference configuration. All 6 panes must have valid, non-overlapping
+// regions that tile the usable screen area completely.
+//
+// Expected behavior (screen 120x30, 29 usable rows):
+// - 6 panes in 2 rows x 3 cols
+// - All panes have width > 0 and height > 0
+// - No panes overlap
+// - Total area equals usable screen area
+
+rite main() {
+    ≔ screen_w = 120;
+    ≔ screen_h = 30;
+    ≔ usable_h = screen_h - 1;  // 29 rows
+    ≔ grid_rows = 2;
+    ≔ grid_cols = 3;
+    ≔ pane_count = grid_rows * grid_cols;  // 6
+
+    ≔ base_w = screen_w / grid_cols;    // 40
+    ≔ extra_w = screen_w % grid_cols;   // 0
+    ≔ base_h = usable_h / grid_rows;    // 14
+    ≔ extra_h = usable_h % grid_rows;   // 1
+
+    // Compute all 6 pane regions
+    ≔ mut px = [0, 0, 0, 0, 0, 0];
+    ≔ mut py = [0, 0, 0, 0, 0, 0];
+    ≔ mut pw = [0, 0, 0, 0, 0, 0];
+    ≔ mut ph = [0, 0, 0, 0, 0, 0];
+
+    ≔ mut idx = 0;
+    ≔ mut cy = 0;
+    ≔ mut r = 0;
+    ⟳ r < grid_rows {
+        ≔ mut h = base_h;
+        ⎇ r == grid_rows - 1 {
+            h = base_h + extra_h;
+        }
+        ≔ mut cx = 0;
+        ≔ mut c = 0;
+        ⟳ c < grid_cols {
+            ≔ mut w = base_w;
+            ⎇ c == grid_cols - 1 {
+                w = base_w + extra_w;
+            }
+            px[idx] = cx;
+            py[idx] = cy;
+            pw[idx] = w;
+            ph[idx] = h;
+            cx = cx + w;
+            idx = idx + 1;
+            c = c + 1;
+        }
+        cy = cy + h;
+        r = r + 1;
+    }
+
+    // Test 1: All 6 panes created
+    ⎇ idx == 6 {
+        println("layout_2x3_count: OK");
+    } ⎉ {
+        println("layout_2x3_count: FAILED");
+    }
+
+    // Test 2: All panes have positive dimensions
+    ≔ mut all_positive = true;
+    ≔ mut i = 0;
+    ⟳ i < pane_count {
+        ⎇ pw[i] <= 0 ∨ ph[i] <= 0 {
+            all_positive = false;
+        }
+        i = i + 1;
+    }
+    ⎇ all_positive == true {
+        println("layout_2x3_positive_dims: OK");
+    } ⎉ {
+        println("layout_2x3_positive_dims: FAILED");
+    }
+
+    // Test 3: Total area covers usable screen
+    ≔ mut total_area = 0;
+    i = 0;
+    ⟳ i < pane_count {
+        total_area = total_area + pw[i] * ph[i];
+        i = i + 1;
+    }
+    ⎇ total_area == screen_w * usable_h {
+        println("layout_2x3_total_area: OK");
+    } ⎉ {
+        println("layout_2x3_total_area: FAILED");
+    }
+
+    // Test 4: No horizontal overlap — panes in same row don't overlap x ranges
+    // Row 0: panes 0, 1, 2
+    ≔ r0_no_overlap = (px[0] + pw[0] == px[1]) ∧ (px[1] + pw[1] == px[2]);
+    ⎇ r0_no_overlap == true {
+        println("layout_2x3_row0_no_overlap: OK");
+    } ⎉ {
+        println("layout_2x3_row0_no_overlap: FAILED");
+    }
+
+    // Row 1: panes 3, 4, 5
+    ≔ r1_no_overlap = (px[3] + pw[3] == px[4]) ∧ (px[4] + pw[4] == px[5]);
+    ⎇ r1_no_overlap == true {
+        println("layout_2x3_row1_no_overlap: OK");
+    } ⎉ {
+        println("layout_2x3_row1_no_overlap: FAILED");
+    }
+
+    // Test 5: No vertical overlap — rows are contiguous
+    ≔ rows_contiguous = (py[0] + ph[0] == py[3]);
+    ⎇ rows_contiguous == true {
+        println("layout_2x3_rows_contiguous: OK");
+    } ⎉ {
+        println("layout_2x3_rows_contiguous: FAILED");
+    }
+
+    // Test 6: Last row + height reaches usable_h
+    ≔ bottom = py[3] + ph[3];
+    ⎇ bottom == usable_h {
+        println("layout_2x3_fills_height: OK");
+    } ⎉ {
+        println("layout_2x3_fills_height: FAILED");
+    }
+}

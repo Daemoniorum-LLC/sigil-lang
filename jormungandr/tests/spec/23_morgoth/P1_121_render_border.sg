@@ -1,0 +1,116 @@
+// Test: Box-drawing border characters at pane edges
+// Spec: MORGOTH-SPEC.md § Phase 1.3 - Border Rendering
+// Priority: P1
+//
+// Purpose:
+// Validates that box-drawing characters are correctly placed at the edges
+// of a pane region within the grid. Tests corners (top-left, top-right,
+// bottom-left, bottom-right), horizontal edges, and vertical edges.
+//
+// Expected behavior:
+// - Corners use specific box-drawing char codes
+// - Horizontal edges use horizontal line char
+// - Vertical edges use vertical line char
+
+rite main() {
+    // Box-drawing character codes (Unicode code points)
+    ≔ CORNER_TL = 9484;   // U+250C: ┌
+    ≔ CORNER_TR = 9488;   // U+2510: ┐
+    ≔ CORNER_BL = 9492;   // U+2514: └
+    ≔ CORNER_BR = 9496;   // U+2518: ┘
+    ≔ HLINE = 9472;       // U+2500: ─
+    ≔ VLINE = 9474;       // U+2502: │
+    ≔ SPACE = 32;
+
+    // Small test grid: 6 rows x 10 cols
+    ≔ grid_cols = 10;
+    ≔ grid_rows = 6;
+    ≔ total = grid_rows * grid_cols;
+    ≔ mut grid = [0; 60];
+
+    // Initialize all to space
+    ≔ mut i = 0;
+    ⟳ i < total {
+        grid[i] = SPACE;
+        i = i + 1;
+    }
+
+    // Draw border for a pane region: x=0, y=0, w=10, h=6
+    ≔ rx = 0;
+    ≔ ry = 0;
+    ≔ rw = 10;
+    ≔ rh = 6;
+
+    // Set corners
+    grid[ry * grid_cols + rx] = CORNER_TL;
+    grid[ry * grid_cols + (rx + rw - 1)] = CORNER_TR;
+    grid[(ry + rh - 1) * grid_cols + rx] = CORNER_BL;
+    grid[(ry + rh - 1) * grid_cols + (rx + rw - 1)] = CORNER_BR;
+
+    // Set horizontal edges (top and bottom, excluding corners)
+    ≔ mut c = 1;
+    ⟳ c < rw - 1 {
+        grid[ry * grid_cols + (rx + c)] = HLINE;
+        grid[(ry + rh - 1) * grid_cols + (rx + c)] = HLINE;
+        c = c + 1;
+    }
+
+    // Set vertical edges (left and right, excluding corners)
+    ≔ mut r = 1;
+    ⟳ r < rh - 1 {
+        grid[(ry + r) * grid_cols + rx] = VLINE;
+        grid[(ry + r) * grid_cols + (rx + rw - 1)] = VLINE;
+        r = r + 1;
+    }
+
+    // Test 1: Top-left corner
+    ⎇ grid[0] == CORNER_TL {
+        println("border_corner_tl: OK");
+    } ⎉ {
+        println("border_corner_tl: FAILED");
+    }
+
+    // Test 2: Top-right corner
+    ⎇ grid[9] == CORNER_TR {
+        println("border_corner_tr: OK");
+    } ⎉ {
+        println("border_corner_tr: FAILED");
+    }
+
+    // Test 3: Bottom-left corner
+    ⎇ grid[50] == CORNER_BL {
+        println("border_corner_bl: OK");
+    } ⎉ {
+        println("border_corner_bl: FAILED");
+    }
+
+    // Test 4: Bottom-right corner
+    ⎇ grid[59] == CORNER_BR {
+        println("border_corner_br: OK");
+    } ⎉ {
+        println("border_corner_br: FAILED");
+    }
+
+    // Test 5: Top edge is horizontal lines
+    ≔ top_ok = grid[1] == HLINE ∧ grid[5] == HLINE ∧ grid[8] == HLINE;
+    ⎇ top_ok == true {
+        println("border_top_edge: OK");
+    } ⎉ {
+        println("border_top_edge: FAILED");
+    }
+
+    // Test 6: Left edge is vertical lines
+    ≔ left_ok = grid[10] == VLINE ∧ grid[20] == VLINE ∧ grid[40] == VLINE;
+    ⎇ left_ok == true {
+        println("border_left_edge: OK");
+    } ⎉ {
+        println("border_left_edge: FAILED");
+    }
+
+    // Test 7: Interior is still spaces
+    ⎇ grid[11] == SPACE ∧ grid[22] == SPACE ∧ grid[33] == SPACE {
+        println("border_interior_space: OK");
+    } ⎉ {
+        println("border_interior_space: FAILED");
+    }
+}

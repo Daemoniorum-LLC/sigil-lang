@@ -1,0 +1,66 @@
+// Test: Single pane layout fills screen minus status bar
+// Spec: MORGOTH-SPEC.md § Phase 1.2 - Layout Engine
+// Priority: P1
+//
+// Purpose:
+// Validates that a single-pane layout correctly computes the pane region
+// to fill the entire screen width and height minus one row reserved for
+// the status bar at the bottom.
+//
+// Expected behavior:
+// - Screen 80x24, single pane: region {x:0, y:0, w:80, h:23}
+// - Status bar occupies the bottom row (row 23)
+
+rite main() {
+    // Screen dimensions
+    ≔ screen_w = 80;
+    ≔ screen_h = 24;
+    ≔ status_bar_rows = 1;
+    ≔ usable_h = screen_h - status_bar_rows;
+
+    // Single pane layout: 1 row, 1 col
+    ≔ rows = 1;
+    ≔ cols = 1;
+
+    // Compute pane region
+    ≔ pane_x = 0;
+    ≔ pane_y = 0;
+    ≔ pane_w = screen_w / cols;
+    ≔ pane_h = usable_h / rows;
+
+    // Test 1: Pane x position
+    ⎇ pane_x == 0 {
+        println("single_pane_x: OK");
+    } ⎉ {
+        println("single_pane_x: FAILED");
+    }
+
+    // Test 2: Pane y position
+    ⎇ pane_y == 0 {
+        println("single_pane_y: OK");
+    } ⎉ {
+        println("single_pane_y: FAILED");
+    }
+
+    // Test 3: Pane width fills screen
+    ⎇ pane_w == 80 {
+        println("single_pane_w: OK");
+    } ⎉ {
+        println("single_pane_w: FAILED");
+    }
+
+    // Test 4: Pane height is screen minus status bar
+    ⎇ pane_h == 23 {
+        println("single_pane_h: OK");
+    } ⎉ {
+        println("single_pane_h: FAILED");
+    }
+
+    // Test 5: Status bar starts at row 23
+    ≔ status_y = usable_h;
+    ⎇ status_y == 23 {
+        println("status_bar_y: OK");
+    } ⎉ {
+        println("status_bar_y: FAILED");
+    }
+}

@@ -1,0 +1,78 @@
+// Test: Shutdown sends SIGTERM to all child processes
+// Spec: MORGOTH-SPEC.md § Phase 1.5 - Graceful Shutdown
+// Priority: P1
+//
+// Purpose:
+// Validates that the shutdown sequence sends SIGTERM to every spawned
+// child process. Tests spawning multiple background processes and then
+// killing them all in sequence.
+//
+// Expected behavior:
+// - Spawn 2 background processes with valid PIDs
+// - Sys·kill(pid, SIGTERM) returns 0 for both
+// - Sys·waitpid reaps both processes
+
+rite main() {
+    // Spawn 2 background processes (simulating pane shells)
+    ≔ bg1 = Sys·spawn_bg("/bin/sleep", ["30"]);
+    ≔ bg2 = Sys·spawn_bg("/bin/sleep", ["30"]);
+
+    // Test 1: Both processes have valid PIDs
+    ⎇ bg1.pid >= 0 ∧ bg2.pid >= 0 {
+        println("shutdown_pids_valid: OK");
+    } ⎉ {
+        println("shutdown_pids_valid: FAILED");
+    }
+
+    // Test 2: PIDs are distinct
+    ⎇ bg1.pid != bg2.pid {
+        println("shutdown_pids_distinct: OK");
+    } ⎉ {
+        println("shutdown_pids_distinct: FAILED");
+    }
+
+    // Shutdown sequence: send SIGTERM to all children
+    ≔ mut pids = [0, 0];
+    pids[0] = bg1.pid;
+    pids[1] = bg2.pid;
+
+    // Test 3: Kill first child
+    ≔ kill1 = Sys·kill(pids[0], SIGTERM());
+    ⎇ kill1 == 0 {
+        println("shutdown_kill_child1: OK");
+    } ⎉ {
+        println("shutdown_kill_child1: FAILED");
+    }
+
+    // Test 4: Kill second child
+    ≔ kill2 = Sys·kill(pids[1], SIGTERM());
+    ⎇ kill2 == 0 {
+        println("shutdown_kill_child2: OK");
+    } ⎉ {
+        println("shutdown_kill_child2: FAILED");
+    }
+
+    // Test 5: Reap first child
+    ≔ wait1 = Sys·waitpid(pids[0], 0);
+    ⎇ wait1.pid >= 0 {
+        println("shutdown_reap_child1: OK");
+    } ⎉ {
+        println("shutdown_reap_child1: FAILED");
+    }
+
+    // Test 6: Reap second child
+    ≔ wait2 = Sys·waitpid(pids[1], 0);
+    ⎇ wait2.pid >= 0 {
+        println("shutdown_reap_child2: OK");
+    } ⎉ {
+        println("shutdown_reap_child2: FAILED");
+    }
+
+    // Cleanup fds
+    Sys·close(bg1.stdin_fd);
+    Sys·close(bg1.stdout_fd);
+    Sys·close(bg1.stderr_fd);
+    Sys·close(bg2.stdin_fd);
+    Sys·close(bg2.stdout_fd);
+    Sys·close(bg2.stderr_fd);
+}

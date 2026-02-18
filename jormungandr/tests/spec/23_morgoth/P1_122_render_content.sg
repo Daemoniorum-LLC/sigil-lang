@@ -1,0 +1,113 @@
+// Test: Text content fills pane interior region
+// Spec: MORGOTH-SPEC.md § Phase 1.3 - Content Rendering
+// Priority: P1
+//
+// Purpose:
+// Validates that text content is correctly placed into the interior of a
+// pane region (inside the border). Characters are written at the correct
+// grid positions using row*cols+col indexing.
+//
+// Expected behavior:
+// - Text placed at interior positions (offset by border)
+// - Characters map to correct flat array indices
+// - Content does not overwrite border cells
+
+rite main() {
+    ≔ SPACE = 32;
+    ≔ grid_cols = 20;
+    ≔ grid_rows = 8;
+    ≔ total = grid_rows * grid_cols;
+    ≔ mut grid = [0; 160];
+
+    // Initialize grid to spaces
+    ≔ mut i = 0;
+    ⟳ i < total {
+        grid[i] = SPACE;
+        i = i + 1;
+    }
+
+    // Pane region: x=2, y=1, w=16, h=6
+    // Interior (inside 1-cell border): x=3, y=2, inner_w=14, inner_h=4
+    ≔ pane_x = 2;
+    ≔ pane_y = 1;
+    ≔ inner_x = pane_x + 1;
+    ≔ inner_y = pane_y + 1;
+    ≔ inner_w = 14;
+    ≔ inner_h = 4;
+
+    // Write "Hello" at first interior row
+    // H=72, e=101, l=108, l=108, o=111
+    ≔ text = [72, 101, 108, 108, 111];
+    ≔ text_len = 5;
+    ≔ mut t = 0;
+    ⟳ t < text_len {
+        ≔ flat = inner_y * grid_cols + inner_x + t;
+        grid[flat] = text[t];
+        t = t + 1;
+    }
+
+    // Test 1: First character placed correctly
+    ≔ first_idx = 2 * grid_cols + 3;  // row 2, col 3
+    ⎇ grid[first_idx] == 72 {
+        println("content_first_char: OK");
+    } ⎉ {
+        println("content_first_char: FAILED");
+    }
+
+    // Test 2: Last character of "Hello" placed correctly
+    ≔ last_idx = 2 * grid_cols + 7;   // row 2, col 7
+    ⎇ grid[last_idx] == 111 {
+        println("content_last_char: OK");
+    } ⎉ {
+        println("content_last_char: FAILED");
+    }
+
+    // Test 3: Cell after text is still space
+    ≔ after_idx = 2 * grid_cols + 8;
+    ⎇ grid[after_idx] == SPACE {
+        println("content_after_space: OK");
+    } ⎉ {
+        println("content_after_space: FAILED");
+    }
+
+    // Test 4: Write content on second interior row
+    ≔ text2 = [87, 111, 114, 108, 100];  // "World"
+    t = 0;
+    ⟳ t < 5 {
+        ≔ flat2 = (inner_y + 1) * grid_cols + inner_x + t;
+        grid[flat2] = text2[t];
+        t = t + 1;
+    }
+    ≔ w_idx = 3 * grid_cols + 3;  // row 3, col 3
+    ⎇ grid[w_idx] == 87 {
+        println("content_second_row: OK");
+    } ⎉ {
+        println("content_second_row: FAILED");
+    }
+
+    // Test 5: Border cell not overwritten (pane_x, pane_y still space)
+    ≔ border_idx = pane_y * grid_cols + pane_x;
+    ⎇ grid[border_idx] == SPACE {
+        println("content_border_intact: OK");
+    } ⎉ {
+        println("content_border_intact: FAILED");
+    }
+
+    // Test 6: Content clipping — do not write past inner_w
+    ≔ mut clipped = true;
+    ≔ mut cx = 0;
+    ⟳ cx < grid_cols {
+        ⎇ cx < inner_x ∨ cx >= inner_x + inner_w {
+            // Outside interior horizontally on row 2
+            ⎇ grid[2 * grid_cols + cx] != SPACE ∧ cx < inner_x {
+                clipped = false;
+            }
+        }
+        cx = cx + 1;
+    }
+    ⎇ clipped == true {
+        println("content_clip_check: OK");
+    } ⎉ {
+        println("content_clip_check: FAILED");
+    }
+}
