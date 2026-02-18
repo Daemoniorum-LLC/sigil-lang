@@ -84,6 +84,8 @@ pub mod llvm_codegen;
 
 pub mod rust_codegen;
 
+pub mod async_transform;
+
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
