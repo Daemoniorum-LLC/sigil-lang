@@ -8,17 +8,23 @@
 // signals. Tests the primitives in a loop-like structure.
 //
 // Expected behavior:
-// - Sys·poll_fd on stdin with 0 timeout returns false (no input in test)
+// - Sys·poll_fd on empty PTY with 0 timeout returns false (no data)
 // - Sys·poll_fd on PTY master after write to slave returns true
 // - Sys·signal_register + signal_pending works in loop context
 
 rite main() {
-    // Test 1: Poll stdin with 0ms timeout — no data expected in test
-    ≔ stdin_ready = Sys·poll_fd(0, 0);
-    ⎇ stdin_ready == false {
-        println("poll_stdin_empty: OK");
+    // Test 1: Poll empty PTY master with 0ms timeout — no data expected
+    // Note: We use an empty PTY rather than fd 0 (stdin) because stdin may be
+    // piped in the test harness, and native libc::poll() correctly detects
+    // piped stdin as readable. An empty PTY master has no data regardless.
+    ≔ empty_pty = Pty·open();
+    ≔ empty_ready = Sys·poll_fd(empty_pty.master_fd, 0);
+    Sys·close(empty_pty.master_fd);
+    Sys·close(empty_pty.slave_fd);
+    ⎇ empty_ready == false {
+        println("poll_empty_fd: OK");
     } ⎉ {
-        println("poll_stdin_empty: FAILED");
+        println("poll_empty_fd: FAILED");
     }
 
     // Test 2: Poll PTY master after writing to slave

@@ -1,4 +1,4 @@
-poll_stdin_empty: OK
+poll_empty_fd: OK
 poll_pty_after_write: OK
 signal_register_winch: OK
 signal_not_pending: OK
