@@ -187,8 +187,8 @@ impl WasmCompiler {
                 }
             }
 
-            // Unsupported for now
-            Expr::Incorporation { .. } => Err(WasmError::unsupported("incorporation expressions")),
+            // Incorporation chains: expr·method(args)·method2(args2)
+            Expr::Incorporation { segments } => self.compile_incorporation(segments),
             Expr::Unsafe(_) => Err(WasmError::unsupported("unsafe blocks")),
             Expr::Deref(_) => Err(WasmError::unsupported("raw pointer dereference")),
             Expr::AddrOf { .. } => Err(WasmError::unsupported("address-of expressions")),

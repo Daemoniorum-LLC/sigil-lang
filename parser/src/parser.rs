@@ -3616,6 +3616,35 @@ impl<'a> Parser<'a> {
                     inner: Box::new(inner),
                 })
             }
+            Some(Token::StarStar) => {
+                // G76: Pointer-to-pointer: **T, **const T, **mut T, **vary T
+                // Handle ** as two nested raw pointers: **T = *(*T)
+                self.advance(); // consume **
+
+                // Check for mutability of the INNER pointer: **const T, **mut T
+                let inner_mutable = if self.consume_if(&Token::Const) {
+                    false
+                } else if self.consume_if(&Token::Mut) {
+                    true
+                } else {
+                    false // Default: immutable inner pointer
+                };
+
+                // Parse the innermost type (e.g., u8, i64, CustomType)
+                let innermost = self.parse_type()?;
+
+                // Build the inner pointer: *T or *mut T
+                let inner_ptr = TypeExpr::Pointer {
+                    mutable: inner_mutable,
+                    inner: Box::new(innermost),
+                };
+
+                // Wrap in outer pointer (immutable by default)
+                Ok(TypeExpr::Pointer {
+                    mutable: false,
+                    inner: Box::new(inner_ptr),
+                })
+            }
             Some(Token::LBracket) => {
                 self.advance();
                 // Check for empty brackets or array/shape syntax
@@ -4622,11 +4651,51 @@ impl<'a> Parser<'a> {
             return Ok(bounds);
         }
 
-        bounds.push(self.parse_type_or_lifetime()?);
+        // G78: Stop before `=` since in generic params context, `T: Bound = Default` means
+        // Bound is the trait bound and Default is the default type value, not an associated type binding
+        bounds.push(self.parse_type_for_bound()?);
         while self.consume_if(&Token::Plus) {
-            bounds.push(self.parse_type_or_lifetime()?);
+            bounds.push(self.parse_type_for_bound()?);
         }
         Ok(bounds)
+    }
+
+    /// G78: Parse a type for a bound context, stopping before `=` to allow default type params
+    fn parse_type_for_bound(&mut self) -> ParseResult<TypeExpr> {
+        // Check for lifetime
+        if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
+            self.advance();
+            return Ok(TypeExpr::Lifetime(name));
+        }
+
+        // Check for HRTB
+        if self.check(&Token::ForAll) {
+            self.advance();
+            self.expect(Token::Lt)?;
+            let mut lifetimes = Vec::new();
+            if let Some(Token::Lifetime(lt)) = self.current_token().cloned() {
+                lifetimes.push(lt);
+                self.advance();
+                while self.consume_if(&Token::Comma) {
+                    if let Some(Token::Lifetime(lt)) = self.current_token().cloned() {
+                        lifetimes.push(lt);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            self.expect_gt()?;
+            let bound = self.parse_type()?;
+            return Ok(TypeExpr::Hrtb {
+                lifetimes,
+                bound: Box::new(bound),
+            });
+        }
+
+        // Parse as regular type - do NOT treat `Ident =` as associated type binding here
+        // since that would consume `T: Trait = Default` incorrectly
+        self.parse_type()
     }
 
     /// Parse either a type or a lifetime (for trait bounds like `T: Trait + 'static`)

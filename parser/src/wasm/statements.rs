@@ -315,13 +315,18 @@ impl WasmCompiler {
             Expr::Call { func, args } => {
                 // Check if this is a call to an external import
                 if let Expr::Path(path) = func.as_ref() {
-                    let simple_name = path.segments.first()
-                        .map(|s| s.ident.name.as_str())
-                        .unwrap_or("");
+                    // Only check single-segment paths for external imports.
+                    // Multi-segment paths like `components::nav_view()` are module-qualified
+                    // calls to locally compiled functions, not external imports.
+                    if path.segments.len() == 1 {
+                        let simple_name = path.segments.first()
+                            .map(|s| s.ident.name.as_str())
+                            .unwrap_or("");
 
-                    // If it's in external_imports, add the WASM import now
-                    if let Some((module_name, _)) = self.external_imports.get(simple_name).cloned() {
-                        self.get_or_add_external_import(&module_name, simple_name, args.len());
+                        // If it's in external_imports, add the WASM import now
+                        if let Some((module_name, _)) = self.external_imports.get(simple_name).cloned() {
+                            self.get_or_add_external_import(&module_name, simple_name, args.len());
+                        }
                     }
                 }
 

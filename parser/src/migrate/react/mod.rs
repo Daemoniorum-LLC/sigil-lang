@@ -12,12 +12,16 @@
 //!
 //! See docs/specs/REACT-MIGRATION.md for full specification.
 
+mod cli;
 mod extraction;
 mod generator;
+mod mcp;
 mod spec;
 #[cfg(test)]
 mod tests;
 
+pub use cli::*;
 pub use extraction::*;
 pub use generator::*;
+pub use mcp::*;
 pub use spec::*;

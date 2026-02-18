@@ -337,6 +337,7 @@ impl ImportRegistry {
         self.add_import("vdom", "create_fragment", vec![], vec![I32]);
         self.add_import("vdom", "set_vnode_prop", vec![I32, I64, I64], vec![]); // vnodeId, nameStrRef, value
         self.add_import("vdom", "set_vnode_str_prop", vec![I32, I64, I64], vec![]); // vnodeId, nameStrRef, valueStrRef
+        self.add_import("vdom", "set_vnode_style", vec![I32, I64, I64], vec![]); // vnodeId, propStrRef, valueStrRef
         self.add_import("vdom", "append_vnode_child", vec![I32, I32], vec![]);
         self.add_import("vdom", "diff_and_patch", vec![I32, I32, I32], vec![]);
         self.add_import("vdom", "mount_vnode", vec![I32, I64], vec![I32]); // vnodeId, selectorStrRef -> domId

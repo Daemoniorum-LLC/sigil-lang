@@ -759,6 +759,67 @@ impl WasmCompiler {
                     return Ok(());
                 }
 
+                // =================================================================
+                // Method Call on Local Variable Detection
+                // =================================================================
+                // When we have a path like ["app", "view"], check if "app" is a local variable.
+                // If so, this is actually a method call: app.view() where we need to:
+                // 1. Push the receiver (app) onto the stack
+                // 2. Call Type::view where Type is inferred from the receiver
+                if resolved_segments.len() == 2 {
+                    let potential_receiver = &resolved_segments[0];
+                    let method_name = &resolved_segments[1];
+
+                    // Check if first segment is a local variable (not a type or module)
+                    let is_local = self.current_function()
+                        .and_then(|f| f.get_local(potential_receiver))
+                        .is_some();
+                    let is_type = self.struct_layouts.contains_key(potential_receiver.as_str())
+                        || self.enum_layouts.contains_key(potential_receiver.as_str());
+
+                    if is_local && !is_type {
+                        // This is a method call on a local variable!
+                        // Get the receiver's type from var_types if available
+                        let receiver_type = self.var_types.get(potential_receiver).cloned();
+
+                        // Try to find the method
+                        let method_func_idx = if let Some(ref ty) = receiver_type {
+                            let qualified_method = format!("{}::{}", ty, method_name);
+                            self.func_map.get(&qualified_method).copied()
+                        } else {
+                            None
+                        };
+
+                        if let Some(func_idx) = method_func_idx {
+                            // Found the method! Emit receiver as first argument
+                            let local_idx = self.current_function()
+                                .and_then(|f| f.get_local(potential_receiver))
+                                .map(|l| l.index)
+                                .unwrap();
+
+                            let func = self.current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::LocalGet(local_idx));
+
+                            // Compile remaining arguments
+                            for arg in args {
+                                self.compile_expr(arg)?;
+                            }
+
+                            // Call the method
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::Call(func_idx));
+
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+
+                            return Ok(());
+                        }
+                    }
+                }
+
                 // Compile arguments for non-import calls
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -1111,6 +1172,27 @@ impl WasmCompiler {
         method: &str,
         args: &[Expr],
     ) -> WasmResult<()> {
+        // First, check if receiver is a simple local variable that needs explicit handling
+        // This is needed because some code paths don't properly emit LocalGet for variables
+        let receiver_local_idx = if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let var_name = &path.segments[0].ident.name;
+                // Not "self" (handled separately), not a type name
+                if var_name != "self" && !self.struct_layouts.contains_key(var_name.as_str())
+                   && !self.enum_layouts.contains_key(var_name.as_str()) {
+                    self.current_function()
+                        .and_then(|f| f.get_local(var_name))
+                        .map(|l| l.index)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Check for actor self·method() calls
         if let Expr::Path(path) = receiver {
             if path.segments.len() == 1 && path.segments[0].ident.name == "self" {
@@ -1228,7 +1310,16 @@ impl WasmCompiler {
             .ok_or_else(|| WasmError::undefined_function(method))?;
 
         // Compile receiver as first argument
-        self.compile_expr(receiver)?;
+        // If we identified a local variable at the start, emit LocalGet directly
+        if let Some(local_idx) = receiver_local_idx {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::LocalGet(local_idx));
+        } else {
+            // Otherwise use normal expression compilation
+            self.compile_expr(receiver)?;
+        }
 
         // Compile remaining arguments
         for arg in args {
@@ -3146,10 +3237,31 @@ impl WasmCompiler {
         let first = &segments[0];
         let mut current_expr = self.segment_to_receiver(first)?;
 
+        // Pre-compute local index for first segment if it's a simple variable
+        let first_local_idx = if first.args.is_none() {
+            let var_name = &first.name.name;
+            if var_name != "self" && !self.struct_layouts.contains_key(var_name.as_str())
+               && !self.enum_layouts.contains_key(var_name.as_str()) {
+                self.current_function()
+                    .and_then(|f| f.get_local(var_name))
+                    .map(|l| l.index)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Handle the method calls (remaining segments) one at a time
         if segments.len() == 1 {
             // No method calls, just compile the receiver
-            self.compile_expr(&current_expr)?;
+            if let Some(local_idx) = first_local_idx {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::LocalGet(local_idx));
+            } else {
+                self.compile_expr(&current_expr)?;
+            }
             return Ok(());
         }
 
@@ -3290,7 +3402,15 @@ impl WasmCompiler {
             }
 
             // Not a builtin - compile as method call
-            self.compile_expr(&current_expr)?;
+            // For the first iteration (i==1), use pre-computed local index if available
+            if i == 1 && first_local_idx.is_some() {
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::LocalGet(first_local_idx.unwrap()));
+            } else {
+                // Compile the current expression as receiver
+                self.compile_expr(&current_expr)?;
+            }
 
             for arg in &method_args {
                 self.compile_expr(arg)?;

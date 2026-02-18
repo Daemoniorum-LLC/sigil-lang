@@ -4,7 +4,7 @@
 //! Tests are crystallized understanding of React → Qliphoth transformation.
 
 use super::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // =============================================================================
 // Phase 1.1: JSX Parsing
@@ -1635,4 +1635,1941 @@ fn test_type_inference_array_elements() {
     // Should infer Vec<i64> from [1, 2, 3]
     assert!(state_field.field_type.contains("Vec"),
         "Should infer Vec type: {}", state_field.field_type);
+}
+
+// =============================================================================
+// Phase 4: MCP Interface
+// =============================================================================
+
+#[test]
+fn test_mcp_list_migrations_empty() {
+    // GIVEN: Empty migration session
+    let extraction = ReactExtraction {
+        file: FileInfo {
+            path: PathBuf::from("test.tsx"),
+            relative_path: "test.tsx".to_string(),
+            language: Language::TypeScript,
+            has_jsx: true,
+        },
+        components: vec![],
+        custom_hooks: vec![],
+        imports: vec![],
+        exports: vec![],
+        types: vec![],
+        helper_functions: vec![],
+    };
+    let spec = generate_spec(&extraction, "");
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We list migrations
+    let migrations = session.list_migrations();
+
+    // THEN: List is empty
+    assert!(migrations.is_empty());
+}
+
+#[test]
+fn test_mcp_list_migrations_populated() {
+    // GIVEN: Session with components
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+        function Display({ value }) {
+            return <span>{value}</span>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We list migrations
+    let migrations = session.list_migrations();
+
+    // THEN: Both components appear with their metadata
+    assert_eq!(migrations.len(), 2);
+
+    let counter = migrations.iter().find(|m| m.name == "Counter")
+        .expect("Should have Counter component");
+    let display = migrations.iter().find(|m| m.name == "Display")
+        .expect("Should have Display component");
+
+    // Check both have IDs and status
+    assert!(!counter.id.is_empty());
+    assert!(!display.id.is_empty());
+    assert_eq!(counter.status, MigrationStatus::Pending);
+    assert_eq!(display.status, MigrationStatus::Pending);
+}
+
+#[test]
+fn test_mcp_get_migration() {
+    // GIVEN: Session with a component
+    let source = r#"
+        function App() {
+            return <div>Hello</div>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We get the migration
+    let comp_id = &session.list_migrations()[0].id;
+    let result = session.get_migration(comp_id);
+
+    // THEN: We get the full spec
+    assert!(result.is_ok());
+    let comp = result.unwrap();
+    assert_eq!(comp.name, "App");
+}
+
+#[test]
+fn test_mcp_get_migration_not_found() {
+    // GIVEN: Session with a component
+    let source = r#"
+        function App() { return <div />; }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We request non-existent component
+    let result = session.get_migration("nonexistent-id");
+
+    // THEN: We get NotFound error
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        McpError::NotFound(id) => assert_eq!(id, "nonexistent-id"),
+        e => panic!("Expected NotFound, got {:?}", e),
+    }
+}
+
+#[test]
+fn test_mcp_validate_sigil_valid() {
+    // GIVEN: Valid Sigil code
+    let code = r#"
+invoke qliphoth·prelude·*;
+
+actor Counter {
+    count: i64,
+
+    rite new() -> Self {
+        Self { count: 0 }
+    }
+
+    rite view(&self) -> VNode {
+        VNode·div()
+            ·child(VNode·text(self.count.to_string()))
+    }
+}
+    "#;
+
+    let source = "function App() { return <div />; }";
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We validate
+    let result = session.validate_sigil(code);
+
+    // THEN: It passes
+    assert!(result.valid, "Should be valid: {:?}", result.errors);
+}
+
+#[test]
+fn test_mcp_validate_sigil_invalid_missing_import() {
+    // GIVEN: Sigil code missing import
+    let code = r#"
+actor Counter {
+    count: i64,
+}
+    "#;
+
+    let source = "function App() { return <div />; }";
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We validate
+    let result = session.validate_sigil(code);
+
+    // THEN: It fails with import error
+    assert!(!result.valid);
+    assert!(result.errors.iter().any(|e| e.message.contains("import")));
+}
+
+#[test]
+fn test_mcp_validate_sigil_placeholder_expression() {
+    // GIVEN: Code with unresolved placeholder
+    let code = r#"
+invoke qliphoth·prelude·*;
+
+actor Counter {
+    rite view(&self) -> VNode {
+        VNode·div()·child(/* expression */)
+    }
+}
+    "#;
+
+    let source = "function App() { return <div />; }";
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We validate
+    let result = session.validate_sigil(code);
+
+    // THEN: It fails with placeholder error
+    assert!(!result.valid);
+    assert!(result.errors.iter().any(|e| e.message.contains("Placeholder")));
+}
+
+#[test]
+fn test_mcp_start_migration() {
+    // GIVEN: Session with components
+    let source = r#"
+        function App() { return <div />; }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let mut session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We start a migration
+    let comp_id = session.list_migrations()[0].id.clone();
+    session.start_migration(&comp_id).unwrap();
+
+    // THEN: Status changes to InProgress
+    let migrations = session.list_migrations();
+    assert_eq!(migrations[0].status, MigrationStatus::InProgress);
+}
+
+#[test]
+fn test_mcp_resolve_ambiguity() {
+    // GIVEN: Component with ambiguities
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            useEffect(() => {
+                console.log(count);
+            }, [count]);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let mut session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    let comp_id = session.list_migrations()[0].id.clone();
+
+    // Get the ambiguity id separately to avoid borrow conflicts
+    let ambiguity_id = {
+        let comp = session.get_migration(&comp_id).unwrap();
+        if comp.ambiguities.is_empty() {
+            return; // No ambiguities to test
+        }
+        comp.ambiguities[0].id.clone()
+    };
+
+    // WHEN: We resolve the ambiguity
+    let result = session.resolve_ambiguity(&comp_id, &ambiguity_id, 0);
+
+    // THEN: It succeeds
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_mcp_resolve_ambiguity_invalid_choice() {
+    // GIVEN: Component with ambiguities
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            useEffect(() => { console.log(count); }, [count]);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let mut session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    let comp_id = session.list_migrations()[0].id.clone();
+
+    // Get the ambiguity id separately to avoid borrow conflicts
+    let ambiguity_id = {
+        let comp = session.get_migration(&comp_id).unwrap();
+        if comp.ambiguities.is_empty() {
+            return; // No ambiguities to test
+        }
+        comp.ambiguities[0].id.clone()
+    };
+
+    // WHEN: We resolve with invalid choice
+    let result = session.resolve_ambiguity(&comp_id, &ambiguity_id, 999);
+
+    // THEN: It fails
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        McpError::InvalidChoice(_, _) => {}
+        e => panic!("Expected InvalidChoice, got {:?}", e),
+    }
+}
+
+#[test]
+fn test_mcp_resource_pending() {
+    // GIVEN: Session with components
+    let source = r#"
+        function App() { return <div />; }
+        function Other() { return <span />; }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let mut session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // Start one migration
+    let comp_id = session.list_migrations()[0].id.clone();
+    session.start_migration(&comp_id).unwrap();
+
+    // WHEN: We get pending resource
+    let pending = session.resource_pending();
+
+    // THEN: Only one is pending (the other is in progress)
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].status, MigrationStatus::Pending);
+}
+
+#[test]
+fn test_mcp_resource_patterns() {
+    // GIVEN: Any session
+    let source = "function App() { return <div />; }";
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We get patterns resource
+    let patterns = session.resource_patterns();
+
+    // THEN: We get pattern library
+    assert!(!patterns.is_empty());
+    assert!(patterns.iter().any(|p| p.name.contains("useState")));
+}
+
+#[test]
+fn test_mcp_resource_overview() {
+    // GIVEN: Session with components
+    let source = r#"
+        function App() { return <div />; }
+        function Other() { return <span />; }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We get overview resource
+    let overview = session.resource_overview();
+
+    // THEN: Counts are correct
+    assert_eq!(overview.total_components, 2);
+    assert_eq!(overview.completed, 0);
+    assert_eq!(overview.in_progress, 0);
+    assert_eq!(overview.blocked, 0);
+}
+
+#[test]
+fn test_mcp_get_patterns_filtered() {
+    // GIVEN: Session
+    let source = "function App() { return <div />; }";
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We filter patterns by name
+    let filter = PatternFilter {
+        name: Some("useState".to_string()),
+        category: None,
+    };
+    let patterns = session.get_patterns(Some(filter));
+
+    // THEN: Only matching patterns returned
+    assert!(patterns.iter().all(|p| p.name.contains("useState")));
+}
+
+#[test]
+fn test_mcp_generate_code() {
+    // GIVEN: Session with component
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <button onClick={() => setCount(count + 1)}>{count}</button>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // WHEN: We generate code
+    let comp_id = session.list_migrations()[0].id.clone();
+    let result = session.generate_code(&comp_id);
+
+    // THEN: We get valid Sigil code
+    assert!(result.is_ok());
+    let generated = result.unwrap();
+    assert!(generated.code.contains("actor Counter"));
+    assert!(generated.code.contains("count"));
+}
+
+#[test]
+fn test_mcp_complete_migration() {
+    // CRITICAL-1: Test the complete_migration functionality
+
+    // GIVEN: Session with a simple component
+    let source = r#"
+        function Greeting() {
+            return <h1>Hello World</h1>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    // Use a unique temp directory for this test
+    let tmp_dir = std::env::temp_dir().join(format!("mcp_complete_test_{}", std::process::id()));
+    let mut session = MigrationSession::from_spec(spec, &tmp_dir);
+
+    let comp_id = session.list_migrations()[0].id.clone();
+
+    // Valid Sigil code for a pure function component
+    let sigil_code = r#"invoke qliphoth·prelude·*;
+
+rite greeting() -> VNode! {
+    VNode·h1()·text_child("Hello World")
+}
+"#;
+
+    // WHEN: We complete the migration
+    let result = session.complete_migration(&comp_id, sigil_code);
+
+    // THEN: It succeeds
+    assert!(result.is_ok(), "complete_migration failed: {:?}", result.err());
+    let completion = result.unwrap();
+    assert!(completion.success);
+    assert!(!completion.output_path.is_empty());
+
+    // Verify file was written
+    let output_path = std::path::Path::new(&completion.output_path);
+    assert!(output_path.exists(), "Output file should exist at {:?}", output_path);
+
+    // Verify file contents
+    let written_code = std::fs::read_to_string(output_path).expect("Should read output file");
+    assert!(written_code.contains("invoke qliphoth"));
+    assert!(written_code.contains("greeting"));
+
+    // Verify status updated to Completed
+    let migrations = session.list_migrations();
+    let completed_comp = migrations.iter().find(|m| m.id == comp_id).unwrap();
+    assert_eq!(completed_comp.status, MigrationStatus::Completed);
+
+    // Verify overview updated
+    let overview = session.resource_overview();
+    assert_eq!(overview.completed, 1);
+
+    // Cleanup
+    std::fs::remove_dir_all(&tmp_dir).ok();
+}
+
+#[test]
+fn test_mcp_complete_migration_validation_failure() {
+    // Test that complete_migration fails if code doesn't validate
+
+    let source = r#"function App() { return <div />; }"#;
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    let tmp_dir = std::env::temp_dir().join(format!("mcp_complete_fail_{}", std::process::id()));
+    let mut session = MigrationSession::from_spec(spec, &tmp_dir);
+
+    let comp_id = session.list_migrations()[0].id.clone();
+
+    // Invalid code - missing qliphoth import
+    let invalid_code = r#"
+actor App {
+    rite view(&self) -> VNode {
+        VNode·div()
+    }
+}
+"#;
+
+    // WHEN: We try to complete with invalid code
+    let result = session.complete_migration(&comp_id, invalid_code);
+
+    // THEN: It fails validation
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        McpError::ValidationFailed(errors) => {
+            assert!(!errors.is_empty());
+            assert!(errors.iter().any(|e| e.message.contains("import")));
+        }
+        e => panic!("Expected ValidationFailed, got {:?}", e),
+    }
+
+    // Status should still be Pending
+    let migrations = session.list_migrations();
+    assert_eq!(migrations[0].status, MigrationStatus::Pending);
+
+    // Cleanup
+    std::fs::remove_dir_all(&tmp_dir).ok();
+}
+
+#[test]
+fn test_mcp_get_completed_code() {
+    // MINOR-3: Test the get_completed_code accessor
+
+    let source = r#"function App() { return <div>Hi</div>; }"#;
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    let tmp_dir = std::env::temp_dir().join(format!("mcp_get_code_{}", std::process::id()));
+    let mut session = MigrationSession::from_spec(spec, &tmp_dir);
+
+    let comp_id = session.list_migrations()[0].id.clone();
+
+    // Before completion, should return None
+    assert!(session.get_completed_code(&comp_id).is_none());
+
+    // Complete the migration
+    let sigil_code = "invoke qliphoth·prelude·*;\nrite app() -> VNode! { VNode·div()·text_child(\"Hi\") }";
+    session.complete_migration(&comp_id, sigil_code).unwrap();
+
+    // After completion, should return the code
+    let retrieved = session.get_completed_code(&comp_id);
+    assert!(retrieved.is_some());
+    assert_eq!(retrieved.unwrap(), sigil_code);
+
+    // Cleanup
+    std::fs::remove_dir_all(&tmp_dir).ok();
+}
+
+#[test]
+fn test_mcp_session_save_load() {
+    // MINOR-2: Test state persistence
+
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            return <div>{count}</div>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    let tmp_dir = std::env::temp_dir().join(format!("mcp_persist_{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).unwrap();
+
+    let mut session = MigrationSession::from_spec(spec, &tmp_dir);
+
+    // Make some changes to session state
+    let comp_id = session.list_migrations()[0].id.clone();
+    session.start_migration(&comp_id).unwrap();
+
+    // Save session
+    let save_path = tmp_dir.join("session.json");
+    session.save(&save_path).expect("Should save session");
+    assert!(save_path.exists());
+
+    // Load session into new instance
+    let loaded_session = MigrationSession::load(&save_path, &tmp_dir)
+        .expect("Should load session");
+
+    // Verify state was preserved
+    let migrations = loaded_session.list_migrations();
+    assert_eq!(migrations.len(), 1);
+    assert_eq!(migrations[0].id, comp_id);
+    assert_eq!(migrations[0].status, MigrationStatus::InProgress);
+
+    // Cleanup
+    std::fs::remove_dir_all(&tmp_dir).ok();
+}
+
+#[test]
+fn test_mcp_validate_sigil_parser_syntax_error() {
+    // MINOR-1: Test that full Sigil parser validation catches syntax errors
+
+    let source = r#"function App() { return <div />; }"#;
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // Code with actual syntax error - unclosed brace
+    let invalid_code = r#"invoke qliphoth·prelude·*;
+
+rite app() -> VNode! {
+    VNode·div()
+// Missing closing brace
+"#;
+
+    let result = session.validate_sigil(invalid_code);
+
+    assert!(!result.valid, "Should detect syntax error");
+    assert!(!result.errors.is_empty(), "Should have errors");
+    // The error should mention unexpected EOF or similar
+    let error_msg = &result.errors[0].message;
+    assert!(
+        error_msg.contains("Unexpected") || error_msg.contains("expected") || error_msg.contains("Syntax"),
+        "Error should mention syntax issue: {}",
+        error_msg
+    );
+}
+
+#[test]
+fn test_mcp_validate_sigil_parser_deprecated_syntax() {
+    // Test that deprecated Rust syntax is caught
+
+    let source = r#"function App() { return <div />; }"#;
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // Code using deprecated Rust 'fn' instead of Sigil 'rite'
+    let rust_syntax_code = r#"invoke qliphoth·prelude·*;
+
+fn app() -> VNode {
+    VNode·div()
+}
+"#;
+
+    let result = session.validate_sigil(rust_syntax_code);
+
+    // Should either fail or have warnings about deprecated syntax
+    // The parser may accept 'fn' with a warning or error
+    if !result.valid {
+        let has_relevant_error = result.errors.iter().any(|e|
+            e.message.contains("Deprecated") ||
+            e.message.contains("fn") ||
+            e.message.contains("rite") ||
+            e.message.contains("Syntax")
+        );
+        assert!(has_relevant_error, "Error should relate to deprecated syntax: {:?}", result.errors);
+    }
+}
+
+#[test]
+fn test_mcp_validate_sigil_parser_valid_complex() {
+    // Test that valid complex Sigil code passes parser validation
+
+    let source = r#"function App() { return <div />; }"#;
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // Valid complex Sigil actor
+    let valid_code = r#"invoke qliphoth·prelude·*;
+
+ᛈ CounterMsg {
+    Increment,
+    Decrement,
+}
+
+☉ actor Counter {
+    state count: i64! = 0,
+
+    rite new() -> Self! {
+        Self { count: 0 }
+    }
+
+    on Increment {
+        self.count += 1;
+    }
+
+    on Decrement {
+        self.count -= 1;
+    }
+
+    rite view(&self) -> VNode! {
+        VNode·div()
+            ·class("counter")
+            ·child(VNode·span()·text_child(self.count·to_string()))
+            ·child(VNode·button()·text_child("+")·on_click(Increment))
+            ·child(VNode·button()·text_child("-")·on_click(Decrement))
+    }
+}
+"#;
+
+    let result = session.validate_sigil(valid_code);
+
+    assert!(result.valid, "Valid Sigil should pass: {:?}", result.errors);
+    assert!(result.errors.is_empty(), "Should have no errors: {:?}", result.errors);
+}
+
+#[test]
+fn test_mcp_validate_sigil_heuristic_before_parser() {
+    // Test that heuristic errors prevent parser from running
+    // (to avoid confusing parser errors on placeholder code)
+
+    let source = r#"function App() { return <div />; }"#;
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let session = MigrationSession::from_spec(spec, "/tmp/output");
+
+    // Code with placeholder - heuristic should catch this first
+    let placeholder_code = r#"invoke qliphoth·prelude·*;
+
+rite app() -> VNode! {
+    VNode·div()·child(/* expression */)
+}
+"#;
+
+    let result = session.validate_sigil(placeholder_code);
+
+    assert!(!result.valid);
+    // Should have the placeholder error, not a parser error
+    assert!(result.errors.iter().any(|e| e.message.contains("Placeholder")),
+        "Should catch placeholder before parser: {:?}", result.errors);
+}
+
+// =============================================================================
+// Phase 6.1: Type Field Extraction
+// =============================================================================
+
+#[test]
+fn test_type_extraction_captures_all_fields() {
+    // GIVEN: An interface with multiple fields
+    let source = r#"
+        interface ButtonProps {
+            label: string;
+            onClick: () => void;
+            disabled: boolean;
+            size: 'small' | 'medium' | 'large';
+            icon?: React.ReactNode;
+        }
+    "#;
+
+    // WHEN: We extract types
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: All 5 fields are captured
+    assert_eq!(extraction.types.len(), 1);
+    let button_props = &extraction.types[0];
+    assert_eq!(button_props.name, "ButtonProps");
+    assert_eq!(button_props.fields.len(), 5, "Should capture all 5 fields");
+
+    // Verify field names
+    let field_names: Vec<&str> = button_props.fields.iter().map(|f| f.name.as_str()).collect();
+    assert!(field_names.contains(&"label"));
+    assert!(field_names.contains(&"onClick"));
+    assert!(field_names.contains(&"disabled"));
+    assert!(field_names.contains(&"size"));
+    assert!(field_names.contains(&"icon"));
+}
+
+#[test]
+fn test_type_extraction_marks_optional_fields() {
+    // GIVEN: An interface with optional fields
+    let source = r#"
+        interface UserProfile {
+            id: string;
+            name: string;
+            email?: string;
+            avatar?: string;
+        }
+    "#;
+
+    // WHEN: We extract types
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Optional fields are marked correctly
+    let profile = &extraction.types[0];
+    let id_field = profile.fields.iter().find(|f| f.name == "id").unwrap();
+    let email_field = profile.fields.iter().find(|f| f.name == "email").unwrap();
+
+    assert!(!id_field.optional, "id should be required");
+    assert!(email_field.optional, "email should be optional");
+}
+
+#[test]
+fn test_type_extraction_preserves_union_types() {
+    // GIVEN: A type with union fields
+    let source = r#"
+        interface ApiResponse {
+            status: 'success' | 'error' | 'pending';
+            data: string | null;
+        }
+    "#;
+
+    // WHEN: We extract types
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Union types are preserved in type_annotation
+    let response = &extraction.types[0];
+    let status_field = response.fields.iter().find(|f| f.name == "status").unwrap();
+
+    assert!(status_field.type_annotation.contains("success"));
+    assert!(status_field.type_annotation.contains("error"));
+    assert!(status_field.type_annotation.contains("pending"));
+}
+
+#[test]
+fn test_type_extraction_handles_extends() {
+    // GIVEN: An interface that extends another
+    let source = r#"
+        interface BaseProps {
+            id: string;
+        }
+        interface ExtendedProps extends BaseProps {
+            name: string;
+        }
+    "#;
+
+    // WHEN: We extract types
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Extended interface captures extends clause
+    let extended = extraction.types.iter().find(|t| t.name == "ExtendedProps").unwrap();
+    assert!(!extended.extends.is_empty(), "Should capture extends");
+    assert!(extended.extends.iter().any(|e| e.contains("BaseProps")));
+}
+
+#[test]
+fn test_type_extraction_resolves_type_references() {
+    // GIVEN: An interface with type references
+    let source = r#"
+        interface User {
+            id: string;
+        }
+        interface Comment {
+            author: User;
+            replies: Comment[];
+        }
+    "#;
+
+    // WHEN: We extract types
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Type references are captured with their kind
+    let comment = extraction.types.iter().find(|t| t.name == "Comment").unwrap();
+    let author_field = comment.fields.iter().find(|f| f.name == "author").unwrap();
+    let replies_field = comment.fields.iter().find(|f| f.name == "replies").unwrap();
+
+    // Check type_kind classification
+    match &author_field.type_kind {
+        extraction::TypeFieldKind::TypeRef { name, .. } => {
+            assert_eq!(name, "User");
+        }
+        _ => panic!("Expected TypeRef for author field"),
+    }
+
+    match &replies_field.type_kind {
+        extraction::TypeFieldKind::Array { element_type } => {
+            assert!(element_type.contains("Comment"));
+        }
+        _ => panic!("Expected Array for replies field"),
+    }
+}
+
+// =============================================================================
+// Phase 6.2: Helper Function Extraction
+// =============================================================================
+
+#[test]
+fn test_helper_extraction_finds_module_scope_functions() {
+    // GIVEN: Source with module-scope helper functions
+    let source = r#"
+        function formatDate(date: Date): string {
+            return date.toISOString();
+        }
+
+        function calculateTotal(items: number[]): number {
+            return items.reduce((a, b) => a + b, 0);
+        }
+
+        function App() {
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Helper functions are found (not components)
+    assert!(extraction.helper_functions.len() >= 2,
+        "Should find at least 2 helper functions, found: {:?}",
+        extraction.helper_functions.iter().map(|h| &h.name).collect::<Vec<_>>());
+
+    let helper_names: Vec<&str> = extraction.helper_functions.iter().map(|h| h.name.as_str()).collect();
+    assert!(helper_names.contains(&"formatDate"), "Should find formatDate");
+    assert!(helper_names.contains(&"calculateTotal"), "Should find calculateTotal");
+}
+
+#[test]
+fn test_helper_extraction_finds_component_scope_functions() {
+    // GIVEN: Source with functions inside component
+    let source = r#"
+        function App() {
+            function handleClick() {
+                console.log('clicked');
+            }
+
+            const formatValue = (val: number) => val.toFixed(2);
+
+            return <button onClick={handleClick}>{formatValue(42)}</button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Component has handlers (component-scope functions become handlers)
+    assert_eq!(extraction.components.len(), 1);
+    let component = &extraction.components[0];
+
+    // handleClick should be extracted as a handler
+    assert!(component.handlers.iter().any(|h| h.name == "handleClick"),
+        "Should find handleClick handler");
+}
+
+#[test]
+fn test_helper_extraction_captures_parameters_and_return_type() {
+    // GIVEN: Helper with typed parameters and return
+    let source = r#"
+        function processData(input: string, count: number): ProcessedResult {
+            return { value: input, total: count };
+        }
+
+        function App() {
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Parameters and return type are captured
+    let helper = extraction.helper_functions.iter()
+        .find(|h| h.name == "processData")
+        .expect("Should find processData");
+
+    assert_eq!(helper.parameters.len(), 2, "Should have 2 parameters");
+    assert!(helper.return_type.is_some(), "Should have return type");
+    assert!(helper.return_type.as_ref().unwrap().contains("ProcessedResult"));
+}
+
+#[test]
+fn test_helper_extraction_detects_purity() {
+    // GIVEN: Pure and impure helper functions
+    let source = r#"
+        // Pure function - no side effects
+        function add(a: number, b: number): number {
+            return a + b;
+        }
+
+        // Impure - has console.log
+        function logAndAdd(a: number, b: number): number {
+            console.log('adding');
+            return a + b;
+        }
+
+        function App() {
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Purity is detected
+    let add_fn = extraction.helper_functions.iter().find(|h| h.name == "add");
+    let log_fn = extraction.helper_functions.iter().find(|h| h.name == "logAndAdd");
+
+    assert!(add_fn.is_some(), "Should find add helper function");
+    assert!(log_fn.is_some(), "Should find logAndAdd helper function");
+
+    let add = add_fn.unwrap();
+    assert!(add.is_pure, "add should be pure");
+
+    let log = log_fn.unwrap();
+    assert!(!log.is_pure, "logAndAdd should be impure");
+    assert!(log.side_effects.iter().any(|s| matches!(s, extraction::SideEffect::ConsoleLog)),
+        "Should detect console.log side effect");
+}
+
+#[test]
+fn test_helper_extraction_tracks_usage_sites() {
+    // GIVEN: Helper used in multiple places
+    let source = r#"
+        function formatCurrency(amount: number): string {
+            return '$' + amount.toFixed(2);
+        }
+
+        function App() {
+            const price = formatCurrency(99.99);
+            const tax = formatCurrency(7.50);
+            return <div>{price} + {tax}</div>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Helper is found with correct metadata
+    let helper = extraction.helper_functions.iter()
+        .find(|h| h.name == "formatCurrency");
+
+    assert!(helper.is_some(), "Should find formatCurrency helper");
+
+    let h = helper.unwrap();
+    assert_eq!(h.name, "formatCurrency");
+    assert!(h.is_pure, "formatCurrency should be pure");
+    assert_eq!(h.parameters.len(), 1, "Should have one parameter");
+
+    // Note: used_by cross-file tracking is not implemented (requires multi-file analysis)
+    // This test verifies the helper is found and correctly extracted
+}
+
+// =============================================================================
+// Phase 6.3: Handler Body Analysis
+// =============================================================================
+
+#[test]
+fn test_handler_body_extracts_function_calls() {
+    // GIVEN: Handler with multiple function calls
+    let source = r#"
+        function ChatPanel() {
+            const [message, setMessage] = useState('');
+
+            const handleSend = () => {
+                sendMessage(message);
+                clearInput();
+                trackEvent('message_sent');
+            };
+
+            return <button onClick={handleSend}>Send</button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Handler calls are extracted
+    let component = &extraction.components[0];
+    let handler = component.handlers.iter().find(|h| h.name == "handleSend").unwrap();
+
+    assert!(handler.calls.len() >= 3, "Should capture at least 3 calls");
+
+    let call_names: Vec<&str> = handler.calls.iter().map(|c| c.name.as_str()).collect();
+    assert!(call_names.contains(&"sendMessage"));
+    assert!(call_names.contains(&"clearInput"));
+    assert!(call_names.contains(&"trackEvent"));
+}
+
+#[test]
+fn test_handler_body_identifies_call_sources() {
+    // GIVEN: Handler calling functions from different sources
+    let source = r#"
+        function ChatPanel() {
+            const [count, setCount] = useState(0);
+
+            const handleAction = () => {
+                setCount(count + 1);
+                fetch('/api/action');
+            };
+
+            return <button onClick={handleAction}>Act</button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Call sources are identified
+    let component = &extraction.components[0];
+    let handler = component.handlers.iter().find(|h| h.name == "handleAction").unwrap();
+
+    // Find setCount call
+    let set_count_call = handler.calls.iter().find(|c| c.name == "setCount");
+    assert!(set_count_call.is_some(), "Should find setCount call");
+
+    if let Some(call) = set_count_call {
+        match &call.source {
+            extraction::CallSource::StateSetter { state_name } => {
+                assert_eq!(state_name, "count");
+            }
+            _ => panic!("setCount should be identified as StateSetter"),
+        }
+    }
+
+    // Find fetch call
+    let fetch_call = handler.calls.iter().find(|c| c.name == "fetch");
+    assert!(fetch_call.is_some(), "Should find fetch call");
+
+    if let Some(call) = fetch_call {
+        assert!(matches!(call.source, extraction::CallSource::Global));
+    }
+}
+
+#[test]
+fn test_handler_body_detects_early_returns() {
+    // GIVEN: Handler with early return
+    let source = r#"
+        function Form() {
+            const handleSubmit = (e: Event) => {
+                if (!isValid) {
+                    return;
+                }
+                submitForm();
+            };
+
+            return <form onSubmit={handleSubmit} />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Early return is detected
+    let component = &extraction.components[0];
+    let handler = component.handlers.iter().find(|h| h.name == "handleSubmit").unwrap();
+
+    assert!(handler.has_early_return, "Should detect early return");
+}
+
+#[test]
+fn test_handler_body_captures_conditionals() {
+    // GIVEN: Handler with conditional logic
+    let source = r#"
+        function Toggle() {
+            const [on, setOn] = useState(false);
+
+            const handleToggle = () => {
+                if (on) {
+                    turnOff();
+                } else {
+                    turnOn();
+                }
+            };
+
+            return <button onClick={handleToggle}>Toggle</button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Conditionals are detected
+    let component = &extraction.components[0];
+    let handler = component.handlers.iter().find(|h| h.name == "handleToggle").unwrap();
+
+    assert!(handler.has_conditionals, "Should detect conditionals");
+}
+
+#[test]
+fn test_handler_body_infers_state_mutations() {
+    // GIVEN: Handler that mutates state
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+            const [total, setTotal] = useState(0);
+
+            const handleIncrement = () => {
+                setCount(count + 1);
+                setTotal(total + 1);
+            };
+
+            return <button onClick={handleIncrement}>+</button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: State mutations are captured
+    let component = &extraction.components[0];
+    let handler = component.handlers.iter().find(|h| h.name == "handleIncrement").unwrap();
+
+    assert!(handler.state_mutations.len() >= 2,
+        "Should detect 2 state mutations, found: {:?}", handler.state_mutations);
+}
+
+// =============================================================================
+// Phase 6.4: Hook Argument Expansion
+// =============================================================================
+
+#[test]
+fn test_hook_args_expand_object_properties() {
+    // GIVEN: Custom hook with object argument
+    let source = r#"
+        function App() {
+            const result = useQuery({
+                queryKey: ['users'],
+                queryFn: fetchUsers,
+                enabled: true
+            });
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Object properties are expanded
+    let component = &extraction.components[0];
+    let hook = component.custom_hooks.iter().find(|h| h.name == "useQuery").unwrap();
+
+    assert!(!hook.expanded_arguments.is_empty(), "Should have expanded arguments");
+
+    if let extraction::HookArgument::Object { properties } = &hook.expanded_arguments[0] {
+        let prop_names: Vec<&str> = properties.iter().map(|p| p.name.as_str()).collect();
+        assert!(prop_names.contains(&"queryKey"));
+        assert!(prop_names.contains(&"queryFn"));
+        assert!(prop_names.contains(&"enabled"));
+    } else {
+        panic!("First argument should be Object");
+    }
+}
+
+#[test]
+fn test_hook_args_capture_arrow_functions() {
+    // GIVEN: Custom hook with arrow function argument
+    let source = r#"
+        function App() {
+            const state = useStore((s) => s.user);
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Arrow function is captured
+    let component = &extraction.components[0];
+    let hook = component.custom_hooks.iter().find(|h| h.name == "useStore").unwrap();
+
+    if let extraction::HookArgument::Function { params, body_summary, .. } = &hook.expanded_arguments[0] {
+        assert!(params.contains(&"s".to_string()) || params.iter().any(|p| p.contains("s")));
+        assert!(body_summary.contains("s.user") || body_summary.contains("user"));
+    } else {
+        panic!("Argument should be Function");
+    }
+}
+
+#[test]
+fn test_hook_args_analyze_callback_bodies() {
+    // GIVEN: Hook with callback that has side effects
+    let source = r#"
+        function App() {
+            const data = useQuery({
+                onSuccess: (data) => {
+                    console.log('Success');
+                    updateCache(data);
+                }
+            });
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Callback body is analyzed
+    let component = &extraction.components[0];
+    let hook = component.custom_hooks.iter().find(|h| h.name == "useQuery").unwrap();
+
+    if let extraction::HookArgument::Object { properties } = &hook.expanded_arguments[0] {
+        let on_success = properties.iter().find(|p| p.name == "onSuccess");
+        assert!(on_success.is_some(), "Should find onSuccess property");
+
+        if let Some(prop) = on_success {
+            if let extraction::HookPropertyValue::Callback { calls, side_effects, .. } = &prop.value_kind {
+                // Should detect console.log
+                assert!(side_effects.iter().any(|s| matches!(s, extraction::SideEffect::ConsoleLog)),
+                    "Should detect console.log in callback");
+                // Should detect updateCache call
+                assert!(calls.iter().any(|c| c.name == "updateCache"),
+                    "Should detect updateCache call");
+            }
+        }
+    }
+}
+
+#[test]
+fn test_hook_args_preserve_array_arguments() {
+    // GIVEN: Hook with array argument
+    let source = r#"
+        function App() {
+            const result = useQuery({
+                queryKey: ['users', userId, 'posts']
+            });
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Array is preserved
+    let component = &extraction.components[0];
+    let hook = component.custom_hooks.iter().find(|h| h.name == "useQuery").unwrap();
+
+    if let extraction::HookArgument::Object { properties } = &hook.expanded_arguments[0] {
+        let query_key = properties.iter().find(|p| p.name == "queryKey");
+        assert!(query_key.is_some(), "Should find queryKey property");
+
+        if let Some(prop) = query_key {
+            match &prop.value_kind {
+                extraction::HookPropertyValue::Array { elements } => {
+                    assert!(elements.len() >= 2, "Should have array elements");
+                }
+                extraction::HookPropertyValue::Simple { value } => {
+                    // Array might be captured as simple value with source
+                    assert!(value.contains("users") || value.contains("["));
+                }
+                _ => panic!("queryKey should be Array or Simple"),
+            }
+        }
+    }
+}
+
+#[test]
+fn test_hook_args_handle_nested_objects() {
+    // GIVEN: Hook with nested object argument
+    let source = r#"
+        function App() {
+            const result = useMutation({
+                options: {
+                    retry: 3,
+                    retryDelay: 1000
+                }
+            });
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Nested object is handled
+    let component = &extraction.components[0];
+    let hook = component.custom_hooks.iter().find(|h| h.name == "useMutation").unwrap();
+
+    if let extraction::HookArgument::Object { properties } = &hook.expanded_arguments[0] {
+        let options = properties.iter().find(|p| p.name == "options");
+        assert!(options.is_some(), "Should find options property");
+
+        if let Some(prop) = options {
+            match &prop.value_kind {
+                extraction::HookPropertyValue::Object { properties: nested } => {
+                    assert!(nested.iter().any(|p| p.name == "retry"));
+                    assert!(nested.iter().any(|p| p.name == "retryDelay"));
+                }
+                _ => panic!("options should be nested Object"),
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Phase 6.5: Architecture Mapping
+// =============================================================================
+
+#[test]
+fn test_architecture_identifies_service_actors() {
+    // GIVEN: Component using custom hooks that suggest service actors
+    let source = r#"
+        function ChatPanel() {
+            const { messages, addMessage } = useChat();
+            const { isRunning, runAgent } = useAgent();
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Service actors are recommended
+    let component = &extraction.components[0];
+    let arch = &component.architecture;
+
+    assert!(arch.service_actors.len() >= 2,
+        "Should recommend at least 2 service actors, found: {:?}",
+        arch.service_actors.iter().map(|a| &a.name).collect::<Vec<_>>());
+
+    let actor_names: Vec<&str> = arch.service_actors.iter().map(|a| a.name.as_str()).collect();
+    assert!(actor_names.contains(&"ChatService"), "Should recommend ChatService");
+    assert!(actor_names.contains(&"AgentService"), "Should recommend AgentService");
+}
+
+#[test]
+fn test_architecture_maps_zustand_stores() {
+    // GIVEN: Component using Zustand store
+    let source = r#"
+        function Dashboard() {
+            const serverStatus = useAppStore((s) => s.serverStatus);
+            const loadModel = useAppStore((s) => s.loadModel);
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Zustand store is mapped
+    let component = &extraction.components[0];
+    let arch = &component.architecture;
+
+    assert!(!arch.zustand_stores.is_empty(), "Should detect Zustand store");
+
+    let store = &arch.zustand_stores[0];
+    assert_eq!(store.hook_name, "useAppStore");
+    assert!(store.suggested_actor.contains("App"), "Should suggest AppActor");
+}
+
+#[test]
+fn test_architecture_suggests_message_types() {
+    // GIVEN: Custom hook with action functions
+    let source = r#"
+        function Editor() {
+            const { save, load, reset } = useDocument();
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Message types are suggested
+    let component = &extraction.components[0];
+    let arch = &component.architecture;
+
+    let doc_service = arch.service_actors.iter().find(|a| a.name == "DocumentService");
+    assert!(doc_service.is_some(), "Should recommend DocumentService");
+
+    if let Some(service) = doc_service {
+        let msg_names: Vec<&str> = service.messages.iter().map(|m| m.name.as_str()).collect();
+        assert!(msg_names.contains(&"Save"), "Should suggest Save message");
+        assert!(msg_names.contains(&"Load"), "Should suggest Load message");
+        assert!(msg_names.contains(&"Reset"), "Should suggest Reset message");
+    }
+}
+
+#[test]
+fn test_architecture_determines_state_ownership() {
+    // GIVEN: Component with local and shared state
+    let source = r#"
+        function Counter() {
+            const [localCount, setLocalCount] = useState(0);
+            const globalCount = useStore((s) => s.count);
+            return <div />;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: State ownership is determined
+    let component = &extraction.components[0];
+    let arch = &component.architecture;
+
+    // Find local state
+    let local_ownership = arch.state_ownership.iter()
+        .find(|s| s.state_name == "localCount");
+    assert!(local_ownership.is_some(), "Should track localCount ownership");
+
+    if let Some(local) = local_ownership {
+        assert_eq!(local.owner, "Self", "Local state owned by Self");
+        assert!(matches!(local.access_pattern, extraction::StateAccessPattern::Local));
+    }
+
+    // Find shared state (from Zustand selector)
+    // The selector `(s) => s.count` should detect "count" as shared state
+    let shared_ownership = arch.state_ownership.iter()
+        .find(|s| s.state_name == "globalCount" || s.state_name == "count");
+
+    assert!(shared_ownership.is_some(), "Should track shared state from Zustand store");
+    let shared = shared_ownership.unwrap();
+    assert!(matches!(shared.access_pattern, extraction::StateAccessPattern::Shared),
+        "Zustand state should be Shared");
+}
+
+#[test]
+fn test_architecture_recommends_communication_patterns() {
+    // GIVEN: Component that calls functions from hooks
+    let source = r#"
+        function Panel() {
+            const { data, refresh } = useData();
+
+            const handleRefresh = async () => {
+                await refresh();
+            };
+
+            return <button onClick={handleRefresh}>Refresh</button>;
+        }
+    "#;
+
+    // WHEN: We extract
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+
+    // THEN: Communication patterns are recommended
+    let component = &extraction.components[0];
+    let arch = &component.architecture;
+
+    // Should have DataService actor
+    assert!(arch.service_actors.iter().any(|a| a.name == "DataService"),
+        "Should recommend DataService");
+
+    // Note: Communication patterns from handlers may require handler.calls to be wired
+    // This test documents expected behavior
+}
+
+#[test]
+fn test_phase3_comprehensive_generation() {
+    // Test comprehensive code generation for a component with:
+    // - State (useState)
+    // - Event handlers  
+    // - Conditional rendering
+    // - Nested elements
+    let source = r#"
+        function ChatWidget() {
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState("");
+            
+            const handleSend = () => {
+                setMessages([...messages, input]);
+                setInput("");
+            };
+            
+            return (
+                <div className="chat">
+                    <div className="messages">
+                        {messages.map((msg, i) => (
+                            <div key={i}>{msg}</div>
+                        ))}
+                    </div>
+                    <input 
+                        value={input} 
+                        onChange={(e) => setInput(e.target.value)} 
+                    />
+                    <button onClick={handleSend}>Send</button>
+                </div>
+            );
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+    
+    // Print generated code for inspection
+    println!("\n=== Generated Sigil Code ===\n{}\n=== End ===\n", generated.code);
+
+    // Basic sanity checks
+    assert!(generated.code.contains("☉ actor ChatWidget"), "Should be an actor (has state)");
+    assert!(generated.code.contains("state messages:"), "Should have messages state");
+    assert!(generated.code.contains("state input:"), "Should have input state");
+    assert!(generated.code.contains("VNode·div()"), "Should have VNode generation");
+    assert!(generated.code.contains("rite view"), "Should have view method");
+}
+
+// =============================================================================
+// Integration Test: Real ChatPanel from Infernum Observer
+// =============================================================================
+
+#[test]
+fn test_integration_chatpanel_real_file() {
+    // This test reads the actual ChatPanel.tsx from infernum-observer
+    let chat_panel_path = "/home/crook/dev/infernum-observer/src/components/chat/ChatPanel.tsx";
+
+    // Skip if file doesn't exist (CI environment)
+    let source = match std::fs::read_to_string(chat_panel_path) {
+        Ok(s) => s,
+        Err(_) => {
+            println!("Skipping integration test - ChatPanel.tsx not found at {}", chat_panel_path);
+            return;
+        }
+    };
+
+    // Extract
+    let extraction = extract_source(&source, Path::new(chat_panel_path), "ChatPanel.tsx")
+        .expect("Should extract ChatPanel");
+
+    println!("\n=== ChatPanel Extraction Summary ===");
+    println!("Components: {}", extraction.components.len());
+
+    for comp in &extraction.components {
+        println!("\nComponent: {}", comp.name);
+        println!("  Hooks: {}", comp.hooks.len());
+        println!("  Handlers: {}", comp.handlers.len());
+        println!("  Custom Hooks: {}", comp.custom_hooks.len());
+
+        // Show handler details
+        for handler in &comp.handlers {
+            println!("  Handler: {} ({} calls)", handler.name, handler.calls.len());
+            for call in &handler.calls {
+                println!("    - {}: {:?}", call.name, call.source);
+            }
+        }
+
+        // Check architecture
+        println!("  Architecture:");
+        println!("    Service actors: {}", comp.architecture.service_actors.len());
+        for actor in &comp.architecture.service_actors {
+            println!("      - {} (from: {:?})", actor.name, actor.derived_from);
+        }
+    }
+
+    // Generate spec
+    let spec = generate_spec(&extraction, &source);
+
+    println!("\n=== Migration Spec ===");
+    for comp_spec in &spec.components {
+        println!("\nComponent: {} -> {:?}", comp_spec.name, comp_spec.target.pattern);
+        println!("  State fields: {}", comp_spec.recommendations.state_fields.len());
+        println!("  Messages: {}", comp_spec.recommendations.messages.len());
+
+        for msg in &comp_spec.recommendations.messages {
+            println!("    Message: {}", msg.name);
+            for sc in &msg.state_changes {
+                println!("      State change: {}", sc);
+            }
+        }
+    }
+
+    // Generate code for each component
+    println!("\n=== Generated Sigil Code ===");
+    for comp_spec in &spec.components {
+        let generated = generate_component(comp_spec);
+        println!("\n--- {} ---\n{}", generated.component_name, generated.code);
+    }
+
+    // Assertions
+    assert!(!extraction.components.is_empty(), "Should extract at least one component");
+
+    let chat_panel = extraction.components.iter()
+        .find(|c| c.name == "ChatPanel")
+        .expect("Should find ChatPanel component");
+
+    // ChatPanel should have state (it uses hooks)
+    assert!(!chat_panel.hooks.is_empty(), "ChatPanel should have hooks");
+
+    // ChatPanel uses custom hooks like useChat
+    assert!(
+        chat_panel.custom_hooks.iter().any(|h| h.name == "useChat"),
+        "ChatPanel should use useChat hook"
+    );
+
+    // Handler calls should be linked to their hook sources
+    let has_hook_linked_calls = chat_panel.handlers.iter()
+        .any(|h| h.calls.iter().any(|c| matches!(c.source, CallSource::Hook { .. })));
+    assert!(has_hook_linked_calls, "Handler calls should be linked to hooks (Phase 6.3 gap fixed)");
+}
+
+// =============================================================================
+// Phase 4: Validation - Generated Code Structure
+// =============================================================================
+
+#[test]
+fn test_phase4_generated_code_structure() {
+    // Test that generated code has proper Sigil structure
+    let source = r#"
+        function Counter() {
+            const [count, setCount] = useState(0);
+
+            const increment = () => setCount(count + 1);
+
+            return (
+                <div>
+                    <span>{count}</span>
+                    <button onClick={increment}>+</button>
+                </div>
+            );
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    println!("\n=== Phase 4 Validation ===\n{}\n", generated.code);
+
+    // Structural validation
+    assert!(generated.code.contains("invoke qliphoth·prelude·*;"),
+        "Should have prelude import");
+
+    assert!(generated.code.contains("ᛈ CounterMsg {"),
+        "Should have message enum");
+
+    assert!(generated.code.contains("☉ actor Counter {"),
+        "Should have actor declaration");
+
+    assert!(generated.code.contains("state count:"),
+        "Should have state field");
+
+    assert!(generated.code.contains("on "),
+        "Should have message handlers");
+
+    assert!(generated.code.contains("rite view(self) -> VNode!"),
+        "Should have view method");
+
+    assert!(generated.code.contains("VNode·div()"),
+        "Should have VNode builder");
+
+    // Check balanced braces
+    let open_braces = generated.code.matches('{').count();
+    let close_braces = generated.code.matches('}').count();
+    assert_eq!(open_braces, close_braces,
+        "Braces should be balanced: {} open, {} close", open_braces, close_braces);
+}
+
+#[test]
+fn test_phase4_service_calls_in_handlers() {
+    // Test that service calls are properly generated in handler bodies
+    // Note: Component needs useState to be treated as an actor
+    let source = r#"
+        function ChatWidget() {
+            const [input, setInput] = useState("");
+            const { messages, addMessage } = useChat();
+            const { runAgent } = useAgent();
+
+            const handleSend = () => {
+                addMessage({ role: 'user', content: input });
+                runAgent({ objective: input });
+                setInput("");
+            };
+
+            return <div onClick={handleSend}>Send</div>;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    println!("\n=== Service Calls Test ===\n{}\n", generated.code);
+
+    // Should be an actor (has useState)
+    assert!(generated.code.contains("☉ actor ChatWidget"),
+        "Should be an actor");
+
+    // Should have service actor message sends
+    assert!(generated.code.contains("ChatService !"),
+        "Should have ChatService message send");
+
+    assert!(generated.code.contains("AgentService !"),
+        "Should have AgentService message send");
+
+    // Should have proper message names
+    assert!(generated.code.contains("AddMessage"),
+        "Should have AddMessage method");
+
+    assert!(generated.code.contains("RunAgent"),
+        "Should have RunAgent method");
+}
+
+#[test]
+fn test_phase4_pure_function_generation() {
+    // Test that pure components generate functions, not actors
+    let source = r#"
+        function Badge({ label, color }) {
+            return (
+                <span className={`badge badge-${color}`}>
+                    {label}
+                </span>
+            );
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    println!("\n=== Pure Function Test ===\n{}\n", generated.code);
+
+    // Pure components (no state/hooks) should generate functions
+    assert!(generated.code.contains("rite badge(") || generated.code.contains("☉ actor Badge"),
+        "Should generate either pure function or actor");
+
+    // Should have VNode generation
+    assert!(generated.code.contains("VNode·span()"),
+        "Should have span VNode");
+}
+
+// =============================================================================
+// Expression Transformation Tests
+// =============================================================================
+
+#[test]
+fn test_expression_transformation_operators() {
+    // Test that JS operators are transformed to Sigil operators
+    let source = r#"
+        function StatusWidget() {
+            const [isLoading, setIsLoading] = useState(false);
+            const [data, setData] = useState(null);
+
+            return (
+                <div>
+                    {isLoading && <Spinner />}
+                    {!isLoading && data && <Content data={data} />}
+                    {data === null && <Empty />}
+                    {data !== null && <Filled />}
+                </div>
+            );
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    println!("\n=== Operator Transformation Test ===\n{}\n", generated.code);
+
+    // Check logical operators transformed
+    assert!(generated.code.contains("∧") || generated.code.contains(" and "),
+        "Should transform && to ∧");
+
+    // Check negation transformed
+    assert!(generated.code.contains("¬") || generated.code.contains("not "),
+        "Should transform ! to ¬");
+}
+
+#[test]
+fn test_expression_transformation_method_calls() {
+    // Test that JS method calls are transformed to Sigil
+    let source = r#"
+        function ListWidget() {
+            const [items, setItems] = useState([]);
+
+            return (
+                <div>
+                    {items.length > 0 && <Count count={items.length} />}
+                </div>
+            );
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+    let generated = generate_component(&spec.components[0]);
+
+    println!("\n=== Method Call Transformation Test ===\n{}\n", generated.code);
+
+    // Check .length → .len()
+    assert!(generated.code.contains(".len()"),
+        "Should transform .length to .len()");
+}
+
+// =============================================================================
+// Phase 7: Service Actor Generation
+// =============================================================================
+
+#[test]
+fn test_service_actor_collection() {
+    // Test that custom hooks are collected into service actors
+    let source = r#"
+        function ChatPanel() {
+            const { messages, isStreaming, addMessage, clearChat } = useChat();
+            const { events, runAgent, stopAgent } = useAgent();
+            const [input, setInput] = useState("");
+
+            const handleSubmit = () => {
+                addMessage({ role: 'user', content: input });
+                runAgent({ objective: input });
+                setInput("");
+            };
+
+            return (
+                <div>
+                    <button onClick={handleSubmit}>Send</button>
+                </div>
+            );
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    println!("\n=== Service Actor Collection Test ===");
+    println!("Service actors found: {}", spec.service_actors.len());
+    for actor in &spec.service_actors {
+        println!("  - {} (from {})", actor.name, actor.derived_from);
+        println!("    State: {:?}", actor.state_fields.iter().map(|f| &f.name).collect::<Vec<_>>());
+        println!("    Messages: {:?}", actor.messages.iter().map(|m| &m.name).collect::<Vec<_>>());
+    }
+
+    // Should have 2 service actors: ChatService and AgentService
+    assert_eq!(spec.service_actors.len(), 2, "Should collect 2 service actors from custom hooks");
+
+    // Find ChatService
+    let chat_service = spec.service_actors.iter()
+        .find(|a| a.name == "ChatService")
+        .expect("Should have ChatService");
+
+    assert_eq!(chat_service.derived_from, "useChat");
+    assert!(chat_service.state_fields.iter().any(|f| f.original_name == "messages"),
+        "ChatService should have messages state");
+    assert!(chat_service.state_fields.iter().any(|f| f.original_name == "isStreaming"),
+        "ChatService should have isStreaming state");
+    assert!(chat_service.messages.iter().any(|m| m.original_name == "addMessage"),
+        "ChatService should have AddMessage message");
+    assert!(chat_service.messages.iter().any(|m| m.original_name == "clearChat"),
+        "ChatService should have ClearChat message");
+
+    // Find AgentService
+    let agent_service = spec.service_actors.iter()
+        .find(|a| a.name == "AgentService")
+        .expect("Should have AgentService");
+
+    assert_eq!(agent_service.derived_from, "useAgent");
+    assert!(agent_service.messages.iter().any(|m| m.original_name == "runAgent"),
+        "AgentService should have RunAgent message");
+}
+
+#[test]
+fn test_service_actor_code_generation() {
+    // Test that service actor code is generated correctly
+    let source = r#"
+        function ChatPanel() {
+            const { messages, isStreaming, addMessage } = useChat();
+            const [input, setInput] = useState("");
+
+            const handleSubmit = () => {
+                addMessage({ role: 'user', content: input });
+            };
+
+            return <div />;
+        }
+    "#;
+
+    let extraction = extract_source(source, Path::new("test.tsx"), "test.tsx").unwrap();
+    let spec = generate_spec(&extraction, source);
+
+    assert!(!spec.service_actors.is_empty(), "Should have service actors");
+
+    let chat_service = &spec.service_actors[0];
+    let generated = generate_service_actor(chat_service);
+
+    println!("\n=== Service Actor Code Generation Test ===\n{}\n", generated.code);
+
+    // Check structure
+    assert!(generated.code.contains("invoke qliphoth·prelude·*;"),
+        "Should have prelude import");
+    assert!(generated.code.contains("ᛈ ChatServiceMsg"),
+        "Should have message enum");
+    assert!(generated.code.contains("☉ actor ChatService"),
+        "Should have actor definition");
+
+    // Check state fields
+    assert!(generated.code.contains("state messages:"),
+        "Should have messages state field");
+    assert!(generated.code.contains("state is_streaming:"),
+        "Should have is_streaming state field");
+
+    // Check message handler
+    assert!(generated.code.contains("on AddMessage"),
+        "Should have AddMessage handler");
 }

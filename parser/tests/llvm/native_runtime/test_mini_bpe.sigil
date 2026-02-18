@@ -1,0 +1,195 @@
+//! Mini BPE simulation - testing scaling with many tokens
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// ==================== BPE SIMULATION ====================
+
+Σ VocabEntry { id: i64, bytes: Vec<u8>, freq: i64 }
+
+⊢ VocabEntry {
+    rite from_byte(b: i64) → Self {
+        ≔ vary bytes = vec![];
+        bytes.push(b as u8);
+        Self { id: b, bytes: bytes, freq: 0 }
+    }
+}
+
+Σ MergeRule { left: i64, right: i64, merged: i64 }
+
+Σ BPETokenizer { vocab: Vec<VocabEntry>, merges: Vec<MergeRule>, vocab_size: i64 }
+
+⊢ BPETokenizer {
+    rite new() → Self {
+        ≔ vary vocab = vec![];
+        ∀ b ∈ 0..256 {
+            vocab.push(VocabEntry·from_byte(b));
+        }
+        Self { vocab: vocab, merges: vec![], vocab_size: 256 }
+    }
+}
+
+Σ PairCount { left: i64, right: i64, count: i64 }
+
+rite add_pair(pairs: &vary Vec<PairCount>, l: i64, r: i64) {
+    ∀ i ∈ 0..pairs.len() {
+        ⎇ pairs[i].left == l && pairs[i].right == r {
+            pairs[i].count += 1;
+            ⤺;
+        } ⎉ {}
+    }
+    pairs.push(PairCount { left: l, right: r, count: 1 });
+}
+
+rite best_pair(pairs: &Vec<PairCount>) → (i64, i64, i64) {
+    ⎇ pairs.len() == 0 { ⤺ (-1, -1, 0); } ⎉ {}
+    ≔ vary best_idx = 0;
+    ≔ vary best_count = pairs[0].count;
+    ∀ i ∈ 1..pairs.len() {
+        ⎇ pairs[i].count > best_count {
+            best_idx = i;
+            best_count = pairs[i].count;
+        } ⎉ {}
+    }
+    (pairs[best_idx].left, pairs[best_idx].right, pairs[best_idx].count)
+}
+
+rite apply_merge(tokens: &Vec<i64>, left: i64, right: i64, merged: i64) → Vec<i64> {
+    ≔ vary result = vec![];
+    ≔ vary i = 0_i64;
+    ≔ len = tokens.len() as i64;
+    ⟳ i < len {
+        ⎇ i + 1 < len && tokens[i as usize] == left && tokens[(i + 1) as usize] == right {
+            result.push(merged);
+            i += 2;
+        } ⎉ {
+            result.push(tokens[i as usize]);
+            i += 1;
+        }
+    }
+    result
+}
+
+rite main() {
+    println_int(1);
+
+    // Create small corpus: "abcdabcdabcd" repeated
+    ≔ vary corpus = vec![];
+    ∀ _ ∈ 0..100 {  // 100 repetitions = 400 bytes
+        corpus.push(97_u8);  // 'a'
+        corpus.push(98_u8);  // 'b'
+        corpus.push(99_u8);  // 'c'
+        corpus.push(100_u8); // 'd'
+    }
+    println_int(2);
+    println_int(corpus.len() as i64);  // Should be 400
+
+    // Initialize tokenizer
+    ≔ vary tok = BPETokenizer·new();
+    println_int(3);
+    println_int(tok.vocab_size);  // Should be 256
+
+    // Convert corpus to tokens
+    ≔ vary tokens = vec![];
+    ∀ i ∈ 0..corpus.len() {
+        tokens.push(corpus[i] as i64);
+    }
+    println_int(4);
+    println_int(tokens.len() as i64);  // Should be 400
+
+    // BPE training: just 5 merge steps
+    ∀ step ∈ 0..5 {
+        println_int(100 + step);
+
+        // Count pairs
+        ≔ vary pairs = vec![];
+        ⎇ tokens.len() >= 2 {
+            ∀ i ∈ 0..(tokens.len() - 1) {
+                add_pair(&vary pairs, tokens[i], tokens[i + 1]);
+            }
+        } ⎉ {}
+        println_int(200 + pairs.len() as i64);
+
+        // Find best pair
+        ≔ (bl, br, bc) = best_pair(&pairs);
+        println_int(300);
+        println_int(bl);
+        println_int(br);
+        println_int(bc);
+
+        ⎇ bc < 2 { } ⎉ {
+            // Create new token - THE CRITICAL PATTERN
+            ≔ new_id = tok.vocab_size;
+            println_int(400);
+
+            // Clone bytes from left token
+            ≔ vary new_bytes = tok.vocab[bl as usize].bytes.clone();
+            println_int(401);
+
+            // Get reference to right token's bytes
+            ≔ right_bytes = &tok.vocab[br as usize].bytes;
+            println_int(402);
+            println_int(right_bytes.len() as i64);
+
+            // Append right bytes
+            ∀ i ∈ 0..right_bytes.len() {
+                new_bytes.push(right_bytes[i]);
+            }
+            println_int(403);
+            println_int(new_bytes.len() as i64);
+
+            // Add to vocab
+            tok.vocab.push(VocabEntry { id: new_id, bytes: new_bytes, freq: bc });
+            tok.merges.push(MergeRule { left: bl, right: br, merged: new_id });
+            tok.vocab_size += 1;
+            println_int(404);
+            println_int(tok.vocab_size);
+
+            // Apply merge
+            tokens = apply_merge(&tokens, bl, br, new_id);
+            println_int(405);
+            println_int(tokens.len() as i64);
+        }
+    }
+
+    println_int(999);  // Done
+}

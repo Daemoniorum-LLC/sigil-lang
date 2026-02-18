@@ -138,6 +138,10 @@ pub struct WasmCompiler {
     /// Used to resolve method calls like Node::append_child
     pub(crate) extern_types: std::collections::HashSet<String>,
 
+    /// Variable types: maps variable name to its type name
+    /// Used to resolve method calls like app·view() where app has type PlatformApp
+    pub(crate) var_types: HashMap<String, String>,
+
     /// Optimization level
     pub(crate) opt_level: OptLevel,
 
@@ -198,6 +202,7 @@ impl WasmCompiler {
             module_path: Vec::new(),
             qualified_items: HashMap::new(),
             extern_types: std::collections::HashSet::new(),
+            var_types: HashMap::new(),
             opt_level: OptLevel::Standard,
             debug_info: false,
             source_map: None,
@@ -548,6 +553,15 @@ impl WasmCompiler {
         // Check in qualified_items
         if let Some(QualifiedItem::Function(idx)) = self.qualified_items.get(&qualified) {
             return Some(*idx);
+        }
+
+        // Try just the last segment (simple name) for module-qualified calls
+        // e.g., components::nav_view -> try just "nav_view"
+        if resolved.len() > 1 {
+            let simple_name = resolved.last().unwrap();
+            if let Some(idx) = self.func_map.get(simple_name) {
+                return Some(*idx);
+            }
         }
 
         // Check imports

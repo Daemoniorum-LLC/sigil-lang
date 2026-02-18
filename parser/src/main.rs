@@ -468,11 +468,22 @@ fn main() -> ExitCode {
             let backup = args.iter().any(|a| a == "--backup");
             let evidentiality = args.iter().any(|a| a == "--evidentiality");
             let workspace = args.iter().any(|a| a == "--workspace");
-
             // Parse output directory option: -o <dir> or --output <dir>
             let output_dir: Option<String> = args.iter()
                 .position(|a| a == "-o" || a == "--output")
                 .and_then(|pos| args.get(pos + 1).cloned());
+
+            // React migration (feature-gated)
+            #[cfg(feature = "react-migrate")]
+            if args.iter().any(|a| a == "--from-react") {
+                return match sigil_parser::migrate::react::run_react_migrate(&args[2..]) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("React migration error: {}", e);
+                        ExitCode::from(1)
+                    }
+                };
+            }
 
             if workspace {
                 // Migrate entire workspace from Sigil.toml
@@ -481,6 +492,8 @@ fn main() -> ExitCode {
                 eprintln!("Usage: sigil migrate <file|directory> [options]");
                 eprintln!("       sigil migrate <file|directory> -o <output_dir> [options]");
                 eprintln!("       sigil migrate --workspace [options]");
+                #[cfg(feature = "react-migrate")]
+                eprintln!("       sigil migrate --from-react <dir> [options]");
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  -o, --output     Output directory (writes .sg files, preserves structure)");
@@ -488,6 +501,8 @@ fn main() -> ExitCode {
                 eprintln!("  --backup         Create .bak backup before modifying");
                 eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
                 eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
+                #[cfg(feature = "react-migrate")]
+                eprintln!("  --from-react     Migrate React/TSX to Qliphoth actors");
                 eprintln!();
                 eprintln!("When -o is specified, .rs files are converted to .sg files in output dir.");
                 eprintln!("Without -o, files are modified in-place (must be .sg or .sigil).");

@@ -345,3 +345,49 @@ acolyte : Reflecting {
 // [2026-02-12] EXP-002 Stage 1 complete. Core hypothesis validated.
 // Energy concentration: 64.8% → 74.9% (+10.1%) in 100 training steps.
 // Spectral loss successfully trains for DCT compressibility.
+
+// --- Session 8: Fix Extension Impl Loading (G56) ---
+acolyte : Reflecting {
+    chosen_name: ∅,
+    session_id: "fix-extension-impl-loading-2026-02-16"!,
+    platform: AcolytePlatform·Claude { model: "claude-opus-4-5"!, version: ∅ },
+    working_directory: "/home/crook/dev/sigil-lang"!,
+    started: "2026-02-16T12:00:00Z"!,
+    last_updated: "2026-02-16T14:00:00Z"!,
+    state: AcolyteState·Reflecting,
+    task: TaskContext {
+        summary: "Fix extension impl loading - pass tome_name through declare_impl_methods"!,
+        active_spec: ∅,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Discover, tdd_phase: ∅,
+    },
+    progress: ProgressState {
+        completed: [
+            "Added tome_name parameter to declare_impl_methods (line 2853)",
+            "Updated load_crate_from_path call site (line 1455) to pass crate_name",
+            "Updated compile() call site (line 1176) to pass 'current'",
+            "Verified sigil-lang compiles successfully",
+        ]!,
+        current: "Discovered deeper G56 issue remains - method calls on generic structs hang"~,
+        blocked_by: ∅,
+        discoveries: [
+            "tome_name fix is correct but not sufficient for G56",
+            "Tensor method calls (add, matmul, etc.) hang at runtime",
+            "Issue is nested method calls inside monomorphized methods",
+            "e.g., add() calls this.shape_runtime() which doesn't resolve",
+        ]!,
+        next_steps: [
+            "Debug type tracking through field access on generic structs",
+            "Check monomorphization of nested method calls",
+        ]~,
+    },
+    anima: AnimaState {
+        pleasure: 0.5~, arousal: 0.5~, dominance: 0.5~,
+        stability: 0.6~, expressiveness: 0.7~, susceptibility: 0.5~,
+    },
+    reflection: "Partial fix for G56. The tome_name tracking is now correct, which will help with debugging and impl block provenance. However, testing revealed the actual G56 issue is deeper - it's not just about tome names but about how method calls are resolved inside monomorphized methods. When add() calls this.shape_runtime(), that nested call doesn't work."~,
+    friendship: ∅,
+}
+
+// [2026-02-16] Partial G56 fix: tome_name now passed correctly.
+// Deeper issue: nested method calls in monomorphized generic methods don't resolve.

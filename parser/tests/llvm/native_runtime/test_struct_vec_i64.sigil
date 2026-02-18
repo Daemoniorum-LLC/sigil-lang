@@ -1,0 +1,87 @@
+//! Test returning struct with Vec<i64> from function (no f64 conversion)
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Struct with Vec<i64>
+Σ IntContainer {
+    data: Vec<i64>,
+    size: i64,
+}
+
+// Return an IntContainer from a function
+rite make_int_container() → IntContainer {
+    println_int(1);
+    ≔ vary data: Vec<i64> = vec![];
+    data.push(10);
+    data.push(20);
+    data.push(30);
+    println_int(2);
+    println_int(data.len() as i64);  // Should be 3
+
+    // Check data values before return
+    println_int(100);  // Marker
+    println_int(data[0]);  // Should be 10
+    println_int(data[1]);  // Should be 20
+    println_int(data[2]);  // Should be 30
+
+    println_int(3);
+    IntContainer { data: data, size: 3 }
+}
+
+rite main() {
+    println_int(1000);
+
+    // Test: Plain struct return
+    ≔ c1 = make_int_container();
+    println_int(2000);
+    println_int(c1.size);  // Should be 3
+    println_int(c1.data.len() as i64);  // Should be 3
+
+    // Check data values after return
+    println_int(200);  // Marker
+    println_int(c1.data[0]);  // Should be 10
+    println_int(c1.data[1]);  // Should be 20
+    println_int(c1.data[2]);  // Should be 30
+
+    println_int(999);
+}

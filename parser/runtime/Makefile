@@ -76,11 +76,13 @@ $(TLS_LIB): $(TLS_OBJECT)
 	@echo "Built $(TLS_LIB) (with TLS/OpenSSL support)"
 	@echo "Link with: $(TLS_LIBS)"
 
-# CUDA runtime - base runtime compiled with CUDA support + CUDA extensions
+# CUDA runtime - base runtime (without CUDA stubs) + CUDA extensions
+# Note: sigil_runtime_cuda.c provides the actual CUDA implementations.
+# SIGIL_CUDA_EXTERNAL tells sigil_runtime.c to not define any CUDA functions.
 CUDA_BASE_OBJECT = sigil_runtime_cuda_base.o
 
 $(CUDA_BASE_OBJECT): sigil_runtime.c
-	$(CC) $(CFLAGS) -DSIGIL_CUDA_SUPPORT -c sigil_runtime.c -o $(CUDA_BASE_OBJECT)
+	$(CC) $(CFLAGS) -DSIGIL_CUDA_EXTERNAL -c sigil_runtime.c -o $(CUDA_BASE_OBJECT)
 
 $(CUDA_OBJECT): sigil_runtime_cuda.c
 	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -c sigil_runtime_cuda.c -o $(CUDA_OBJECT)

@@ -12,7 +12,7 @@ use std::fmt;
 use std::rc::Rc;
 
 /// Internal type representation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     /// Primitive types
     Unit,
@@ -105,6 +105,10 @@ pub enum Type {
     /// Associated type binding: Output = Type
     AssocTypeBinding { name: String, ty: Box<Type> },
 
+    /// Const generic value (compile-time constant for generic parameters)
+    /// Used for array dimensions, Shape types, etc.
+    ConstGeneric(i64),
+
     /// Linear type wrapper - value must be used exactly once (no-cloning theorem)
     Linear(Box<Type>),
 
@@ -116,7 +120,7 @@ pub enum Type {
 }
 
 /// Integer sizes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IntSize {
     I8,
     I16,
@@ -133,7 +137,7 @@ pub enum IntSize {
 }
 
 /// Float sizes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatSize {
     F32,
     F64,
@@ -146,7 +150,7 @@ pub enum FloatSize {
 ///
 /// Operations combine evidence levels using join (⊔):
 ///   a + b : join(evidence(a), evidence(b))
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum EvidenceLevel {
     /// Direct knowledge - computed locally, verified
     Known, // !
@@ -1697,6 +1701,112 @@ impl TypeChecker {
                 Type::Unit
             }
         }
+    }
+
+    /// Apply all type variable substitutions to resolve a type fully.
+    /// This resolves type variables to their inferred concrete types.
+    /// Used by LLVM codegen to get concrete types for monomorphization.
+    pub fn apply_substitutions(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Var(v) => {
+                if let Some(resolved) = self.substitutions.get(v) {
+                    // Recursively apply in case of chained substitutions
+                    self.apply_substitutions(resolved)
+                } else {
+                    // Unresolved type variable - return as-is
+                    ty.clone()
+                }
+            }
+            Type::Named { name, generics } => Type::Named {
+                name: name.clone(),
+                generics: generics
+                    .iter()
+                    .map(|g| self.apply_substitutions(g))
+                    .collect(),
+            },
+            Type::Array { element, size } => Type::Array {
+                element: Box::new(self.apply_substitutions(element)),
+                size: *size,
+            },
+            Type::Slice(inner) => Type::Slice(Box::new(self.apply_substitutions(inner))),
+            Type::Tuple(elements) => {
+                Type::Tuple(elements.iter().map(|e| self.apply_substitutions(e)).collect())
+            }
+            Type::Function {
+                params,
+                return_type,
+                is_async,
+            } => Type::Function {
+                params: params.iter().map(|p| self.apply_substitutions(p)).collect(),
+                return_type: Box::new(self.apply_substitutions(return_type)),
+                is_async: *is_async,
+            },
+            Type::Ref {
+                lifetime,
+                mutable,
+                inner,
+            } => Type::Ref {
+                lifetime: lifetime.clone(),
+                mutable: *mutable,
+                inner: Box::new(self.apply_substitutions(inner)),
+            },
+            Type::Ptr { mutable, inner } => Type::Ptr {
+                mutable: *mutable,
+                inner: Box::new(self.apply_substitutions(inner)),
+            },
+            Type::Evidential { inner, evidence } => Type::Evidential {
+                inner: Box::new(self.apply_substitutions(inner)),
+                evidence: *evidence,
+            },
+            Type::Atomic(inner) => Type::Atomic(Box::new(self.apply_substitutions(inner))),
+            Type::Simd { element, lanes } => Type::Simd {
+                element: Box::new(self.apply_substitutions(element)),
+                lanes: *lanes,
+            },
+            Type::Linear(inner) => Type::Linear(Box::new(self.apply_substitutions(inner))),
+            Type::Affine(inner) => Type::Affine(Box::new(self.apply_substitutions(inner))),
+            Type::Relevant(inner) => Type::Relevant(Box::new(self.apply_substitutions(inner))),
+            Type::TraitObject(bounds) => {
+                Type::TraitObject(bounds.iter().map(|b| self.apply_substitutions(b)).collect())
+            }
+            Type::ImplTrait(bounds) => {
+                Type::ImplTrait(bounds.iter().map(|b| self.apply_substitutions(b)).collect())
+            }
+            Type::Hrtb { lifetimes, bound } => Type::Hrtb {
+                lifetimes: lifetimes.clone(),
+                bound: Box::new(self.apply_substitutions(bound)),
+            },
+            Type::InlineStruct { fields } => Type::InlineStruct {
+                fields: fields
+                    .iter()
+                    .map(|(n, t)| (n.clone(), self.apply_substitutions(t)))
+                    .collect(),
+            },
+            Type::AssocTypeBinding { name, ty } => Type::AssocTypeBinding {
+                name: name.clone(),
+                ty: Box::new(self.apply_substitutions(ty)),
+            },
+            // Primitive types that don't contain type variables
+            Type::Unit
+            | Type::Bool
+            | Type::Int(_)
+            | Type::Float(_)
+            | Type::Char
+            | Type::Str
+            | Type::Error
+            | Type::Never
+            | Type::Lifetime(_)
+            | Type::Cycle { .. }
+            | Type::InlineEnum(_)
+            | Type::ConstGeneric(_) => ty.clone(),
+        }
+    }
+
+    /// Infer the type of an expression and resolve all type variables.
+    /// Returns a fully concrete type (no type variables).
+    pub fn infer_and_resolve(&mut self, expr: &Expr) -> Type {
+        let ty = self.infer_expr(expr);
+        self.apply_substitutions(&ty)
     }
 
     /// Infer the type of an expression
@@ -4279,6 +4389,8 @@ impl fmt::Display for Type {
             Type::AssocTypeBinding { name, ty } => {
                 write!(f, "{} = {}", name, ty)
             }
+            // Const generic value (compile-time constant)
+            Type::ConstGeneric(value) => write!(f, "{}", value),
             // Linear type modifiers for quantum computing
             Type::Linear(inner) => write!(f, "linear {}", inner),
             Type::Affine(inner) => write!(f, "affine {}", inner),

@@ -24,6 +24,12 @@ pub struct MigrationSpec {
     pub project_root: String,
     pub components: Vec<ComponentMigrationSpec>,
     pub types: Vec<TypeMigrationSpec>,
+    /// Helper functions at module scope (Phase 6.2)
+    #[serde(default)]
+    pub helper_functions: Vec<HelperFunctionExtraction>,
+    /// Service actors derived from custom hooks (Phase 7)
+    #[serde(default)]
+    pub service_actors: Vec<ServiceActorSpec>,
     pub state: MigrationState,
 }
 
@@ -123,6 +129,63 @@ pub struct MessageRecommendation {
     pub payload: Option<String>,   // "{ amount: i32 }" or None
     pub state_changes: Vec<String>, // ["self.count += 1"]
     pub side_effects: Vec<String>,  // ["update document title"]
+    /// Calls to service actor methods (from hook-returned functions)
+    #[serde(default)]
+    pub service_calls: Vec<ServiceCall>,
+}
+
+/// A call to a service actor method
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceCall {
+    /// The service actor name (e.g., "ChatService")
+    pub service: String,
+    /// The method/message name (e.g., "AddMessage")
+    pub method: String,
+    /// Arguments to pass
+    pub args: Vec<String>,
+}
+
+// =============================================================================
+// Service Actor Spec (Phase 7)
+// =============================================================================
+
+/// Specification for a service actor derived from custom hook analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceActorSpec {
+    /// Actor name (e.g., "ChatService")
+    pub name: String,
+    /// The custom hook this was derived from (e.g., "useChat")
+    pub derived_from: String,
+    /// State fields inferred from hook return values
+    pub state_fields: Vec<ServiceStateField>,
+    /// Messages the actor responds to
+    pub messages: Vec<ServiceMessage>,
+    /// Components that use this service
+    pub used_by: Vec<String>,
+}
+
+/// A state field for a service actor
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceStateField {
+    /// Field name (e.g., "messages", "is_streaming")
+    pub name: String,
+    /// Original name from hook (before snake_case conversion)
+    pub original_name: String,
+    /// Inferred type
+    pub field_type: String,
+    /// Whether this is observable/reactive state
+    pub is_observable: bool,
+}
+
+/// A message type for a service actor
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceMessage {
+    /// Message name (e.g., "AddMessage")
+    pub name: String,
+    /// Original function name from hook (e.g., "addMessage")
+    pub original_name: String,
+    /// Parameter types/names inferred from call sites
+    pub parameters: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,9 +283,32 @@ pub struct TypeMigrationSpec {
     pub id: String,
     pub name: String,
     pub source: String,     // Original TypeScript
-    pub target: String,     // Suggested Sigil
+    pub target: String,     // Generated Sigil code
     pub manual_review_needed: bool,
     pub notes: Vec<String>,
+    /// Extracted fields with full type information (Phase 6.1)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub fields: Vec<TypeFieldSpec>,
+    /// Type parameters for generics
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub type_params: Vec<String>,
+    /// Extended types (for interfaces)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub extends: Vec<String>,
+    /// Union variants (for type aliases and enums)
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub union_variants: Vec<String>,
+}
+
+/// Extracted type field with full details for Qliphoth generation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeFieldSpec {
+    pub name: String,
+    pub type_annotation: String,
+    pub optional: bool,
+    pub readonly: bool,
+    /// Classified type kind for easier mapping
+    pub type_kind: String,
 }
 
 // =============================================================================
@@ -340,6 +426,9 @@ impl<'a> SpecGenerator<'a> {
             .map(|t| self.generate_type_spec(t))
             .collect();
 
+        // Collect service actors from custom hooks across all components
+        let service_actors = self.collect_service_actors(&components);
+
         let total = components.len();
 
         MigrationSpec {
@@ -350,6 +439,8 @@ impl<'a> SpecGenerator<'a> {
                 .unwrap_or_default(),
             components,
             types,
+            helper_functions: self.extraction.helper_functions.clone(),
+            service_actors,
             state: MigrationState {
                 total_components: total,
                 completed: 0,
@@ -460,6 +551,18 @@ impl<'a> SpecGenerator<'a> {
     fn recommend_messages(&self, comp: &ComponentExtraction) -> Vec<MessageRecommendation> {
         let mut messages = Vec::new();
 
+        // Build state_fields mapping for transformation: (setter_name, field_name)
+        let state_fields: Vec<(String, String)> = comp.hooks.iter()
+            .filter(|h| h.hook_type == HookType::UseState)
+            .filter_map(|h| {
+                if let (Some(state_name), Some(setter_name)) = (&h.state_name, &h.setter_name) {
+                    Some((setter_name.clone(), state_name.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         // Generate messages from useState setters
         for hook in &comp.hooks {
             if hook.hook_type == HookType::UseState {
@@ -473,6 +576,7 @@ impl<'a> SpecGenerator<'a> {
                         payload: None,
                         state_changes: vec![format!("self.{} = /* new value */", state_name)],
                         side_effects: vec![],
+                        service_calls: vec![],
                     });
                 }
             }
@@ -482,12 +586,22 @@ impl<'a> SpecGenerator<'a> {
         for handler in &comp.handlers {
             let msg_name = to_pascal_case(&handler.name.replace("handle", ""));
 
+            // Transform React state mutations to Sigil syntax
+            let transformed_state_changes = transform_state_mutations_to_sigil(
+                &handler.state_mutations,
+                &state_fields,
+            );
+
+            // Extract service calls from handler.calls (hook-returned functions)
+            let service_calls = extract_service_calls(&handler.calls);
+
             messages.push(MessageRecommendation {
                 name: msg_name,
                 from_handler: handler.name.clone(),
                 payload: None,
-                state_changes: handler.state_mutations.clone(),
+                state_changes: transformed_state_changes,
                 side_effects: handler.api_calls.clone(),
+                service_calls,
             });
         }
 
@@ -765,8 +879,126 @@ impl<'a> SpecGenerator<'a> {
         Dependencies { components, types }
     }
 
+    /// Collect service actors from custom hooks across all components.
+    fn collect_service_actors(&self, components: &[ComponentMigrationSpec]) -> Vec<ServiceActorSpec> {
+        use std::collections::HashMap;
+
+        // Map: hook_name -> (service_name, state_fields, messages, components_using)
+        let mut service_map: HashMap<String, ServiceActorBuilder> = HashMap::new();
+
+        // Iterate through all components and their custom hooks
+        for comp in &self.extraction.components {
+            for hook in &comp.custom_hooks {
+                // Skip Zustand stores (handled differently)
+                if hook.is_zustand {
+                    continue;
+                }
+
+                let service_name = hook_name_to_service(&hook.name);
+                let entry = service_map.entry(hook.name.clone()).or_insert_with(|| {
+                    ServiceActorBuilder {
+                        name: service_name,
+                        derived_from: hook.name.clone(),
+                        state_fields: HashMap::new(),
+                        messages: HashMap::new(),
+                        used_by: Vec::new(),
+                    }
+                });
+
+                // Track which components use this service
+                if !entry.used_by.contains(&comp.name) {
+                    entry.used_by.push(comp.name.clone());
+                }
+
+                // Collect state fields from non-function return values
+                for ret in &hook.returned_values {
+                    if !ret.is_function {
+                        let field_name = to_snake_case(&ret.name);
+                        entry.state_fields.entry(field_name.clone()).or_insert_with(|| {
+                            ServiceStateField {
+                                name: field_name,
+                                original_name: ret.name.clone(),
+                                field_type: infer_type_from_name(&ret.name),
+                                is_observable: true,
+                            }
+                        });
+                    }
+                }
+
+                // Collect messages from function return values
+                for ret in &hook.returned_values {
+                    if ret.is_function {
+                        let msg_name = to_pascal_case(&ret.name);
+                        entry.messages.entry(msg_name.clone()).or_insert_with(|| {
+                            ServiceMessage {
+                                name: msg_name,
+                                original_name: ret.name.clone(),
+                                parameters: vec![], // Will be populated from call sites
+                            }
+                        });
+                    }
+                }
+            }
+
+            // Also look at handler calls to infer message parameters
+            for handler in &comp.handlers {
+                for call in &handler.calls {
+                    if let CallSource::Hook { hook_name } = &call.source {
+                        if let Some(entry) = service_map.get_mut(hook_name) {
+                            let msg_name = to_pascal_case(&call.name);
+                            if let Some(msg) = entry.messages.get_mut(&msg_name) {
+                                // Merge parameters from call site
+                                for arg in &call.arguments {
+                                    if !msg.parameters.contains(arg) {
+                                        msg.parameters.push(arg.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert to final ServiceActorSpec
+        service_map.into_values()
+            .map(|builder| ServiceActorSpec {
+                name: builder.name,
+                derived_from: builder.derived_from,
+                state_fields: builder.state_fields.into_values().collect(),
+                messages: builder.messages.into_values().collect(),
+                used_by: builder.used_by,
+            })
+            .collect()
+    }
+
     fn generate_type_spec(&self, type_ext: &TypeExtraction) -> TypeMigrationSpec {
         let sigil_type = convert_ts_type_to_sigil(type_ext);
+
+        // Convert extracted fields to spec format
+        let fields: Vec<TypeFieldSpec> = type_ext.fields.iter()
+            .map(|f| TypeFieldSpec {
+                name: f.name.clone(),
+                type_annotation: f.type_annotation.clone(),
+                optional: f.optional,
+                readonly: f.readonly,
+                type_kind: format_type_kind(&f.type_kind),
+            })
+            .collect();
+
+        // Convert type params
+        let type_params: Vec<String> = type_ext.type_params.iter()
+            .map(|p| {
+                let mut s = p.name.clone();
+                if let Some(constraint) = &p.constraint {
+                    s.push_str(&format!(" extends {}", constraint));
+                }
+                if let Some(default) = &p.default {
+                    s.push_str(&format!(" = {}", default));
+                }
+                s
+            })
+            .collect();
 
         TypeMigrationSpec {
             id: format!("{}:{}", self.extraction.file.relative_path, type_ext.name),
@@ -775,7 +1007,45 @@ impl<'a> SpecGenerator<'a> {
             target: sigil_type,
             manual_review_needed: false,
             notes: vec![],
+            fields,
+            type_params,
+            extends: type_ext.extends.clone(),
+            union_variants: type_ext.union_variants.clone(),
         }
+    }
+}
+
+/// Format TypeFieldKind as a simple string for JSON output
+fn format_type_kind(kind: &TypeFieldKind) -> String {
+    match kind {
+        TypeFieldKind::Primitive { name } => format!("primitive:{}", name),
+        TypeFieldKind::TypeRef { name, type_args } => {
+            if type_args.is_empty() {
+                format!("ref:{}", name)
+            } else {
+                format!("ref:{}<{}>", name, type_args.join(", "))
+            }
+        }
+        TypeFieldKind::Array { element_type } => format!("array:{}", element_type),
+        TypeFieldKind::Union { variants } => format!("union:[{}]", variants.join(" | ")),
+        TypeFieldKind::Function { params, return_type } => {
+            let params_str: Vec<String> = params.iter()
+                .map(|p| {
+                    let name = p.name.as_deref().unwrap_or("_");
+                    let opt = if p.optional { "?" } else { "" };
+                    format!("{}{}: {}", name, opt, p.type_annotation)
+                })
+                .collect();
+            format!("fn:({}) => {}", params_str.join(", "), return_type)
+        }
+        TypeFieldKind::Record { key_type, value_type } => {
+            format!("record:<{}, {}>", key_type, value_type)
+        }
+        TypeFieldKind::Tuple { element_types } => {
+            format!("tuple:[{}]", element_types.join(", "))
+        }
+        TypeFieldKind::Literal { value } => format!("literal:{}", value),
+        TypeFieldKind::Complex { raw } => format!("complex:{}", raw),
     }
 }
 
@@ -783,7 +1053,8 @@ impl<'a> SpecGenerator<'a> {
 // Helper Functions
 // =============================================================================
 
-fn chrono_now() -> String {
+/// Generate current UTC timestamp in ISO 8601 format.
+pub fn chrono_now() -> String {
     // Use std::time for UTC timestamp
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -996,13 +1267,332 @@ fn has_event_handlers(jsx: &JsxTree) -> bool {
 fn convert_ts_type_to_sigil(type_ext: &TypeExtraction) -> String {
     match type_ext.kind {
         TypeKind::Interface => {
-            format!("Σ {} {{ /* fields */ }}", type_ext.name)
+            // Generate Σ struct with all fields
+            let type_params = if type_ext.type_params.is_empty() {
+                String::new()
+            } else {
+                format!("<{}>", type_ext.type_params.iter()
+                    .map(|p| p.name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", "))
+            };
+
+            if type_ext.fields.is_empty() {
+                format!("Σ {}{} {{ }}", type_ext.name, type_params)
+            } else {
+                let fields: Vec<String> = type_ext.fields.iter()
+                    .map(|f| {
+                        let sigil_type = ts_type_to_sigil_type(&f.type_annotation, &f.type_kind);
+                        let opt = if f.optional { "?" } else { "" };
+                        format!("    {}{}: {}", f.name, opt, sigil_type)
+                    })
+                    .collect();
+                format!("Σ {}{} {{\n{}\n}}", type_ext.name, type_params, fields.join(",\n"))
+            }
         }
         TypeKind::TypeAlias => {
-            format!("type {} = /* ... */", type_ext.name)
+            // Handle union types specially
+            if !type_ext.union_variants.is_empty() {
+                let variants: Vec<String> = type_ext.union_variants.iter()
+                    .map(|v| ts_type_to_sigil_type(v, &TypeFieldKind::Complex { raw: v.clone() }))
+                    .collect();
+                format!("type {} = {}", type_ext.name, variants.join(" | "))
+            } else if !type_ext.fields.is_empty() {
+                // Object type literal
+                let fields: Vec<String> = type_ext.fields.iter()
+                    .map(|f| {
+                        let sigil_type = ts_type_to_sigil_type(&f.type_annotation, &f.type_kind);
+                        let opt = if f.optional { "?" } else { "" };
+                        format!("    {}{}: {}", f.name, opt, sigil_type)
+                    })
+                    .collect();
+                format!("Σ {} {{\n{}\n}}", type_ext.name, fields.join(",\n"))
+            } else {
+                format!("type {} = /* TODO: map {} */", type_ext.name, type_ext.definition)
+            }
         }
         TypeKind::Enum => {
-            format!("ᛈ {} {{ /* variants */ }}", type_ext.name)
+            // Generate enum with variants
+            if type_ext.union_variants.is_empty() {
+                format!("ᛈ {} {{ }}", type_ext.name)
+            } else {
+                let variants: Vec<String> = type_ext.union_variants.iter()
+                    .map(|v| format!("    {}", v))
+                    .collect();
+                format!("ᛈ {} {{\n{}\n}}", type_ext.name, variants.join(",\n"))
+            }
         }
     }
+}
+
+/// Convert a TypeScript type annotation to Sigil type
+fn ts_type_to_sigil_type(annotation: &str, kind: &TypeFieldKind) -> String {
+    match kind {
+        TypeFieldKind::Primitive { name } => match name.as_str() {
+            "string" => "String".to_string(),
+            "number" => "f64".to_string(),  // Or i64 depending on context
+            "boolean" => "bool".to_string(),
+            "null" | "undefined" => "∅".to_string(),
+            "void" => "()".to_string(),
+            "any" | "unknown" => "Any".to_string(),
+            "never" => "!".to_string(),
+            "object" => "Object".to_string(),
+            "bigint" => "i128".to_string(),
+            "symbol" => "Symbol".to_string(),
+            _ => annotation.to_string(),
+        },
+        TypeFieldKind::TypeRef { name, type_args } => {
+            // Map common React types
+            let base = match name.as_str() {
+                "ReactNode" | "React.ReactNode" => "VNode",
+                "ReactElement" | "React.ReactElement" => "VNode",
+                "JSX.Element" => "VNode",
+                "HTMLElement" | "Element" => "DomRef",
+                "CSSProperties" => "StyleMap",
+                "Ref" => "Ref",
+                "RefObject" => "Ref",
+                "Promise" => "Future",
+                "Date" => "DateTime",
+                _ => name,
+            };
+            if type_args.is_empty() {
+                base.to_string()
+            } else {
+                format!("{}<{}>", base, type_args.join(", "))
+            }
+        }
+        TypeFieldKind::Array { element_type } => {
+            format!("[{}]", ts_type_to_sigil_type(element_type, &TypeFieldKind::Complex { raw: element_type.clone() }))
+        }
+        TypeFieldKind::Union { variants } => {
+            // Check for optional pattern: T | null | undefined
+            let non_null: Vec<&String> = variants.iter()
+                .filter(|v| v.as_str() != "null" && v.as_str() != "undefined")
+                .collect();
+            if non_null.len() == 1 && variants.len() > 1 {
+                format!("Option<{}>", ts_type_to_sigil_type(non_null[0], &TypeFieldKind::Complex { raw: non_null[0].clone() }))
+            } else {
+                variants.join(" | ")
+            }
+        }
+        TypeFieldKind::Function { params, return_type } => {
+            let params_str: Vec<String> = params.iter()
+                .map(|p| ts_type_to_sigil_type(&p.type_annotation, &TypeFieldKind::Complex { raw: p.type_annotation.clone() }))
+                .collect();
+            let ret = ts_type_to_sigil_type(return_type, &TypeFieldKind::Complex { raw: return_type.clone() });
+            format!("rite({}) -> {}", params_str.join(", "), ret)
+        }
+        TypeFieldKind::Record { key_type, value_type } => {
+            format!("Map<{}, {}>", key_type, value_type)
+        }
+        TypeFieldKind::Tuple { element_types } => {
+            format!("({})", element_types.join(", "))
+        }
+        TypeFieldKind::Literal { value } => {
+            // Literal types become the value itself
+            value.clone()
+        }
+        TypeFieldKind::Complex { .. } => {
+            // Fallback: use the annotation as-is but clean it up
+            annotation.replace("React.", "")
+        }
+    }
+}
+
+// =============================================================================
+// State Mutation Transformation (Phase 3)
+// =============================================================================
+
+/// Transform React state mutation calls to Sigil state assignments.
+/// e.g., `setMessages([...messages, input])` → `self.messages = [...self.messages, self.input]`
+fn transform_state_mutations_to_sigil(
+    mutations: &[String],
+    state_fields: &[(String, String)], // [(setter_name, field_name)]
+) -> Vec<String> {
+    mutations.iter()
+        .filter_map(|mutation| transform_single_mutation(mutation, state_fields))
+        .collect()
+}
+
+/// Transform a single React state mutation to Sigil.
+fn transform_single_mutation(
+    mutation: &str,
+    state_fields: &[(String, String)],
+) -> Option<String> {
+    let mutation = mutation.trim();
+
+    // Look for setState(value) pattern
+    for (setter, field) in state_fields {
+        if mutation.starts_with(setter) {
+            // Extract the value argument
+            if let Some(start) = mutation.find('(') {
+                let depth_start = start + 1;
+                let end = find_matching_paren(mutation, start)?;
+                let value = mutation[depth_start..end].trim();
+
+                // Transform state references in the value
+                let transformed_value = transform_state_references(value, state_fields);
+
+                return Some(format!("self.{} = {}", field, transformed_value));
+            }
+        }
+    }
+
+    // Not a recognized state setter - return as-is with self prefix attempt
+    Some(transform_state_references(mutation, state_fields))
+}
+
+/// Find the matching closing parenthesis.
+fn find_matching_paren(s: &str, open_pos: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0;
+
+    for (i, &b) in bytes.iter().enumerate().skip(open_pos) {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+/// Transform state variable references to use self. prefix.
+fn transform_state_references(value: &str, state_fields: &[(String, String)]) -> String {
+    let mut result = value.to_string();
+
+    // Get all field names for prefixing
+    let field_names: Vec<&str> = state_fields.iter()
+        .map(|(_, field)| field.as_str())
+        .collect();
+
+    // Simple word boundary replacement for field names
+    for field in &field_names {
+        // Replace standalone field references with self.field
+        // This is a simple approach - a full solution would use proper parsing
+        let pattern = format!(r"\b{}\b", regex::escape(field));
+        if let Ok(re) = regex::Regex::new(&pattern) {
+            // Only replace if not already prefixed with self.
+            let replacement = format!("self.{}", field);
+
+            // Avoid replacing self.field with self.self.field
+            let mut new_result = String::new();
+            let mut last_end = 0;
+
+            for m in re.find_iter(&result) {
+                // Check if preceded by "self."
+                let prefix_start = m.start().saturating_sub(5);
+                let prefix = &result[prefix_start..m.start()];
+
+                new_result.push_str(&result[last_end..m.start()]);
+
+                if prefix.ends_with("self.") {
+                    // Already has self. prefix
+                    new_result.push_str(m.as_str());
+                } else {
+                    new_result.push_str(&replacement);
+                }
+
+                last_end = m.end();
+            }
+            new_result.push_str(&result[last_end..]);
+            result = new_result;
+        }
+    }
+
+    result
+}
+
+// =============================================================================
+// Service Call Extraction (Phase 3)
+// =============================================================================
+
+/// Extract service calls from handler calls that come from hooks.
+/// Transforms hook-returned function calls into service actor messages.
+fn extract_service_calls(calls: &[HandlerCall]) -> Vec<ServiceCall> {
+    calls.iter()
+        .filter_map(|call| {
+            match &call.source {
+                CallSource::Hook { hook_name } => {
+                    // Convert hook name to service actor name
+                    // e.g., "useChat" -> "ChatService"
+                    let service = hook_name_to_service(hook_name);
+
+                    // Convert function name to method name
+                    // e.g., "addMessage" -> "AddMessage"
+                    let method = to_pascal_case(&call.name);
+
+                    Some(ServiceCall {
+                        service,
+                        method,
+                        args: call.arguments.clone(),
+                    })
+                }
+                _ => None, // Only hook-returned functions become service calls
+            }
+        })
+        .collect()
+}
+
+/// Convert a hook name to a service actor name.
+/// e.g., "useChat" -> "ChatService", "useAgent" -> "AgentService"
+fn hook_name_to_service(hook_name: &str) -> String {
+    let base = hook_name
+        .strip_prefix("use")
+        .unwrap_or(hook_name);
+
+    format!("{}Service", to_pascal_case(base))
+}
+
+/// Builder for collecting service actor info across multiple components.
+struct ServiceActorBuilder {
+    name: String,
+    derived_from: String,
+    state_fields: std::collections::HashMap<String, ServiceStateField>,
+    messages: std::collections::HashMap<String, ServiceMessage>,
+    used_by: Vec<String>,
+}
+
+/// Infer type from a variable name (heuristic-based).
+fn infer_type_from_name(name: &str) -> String {
+    let lower = name.to_lowercase();
+
+    // Boolean patterns
+    if lower.starts_with("is_") || lower.starts_with("has_") ||
+       lower.starts_with("can_") || lower.starts_with("should_") ||
+       lower.starts_with("is") || lower.starts_with("has") ||
+       lower.ends_with("ing") || lower.ends_with("ed") {
+        return "bool".to_string();
+    }
+
+    // Array/list patterns
+    if lower.ends_with("s") && !lower.ends_with("ss") && !lower.ends_with("us") {
+        // Likely plural - probably a list
+        return "Vec<Any>".to_string();
+    }
+    if lower.contains("list") || lower.contains("array") || lower.contains("items") {
+        return "Vec<Any>".to_string();
+    }
+
+    // String patterns
+    if lower.contains("name") || lower.contains("text") || lower.contains("message") ||
+       lower.contains("content") || lower.contains("title") || lower.contains("description") ||
+       lower.contains("id") || lower.contains("url") || lower.contains("path") {
+        return "String".to_string();
+    }
+
+    // Number patterns
+    if lower.contains("count") || lower.contains("index") || lower.contains("size") ||
+       lower.contains("length") || lower.contains("num") || lower.contains("total") {
+        return "i64".to_string();
+    }
+
+    // Default to Any
+    "Any".to_string()
 }

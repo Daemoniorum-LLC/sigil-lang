@@ -346,6 +346,7 @@ pub enum Token {
     Let,
     #[token("Δ")]  // Delta - change/mutable
     #[token("vary")]  // Vary - mutable/changing (Sigil prose alternative)
+    #[token("mut")]  // G76: Rust-style mutable keyword for pointer types
     Mut,
     #[token("const")]
     #[token("◆")]  // Diamond - solid, fixed (native symbol alternative)
