@@ -35,9 +35,12 @@
 //! 1. Load state and locals from memory
 //! 2. Continue execution from saved state
 
-use super::error::WasmResult;
+use super::error::{WasmError, WasmResult};
 use super::WasmCompiler;
 use crate::ast::{Block, Expr, Function, Pattern, Stmt};
+
+#[cfg(feature = "wasm")]
+use wasm_encoder::{BlockType, Instruction, ValType};
 
 /// Information about an await point in an async function
 #[derive(Debug, Clone)]
@@ -48,6 +51,8 @@ pub struct AwaitPoint {
     pub frame_offset: u32,
     /// Variables that need to be saved at this point
     pub saved_locals: Vec<String>,
+    /// Variables that are live after this await (need to be restored)
+    pub live_after: Vec<String>,
 }
 
 /// State machine representation of an async function
@@ -61,7 +66,17 @@ pub struct AsyncStateMachine {
     pub frame_size: u32,
     /// Number of local variables to save
     pub num_saved_locals: usize,
+    /// All local variables declared in the function
+    pub all_locals: Vec<String>,
 }
+
+/// Frame layout for async state machine:
+/// - Offset 0: state number (i32, 4 bytes)
+/// - Offset 4: padding (4 bytes for alignment)
+/// - Offset 8: saved locals (8 bytes each, i64)
+/// - After locals: intermediate values
+pub const STATE_OFFSET: u32 = 0;
+pub const LOCALS_OFFSET: u32 = 8;
 
 impl WasmCompiler {
     /// Analyze an async function to find await points and build state machine info
@@ -71,10 +86,10 @@ impl WasmCompiler {
         }
 
         let mut await_points = Vec::new();
-        let mut frame_offset = 0u32;
+        let mut frame_offset = LOCALS_OFFSET;
 
-        // Collect all locals that might need saving - extract names from patterns
-        let saved_locals: Vec<String> = func.params
+        // Collect parameter names
+        let param_names: Vec<String> = func.params
             .iter()
             .filter_map(|p| {
                 if let Pattern::Ident { name, .. } = &p.pattern {
@@ -85,9 +100,15 @@ impl WasmCompiler {
             })
             .collect();
 
+        // Collect all local variable declarations from body
+        let mut all_locals = param_names.clone();
+        if let Some(ref body) = func.body {
+            self.collect_local_declarations(body, &mut all_locals);
+        }
+
         // Find all await expressions
         if let Some(ref body) = func.body {
-            self.find_await_points(body, &mut await_points, &saved_locals, &mut frame_offset);
+            self.find_await_points(body, &mut await_points, &all_locals, &mut frame_offset);
         }
 
         if await_points.is_empty() {
@@ -95,16 +116,86 @@ impl WasmCompiler {
             return None;
         }
 
-        // Each saved local takes 8 bytes (i64)
-        let num_saved_locals = saved_locals.len();
-        let frame_size = (num_saved_locals as u32 * 8) + 8; // +8 for state number
+        // Calculate frame size:
+        // - 8 bytes for state (i32 state + 4 byte padding)
+        // - 8 bytes per local variable
+        let num_saved_locals = all_locals.len();
+        let frame_size = LOCALS_OFFSET + (num_saved_locals as u32 * 8);
 
         Some(AsyncStateMachine {
             name: func.name.name.clone(),
             await_points,
             frame_size,
             num_saved_locals,
+            all_locals,
         })
+    }
+
+    /// Collect all local variable declarations from a block
+    fn collect_local_declarations(&self, block: &Block, locals: &mut Vec<String>) {
+        for stmt in &block.stmts {
+            match stmt {
+                Stmt::Let { pattern, .. } | Stmt::LetElse { pattern, .. } => {
+                    self.collect_pattern_names(pattern, locals);
+                }
+                _ => {}
+            }
+        }
+        // Check nested blocks in expressions
+        if let Some(expr) = &block.expr {
+            self.collect_locals_in_expr(expr, locals);
+        }
+    }
+
+    /// Collect variable names from a pattern
+    fn collect_pattern_names(&self, pattern: &Pattern, names: &mut Vec<String>) {
+        match pattern {
+            Pattern::Ident { name, .. } => {
+                if !names.contains(&name.name) {
+                    names.push(name.name.clone());
+                }
+            }
+            Pattern::Tuple(elements) => {
+                for elem in elements {
+                    self.collect_pattern_names(elem, names);
+                }
+            }
+            Pattern::Struct { fields, .. } => {
+                for field in fields {
+                    if let Some(ref pat) = field.pattern {
+                        self.collect_pattern_names(pat, names);
+                    } else {
+                        // Field shorthand: `{ name }` binds `name`
+                        if !names.contains(&field.name.name) {
+                            names.push(field.name.name.clone());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Collect locals declared in nested expressions
+    fn collect_locals_in_expr(&self, expr: &Expr, locals: &mut Vec<String>) {
+        match expr {
+            Expr::Block(block) => {
+                self.collect_local_declarations(block, locals);
+            }
+            Expr::If { then_branch, else_branch, .. } => {
+                self.collect_local_declarations(then_branch, locals);
+                if let Some(else_expr) = else_branch {
+                    self.collect_locals_in_expr(else_expr, locals);
+                }
+            }
+            Expr::Match { arms, .. } => {
+                for arm in arms {
+                    self.collect_pattern_names(&arm.pattern, locals);
+                    self.collect_locals_in_expr(&arm.body, locals);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Recursively find await expressions in a block
@@ -151,10 +242,13 @@ impl WasmCompiler {
     ) {
         match expr {
             Expr::Await { .. } => {
+                // All locals are conservatively considered live after await
+                // A more sophisticated analysis would compute actual liveness
                 points.push(AwaitPoint {
                     index: points.len(),
                     frame_offset: *frame_offset,
                     saved_locals: saved_locals.to_vec(),
+                    live_after: saved_locals.to_vec(),
                 });
                 *frame_offset += (saved_locals.len() as u32 * 8) + 8;
             }
@@ -185,6 +279,7 @@ impl WasmCompiler {
                         points.push(AwaitPoint {
                             index: points.len(),
                             frame_offset: *frame_offset,
+                            live_after: saved_locals.to_vec(),
                             saved_locals: saved_locals.to_vec(),
                         });
                         *frame_offset += (saved_locals.len() as u32 * 8) + 8;
@@ -196,31 +291,215 @@ impl WasmCompiler {
     }
 
     /// Compile an async function as a state machine
+    ///
+    /// For functions with multiple await points, this generates:
+    /// 1. A state dispatcher at function entry (br_table)
+    /// 2. State blocks for each segment between awaits
+    /// 3. Save/restore code for locals at each await boundary
+    ///
+    /// The function signature becomes:
+    /// (frame_ptr: i32, resume_value: i64) -> i64
+    ///
+    /// Where frame_ptr points to the state frame in linear memory,
+    /// and resume_value is the resolved value when resuming after await.
+    #[cfg(feature = "wasm")]
     pub fn compile_async_state_machine(
         &mut self,
-        _func: &Function,
+        func: &Function,
         sm: &AsyncStateMachine,
     ) -> WasmResult<()> {
-        // For now, fall back to simple await for single await points
-        // Full state machine for multiple awaits would require:
-        // 1. Allocating a frame in memory
-        // 2. Generating a dispatch table at function entry
-        // 3. Saving/restoring locals at each await point
-
+        // For single await or no awaits, use simple await_promise approach
         if sm.await_points.len() <= 1 {
-            // Simple case - just use regular await
             return Ok(());
         }
 
-        // For multiple awaits, we need the state machine transformation
-        // This is a complex transformation that requires:
-        // - Splitting the function body at each await
-        // - Generating state save/restore code
-        // - Creating a dispatcher that jumps to the right state
+        // Get required imports
+        let alloc_idx = self.get_func("alloc")
+            .ok_or_else(|| WasmError::internal("alloc import not found"))?;
+        let create_continuation_idx = self.get_func("async_create_continuation")
+            .ok_or_else(|| WasmError::internal("async_create_continuation import not found"))?;
 
-        // For now, log that we're using the simplified approach
-        // The full implementation would require significant refactoring
-        // of how we compile function bodies
+        let compiled_func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Allocate locals for state machine
+        let frame_ptr_local = compiled_func.alloc_local("__sm_frame".to_string(), ValType::I32);
+        let state_local = compiled_func.alloc_local("__sm_state".to_string(), ValType::I32);
+        let resume_value_local = compiled_func.alloc_local("__sm_resume".to_string(), ValType::I64);
+
+        // Allocate locals for each saved variable
+        let mut local_indices: Vec<(String, u32)> = Vec::new();
+        for local_name in &sm.all_locals {
+            let idx = compiled_func.alloc_local(local_name.clone(), ValType::I64);
+            local_indices.push((local_name.clone(), idx));
+        }
+
+        // Prologue: Allocate frame on first call (state == 0)
+        // frame_ptr = alloc(frame_size)
+        compiled_func.push(Instruction::I32Const(sm.frame_size as i32));
+        compiled_func.push(Instruction::Call(alloc_idx));
+        compiled_func.push(Instruction::LocalSet(frame_ptr_local));
+
+        // Initialize state to 0
+        compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+        compiled_func.push(Instruction::I32Const(0));
+        compiled_func.push(Instruction::I32Store(wasm_encoder::MemArg {
+            offset: STATE_OFFSET as u64,
+            align: 2,
+            memory_index: 0,
+        }));
+
+        // Load state for dispatcher
+        compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+        compiled_func.push(Instruction::I32Load(wasm_encoder::MemArg {
+            offset: STATE_OFFSET as u64,
+            align: 2,
+            memory_index: 0,
+        }));
+        compiled_func.push(Instruction::LocalSet(state_local));
+
+        // Generate dispatcher (br_table)
+        // We need blocks for each state plus a final block
+        let num_states = sm.await_points.len() + 1; // +1 for final state
+
+        // Create nested blocks for br_table targets
+        // Structure: block $final { block $stateN { ... block $state0 { br_table } } }
+        for _i in 0..num_states {
+            compiled_func.push(Instruction::Block(wasm_encoder::BlockType::Empty));
+        }
+
+        // br_table instruction
+        // Takes state value and jumps to corresponding block
+        compiled_func.push(Instruction::LocalGet(state_local));
+        let targets: Vec<u32> = (0..num_states as u32).collect();
+        compiled_func.push(Instruction::BrTable(
+            targets[..num_states-1].to_vec().into(),
+            (num_states - 1) as u32, // default to final state
+        ));
+
+        // Generate code for each state
+        // State 0 is the entry state, states 1..N are resume states
+        for state_idx in 0..num_states {
+            // End the block for this state
+            compiled_func.push(Instruction::End);
+
+            if state_idx < sm.await_points.len() {
+                // This is a state that ends with an await
+                let await_point = &sm.await_points[state_idx];
+
+                // For resume states (> 0), restore locals and get resume value
+                if state_idx > 0 {
+                    // Load resume value (would be passed by runtime)
+                    compiled_func.push(Instruction::LocalGet(resume_value_local));
+                    // Store as the result of previous await
+                    // (The actual binding would need AST info to know where to store)
+                }
+
+                // Generate save locals before await
+                for (i, local_name) in await_point.saved_locals.iter().enumerate() {
+                    if let Some((_, local_idx)) = local_indices.iter().find(|(n, _)| n == local_name) {
+                        // frame_ptr.offset = local_value
+                        compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+                        compiled_func.push(Instruction::LocalGet(*local_idx));
+                        compiled_func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                            offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
+                            align: 3,
+                            memory_index: 0,
+                        }));
+                    }
+                }
+
+                // Set next state
+                compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+                compiled_func.push(Instruction::I32Const((state_idx + 1) as i32));
+                compiled_func.push(Instruction::I32Store(wasm_encoder::MemArg {
+                    offset: STATE_OFFSET as u64,
+                    align: 2,
+                    memory_index: 0,
+                }));
+
+                // Create continuation and return
+                // create_continuation(frame_ptr, next_state) -> continuation_ptr
+                compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+                compiled_func.push(Instruction::I32Const((state_idx + 1) as i32));
+                compiled_func.push(Instruction::Call(create_continuation_idx));
+
+                // Return continuation as i64
+                compiled_func.push(Instruction::I64ExtendI32U);
+                compiled_func.push(Instruction::Return);
+            } else {
+                // Final state - restore locals and complete
+                if !sm.await_points.is_empty() {
+                    let last_await = &sm.await_points[sm.await_points.len() - 1];
+                    for (i, local_name) in last_await.live_after.iter().enumerate() {
+                        if let Some((_, local_idx)) = local_indices.iter().find(|(n, _)| n == local_name) {
+                            // local_value = frame_ptr.offset
+                            compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+                            compiled_func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                                offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
+                                align: 3,
+                                memory_index: 0,
+                            }));
+                            compiled_func.push(Instruction::LocalSet(*local_idx));
+                        }
+                    }
+                }
+
+                // Get resume value as final result
+                compiled_func.push(Instruction::LocalGet(resume_value_local));
+            }
+        }
+
+        // Note: The actual body compilation would need to be interleaved
+        // with the state machine structure. This implementation provides
+        // the framework; full integration requires modifying compile_block
+        // to emit code into the appropriate state blocks.
+
+        Ok(())
+    }
+
+    /// Generate code to save all locals to the state frame
+    #[cfg(feature = "wasm")]
+    pub fn emit_save_locals(
+        &mut self,
+        frame_ptr_local: u32,
+        locals: &[(String, u32)],
+    ) -> WasmResult<()> {
+        let compiled_func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        for (i, (_, local_idx)) in locals.iter().enumerate() {
+            compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+            compiled_func.push(Instruction::LocalGet(*local_idx));
+            compiled_func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
+
+        Ok(())
+    }
+
+    /// Generate code to restore all locals from the state frame
+    #[cfg(feature = "wasm")]
+    pub fn emit_restore_locals(
+        &mut self,
+        frame_ptr_local: u32,
+        locals: &[(String, u32)],
+    ) -> WasmResult<()> {
+        let compiled_func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        for (i, (_, local_idx)) in locals.iter().enumerate() {
+            compiled_func.push(Instruction::LocalGet(frame_ptr_local));
+            compiled_func.push(Instruction::I64Load(wasm_encoder::MemArg {
+                offset: (LOCALS_OFFSET + (i as u32 * 8)) as u64,
+                align: 3,
+                memory_index: 0,
+            }));
+            compiled_func.push(Instruction::LocalSet(*local_idx));
+        }
 
         Ok(())
     }
@@ -378,7 +657,9 @@ mod tests {
         assert!(result.is_some());
         let sm = result.unwrap();
         assert_eq!(sm.await_points.len(), 2);
-        assert_eq!(sm.num_saved_locals, 2); // url1, url2 parameters
+        // Now collects all locals: params (url1, url2) + body declarations (a, b)
+        assert_eq!(sm.num_saved_locals, 4);
+        assert_eq!(sm.all_locals, vec!["url1", "url2", "a", "b"]);
     }
 
     #[test]
