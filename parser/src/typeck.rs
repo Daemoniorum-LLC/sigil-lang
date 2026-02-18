@@ -1295,7 +1295,7 @@ impl TypeChecker {
                     .return_type
                     .as_ref()
                     .map(|t| self.convert_type(t))
-                    .unwrap_or(Type::Unit);
+                    .unwrap_or_else(|| self.fresh_var());
 
                 let fn_type = Type::Function {
                     params,
@@ -1350,7 +1350,7 @@ impl TypeChecker {
                             .return_type
                             .as_ref()
                             .map(|t| self.convert_type(t))
-                            .unwrap_or(Type::Unit);
+                            .unwrap_or_else(|| self.fresh_var());
 
                         let fn_type = Type::Function {
                             params,
@@ -1393,7 +1393,9 @@ impl TypeChecker {
         match item {
             Item::Function(f) => self.check_function(f),
             Item::Const(c) => {
-                let declared = self.convert_type(&c.ty);
+                let declared = c.ty.as_ref()
+                    .map(|t| self.convert_type(t))
+                    .unwrap_or_else(|| self.fresh_var());
                 let inferred = self.infer_expr(&c.value);
                 if !self.unify(&declared, &inferred) {
                     self.error(
@@ -1492,7 +1494,7 @@ impl TypeChecker {
             .return_type
             .as_ref()
             .map(|t| self.convert_type(t))
-            .unwrap_or(Type::Unit);
+            .unwrap_or_else(|| self.fresh_var());
         let old_return_type = self.expected_return_type.clone();
         self.expected_return_type = Some(expected_return.clone());
 
@@ -1508,7 +1510,7 @@ impl TypeChecker {
                 .return_type
                 .as_ref()
                 .map(|t| self.convert_type(t))
-                .unwrap_or(Type::Unit);
+                .unwrap_or_else(|| self.fresh_var());
 
             // Check structural type compatibility
             // For bootstrapping: skip return type checking to be lenient with

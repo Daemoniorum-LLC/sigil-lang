@@ -2487,8 +2487,11 @@ impl<'a> Parser<'a> {
     fn parse_const(&mut self, visibility: Visibility) -> ParseResult<ConstDef> {
         self.expect(Token::Const)?;
         let name = self.parse_ident()?;
-        self.expect(Token::Colon)?;
-        let ty = self.parse_type()?;
+        let ty = if self.consume_if(&Token::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
         // Semicolon is optional in Sigil's advanced syntax
@@ -2512,8 +2515,11 @@ impl<'a> Parser<'a> {
     ) -> ParseResult<ConstDef> {
         self.expect(Token::Let)?; // consume ≔
         let name = self.parse_ident()?;
-        self.expect(Token::Colon)?;
-        let ty = self.parse_type()?;
+        let ty = if self.consume_if(&Token::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
         self.expect_semi_or_item_start()?;

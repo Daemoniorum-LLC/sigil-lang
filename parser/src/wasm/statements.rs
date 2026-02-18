@@ -1592,7 +1592,7 @@ mod tests {
             doc_comments: vec![],
             visibility: Visibility::Public,
             name: make_ident("MAX"),
-            ty: crate::ast::TypeExpr::Path(TypePath { segments: vec![] }),
+            ty: Some(crate::ast::TypeExpr::Path(TypePath { segments: vec![] })),
             value: make_int(100),
         };
 

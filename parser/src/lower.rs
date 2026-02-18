@@ -1969,7 +1969,7 @@ fn lower_impl_block(ctx: &mut LoweringContext, i: &ast::ImplBlock) -> IrImplBloc
 fn lower_const_def(ctx: &mut LoweringContext, c: &ast::ConstDef) -> IrConstant {
     IrConstant {
         name: c.name.name.clone(),
-        ty: lower_type_expr(&c.ty),
+        ty: c.ty.as_ref().map(lower_type_expr).unwrap_or(IrType::Infer),
         value: lower_expr(ctx, &c.value),
         visibility: lower_visibility(c.visibility),
         span: None,

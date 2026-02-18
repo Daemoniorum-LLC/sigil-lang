@@ -1,0 +1,5 @@
+// Test: top-level const without type annotation
+≔ X = 42;
+rite main() {
+    println(to_string(X));
+}

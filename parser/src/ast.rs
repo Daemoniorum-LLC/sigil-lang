@@ -945,7 +945,7 @@ pub struct ConstDef {
     pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
-    pub ty: TypeExpr,
+    pub ty: Option<TypeExpr>,
     pub value: Expr,
 }
 

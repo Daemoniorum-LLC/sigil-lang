@@ -505,8 +505,10 @@ impl RustCompiler {
                     self.write_indent();
                     self.write("const ");
                     self.write(&c.name.name);
-                    self.write(": ");
-                    self.emit_type(&c.ty)?;
+                    if let Some(ref ty) = c.ty {
+                        self.write(": ");
+                        self.emit_type(ty)?;
+                    }
                     self.write(" = ");
                     self.emit_expr(&c.value)?;
                     self.write(";\n");
@@ -581,8 +583,10 @@ impl RustCompiler {
         self.emit_visibility(&c.visibility);
         self.write("const ");
         self.write(&c.name.name);
-        self.write(": ");
-        self.emit_type(&c.ty)?;
+        if let Some(ref ty) = c.ty {
+            self.write(": ");
+            self.emit_type(ty)?;
+        }
         self.write(" = ");
         self.emit_expr(&c.value)?;
         self.write(";\n");
