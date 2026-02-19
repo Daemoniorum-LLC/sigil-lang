@@ -1,0 +1,132 @@
+// Test: Unzoom restores original regions
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that after zoom+unzoom, relayout restores panes to their
+// proper grid positions.
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite layout_grid(rows, cols, screen_w, screen_h) {
+    ≔ usable_h = screen_h - 1;
+    ≔ base_h = usable_h / rows;
+    ≔ remainder_h = usable_h % rows;
+    ≔ base_w = screen_w / cols;
+    ≔ remainder_w = screen_w % cols;
+    ≔ mut regions = [];
+    ≔ mut y_offset = 0;
+    ≔ mut r = 0;
+    ⟳ r < rows {
+        ≔ mut h = base_h;
+        ⎇ r == rows - 1 { h = base_h + remainder_h; }
+        ≔ mut x_offset = 0;
+        ≔ mut c = 0;
+        ⟳ c < cols {
+            ≔ mut w = base_w;
+            ⎇ c == cols - 1 { w = base_w + remainder_w; }
+            push(regions, Region_new(x_offset, y_offset, w, h));
+            x_offset = x_offset + w;
+            c = c + 1;
+        }
+        y_offset = y_offset + h;
+        r = r + 1;
+    }
+    ↩ regions
+}
+
+rite recompute_grid(num_panes, screen_h, screen_w) {
+    ≔ usable_h = screen_h - 1;
+    ≔ mut best_rows = 1;
+    ≔ mut best_cols = num_panes;
+    ≔ mut best_diff = 999999;
+    ≔ mut r = 1;
+    ⟳ r * r <= num_panes {
+        ≔ c = (num_panes + r - 1) / r;
+        ≔ pane_h = usable_h / r;
+        ≔ pane_w = screen_w / c;
+        ≔ mut diff = pane_w - pane_h * 2;
+        ⎇ diff < 0 { diff = 0 - diff; }
+        ⎇ diff < best_diff {
+            best_diff = diff;
+            best_rows = r;
+            best_cols = c;
+        }
+        r = r + 1;
+    }
+    ↩ { rows: best_rows, cols: best_cols }
+}
+
+rite main() {
+    ≔ screen_w = 80;
+    ≔ screen_h = 24;
+
+    // Set up 4 panes in 2x2 grid
+    ≔ grid = recompute_grid(4, screen_h, screen_w);
+    ≔ original_regions = layout_grid(grid.rows, grid.cols, screen_w, screen_h);
+
+    ≔ mut panes = [];
+    ≔ mut i = 0;
+    ⟳ i < 4 {
+        push(panes, { region: original_regions[i], title: "p" + to_string(i) });
+        i = i + 1;
+    }
+
+    // Save original positions
+    ≔ orig_x0 = panes[0].region.x;
+    ≔ orig_w0 = panes[0].region.w;
+    ≔ orig_x1 = panes[1].region.x;
+
+    // Zoom pane 1
+    panes[1].region = Region_new(0, 0, screen_w, screen_h - 1);
+
+    // Verify zoomed
+    ⎇ panes[1].region.w == 80 {
+        println("zoomed: OK");
+    } ⎉ {
+        println("zoomed: FAILED");
+    }
+
+    // Unzoom: relayout all panes
+    ≔ restored_regions = layout_grid(grid.rows, grid.cols, screen_w, screen_h);
+    i = 0;
+    ⟳ i < 4 {
+        panes[i].region = restored_regions[i];
+        i = i + 1;
+    }
+
+    // Test 1: Pane 0 restored
+    ⎇ panes[0].region.x == orig_x0 ∧ panes[0].region.w == orig_w0 {
+        println("restore_pane0: OK");
+    } ⎉ {
+        println("restore_pane0: FAILED x=" + to_string(panes[0].region.x) + " w=" + to_string(panes[0].region.w));
+    }
+
+    // Test 2: Pane 1 restored to original position
+    ⎇ panes[1].region.x == orig_x1 {
+        println("restore_pane1: OK");
+    } ⎉ {
+        println("restore_pane1: FAILED x=" + to_string(panes[1].region.x));
+    }
+
+    // Test 3: All panes have distinct positions
+    ≔ mut all_diff = true;
+    ≔ mut a = 0;
+    ⟳ a < 4 {
+        ≔ mut b = a + 1;
+        ⟳ b < 4 {
+            ⎇ panes[a].region.x == panes[b].region.x ∧ panes[a].region.y == panes[b].region.y {
+                all_diff = false;
+            }
+            b = b + 1;
+        }
+        a = a + 1;
+    }
+    ⎇ all_diff == true {
+        println("distinct_positions: OK");
+    } ⎉ {
+        println("distinct_positions: FAILED");
+    }
+}

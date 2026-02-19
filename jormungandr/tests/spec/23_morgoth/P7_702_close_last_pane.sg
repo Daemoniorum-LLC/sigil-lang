@@ -1,0 +1,41 @@
+// Test: Cannot close last pane (guard)
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that the close guard prevents removing the last pane.
+// Invariant P1: len(panes) >= 1
+
+rite main() {
+    ≔ mut panes = [];
+    push(panes, { id: 0, title: "only" });
+    push(panes, { id: 1, title: "second" });
+
+    // Test 1: Can close when 2 panes exist
+    ≔ mut can_close = len(panes) > 1;
+    ⎇ can_close == true {
+        println("close_with_two: OK");
+    } ⎉ {
+        println("close_with_two: FAILED");
+    }
+
+    // Simulate closing one pane
+    ≔ mut reduced = [];
+    push(reduced, panes[0]);
+    panes = reduced;
+
+    // Test 2: Cannot close when only 1 pane
+    can_close = len(panes) > 1;
+    ⎇ can_close == false {
+        println("guard_last_pane: OK");
+    } ⎉ {
+        println("guard_last_pane: FAILED");
+    }
+
+    // Test 3: Count stays at 1
+    ⎇ len(panes) == 1 {
+        println("count_preserved: OK");
+    } ⎉ {
+        println("count_preserved: FAILED got=" + to_string(len(panes)));
+    }
+}

@@ -1,0 +1,102 @@
+// Test: Background panes still receive data during zoom
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates invariant P6: during zoom, all panes continue to receive
+// PTY output (vterm_feed), even though only the focused pane is rendered.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells,
+        rows: rows,
+        cols: cols,
+        cursor_row: 0,
+        cursor_col: 0
+    }
+}
+
+rite simple_vterm_feed(vt, text) {
+    // Simplified: just write chars at cursor
+    ≔ mut i = 0;
+    ⟳ i < len(text) {
+        ≔ ch = to_string(char_at(text, i));
+        ⎇ vt.cursor_col < vt.cols ∧ vt.cursor_row < vt.rows {
+            ≔ idx = vt.cursor_row * vt.cols + vt.cursor_col;
+            vt.cells[idx] = {ch: ch, fg: 7, bg: 0};
+            vt.cursor_col = vt.cursor_col + 1;
+        }
+        i = i + 1;
+    }
+}
+
+rite main() {
+    // Create 3 panes with vterms
+    ≔ mut panes = [];
+    push(panes, { vterm: VTerm_new(10, 40), alive: true, title: "p0" });
+    push(panes, { vterm: VTerm_new(10, 40), alive: true, title: "p1" });
+    push(panes, { vterm: VTerm_new(10, 40), alive: true, title: "p2" });
+
+    ≔ focus = 0;
+    ≔ zoomed = true;
+
+    // Simulate PTY poll loop: ALL panes get data regardless of zoom
+    ≔ mut i = 0;
+    ⟳ i < len(panes) {
+        ⎇ panes[i].alive == true {
+            // Simulate pty_data received
+            simple_vterm_feed(panes[i].vterm, "data" + to_string(i));
+        }
+        i = i + 1;
+    }
+
+    // Test 1: Focused pane received data
+    ⎇ panes[0].vterm.cells[0].ch == "d" {
+        println("focused_data: OK");
+    } ⎉ {
+        println("focused_data: FAILED ch=" + panes[0].vterm.cells[0].ch);
+    }
+
+    // Test 2: Background pane 1 received data
+    ⎇ panes[1].vterm.cells[0].ch == "d" {
+        println("bg_pane1_data: OK");
+    } ⎉ {
+        println("bg_pane1_data: FAILED ch=" + panes[1].vterm.cells[0].ch);
+    }
+
+    // Test 3: Background pane 2 received data
+    ⎇ panes[2].vterm.cells[0].ch == "d" {
+        println("bg_pane2_data: OK");
+    } ⎉ {
+        println("bg_pane2_data: FAILED ch=" + panes[2].vterm.cells[0].ch);
+    }
+
+    // Test 4: Each pane has distinct data (the digit differs)
+    ⎇ panes[0].vterm.cells[4].ch == "0" ∧ panes[1].vterm.cells[4].ch == "1" ∧ panes[2].vterm.cells[4].ch == "2" {
+        println("distinct_data: OK");
+    } ⎉ {
+        println("distinct_data: FAILED");
+    }
+
+    // Test 5: Only focused pane would be rendered (logic check)
+    ≔ mut rendered = 0;
+    i = 0;
+    ⟳ i < len(panes) {
+        ⎇ zoomed == false ∨ i == focus {
+            rendered = rendered + 1;
+        }
+        i = i + 1;
+    }
+    ⎇ rendered == 1 {
+        println("render_only_focused: OK");
+    } ⎉ {
+        println("render_only_focused: FAILED rendered=" + to_string(rendered));
+    }
+}

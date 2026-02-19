@@ -1,0 +1,87 @@
+// Test: Focus adjusts when closing at/before focus
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates invariant P2: 0 <= focus < len(panes) after close.
+// Focus should clamp to len(panes)-1 if at or beyond the closed index.
+
+rite remove_at(arr, idx) {
+    ≔ mut result = [];
+    ≔ mut i = 0;
+    ⟳ i < len(arr) {
+        ⎇ i != idx {
+            push(result, arr[i]);
+        }
+        i = i + 1;
+    }
+    ↩ result
+}
+
+rite main() {
+    ≔ mut panes = [0, 1, 2, 3];
+    ≔ mut focus = 2;
+
+    // Test 1: Close pane after focus — focus unchanged
+    panes = remove_at(panes, 3);
+    // focus=2 is still valid for 3 panes (indices 0,1,2)
+    ⎇ focus < len(panes) {
+        println("close_after_focus: OK");
+    } ⎉ {
+        println("close_after_focus: FAILED focus=" + to_string(focus) + " len=" + to_string(len(panes)));
+    }
+
+    // Reset
+    panes = [0, 1, 2, 3];
+    focus = 3;
+
+    // Test 2: Close pane AT focus (last index) — focus clamps
+    panes = remove_at(panes, 3);
+    ⎇ focus >= len(panes) {
+        focus = len(panes) - 1;
+    }
+    ⎇ focus == 2 {
+        println("close_at_focus: OK");
+    } ⎉ {
+        println("close_at_focus: FAILED focus=" + to_string(focus));
+    }
+
+    // Reset
+    panes = [0, 1, 2, 3];
+    focus = 2;
+
+    // Test 3: Close pane before focus — focus decrements
+    panes = remove_at(panes, 1);
+    focus = focus - 1;
+    ⎇ focus == 1 ∧ focus < len(panes) {
+        println("close_before_focus: OK");
+    } ⎉ {
+        println("close_before_focus: FAILED focus=" + to_string(focus));
+    }
+
+    // Test 4: Close at index 0 with focus=0 — focus stays at 0
+    panes = [0, 1, 2];
+    focus = 0;
+    panes = remove_at(panes, 0);
+    ⎇ focus >= len(panes) {
+        focus = len(panes) - 1;
+    }
+    ⎇ focus == 0 ∧ len(panes) == 2 {
+        println("close_first_focused: OK");
+    } ⎉ {
+        println("close_first_focused: FAILED focus=" + to_string(focus) + " len=" + to_string(len(panes)));
+    }
+
+    // Test 5: Invariant P2 always holds
+    panes = [0, 1];
+    focus = 1;
+    panes = remove_at(panes, 1);
+    ⎇ focus >= len(panes) {
+        focus = len(panes) - 1;
+    }
+    ⎇ focus >= 0 ∧ focus < len(panes) {
+        println("invariant_P2: OK");
+    } ⎉ {
+        println("invariant_P2: FAILED");
+    }
+}

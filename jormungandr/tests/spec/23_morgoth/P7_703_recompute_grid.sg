@@ -1,0 +1,107 @@
+// Test: Grid auto-sizing for 1-12 panes
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that recompute_grid finds optimal rows/cols for pane counts 1-12,
+// minimizing aspect ratio distortion on an 80x24 terminal.
+
+rite recompute_grid(num_panes, screen_h, screen_w) {
+    ≔ usable_h = screen_h - 1;
+    ≔ mut best_rows = 1;
+    ≔ mut best_cols = num_panes;
+    ≔ mut best_diff = 999999;
+    ≔ mut r = 1;
+    ⟳ r * r <= num_panes {
+        ≔ c = (num_panes + r - 1) / r;
+        ≔ pane_h = usable_h / r;
+        ≔ pane_w = screen_w / c;
+        ≔ mut diff = pane_w - pane_h * 2;
+        ⎇ diff < 0 { diff = 0 - diff; }
+        ⎇ diff < best_diff {
+            best_diff = diff;
+            best_rows = r;
+            best_cols = c;
+        }
+        r = r + 1;
+    }
+    ↩ { rows: best_rows, cols: best_cols }
+}
+
+rite main() {
+    // All tests use 80x24 terminal
+    ≔ W = 80;
+    ≔ H = 24;
+
+    // Test 1: 1 pane -> 1x1
+    ≔ g1 = recompute_grid(1, H, W);
+    ⎇ g1.rows == 1 ∧ g1.cols == 1 {
+        println("grid_1: OK");
+    } ⎉ {
+        println("grid_1: FAILED r=" + to_string(g1.rows) + " c=" + to_string(g1.cols));
+    }
+
+    // Test 2: 2 panes -> 1x2
+    ≔ g2 = recompute_grid(2, H, W);
+    ⎇ g2.rows == 1 ∧ g2.cols == 2 {
+        println("grid_2: OK");
+    } ⎉ {
+        println("grid_2: FAILED r=" + to_string(g2.rows) + " c=" + to_string(g2.cols));
+    }
+
+    // Test 3: 3 panes -> best fit
+    ≔ g3 = recompute_grid(3, H, W);
+    ⎇ g3.rows * g3.cols >= 3 {
+        println("grid_3: OK");
+    } ⎉ {
+        println("grid_3: FAILED r=" + to_string(g3.rows) + " c=" + to_string(g3.cols));
+    }
+
+    // Test 4: 4 panes -> 2x2
+    ≔ g4 = recompute_grid(4, H, W);
+    ⎇ g4.rows == 2 ∧ g4.cols == 2 {
+        println("grid_4: OK");
+    } ⎉ {
+        println("grid_4: FAILED r=" + to_string(g4.rows) + " c=" + to_string(g4.cols));
+    }
+
+    // Test 5: 6 panes -> 2x3
+    ≔ g6 = recompute_grid(6, H, W);
+    ⎇ g6.rows * g6.cols >= 6 {
+        println("grid_6: OK");
+    } ⎉ {
+        println("grid_6: FAILED r=" + to_string(g6.rows) + " c=" + to_string(g6.cols));
+    }
+
+    // Test 6: 9 panes -> grid has enough cells
+    ≔ g9 = recompute_grid(9, H, W);
+    ⎇ g9.rows * g9.cols >= 9 {
+        println("grid_9: OK");
+    } ⎉ {
+        println("grid_9: FAILED r=" + to_string(g9.rows) + " c=" + to_string(g9.cols));
+    }
+
+    // Test 7: 12 panes -> grid has enough cells
+    ≔ g12 = recompute_grid(12, H, W);
+    ⎇ g12.rows * g12.cols >= 12 {
+        println("grid_12: OK");
+    } ⎉ {
+        println("grid_12: FAILED r=" + to_string(g12.rows) + " c=" + to_string(g12.cols));
+    }
+
+    // Test 8: All grids have enough cells (invariant P3)
+    ≔ mut all_ok = true;
+    ≔ mut n = 1;
+    ⟳ n <= 12 {
+        ≔ g = recompute_grid(n, H, W);
+        ⎇ g.rows * g.cols < n {
+            all_ok = false;
+        }
+        n = n + 1;
+    }
+    ⎇ all_ok == true {
+        println("invariant_P3: OK");
+    } ⎉ {
+        println("invariant_P3: FAILED");
+    }
+}

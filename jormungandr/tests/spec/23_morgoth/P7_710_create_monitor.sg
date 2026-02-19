@@ -1,0 +1,104 @@
+// Test: Create monitor pane (pane_type="monitor", no PTY)
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that creating a monitor pane sets pane_type to "monitor",
+// master_fd=-1, pid=-1, alive=false (no PTY).
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells,
+        rows: rows,
+        cols: cols,
+        cursor_row: 0,
+        cursor_col: 0
+    }
+}
+
+rite MonitorPane_new(id, region) {
+    ≔ vt = VTerm_new(region.h - 2, region.w - 2);
+    ↩ {
+        id: id,
+        region: region,
+        master_fd: -1,
+        slave_fd: -1,
+        pid: -1,
+        alive: false,
+        title: "monitor",
+        vterm: vt,
+        pane_type: "monitor"
+    }
+}
+
+rite main() {
+    ≔ mut panes = [];
+
+    // Start with a terminal pane
+    push(panes, {
+        id: 0,
+        region: Region_new(0, 0, 80, 24),
+        master_fd: 5000,
+        pid: 7000,
+        alive: true,
+        title: "bash",
+        pane_type: "terminal"
+    });
+
+    // Create a monitor pane
+    ≔ r = Region_new(80, 0, 40, 24);
+    push(panes, MonitorPane_new(1, r));
+
+    // Test 1: Count is now 2
+    ⎇ len(panes) == 2 {
+        println("count: OK");
+    } ⎉ {
+        println("count: FAILED got=" + to_string(len(panes)));
+    }
+
+    // Test 2: pane_type is "monitor"
+    ⎇ panes[1].pane_type == "monitor" {
+        println("pane_type: OK");
+    } ⎉ {
+        println("pane_type: FAILED got=" + panes[1].pane_type);
+    }
+
+    // Test 3: No PTY (master_fd = -1)
+    ⎇ panes[1].master_fd == -1 {
+        println("no_pty: OK");
+    } ⎉ {
+        println("no_pty: FAILED fd=" + to_string(panes[1].master_fd));
+    }
+
+    // Test 4: Not alive (no process)
+    ⎇ panes[1].alive == false {
+        println("not_alive: OK");
+    } ⎉ {
+        println("not_alive: FAILED");
+    }
+
+    // Test 5: Title is "monitor"
+    ⎇ panes[1].title == "monitor" {
+        println("title: OK");
+    } ⎉ {
+        println("title: FAILED got=" + panes[1].title);
+    }
+
+    // Test 6: VTerm has correct inner dimensions
+    ⎇ panes[1].vterm.rows == 22 ∧ panes[1].vterm.cols == 38 {
+        println("vterm_dims: OK");
+    } ⎉ {
+        println("vterm_dims: FAILED rows=" + to_string(panes[1].vterm.rows) + " cols=" + to_string(panes[1].vterm.cols));
+    }
+}

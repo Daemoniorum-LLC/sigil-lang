@@ -1,0 +1,66 @@
+// Test: Zoomed pane gets full-screen region
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that zooming a pane sets its region to fill the entire screen
+// (minus status bar), and inner dimensions are screen_h-3, screen_w-2.
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite main() {
+    ≔ screen_w = 80;
+    ≔ screen_h = 24;
+
+    // Start with 4 panes in 2x2 grid
+    ≔ mut panes = [];
+    push(panes, { region: Region_new(0, 0, 40, 11), title: "p0" });
+    push(panes, { region: Region_new(40, 0, 40, 11), title: "p1" });
+    push(panes, { region: Region_new(0, 11, 40, 12), title: "p2" });
+    push(panes, { region: Region_new(40, 11, 40, 12), title: "p3" });
+
+    ≔ focus = 1;
+
+    // Zoom: set focused pane to full screen minus status bar
+    ≔ zoom_region = Region_new(0, 0, screen_w, screen_h - 1);
+    panes[focus].region = zoom_region;
+
+    // Test 1: Zoom region origin
+    ⎇ panes[focus].region.x == 0 ∧ panes[focus].region.y == 0 {
+        println("zoom_origin: OK");
+    } ⎉ {
+        println("zoom_origin: FAILED");
+    }
+
+    // Test 2: Zoom region width = screen width
+    ⎇ panes[focus].region.w == 80 {
+        println("zoom_width: OK");
+    } ⎉ {
+        println("zoom_width: FAILED got=" + to_string(panes[focus].region.w));
+    }
+
+    // Test 3: Zoom region height = screen_h - 1 (status bar)
+    ⎇ panes[focus].region.h == 23 {
+        println("zoom_height: OK");
+    } ⎉ {
+        println("zoom_height: FAILED got=" + to_string(panes[focus].region.h));
+    }
+
+    // Test 4: Inner dimensions for VTerm resize
+    ≔ inner_rows = panes[focus].region.h - 2;
+    ≔ inner_cols = panes[focus].region.w - 2;
+    ⎇ inner_rows == 21 ∧ inner_cols == 78 {
+        println("zoom_inner: OK");
+    } ⎉ {
+        println("zoom_inner: FAILED rows=" + to_string(inner_rows) + " cols=" + to_string(inner_cols));
+    }
+
+    // Test 5: Non-focused panes retain original regions
+    ⎇ panes[0].region.w == 40 ∧ panes[2].region.w == 40 {
+        println("others_unchanged: OK");
+    } ⎉ {
+        println("others_unchanged: FAILED");
+    }
+}

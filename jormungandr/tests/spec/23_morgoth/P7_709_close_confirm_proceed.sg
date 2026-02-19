@@ -1,0 +1,105 @@
+// Test: Close confirmation: 'y' triggers removal
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that when confirming_close is true and user presses 'y',
+// the action "close_confirm" is returned.
+
+rite InputState_new() {
+    ↩ {
+        leader_active: false,
+        in_escape: false,
+        escape_buf: "",
+        last_escape_buf: "",
+        confirming_close: false
+    }
+}
+
+rite process_input(input_state, byte, pane_count) {
+    ⎇ input_state.confirming_close == true {
+        input_state.confirming_close = false;
+        ⎇ byte == 121 { ↩ "close_confirm"; }
+        ↩ "close_cancel"
+    }
+
+    ≔ mut action = "passthrough";
+    ⎇ input_state.leader_active == true {
+        input_state.leader_active = false;
+        action = "none";
+        ⎇ byte == 120 { action = "close_pane"; }
+    } ⎉ {
+        ⎇ byte == 2 {
+            input_state.leader_active = true;
+            action = "leader_activate";
+        }
+    }
+    ↩ action
+}
+
+rite remove_at(arr, idx) {
+    ≔ mut result = [];
+    ≔ mut i = 0;
+    ⟳ i < len(arr) {
+        ⎇ i != idx {
+            push(result, arr[i]);
+        }
+        i = i + 1;
+    }
+    ↩ result
+}
+
+rite main() {
+    ≔ input = InputState_new();
+
+    // Simulate: leader + x -> close_pane
+    ≔ a1 = process_input(input, 2, 3);
+    ⎇ a1 == "leader_activate" {
+        println("leader: OK");
+    } ⎉ {
+        println("leader: FAILED got=" + a1);
+    }
+
+    ≔ a2 = process_input(input, 120, 3);
+    ⎇ a2 == "close_pane" {
+        println("close_action: OK");
+    } ⎉ {
+        println("close_action: FAILED got=" + a2);
+    }
+
+    // Set confirming state (as action handler would)
+    input.confirming_close = true;
+
+    // Press 'y' (121) — should confirm
+    ≔ a3 = process_input(input, 121, 3);
+    ⎇ a3 == "close_confirm" {
+        println("confirm_on_y: OK");
+    } ⎉ {
+        println("confirm_on_y: FAILED got=" + a3);
+    }
+
+    // Simulate the removal after confirm
+    ≔ mut panes = [];
+    push(panes, { id: 0, title: "p0" });
+    push(panes, { id: 1, title: "p1" });
+    push(panes, { id: 2, title: "p2" });
+    ≔ mut focus = 1;
+
+    // Close focused pane
+    panes = remove_at(panes, focus);
+    ⎇ focus >= len(panes) {
+        focus = len(panes) - 1;
+    }
+
+    ⎇ len(panes) == 2 {
+        println("pane_removed: OK");
+    } ⎉ {
+        println("pane_removed: FAILED len=" + to_string(len(panes)));
+    }
+
+    ⎇ focus == 1 {
+        println("focus_adjusted: OK");
+    } ⎉ {
+        println("focus_adjusted: FAILED focus=" + to_string(focus));
+    }
+}

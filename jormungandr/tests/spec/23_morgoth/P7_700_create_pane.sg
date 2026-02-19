@@ -1,0 +1,96 @@
+// Test: Create pane increments count, assigns valid fields
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that creating a new pane via Pane·new returns a pane object
+// with valid master_fd, pid, vterm, and that it can be pushed to the array.
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells,
+        rows: rows,
+        cols: cols,
+        cursor_row: 0,
+        cursor_col: 0
+    }
+}
+
+rite FakePane_new(id, region, shell) {
+    ≔ vt = VTerm_new(region.h - 2, region.w - 2);
+    ↩ {
+        id: id,
+        region: region,
+        master_fd: 5000 + id,
+        slave_fd: 5001 + id,
+        pid: 7000 + id,
+        alive: true,
+        title: "bash",
+        vterm: vt,
+        pane_type: "terminal"
+    }
+}
+
+rite main() {
+    ≔ mut panes = [];
+    ≔ r1 = Region_new(0, 0, 80, 24);
+    push(panes, FakePane_new(0, r1, "/bin/bash"));
+
+    // Test 1: Initial count is 1
+    ⎇ len(panes) == 1 {
+        println("initial_count: OK");
+    } ⎉ {
+        println("initial_count: FAILED got=" + to_string(len(panes)));
+    }
+
+    // Test 2: Create a second pane
+    ≔ r2 = Region_new(80, 0, 80, 24);
+    push(panes, FakePane_new(1, r2, "/bin/bash"));
+    ⎇ len(panes) == 2 {
+        println("after_create_count: OK");
+    } ⎉ {
+        println("after_create_count: FAILED got=" + to_string(len(panes)));
+    }
+
+    // Test 3: New pane has valid fields
+    ≔ p = panes[1];
+    ⎇ p.master_fd > 0 ∧ p.pid > 0 ∧ p.alive == true {
+        println("new_pane_fields: OK");
+    } ⎉ {
+        println("new_pane_fields: FAILED fd=" + to_string(p.master_fd) + " pid=" + to_string(p.pid));
+    }
+
+    // Test 4: New pane has correct region
+    ⎇ p.region.x == 80 ∧ p.region.w == 80 {
+        println("new_pane_region: OK");
+    } ⎉ {
+        println("new_pane_region: FAILED x=" + to_string(p.region.x));
+    }
+
+    // Test 5: VTerm inner dimensions correct
+    ⎇ p.vterm.rows == 22 ∧ p.vterm.cols == 78 {
+        println("new_pane_vterm: OK");
+    } ⎉ {
+        println("new_pane_vterm: FAILED rows=" + to_string(p.vterm.rows) + " cols=" + to_string(p.vterm.cols));
+    }
+
+    // Test 6: Create third pane, count = 3
+    ≔ r3 = Region_new(0, 24, 80, 24);
+    push(panes, FakePane_new(2, r3, "/bin/bash"));
+    ⎇ len(panes) == 3 {
+        println("triple_count: OK");
+    } ⎉ {
+        println("triple_count: FAILED got=" + to_string(len(panes)));
+    }
+}

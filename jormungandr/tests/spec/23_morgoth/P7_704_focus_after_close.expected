@@ -1,0 +1,5 @@
+close_after_focus: OK
+close_at_focus: OK
+close_before_focus: OK
+close_first_focused: OK
+invariant_P2: OK

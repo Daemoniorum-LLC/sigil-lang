@@ -1,0 +1,5 @@
+normal_passthrough: OK
+cancel_on_n: OK
+state_reset: OK
+cancel_on_random: OK
+restored_normal: OK

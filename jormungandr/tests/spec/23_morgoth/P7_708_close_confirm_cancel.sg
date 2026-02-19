@@ -1,0 +1,86 @@
+// Test: Close confirmation: 'n' cancels, state reset
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that when confirming_close is true and user presses 'n' (or
+// any non-'y'), the close is cancelled and state resets.
+
+rite InputState_new() {
+    ↩ {
+        leader_active: false,
+        in_escape: false,
+        escape_buf: "",
+        last_escape_buf: "",
+        confirming_close: false
+    }
+}
+
+rite process_input(input_state, byte, pane_count) {
+    // Confirmation intercept — before any other input handling
+    ⎇ input_state.confirming_close == true {
+        input_state.confirming_close = false;
+        ⎇ byte == 121 { ↩ "close_confirm"; }
+        ↩ "close_cancel"
+    }
+
+    ≔ mut action = "passthrough";
+    ⎇ input_state.leader_active == true {
+        input_state.leader_active = false;
+        action = "none";
+        ⎇ byte == 120 { action = "close_pane"; }
+    } ⎉ {
+        ⎇ byte == 2 {
+            input_state.leader_active = true;
+            action = "leader_activate";
+        }
+    }
+    ↩ action
+}
+
+rite main() {
+    ≔ input = InputState_new();
+
+    // Test 1: Normal input returns passthrough
+    ≔ a1 = process_input(input, 97, 3);
+    ⎇ a1 == "passthrough" {
+        println("normal_passthrough: OK");
+    } ⎉ {
+        println("normal_passthrough: FAILED got=" + a1);
+    }
+
+    // Test 2: Enter confirming_close state
+    input.confirming_close = true;
+
+    // Test 3: Press 'n' (110) — should cancel
+    ≔ a2 = process_input(input, 110, 3);
+    ⎇ a2 == "close_cancel" {
+        println("cancel_on_n: OK");
+    } ⎉ {
+        println("cancel_on_n: FAILED got=" + a2);
+    }
+
+    // Test 4: confirming_close is now false
+    ⎇ input.confirming_close == false {
+        println("state_reset: OK");
+    } ⎉ {
+        println("state_reset: FAILED");
+    }
+
+    // Test 5: Random key (e.g., 'a'=97) also cancels
+    input.confirming_close = true;
+    ≔ a3 = process_input(input, 97, 3);
+    ⎇ a3 == "close_cancel" {
+        println("cancel_on_random: OK");
+    } ⎉ {
+        println("cancel_on_random: FAILED got=" + a3);
+    }
+
+    // Test 6: After cancel, normal input works again
+    ≔ a4 = process_input(input, 97, 3);
+    ⎇ a4 == "passthrough" {
+        println("restored_normal: OK");
+    } ⎉ {
+        println("restored_normal: FAILED got=" + a4);
+    }
+}

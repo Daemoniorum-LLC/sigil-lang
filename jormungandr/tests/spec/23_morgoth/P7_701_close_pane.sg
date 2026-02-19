@@ -1,0 +1,75 @@
+// Test: Close pane decrements count, removes by index
+// Spec: Phase 7 - Dynamic Pane Management
+// Priority: P7
+//
+// Purpose:
+// Validates that removing a pane from the array by index works correctly,
+// the count decrements, and remaining panes are contiguous.
+
+rite make_pane(id) {
+    ↩ {
+        id: id,
+        region: { x: 0, y: 0, w: 40, h: 12 },
+        master_fd: 5000 + id,
+        pid: 7000 + id,
+        alive: true,
+        title: "pane" + to_string(id),
+        pane_type: "terminal"
+    }
+}
+
+rite remove_pane(panes, idx) {
+    ≔ mut result = [];
+    ≔ mut i = 0;
+    ⟳ i < len(panes) {
+        ⎇ i != idx {
+            push(result, panes[i]);
+        }
+        i = i + 1;
+    }
+    ↩ result
+}
+
+rite main() {
+    ≔ mut panes = [];
+    push(panes, make_pane(0));
+    push(panes, make_pane(1));
+    push(panes, make_pane(2));
+
+    // Test 1: Start with 3 panes
+    ⎇ len(panes) == 3 {
+        println("initial: OK");
+    } ⎉ {
+        println("initial: FAILED got=" + to_string(len(panes)));
+    }
+
+    // Test 2: Close pane at index 1 (middle)
+    panes = remove_pane(panes, 1);
+    ⎇ len(panes) == 2 {
+        println("after_close: OK");
+    } ⎉ {
+        println("after_close: FAILED got=" + to_string(len(panes)));
+    }
+
+    // Test 3: Remaining panes are id 0 and id 2
+    ⎇ panes[0].id == 0 ∧ panes[1].id == 2 {
+        println("remaining_ids: OK");
+    } ⎉ {
+        println("remaining_ids: FAILED p0=" + to_string(panes[0].id) + " p1=" + to_string(panes[1].id));
+    }
+
+    // Test 4: Close pane at index 0 (first)
+    panes = remove_pane(panes, 0);
+    ⎇ len(panes) == 1 {
+        println("after_close_first: OK");
+    } ⎉ {
+        println("after_close_first: FAILED got=" + to_string(len(panes)));
+    }
+
+    // Test 5: Only pane 2 remains
+    ⎇ panes[0].id == 2 {
+        println("sole_survivor: OK");
+    } ⎉ {
+        println("sole_survivor: FAILED id=" + to_string(panes[0].id));
+    }
+}
