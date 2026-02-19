@@ -744,6 +744,10 @@ pub mod llvm {
         }
 
         pub extern "C" fn sigil_cuda_get_device_count() -> i64 {
+            // G121: Must initialize CUDA driver before querying device count
+            if cudarc::driver::result::init().is_err() {
+                return 0;
+            }
             match cudarc::driver::result::device::get_count() {
                 Ok(count) => count as i64,
                 Err(_) => 0,
@@ -4112,6 +4116,155 @@ pub mod llvm {
             Ok(fn_value)
         }
 
+        /// Declare an extern block (FFI declarations)
+        /// These functions are provided by external libraries and resolved at link time.
+        fn declare_extern_block(
+            &mut self,
+            extern_block: &ast::ExternBlock,
+        ) -> Result<(), String> {
+            use ast::ExternItem;
+
+            // Only support "C" ABI for now
+            if extern_block.abi != "C" && extern_block.abi != "c" {
+                return Err(format!(
+                    "Unsupported ABI '{}', only 'C' is supported",
+                    extern_block.abi
+                ));
+            }
+
+            for item in &extern_block.items {
+                match item {
+                    ExternItem::Function(func) => {
+                        self.declare_extern_function(func)?;
+                    }
+                    ExternItem::Static(s) => {
+                        eprintln!(
+                            "[WARN] extern static '{}' not yet supported, skipping",
+                            s.name.name
+                        );
+                    }
+                    ExternItem::Type(t) => {
+                        // Extern types are opaque - just note them for type checking
+                        eprintln!(
+                            "[INFO] extern type '{}' registered (opaque)",
+                            t.name.name
+                        );
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Declare an extern "C" function (external linkage, resolved at link time)
+        fn declare_extern_function(
+            &mut self,
+            func: &ast::ExternFunction,
+        ) -> Result<FunctionValue<'ctx>, String> {
+            let name = &func.name.name;
+
+            // Check if already declared (e.g., runtime functions)
+            if let Some(existing) = self.functions.get(name) {
+                return Ok(*existing);
+            }
+
+            let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            // Build parameter types based on actual param types
+            let param_types: Vec<BasicMetadataTypeEnum> = func
+                .params
+                .iter()
+                .map(|param| {
+                    // Map Sigil types to LLVM types for FFI
+                    self.type_to_llvm_ffi(&param.ty)
+                })
+                .collect();
+
+            // Determine return type
+            let return_type = if let Some(ref ret_ty) = func.return_type {
+                self.type_to_llvm_ffi(ret_ty)
+            } else {
+                // void return - use i64 as placeholder (will be ignored)
+                i64_type.into()
+            };
+
+            // Create function type (variadic if specified)
+            let fn_type = match return_type {
+                BasicMetadataTypeEnum::IntType(t) => t.fn_type(&param_types, func.variadic),
+                BasicMetadataTypeEnum::PointerType(t) => t.fn_type(&param_types, func.variadic),
+                BasicMetadataTypeEnum::FloatType(t) => t.fn_type(&param_types, func.variadic),
+                _ => i64_type.fn_type(&param_types, func.variadic),
+            };
+
+            // Declare with External linkage - resolved at link time
+            let fn_value = self.module.add_function(
+                name,
+                fn_type,
+                Some(inkwell::module::Linkage::External),
+            );
+
+            // Add nounwind attribute (FFI functions shouldn't unwind through Rust/Sigil)
+            let nounwind_attr = self.context.create_enum_attribute(
+                inkwell::attributes::Attribute::get_named_enum_kind_id("nounwind"),
+                0,
+            );
+            fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, nounwind_attr);
+
+            // Store in functions map for call resolution
+            self.functions.insert(name.clone(), fn_value);
+
+            eprintln!("[FFI] Declared extern function: {} ({} params)", name, func.params.len());
+
+            Ok(fn_value)
+        }
+
+        /// Convert a Sigil type to LLVM type for FFI
+        fn type_to_llvm_ffi(&self, ty: &ast::TypeExpr) -> BasicMetadataTypeEnum<'ctx> {
+            let i64_type = self.context.i64_type();
+            let i32_type = self.context.i32_type();
+            let i8_type = self.context.i8_type();
+            let f32_type = self.context.f32_type();
+            let f64_type = self.context.f64_type();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            match ty {
+                ast::TypeExpr::Path(type_path) => {
+                    // Get the first segment's name (simple types like i32, String)
+                    if let Some(first_seg) = type_path.segments.first() {
+                        match first_seg.ident.name.as_str() {
+                            // Integer types
+                            "i8" => i8_type.into(),
+                            "i16" => self.context.i16_type().into(),
+                            "i32" => i32_type.into(),
+                            "i64" | "isize" => i64_type.into(),
+                            "u8" => i8_type.into(),
+                            "u16" => self.context.i16_type().into(),
+                            "u32" => i32_type.into(),
+                            "u64" | "usize" => i64_type.into(),
+                            // Float types
+                            "f32" => f32_type.into(),
+                            "f64" => f64_type.into(),
+                            // Boolean
+                            "bool" => i8_type.into(),
+                            // Default to i64 for unknown named types
+                            _ => i64_type.into(),
+                        }
+                    } else {
+                        i64_type.into()
+                    }
+                }
+                ast::TypeExpr::Pointer { .. } => {
+                    ptr_type.into()
+                }
+                ast::TypeExpr::Reference { .. } => {
+                    ptr_type.into()
+                }
+                // Default to i64 for complex types
+                _ => i64_type.into(),
+            }
+        }
+
         /// Compile a function body
         fn compile_function(&mut self, func: &ast::Function) -> Result<(), String> {
             let name = &func.name.name;
@@ -4214,8 +4367,10 @@ pub mod llvm {
 
                     // G26: Track reference parameters (&Vec<T> or &vary Vec<T>)
                     // For these, accessing the value requires an extra dereference
-                    if self.type_is_vec_ref(&param.ty) {
-                        // // // eprintln!("[G26-DEBUG] ref_var registered: {} (type: {:?})", param_name, param.ty);
+                    let is_vec_ref = self.type_is_vec_ref(&param.ty);
+                    eprintln!("[G120-DBG] Checking param '{}': type_is_vec_ref = {}", param_name, is_vec_ref);
+                    if is_vec_ref {
+                        eprintln!("[G120-DBG] Registering '{}' in ref_vars", param_name);
                         scope.ref_vars.insert(param_name.clone());
                     }
                 }
@@ -6011,28 +6166,15 @@ pub mod llvm {
                     // Compile the struct expression to get pointer
                     let mut struct_ptr_int = self.compile_expr(fn_value, scope, expr)?;
 
-                    // G26: If expr is a reference variable, dereference it
+                    // G26/G120: For reference variables, compile_expr already returns the loaded
+                    // reference value (which IS the struct pointer). No extra dereference needed.
+                    // The previous code incorrectly did another load, reading first 8 bytes of struct.
                     if let Expr::Path(path) = expr.as_ref() {
                         if let Some(seg) = path.segments.last() {
-                            // // // eprintln!("[G26-FIELD] field access on '{}', is_ref_var: {}", seg.ident.name, scope.ref_vars.contains(&seg.ident.name));
-                            if scope.ref_vars.contains(&seg.ident.name) {
-                                // // // eprintln!("[G26-FIELD] dereferencing '{}' for field '{}'", seg.ident.name, field.name);
-                                // struct_ptr_int is the address of the original alloca
-                                // Load from it to get the actual struct pointer
-                                let ptr = self
-                                    .builder
-                                    .build_int_to_ptr(
-                                        struct_ptr_int,
-                                        self.context.ptr_type(AddressSpace::default()),
-                                        "ref_ptr",
-                                    )
-                                    .map_err(|e| e.to_string())?;
-                                let loaded = self
-                                    .builder
-                                    .build_load(self.context.i64_type(), ptr, "deref_struct")
-                                    .map_err(|e| e.to_string())?;
-                                struct_ptr_int = loaded.into_int_value();
-                            }
+                            let is_ref_var = scope.ref_vars.contains(&seg.ident.name);
+                            eprintln!("[G120-FIELD] field '{}' on base '{}', is_ref_var: {}, ref_vars: {:?}", field.name, seg.ident.name, is_ref_var, scope.ref_vars);
+                            // G120: DO NOT dereference - struct_ptr_int is already correct
+                            // compile_expr loads the value from the alloca, which for &T is the pointer to T
                         }
                     }
 
@@ -6934,31 +7076,16 @@ pub mod llvm {
                     eprintln!("[DEBUG-MCALL] receiver compiled, receiver_val type: {:?}", receiver_val.get_type());
                     let method_name = method.name.as_str();
 
-                    // G26: If receiver is a reference variable (&Vec<T>), dereference it
-                    // Reference vars contain the address of the original variable's alloca
-                    // We need to load from that address to get the actual Vec pointer
+                    // G26/G120: For reference variables, compile_expr already returns the loaded
+                    // reference value (which IS the Vec/struct pointer). No extra dereference needed.
+                    // The previous G26 code incorrectly assumed compile_expr returned alloca address,
+                    // but it actually returns the loaded value from the alloca.
                     if let Expr::Path(path) = receiver.as_ref() {
                         if let Some(seg) = path.segments.last() {
-                            // // // eprintln!("[G26-DEBUG] MethodCall on '{}', checking ref_vars: {:?}", seg.ident.name, scope.ref_vars.contains(&seg.ident.name));
-                            if scope.ref_vars.contains(&seg.ident.name) {
-                                // // // eprintln!("[G26-DEREF] Dereferencing ref_var '{}' from {:?}", seg.ident.name, receiver_val);
-                                // receiver_val is the address of the original alloca
-                                // Load from it to get the actual Vec pointer
-                                let ptr = self
-                                    .builder
-                                    .build_int_to_ptr(
-                                        receiver_val,
-                                        self.context.ptr_type(AddressSpace::default()),
-                                        "ref_ptr",
-                                    )
-                                    .map_err(|e| e.to_string())?;
-                                let loaded = self
-                                    .builder
-                                    .build_load(self.context.i64_type(), ptr, "deref_vec")
-                                    .map_err(|e| e.to_string())?;
-                                receiver_val = loaded.into_int_value();
-                                // // // eprintln!("[G26-DEREF] After deref, receiver_val={:?}", receiver_val);
-                            }
+                            let is_ref_var = scope.ref_vars.contains(&seg.ident.name);
+                            eprintln!("[G120-MCALL] method '{}' on base '{}', is_ref_var: {}", method_name, seg.ident.name, is_ref_var);
+                            // G120: DO NOT dereference - receiver_val is already correct
+                            // compile_expr loads the value from the alloca, which for &T is the pointer to T
                         }
                     }
 
@@ -12229,6 +12356,8 @@ pub mod llvm {
             bindings: &HashMap<String, RichType>,
             fn_name: &str,
         ) -> Result<FunctionValue<'ctx>, String> {
+            eprintln!("[G119-MONO] Compiling monomorphized generic fn: {}", fn_name);
+            eprintln!("[G119-MONO] bindings: {:?}", bindings);
             // Save current builder position so we can restore after compiling
             let saved_block = self.builder.get_insert_block();
 
@@ -12268,6 +12397,12 @@ pub mod llvm {
             // they need to resolve to the concrete type
             for (name, ty) in bindings.iter() {
                 scope.rich_types.insert(name.clone(), ty.clone());
+                // G119: Also add const generics to const_generics map so they can
+                // be resolved when used in expressions (e.g., `N` in `let numel = N`)
+                if let RichType::ConstGeneric(val) = ty {
+                    eprintln!("[G119-FIX] Adding const generic '{}' = {} to scope.const_generics", name, val);
+                    scope.const_generics.insert(name.clone(), *val);
+                }
             }
 
             // Add parameters to scope
@@ -16829,6 +16964,15 @@ pub mod llvm {
                             })
                             .collect();
 
+                        // G119: Also extract const generic param names
+                        let const_param_names: Vec<String> = generics.params.iter()
+                            .filter_map(|p| match p {
+                                ast::GenericParam::Const { name, .. } => Some(name.name.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        eprintln!("[G119] const_param_names={:?}", const_param_names);
+
                         // Build bindings by inferring types from arguments
                         let mut rich_bindings: HashMap<String, RichType> = HashMap::new();
 
@@ -16866,12 +17010,39 @@ pub mod llvm {
                             }
                         }
 
+                        // G119: Check for explicit generics at call site for const generics
+                        // e.g., create_tensor_generic·<4>() has explicit const generic 4
+                        // Note: Inside compile_call, `func` is the function expression (path)
+                        if let Expr::Path(path) = func {
+                            if path.segments.len() == 1 {
+                                if let Some(call_generics) = &path.segments[0].generics {
+                                    eprintln!("[G119] Found explicit generics at call site: {:?}", call_generics.len());
+                                    // Bind const generics from explicit call-site generics
+                                    for (i, type_expr) in call_generics.iter().enumerate() {
+                                        let rich = self.type_expr_to_rich_type(type_expr);
+                                        eprintln!("[G119] call-site generic[{}] = {:?}", i, rich);
+                                        // Match against const param names
+                                        if i < const_param_names.len() {
+                                            let param_name = &const_param_names[i];
+                                            eprintln!("[G119] binding const '{}' = {:?}", param_name, rich);
+                                            rich_bindings.insert(param_name.clone(), rich);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         eprintln!("[G85-GEN] rich_bindings for '{}': {:?}", fn_name, rich_bindings);
 
+                        // G119: Monomorphize if we have any bindings (type OR const)
                         if !rich_bindings.is_empty() {
                             // Generate mangled name for this instantiation
-                            let binding_suffix: String = type_param_names.iter()
-                                .filter_map(|name| rich_bindings.get(name))
+                            // G119: Include both type and const param bindings in the suffix
+                            let all_param_names: Vec<&String> = type_param_names.iter()
+                                .chain(const_param_names.iter())
+                                .collect();
+                            let binding_suffix: String = all_param_names.iter()
+                                .filter_map(|name| rich_bindings.get(*name))
                                 .map(|v| match v {
                                     RichType::Named { name, generics } => {
                                         if generics.is_empty() {
@@ -16888,15 +17059,18 @@ pub mod llvm {
                                             format!("_{}_{}", name, gen_str)
                                         }
                                     }
-                                    RichType::ConstGeneric(val) => format!("_{}", val),
+                                    RichType::ConstGeneric(val) => format!("_c{}", val),
                                     _ => "_unknown".to_string(),
                                 })
                                 .collect();
 
                             let mangled_name = format!("{}{}", fn_name, binding_suffix);
+                            eprintln!("[G119] mangled_name for const generic fn: {}", mangled_name);
 
                             // Check if already compiled
+                            eprintln!("[G119-DBG] Checking if {} already exists...", mangled_name);
                             if let Some(existing) = self.module.get_function(&mangled_name) {
+                                eprintln!("[G119-DBG] {} already exists, calling it", mangled_name);
                                 // Compile arguments and call existing function
                                 let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
                                 for arg in args {
@@ -16914,10 +17088,13 @@ pub mod llvm {
                             }
 
                             // Compile the monomorphized version
+                            eprintln!("[G119-DBG] {} not found, calling compile_monomorphized_generic_fn", mangled_name);
                             let mono_result = self.compile_monomorphized_generic_fn(&generic_fn, &rich_bindings, &mangled_name);
+                            eprintln!("[G119-DBG] compile_monomorphized_generic_fn returned: {:?}", mono_result.is_ok());
 
                             match mono_result {
                                 Ok(mono_fn) => {
+                                    eprintln!("[G119-DBG] Monomorphization succeeded, calling {}", mangled_name);
                                     // Compile arguments and call
                                     let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
                                     for arg in args {
@@ -16933,7 +17110,8 @@ pub mod llvm {
                                         .map(|v| v.into_int_value())
                                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                                 }
-                                Err(_e) => {
+                                Err(e) => {
+                                    eprintln!("[G119-DBG] Monomorphization FAILED: {}", e);
                                     // Fall through to heuristic patterns
                                 }
                             }
