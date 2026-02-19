@@ -3,34 +3,34 @@
 // Priority: P1 - Important
 //
 // Purpose: Validate async function and await operator translation
-// Note: Simplified test - full async requires runtime support
 //
 // Expected: async fn and .await syntax
 
-// Simulated async function (would require tokio/async-std runtime)
-async rite fetch_data(url: String) → String {
-    // In real code: http_get(url)⌛
-    "response"
+async rite fetch_data(url: String) → Result<String, Error> {
+    // Simulated async operation
+    ≔ response = http_get(url)⌛?;
+    Ok(response)
 }
 
-async rite process_single(url: String) → String {
-    ≔ result = fetch_data(url)⌛;
-    result
+async rite process_urls(urls: Vec<String>) → Vec<String> {
+    ≔ Δ results = Vec·new();
+    ∀ url ∈ urls {
+        ≔ data = fetch_data(url)⌛;
+        ↦ data {
+            Ok(s) => results·push(s),
+            Err(_) => (),
+        }
+    }
+    results
 }
 
-// Non-async helper
-rite create_urls() → Vec<String> {
-    ≔ Δ urls = Vec·new();
-    urls.push("http://example1.com");
-    urls.push("http://example2.com");
-    urls
+async rite parallel_fetch(urls: Vec<String>) → Vec<Result<String, Error>> {
+    ≔ futures = urls |τ{url => fetch_data(url)} |→[];
+    join_all(futures)⌛
 }
 
 rite main() {
-    // Async functions are created but not awaited in sync main
-    ≔ urls = create_urls();
-    println("Created URLs:");
-    ∀ url ∈ urls {
-        println(url);
-    }
+    // Would run in tokio runtime
+    ≔ urls = vec!["http://example.com"·to_string()];
+    // tokio::runtime::Runtime::new().unwrap().block_on(process_urls(urls));
 }

@@ -6,52 +6,44 @@
 //
 // Expected: ◆ N: usize → const N: usize
 
-// Simple const generic struct (no array repeat which isn't fully supported)
-sigil FixedVec<◆ N: usize> {
-    data: Vec<i32>,
+sigil FixedArray<T, ◆ N: usize> {
+    data: [T; N],
 }
 
-⊢<◆ N: usize> FixedVec<N> {
-    rite new() → This {
-        ≔ Δ v = Vec·new();
-        ∀ _ ∈ 0..N {
-            v.push(0);
-        }
-        FixedVec { data: v }
+⊢ FixedArray<T, ◆ N> {
+    rite new(default: T) → Self
+    where T: Copy
+    {
+        Self { data: [default; N] }
     }
 
     rite len(&this) → usize {
-        this.data.len()
-    }
-
-    rite capacity(&this) → usize {
         N
     }
+
+    rite get(&this, index: usize) → Option<&T> {
+        ⎇ index < N {
+            Some(&this·data[index])
+        } ∅ {
+            None
+        }
+    }
 }
 
-// Multiple const generics
-sigil Dims<◆ ROWS: usize, ◆ COLS: usize> {
-    rows: usize,
-    cols: usize,
+sigil Matrix<T, ◆ ROWS: usize, ◆ COLS: usize> {
+    data: [[T; COLS]; ROWS],
 }
 
-⊢<◆ ROWS: usize, ◆ COLS: usize> Dims<ROWS, COLS> {
-    rite new() → This {
-        Dims { rows: ROWS, cols: COLS }
-    }
-
-    rite total(&this) → usize {
-        ROWS * COLS
-    }
+⊢ Matrix<T, ◆ ROWS, ◆ COLS> {
+    rite rows(&this) → usize { ROWS }
+    rite cols(&this) → usize { COLS }
+    rite size(&this) → usize { ROWS * COLS }
 }
 
 rite main() {
-    // Const generic constructor: Type·<N>·method()
-    ≔ v = FixedVec·<5>·new();
-    println(v.len());
-    println(v.capacity());
+    ≔ arr: FixedArray<i32, 5> = FixedArray·new(0);
+    println(arr·len());
 
-    // Multiple const generics
-    ≔ d = Dims·<3, 4>·new();
-    println(d.total());
+    ≔ mat: Matrix<f64, 3, 4> = Matrix { data: [[0.0; 4]; 3] };
+    println(mat·size());
 }

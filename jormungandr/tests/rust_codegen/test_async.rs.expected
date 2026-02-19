@@ -1,29 +1,28 @@
-// Async/await translation
-// Note: Simplified test - full async requires tokio/async-std runtime
-
-async fn fetch_data(url: String) -> String {
-    // In real code: http_get(url).await
-    "response".to_string()
+async fn fetch_data(url: String) -> Result<String, Error> {
+    // Simulated async operation
+    let response = http_get(url).await?;
+    Ok(response)
 }
 
-async fn process_single(url: String) -> String {
-    let result = fetch_data(url).await;
-    result
+async fn process_urls(urls: Vec<String>) -> Vec<String> {
+    let mut results = Vec::new();
+    for url in urls {
+        let data = fetch_data(url).await;
+        match data {
+            Ok(s) => results.push(s),
+            Err(_) => (),
+        }
+    }
+    results
 }
 
-// Non-async helper
-fn create_urls() -> Vec<String> {
-    let mut urls = Vec::new();
-    urls.push("http://example1.com".to_string());
-    urls.push("http://example2.com".to_string());
-    urls
+async fn parallel_fetch(urls: Vec<String>) -> Vec<Result<String, Error>> {
+    let futures: Vec<_> = urls.iter().map(|url| fetch_data(url)).collect();
+    join_all(futures).await
 }
 
 fn main() {
-    // Async functions are created but not awaited in sync main
-    let urls = create_urls();
-    println!("Created URLs:");
-    for url in urls {
-        println!("{}", url);
-    }
+    // Would run in tokio runtime
+    let urls = vec!["http://example.com".to_string()];
+    // tokio::runtime::Runtime::new().unwrap().block_on(process_urls(urls));
 }
