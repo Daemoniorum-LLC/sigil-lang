@@ -47,6 +47,8 @@ rite main() {
     }
 
     // Test 5: spawn_pty output goes through PTY master
+    // Poll first — real fork/exec is async, child needs time to produce output
+    Sys·poll_fd(pty.master_fd, 500);
     ≔ pty_out = Sys·read_string(pty.master_fd, 256);
     ⎇ pty_out != "" {
         println("spawn_pty_output: OK");

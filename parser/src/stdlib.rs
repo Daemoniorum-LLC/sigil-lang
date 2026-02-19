@@ -38506,6 +38506,21 @@ fn register_sys(interp: &mut Interpreter) {
                 Ok(Value::Int(output.len() as i64))
             }
             _ => {
+                // Native: use libc::write for real fds (< 4000; fake counters start at 4000+)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    if fd > 2 && fd < 4000 {
+                        let bytes = output.as_bytes();
+                        let n = unsafe {
+                            libc::write(fd as i32, bytes.as_ptr() as *const libc::c_void, bytes.len())
+                        };
+                        if n >= 0 {
+                            return Ok(Value::Int(n as i64));
+                        }
+                        return Ok(Value::Int(-5)); // -EIO
+                    }
+                }
+
                 // Check if this fd belongs to a fake pipe
                 let pipe_write = FAKE_PIPE_STATE.with(|map| {
                     map.borrow().contains_key(&fd)
@@ -38590,6 +38605,27 @@ fn register_sys(interp: &mut Interpreter) {
                 }
             }
             _ => {
+                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    if fd > 2 && fd < 4000 {
+                        let mut buffer = vec![0u8; len];
+                        let n = unsafe {
+                            libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, len)
+                        };
+                        if n > 0 {
+                            buffer.truncate(n as usize);
+                            let s = String::from_utf8_lossy(&buffer).to_string();
+                            let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                            FAKE_PTR_MAP.with(|map| {
+                                map.borrow_mut().insert(ptr_id, s);
+                            });
+                            return Ok(Value::Int(n as i64));
+                        }
+                        return Ok(Value::Int(0)); // EAGAIN or error
+                    }
+                }
+
                 // Check if this fd belongs to a fake pipe (read from peer's buffer)
                 let pipe_data = FAKE_PIPE_STATE.with(|map| {
                     let m = map.borrow();
@@ -38818,6 +38854,14 @@ fn register_sys(interp: &mut Interpreter) {
         let removed_epoll = FAKE_EPOLL_STATE.with(|map| {
             map.borrow_mut().remove(&fd).is_some()
         });
+
+        // Native: close real fd via libc (real OS fds are < 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd > 2 && fd < 4000 {
+                unsafe { libc::close(fd as i32); }
+            }
+        }
 
         if removed_fd || removed_socket || removed_pipe || removed_pty || removed_epoll {
             Ok(Value::Int(0))
@@ -39475,7 +39519,58 @@ fn register_sys(interp: &mut Interpreter) {
 
     // Pty·open() - create a pseudo-terminal pair, returns {master_fd, slave_fd}
     define(interp, "Pty·open", Some(0), |_, _| {
-        // In interpreter mode: allocate fake PTY fd pair
+        // Native: use libc::openpty for real PTY allocation
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut amaster: libc::c_int = 0;
+            let mut aslave: libc::c_int = 0;
+            let ret = unsafe {
+                libc::openpty(
+                    &mut amaster, &mut aslave,
+                    std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(),
+                )
+            };
+            if ret == 0 {
+                // Set master fd to non-blocking so reads don't stall the event loop
+                unsafe {
+                    let flags = libc::fcntl(amaster, libc::F_GETFL);
+                    libc::fcntl(amaster, libc::F_SETFL, flags | libc::O_NONBLOCK);
+                }
+                // Set slave to raw mode so data passes through without line discipline buffering
+                unsafe {
+                    let mut tios: libc::termios = std::mem::zeroed();
+                    libc::tcgetattr(aslave, &mut tios);
+                    libc::cfmakeraw(&mut tios);
+                    libc::tcsetattr(aslave, libc::TCSANOW, &tios);
+                }
+                // Store in FAKE_PTY_STATE for consistency (peer tracking, Sys·close, etc.)
+                FAKE_PTY_STATE.with(|map| {
+                    map.borrow_mut().insert(amaster as i64, FakePty {
+                        peer_fd: aslave as i64,
+                        rows: 24,
+                        cols: 80,
+                        name: format!("/dev/pts/{}", aslave),
+                    });
+                    map.borrow_mut().insert(aslave as i64, FakePty {
+                        peer_fd: amaster as i64,
+                        rows: 24,
+                        cols: 80,
+                        name: format!("/dev/pts/{}", amaster),
+                    });
+                });
+
+                let mut fields = HashMap::new();
+                fields.insert("master_fd".to_string(), Value::Int(amaster as i64));
+                fields.insert("slave_fd".to_string(), Value::Int(aslave as i64));
+                return Ok(Value::Struct {
+                    name: "Pty".to_string(),
+                    fields: Rc::new(RefCell::new(fields)),
+                });
+            }
+            // Fall through to fake on openpty failure
+        }
+
+        // Fake: allocate fake PTY fd pair (interpreter mode / non-native)
         let master_fd = FAKE_PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
         let slave_fd = FAKE_PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
         FAKE_PTY_STATE.with(|map| {
@@ -39520,7 +39615,20 @@ fn register_sys(interp: &mut Interpreter) {
         if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
             return Ok(Value::Int(-22)); // -EINVAL
         }
-        // In interpreter mode: update fake PTY state
+        // Native: use ioctl TIOCSWINSZ for real fds (< 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd > 0 && fd < 4000 {
+                let ws = libc::winsize {
+                    ws_row: rows as u16,
+                    ws_col: cols as u16,
+                    ws_xpixel: 0,
+                    ws_ypixel: 0,
+                };
+                unsafe { libc::ioctl(fd as i32, libc::TIOCSWINSZ, &ws); }
+            }
+        }
+        // Update fake PTY state (works for both native and fake fds)
         FAKE_PTY_STATE.with(|map| {
             if let Some(pty) = map.borrow_mut().get_mut(&fd) {
                 pty.rows = rows as u16;
@@ -39665,6 +39773,25 @@ fn register_sys(interp: &mut Interpreter) {
                 }
             }
             _ => {
+                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    if fd > 2 && fd < 4000 {
+                        let mut buffer = vec![0u8; max_len];
+                        let n = unsafe {
+                            libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, max_len)
+                        };
+                        if n > 0 {
+                            buffer.truncate(n as usize);
+                            return Ok(Value::String(Rc::new(
+                                String::from_utf8_lossy(&buffer).to_string(),
+                            )));
+                        }
+                        // EAGAIN/EWOULDBLOCK or error — return empty
+                        return Ok(Value::String(Rc::new(String::new())));
+                    }
+                }
+
                 // Check fake pipes — read from peer's buffer
                 let pipe_data = FAKE_PIPE_STATE.with(|map| {
                     let m = map.borrow();
@@ -39770,6 +39897,16 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
+        // Native: use libc::poll() for real fds (< 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd > 0 && fd < 4000 {
+                let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
+                let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
+                return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
+            }
+        }
+
         // Check fake pipes — data available in peer's buffer
         let pipe_ready = FAKE_PIPE_STATE.with(|map| {
             let m = map.borrow();
@@ -39814,7 +39951,7 @@ fn register_sys(interp: &mut Interpreter) {
             return Ok(Value::Bool(ready));
         }
 
-        // Native fallback: use libc::poll() for real fds
+        // Native fallback: use libc::poll() for other real fds
         #[cfg(all(unix, feature = "native"))]
         {
             let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
@@ -39943,7 +40080,66 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·spawn_pty requires int slave_fd")),
         };
 
-        // Get the master fd from the slave's PTY state
+        // Native: real fork/exec for real PTY fds (< 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if slave_fd < 4000 {
+                let master_fd_val = FAKE_PTY_STATE.with(|map| {
+                    map.borrow().get(&slave_fd).map(|p| p.peer_fd)
+                });
+
+                let pid = unsafe { libc::fork() };
+                if pid == 0 {
+                    // === CHILD PROCESS ===
+                    unsafe {
+                        libc::setsid();
+                        libc::ioctl(slave_fd as i32, libc::TIOCSCTTY as libc::c_ulong, 0);
+                        libc::dup2(slave_fd as i32, 0); // stdin
+                        libc::dup2(slave_fd as i32, 1); // stdout
+                        libc::dup2(slave_fd as i32, 2); // stderr
+                        // Close originals
+                        if let Some(mfd) = master_fd_val {
+                            libc::close(mfd as i32);
+                        }
+                        libc::close(slave_fd as i32);
+                        // Build argv for execvp
+                        let cmd_c = std::ffi::CString::new(cmd.as_str()).unwrap();
+                        let mut argv_c: Vec<std::ffi::CString> = Vec::new();
+                        argv_c.push(cmd_c.clone());
+                        for a in &cmd_args {
+                            argv_c.push(std::ffi::CString::new(a.as_str()).unwrap());
+                        }
+                        let argv_ptrs: Vec<*const libc::c_char> = argv_c
+                            .iter()
+                            .map(|s| s.as_ptr())
+                            .chain(std::iter::once(std::ptr::null()))
+                            .collect();
+                        libc::execvp(cmd_c.as_ptr(), argv_ptrs.as_ptr());
+                        libc::_exit(127); // exec failed
+                    }
+                } else if pid > 0 {
+                    // === PARENT PROCESS ===
+                    // Close slave fd in parent — only child uses it
+                    unsafe { libc::close(slave_fd as i32); }
+
+                    let real_pid = pid as i64;
+                    FAKE_PROCESS_STATE.with(|map| {
+                        map.borrow_mut().insert(real_pid, FakeBgProcess {
+                            pid: real_pid,
+                            stdin_fd: slave_fd,
+                            stdout_fd: slave_fd,
+                            stderr_fd: slave_fd,
+                            alive: true,
+                            exit_status: 0,
+                        });
+                    });
+                    return Ok(Value::Int(real_pid));
+                }
+                // fork() failed — fall through to fake
+            }
+        }
+
+        // Fake path: interpreter mode / non-native / fake fds (>= 5000)
         let master_fd = FAKE_PTY_STATE.with(|map| {
             map.borrow().get(&slave_fd).map(|pty| pty.peer_fd)
         });
