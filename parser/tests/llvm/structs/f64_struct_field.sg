@@ -1,0 +1,22 @@
+// LLVM Test: Struct with f64 field
+// Tests: f64 struct field store and load with static method constructor
+// Expected exit code: 0 (no crash)
+// Bug fixed: LLVM codegen was storing i64 to f64 fields causing crashes
+
+Σ Point { x: f64, y: f64 }
+
+⊢ Point {
+    rite new(x: f64, y: f64) → Self { Self { x: x, y: y } }
+}
+
+rite get_x(p: &Point) → f64 {
+    p.x
+}
+
+rite main() → i64 {
+    // This used to crash due to type mismatch in struct field storage
+    ≔ p = Point·new(20.0, 22.0);
+    ≔ x = get_x(&p);
+    // Successfully loaded field without crash
+    0
+}

@@ -1,0 +1,46 @@
+// G46: Variable shadowing with while loop - mimics f16 to_f32 pattern
+// Variable `exp` defined outside, then redefined in different branches
+
+rite test_shadowed_var(input: i64) → i64 {
+    ≔ sign = (input >> 15) & 1;
+    ≔ exp = (input >> 10) & 31;  // First definition
+    ≔ mantissa = input & 1023;
+
+    ≔ result = ⎇ exp == 0 {
+        ⎇ mantissa == 0 {
+            sign << 31
+        } ⎉ {
+            // Denormalized path - while loop then redefine exp
+            ≔ vary e = -1;
+            ≔ vary m = mantissa;
+            ⟳ (m & 1024) == 0 {
+                m = m << 1;
+                e = e - 1;
+            }
+            // Redefine exp AFTER while loop, inside else
+            ≔ exp = 127 - 15 - e;
+            (sign << 31) | (exp << 23) | ((m & 1023) << 13)
+        }
+    } ⎉ ⎇ exp == 31 {
+        // Infinity/NaN
+        (sign << 31) | 2139095040 | (mantissa << 13)
+    } ⎉ {
+        // Normalized - use original exp
+        ≔ exp = exp + 127 - 15;
+        (sign << 31) | (exp << 23) | (mantissa << 13)
+    };
+
+    result
+}
+
+rite main() {
+    println!("Testing shadowed var with while...");
+
+    ≔ r1 = test_shadowed_var(0);
+    println!("test(0) = {}", r1);
+
+    ≔ r2 = test_shadowed_var(15360);
+    println!("test(15360) = {}", r2);
+
+    println!("Done!");
+}

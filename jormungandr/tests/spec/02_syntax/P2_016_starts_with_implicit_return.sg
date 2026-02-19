@@ -1,0 +1,12 @@
+// Test: starts_with on implicit return value
+rite get_action() {
+    ≔ x = "mouse:click";
+    x
+}
+rite main() {
+    ⎇ starts_with(get_action(), "mouse") == true {
+        println("OK");
+    } ⎉ {
+        println("FAIL");
+    }
+}

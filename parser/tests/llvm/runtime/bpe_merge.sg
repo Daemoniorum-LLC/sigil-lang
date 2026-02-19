@@ -1,0 +1,82 @@
+// G52: BPE merge operation test
+
+Σ Entry {
+    id: i64,
+    bytes: Vec<u8>,
+}
+
+⊢ Entry {
+    rite from_byte(b: i64) → Self {
+        ≔ vary bytes = vec![];
+        bytes.push(b as u8);
+        Self { id: b, bytes: bytes }
+    }
+
+    rite new(id: i64, bytes: Vec<u8>) → Self {
+        Self { id: id, bytes: bytes }
+    }
+}
+
+Σ Tokenizer {
+    vocab: Vec<Entry>,
+    vocab_size: i64,
+}
+
+⊢ Tokenizer {
+    rite new() → Self {
+        ≔ vary vocab = vec![];
+        ∀ b ∈ 0..256 {
+            vocab.push(Entry·from_byte(b));
+        }
+        Self { vocab: vocab, vocab_size: 256 }
+    }
+
+    rite add_merge(&vary this, left_id: i64, right_id: i64) {
+        println!("  Getting left entry {}...", left_id);
+        ≔ le = &this.vocab[left_id as usize];
+        println!("  Left entry id: {}, bytes len: {}", le.id, le.bytes.len());
+
+        println!("  Getting right entry {}...", right_id);
+        ≔ re = &this.vocab[right_id as usize];
+        println!("  Right entry id: {}, bytes len: {}", re.id, re.bytes.len());
+
+        // Concatenate bytes
+        println!("  Creating new bytes...");
+        ≔ vary new_bytes = vec![];
+        ∀ i ∈ 0..le.bytes.len() {
+            new_bytes.push(le.bytes[i]);
+        }
+        ∀ i ∈ 0..re.bytes.len() {
+            new_bytes.push(re.bytes[i]);
+        }
+        println!("  New bytes len: {}", new_bytes.len());
+
+        // Create new entry
+        ≔ new_id = this.vocab_size;
+        println!("  Creating entry with id {}...", new_id);
+        this.vocab.push(Entry·new(new_id, new_bytes));
+        this.vocab_size += 1;
+        println!("  Done, vocab_size now: {}", this.vocab_size);
+    }
+}
+
+rite main() {
+    println!("Creating tokenizer...");
+    ≔ vary tokenizer = Tokenizer·new();
+    println!("Created with {} entries", tokenizer.vocab_size);
+
+    // Merge 'A' (65) and 'B' (66) -> new token 256
+    println!("Adding merge A+B...");
+    tokenizer.add_merge(65, 66);
+
+    // Merge 'C' (67) and 'D' (68) -> new token 257
+    println!("Adding merge C+D...");
+    tokenizer.add_merge(67, 68);
+
+    // Merge new tokens 256 + 257 -> 258
+    println!("Adding merge 256+257...");
+    tokenizer.add_merge(256, 257);
+
+    println!("Final vocab size: {}", tokenizer.vocab_size);
+    println!("Done!");
+}

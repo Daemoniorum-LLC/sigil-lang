@@ -58,6 +58,7 @@ fn main() -> ExitCode {
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        eprintln!("  rust <file>     Transpile to Rust source code");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
         eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
@@ -167,7 +168,7 @@ fn main() -> ExitCode {
         "compile" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lto] [--tls] [--cuda] [--native-runtime] [-O0|-O1|-O2|-O3|-Os]");
+                eprintln!("Usage: sigil compile <file.sigil> [-o output] [--lib] [--lto] [--tls] [--cuda] [--native-runtime] [-O0|-O1|-O2|-O3|-Os]");
                 return ExitCode::from(1);
             }
             // Parse flags
@@ -175,6 +176,7 @@ fn main() -> ExitCode {
             let use_tls = args.iter().any(|a| a == "--tls");
             let use_cuda = args.iter().any(|a| a == "--cuda");
             let use_native_runtime = args.iter().any(|a| a == "--native-runtime" || a == "--native");
+            let is_library = args.iter().any(|a| a == "--lib" || a == "--shared");
             // Parse optimization level
             let opt_level = if args.iter().any(|a| a == "-O0" || a == "-Onone") {
                 OptLevel::None
@@ -184,9 +186,11 @@ fn main() -> ExitCode {
                 OptLevel::Standard
             } else if args.iter().any(|a| a == "-Os" || a == "-Osize") {
                 OptLevel::Size
-            } else {
-                // Default: Aggressive (-O3)
+            } else if args.iter().any(|a| a == "-O3" || a == "-Oaggressive") {
                 OptLevel::Aggressive
+            } else {
+                // Default: Standard (-O2) - O3 can crash LLVM on complex nested loops
+                OptLevel::Standard
             };
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
@@ -204,7 +208,7 @@ fn main() -> ExitCode {
                     .trim_end_matches(".sg")
                     .to_string()
             };
-            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, use_native_runtime, opt_level)
+            compile_file(&args[2], &output, use_lto, use_tls, use_cuda, use_native_runtime, is_library, opt_level)
         }
         #[cfg(not(feature = "llvm"))]
         "compile" => {
@@ -239,6 +243,35 @@ fn main() -> ExitCode {
         "wasm" => {
             eprintln!("Error: WASM compilation requires --features wasm");
             ExitCode::from(1)
+        }
+        "rust" => {
+            if args.len() < 3 {
+                eprintln!("Error: missing file argument");
+                eprintln!("Usage: sigil rust <file.sigil|dir> [-o output] [--preserve-evidence] [--no-std] [--emit-cargo] [--workspace]");
+                return ExitCode::from(1);
+            }
+            let preserve_evidence = args.iter().any(|a| a == "--preserve-evidence");
+            let no_std = args.iter().any(|a| a == "--no-std");
+            let emit_comments = args.iter().any(|a| a == "--emit-comments");
+            let emit_cargo = args.iter().any(|a| a == "--emit-cargo");
+            let workspace = args.iter().any(|a| a == "--workspace");
+            let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
+                if pos + 1 < args.len() {
+                    Some(args[pos + 1].clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Check if path is a directory (workspace mode)
+            let path = &args[2];
+            if std::path::Path::new(path).is_dir() || workspace {
+                rust_compile_workspace(path, output.as_deref(), preserve_evidence, no_std, emit_comments, emit_cargo)
+            } else {
+                rust_compile_file(path, output.as_deref(), preserve_evidence, no_std, emit_comments)
+            }
         }
         "check" => {
             if args.len() < 3 {
@@ -435,26 +468,51 @@ fn main() -> ExitCode {
             let backup = args.iter().any(|a| a == "--backup");
             let evidentiality = args.iter().any(|a| a == "--evidentiality");
             let workspace = args.iter().any(|a| a == "--workspace");
+            // Parse output directory option: -o <dir> or --output <dir>
+            let output_dir: Option<String> = args.iter()
+                .position(|a| a == "-o" || a == "--output")
+                .and_then(|pos| args.get(pos + 1).cloned());
+
+            // React migration (feature-gated)
+            #[cfg(feature = "react-migrate")]
+            if args.iter().any(|a| a == "--from-react") {
+                return match sigil_parser::migrate::react::run_react_migrate(&args[2..]) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("React migration error: {}", e);
+                        ExitCode::from(1)
+                    }
+                };
+            }
 
             if workspace {
                 // Migrate entire workspace from Sigil.toml
                 migrate_workspace(dry_run, backup, evidentiality)
             } else if args.len() < 3 || args[2].starts_with('-') {
                 eprintln!("Usage: sigil migrate <file|directory> [options]");
+                eprintln!("       sigil migrate <file|directory> -o <output_dir> [options]");
                 eprintln!("       sigil migrate --workspace [options]");
+                #[cfg(feature = "react-migrate")]
+                eprintln!("       sigil migrate --from-react <dir> [options]");
                 eprintln!();
                 eprintln!("Options:");
+                eprintln!("  -o, --output     Output directory (writes .sg files, preserves structure)");
                 eprintln!("  --dry-run        Show changes without applying");
                 eprintln!("  --backup         Create .bak backup before modifying");
                 eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
                 eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
+                #[cfg(feature = "react-migrate")]
+                eprintln!("  --from-react     Migrate React/TSX to Qliphoth actors");
+                eprintln!();
+                eprintln!("When -o is specified, .rs files are converted to .sg files in output dir.");
+                eprintln!("Without -o, files are modified in-place (must be .sg or .sigil).");
                 return ExitCode::from(1);
             } else {
                 let path = std::path::Path::new(&args[2]);
                 if path.is_dir() {
-                    migrate_directory(&args[2], dry_run, backup, evidentiality)
+                    migrate_directory(&args[2], output_dir.as_deref(), dry_run, backup, evidentiality)
                 } else {
-                    migrate_file(&args[2], dry_run, backup, evidentiality)
+                    migrate_file(&args[2], output_dir.as_deref(), dry_run, backup, evidentiality)
                 }
             }
         }
@@ -901,56 +959,120 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             }
         }
 
-        // Find all .sigil files in src/
-        let src_dir = match fs::read_dir(&src_path) {
-            Ok(d) => d,
-            Err(_) => {
-                eprintln!("  Warning: Could not read {}/src/", member);
-                continue;
+        // Find all .sigil files in src/ (including subdirectories)
+        fn collect_sigil_files(dir: &std::path::Path, files: &mut Vec<String>) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        // Recurse into subdirectories
+                        collect_sigil_files(&path, files);
+                    } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                        files.push(path.to_string_lossy().to_string());
+                    }
+                }
             }
-        };
+        }
 
-        let mut files: Vec<String> = src_dir
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
-            .map(|e| e.path().to_string_lossy().to_string())
-            .collect();
+        let mut files: Vec<String> = Vec::new();
+        collect_sigil_files(&src_path, &mut files);
+
+        if files.is_empty() {
+            eprintln!("  Warning: No .sigil files found in {}/src/", member);
+            continue;
+        }
 
         // Sort files to ensure proper load order:
-        // 1. lib.sigil first (defines the crate's public interface)
-        // 2. Other modules in alphabetical order
-        // 3. main.sigil last (uses definitions from other modules)
+        // 1. Root lib.sigil first (defines the crate's public interface)
+        // 2. Root-level non-lib/main files
+        // 3. Subdirectory mod.sigil files (in order of depth, then alphabetically)
+        // 4. Subdirectory non-mod files
+        // 5. main.sigil last (uses definitions from other modules)
         files.sort_by(|a, b| {
-            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            match (a_name, b_name) {
-                ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
-                (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
-                ("main.sigil", _) | ("main.sg", _) => std::cmp::Ordering::Greater,
-                (_, "main.sigil") | (_, "main.sg") => std::cmp::Ordering::Less,
-                _ => a_name.cmp(b_name),
-            }
+            let a_path = Path::new(a);
+            let b_path = Path::new(b);
+            let a_name = a_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let b_name = b_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            // Count directory depth relative to src/
+            let a_depth = a.matches('/').count();
+            let b_depth = b.matches('/').count();
+
+            // Root-level lib.sigil always first
+            let a_is_root_lib = a_depth <= 3 && (a_name == "lib.sigil" || a_name == "lib.sg");
+            let b_is_root_lib = b_depth <= 3 && (b_name == "lib.sigil" || b_name == "lib.sg");
+            if a_is_root_lib && !b_is_root_lib { return std::cmp::Ordering::Less; }
+            if b_is_root_lib && !a_is_root_lib { return std::cmp::Ordering::Greater; }
+
+            // main.sigil always last
+            let a_is_main = a_name == "main.sigil" || a_name == "main.sg";
+            let b_is_main = b_name == "main.sigil" || b_name == "main.sg";
+            if a_is_main && !b_is_main { return std::cmp::Ordering::Greater; }
+            if b_is_main && !a_is_main { return std::cmp::Ordering::Less; }
+
+            // Sort by depth first (shallower files first)
+            if a_depth != b_depth { return a_depth.cmp(&b_depth); }
+
+            // Within same depth, mod.sigil comes first
+            let a_is_mod = a_name == "mod.sigil" || a_name == "mod.sg";
+            let b_is_mod = b_name == "mod.sigil" || b_name == "mod.sg";
+            if a_is_mod && !b_is_mod { return std::cmp::Ordering::Less; }
+            if b_is_mod && !a_is_mod { return std::cmp::Ordering::Greater; }
+
+            // Otherwise alphabetical by full path
+            a.cmp(b)
         });
 
         eprintln!("  Loading {} ({} files)...", crate_name, files.len());
 
         // Load each file in the crate
         for file_path in &files {
-            let file_name = Path::new(file_path)
+            let file_path_obj = Path::new(file_path);
+            let file_name = file_path_obj
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?");
-            eprintln!("    - {}", file_name);
 
-            // Set current module based on file name (for module-qualified function names)
+            // Get relative path from src/ for subdirectory files
+            let relative_display = file_path_obj
+                .strip_prefix(&src_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| file_name.to_string());
+            eprintln!("    - {}", relative_display);
+
+            // Set current module based on file path (for module-qualified function names)
             // e.g., "analyze.sigil" -> module name "analyze"
+            //       "router/mod.sigil" -> module name "router"
+            //       "router/types.sigil" -> module name "router·types"
             // Skip for lib.sigil and main.sigil as they are the crate root
             let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
                 && file_name != "lib.sg" && file_name != "main.sg" {
-                Path::new(file_name)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
+                // Build module path from relative directory path + file stem
+                let relative_path = file_path_obj.strip_prefix(&src_path).ok();
+                let module_parts: Vec<String> = if let Some(rel) = relative_path {
+                    let parent_parts: Vec<&str> = rel.parent()
+                        .map(|p| p.iter().filter_map(|c| c.to_str()).collect())
+                        .unwrap_or_default();
+                    let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+                    // For mod.sigil files, use just the parent directory path
+                    if stem == "mod" {
+                        parent_parts.iter().map(|s| s.to_string()).collect()
+                    } else {
+                        // For other files, include parent path + file stem
+                        let mut parts: Vec<String> = parent_parts.iter().map(|s| s.to_string()).collect();
+                        parts.push(stem.to_string());
+                        parts
+                    }
+                } else {
+                    vec![file_path_obj.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()]
+                };
+
+                if module_parts.is_empty() || (module_parts.len() == 1 && module_parts[0].is_empty()) {
+                    None
+                } else {
+                    Some(module_parts.join("·"))
+                }
             } else {
                 None
             };
@@ -1106,6 +1228,14 @@ fn llvm_file(path: &str) -> ExitCode {
         }
     };
 
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
     // Compile
     if let Err(e) = compiler.compile(&source) {
         eprintln!("Compilation error in '{}': {}", path, e);
@@ -1133,7 +1263,7 @@ fn llvm_file(path: &str) -> ExitCode {
 }
 
 #[cfg(feature = "llvm")]
-fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, use_native_runtime: bool, opt_level: OptLevel) -> ExitCode {
+fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda: bool, use_native_runtime: bool, is_library: bool, opt_level: OptLevel) -> ExitCode {
     use inkwell::context::Context;
     use std::path::Path;
     use std::process::Command;
@@ -1157,11 +1287,25 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
             }
         };
 
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
     // Compile
     if let Err(e) = compiler.compile(&source) {
         eprintln!("Compilation error in '{}': {}", path, e);
         return ExitCode::from(1);
     }
+
+    // Get link libraries from #[link("lib")] attributes on extern blocks
+    let link_libs: Vec<String> = compiler.get_link_libraries()
+        .iter()
+        .map(|lib| format!("-l{}", lib))
+        .collect();
 
     // Debug: print IR
     if std::env::var("SIGIL_DEBUG_IR").is_ok() {
@@ -1173,6 +1317,11 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
     if let Err(e) = compiler.write_object_file(Path::new(&obj_path)) {
         eprintln!("Failed to write object file: {}", e);
         return ExitCode::from(1);
+    }
+
+    // Library mode: create shared library without runtime (no main function required)
+    if is_library {
+        return compile_as_library(&obj_path, output, &link_libs);
     }
 
     // Native runtime mode: link with pure assembly runtime, no libc
@@ -1247,6 +1396,11 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
         args.push("-Wl,-rpath,/usr/local/cuda/lib64");
     }
 
+    // Add libraries from #[link("lib")] attributes on extern blocks
+    for lib_flag in &link_libs {
+        args.push(lib_flag);
+    }
+
     let link_result = Command::new(&linker).args(&args).status();
 
     // Clean up object file
@@ -1312,6 +1466,85 @@ fn link_native_runtime(obj_path: &str, output: &str) -> ExitCode {
         Err(e) => {
             eprintln!("Failed to run linker 'ld': {}", e);
             ExitCode::from(1)
+        }
+    }
+}
+
+/// Compile as a shared library (no runtime, no main function required)
+#[cfg(feature = "llvm")]
+fn compile_as_library(obj_path: &str, output: &str, link_libs: &[String]) -> ExitCode {
+    use std::process::Command;
+
+    let linker = find_linker();
+
+    // Determine output type based on extension
+    let is_static = output.ends_with(".a");
+    let output_path = if output.ends_with(".so") || output.ends_with(".a") {
+        output.to_string()
+    } else {
+        format!("{}.so", output)
+    };
+
+    if is_static {
+        // Create static library with ar
+        println!("Creating static library {} -> {}", obj_path, output_path);
+
+        let ar_result = Command::new("ar")
+            .args(["rcs", &output_path, obj_path])
+            .status();
+
+        // Clean up object file
+        let _ = std::fs::remove_file(obj_path);
+
+        match ar_result {
+            Ok(status) if status.success() => {
+                println!("Successfully created static library: {}", output_path);
+                ExitCode::SUCCESS
+            }
+            Ok(status) => {
+                eprintln!("ar failed with status: {}", status);
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                eprintln!("Failed to run ar: {}", e);
+                ExitCode::from(1)
+            }
+        }
+    } else {
+        // Create shared library with -shared flag
+        println!("Creating shared library {} -> {}", obj_path, output_path);
+
+        let mut args = vec![
+            "-shared",
+            "-fPIC",
+            obj_path,
+            "-o", &output_path,
+            "-lm",
+        ];
+
+        // Add libraries from #[link("lib")] attributes
+        for lib_flag in link_libs {
+            args.push(lib_flag);
+        }
+
+        let link_result = Command::new(&linker).args(&args).status();
+
+        // Clean up object file
+        let _ = std::fs::remove_file(obj_path);
+
+        match link_result {
+            Ok(status) if status.success() => {
+                println!("Successfully created shared library: {}", output_path);
+                ExitCode::SUCCESS
+            }
+            Ok(status) => {
+                eprintln!("Linker failed with status: {}", status);
+                ExitCode::from(1)
+            }
+            Err(e) => {
+                eprintln!("Failed to run linker '{}': {}", linker, e);
+                ExitCode::from(1)
+            }
         }
     }
 }
@@ -1481,39 +1714,482 @@ fn find_linker() -> String {
     "cc".to_string()
 }
 
-/// Compile a Sigil source file to WebAssembly.
+/// Transpile a Sigil source file to Rust source code.
+fn rust_compile_file(
+    path: &str,
+    output: Option<&str>,
+    preserve_evidence: bool,
+    no_std: bool,
+    emit_comments: bool,
+) -> ExitCode {
+    use sigil_parser::{RustCompiler, RustCodegenOptions, RustEdition};
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Configure options
+    let options = RustCodegenOptions {
+        preserve_evidence,
+        emit_comments,
+        edition: RustEdition::Edition2021,
+        no_std,
+        indent_spaces: 4,
+    };
+
+    // Parse
+    let mut parser = Parser::new(&source);
+    let source_file = match parser.parse_file() {
+        Ok(sf) => sf,
+        Err(e) => {
+            eprintln!("Parse error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Extract items from SourceFile
+    let items: Vec<_> = source_file.items.iter().map(|s| s.node.clone()).collect();
+
+    // Generate Rust code
+    let mut compiler = RustCompiler::with_options(options);
+    let rust_code = match compiler.compile(&items) {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("Rust codegen error in '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Output
+    if let Some(output_path) = output {
+        if let Err(e) = fs::write(output_path, &rust_code) {
+            eprintln!("Error writing output file '{}': {}", output_path, e);
+            return ExitCode::from(1);
+        }
+        println!("Generated: {} ({} bytes)", output_path, rust_code.len());
+    } else {
+        // Print to stdout
+        print!("{}", rust_code);
+    }
+
+    ExitCode::SUCCESS
+}
+
+/// Compile a Sigil workspace to Rust with Cargo.toml generation.
+fn rust_compile_workspace(
+    path: &str,
+    output: Option<&str>,
+    preserve_evidence: bool,
+    no_std: bool,
+    emit_comments: bool,
+    emit_cargo: bool,
+) -> ExitCode {
+    use sigil_parser::{RustCompiler, RustCodegenOptions, RustEdition};
+    use std::path::Path;
+
+    let workspace_path = Path::new(path);
+    let output_dir = output.unwrap_or("rust-out");
+
+    // Look for Sigil.toml in the workspace root
+    let sigil_toml_path = workspace_path.join("Sigil.toml");
+    let workspace_config = if sigil_toml_path.exists() {
+        match fs::read_to_string(&sigil_toml_path) {
+            Ok(content) => Some(content),
+            Err(e) => {
+                eprintln!("Warning: Could not read {}: {}", sigil_toml_path.display(), e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Parse workspace members from Sigil.toml
+    let crate_dirs: Vec<String> = if let Some(ref config) = workspace_config {
+        parse_workspace_members(config)
+    } else {
+        // Fallback: find all directories with .sigil or .sg files
+        find_sigil_crates(workspace_path)
+    };
+
+    if crate_dirs.is_empty() {
+        eprintln!("No Sigil crates found in workspace");
+        return ExitCode::from(1);
+    }
+
+    // Create output directory
+    if let Err(e) = fs::create_dir_all(output_dir) {
+        eprintln!("Error creating output directory '{}': {}", output_dir, e);
+        return ExitCode::from(1);
+    }
+
+    println!("Compiling {} crates to Rust...", crate_dirs.len());
+
+    // Configure codegen options
+    let options = RustCodegenOptions {
+        preserve_evidence,
+        emit_comments,
+        edition: RustEdition::Edition2021,
+        no_std,
+        indent_spaces: 4,
+    };
+
+    let mut success_count = 0;
+    let mut crate_names = Vec::new();
+
+    for crate_dir in &crate_dirs {
+        let crate_path = workspace_path.join(crate_dir);
+        let crate_name = Path::new(crate_dir)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| crate_dir.replace('/', "-"));
+
+        // Create output crate directory
+        let out_crate_dir = Path::new(output_dir).join(&crate_name);
+        let out_src_dir = out_crate_dir.join("src");
+        if let Err(e) = fs::create_dir_all(&out_src_dir) {
+            eprintln!("  Error creating {}: {}", out_src_dir.display(), e);
+            continue;
+        }
+
+        // Find all .sigil and .sg files in src/
+        let src_dir = crate_path.join("src");
+        if !src_dir.is_dir() {
+            eprintln!("  Skipping {}: no src/ directory", crate_name);
+            continue;
+        }
+
+        let mut has_lib = false;
+        let mut file_count = 0;
+
+        if let Ok(entries) = fs::read_dir(&src_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let ext = path.extension().and_then(|e| e.to_str());
+
+                if ext != Some("sigil") && ext != Some("sg") {
+                    continue;
+                }
+
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+                let out_name = if stem == "lib" {
+                    has_lib = true;
+                    "lib.rs".to_string()
+                } else {
+                    format!("{}.rs", stem)
+                };
+
+                // Read and compile
+                let source = match fs::read_to_string(&path) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("    Error reading {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+
+                let mut parser = Parser::new(&source);
+                let source_file = match parser.parse_file() {
+                    Ok(sf) => sf,
+                    Err(e) => {
+                        eprintln!("    Parse error in {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+
+                let items: Vec<_> = source_file.items.iter().map(|s| s.node.clone()).collect();
+                let mut compiler = RustCompiler::with_options(options.clone());
+                let rust_code = match compiler.compile(&items) {
+                    Ok(code) => code,
+                    Err(e) => {
+                        eprintln!("    Codegen error in {}: {}", stem, e);
+                        continue;
+                    }
+                };
+
+                // Write output file
+                let out_path = out_src_dir.join(&out_name);
+                if let Err(e) = fs::write(&out_path, &rust_code) {
+                    eprintln!("    Error writing {}: {}", out_path.display(), e);
+                    continue;
+                }
+
+                file_count += 1;
+            }
+        }
+
+        if !has_lib {
+            eprintln!("  Skipping {}: no lib.sigil or lib.sg", crate_name);
+            continue;
+        }
+
+        // Generate Cargo.toml if requested
+        if emit_cargo {
+            let cargo_toml = generate_cargo_toml(&crate_name, crate_dir, workspace_config.as_deref());
+            let cargo_path = out_crate_dir.join("Cargo.toml");
+            if let Err(e) = fs::write(&cargo_path, &cargo_toml) {
+                eprintln!("  Error writing {}: {}", cargo_path.display(), e);
+            }
+        }
+
+        println!("  {} ({} files) -> {}", crate_name, file_count, out_src_dir.display());
+        crate_names.push(crate_name);
+        success_count += 1;
+    }
+
+    // Generate workspace Cargo.toml
+    if emit_cargo && !crate_names.is_empty() {
+        let workspace_cargo = generate_workspace_cargo(&crate_names);
+        let workspace_cargo_path = Path::new(output_dir).join("Cargo.toml");
+        if let Err(e) = fs::write(&workspace_cargo_path, &workspace_cargo) {
+            eprintln!("Error writing workspace Cargo.toml: {}", e);
+        } else {
+            println!("Generated workspace: {}", workspace_cargo_path.display());
+        }
+    }
+
+    println!("\nCompiled {}/{} crates successfully", success_count, crate_dirs.len());
+
+    if success_count > 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+/// Parse workspace.members from Sigil.toml
+fn parse_workspace_members(toml_content: &str) -> Vec<String> {
+    let mut members = Vec::new();
+    let mut in_members = false;
+
+    for line in toml_content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("members = [") {
+            in_members = true;
+            continue;
+        }
+
+        if in_members {
+            if trimmed == "]" {
+                break;
+            }
+            // Extract path from quoted string
+            if let Some(start) = trimmed.find('"') {
+                if let Some(end) = trimmed[start + 1..].find('"') {
+                    let path = &trimmed[start + 1..start + 1 + end];
+                    members.push(path.to_string());
+                }
+            }
+        }
+    }
+
+    members
+}
+
+/// Find directories containing .sigil or .sg files
+fn find_sigil_crates(workspace_path: &std::path::Path) -> Vec<String> {
+    let mut crates = Vec::new();
+    let crates_dir = workspace_path.join("crates");
+
+    if crates_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&crates_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let src_dir = path.join("src");
+                    if src_dir.join("lib.sigil").exists() || src_dir.join("lib.sg").exists() {
+                        if let Some(name) = path.file_name() {
+                            crates.push(format!("crates/{}", name.to_string_lossy()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    crates
+}
+
+/// Generate a Cargo.toml for a single crate
+fn generate_cargo_toml(crate_name: &str, _crate_path: &str, _workspace_config: Option<&str>) -> String {
+    // Normalize crate name (replace hyphens with underscores for Rust)
+    let lib_name = crate_name.replace('-', "_");
+
+    // Infer dependencies based on crate name patterns
+    let deps = infer_crate_dependencies(crate_name);
+
+    format!(
+        r#"[package]
+name = "{crate_name}"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "{lib_name}"
+path = "src/lib.rs"
+
+[dependencies]
+{deps}
+
+[features]
+default = []
+cuda = []
+"#,
+        crate_name = crate_name,
+        lib_name = lib_name,
+        deps = deps,
+    )
+}
+
+/// Infer dependencies for a crate based on naming conventions
+fn infer_crate_dependencies(crate_name: &str) -> String {
+    // Nihil dependency graph (based on Sigil.toml structure)
+    let deps: Vec<&str> = match crate_name {
+        "nihil-core" => vec![],
+        "nihil-memory" => vec!["nihil-core"],
+        "nihil-ops" => vec!["nihil-core", "nihil-memory"],
+        "nihil-cpu" => vec!["nihil-core", "nihil-ops"],
+        "nihil-cuda" => vec!["nihil-core", "nihil-ops", "nihil-memory"],
+        "nihil-autograd" => vec!["nihil-core", "nihil-ops"],
+        "nihil-einsum" => vec!["nihil-core", "nihil-ops"],
+        "nihil-linalg" => vec!["nihil-core", "nihil-ops", "nihil-einsum"],
+        "nihil-nn" => vec!["nihil-core", "nihil-ops", "nihil-autograd"],
+        "nihil-optim" => vec!["nihil-nn", "nihil-autograd"],
+        "nihil-transformer" => vec!["nihil-nn", "nihil-ops"],
+        "nihil-io" => vec!["nihil-core"],
+        "nihil-models" => vec!["nihil-transformer", "nihil-io"],
+        "nihil-quant" => vec!["nihil-core", "nihil-ops"],
+        "nihil-distributed" => vec!["nihil-core", "nihil-ops", "nihil-nn"],
+        "nihil-dispatch" => vec!["nihil-core", "nihil-cpu", "nihil-cuda"],
+        "nihil-compile" => vec!["nihil-core", "nihil-ops"],
+        "nihil-test" => vec!["nihil-core", "nihil-ops", "nihil-nn"],
+        "nihil-bench" => vec!["nihil-core", "nihil-ops"],
+        "nihil-embed" => vec!["nihil-transformer", "nihil-models"],
+        "pynihil" => vec!["nihil-core", "nihil-ops", "nihil-nn"],
+        "nihil" => vec![
+            "nihil-core", "nihil-ops", "nihil-nn", "nihil-autograd",
+            "nihil-transformer", "nihil-io", "nihil-models",
+        ],
+        _ => vec![],
+    };
+
+    if deps.is_empty() {
+        String::new()
+    } else {
+        deps.iter()
+            .map(|d| format!("{} = {{ path = \"../{}\" }}", d, d))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+/// Generate a workspace Cargo.toml
+fn generate_workspace_cargo(crate_names: &[String]) -> String {
+    let members: Vec<String> = crate_names.iter().map(|n| format!("    \"{}\",", n)).collect();
+
+    format!(
+        r#"[workspace]
+resolver = "2"
+members = [
+{}
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+"#,
+        members.join("\n")
+    )
+}
+
+/// Compile a Sigil source file or project to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
     use std::path::Path;
 
-    println!("Compiling {} -> {} (WebAssembly)", path, output);
+    let path = Path::new(path);
 
-    // Create WASM compiler and compile from path (enables multi-file module resolution)
-    let mut compiler = WasmCompiler::new();
-    match compiler.compile_from_path(Path::new(path)) {
-        Ok(wasm_bytes) => {
-            // Write the WASM bytes to output file
-            if let Err(e) = fs::write(output, &wasm_bytes) {
-                eprintln!("Error writing output file '{}': {}", output, e);
-                return ExitCode::from(1);
+    // Check if this is a directory with sigil.toml or Sigil.toml (project compilation)
+    let is_project = if path.is_dir() {
+        path.join("sigil.toml").exists() || path.join("Sigil.toml").exists()
+    } else if let Some(parent) = path.parent() {
+        parent.join("sigil.toml").exists() || parent.join("Sigil.toml").exists()
+    } else {
+        false
+    };
+
+    if is_project {
+        // Project compilation with dependencies
+        let project_dir = if path.is_dir() {
+            path.to_path_buf()
+        } else {
+            path.parent().unwrap().to_path_buf()
+        };
+
+        println!("Compiling project {} -> {} (WebAssembly with dependencies)",
+                 project_dir.display(), output);
+
+        match WasmCompiler::compile_project(&project_dir) {
+            Ok(wasm_bytes) => {
+                if let Err(e) = fs::write(output, &wasm_bytes) {
+                    eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                let size = wasm_bytes.len();
+                let size_str = format_size(size);
+                println!("Successfully compiled to: {} ({})", output, size_str);
+                ExitCode::SUCCESS
             }
-
-            let size = wasm_bytes.len();
-            let size_str = if size < 1024 {
-                format!("{} bytes", size)
-            } else if size < 1024 * 1024 {
-                format!("{:.1} KB", size as f64 / 1024.0)
-            } else {
-                format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-            };
-
-            println!("Successfully compiled to: {} ({})", output, size_str);
-            ExitCode::SUCCESS
+            Err(e) => {
+                eprintln!("Compilation error: {}", e);
+                ExitCode::from(1)
+            }
         }
-        Err(e) => {
-            eprintln!("Compilation error in '{}': {}", path, e);
-            ExitCode::from(1)
+    } else {
+        // Single file compilation
+        println!("Compiling {} -> {} (WebAssembly)", path.display(), output);
+
+        let mut compiler = WasmCompiler::new();
+        match compiler.compile_from_path(path) {
+            Ok(wasm_bytes) => {
+                if let Err(e) = fs::write(output, &wasm_bytes) {
+                    eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                let size = wasm_bytes.len();
+                let size_str = format_size(size);
+                println!("Successfully compiled to: {} ({})", output, size_str);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("Compilation error in '{}': {}", path.display(), e);
+                ExitCode::from(1)
+            }
         }
+    }
+}
+
+/// Format file size for display.
+#[cfg(feature = "wasm")]
+fn format_size(size: usize) -> String {
+    if size < 1024 {
+        format!("{} bytes", size)
+    } else if size < 1024 * 1024 {
+        format!("{:.1} KB", size as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
     }
 }
 
@@ -2153,6 +2829,7 @@ fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode 
             Evidentiality::Reported => "reported",
             Evidentiality::Uncertain => "uncertain",
             Evidentiality::Predicted => "predicted",
+            Evidentiality::Chaos => "chaotic",
             Evidentiality::Paradox => "paradox",
         }
     }
@@ -3267,6 +3944,55 @@ fn init_project() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Recursively collect test function names from AST items.
+/// Looks for both top-level #[test]/`//@ rune: test` functions and functions
+/// inside `scroll tests {}` modules.
+fn collect_test_fn_names(
+    items: &[sigil_parser::span::Spanned<sigil_parser::ast::Item>],
+    test_fn_names: &mut Vec<String>,
+    module_prefix: Option<&str>,
+) {
+    use sigil_parser::ast::Item;
+
+    for item in items {
+        match &item.node {
+            Item::Function(func) => {
+                if func.attrs.test {
+                    let name = match module_prefix {
+                        // Use middledot (·) as separator - matches how interpreter registers module functions
+                        Some(prefix) => format!("{}·{}", prefix, func.name.name),
+                        None => func.name.name.clone(),
+                    };
+                    test_fn_names.push(name);
+                }
+            }
+            Item::Module(m) => {
+                // Check if this is a `tests` module (either named "tests" or has #[cfg(test)])
+                let is_test_module = m.name.name == "tests" || m.name.name == "test";
+
+                if let Some(ref inner_items) = m.items {
+                    if is_test_module {
+                        // Look for test functions inside the tests module
+                        let new_prefix = match module_prefix {
+                            Some(prefix) => format!("{}·{}", prefix, m.name.name),
+                            None => m.name.name.clone(),
+                        };
+                        collect_test_fn_names(inner_items, test_fn_names, Some(&new_prefix));
+                    } else {
+                        // Recursively check other modules for nested test modules
+                        let new_prefix = match module_prefix {
+                            Some(prefix) => format!("{}·{}", prefix, m.name.name),
+                            None => m.name.name.clone(),
+                        };
+                        collect_test_fn_names(inner_items, test_fn_names, Some(&new_prefix));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Run tests in the current project
 fn collect_test_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
@@ -3347,15 +4073,9 @@ fn run_test_files(
             continue;
         }
 
-        // Collect test function names
+        // Collect test function names (both top-level and from `scroll tests {}` modules)
         let mut test_fn_names: Vec<String> = Vec::new();
-        for item in &ast.items {
-            if let sigil_parser::ast::Item::Function(func) = &item.node {
-                if func.attrs.test {
-                    test_fn_names.push(func.name.name.clone());
-                }
-            }
-        }
+        collect_test_fn_names(&ast.items, &mut test_fn_names, None);
 
         if !test_fn_names.is_empty() {
             let mut interpreter = Interpreter::new();
@@ -3572,9 +4292,264 @@ fn print_test_summary(total: usize, passed: usize, failed: usize) -> ExitCode {
     }
 }
 
+// ============================================================================
+// Build System: Manifest Parsing and Dependency Resolution
+// ============================================================================
+
+/// Parsed manifest information
+#[derive(Debug, Clone)]
+struct Manifest {
+    name: String,
+    version: String,
+    has_lib: bool,
+    has_bin: bool,
+    dependencies: Vec<Dependency>,
+    workspace_members: Vec<String>,  // [workspace] members list
+}
+
+/// A dependency reference
+#[derive(Debug, Clone)]
+struct Dependency {
+    name: String,
+    path: std::path::PathBuf,
+}
+
+/// Parse a sigil.toml manifest file
+fn parse_manifest(manifest_path: &std::path::Path) -> Result<Manifest, String> {
+    let content = fs::read_to_string(manifest_path)
+        .map_err(|e| format!("Failed to read manifest: {}", e))?;
+
+    // Parse name
+    let name = content
+        .lines()
+        .find(|l| l.trim().starts_with("name"))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .ok_or_else(|| "Missing 'name' in manifest".to_string())?;
+
+    // Parse version (optional, default to 0.1.0)
+    let version = content
+        .lines()
+        .find(|l| l.trim().starts_with("version"))
+        .and_then(|l| l.split('=').nth(1))
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .unwrap_or_else(|| "0.1.0".to_string());
+
+    // Check for lib.sigil and main.sigil
+    let manifest_dir = manifest_path.parent().unwrap_or(std::path::Path::new("."));
+    let has_lib = manifest_dir.join("src/lib.sigil").exists();
+    let has_bin = manifest_dir.join("src/main.sigil").exists();
+
+    // Parse dependencies
+    let dependencies = parse_dependencies(&content, manifest_dir);
+
+    // Parse workspace members
+    let workspace_members = parse_workspace_members(&content);
+
+    Ok(Manifest {
+        name,
+        version,
+        has_lib,
+        has_bin,
+        dependencies,
+        workspace_members,
+    })
+}
+
+/// Parse [dependencies] section from manifest content
+fn parse_dependencies(content: &str, manifest_dir: &std::path::Path) -> Vec<Dependency> {
+    let mut deps = Vec::new();
+    let mut in_deps_section = false;
+    let debug = std::env::var("SIGIL_DEBUG_DEPS").is_ok();
+
+    if debug {
+        eprintln!("DEBUG: parse_dependencies called, manifest_dir={}", manifest_dir.display());
+    }
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Check for section headers
+        if trimmed.starts_with('[') {
+            in_deps_section = trimmed == "[dependencies]";
+            if debug && in_deps_section {
+                eprintln!("DEBUG: Found [dependencies] section");
+            }
+            continue;
+        }
+
+        // Skip if not in dependencies section
+        if !in_deps_section {
+            continue;
+        }
+
+        // Skip empty lines and comments
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Parse dependency line: name = { path = "...", optional = true }
+        if let Some((name, rest)) = trimmed.split_once('=') {
+            let name = name.trim().to_string();
+            let rest = rest.trim();
+
+            // Skip optional dependencies
+            if rest.contains("optional") && rest.contains("true") {
+                if debug {
+                    eprintln!("DEBUG: Skipping optional dep '{}'", name);
+                }
+                continue;
+            }
+
+            // Extract path from { path = "..." }
+            if let Some(path_start) = rest.find("path") {
+                let after_path = &rest[path_start + 4..];
+                if let Some(eq_pos) = after_path.find('=') {
+                    let path_value = after_path[eq_pos + 1..].trim();
+                    // Extract the quoted path
+                    if let Some(start) = path_value.find('"') {
+                        if let Some(end) = path_value[start + 1..].find('"') {
+                            let path_str = &path_value[start + 1..start + 1 + end];
+                            let resolved_path = manifest_dir.join(path_str);
+                            if debug {
+                                eprintln!("DEBUG: Found dep '{}' at '{}'", name, resolved_path.display());
+                            }
+                            deps.push(Dependency {
+                                name,
+                                path: resolved_path,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if debug {
+        eprintln!("DEBUG: Parsed {} dependencies", deps.len());
+    }
+    deps
+}
+
+/// Build dependencies in the correct order (dependencies first)
+fn build_dependencies(deps: &[Dependency], built: &mut std::collections::HashSet<String>) -> Result<Vec<std::path::PathBuf>, String> {
+    use std::sync::LazyLock;
+    // Track in-progress builds for cycle detection
+    static IN_PROGRESS: LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
+    let mut lib_paths = Vec::new();
+
+    for dep in deps {
+        // Check for circular dependency
+        {
+            let in_progress = IN_PROGRESS.lock().unwrap();
+            if in_progress.contains(&dep.name) {
+                eprintln!("Note: Skipping circular dependency '{}'", dep.name);
+                continue;
+            }
+        }
+
+        // Skip if already built
+        if built.contains(&dep.name) {
+            // Find the already-built library
+            let lib_name = format!("lib{}.a", dep.name.replace('-', "_"));
+            let lib_path = dep.path.join("target").join(&lib_name);
+            if lib_path.exists() {
+                lib_paths.push(lib_path);
+            }
+            continue;
+        }
+
+        // Check if dependency directory exists
+        if !dep.path.exists() {
+            // Skip external dependencies that don't exist locally
+            // (e.g., system libraries, packages to be installed separately)
+            eprintln!("Note: Skipping external dependency '{}' (path not found)", dep.name);
+            built.insert(dep.name.clone());
+            continue;
+        }
+
+        // Check for sigil.toml in dependency
+        let dep_manifest = dep.path.join("sigil.toml");
+        if !dep_manifest.exists() {
+            // Skip non-Sigil dependencies (e.g., Rust/Cargo packages, FFI libs)
+            eprintln!("Note: Skipping non-Sigil dependency '{}' (no sigil.toml)", dep.name);
+            built.insert(dep.name.clone());
+            continue;
+        }
+
+        // Parse dependency's manifest
+        let dep_info = parse_manifest(&dep_manifest)?;
+
+        // Recursively build this dependency's dependencies first
+        if !dep_info.dependencies.is_empty() {
+            let sub_libs = build_dependencies(&dep_info.dependencies, built)?;
+            lib_paths.extend(sub_libs);
+        }
+
+        // Build this dependency (library only)
+        if dep_info.has_lib {
+            // Canonicalize paths to avoid relative path issues
+            let dep_path = match dep.path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => dep.path.clone(), // Fall back to original if canonicalize fails
+            };
+
+            // Check if library already exists (avoid rebuilding)
+            let lib_name = format!("lib{}.a", dep.name.replace('-', "_"));
+            let lib_path = dep_path.join("target").join(&lib_name);
+
+            if lib_path.exists() {
+                // Library already built
+                lib_paths.push(lib_path);
+            } else {
+                println!("  Building dependency: {}", dep.name);
+
+                // Mark as in-progress to detect cycles
+                {
+                    let mut in_progress = IN_PROGRESS.lock().unwrap();
+                    in_progress.insert(dep.name.clone());
+                }
+
+                // Spawn a subprocess to build each dependency
+                // This isolates LLVM contexts and prevents memory corruption
+                let build_result = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("sigil")))
+                    .arg("build")
+                    .current_dir(&dep_path)
+                    .status();
+
+                // Remove from in-progress
+                {
+                    let mut in_progress = IN_PROGRESS.lock().unwrap();
+                    in_progress.remove(&dep.name);
+                }
+
+                match build_result {
+                    Ok(status) if status.success() => {
+                        // Build succeeded
+                        lib_paths.push(lib_path);
+                    }
+                    Ok(status) => {
+                        return Err(format!("Failed to build dependency '{}': exit code {:?}", dep.name, status.code()));
+                    }
+                    Err(e) => {
+                        return Err(format!("Failed to run build for dependency '{}': {}", dep.name, e));
+                    }
+                }
+            }
+        }
+
+        built.insert(dep.name.clone());
+    }
+
+    Ok(lib_paths)
+}
+
 /// Build the current project
 fn build_project() -> ExitCode {
     use std::path::Path;
+    use std::collections::HashSet;
 
     // Check for sigil.toml
     let manifest_path = Path::new("sigil.toml");
@@ -3584,31 +4559,34 @@ fn build_project() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    // Parse sigil.toml (simplified - just look for name and main file)
-    let manifest = match fs::read_to_string(manifest_path) {
-        Ok(s) => s,
+    // Parse manifest using the new parser
+    let manifest = match parse_manifest(manifest_path) {
+        Ok(m) => m,
         Err(e) => {
-            eprintln!("Error reading sigil.toml: {}", e);
+            eprintln!("Error parsing sigil.toml: {}", e);
             return ExitCode::from(1);
         }
     };
 
-    // Simple TOML parsing for name
-    let name = manifest
-        .lines()
-        .find(|l| l.starts_with("name"))
-        .and_then(|l| l.split('=').nth(1))
-        .map(|s| s.trim().trim_matches('"'))
-        .unwrap_or("app");
-
-    // Find main file
-    let main_file = Path::new("src/main.sigil");
-    if !main_file.exists() {
-        eprintln!("Error: src/main.sigil not found");
-        return ExitCode::from(1);
+    let debug = std::env::var("SIGIL_DEBUG_DEPS").is_ok();
+    if debug {
+        eprintln!("DEBUG: Manifest name={}, has_lib={}, has_bin={}, deps={}, workspace_members={}",
+            manifest.name, manifest.has_lib, manifest.has_bin, manifest.dependencies.len(), manifest.workspace_members.len());
+        for dep in &manifest.dependencies {
+            eprintln!("DEBUG:   dep: {} at {}", dep.name, dep.path.display());
+        }
     }
 
-    println!("Building {}...", name);
+    // Check if this is a workspace manifest
+    if !manifest.workspace_members.is_empty() {
+        return build_workspace(&manifest);
+    }
+
+    if !manifest.has_lib && !manifest.has_bin {
+        eprintln!("Error: no src/lib.sigil or src/main.sigil found");
+        eprintln!("A tome must have at least one of these files.");
+        return ExitCode::from(1);
+    }
 
     // Create target directory
     let target_dir = Path::new("target");
@@ -3619,16 +4597,135 @@ fn build_project() -> ExitCode {
         }
     }
 
-    // For now, just type-check the project
-    let source = match fs::read_to_string(main_file) {
+    // Build dependencies first
+    let mut built: HashSet<String> = HashSet::new();
+    let dep_libs = if !manifest.dependencies.is_empty() {
+        println!("Building dependencies...");
+        match build_dependencies(&manifest.dependencies, &mut built) {
+            Ok(libs) => libs,
+            Err(e) => {
+                eprintln!("Error building dependencies: {}", e);
+                return ExitCode::from(1);
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    // Build library if present
+    let lib_file = Path::new("src/lib.sigil");
+    if manifest.has_lib {
+        println!("Building {} (library)...", manifest.name);
+        let result = build_library(&manifest.name, lib_file, target_dir);
+        if result != ExitCode::SUCCESS {
+            return result;
+        }
+    }
+
+    // Build binary if present
+    let main_file = Path::new("src/main.sigil");
+    if manifest.has_bin {
+        println!("Building {} (binary)...", manifest.name);
+        let result = build_binary_with_deps(&manifest.name, main_file, target_dir, &dep_libs);
+        if result != ExitCode::SUCCESS {
+            return result;
+        }
+    }
+
+    ExitCode::SUCCESS
+}
+
+/// Build all tomes in a workspace
+fn build_workspace(manifest: &Manifest) -> ExitCode {
+    use std::path::Path;
+
+    println!("Building workspace '{}' with {} members...", manifest.name, manifest.workspace_members.len());
+
+    let mut success_count = 0;
+    let mut fail_count = 0;
+
+    for member_path in &manifest.workspace_members {
+        let member_dir = Path::new(member_path);
+
+        // Check if member directory exists
+        if !member_dir.exists() {
+            eprintln!("  Warning: member '{}' not found, skipping", member_path);
+            continue;
+        }
+
+        // Check for sigil.toml in member
+        let member_manifest = member_dir.join("sigil.toml");
+        if !member_manifest.exists() {
+            eprintln!("  Warning: no sigil.toml in '{}', skipping", member_path);
+            continue;
+        }
+
+        // Get member name from manifest
+        let member_name = match parse_manifest(&member_manifest) {
+            Ok(m) => m.name,
+            Err(_) => member_path.split('/').last().unwrap_or(member_path).to_string(),
+        };
+
+        // Check if library already built
+        let lib_name = format!("lib{}.a", member_name.replace('-', "_"));
+        let lib_path = member_dir.join("target").join(&lib_name);
+
+        if lib_path.exists() {
+            println!("  {} (already built)", member_name);
+            success_count += 1;
+            continue;
+        }
+
+        // Spawn subprocess to build member (isolates LLVM contexts)
+        print!("  {} ... ", member_name);
+
+        let build_result = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("sigil")))
+            .arg("build")
+            .current_dir(member_dir)
+            .stdout(std::process::Stdio::null())  // Suppress verbose output
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        match build_result {
+            Ok(output) if output.status.success() => {
+                println!("ok");
+                success_count += 1;
+            }
+            Ok(output) => {
+                println!("FAILED");
+                if !output.stderr.is_empty() {
+                    eprintln!("    {}", String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or(""));
+                }
+                fail_count += 1;
+            }
+            Err(e) => {
+                println!("FAILED ({})", e);
+                fail_count += 1;
+            }
+        }
+    }
+
+    println!("\nWorkspace build complete: {}/{} tomes succeeded",
+        success_count, success_count + fail_count);
+
+    if fail_count > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Build a library tome (produces .a static library)
+fn build_library(name: &str, lib_file: &std::path::Path, target_dir: &std::path::Path) -> ExitCode {
+    // Read and parse source
+    let source = match fs::read_to_string(lib_file) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("Error reading src/main.sigil: {}", e);
+            eprintln!("Error reading {}: {}", lib_file.display(), e);
             return ExitCode::from(1);
         }
     };
 
-    // Parse
     let mut parser = Parser::new(&source);
     let ast = match parser.parse_file() {
         Ok(ast) => ast,
@@ -3650,65 +4747,363 @@ fn build_project() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    // If LLVM is available, compile to native
+    // Compile to object file and archive
+    #[cfg(feature = "llvm")]
+    {
+        return compile_library(&lib_file.to_string_lossy(), name, target_dir);
+    }
+
+    #[cfg(not(feature = "llvm"))]
+    {
+        println!("✓ Type check passed (library)");
+        println!("Note: Native compilation requires LLVM support.");
+        ExitCode::SUCCESS
+    }
+}
+
+/// Build a binary tome (produces executable)
+fn build_binary(name: &str, main_file: &std::path::Path, target_dir: &std::path::Path) -> ExitCode {
+    // Read and parse source
+    let source = match fs::read_to_string(main_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading {}: {}", main_file.display(), e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let mut parser = Parser::new(&source);
+    let ast = match parser.parse_file() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Type check
+    let mut type_checker = TypeChecker::new();
+    if let Err(errors) = type_checker.check_file(&ast) {
+        for err in errors {
+            eprintln!("Error: {}", err.message);
+            for note in &err.notes {
+                eprintln!("  note: {}", note);
+            }
+        }
+        return ExitCode::from(1);
+    }
+
+    // Compile to native executable
     #[cfg(feature = "llvm")]
     {
         let output_path = target_dir.join(name);
         let output_str = output_path.to_string_lossy();
         println!("Compiling to native executable...");
-        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, false, OptLevel::Standard);
+        return compile_file(&main_file.to_string_lossy(), &output_str, false, false, false, false, false, OptLevel::Standard);
     }
 
     #[cfg(not(feature = "llvm"))]
     {
-        println!("✓ Type check passed");
-        println!();
+        println!("✓ Type check passed (binary)");
         println!("Note: Native compilation requires LLVM support.");
-        println!("Run with: sigil run src/main.sigil");
         ExitCode::SUCCESS
+    }
+}
+
+/// Build a binary tome with dependency libraries (produces executable linked with deps)
+fn build_binary_with_deps(name: &str, main_file: &std::path::Path, target_dir: &std::path::Path, dep_libs: &[std::path::PathBuf]) -> ExitCode {
+    // Read and parse source
+    let source = match fs::read_to_string(main_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading {}: {}", main_file.display(), e);
+            return ExitCode::from(1);
+        }
+    };
+
+    let mut parser = Parser::new(&source);
+    let ast = match parser.parse_file() {
+        Ok(ast) => ast,
+        Err(e) => {
+            eprintln!("Parse error: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Type check
+    let mut type_checker = TypeChecker::new();
+    if let Err(errors) = type_checker.check_file(&ast) {
+        for err in errors {
+            eprintln!("Error: {}", err.message);
+            for note in &err.notes {
+                eprintln!("  note: {}", note);
+            }
+        }
+        return ExitCode::from(1);
+    }
+
+    // Compile to native executable with dependency linking
+    #[cfg(feature = "llvm")]
+    {
+        let output_path = target_dir.join(name);
+        let output_str = output_path.to_string_lossy();
+        println!("Compiling to native executable...");
+        if !dep_libs.is_empty() {
+            println!("  Linking with {} dependencies", dep_libs.len());
+        }
+        return compile_file_with_deps(&main_file.to_string_lossy(), &output_str, dep_libs, OptLevel::Standard);
+    }
+
+    #[cfg(not(feature = "llvm"))]
+    {
+        println!("✓ Type check passed (binary)");
+        println!("Note: Native compilation requires LLVM support.");
+        ExitCode::SUCCESS
+    }
+}
+
+/// Compile a file to an executable, linking with dependency libraries
+#[cfg(feature = "llvm")]
+fn compile_file_with_deps(path: &str, output: &str, dep_libs: &[std::path::PathBuf], opt_level: OptLevel) -> ExitCode {
+    use inkwell::context::Context;
+    use std::path::Path;
+    use std::process::Command;
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Create LLVM context and compiler in AOT mode
+    let context = Context::create();
+    let mut compiler =
+        match LlvmCompiler::with_mode(&context, opt_level, CompileMode::Aot) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Failed to initialize LLVM compiler: {}", e);
+                return ExitCode::from(1);
+            }
+        };
+
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
+    // Compile
+    if let Err(e) = compiler.compile(&source) {
+        eprintln!("Compilation error in '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    // Get link libraries from #[link("lib")] attributes on extern blocks
+    let link_libs: Vec<String> = compiler.get_link_libraries()
+        .iter()
+        .map(|lib| format!("-l{}", lib))
+        .collect();
+
+    // Write object file
+    let obj_path = format!("{}.o", output);
+    if let Err(e) = compiler.write_object_file(Path::new(&obj_path)) {
+        eprintln!("Failed to write object file: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Find the runtime
+    let runtime_result = find_runtime(false, false, false);
+    if runtime_result.is_none() {
+        eprintln!("Error: Could not find sigil runtime");
+        eprintln!("Expected: ./runtime/libsigil_runtime.a");
+        let _ = std::fs::remove_file(&obj_path);
+        return ExitCode::from(1);
+    }
+    let (runtime, _) = runtime_result.unwrap();
+
+    // Build linker arguments
+    let linker = find_linker();
+    let mut args: Vec<String> = vec![
+        obj_path.clone(),
+        runtime,
+        "-o".to_string(),
+        output.to_string(),
+        "-lm".to_string(),
+    ];
+
+    // Add dependency libraries
+    for lib_path in dep_libs {
+        args.push(lib_path.to_string_lossy().to_string());
+    }
+
+    // Add libraries from #[link("lib")] attributes on extern blocks
+    for lib_flag in &link_libs {
+        args.push(lib_flag.clone());
+    }
+
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let link_result = Command::new(&linker).args(&args_refs).status();
+
+    // Clean up object file
+    let _ = std::fs::remove_file(&obj_path);
+
+    match link_result {
+        Ok(status) if status.success() => {
+            println!("Successfully compiled to: {}", output);
+            ExitCode::SUCCESS
+        }
+        Ok(status) => {
+            eprintln!("Linker failed with status: {}", status);
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("Failed to run linker '{}': {}", linker, e);
+            ExitCode::from(1)
+        }
+    }
+}
+
+/// Compile a library to a static archive (.a file)
+#[cfg(feature = "llvm")]
+fn compile_library(path: &str, name: &str, target_dir: &std::path::Path) -> ExitCode {
+    use inkwell::context::Context;
+    use std::process::Command;
+
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error reading file '{}': {}", path, e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Create LLVM context and compiler in AOT mode
+    let context = Context::create();
+    let mut compiler = match LlvmCompiler::with_mode(&context, OptLevel::Standard, CompileMode::Aot) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to initialize LLVM compiler: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
+    // Compile (generates LLVM IR without requiring main)
+    if let Err(e) = compiler.compile(&source) {
+        eprintln!("Compilation error in '{}': {}", path, e);
+        return ExitCode::from(1);
+    }
+
+    // Write object file
+    let obj_path = target_dir.join(format!("{}.o", name));
+    if let Err(e) = compiler.write_object_file(&obj_path) {
+        eprintln!("Failed to write object file: {}", e);
+        return ExitCode::from(1);
+    }
+
+    // Create static archive (.a file) using ar
+    let lib_name = format!("lib{}.a", name.replace('-', "_"));
+    let lib_path = target_dir.join(&lib_name);
+
+    println!("Creating static library: {}", lib_path.display());
+
+    let ar_result = Command::new("ar")
+        .args(["rcs", &lib_path.to_string_lossy(), &obj_path.to_string_lossy()])
+        .status();
+
+    // Clean up object file
+    let _ = std::fs::remove_file(&obj_path);
+
+    match ar_result {
+        Ok(status) if status.success() => {
+            println!("Successfully built library: {}", lib_path.display());
+            ExitCode::SUCCESS
+        }
+        Ok(status) => {
+            eprintln!("ar failed with status: {}", status);
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("Failed to run ar: {}", e);
+            eprintln!("Make sure 'ar' is installed (part of binutils).");
+            ExitCode::from(1)
+        }
     }
 }
 
 /// Recursively collect all .sg and .sigil files from a directory.
 fn collect_migrate_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    collect_migrate_files_with_rs(dir, false)
+}
+
+/// Recursively collect all .sg, .sigil, and optionally .rs files from a directory.
+fn collect_migrate_files_with_rs(dir: &std::path::Path, include_rs: bool) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
 
-    fn visit_dir(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    fn visit_dir(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>, include_rs: bool) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    visit_dir(&path, files);
-                } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
-                    // Skip backup files
-                    if !path.to_string_lossy().ends_with(".bak") {
-                        files.push(path);
+                    // Skip target directories (Rust build artifacts)
+                    if path.file_name().map_or(false, |n| n == "target") {
+                        continue;
+                    }
+                    visit_dir(&path, files, include_rs);
+                } else {
+                    let ext_ok = path.extension().map_or(false, |ext| {
+                        ext == "sigil" || ext == "sg" || (include_rs && ext == "rs")
+                    });
+                    if ext_ok {
+                        // Skip backup files
+                        if !path.to_string_lossy().ends_with(".bak") {
+                            files.push(path);
+                        }
                     }
                 }
             }
         }
     }
 
-    visit_dir(dir, &mut files);
+    visit_dir(dir, &mut files, include_rs);
     files.sort();
     files
 }
 
-/// Migrate all .sg/.sigil files in a directory (recursive).
-fn migrate_directory(dir_path: &str, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
-    let path = std::path::Path::new(dir_path);
-    if !path.exists() {
+/// Migrate all .sg/.sigil/.rs files in a directory (recursive).
+/// With output_dir, preserves directory structure and converts .rs → .sg.
+fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+    let input_path = std::path::Path::new(dir_path);
+    if !input_path.exists() {
         eprintln!("Error: directory '{}' does not exist", dir_path);
         return ExitCode::from(1);
     }
 
-    let files = collect_migrate_files(path);
+    let files = collect_migrate_files_with_rs(input_path, output_dir.is_some());
     if files.is_empty() {
-        eprintln!("No .sg or .sigil files found in '{}'", dir_path);
+        if output_dir.is_some() {
+            eprintln!("No .sg, .sigil, or .rs files found in '{}'", dir_path);
+        } else {
+            eprintln!("No .sg or .sigil files found in '{}'", dir_path);
+        }
         return ExitCode::from(1);
     }
 
     println!("Migrating {} files in '{}'...", files.len(), dir_path);
+    if let Some(out_dir) = output_dir {
+        println!("Output directory: {}", out_dir);
+    }
     println!();
 
     let mut total_files_changed = 0;
@@ -3718,16 +5113,35 @@ fn migrate_directory(dir_path: &str, dry_run: bool, backup: bool, evidentiality:
         let file_str = file.to_string_lossy();
         // Read file to count changes before calling migrate_file
         if let Ok(source) = fs::read_to_string(file) {
-            // Quick check: does this file have any Rust syntax?
+            // Quick check: does this file have any Rust syntax or attributes?
             let has_rust = source.contains("pub ") || source.contains("fn ") || source.contains("let ")
                 || source.contains("struct ") || source.contains("impl ") || source.contains("trait ")
-                || source.contains("enum ") || source.contains("match ") || source.contains("::");
-            if !has_rust && !evidentiality {
-                continue; // Skip already-native files silently
+                || source.contains("enum ") || source.contains("match ") || source.contains("::")
+                || source.contains("#[");
+            if !has_rust && !evidentiality && output_dir.is_none() {
+                continue; // Skip already-native files silently (in-place mode only)
             }
         }
 
-        let result = migrate_file(&file_str, dry_run, backup, evidentiality);
+        // Compute output subdirectory preserving structure
+        let file_output_dir = if let Some(out_dir) = output_dir {
+            // Get relative path from input directory
+            let rel_path = file.strip_prefix(input_path).unwrap_or(file);
+            if let Some(parent) = rel_path.parent() {
+                let parent_str = parent.to_string_lossy();
+                if parent_str.is_empty() {
+                    Some(out_dir.to_string())
+                } else {
+                    Some(format!("{}/{}", out_dir, parent_str))
+                }
+            } else {
+                Some(out_dir.to_string())
+            }
+        } else {
+            None
+        };
+
+        let result = migrate_file(&file_str, file_output_dir.as_deref(), dry_run, backup, evidentiality);
         if result == ExitCode::SUCCESS {
             total_files_changed += 1;
         } else {
@@ -3843,7 +5257,7 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
             }
         }
 
-        let result = migrate_file(&file_str, dry_run, backup, evidentiality);
+        let result = migrate_file(&file_str, None, dry_run, backup, evidentiality);
         if result == ExitCode::SUCCESS {
             files_migrated += 1;
         } else {
@@ -3899,13 +5313,31 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
 /// - Model·predict/infer → ◊ (Predicted)
 /// - rand/random → ? (Uncertain)
 /// - Time·now → ~ (Reported)
-fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+///
+/// With output_dir, writes to that directory (converting .rs → .sg).
+/// Without output_dir, modifies files in-place.
+fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error reading '{}': {}", path, e);
             return ExitCode::from(1);
         }
+    };
+
+    // Compute output path
+    let output_path = if let Some(out_dir) = output_dir {
+        let input_path = std::path::Path::new(path);
+        let file_name = input_path.file_name().unwrap_or_default().to_string_lossy();
+        // Change .rs extension to .sg
+        let new_name = if file_name.ends_with(".rs") {
+            file_name.trim_end_matches(".rs").to_string() + ".sg"
+        } else {
+            file_name.to_string()
+        };
+        format!("{}/{}", out_dir, new_name)
+    } else {
+        path.to_string()
     };
 
     // Simple replacements (not keywords - always replace)
@@ -3932,9 +5364,9 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
         ("match", "⌥", &[" ", "("]),
         ("while", "⟳", &[" ", "("]),
         ("for", "∀", &[" ", "("]),
-        ("return", "⤺", &[" ", ";", "("]),
-        ("break", "⊗", &[";", " "]),
-        ("continue", "↻", &[";", " "]),
+        ("return", "⤺", &[" ", ";", "(", ","]),
+        ("break", "⊗", &[";", " ", ","]),
+        ("continue", "↻", &[";", " ", ","]),
     ];
 
     let mut result = source.clone();
@@ -3949,6 +5381,128 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
             result = result.replace(from, to);
         }
     }
+
+    // Convert Rust attributes #[...] and #![...] to Sigil rune comments //@ rune: ...
+    // Only converts line-starting attributes (not inline ones like #[from] in enum variants)
+    // Inner attributes #![...] become //@ rune!: ...
+    let mut attr_result = String::with_capacity(result.len());
+    let mut attr_changes = 0;
+    let mut chars = result.chars().peekable();
+    let mut line_start = true;
+
+    while let Some(c) = chars.next() {
+        if c == '\n' {
+            attr_result.push(c);
+            line_start = true;
+            continue;
+        }
+
+        if line_start && (c == ' ' || c == '\t') {
+            attr_result.push(c);
+            continue;
+        }
+
+        if line_start && c == '#' {
+            // Check for #![ (inner attribute) or #[ (outer attribute)
+            let is_inner = chars.peek() == Some(&'!');
+            if is_inner {
+                chars.next(); // consume '!'
+            }
+
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // Collect the attribute content until matching ']'
+                // Skip bracket counting inside string literals
+                let mut attr_content = String::new();
+                let mut bracket_depth = 1;
+                let mut in_string = false;
+                let mut escape_next = false;
+                while let Some(ac) = chars.next() {
+                    if escape_next {
+                        escape_next = false;
+                        attr_content.push(ac);
+                        continue;
+                    }
+                    if ac == '\\' && in_string {
+                        escape_next = true;
+                        attr_content.push(ac);
+                        continue;
+                    }
+                    if ac == '"' {
+                        in_string = !in_string;
+                        attr_content.push(ac);
+                        continue;
+                    }
+                    if !in_string {
+                        if ac == '[' {
+                            bracket_depth += 1;
+                        } else if ac == ']' {
+                            bracket_depth -= 1;
+                            if bracket_depth == 0 {
+                                break;
+                            }
+                        }
+                    }
+                    attr_content.push(ac);
+                }
+
+                // Convert the attribute content
+                // Replace :: with · in attribute names (e.g., tokio::test → tokio·test)
+                let converted_attr = attr_content.replace("::", "·");
+
+                // Known Sigil rune attributes (convert to //@ rune:)
+                // Unknown attributes become regular comments (// #[...])
+                let attr_name = converted_attr.split('(').next().unwrap_or(&converted_attr).trim();
+                let known_runes = [
+                    // Core derive and testing
+                    "derive", "test", "default", "ignore",
+                    // Error handling (thiserror)
+                    "error", "from", "source",
+                    // Serde
+                    "serde",
+                    // Lints (kept as regular comments since Sigil has different lint system)
+                    // "allow", "warn", "deny",
+                    // Documentation
+                    "doc", "deprecated",
+                    // Async
+                    "tokio·test", "async_trait",
+                    // Note: Python bindings (pyo3, pyfunction, etc.) are Rust-specific FFI
+                    // Note: cfg, cfg_attr, inline, must_use, repr are Rust-specific
+                ];
+
+                let is_known_rune = known_runes.iter().any(|&r| attr_name == r || attr_name.starts_with(&format!("{}(", r)));
+
+                if is_known_rune {
+                    if is_inner {
+                        attr_result.push_str("//@ rune!: ");
+                    } else {
+                        attr_result.push_str("//@ rune: ");
+                    }
+                    attr_result.push_str(&converted_attr);
+                } else {
+                    // Unknown attribute - keep as regular comment without #[ prefix
+                    // (Sigil parser warns about comments containing #[...])
+                    attr_result.push_str("// ");
+                    attr_result.push_str(&converted_attr);
+                }
+                attr_changes += 1;
+                line_start = false;
+                continue;
+            } else if is_inner {
+                // Was #! but not #![, put it back
+                attr_result.push('#');
+                attr_result.push('!');
+                line_start = false;
+                continue;
+            }
+        }
+
+        line_start = false;
+        attr_result.push(c);
+    }
+
+    result = attr_result;
+    changes += attr_changes;
 
     // Apply keyword replacements with word boundary check
     for (keyword, replacement, suffixes) in keyword_replacements {
@@ -4127,8 +5681,8 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
         return ExitCode::SUCCESS;
     }
 
-    // Create backup if requested
-    if backup {
+    // Create backup if requested (only for in-place migration)
+    if backup && output_dir.is_none() {
         let backup_path = format!("{}.bak", path);
         if let Err(e) = fs::write(&backup_path, &source) {
             eprintln!("Error creating backup '{}': {}", backup_path, e);
@@ -4137,13 +5691,25 @@ fn migrate_file(path: &str, dry_run: bool, backup: bool, evidentiality: bool) ->
         println!("Created backup: {}", backup_path);
     }
 
+    // Create output directory if needed
+    if let Some(out_dir) = output_dir {
+        if let Err(e) = fs::create_dir_all(out_dir) {
+            eprintln!("Error creating output directory '{}': {}", out_dir, e);
+            return ExitCode::from(1);
+        }
+    }
+
     // Write the migrated file
-    if let Err(e) = fs::write(path, &result) {
-        eprintln!("Error writing '{}': {}", path, e);
+    if let Err(e) = fs::write(&output_path, &result) {
+        eprintln!("Error writing '{}': {}", output_path, e);
         return ExitCode::from(1);
     }
 
-    println!("✓ Migrated {} ({} replacements)", path, total_changes);
+    if output_dir.is_some() {
+        println!("✓ Migrated {} → {} ({} replacements)", path, output_path, total_changes);
+    } else {
+        println!("✓ Migrated {} ({} replacements)", path, total_changes);
+    }
     println!();
     if changes > 0 {
         println!("Converted Rust syntax to native Sigil:");

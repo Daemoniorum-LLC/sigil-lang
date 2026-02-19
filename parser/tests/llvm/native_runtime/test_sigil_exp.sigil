@@ -1,0 +1,84 @@
+//! Test sigil_exp function - returns garbage?
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Taylor series for exp
+☉ rite sigil_exp(x: f64) → f64 {
+    ⎇ x > 700.0 { ⤺ 1e300; } ⎉ {}
+    ⎇ x < -700.0 { ⤺ 0.0; } ⎉ {}
+
+    ≔ vary sum = 1.0;
+    ≔ vary term = 1.0;
+    ∀ n ∈ 1..30 {
+        ≔ n_f64 = n as f64;
+        ≔ new_term = term * x / n_f64;
+        ⎇ n < 5 {
+            println!("[EXP-DBG] n={}, term={}, x={}, n_f64={}, new_term={}, sum={}", n, term, x, n_f64, new_term, sum);
+        } ⎉ {}
+        term = new_term;
+        sum = sum + term;
+    }
+    sum
+}
+
+rite main() {
+    println_int(1000);
+
+    // Test exp(0) = 1
+    ≔ e0 = sigil_exp(0.0);
+    println!("exp(0)={}", e0);
+
+    // Test exp(1) ~= 2.718
+    ≔ e1 = sigil_exp(1.0);
+    println!("exp(1)={}", e1);
+
+    // Test exp(-1) ~= 0.368
+    ≔ em1 = sigil_exp(-1.0);
+    println!("exp(-1)={}", em1);
+
+    // Test the problematic value from CE loss
+    ≔ eprob = sigil_exp(-12.527);
+    println!("exp(-12.527)={}", eprob);
+
+    println_int(9999);
+}

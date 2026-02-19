@@ -1,0 +1,168 @@
+// G52: BPE training test
+
+Σ VocabEntry { id: i64, bytes: Vec<u8>, frequency: i64 }
+
+⊢ VocabEntry {
+    rite from_byte(b: i64) → Self {
+        ≔ vary bytes = vec![];
+        bytes.push(b as u8);
+        Self { id: b, bytes: bytes, frequency: 0 }
+    }
+    rite new(id: i64, bytes: Vec<u8>, freq: i64) → Self {
+        Self { id: id, bytes: bytes, frequency: freq }
+    }
+}
+
+Σ MergeRule { left: i64, right: i64, merged: i64, priority: i64 }
+
+⊢ MergeRule {
+    rite new(l: i64, r: i64, m: i64, p: i64) → Self {
+        Self { left: l, right: r, merged: m, priority: p }
+    }
+}
+
+Σ BPETokenizer {
+    vocab: Vec<VocabEntry>,
+    merges: Vec<MergeRule>,
+    vocab_size: i64,
+}
+
+⊢ BPETokenizer {
+    rite new() → Self {
+        ≔ vary vocab = vec![];
+        ∀ b ∈ 0..256 {
+            vocab.push(VocabEntry·from_byte(b));
+        }
+        Self { vocab: vocab, merges: vec![], vocab_size: 256 }
+    }
+}
+
+☉ rite apply_merge(tokens: Vec<i64>, left: i64, right: i64, merged: i64) → Vec<i64> {
+    ≔ vary result = vec![];
+    ≔ vary i = 0;
+    ≔ len = tokens.len() as i64;
+    ∀ _ ∈ 0..len {
+        ⎇ i >= len { } ⎉ {
+            ⎇ i + 1 < len && tokens[i as usize] == left && tokens[(i+1) as usize] == right {
+                result.push(merged);
+                i = i + 2;
+            } ⎉ {
+                result.push(tokens[i as usize]);
+                i = i + 1;
+            }
+        }
+    }
+    result
+}
+
+Σ PairCount { left: i64, right: i64, count: i64 }
+⊢ PairCount { rite new(l: i64, r: i64) → Self { Self { left: l, right: r, count: 1 } } }
+
+Σ PairCounter { pairs: Vec<PairCount> }
+⊢ PairCounter {
+    rite new() → Self { Self { pairs: vec![] } }
+    rite add(&vary this, l: i64, r: i64) {
+        ≔ vary found = false;
+        ∀ i ∈ 0..this.pairs.len() {
+            ⎇ this.pairs[i].left == l && this.pairs[i].right == r {
+                this.pairs[i].count += 1;
+                found = true;
+            } ⎉ {}
+        }
+        ⎇ !found { this.pairs.push(PairCount·new(l, r)); } ⎉ {}
+    }
+    rite best(&this) → (i64, i64, i64) {
+        ⎇ this.pairs.len() == 0 { ⤺ (-1, -1, 0); } ⎉ {}
+        ≔ vary bi = 0;
+        ≔ vary bc = this.pairs[0].count;
+        ∀ i ∈ 1..this.pairs.len() {
+            ⎇ this.pairs[i].count > bc { bi = i; bc = this.pairs[i].count; } ⎉ {}
+        }
+        ≔ b = &this.pairs[bi];
+        (b.left, b.right, b.count)
+    }
+}
+
+☉ rite train_bpe(corpus: &[u8], target_vocab: i64) → BPETokenizer {
+    println!("  train_bpe: starting, target_vocab={}", target_vocab);
+    ≔ vary tokenizer = BPETokenizer·new();
+    ≔ vary tokens = vec![];
+    println!("  train_bpe: converting corpus to tokens, len={}", corpus.len());
+    ∀ i ∈ 0..corpus.len() {
+        tokens.push(corpus[i] as i64);
+    }
+    println!("  train_bpe: have {} tokens", tokens.len());
+
+    ≔ num_merges = target_vocab - 256;
+    println!("  train_bpe: doing {} merges", num_merges);
+
+    ∀ merge_idx ∈ 0..num_merges {
+        ⎇ tokenizer.vocab_size >= target_vocab {
+            println!("  train_bpe: reached target vocab");
+        } ⎉ {
+            // Count pairs
+            ≔ vary counter = PairCounter·new();
+            ⎇ tokens.len() >= 2 {
+                ∀ i ∈ 0..(tokens.len() - 1) {
+                    counter.add(tokens[i], tokens[i+1]);
+                }
+            } ⎉ {}
+
+            ≔ (bl, br, bc) = counter.best();
+            println!("  Merge {}: best pair ({}, {}) count={}", merge_idx, bl, br, bc);
+
+            ⎇ bc < 2 {
+                println!("  train_bpe: stopping, best count < 2");
+            } ⎉ {
+                // Get the byte sequences
+                ≔ new_id = tokenizer.vocab_size;
+                println!("    Getting vocab entry {}...", bl);
+                ≔ le = &tokenizer.vocab[bl as usize];
+                println!("    Got le, id={}, bytes.len={}", le.id, le.bytes.len());
+
+                println!("    Getting vocab entry {}...", br);
+                ≔ re = &tokenizer.vocab[br as usize];
+                println!("    Got re, id={}, bytes.len={}", re.id, re.bytes.len());
+
+                // Create merged bytes
+                ≔ vary nb = vec![];
+                println!("    Copying left bytes...");
+                ∀ i ∈ 0..le.bytes.len() {
+                    nb.push(le.bytes[i]);
+                }
+                println!("    Copying right bytes...");
+                ∀ i ∈ 0..re.bytes.len() {
+                    nb.push(re.bytes[i]);
+                }
+                println!("    New bytes len: {}", nb.len());
+
+                // Add to vocab
+                println!("    Creating new entry...");
+                tokenizer.vocab.push(VocabEntry·new(new_id, nb, bc));
+                tokenizer.merges.push(MergeRule·new(bl, br, new_id, tokenizer.merges.len() as i64));
+                println!("    Applying merge...");
+                tokens = apply_merge(tokens, bl, br, new_id);
+                tokenizer.vocab_size += 1;
+                println!("    Now have {} tokens, vocab_size={}", tokens.len(), tokenizer.vocab_size);
+            }
+        }
+    }
+    println!("  train_bpe: done, vocab_size={}", tokenizer.vocab_size);
+    tokenizer
+}
+
+rite main() {
+    println!("Testing BPE training...");
+
+    // Small corpus: "AABCABC" repeated
+    ≔ corpus = "AABCABCAABCABC";
+    println!("Corpus: '{}' ({} bytes)", corpus, corpus.len());
+
+    println!("Training BPE to vocab_size=260...");
+    ≔ tokenizer = train_bpe(corpus.as_bytes(), 260);
+
+    println!("Final vocab_size: {}", tokenizer.vocab_size);
+    println!("Number of merges: {}", tokenizer.merges.len());
+
+    println!("Done!");
+}

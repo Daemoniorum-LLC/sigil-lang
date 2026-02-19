@@ -459,7 +459,9 @@ fn lower_visibility(v: ast::Visibility) -> IrVisibility {
 fn lower_evidentiality(e: ast::Evidentiality) -> IrEvidence {
     match e {
         ast::Evidentiality::Known => IrEvidence::Known,
-        ast::Evidentiality::Uncertain | ast::Evidentiality::Predicted => IrEvidence::Uncertain,
+        ast::Evidentiality::Uncertain | ast::Evidentiality::Predicted | ast::Evidentiality::Chaos => {
+            IrEvidence::Uncertain
+        }
         ast::Evidentiality::Reported => IrEvidence::Reported,
         ast::Evidentiality::Paradox => IrEvidence::Paradox,
     }
@@ -1157,7 +1159,9 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             // Use the explicit evidentiality marker if provided, otherwise infer from inner
             let evidence = match evidentiality {
                 Some(ast::Evidentiality::Known) => IrEvidence::Known,
-                Some(ast::Evidentiality::Uncertain) | Some(ast::Evidentiality::Predicted) => IrEvidence::Uncertain,
+                Some(ast::Evidentiality::Uncertain)
+                | Some(ast::Evidentiality::Predicted)
+                | Some(ast::Evidentiality::Chaos) => IrEvidence::Uncertain,
                 Some(ast::Evidentiality::Reported) => IrEvidence::Reported,
                 Some(ast::Evidentiality::Paradox) => IrEvidence::Uncertain, // Trust boundary
                 None => get_operation_evidence(&inner_ir),
@@ -1183,6 +1187,9 @@ fn lower_expr(ctx: &mut LoweringContext, expr: &ast::Expr) -> IrOperation {
             ty: IrType::Infer,
             evidence: IrEvidence::Paradox, // Unsafe always produces paradox
         },
+
+        // Attributed expression - lower the inner expression (attributes are compile-time)
+        ast::Expr::Attributed { expr, .. } => lower_expr(ctx, expr),
 
         ast::Expr::Async { block, is_move } => IrOperation::Async {
             body: Box::new(lower_block(ctx, block)),
@@ -1590,7 +1597,9 @@ fn pipe_op_evidence(op: &ast::PipeOp) -> IrEvidence {
 fn ast_evidence_to_ir(ev: ast::Evidentiality) -> IrEvidence {
     match ev {
         ast::Evidentiality::Known => IrEvidence::Known,
-        ast::Evidentiality::Uncertain | ast::Evidentiality::Predicted => IrEvidence::Uncertain,
+        ast::Evidentiality::Uncertain | ast::Evidentiality::Predicted | ast::Evidentiality::Chaos => {
+            IrEvidence::Uncertain
+        }
         ast::Evidentiality::Reported => IrEvidence::Reported,
         ast::Evidentiality::Paradox => IrEvidence::Paradox,
     }
@@ -1960,7 +1969,7 @@ fn lower_impl_block(ctx: &mut LoweringContext, i: &ast::ImplBlock) -> IrImplBloc
 fn lower_const_def(ctx: &mut LoweringContext, c: &ast::ConstDef) -> IrConstant {
     IrConstant {
         name: c.name.name.clone(),
-        ty: lower_type_expr(&c.ty),
+        ty: c.ty.as_ref().map(lower_type_expr).unwrap_or(IrType::Infer),
         value: lower_expr(ctx, &c.value),
         visibility: lower_visibility(c.visibility),
         span: None,

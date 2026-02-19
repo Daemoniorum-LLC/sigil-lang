@@ -26,38 +26,38 @@ sigil Square {
 
 ⊢ Drawable ∀ Circle {
     rite draw(&this) {
-        println("Drawing circle with radius: " + this·radius·to_string());
+        println("Drawing circle with radius: {}", this.radius);
     }
 
     rite area(&this) → f64 {
-        3.14159 * this·radius * this·radius
+        3.14159 * this.radius * this.radius
     }
 }
 
 ⊢ Named ∀ Circle {
     rite name(&this) → String {
-        this·label·clone()
+        this.label.clone()
     }
 }
 
 ⊢ Drawable ∀ Square {
     rite draw(&this) {
-        println("Drawing square with side: " + this·side·to_string());
+        println("Drawing square with side: {}", this.side);
     }
 
     rite area(&this) → f64 {
-        this·side * this·side
+        this.side * this.side
     }
 }
 
 rite draw_shape<T: Drawable>(shape: &T) {
-    shape·draw();
-    ≔ a = shape·area();
-    println("Area: " + a·to_string());
+    shape.draw();
+    ≔ a = shape.area();
+    println("Area: {}", a);
 }
 
 rite main() {
-    ≔ c = Circle { radius: 5.0, label: "MyCircle"·to_string() };
+    ≔ c = Circle { radius: 5.0, label: "MyCircle" };
     ≔ s = Square { side: 4.0 };
     draw_shape(&c);
     draw_shape(&s);

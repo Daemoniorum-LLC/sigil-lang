@@ -1,0 +1,12 @@
+// Test G25: Function calls in arithmetic expressions
+// This triggers "Both operands to a binary operator are not of the same type"
+// when function lookup returns pointer instead of calling the function
+
+rite get_value() → i64 {
+    42
+}
+
+rite main() {
+    ≔ x = get_value() * 2;
+    println!("{}", x);  // Should print 84
+}

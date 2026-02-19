@@ -1,0 +1,19 @@
+// Test: Enum match expression
+// Expected exit code: 20
+
+ᛈ Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+rite main() → i64 {
+    ≔ d = Direction·Down;
+    ⌥ d {
+        Direction·Up => 10,
+        Direction·Down => 20,
+        Direction·Left => 30,
+        Direction·Right => 40,
+    }
+}

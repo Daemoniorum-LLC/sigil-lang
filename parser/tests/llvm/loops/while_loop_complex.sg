@@ -1,0 +1,26 @@
+// G42: While loop with complex body (matches nihil fill_randn pattern)
+//
+// Expected: prints pairs of values then "Done!"
+// Actual: LLVM IR verification fails - "Basic Block does not have terminator"
+
+rite main() {
+    ≔ len = 10;
+    ≔ vary i = 0;
+
+    ⟳ i < len {
+        // Multiple variable declarations inside while
+        ≔ z0 = i * 2;
+        ≔ z1 = i * 2 + 1;
+
+        println!("z0={}, z1={}", z0, z1);
+
+        // Conditional inside while
+        ⎇ i + 1 < len {
+            println!("  (has next)");
+        }
+
+        i += 2;
+    }
+
+    println!("Done!");
+}

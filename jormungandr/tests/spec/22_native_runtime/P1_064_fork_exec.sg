@@ -1,0 +1,46 @@
+// Test: Process spawning (fork/exec/waitpid)
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Process spawn
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·fork() creates a child process, Sys·execve() replaces
+// the child's image, and Sys·waitpid() waits for child termination.
+// In interpreter mode these are simulated with shell() under the hood.
+//
+// Expected behavior:
+// - Sys·fork() returns pid > 0 in parent, 0 in child
+// - Sys·waitpid(pid) returns exit status
+// - Sys·spawn(cmd, args) is a convenience wrapper returning {pid, status}
+
+rite main() {
+    // Test 1: Spawn a simple command and wait for it
+    ≔ result = Sys·spawn("echo", ["hello spawn"]);
+    ⎇ result.status == 0 {
+        println("spawn_echo: OK");
+    } ⎉ {
+        println("spawn_echo: FAILED");
+    }
+
+    // Test 2: Spawn should capture output
+    ⎇ result.stdout == "hello spawn\n" {
+        println("spawn_stdout: OK");
+    } ⎉ {
+        println("spawn_stdout: FAILED");
+    }
+
+    // Test 3: Spawn a command that exits with error
+    ≔ fail_result = Sys·spawn("false", []);
+    ⎇ fail_result.status != 0 {
+        println("spawn_fail: OK");
+    } ⎉ {
+        println("spawn_fail: FAILED");
+    }
+
+    // Test 4: Sys·getpid() returns current process id
+    ≔ my_pid = Sys·getpid();
+    ⎇ my_pid > 0 {
+        println("getpid: OK");
+    } ⎉ {
+        println("getpid: FAILED");
+    }
+}

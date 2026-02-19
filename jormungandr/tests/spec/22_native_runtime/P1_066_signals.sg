@@ -1,0 +1,75 @@
+// Test: Signal handling (SIGWINCH, SIGCHLD)
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Signal handling
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·signal_register() can install signal handlers and
+// Sys·signal_pending() can check for delivered signals. In interpreter
+// mode, signals are simulated. In native mode, real sigaction() is used.
+//
+// Expected behavior:
+// - Signal constants are defined (SIGWINCH, SIGCHLD, SIGTERM, SIGINT)
+// - Sys·signal_register(signum) returns 0 on success
+// - Sys·signal_pending(signum) returns false when no signal delivered
+// - Sys·signal_send(pid, signum) sends a signal (for testing)
+
+rite main() {
+    // Test 1: Signal constants exist and are positive
+    ⎇ SIGWINCH() > 0 {
+        println("SIGWINCH: OK");
+    } ⎉ {
+        println("SIGWINCH: FAILED");
+    }
+
+    ⎇ SIGCHLD() > 0 {
+        println("SIGCHLD: OK");
+    } ⎉ {
+        println("SIGCHLD: FAILED");
+    }
+
+    ⎇ SIGTERM() > 0 {
+        println("SIGTERM: OK");
+    } ⎉ {
+        println("SIGTERM: FAILED");
+    }
+
+    // Test 2: Register a signal handler
+    ≔ reg_result = Sys·signal_register(SIGWINCH());
+    ⎇ reg_result == 0 {
+        println("signal_register: OK");
+    } ⎉ {
+        println("signal_register: FAILED");
+    }
+
+    // Test 3: No signal should be pending initially
+    ≔ pending = Sys·signal_pending(SIGWINCH());
+    ⎇ pending == false {
+        println("signal_not_pending: OK");
+    } ⎉ {
+        println("signal_not_pending: FAILED");
+    }
+
+    // Test 4: Send a signal and check pending
+    ≔ send_result = Sys·signal_send(SIGWINCH());
+    ⎇ send_result == 0 {
+        println("signal_send: OK");
+    } ⎉ {
+        println("signal_send: FAILED");
+    }
+
+    // Test 5: Signal should now be pending
+    ≔ pending2 = Sys·signal_pending(SIGWINCH());
+    ⎇ pending2 == true {
+        println("signal_pending: OK");
+    } ⎉ {
+        println("signal_pending: FAILED");
+    }
+
+    // Test 6: Sending an unregistered signal should fail
+    ≔ send_unreg = Sys·signal_send(SIGKILL());
+    ⎇ send_unreg == -3 {
+        println("signal_send_unreg: OK");
+    } ⎉ {
+        println("signal_send_unreg: FAILED");
+    }
+}

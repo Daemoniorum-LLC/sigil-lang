@@ -1,0 +1,73 @@
+// Test: Impl Block Where Clauses
+// Spec: RUST-CODEGEN-PARSER-GAPS-SPEC.md § 10 (Gap J)
+// Priority: P1 - Clean impl constraints
+//
+// Purpose: Validate ∋ where clauses in impl blocks emit correctly
+//
+// Key rules:
+//   - ⊢<T> Foo<T> ∋ T: Clone { } → impl<T> Foo<T> where T: Clone { }
+//   - Multiple predicates separated by commas
+//   - Trait impl: ⊢<T> Trait for Type ∋ T: Bound { }
+
+// EC₁: Single predicate
+sigil Container<T> {
+    value: T,
+}
+
+⊢<T> Container<T> ∋ T: Clone {
+    rite clone_value(&self) → T {
+        self.value.clone()
+    }
+}
+
+// EC₂: Multiple predicates
+sigil Pair<T, U> {
+    first: T,
+    second: U,
+}
+
+⊢<T, U> Pair<T, U> ∋ T: Clone, U: Clone {
+    rite clone_both(&self) → (T, U) {
+        (self.first.clone(), self.second.clone())
+    }
+}
+
+// EC₃: Multiple bounds on single type
+sigil Wrapper<T> {
+    inner: T,
+}
+
+⊢<T> Wrapper<T> ∋ T: Clone + Default {
+    rite clone_or_default(&self) → T {
+        self.inner.clone()
+    }
+}
+
+// EC₄: Trait implementation with where clause
+⊢<T> Default ∀ Container<T> ∋ T: Default {
+    rite default() → Self {
+        Container { value: T·default() }
+    }
+}
+
+// EC₅: Method with its own where clause (combined)
+sigil Processor<T> {
+    data: T,
+}
+
+⊢<T> Processor<T> ∋ T: Clone {
+    rite process<U>(&self, other: U) → U ∋ U: Default {
+        U·default()
+    }
+}
+
+// Main function for testing
+rite main() {
+    ≔ c = Container { value: 42 };
+    ≔ cloned = c.clone_value();
+    println!("Cloned: {}", cloned);
+
+    ≔ p: Pair<i32, i32> = Pair { first: 1, second: 2 };
+    ≔ (a, b) = p.clone_both();
+    println!("Pair: {} {}", a, b);
+}

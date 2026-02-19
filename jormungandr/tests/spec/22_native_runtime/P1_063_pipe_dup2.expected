@@ -1,0 +1,5 @@
+pipe_create: OK
+pipe_fds_distinct: OK
+pipe_write: OK
+pipe_read: OK
+dup2: OK

@@ -1,0 +1,140 @@
+//! Test: Raw Pointer Type Annotations (Gap I)
+//!
+//! Spec Reference: RUST-CODEGEN-PARSER-GAPS-SPEC.md Section 10
+//!
+//! This test verifies correct handling of raw pointer types and documents
+//! the need for explicit type annotations where Rust's type inference
+//! cannot determine the pointee type.
+//!
+//! Key behaviors:
+//! 1. *◆ T (const pointer) emits *const T
+//! 2. *vary T (mut pointer) emits *mut T
+//! 3. Explicit type annotations on pointer bindings
+//! 4. Pointer arithmetic with .add(), .offset()
+//! 5. Pointer dereferencing in unsafe blocks
+//!
+//! IMPORTANT: When using .add() or .offset() on raw pointers, Rust
+//! requires the pointee type to be known at the call site. The Sigil
+//! interpreter can infer this, but Rust cannot. Explicit type annotations
+//! are required in the Sigil source for these cases.
+
+// Test 1: Basic const pointer type
+☉ rite get_const_ptr<T>(slice: &[T]) → *◆ T {
+    slice.as_ptr()
+}
+
+// Test 2: Basic mut pointer type
+☉ rite get_mut_ptr<T>(slice: &vary [T]) → *vary T {
+    slice.as_mut_ptr()
+}
+
+// Test 3: Explicit pointer type annotation (REQUIRED for .add())
+// Without the explicit `: *◆ i32` annotation, Rust cannot infer the type
+// when .add() is called later.
+☉ rite sum_array(data: &[i32], len: usize) → i32 {
+    ≔ ptr: *◆ i32 = data.as_ptr();  // Explicit annotation required!
+    ≔ vary sum = 0;
+
+    ∀ i ∈ 0..len {
+        unsafe {
+            sum += *ptr.add(i);  // .add() needs to know pointee type
+        }
+    }
+
+    sum
+}
+
+// Test 4: Mutable pointer with explicit type
+☉ rite fill_array(data: &vary [i32], len: usize, value: i32) {
+    ≔ ptr: *vary i32 = data.as_mut_ptr();  // Explicit annotation required!
+
+    ∀ i ∈ 0..len {
+        unsafe {
+            *ptr.add(i) = value;
+        }
+    }
+}
+
+// Test 5: Generic function with pointer annotations
+// The generic parameter D must be explicit in the pointer type
+☉ rite copy_elements<D: Copy>(
+    src: &[D],
+    dst: &vary [D],
+    count: usize,
+) {
+    ≔ src_ptr: *◆ D = src.as_ptr();
+    ≔ dst_ptr: *vary D = dst.as_mut_ptr();
+
+    ∀ i ∈ 0..count {
+        unsafe {
+            *dst_ptr.add(i) = *src_ptr.add(i);
+        }
+    }
+}
+
+// Test 6: Multiple pointer operations in single function
+☉ rite element_wise_add(
+    a: &[f64],
+    b: &[f64],
+    result: &vary [f64],
+    len: usize,
+) {
+    ≔ a_ptr: *◆ f64 = a.as_ptr();
+    ≔ b_ptr: *◆ f64 = b.as_ptr();
+    ≔ r_ptr: *vary f64 = result.as_mut_ptr();
+
+    ∀ i ∈ 0..len {
+        unsafe {
+            *r_ptr.add(i) = *a_ptr.add(i) + *b_ptr.add(i);
+        }
+    }
+}
+
+// Test 7: Pointer from struct field (Nihil pattern)
+☉ sigil Buffer<T> {
+    ☉ data: Vec<T>,
+}
+
+⊢<T> Buffer<T> {
+    ☉ rite as_ptr(&this) → *◆ T {
+        this.data.as_ptr()
+    }
+
+    ☉ rite as_mut_ptr(&vary this) → *vary T {
+        this.data.as_mut_ptr()
+    }
+}
+
+// Test 8: Using pointers from struct methods
+☉ rite process_buffer(buffer: &Buffer<i32>) → i32 {
+    ≔ ptr: *◆ i32 = buffer.as_ptr();
+    ≔ len = buffer.data.len();
+    ≔ vary total = 0;
+
+    ∀ i ∈ 0..len {
+        unsafe {
+            total += *ptr.add(i);
+        }
+    }
+
+    total
+}
+
+// Test 9: Pointer offset (isize)
+☉ rite access_with_offset(data: &[i32], offset: isize) → i32 {
+    ≔ ptr: *◆ i32 = data.as_ptr();
+    unsafe {
+        *ptr.offset(offset)
+    }
+}
+
+// Test 10: Cast between pointer types
+☉ rite reinterpret_as_bytes(data: &[u32]) → *◆ u8 {
+    data.as_ptr() as *◆ u8
+}
+
+// Test 12: Pointer arithmetic result type
+// The result of .add() is the same pointer type
+☉ rite advance_pointer(ptr: *◆ i32, n: usize) → *◆ i32 {
+    unsafe { ptr.add(n) }
+}

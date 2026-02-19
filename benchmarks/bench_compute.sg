@@ -1,0 +1,42 @@
+// Compute Intensive Benchmark
+// Tests: ALU throughput, instruction-level parallelism
+
+rite compute_intensive(n: i64) → i64 {
+    ≔ vary a: i64 = 1;
+    ≔ vary b: i64 = 2;
+    ≔ vary c: i64 = 3;
+    ≔ vary d: i64 = 4;
+    ≔ vary i: i64 = 0;
+    
+    // Multiple independent operations for ILP
+    ⟳ i < n {
+        a = a * 3 + 7;
+        b = b * 5 + 11;
+        c = c * 7 + 13;
+        d = d * 11 + 17;
+        a = a ^ b;
+        c = c ^ d;
+        i = i + 1;
+    }
+    ⤺ a + b + c + d;
+}
+
+rite division_heavy(n: i64) → i64 {
+    ≔ vary sum: i64 = 0;
+    ≔ vary i: i64 = 1;
+    
+    // Division is slow - tests ALU scheduling
+    ⟳ i < n {
+        sum = sum + (i * 1000000) / (i + 1);
+        sum = sum + i % 7;
+        i = i + 1;
+    }
+    ⤺ sum;
+}
+
+☉ rite main() → !i32 {
+    ≔ r1 = compute_intensive(100000000);
+    ≔ r2 = division_heavy(10000000);
+    ⎇ r1 != 0 && r2 > 0 { ⤺ 0; }
+    ⤺ 1;
+}

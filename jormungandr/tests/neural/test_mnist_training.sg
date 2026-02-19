@@ -1,0 +1,129 @@
+//! Test: MNIST-style training with SGD optimizer
+//! This test validates end-to-end training with weight updates
+//! Priority: P1 Integration Test - Nihil Dogfooding
+
+rite main() {
+    println("=== MNIST Training Test (SGD Optimizer) ===");
+    println("");
+
+    // =========================================================================
+    // 1. Hyperparameters
+    // =========================================================================
+
+    ≔ learning_rate = 0.1;
+    ≔ num_epochs = 10;
+    ≔ batch_size = 4;
+
+    println("  Hyperparameters:");
+    println("    learning_rate: 0.1");
+    println("    num_epochs: 10");
+    println("    batch_size: 4");
+    println("");
+
+    // =========================================================================
+    // 2. Create model weights (2-layer MLP: 4 -> 8 -> 3)
+    // =========================================================================
+
+    // Input: 4 features, Hidden: 8 neurons, Output: 3 classes
+    // Weights must be mutable for SGD updates
+    ≔ Δ w1 = Tensor·randn([4, 8]);
+    ≔ Δ w2 = Tensor·randn([8, 3]);
+
+    println("  Model architecture: 4 -> 8 -> 3");
+    println("    w1 shape: [4, 8]");
+    println("    w2 shape: [8, 3]");
+    println("");
+
+    // =========================================================================
+    // 3. Create synthetic training data
+    // =========================================================================
+
+    // 4 samples, 4 features each - using randn (requires_grad=true)
+    // Note: Tensor·from currently broken, so using randn for input too
+    ≔ x_train = Tensor·randn([4, 4]);
+
+    // Labels: each sample belongs to a different class (0, 1, 2, 0)
+    ≔ y_train = [0, 1, 2, 0];
+
+    println("  Training data: 4 samples, 4 features");
+    println("  Labels: [0, 1, 2, 0]");
+    println("");
+
+    // =========================================================================
+    // 4. Training loop
+    // =========================================================================
+
+    println("  Training:");
+
+    // Compute initial loss before any updates
+    ≔ h_init = x_train @ w1;
+    ≔ h_init_act = h_init|gelu;
+    ≔ logits_init = h_init_act @ w2;
+    ≔ initial_loss = cross_entropy(logits_init, y_train).item();
+    println("    Initial loss: {}", initial_loss);
+
+    ∀ epoch ∈ 0..num_epochs {
+        // Forward pass
+        ≔ h1 = x_train @ w1;           // [4, 4] @ [4, 8] = [4, 8]
+        ≔ h1_act = h1|gelu;            // Activation
+        ≔ logits = h1_act @ w2;        // [4, 8] @ [8, 3] = [4, 3]
+
+        // Compute loss
+        ≔ loss = cross_entropy(logits, y_train);
+        ≔ loss_val = loss.item();
+
+        // Backward pass
+        ≔ grads = loss|∇;
+
+        // Get gradients for each parameter
+        ≔ grad_w1_opt = grads.get(&w1);
+        ≔ grad_w2_opt = grads.get(&w2);
+
+        // SGD update: w.sub_(grad * lr) - in-place to preserve tensor identity
+        ≔ grad_w1 = grad_w1_opt.unwrap();
+        ≔ grad_w2 = grad_w2_opt.unwrap();
+
+        w1.sub_(grad_w1 * learning_rate);
+        w2.sub_(grad_w2 * learning_rate);
+
+        // Zero gradients (for next iteration)
+        grads.zero();
+
+        // Print progress
+        println("    Epoch {}: loss = {}", epoch + 1, loss_val);
+    }
+
+    println("");
+
+    // =========================================================================
+    // 5. Verify training worked
+    // =========================================================================
+
+    // Final forward pass to get final loss
+    ≔ h_final = x_train @ w1;
+    ≔ h_final_act = h_final|gelu;
+    ≔ logits_final = h_final_act @ w2;
+    ≔ final_loss = cross_entropy(logits_final, y_train);
+    ≔ final_loss_val = final_loss.item();
+
+    println("  Initial loss: {}", initial_loss);
+    println("  Final loss: {}", final_loss_val);
+    println("  Loss reduction: {}%", ((initial_loss - final_loss_val) / initial_loss * 100.0));
+
+    // Verify loss actually DECREASED (true gradient descent working!)
+    assert(final_loss_val < initial_loss, "Loss decreased during training");
+    println("  [PASS] Loss decreased during training");
+
+    // Verify some improvement (at least 1% reduction - with random init, this is enough)
+    ≔ improvement = (initial_loss - final_loss_val) / initial_loss;
+    assert(improvement > 0.01, "At least 1% loss reduction");
+    println("  [PASS] Significant loss reduction (>1%)");
+
+    // Check loss is finite and reasonable
+    assert(final_loss_val > 0.0, "Final loss is positive");
+    assert(final_loss_val < 10.0, "Final loss is bounded");
+    println("  [PASS] Final loss is finite and bounded");
+
+    println("");
+    println("=== MNIST training test PASSED - True gradient descent working! ===");
+}

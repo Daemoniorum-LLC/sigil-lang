@@ -1,0 +1,14 @@
+// Test: Use imports with alias (rename)
+// Expected exit code: 15
+
+scroll utils {
+    ☉ rite add(a: i64, b: i64) → i64 {
+        a + b
+    }
+}
+
+invoke utils·add as sum;
+
+rite main() → i64 {
+    sum(10, 5)
+}

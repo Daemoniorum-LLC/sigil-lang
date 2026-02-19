@@ -1,0 +1,398 @@
+// Haagenti-Style GPU Integration Tests
+// Spec: docs/specs/CUDA-KERNEL-ARG-CODEGEN.md
+//
+// These tests verify CUDA patterns used in Haagenti GPU workloads:
+// - Parallel array processing (neural decompression style)
+// - Multiple input arrays
+// - Grid/block scaling for larger workloads
+
+// Main entry point
+rite main() -> i32 {
+    ≔ Δ failures = 0;
+
+    ≔ r1 = test_parallel_array_add();
+    ⎇ r1 != 0 { failures = failures + 1; }
+
+    ≔ r2 = test_codebook_lookup();
+    ⎇ r2 != 0 { failures = failures + 1; }
+
+    ≔ r3 = test_multi_block_reduction();
+    ⎇ r3 != 0 { failures = failures + 1; }
+
+    ≔ r4 = test_inplace_scale();
+    ⎇ r4 != 0 { failures = failures + 1; }
+
+    ≔ r5 = test_five_arg_kernel();
+    ⎇ r5 != 0 { failures = failures + 1; }
+
+    ↩ failures;
+}
+
+//@ rune: test
+rite test_parallel_array_add() -> i32 {
+    // Test: parallel element-wise addition across arrays
+    // Pattern: neural_gpu.sg style bulk processing
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    ≔ kernel_src = "
+extern \"C\" __global__ void vec_add(long long* out, long long* a, long long* b, long long n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        out[idx] = a[idx] + b[idx];
+    }
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "vec_add");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    // Allocate device arrays
+    ≔ n = 256i64;
+    ≔ bytes = n * 8;
+    ≔ d_out = Cuda·malloc(bytes);
+    ≔ d_a = Cuda·malloc(bytes);
+    ≔ d_b = Cuda·malloc(bytes);
+    ⎇ d_out == 0 ∨ d_a == 0 ∨ d_b == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Initialize host arrays
+    ≔ Δ h_a = [0i64; 256];
+    ≔ Δ h_b = [0i64; 256];
+    ≔ Δ i = 0;
+    ⟳ i < 256 {
+        h_a[i] = i as i64;
+        h_b[i] = 1000i64;
+        i = i + 1;
+    }
+
+    // Copy to device
+    Cuda·memcpy_h2d(d_a, h_a.as_ptr() as i64, bytes);
+    Cuda·memcpy_h2d(d_b, h_b.as_ptr() as i64, bytes);
+
+    // Launch: 256 elements, 256 threads/block
+    ≔ Δ args = [d_out, d_a, d_b, n];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 256, args.as_ptr() as i64, 4);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·free(d_a);
+        Cuda·free(d_b);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    // Read result
+    ≔ Δ h_out = [0i64; 256];
+    Cuda·memcpy_d2h(h_out.as_ptr() as i64, d_out, bytes);
+
+    Cuda·free(d_out);
+    Cuda·free(d_a);
+    Cuda·free(d_b);
+    Cuda·cleanup();
+
+    // Verify: h_out[i] = i + 1000
+    ≔ Δ j = 0;
+    ⟳ j < 256 {
+        ≔ expected = j as i64 + 1000;
+        ⎇ h_out[j] != expected {
+            ↩ 5;
+        }
+        j = j + 1;
+    }
+    ↩ 0;  // PASS
+}
+
+//@ rune: test
+rite test_codebook_lookup() -> i32 {
+    // Test: codebook-style indexed lookup
+    // Pattern: neural_gpu.sg codebook decompression
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    ≔ kernel_src = "
+extern \"C\" __global__ void lookup(long long* out, long long* codebook, long long* indices, long long n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        int code_idx = (int)indices[idx];
+        out[idx] = codebook[code_idx];
+    }
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "lookup");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    // Codebook: 16 entries
+    ≔ codebook_size = 16i64;
+    ≔ n = 64i64;
+
+    ≔ d_out = Cuda·malloc(n * 8);
+    ≔ d_codebook = Cuda·malloc(codebook_size * 8);
+    ≔ d_indices = Cuda·malloc(n * 8);
+    ⎇ d_out == 0 ∨ d_codebook == 0 ∨ d_indices == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Initialize codebook: entry[i] = i * 100
+    ≔ Δ h_codebook = [0i64; 16];
+    ≔ Δ i = 0;
+    ⟳ i < 16 {
+        h_codebook[i] = i as i64 * 100;
+        i = i + 1;
+    }
+
+    // Initialize indices: cycle through 0-15
+    ≔ Δ h_indices = [0i64; 64];
+    ≔ Δ j = 0;
+    ⟳ j < 64 {
+        h_indices[j] = (j % 16) as i64;
+        j = j + 1;
+    }
+
+    // Copy to device
+    Cuda·memcpy_h2d(d_codebook, h_codebook.as_ptr() as i64, codebook_size * 8);
+    Cuda·memcpy_h2d(d_indices, h_indices.as_ptr() as i64, n * 8);
+
+    // Launch
+    ≔ Δ args = [d_out, d_codebook, d_indices, n];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 64, args.as_ptr() as i64, 4);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·free(d_codebook);
+        Cuda·free(d_indices);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    // Read result
+    ≔ Δ h_out = [0i64; 64];
+    Cuda·memcpy_d2h(h_out.as_ptr() as i64, d_out, n * 8);
+
+    Cuda·free(d_out);
+    Cuda·free(d_codebook);
+    Cuda·free(d_indices);
+    Cuda·cleanup();
+
+    // Verify: h_out[j] = (j % 16) * 100
+    ≔ Δ k = 0;
+    ⟳ k < 64 {
+        ≔ expected = (k % 16) as i64 * 100;
+        ⎇ h_out[k] != expected {
+            ↩ 5;
+        }
+        k = k + 1;
+    }
+    ↩ 0;  // PASS
+}
+
+//@ rune: test
+rite test_multi_block_reduction() -> i32 {
+    // Test: multi-block kernel with partial sums
+    // Pattern: batch processing in neural_gpu.sg
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    // Each block computes sum of its 64 elements
+    ≔ kernel_src = "
+extern \"C\" __global__ void block_sum(long long* block_sums, long long* data, long long n) {
+    __shared__ long long partial[64];
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+
+    partial[tid] = (idx < n) ? data[idx] : 0;
+    __syncthreads();
+
+    // Simple reduction within block
+    for (int stride = 32; stride > 0; stride >>= 1) {
+        if (tid < stride) partial[tid] += partial[tid + stride];
+        __syncthreads();
+    }
+
+    if (tid == 0) block_sums[blockIdx.x] = partial[0];
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "block_sum");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    // 256 elements = 4 blocks of 64
+    ≔ n = 256i64;
+    ≔ blocks = 4i64;
+    ≔ threads = 64i64;
+
+    ≔ d_data = Cuda·malloc(n * 8);
+    ≔ d_sums = Cuda·malloc(blocks * 8);
+    ⎇ d_data == 0 ∨ d_sums == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Initialize data: all 1s (sum should be 64 per block)
+    ≔ Δ h_data = [1i64; 256];
+    Cuda·memcpy_h2d(d_data, h_data.as_ptr() as i64, n * 8);
+
+    // Launch 4 blocks of 64 threads
+    ≔ Δ args = [d_sums, d_data, n];
+    ≔ launch_ok = Cuda·launch_1d(kernel, blocks as i32, threads as i32, args.as_ptr() as i64, 3);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_data);
+        Cuda·free(d_sums);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    // Read block sums
+    ≔ Δ h_sums = [0i64; 4];
+    Cuda·memcpy_d2h(h_sums.as_ptr() as i64, d_sums, blocks * 8);
+
+    Cuda·free(d_data);
+    Cuda·free(d_sums);
+    Cuda·cleanup();
+
+    // Verify: each block sum should be 64
+    ≔ Δ i = 0;
+    ⟳ i < 4 {
+        ⎇ h_sums[i] != 64 {
+            ↩ 5;
+        }
+        i = i + 1;
+    }
+    ↩ 0;  // PASS
+}
+
+//@ rune: test
+rite test_inplace_scale() -> i32 {
+    // Test: in-place array modification
+    // Pattern: weight updates in neural training
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    ≔ kernel_src = "
+extern \"C\" __global__ void scale(long long* data, long long factor, long long n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        data[idx] = data[idx] * factor;
+    }
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "scale");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    ≔ n = 128i64;
+    ≔ d_data = Cuda·malloc(n * 8);
+    ⎇ d_data == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Initialize: [1, 2, 3, ...]
+    ≔ Δ h_data = [0i64; 128];
+    ≔ Δ i = 0;
+    ⟳ i < 128 {
+        h_data[i] = i as i64 + 1;
+        i = i + 1;
+    }
+    Cuda·memcpy_h2d(d_data, h_data.as_ptr() as i64, n * 8);
+
+    // Scale by 3
+    ≔ factor = 3i64;
+    ≔ Δ args = [d_data, factor, n];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 2, 64, args.as_ptr() as i64, 3);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_data);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    // Read back
+    Cuda·memcpy_d2h(h_data.as_ptr() as i64, d_data, n * 8);
+
+    Cuda·free(d_data);
+    Cuda·cleanup();
+
+    // Verify: [3, 6, 9, ...]
+    ≔ Δ j = 0;
+    ⟳ j < 128 {
+        ≔ expected = (j as i64 + 1) * 3;
+        ⎇ h_data[j] != expected {
+            ↩ 5;
+        }
+        j = j + 1;
+    }
+    ↩ 0;  // PASS
+}
+
+//@ rune: test
+rite test_five_arg_kernel() -> i32 {
+    // Test: many arguments (stress test void** handling)
+    // Pattern: complex kernels with multiple params
+    ≔ ok = Cuda·init();
+    ⎇ ok == 0 { ↩ 1; }
+
+    ≔ kernel_src = "
+extern \"C\" __global__ void combine(long long* out, long long a, long long b, long long c, long long d) {
+    if (threadIdx.x == 0) {
+        *out = a + b * c - d;
+    }
+}";
+
+    ≔ kernel = Cuda·compile_kernel(kernel_src, "combine");
+    ⎇ kernel < 0 {
+        Cuda·cleanup();
+        ↩ 2;
+    }
+
+    ≔ d_out = Cuda·malloc(8);
+    ⎇ d_out == 0 {
+        Cuda·cleanup();
+        ↩ 3;
+    }
+
+    // Compute: 10 + 5 * 8 - 2 = 48
+    ≔ a = 10i64;
+    ≔ b = 5i64;
+    ≔ c = 8i64;
+    ≔ d = 2i64;
+
+    ≔ Δ args = [d_out, a, b, c, d];
+    ≔ launch_ok = Cuda·launch_1d(kernel, 1, 1, args.as_ptr() as i64, 5);
+    ⎇ launch_ok == 0 {
+        Cuda·free(d_out);
+        Cuda·cleanup();
+        ↩ 4;
+    }
+
+    Cuda·sync();
+
+    ≔ Δ h_out = [0i64; 1];
+    Cuda·memcpy_d2h(h_out.as_ptr() as i64, d_out, 8);
+
+    Cuda·free(d_out);
+    Cuda·cleanup();
+
+    // Verify: 10 + 5*8 - 2 = 48
+    ⎇ h_out[0] == 48 {
+        ↩ 0;  // PASS
+    }
+    ↩ 5;
+}

@@ -1,0 +1,97 @@
+// G51: Minimal Stage 3 reproduction
+// Test nested struct method calls and vector slicing
+
+Σ Linear {
+    weights: Vec<f64>,
+    grad_weights: Vec<f64>,
+}
+
+⊢ Linear {
+    rite new(size: i64) → Self {
+        Self {
+            weights: vec![0.5; size as usize],
+            grad_weights: vec![0.0; size as usize],
+        }
+    }
+
+    rite fwd(&this, input: &[f64]) → Vec<f64> {
+        ≔ vary output = vec![0.0; input.len()];
+        ∀ i ∈ 0..input.len() {
+            output[i] = input[i] * this.weights[i % this.weights.len()];
+        }
+        output
+    }
+
+    rite zero_grad(&vary this) {
+        ∀ i ∈ 0..this.grad_weights.len() {
+            this.grad_weights[i] = 0.0;
+        }
+    }
+}
+
+Σ Layer {
+    proj: Linear,
+}
+
+⊢ Layer {
+    rite new(size: i64) → Self {
+        Self { proj: Linear·new(size) }
+    }
+
+    rite fwd(&this, input: &[f64]) → Vec<f64> {
+        this.proj.fwd(input)
+    }
+
+    rite zero_grad(&vary this) {
+        this.proj.zero_grad();
+    }
+}
+
+Σ Model {
+    layers: Vec<Layer>,
+}
+
+⊢ Model {
+    rite new(num_layers: i64, size: i64) → Self {
+        ≔ vary layers = vec![];
+        ∀ i ∈ 0..num_layers {
+            layers.push(Layer·new(size));
+        }
+        Self { layers }
+    }
+
+    rite fwd(&this, input: &[f64]) → Vec<f64> {
+        ≔ vary hidden = input.to_vec();
+        ∀ layer ∈ &this.layers {
+            hidden = layer.fwd(&hidden);
+        }
+        hidden
+    }
+
+    rite zero_grad(&vary this) {
+        ∀ layer ∈ &vary this.layers {
+            layer.zero_grad();
+        }
+    }
+}
+
+rite main() {
+    println!("Creating model...");
+    ≔ vary model = Model·new(3, 16);
+
+    println!("Creating input...");
+    ≔ input = vec![1.0; 16];
+
+    println!("Starting loop...");
+    ∀ step ∈ 0..5 {
+        println!("Step {} - zero_grad", step);
+        model.zero_grad();
+
+        println!("Step {} - forward", step);
+        ≔ output = model.fwd(&input);
+
+        println!("Step {} - output len: {}", step, output.len());
+    }
+
+    println!("Done!");
+}

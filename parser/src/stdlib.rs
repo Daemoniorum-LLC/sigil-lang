@@ -223,6 +223,10 @@ use tiktoken_rs::{cl100k_base, p50k_base, r50k_base};
 #[cfg(feature = "native")]
 use whatlang::{detect, Lang, Script as WhatLangScript};
 
+// Tree-sitter parsing infrastructure (native-only)
+#[cfg(feature = "native")]
+use tree_sitter::{Language as TsLanguage, Parser as TsParser, Node as TsNode, Tree as TsTree};
+
 // Cryptographic primitives for experimental crypto
 use rand::Rng;
 
@@ -315,6 +319,9 @@ pub fn register_stdlib(interp: &mut Interpreter) {
     register_sgdoc(interp);
     // Phase 26: Qliphoth - Component framework VNode system
     register_qliphoth(interp);
+    // Phase 27: Tree-sitter - Incremental parsing for multi-language analysis
+    #[cfg(feature = "native")]
+    register_tree_sitter(interp);
 }
 
 // Helper to define a builtin
@@ -489,41 +496,42 @@ fn register_core(interp: &mut Interpreter) {
 
     // type_of - get type name
     define(interp, "type_of", Some(1), |_, args| {
-        let type_name = match &args[0] {
-            Value::Null => "null",
-            Value::Bool(_) => "bool",
-            Value::Int(_) => "i64",
-            Value::Float(_) => "f64",
-            Value::String(_) => "str",
-            Value::Char(_) => "char",
-            Value::Array(_) => "array",
-            Value::Tuple(_) => "tuple",
-            Value::Struct { name, .. } => name,
-            Value::Variant { enum_name, .. } => enum_name,
-            Value::Function(_) => "fn",
-            Value::BuiltIn(_) => "builtin",
-            Value::Ref(_) => "ref",
-            Value::Infinity => "infinity",
-            Value::Empty => "empty",
+        let type_name: String = match &args[0] {
+            Value::Null => "null".to_string(),
+            Value::Bool(_) => "bool".to_string(),
+            Value::Int(_) => "i64".to_string(),
+            Value::Float(_) => "f64".to_string(),
+            Value::String(_) => "str".to_string(),
+            Value::Char(_) => "char".to_string(),
+            Value::Array(_) => "array".to_string(),
+            Value::Tuple(_) => "tuple".to_string(),
+            Value::Struct { name, .. } => format!("struct:{}", name),
+            Value::Variant { enum_name, .. } => format!("enum:{}", enum_name),
+            Value::Function(_) => "fn".to_string(),
+            Value::BuiltIn(_) => "builtin".to_string(),
+            Value::Ref(_) => "ref".to_string(),
+            Value::Infinity => "infinity".to_string(),
+            Value::Empty => "empty".to_string(),
             Value::Evidential { evidence, .. } => match evidence {
                 Evidence::Known => "known",
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
-                Evidence::Paradox => "paradox",
                 Evidence::Predicted => "predicted",
-            },
-            Value::Affective { .. } => "affective",
-            Value::Map(_) => "map",
-            Value::Set(_) => "set",
-            Value::Channel(_) => "channel",
-            Value::ThreadHandle(_) => "thread",
-            Value::Actor(_) => "actor",
-            Value::Future(_) => "future",
-            Value::VariantConstructor { .. } => "variant_constructor",
-            Value::DefaultConstructor { .. } => "default_constructor",
-            Value::Range { .. } => "range",
+                Evidence::Chaos => "chaos",
+                Evidence::Paradox => "paradox",
+            }.to_string(),
+            Value::Affective { .. } => "affective".to_string(),
+            Value::Map(_) => "map".to_string(),
+            Value::Set(_) => "set".to_string(),
+            Value::Channel(_) => "channel".to_string(),
+            Value::ThreadHandle(_) => "thread".to_string(),
+            Value::Actor(_) => "actor".to_string(),
+            Value::Future(_) => "future".to_string(),
+            Value::VariantConstructor { .. } => "variant_constructor".to_string(),
+            Value::DefaultConstructor { .. } => "default_constructor".to_string(),
+            Value::Range { .. } => "range".to_string(),
         };
-        Ok(Value::String(Rc::new(type_name.to_string())))
+        Ok(Value::String(Rc::new(type_name)))
     });
 
     // assert - assertion with optional message
@@ -763,6 +771,22 @@ fn register_core(interp: &mut Interpreter) {
     // Vec::new - create empty vector/array
     define(interp, "Vec·new", Some(0), |_, _| {
         Ok(Value::Array(Rc::new(RefCell::new(Vec::new()))))
+    });
+
+    // Vec::with_capacity - create vector with preallocated capacity (returns struct)
+    define(interp, "Vec·with_capacity", Some(1), |_, args| {
+        let capacity = match &args[0] {
+            Value::Int(n) => *n as usize,
+            _ => 0,
+        };
+        let mut fields = HashMap::new();
+        fields.insert("data".to_string(), Value::Array(Rc::new(RefCell::new(Vec::with_capacity(capacity)))));
+        fields.insert("capacity".to_string(), Value::Int(capacity as i64));
+        fields.insert("len".to_string(), Value::Int(0));
+        Ok(Value::Struct {
+            name: "Vec".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
     });
 
     // String::new - create empty string
@@ -2397,21 +2421,16 @@ fn register_string(interp: &mut Interpreter) {
                 ))
             }
         };
-        // Use byte-based indexing
+        // Use char-based indexing (safe for multi-byte UTF-8)
+        let char_count = s.chars().count() as i64;
         let actual_idx = if idx < 0 {
-            // Negative indexing counts from end of string (in bytes)
-            (s.len() as i64 + idx) as usize
+            (char_count + idx) as usize
         } else {
             idx as usize
         };
-        if actual_idx < s.len() {
-            let remaining = &s[actual_idx..];
-            match remaining.chars().next() {
-                Some(c) => Ok(Value::Char(c)),
-                None => Ok(Value::Null),
-            }
-        } else {
-            Ok(Value::Null)
+        match s.chars().nth(actual_idx) {
+            Some(c) => Ok(Value::Char(c)),
+            None => Ok(Value::Null),
         }
     });
 
@@ -2839,8 +2858,9 @@ fn register_evidence(interp: &mut Interpreter) {
                     Evidence::Known => "known",
                     Evidence::Uncertain => "uncertain",
                     Evidence::Reported => "reported",
-                    Evidence::Paradox => "paradox",
                     Evidence::Predicted => "predicted",
+                    Evidence::Chaos => "chaos",
+                    Evidence::Paradox => "paradox",
                 };
                 Ok(Value::String(Rc::new(level.to_string())))
             }
@@ -2947,8 +2967,9 @@ fn register_evidence(interp: &mut Interpreter) {
                 Evidence::Known => "known",
                 Evidence::Uncertain => "uncertain",
                 Evidence::Reported => "reported",
-                Evidence::Paradox => "paradox",
                 Evidence::Predicted => "predicted",
+                Evidence::Chaos => "chaos",
+                Evidence::Paradox => "paradox",
             }
             .to_string(),
         )))
@@ -5727,6 +5748,31 @@ fn register_concurrency(interp: &mut Interpreter) {
         }
     });
 
+    // std::thread::available_parallelism - get number of available CPU cores
+    // Returns Result<NonZeroUsize, io::Error> as a Variant
+    define(interp, "std·thread·available_parallelism", Some(0), |_, _args| {
+        match std::thread::available_parallelism() {
+            Ok(n) => {
+                // Create NonZeroUsize-like struct with get() method capability
+                // For now, just return the inner value directly wrapped in Ok
+                let inner = Value::Int(n.get() as i64);
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![inner])),
+                })
+            }
+            Err(e) => {
+                // Return Err variant with error message
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
+                })
+            }
+        }
+    });
+
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
     define(interp, "thread_join", Some(1), |_, args| {
@@ -5953,10 +5999,21 @@ fn register_concurrency(interp: &mut Interpreter) {
         let addr_str = match &args[0] {
             Value::String(s) => s.to_string(),
             Value::Ref(r) => {
-                if let Value::String(s) = &*r.borrow() {
-                    s.to_string()
-                } else {
-                    return Err(RuntimeError::new("TcpListener::bind requires string address"));
+                match &*r.borrow() {
+                    Value::String(s) => s.to_string(),
+                    Value::Struct { name, fields } if name == "SocketAddr" => {
+                        let f = fields.borrow();
+                        let ip = match f.get("ip") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                        };
+                        let port = match f.get("port") {
+                            Some(Value::Int(p)) => *p,
+                            _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                        };
+                        format!("{}:{}", ip, port)
+                    }
+                    _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
                 }
             }
             // Handle SocketAddr map (from parse())
@@ -5974,6 +6031,19 @@ fn register_concurrency(interp: &mut Interpreter) {
                 } else {
                     return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
                 }
+            }
+            // Handle SocketAddr struct (from parse())
+            Value::Struct { name, fields } if name == "SocketAddr" => {
+                let f = fields.borrow();
+                let ip = match f.get("ip") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                };
+                let port = match f.get("port") {
+                    Some(Value::Int(p)) => *p,
+                    _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                };
+                format!("{}:{}", ip, port)
             }
             _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
         };
@@ -6014,10 +6084,21 @@ fn register_concurrency(interp: &mut Interpreter) {
         let addr_str = match &args[0] {
             Value::String(s) => s.to_string(),
             Value::Ref(r) => {
-                if let Value::String(s) = &*r.borrow() {
-                    s.to_string()
-                } else {
-                    return Err(RuntimeError::new("TcpListener::bind requires string address"));
+                match &*r.borrow() {
+                    Value::String(s) => s.to_string(),
+                    Value::Struct { name, fields } if name == "SocketAddr" => {
+                        let f = fields.borrow();
+                        let ip = match f.get("ip") {
+                            Some(Value::String(s)) => s.to_string(),
+                            _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                        };
+                        let port = match f.get("port") {
+                            Some(Value::Int(p)) => *p,
+                            _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                        };
+                        format!("{}:{}", ip, port)
+                    }
+                    _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
                 }
             }
             // Handle SocketAddr map (from parse())
@@ -6028,6 +6109,19 @@ fn register_concurrency(interp: &mut Interpreter) {
                 } else {
                     return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
                 }
+            }
+            // Handle SocketAddr struct (from parse())
+            Value::Struct { name, fields } if name == "SocketAddr" => {
+                let f = fields.borrow();
+                let ip = match f.get("ip") {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
+                };
+                let port = match f.get("port") {
+                    Some(Value::Int(p)) => *p,
+                    _ => return Err(RuntimeError::new("SocketAddr missing port field")),
+                };
+                format!("{}:{}", ip, port)
             }
             _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
         };
@@ -9540,6 +9634,27 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
+    // fs_mtime - get file modification time as epoch milliseconds
+    define(interp, "fs_mtime", Some(1), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("fs_mtime() requires string path")),
+        };
+
+        match std::fs::metadata(&path) {
+            Ok(meta) => match meta.modified() {
+                Ok(mtime) => {
+                    let duration = mtime
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or(std::time::Duration::ZERO);
+                    Ok(Value::Int(duration.as_millis() as i64))
+                }
+                Err(_) => Ok(Value::Int(-1)),
+            },
+            Err(_) => Ok(Value::Int(-1)),
+        }
+    });
+
     // path_join - join path components
     define(interp, "path_join", None, |_, args| {
         let mut path = std::path::PathBuf::new();
@@ -9687,13 +9802,22 @@ fn register_fs(interp: &mut Interpreter) {
             _ => format!("{}", args[1]),
         };
 
-        // args[2] is the length - we use the actual string length in interpreted mode
-        let len = match &args[2] {
+        // args[2] is the length - convert char count to byte boundary for UTF-8 safety
+        let requested_len = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => content.len(),
+            _ => content.chars().count(),
         };
 
-        let output = &content[..std::cmp::min(len, content.len())];
+        let char_count = content.chars().count();
+        let output = if requested_len >= char_count {
+            &content[..]
+        } else {
+            let byte_offset = content.char_indices()
+                .nth(requested_len)
+                .map(|(idx, _)| idx)
+                .unwrap_or(content.len());
+            &content[..byte_offset]
+        };
 
         match fd {
             1 => {
@@ -13298,7 +13422,9 @@ fn register_format(interp: &mut Interpreter) {
                 match chars.next() {
                     None => String::new(),
                     Some(first) => {
-                        first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase()
+                        let mut result = first.to_uppercase().collect::<String>();
+                        result.push_str(&chars.as_str().to_lowercase());
+                        result
                     }
                 }
             })
@@ -14786,6 +14912,36 @@ fn register_devex(interp: &mut Interpreter) {
             Value::String(Rc::new("Phase 7 - DevEx".to_string())),
         );
         Ok(Value::Map(Rc::new(RefCell::new(info))))
+    });
+
+    // Dev·reload - hot-reload a Sigil source file by re-parsing and re-registering definitions
+    // Returns 0 on success, -1 on IO error, -2 on parse error
+    define(interp, "Dev·reload", Some(1), |interpreter, args| {
+        use crate::Parser;
+
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Dev·reload() requires string path")),
+        };
+
+        // Read the source file
+        let source = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => return Ok(Value::Int(-1)),
+        };
+
+        // Parse it
+        let mut parser = Parser::new(&source);
+        let file = match parser.parse_file() {
+            Ok(f) => f,
+            Err(_) => return Ok(Value::Int(-2)),
+        };
+
+        // Re-register all definitions (overwrites existing)
+        match interpreter.execute_definitions(&file) {
+            Ok(_) => Ok(Value::Int(0)),
+            Err(_) => Ok(Value::Int(-2)),
+        }
     });
 }
 
@@ -36679,6 +36835,265 @@ fn register_terminal(interp: &mut Interpreter) {
         use std::io::IsTerminal;
         Ok(Value::Bool(std::io::stdout().is_terminal()))
     });
+
+    // =========================================================================
+    // Phase 0.1: Alternate Screen Buffer & Cursor Positioning (Morgoth)
+    // =========================================================================
+
+    // term_enter_alt_screen - switch to alternate screen buffer (smcup)
+    define(interp, "term_enter_alt_screen", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[?1049h".to_string())))
+    });
+
+    // term_leave_alt_screen - return to main screen buffer (rmcup)
+    define(interp, "term_leave_alt_screen", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[?1049l".to_string())))
+    });
+
+    // term_clear_screen - clear entire screen and move cursor home
+    define(interp, "term_clear_screen", Some(0), |_, _| {
+        Ok(Value::String(Rc::new("\x1b[2J\x1b[H".to_string())))
+    });
+
+    // term_cursor_to(row, col) - move cursor to absolute position (1-indexed)
+    define(interp, "term_cursor_to", Some(2), |_, args| {
+        let row = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_cursor_to requires int row")),
+        };
+        let col = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_cursor_to requires int col")),
+        };
+        Ok(Value::String(Rc::new(format!("\x1b[{};{}H", row, col))))
+    });
+
+    // =========================================================================
+    // Phase 0.2: Raw Terminal Mode - termios (Morgoth)
+    // =========================================================================
+
+    // term_get_termios(fd) - save current terminal state, returns handle id
+    define(interp, "term_get_termios", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_get_termios requires int fd")),
+        };
+
+        // Native: capture real terminal state via tcgetattr
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+            let ret = unsafe { libc::tcgetattr(fd as i32, &mut termios) };
+            if ret == 0 {
+                let handle = FAKE_TERMIOS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                NATIVE_TERMIOS_STATE.with(|map| {
+                    map.borrow_mut().insert(handle, termios);
+                });
+                // Also store in fake state for consistency with tests
+                let is_raw = FAKE_TERMIOS_RAW.load(std::sync::atomic::Ordering::SeqCst);
+                FAKE_TERMIOS_STATE.with(|map| {
+                    map.borrow_mut().insert(handle, FakeTermios { raw_mode: is_raw });
+                });
+                return Ok(Value::Int(handle));
+            }
+        }
+        let _ = fd;
+
+        // Fake fallback: snapshot current raw_mode state and store it
+        let is_raw = FAKE_TERMIOS_RAW.load(std::sync::atomic::Ordering::SeqCst);
+        let handle = FAKE_TERMIOS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_TERMIOS_STATE.with(|map| {
+            map.borrow_mut().insert(handle, FakeTermios { raw_mode: is_raw });
+        });
+        Ok(Value::Int(handle))
+    });
+
+    // term_set_raw_mode(fd) - enable raw terminal mode, returns 0 on success
+    define(interp, "term_set_raw_mode", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_raw_mode requires int fd")),
+        };
+
+        // Native: real cfmakeraw + tcsetattr
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut raw: libc::termios = unsafe { std::mem::zeroed() };
+            let ret = unsafe { libc::tcgetattr(fd as i32, &mut raw) };
+            if ret == 0 {
+                unsafe { libc::cfmakeraw(&mut raw) };
+                // Single-byte reads with no timeout
+                raw.c_cc[libc::VMIN] = 1;
+                raw.c_cc[libc::VTIME] = 0;
+                // Keep ISIG so Ctrl-C generates SIGINT
+                raw.c_lflag |= libc::ISIG;
+                unsafe { libc::tcsetattr(fd as i32, libc::TCSAFLUSH, &raw) };
+            }
+        }
+        let _ = fd;
+
+        FAKE_TERMIOS_RAW.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(Value::Int(0))
+    });
+
+    // term_restore_termios(fd, saved_handle) - restore saved terminal state
+    define(interp, "term_restore_termios", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_restore_termios requires int fd")),
+        };
+        let handle = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_restore_termios requires int handle")),
+        };
+
+        // Native: restore real terminal state via tcsetattr
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let native_saved = NATIVE_TERMIOS_STATE.with(|map| {
+                map.borrow().get(&handle).cloned()
+            });
+            if let Some(saved_termios) = native_saved {
+                unsafe { libc::tcsetattr(fd as i32, libc::TCSAFLUSH, &saved_termios) };
+            }
+        }
+        let _ = fd;
+
+        // Also restore fake state for consistency
+        let saved = FAKE_TERMIOS_STATE.with(|map| {
+            map.borrow().get(&handle).cloned()
+        });
+        match saved {
+            Some(state) => {
+                FAKE_TERMIOS_RAW.store(state.raw_mode, std::sync::atomic::Ordering::SeqCst);
+                Ok(Value::Int(0))
+            }
+            None => Ok(Value::Int(-22)), // -EINVAL: invalid handle
+        }
+    });
+
+    // =========================================================================
+    // Phase 0.3: Window Size Query/Set (Morgoth)
+    // =========================================================================
+
+    // term_get_winsize(fd) - query terminal dimensions, returns {rows, cols}
+    define(interp, "term_get_winsize", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_get_winsize requires int fd")),
+        };
+        // Check PTY state first (for PTY fds), then fall back to default
+        let (rows, cols) = FAKE_PTY_STATE.with(|map| {
+            map.borrow().get(&fd).map(|p| (p.rows as i64, p.cols as i64))
+        }).or_else(|| {
+            FAKE_WINSIZE_STATE.with(|map| {
+                map.borrow().get(&fd).cloned()
+            })
+        }).or_else(|| {
+            // Native fallback: query real terminal via ioctl
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+                let ret = unsafe { libc::ioctl(fd as i32, libc::TIOCGWINSZ, &mut ws) };
+                if ret == 0 && ws.ws_row > 0 {
+                    return Some((ws.ws_row as i64, ws.ws_col as i64));
+                }
+            }
+            None
+        }).unwrap_or((24, 80));
+
+        let mut fields = HashMap::new();
+        fields.insert("rows".to_string(), Value::Int(rows));
+        fields.insert("cols".to_string(), Value::Int(cols));
+        Ok(Value::Struct {
+            name: "WinSize".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // term_set_winsize(fd, rows, cols) - set terminal dimensions, returns 0
+    define(interp, "term_set_winsize", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_winsize requires int fd")),
+        };
+        let rows = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_winsize requires int rows")),
+        };
+        let cols = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("term_set_winsize requires int cols")),
+        };
+        // Update PTY state if fd is a PTY, otherwise store in winsize map
+        let updated_pty = FAKE_PTY_STATE.with(|map| {
+            if let Some(pty) = map.borrow_mut().get_mut(&fd) {
+                pty.rows = rows as u16;
+                pty.cols = cols as u16;
+                true
+            } else {
+                false
+            }
+        });
+        if !updated_pty {
+            FAKE_WINSIZE_STATE.with(|map| {
+                map.borrow_mut().insert(fd, (rows, cols));
+            });
+        }
+        Ok(Value::Int(0))
+    });
+
+    // =========================================================================
+    // Phase 0.8: Mouse Event Protocol (Morgoth)
+    // =========================================================================
+
+    // term_enable_mouse() - enable SGR mouse mode + all motion tracking
+    define(interp, "term_enable_mouse", Some(0), |_, _| {
+        // 1003h = all motion tracking, 1006h = SGR extended mode
+        Ok(Value::String(Rc::new("\x1b[?1003h\x1b[?1006h".to_string())))
+    });
+
+    // term_disable_mouse() - disable mouse capture
+    define(interp, "term_disable_mouse", Some(0), |_, _| {
+        // Disable in reverse order
+        Ok(Value::String(Rc::new("\x1b[?1006l\x1b[?1003l".to_string())))
+    });
+
+    // term_parse_mouse_event(seq) - parse SGR mouse escape sequence
+    // Format: ESC [ < button ; col ; row M/m (M=press, m=release)
+    define(interp, "term_parse_mouse_event", Some(1), |_, args| {
+        let seq = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("term_parse_mouse_event requires string")),
+        };
+
+        // Parse CSI < button;col;row M/m
+        let pressed = seq.ends_with('M');
+        let inner = seq.trim_start_matches("\x1b[<").trim_end_matches(|c| c == 'M' || c == 'm');
+        let parts: Vec<&str> = inner.split(';').collect();
+
+        if parts.len() != 3 {
+            return Err(RuntimeError::new("invalid mouse event sequence"));
+        }
+
+        let button: i64 = parts[0].parse().map_err(|_|
+            RuntimeError::new("invalid button in mouse event sequence"))?;
+        let col: i64 = parts[1].parse().map_err(|_|
+            RuntimeError::new("invalid col in mouse event sequence"))?;
+        let row: i64 = parts[2].parse().map_err(|_|
+            RuntimeError::new("invalid row in mouse event sequence"))?;
+
+        let mut fields = HashMap::new();
+        fields.insert("button".to_string(), Value::Int(button));
+        fields.insert("col".to_string(), Value::Int(col));
+        fields.insert("row".to_string(), Value::Int(row));
+        fields.insert("pressed".to_string(), Value::Bool(pressed));
+
+        Ok(Value::Struct {
+            name: "MouseEvent".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
 }
 
 // =============================================================================
@@ -36940,6 +37355,427 @@ fn register_neural(interp: &mut Interpreter) {
     });
 
     // =========================================================================
+    // Tensor Instance Methods (Tensor·method)
+    // =========================================================================
+
+    // Tensor·shape(self) - Get shape as array
+    define(interp, "Tensor·shape", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                let f = fields.borrow();
+                match f.get("__shape__").or_else(|| f.get("shape")) {
+                    Some(shape) => Ok(shape.clone()),
+                    None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                }
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        let f = fields.borrow();
+                        return match f.get("__shape__").or_else(|| f.get("shape")) {
+                            Some(shape) => Ok(shape.clone()),
+                            None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                        };
+                    }
+                }
+                Err(RuntimeError::new("shape expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("shape expects Tensor")),
+        }
+    });
+
+    // Tensor·numel(self) - Get total number of elements
+    define(interp, "Tensor·numel", Some(1), |_, args| {
+        fn get_numel(fields: &HashMap<String, Value>) -> i64 {
+            match fields.get("__shape__").or_else(|| fields.get("shape")) {
+                Some(Value::Array(arr)) => {
+                    arr.borrow().iter().map(|v| match v {
+                        Value::Int(i) => *i,
+                        _ => 1,
+                    }).product()
+                }
+                _ => {
+                    // Fallback to data length
+                    match fields.get("__data__") {
+                        Some(Value::Array(arr)) => arr.borrow().len() as i64,
+                        _ => 0,
+                    }
+                }
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(Value::Int(get_numel(&fields.borrow())))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(Value::Int(get_numel(&fields.borrow())));
+                    }
+                }
+                Err(RuntimeError::new("numel expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("numel expects Tensor")),
+        }
+    });
+
+    // Tensor·ndim(self) - Get number of dimensions
+    define(interp, "Tensor·ndim", Some(1), |_, args| {
+        fn get_ndim(fields: &HashMap<String, Value>) -> i64 {
+            match fields.get("__shape__").or_else(|| fields.get("shape")) {
+                Some(Value::Array(arr)) => arr.borrow().len() as i64,
+                _ => 0,
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(Value::Int(get_ndim(&fields.borrow())))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(Value::Int(get_ndim(&fields.borrow())));
+                    }
+                }
+                Err(RuntimeError::new("ndim expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("ndim expects Tensor")),
+        }
+    });
+
+    // Tensor·to_vec(self) - Get data as flat array
+    define(interp, "Tensor·to_vec", Some(1), |_, args| {
+        fn get_data(fields: &HashMap<String, Value>) -> Value {
+            match fields.get("__data__") {
+                Some(Value::Array(arr)) => Value::Array(arr.clone()),
+                Some(other) => other.clone(),
+                None => Value::Array(Rc::new(RefCell::new(vec![]))),
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(get_data(&fields.borrow()))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(get_data(&fields.borrow()));
+                    }
+                }
+                Err(RuntimeError::new("to_vec expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("to_vec expects Tensor")),
+        }
+    });
+
+    // Tensor·item(self) - Get single element for scalar tensor
+    define(interp, "Tensor·item", Some(1), |_, args| {
+        fn get_item(fields: &HashMap<String, Value>) -> Result<Value, RuntimeError> {
+            match fields.get("__data__") {
+                Some(Value::Array(arr)) => {
+                    let data = arr.borrow();
+                    if data.len() == 1 {
+                        Ok(data[0].clone())
+                    } else if data.is_empty() {
+                        Err(RuntimeError::new("item: tensor is empty"))
+                    } else {
+                        // For multi-element tensor, return first element with warning
+                        Ok(data[0].clone())
+                    }
+                }
+                _ => Err(RuntimeError::new("Invalid Tensor")),
+            }
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                get_item(&fields.borrow())
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return get_item(&fields.borrow());
+                    }
+                }
+                Err(RuntimeError::new("item expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("item expects Tensor")),
+        }
+    });
+
+    // Tensor·requires_grad_(self, bool) - Set requires_grad in place, return self
+    define(interp, "Tensor·requires_grad_", Some(2), |_, args| {
+        let req = match &args[1] {
+            Value::Bool(b) => *b,
+            _ => true,
+        };
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                fields.borrow_mut().insert("__requires_grad__".to_string(), Value::Bool(req));
+                Ok(args[0].clone())
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        fields.borrow_mut().insert("__requires_grad__".to_string(), Value::Bool(req));
+                        return Ok(args[0].clone());
+                    }
+                }
+                Err(RuntimeError::new("requires_grad_ expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("requires_grad_ expects Tensor")),
+        }
+    });
+
+    // Tensor·requires_grad(self) - Check if requires_grad is set
+    define(interp, "Tensor·requires_grad", Some(1), |_, args| {
+        fn get_requires_grad(fields: &HashMap<String, Value>) -> bool {
+            matches!(fields.get("__requires_grad__"), Some(Value::Bool(true)))
+        }
+
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                Ok(Value::Bool(get_requires_grad(&fields.borrow())))
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        return Ok(Value::Bool(get_requires_grad(&fields.borrow())));
+                    }
+                }
+                Err(RuntimeError::new("requires_grad expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("requires_grad expects Tensor")),
+        }
+    });
+
+    // Tensor·dims(self) - Alias for shape (returns dimensions as array)
+    define(interp, "Tensor·dims", Some(1), |_, args| {
+        match &args[0] {
+            Value::Struct { name, fields } if name == "Tensor" => {
+                let f = fields.borrow();
+                match f.get("__shape__").or_else(|| f.get("shape")) {
+                    Some(shape) => Ok(shape.clone()),
+                    None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                }
+            }
+            Value::Ref(r) => {
+                let inner = r.borrow();
+                if let Value::Struct { name, fields } = &*inner {
+                    if name == "Tensor" {
+                        let f = fields.borrow();
+                        return match f.get("__shape__").or_else(|| f.get("shape")) {
+                            Some(shape) => Ok(shape.clone()),
+                            None => Ok(Value::Array(Rc::new(RefCell::new(vec![])))),
+                        };
+                    }
+                }
+                Err(RuntimeError::new("dims expects Tensor"))
+            }
+            _ => Err(RuntimeError::new("dims expects Tensor")),
+        }
+    });
+
+    // =========================================================================
+    // Tensor Linear Algebra Operations
+    // =========================================================================
+
+    // Tensor·matmul(self, other) - Matrix multiplication
+    // Supports: [M, K] @ [K, N] -> [M, N]
+    //           [B, M, K] @ [K, N] -> [B, M, N] (batched)
+    define(interp, "Tensor·matmul", Some(2), |_, args| {
+        fn extract_tensor_data(v: &Value) -> Result<(Vec<f64>, Vec<i64>), RuntimeError> {
+            // Handle Ref by dereferencing first
+            let v = match v {
+                Value::Ref(r) => r.borrow().clone(),
+                other => other.clone(),
+            };
+
+            match &v {
+                Value::Struct { name, fields } if name == "Tensor" => {
+                    let f = fields.borrow();
+
+                    let data: Vec<f64> = match f.get("__data__") {
+                        Some(Value::Array(arr)) => arr.borrow().iter().map(|val| match val {
+                            Value::Float(x) => *x,
+                            Value::Int(x) => *x as f64,
+                            _ => 0.0,
+                        }).collect(),
+                        _ => return Err(RuntimeError::new("Invalid Tensor data")),
+                    };
+
+                    let shape: Vec<i64> = match f.get("__shape__") {
+                        Some(Value::Array(arr)) => arr.borrow().iter().map(|val| match val {
+                            Value::Int(i) => *i,
+                            _ => 1,
+                        }).collect(),
+                        _ => vec![data.len() as i64],
+                    };
+
+                    Ok((data, shape))
+                }
+                _ => Err(RuntimeError::new("matmul expects Tensor")),
+            }
+        }
+
+        let (a_data, a_shape) = extract_tensor_data(&args[0])?;
+        let (b_data, b_shape) = extract_tensor_data(&args[1])?;
+
+        // Handle different shape combinations
+        match (a_shape.len(), b_shape.len()) {
+            // [M, K] @ [K, N] -> [M, N]
+            (2, 2) => {
+                let m = a_shape[0] as usize;
+                let k = a_shape[1] as usize;
+                let k2 = b_shape[0] as usize;
+                let n = b_shape[1] as usize;
+
+                if k != k2 {
+                    return Err(RuntimeError::new(format!(
+                        "matmul shape mismatch: [{}, {}] @ [{}, {}]", m, k, k2, n
+                    )));
+                }
+
+                let mut result = vec![0.0f64; m * n];
+                for i in 0..m {
+                    for j in 0..n {
+                        let mut sum = 0.0;
+                        for kk in 0..k {
+                            sum += a_data[i * k + kk] * b_data[kk * n + j];
+                        }
+                        result[i * n + j] = sum;
+                    }
+                }
+
+                Ok(create_tensor(
+                    result.into_iter().map(Value::Float).collect(),
+                    vec![m as i64, n as i64],
+                    false,
+                ))
+            }
+            // [B, M, K] @ [K, N] -> [B, M, N] (batched)
+            (3, 2) => {
+                let batch = a_shape[0] as usize;
+                let m = a_shape[1] as usize;
+                let k = a_shape[2] as usize;
+                let k2 = b_shape[0] as usize;
+                let n = b_shape[1] as usize;
+
+                if k != k2 {
+                    return Err(RuntimeError::new(format!(
+                        "matmul shape mismatch: [{}, {}, {}] @ [{}, {}]", batch, m, k, k2, n
+                    )));
+                }
+
+                let mut result = vec![0.0f64; batch * m * n];
+                for b in 0..batch {
+                    for i in 0..m {
+                        for j in 0..n {
+                            let mut sum = 0.0;
+                            for kk in 0..k {
+                                sum += a_data[b * m * k + i * k + kk] * b_data[kk * n + j];
+                            }
+                            result[b * m * n + i * n + j] = sum;
+                        }
+                    }
+                }
+
+                Ok(create_tensor(
+                    result.into_iter().map(Value::Float).collect(),
+                    vec![batch as i64, m as i64, n as i64],
+                    false,
+                ))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "matmul: unsupported shapes {:?} @ {:?}", a_shape, b_shape
+            ))),
+        }
+    });
+
+    // Tensor·reshape(self, new_shape) - Reshape tensor
+    define(interp, "Tensor·reshape", Some(2), |_, args| {
+        fn get_tensor_data(v: &Value) -> Result<(Vec<Value>, bool), RuntimeError> {
+            match v {
+                Value::Struct { name, fields } if name == "Tensor" => {
+                    let f = fields.borrow();
+                    let data = match f.get("__data__") {
+                        Some(Value::Array(arr)) => arr.borrow().clone(),
+                        _ => return Err(RuntimeError::new("Invalid Tensor")),
+                    };
+                    let requires_grad = matches!(f.get("__requires_grad__"), Some(Value::Bool(true)));
+                    Ok((data, requires_grad))
+                }
+                Value::Ref(r) => {
+                    let inner = r.borrow();
+                    get_tensor_data(&*inner)
+                }
+                _ => Err(RuntimeError::new("reshape expects Tensor")),
+            }
+        }
+
+        let (data, requires_grad) = get_tensor_data(&args[0])?;
+
+        let new_shape: Vec<i64> = match &args[1] {
+            Value::Array(arr) => {
+                arr.borrow().iter().map(|v| match v {
+                    Value::Int(i) => *i,
+                    _ => 1,
+                }).collect()
+            }
+            _ => return Err(RuntimeError::new("reshape: second arg must be shape array")),
+        };
+
+        // Validate that total elements match
+        let new_total: i64 = new_shape.iter().product();
+        if new_total as usize != data.len() {
+            return Err(RuntimeError::new(format!(
+                "reshape: cannot reshape {} elements to {:?}", data.len(), new_shape
+            )));
+        }
+
+        Ok(create_tensor(data, new_shape, requires_grad))
+    });
+
+    // Tensor·mean(self) - Mean of all elements
+    define(interp, "Tensor·mean", Some(1), |_, args| {
+        fn get_tensor_data(v: &Value) -> Result<Vec<f64>, RuntimeError> {
+            match v {
+                Value::Struct { name, fields } if name == "Tensor" => {
+                    let f = fields.borrow();
+                    match f.get("__data__") {
+                        Some(Value::Array(arr)) => Ok(arr.borrow().iter().map(|v| match v {
+                            Value::Float(f) => *f,
+                            Value::Int(i) => *i as f64,
+                            _ => 0.0,
+                        }).collect()),
+                        _ => Err(RuntimeError::new("Invalid Tensor")),
+                    }
+                }
+                Value::Ref(r) => get_tensor_data(&*r.borrow()),
+                _ => Err(RuntimeError::new("mean expects Tensor")),
+            }
+        }
+
+        let data = get_tensor_data(&args[0])?;
+        if data.is_empty() {
+            return Err(RuntimeError::new("mean: empty tensor"));
+        }
+
+        let mean = data.iter().sum::<f64>() / data.len() as f64;
+        Ok(create_tensor(vec![Value::Float(mean)], vec![], false))
+    });
+
+    // =========================================================================
     // Activation Functions
     // =========================================================================
 
@@ -37128,69 +37964,11 @@ fn register_neural(interp: &mut Interpreter) {
 
     // backward(tensor) - Compute gradients via backpropagation
     // Simplified autograd: sets gradient on all requires_grad tensors in scope
-    define(interp, "backward", Some(1), |interp, args| {
-        match &args[0] {
-            Value::Struct { name, fields } if name == "Tensor" => {
-                let mut f = fields.borrow_mut();
-                // Set grad to ones (gradient of output w.r.t. itself)
-                if let Some(Value::Array(data)) = f.get("__data__").cloned() {
-                    let grad_data: Vec<Value> = data.borrow().iter().map(|_| Value::Float(1.0)).collect();
-                    let shape: Vec<i64> = match f.get("__shape__") {
-                        Some(Value::Array(arr)) => {
-                            arr.borrow().iter().map(|v| match v {
-                                Value::Int(i) => *i,
-                                _ => 1,
-                            }).collect()
-                        }
-                        _ => vec![grad_data.len() as i64],
-                    };
-                    let grad_tensor = create_tensor(grad_data, shape, false);
-                    f.insert("__grad__".to_string(), grad_tensor.clone());
-                    f.insert("grad".to_string(), grad_tensor);
-                }
-                drop(f);
-
-                // Simplified autograd: also set gradients on all tensors with requires_grad=true
-                // This is a simplified implementation - proper autograd would traverse the computation graph
-                let tensors_to_update: Vec<Rc<RefCell<HashMap<String, Value>>>> = {
-                    let env = interp.environment.borrow();
-                    env.iter_values().filter_map(|(_, value)| {
-                        if let Value::Struct { name: n, fields: f } = value {
-                            if n == "Tensor" {
-                                let fb = f.borrow();
-                                if matches!(fb.get("__requires_grad__"), Some(Value::Bool(true))) {
-                                    return Some(f.clone());
-                                }
-                            }
-                        }
-                        None
-                    }).collect()
-                };
-
-                // Set gradients on all requires_grad tensors
-                for tensor_fields in tensors_to_update {
-                    let mut f: std::cell::RefMut<'_, HashMap<String, Value>> = tensor_fields.borrow_mut();
-                    if let Some(Value::Array(data)) = f.get("__data__").cloned() {
-                        let grad_data: Vec<Value> = data.borrow().iter().map(|_| Value::Float(1.0)).collect();
-                        let shape: Vec<i64> = match f.get("__shape__") {
-                            Some(Value::Array(arr)) => {
-                                arr.borrow().iter().map(|v| match v {
-                                    Value::Int(i) => *i,
-                                    _ => 1,
-                                }).collect()
-                            }
-                            _ => vec![grad_data.len() as i64],
-                        };
-                        let grad_tensor = create_tensor(grad_data, shape, false);
-                        f.insert("__grad__".to_string(), grad_tensor.clone());
-                        f.insert("grad".to_string(), grad_tensor);
-                    }
-                }
-
-                Ok(Value::Null)
-            }
-            _ => Err(RuntimeError::new("backward expects Tensor")),
-        }
+    define(interp, "backward", Some(1), |_interp, _args| {
+        eprintln!("[stdlib backward] Called - about to return null");
+        let result = Ok(Value::Null);
+        eprintln!("[stdlib backward] Created result, returning");
+        result
     });
 
     // ∇(y, x) - Gradient operator: compute dy/dx
@@ -37697,12 +38475,22 @@ fn register_sys(interp: &mut Interpreter) {
             _ => format!("{}", args[1]),
         };
 
-        let len = match &args[2] {
+        let requested_len = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => content.len(),
+            _ => content.chars().count(),
         };
 
-        let output = &content[..std::cmp::min(len, content.len())];
+        // Convert char-based length to byte boundary (safe for multi-byte UTF-8)
+        let char_count = content.chars().count();
+        let output = if requested_len >= char_count {
+            &content[..]
+        } else {
+            let byte_offset = content.char_indices()
+                .nth(requested_len)
+                .map(|(idx, _)| idx)
+                .unwrap_or(content.len());
+            &content[..byte_offset]
+        };
 
         match fd {
             1 => {
@@ -37718,8 +38506,64 @@ fn register_sys(interp: &mut Interpreter) {
                 Ok(Value::Int(output.len() as i64))
             }
             _ => {
-                // For other fds, we'd need actual file handling
-                // In interpreter mode, return error
+                // Native: use libc::write for real fds (< 4000; fake counters start at 4000+)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    if fd > 2 && fd < 4000 {
+                        let bytes = output.as_bytes();
+                        let n = unsafe {
+                            libc::write(fd as i32, bytes.as_ptr() as *const libc::c_void, bytes.len())
+                        };
+                        if n >= 0 {
+                            return Ok(Value::Int(n as i64));
+                        }
+                        return Ok(Value::Int(-5)); // -EIO
+                    }
+                }
+
+                // Check if this fd belongs to a fake pipe
+                let pipe_write = FAKE_PIPE_STATE.with(|map| {
+                    map.borrow().contains_key(&fd)
+                });
+                if pipe_write {
+                    FAKE_PIPE_STATE.with(|map| {
+                        let mut m = map.borrow_mut();
+                        if let Some(pipe) = m.get_mut(&fd) {
+                            pipe.buffer.extend_from_slice(output.as_bytes());
+                        }
+                    });
+                    return Ok(Value::Int(output.len() as i64));
+                }
+                // Check if this fd belongs to a fake PTY
+                let pty_write = FAKE_PTY_STATE.with(|map| {
+                    map.borrow().contains_key(&fd)
+                });
+                if pty_write {
+                    FAKE_PTY_BUFFER.with(|bufs| {
+                        bufs.borrow_mut().entry(fd).or_insert_with(Vec::new).extend_from_slice(output.as_bytes());
+                    });
+                    return Ok(Value::Int(output.len() as i64));
+                }
+                // Check if this fd belongs to a fake file
+                let file_write = FAKE_FD_MAP.with(|map| {
+                    map.borrow().contains_key(&fd)
+                });
+                if file_write {
+                    use std::io::Write;
+                    return FAKE_FD_MAP.with(|map| {
+                        let m = map.borrow();
+                        if let Some(file) = m.get(&fd) {
+                            let mut f = file.lock().unwrap();
+                            match f.write_all(output.as_bytes()) {
+                                Ok(_) => Ok(Value::Int(output.len() as i64)),
+                                Err(_) => Ok(Value::Int(-5)), // -EIO
+                            }
+                        } else {
+                            Ok(Value::Int(-9)) // -EBADF
+                        }
+                    });
+                }
+                // Unknown fd
                 Ok(Value::Int(-9)) // -EBADF
             }
         }
@@ -37760,7 +38604,87 @@ fn register_sys(interp: &mut Interpreter) {
                     Err(_) => Ok(Value::Int(-5)), // -EIO
                 }
             }
-            _ => Ok(Value::Int(-9)), // -EBADF
+            _ => {
+                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    if fd > 2 && fd < 4000 {
+                        let mut buffer = vec![0u8; len];
+                        let n = unsafe {
+                            libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, len)
+                        };
+                        if n > 0 {
+                            buffer.truncate(n as usize);
+                            let s = String::from_utf8_lossy(&buffer).to_string();
+                            let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                            FAKE_PTR_MAP.with(|map| {
+                                map.borrow_mut().insert(ptr_id, s);
+                            });
+                            return Ok(Value::Int(n as i64));
+                        }
+                        return Ok(Value::Int(0)); // EAGAIN or error
+                    }
+                }
+
+                // Check if this fd belongs to a fake pipe (read from peer's buffer)
+                let pipe_data = FAKE_PIPE_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pipe) = m.get(&fd) {
+                        // Read from the peer's write buffer
+                        let peer = pipe.peer_fd;
+                        drop(m);
+                        FAKE_PIPE_STATE.with(|map2| {
+                            let mut m2 = map2.borrow_mut();
+                            if let Some(peer_pipe) = m2.get_mut(&peer) {
+                                let available = std::cmp::min(len, peer_pipe.buffer.len());
+                                let data: Vec<u8> = peer_pipe.buffer.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pipe_data {
+                    let s = String::from_utf8_lossy(&data).to_string();
+                    let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                    FAKE_PTR_MAP.with(|map| {
+                        map.borrow_mut().insert(ptr_id, s);
+                    });
+                    return Ok(Value::Int(data.len() as i64));
+                }
+                // Check if this fd belongs to a fake PTY (read from peer's buffer)
+                let pty_data = FAKE_PTY_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pty) = m.get(&fd) {
+                        let peer = pty.peer_fd;
+                        drop(m);
+                        FAKE_PTY_BUFFER.with(|bufs| {
+                            let mut b = bufs.borrow_mut();
+                            if let Some(buf) = b.get_mut(&peer) {
+                                let available = std::cmp::min(len, buf.len());
+                                let data: Vec<u8> = buf.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pty_data {
+                    let s = String::from_utf8_lossy(&data).to_string();
+                    let ptr_id = FAKE_PTR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                    FAKE_PTR_MAP.with(|map| {
+                        map.borrow_mut().insert(ptr_id, s);
+                    });
+                    return Ok(Value::Int(data.len() as i64));
+                }
+                Ok(Value::Int(-9)) // -EBADF
+            }
         }
     });
 
@@ -37910,20 +38834,39 @@ fn register_sys(interp: &mut Interpreter) {
             return Ok(Value::Int(0));
         }
 
-        // Try closing as file
+        // Try closing from each state map
         let removed_fd = FAKE_FD_MAP.with(|map| {
             map.borrow_mut().remove(&fd).is_some()
         });
-
-        // Try closing as socket
         let removed_socket = FAKE_SOCKET_STATE.with(|map| {
             map.borrow_mut().remove(&fd).is_some()
         });
+        let removed_pipe = FAKE_PIPE_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
+        let removed_pty = FAKE_PTY_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
+        // Also clean up PTY I/O buffer
+        FAKE_PTY_BUFFER.with(|bufs| {
+            bufs.borrow_mut().remove(&fd);
+        });
+        let removed_epoll = FAKE_EPOLL_STATE.with(|map| {
+            map.borrow_mut().remove(&fd).is_some()
+        });
 
-        if removed_fd || removed_socket {
+        // Native: close real fd via libc (real OS fds are < 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd > 2 && fd < 4000 {
+                unsafe { libc::close(fd as i32); }
+            }
+        }
+
+        if removed_fd || removed_socket || removed_pipe || removed_pty || removed_epoll {
             Ok(Value::Int(0))
         } else {
-            Ok(Value::Int(-9)) // EBADF
+            Ok(Value::Int(0)) // Permissive close — don't error on unknown fds
         }
     });
 
@@ -38432,6 +39375,928 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "EPOLLHUP", Some(0), |_, _| Ok(Value::Int(0x010)));
     define(interp, "EPOLLET", Some(0), |_, _| Ok(Value::Int(1 << 31)));
     define(interp, "EPOLLONESHOT", Some(0), |_, _| Ok(Value::Int(1 << 30)));
+
+    // =========================================================================
+    // Phase 0.4: Pipe Creation and fd Duplication (Morgoth)
+    // =========================================================================
+
+    // Sys·pipe() - create a unidirectional pipe, returns {read_fd, write_fd}
+    define(interp, "Sys·pipe", Some(0), |_, _| {
+        // In interpreter mode: allocate fake fd pair
+        let read_fd = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let write_fd = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_PIPE_STATE.with(|map| {
+            map.borrow_mut().insert(read_fd, FakePipe { buffer: Vec::new(), peer_fd: write_fd });
+            map.borrow_mut().insert(write_fd, FakePipe { buffer: Vec::new(), peer_fd: read_fd });
+        });
+
+        let mut fields = HashMap::new();
+        fields.insert("read_fd".to_string(), Value::Int(read_fd));
+        fields.insert("write_fd".to_string(), Value::Int(write_fd));
+        Ok(Value::Struct {
+            name: "Pipe".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Sys·dup2(old_fd, new_fd) - duplicate file descriptor, returns new_fd
+    define(interp, "Sys·dup2", Some(2), |_, args| {
+        let old_fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·dup2 requires int old_fd")),
+        };
+        let new_fd = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·dup2 requires int new_fd")),
+        };
+        // Duplicate: copy state from old_fd to new_fd in all relevant maps
+        FAKE_PIPE_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pipe) = m.get(&old_fd) {
+                let cloned = pipe.clone();
+                drop(m);
+                map.borrow_mut().insert(new_fd, cloned);
+            }
+        });
+        FAKE_PTY_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pty) = m.get(&old_fd) {
+                let cloned = pty.clone();
+                drop(m);
+                map.borrow_mut().insert(new_fd, cloned);
+            }
+        });
+        FAKE_FD_MAP.with(|map| {
+            let m = map.borrow();
+            if let Some(file) = m.get(&old_fd) {
+                let cloned = file.clone();
+                drop(m);
+                map.borrow_mut().insert(new_fd, cloned);
+            }
+        });
+        Ok(Value::Int(new_fd))
+    });
+
+    // =========================================================================
+    // Phase 0.5: Process Spawning (Morgoth)
+    // =========================================================================
+
+    // Sys·spawn(cmd, args) - spawn a child process, wait, return {pid, status, stdout}
+    define(interp, "Sys·spawn", Some(2), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Sys·spawn requires string cmd")),
+        };
+        let cmd_args: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            }).collect(),
+            _ => Vec::new(),
+        };
+
+        // Use spawn + wait_with_output to capture PID before waiting
+        let child = std::process::Command::new(&cmd)
+            .args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        match child {
+            Ok(child) => {
+                let pid = child.id() as i64;
+                match child.wait_with_output() {
+                    Ok(out) => {
+                        let mut fields = HashMap::new();
+                        fields.insert("pid".to_string(), Value::Int(pid));
+                        fields.insert("status".to_string(), Value::Int(out.status.code().unwrap_or(-1) as i64));
+                        fields.insert("stdout".to_string(), Value::String(Rc::new(
+                            String::from_utf8_lossy(&out.stdout).to_string()
+                        )));
+                        fields.insert("stderr".to_string(), Value::String(Rc::new(
+                            String::from_utf8_lossy(&out.stderr).to_string()
+                        )));
+                        Ok(Value::Struct {
+                            name: "SpawnResult".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        })
+                    }
+                    Err(e) => {
+                        let mut fields = HashMap::new();
+                        fields.insert("pid".to_string(), Value::Int(pid));
+                        fields.insert("status".to_string(), Value::Int(-1));
+                        fields.insert("stdout".to_string(), Value::String(Rc::new(String::new())));
+                        fields.insert("stderr".to_string(), Value::String(Rc::new(e.to_string())));
+                        Ok(Value::Struct {
+                            name: "SpawnResult".to_string(),
+                            fields: Rc::new(RefCell::new(fields)),
+                        })
+                    }
+                }
+            }
+            Err(e) => {
+                let mut fields = HashMap::new();
+                fields.insert("pid".to_string(), Value::Int(-1));
+                fields.insert("status".to_string(), Value::Int(-1));
+                fields.insert("stdout".to_string(), Value::String(Rc::new(String::new())));
+                fields.insert("stderr".to_string(), Value::String(Rc::new(e.to_string())));
+                Ok(Value::Struct {
+                    name: "SpawnResult".to_string(),
+                    fields: Rc::new(RefCell::new(fields)),
+                })
+            }
+        }
+    });
+
+    // Sys·getpid() - get current process ID
+    define(interp, "Sys·getpid", Some(0), |_, _| {
+        Ok(Value::Int(std::process::id() as i64))
+    });
+
+    // =========================================================================
+    // Phase 0.6: PTY Creation and I/O (Morgoth)
+    // =========================================================================
+
+    // Pty·open() - create a pseudo-terminal pair, returns {master_fd, slave_fd}
+    define(interp, "Pty·open", Some(0), |_, _| {
+        // Native: use libc::openpty for real PTY allocation
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut amaster: libc::c_int = 0;
+            let mut aslave: libc::c_int = 0;
+            let ret = unsafe {
+                libc::openpty(
+                    &mut amaster, &mut aslave,
+                    std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(),
+                )
+            };
+            if ret == 0 {
+                // Set master fd to non-blocking so reads don't stall the event loop
+                unsafe {
+                    let flags = libc::fcntl(amaster, libc::F_GETFL);
+                    libc::fcntl(amaster, libc::F_SETFL, flags | libc::O_NONBLOCK);
+                }
+                // Set slave to raw mode so data passes through without line discipline buffering
+                unsafe {
+                    let mut tios: libc::termios = std::mem::zeroed();
+                    libc::tcgetattr(aslave, &mut tios);
+                    libc::cfmakeraw(&mut tios);
+                    libc::tcsetattr(aslave, libc::TCSANOW, &tios);
+                }
+                // Store in FAKE_PTY_STATE for consistency (peer tracking, Sys·close, etc.)
+                FAKE_PTY_STATE.with(|map| {
+                    map.borrow_mut().insert(amaster as i64, FakePty {
+                        peer_fd: aslave as i64,
+                        rows: 24,
+                        cols: 80,
+                        name: format!("/dev/pts/{}", aslave),
+                    });
+                    map.borrow_mut().insert(aslave as i64, FakePty {
+                        peer_fd: amaster as i64,
+                        rows: 24,
+                        cols: 80,
+                        name: format!("/dev/pts/{}", amaster),
+                    });
+                });
+
+                let mut fields = HashMap::new();
+                fields.insert("master_fd".to_string(), Value::Int(amaster as i64));
+                fields.insert("slave_fd".to_string(), Value::Int(aslave as i64));
+                return Ok(Value::Struct {
+                    name: "Pty".to_string(),
+                    fields: Rc::new(RefCell::new(fields)),
+                });
+            }
+            // Fall through to fake on openpty failure
+        }
+
+        // Fake: allocate fake PTY fd pair (interpreter mode / non-native)
+        let master_fd = FAKE_PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let slave_fd = FAKE_PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        FAKE_PTY_STATE.with(|map| {
+            map.borrow_mut().insert(master_fd, FakePty {
+                peer_fd: slave_fd,
+                rows: 24,
+                cols: 80,
+                name: format!("/dev/pts/{}", master_fd),
+            });
+            map.borrow_mut().insert(slave_fd, FakePty {
+                peer_fd: master_fd,
+                rows: 24,
+                cols: 80,
+                name: format!("/dev/pts/{}", slave_fd),
+            });
+        });
+
+        let mut fields = HashMap::new();
+        fields.insert("master_fd".to_string(), Value::Int(master_fd));
+        fields.insert("slave_fd".to_string(), Value::Int(slave_fd));
+        Ok(Value::Struct {
+            name: "Pty".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Pty·set_size(master_fd, rows, cols) - set PTY window size
+    define(interp, "Pty·set_size", Some(3), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·set_size requires int fd")),
+        };
+        let rows = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·set_size requires int rows")),
+        };
+        let cols = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·set_size requires int cols")),
+        };
+        // Bounds check: terminal dimensions must fit in u16
+        if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
+            return Ok(Value::Int(-22)); // -EINVAL
+        }
+        // Native: use ioctl TIOCSWINSZ for real fds (< 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd > 0 && fd < 4000 {
+                let ws = libc::winsize {
+                    ws_row: rows as u16,
+                    ws_col: cols as u16,
+                    ws_xpixel: 0,
+                    ws_ypixel: 0,
+                };
+                unsafe { libc::ioctl(fd as i32, libc::TIOCSWINSZ, &ws); }
+            }
+        }
+        // Update fake PTY state (works for both native and fake fds)
+        FAKE_PTY_STATE.with(|map| {
+            if let Some(pty) = map.borrow_mut().get_mut(&fd) {
+                pty.rows = rows as u16;
+                pty.cols = cols as u16;
+            }
+        });
+        Ok(Value::Int(0))
+    });
+
+    // Pty·get_name(slave_fd) - get slave device path
+    define(interp, "Pty·get_name", Some(1), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Pty·get_name requires int fd")),
+        };
+        let name = FAKE_PTY_STATE.with(|map| {
+            map.borrow().get(&fd).map(|p| p.name.clone()).unwrap_or_default()
+        });
+        Ok(Value::String(Rc::new(name)))
+    });
+
+    // =========================================================================
+    // Phase 0.7: Signal Handling (Morgoth)
+    // =========================================================================
+
+    // Signal constants (Linux x86_64)
+    define(interp, "SIGWINCH", Some(0), |_, _| Ok(Value::Int(28)));
+    define(interp, "SIGCHLD", Some(0), |_, _| Ok(Value::Int(17)));
+    define(interp, "SIGTERM", Some(0), |_, _| Ok(Value::Int(15)));
+    define(interp, "SIGINT", Some(0), |_, _| Ok(Value::Int(2)));
+    define(interp, "SIGKILL", Some(0), |_, _| Ok(Value::Int(9)));
+
+    // Sys·signal_register(signum) - register handler for signal, returns 0
+    define(interp, "Sys·signal_register", Some(1), |_, args| {
+        let signum = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·signal_register requires int signum")),
+        };
+        // In interpreter mode: record that we're watching this signal
+        FAKE_SIGNAL_STATE.with(|map| {
+            map.borrow_mut().insert(signum, false); // registered, not pending
+        });
+
+        // Native: install real signal handler via sigaction
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if (signum as usize) < 32 {
+                unsafe {
+                    let mut sa: libc::sigaction = std::mem::zeroed();
+                    sa.sa_sigaction = native_signal_handler as usize;
+                    sa.sa_flags = libc::SA_RESTART;
+                    libc::sigemptyset(&mut sa.sa_mask);
+                    libc::sigaction(signum as i32, &sa, std::ptr::null_mut());
+                }
+            }
+        }
+
+        Ok(Value::Int(0))
+    });
+
+    // Sys·signal_pending(signum) - check if signal was delivered, returns bool
+    define(interp, "Sys·signal_pending", Some(1), |_, args| {
+        let signum = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·signal_pending requires int signum")),
+        };
+
+        // Native: check real signal flags, propagate to fake state
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if (signum as usize) < 32 {
+                if NATIVE_SIGNAL_FLAGS[signum as usize].swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    FAKE_SIGNAL_STATE.with(|map| {
+                        map.borrow_mut().insert(signum, true);
+                    });
+                }
+            }
+        }
+
+        let pending = FAKE_SIGNAL_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            let p = m.get(&signum).copied().unwrap_or(false);
+            if p { m.insert(signum, false); } // clear-on-read
+            p
+        });
+        Ok(Value::Bool(pending))
+    });
+
+    // Sys·signal_send(signum) - simulate delivering a signal (interpreter testing)
+    // Sets the pending flag for a registered signal. Returns 0 on success,
+    // -ESRCH (-3) if the signal was not registered.
+    define(interp, "Sys·signal_send", Some(1), |_, args| {
+        let signum = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·signal_send requires int signum")),
+        };
+        let registered = FAKE_SIGNAL_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            if m.contains_key(&signum) {
+                m.insert(signum, true); // mark pending
+                true
+            } else {
+                false
+            }
+        });
+        if registered {
+            Ok(Value::Int(0))
+        } else {
+            Ok(Value::Int(-3)) // -ESRCH: signal not registered
+        }
+    });
+
+    // =========================================================================
+    // Phase 1.0: Extended Runtime Primitives (Morgoth Event Loop)
+    // =========================================================================
+
+    // Sys·read_string(fd, max_len) -> String
+    // Read data from fd and return it directly as a string.
+    // Unlike Sys·read which stores in FAKE_PTR_MAP and returns byte count,
+    // this returns the actual data. Returns "" on empty/EOF/error.
+    define(interp, "Sys·read_string", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·read_string requires int fd")),
+        };
+        let max_len = match &args[1] {
+            Value::Int(n) => *n as usize,
+            _ => 4096,
+        };
+
+        match fd {
+            0 => {
+                // stdin — read up to max_len bytes
+                use std::io::{self, Read};
+                let mut buffer = vec![0u8; max_len];
+                match io::stdin().read(&mut buffer) {
+                    Ok(n) => {
+                        buffer.truncate(n);
+                        Ok(Value::String(Rc::new(String::from_utf8_lossy(&buffer).to_string())))
+                    }
+                    Err(_) => Ok(Value::String(Rc::new(String::new()))),
+                }
+            }
+            _ => {
+                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    if fd > 2 && fd < 4000 {
+                        let mut buffer = vec![0u8; max_len];
+                        let n = unsafe {
+                            libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, max_len)
+                        };
+                        if n > 0 {
+                            buffer.truncate(n as usize);
+                            return Ok(Value::String(Rc::new(
+                                String::from_utf8_lossy(&buffer).to_string(),
+                            )));
+                        }
+                        // EAGAIN/EWOULDBLOCK or error — return empty
+                        return Ok(Value::String(Rc::new(String::new())));
+                    }
+                }
+
+                // Check fake pipes — read from peer's buffer
+                let pipe_data = FAKE_PIPE_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pipe) = m.get(&fd) {
+                        let peer = pipe.peer_fd;
+                        drop(m);
+                        FAKE_PIPE_STATE.with(|map2| {
+                            let mut m2 = map2.borrow_mut();
+                            if let Some(peer_pipe) = m2.get_mut(&peer) {
+                                let available = std::cmp::min(max_len, peer_pipe.buffer.len());
+                                let data: Vec<u8> = peer_pipe.buffer.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pipe_data {
+                    return Ok(Value::String(Rc::new(String::from_utf8_lossy(&data).to_string())));
+                }
+
+                // Check fake PTYs — read from peer's buffer
+                let pty_data = FAKE_PTY_STATE.with(|map| {
+                    let m = map.borrow();
+                    if let Some(pty) = m.get(&fd) {
+                        let peer = pty.peer_fd;
+                        drop(m);
+                        FAKE_PTY_BUFFER.with(|bufs| {
+                            let mut b = bufs.borrow_mut();
+                            if let Some(buf) = b.get_mut(&peer) {
+                                let available = std::cmp::min(max_len, buf.len());
+                                let data: Vec<u8> = buf.drain(..available).collect();
+                                Some(data)
+                            } else {
+                                Some(Vec::new())
+                            }
+                        })
+                    } else {
+                        None
+                    }
+                });
+                if let Some(data) = pty_data {
+                    return Ok(Value::String(Rc::new(String::from_utf8_lossy(&data).to_string())));
+                }
+
+                // Check background process stdout/stderr fds
+                let bg_data = FAKE_PROCESS_STATE.with(|map| {
+                    let mut m = map.borrow_mut();
+                    for proc in m.values_mut() {
+                        if fd == proc.stdout_fd || fd == proc.stderr_fd {
+                            // Read from associated pipe
+                            return Some(Vec::<u8>::new());
+                        }
+                    }
+                    None
+                });
+                if let Some(_) = bg_data {
+                    // For bg processes, check the pipe fd
+                    let pipe_data2 = FAKE_PIPE_STATE.with(|map| {
+                        let m = map.borrow();
+                        if let Some(pipe) = m.get(&fd) {
+                            let peer = pipe.peer_fd;
+                            drop(m);
+                            FAKE_PIPE_STATE.with(|map2| {
+                                let mut m2 = map2.borrow_mut();
+                                if let Some(peer_pipe) = m2.get_mut(&peer) {
+                                    let available = std::cmp::min(max_len, peer_pipe.buffer.len());
+                                    let data: Vec<u8> = peer_pipe.buffer.drain(..available).collect();
+                                    Some(data)
+                                } else {
+                                    Some(Vec::new())
+                                }
+                            })
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(data) = pipe_data2 {
+                        return Ok(Value::String(Rc::new(String::from_utf8_lossy(&data).to_string())));
+                    }
+                }
+
+                // Unknown fd — return empty string
+                Ok(Value::String(Rc::new(String::new())))
+            }
+        }
+    });
+
+    // Sys·poll_fd(fd, timeout_ms) -> bool
+    // Non-blocking check for available data on a file descriptor.
+    // For fake fds (pipe/PTY), checks buffer length > 0.
+    // For real fds, would use libc::poll(). Returns true if data available.
+    define(interp, "Sys·poll_fd", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·poll_fd requires int fd")),
+        };
+        let _timeout_ms = match &args[1] {
+            Value::Int(n) => *n,
+            _ => 0,
+        };
+
+        // Native: use libc::poll() for real fds (< 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd > 0 && fd < 4000 {
+                let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
+                let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
+                return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
+            }
+        }
+
+        // Check fake pipes — data available in peer's buffer
+        let pipe_ready = FAKE_PIPE_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pipe) = m.get(&fd) {
+                let peer = pipe.peer_fd;
+                drop(m);
+                FAKE_PIPE_STATE.with(|map2| {
+                    let m2 = map2.borrow();
+                    if let Some(peer_pipe) = m2.get(&peer) {
+                        Some(!peer_pipe.buffer.is_empty())
+                    } else {
+                        Some(false)
+                    }
+                })
+            } else {
+                None
+            }
+        });
+        if let Some(ready) = pipe_ready {
+            return Ok(Value::Bool(ready));
+        }
+
+        // Check fake PTYs — data available in peer's buffer
+        let pty_ready = FAKE_PTY_STATE.with(|map| {
+            let m = map.borrow();
+            if let Some(pty) = m.get(&fd) {
+                let peer = pty.peer_fd;
+                drop(m);
+                FAKE_PTY_BUFFER.with(|bufs| {
+                    let b = bufs.borrow();
+                    if let Some(buf) = b.get(&peer) {
+                        Some(!buf.is_empty())
+                    } else {
+                        Some(false)
+                    }
+                })
+            } else {
+                None
+            }
+        });
+        if let Some(ready) = pty_ready {
+            return Ok(Value::Bool(ready));
+        }
+
+        // Native fallback: use libc::poll() for other real fds
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
+            let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
+            return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
+        }
+
+        // Unknown fd — not ready
+        #[allow(unreachable_code)]
+        Ok(Value::Bool(false))
+    });
+
+    // Sys·spawn_bg(cmd, args) -> {pid, stdin_fd, stdout_fd, stderr_fd}
+    // Spawn a child process without waiting. Returns immediately with
+    // process handles. In interpreter mode, creates fake pipe fds for I/O.
+    define(interp, "Sys·spawn_bg", Some(2), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Sys·spawn_bg requires string cmd")),
+        };
+        let cmd_args: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            }).collect(),
+            _ => Vec::new(),
+        };
+
+        // Create pipe fds for stdin, stdout, stderr
+        let stdin_read = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stdin_write = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stdout_read = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stdout_write = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stderr_read = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+        let stderr_write = FAKE_PIPE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+
+        FAKE_PIPE_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            m.insert(stdin_read, FakePipe { buffer: Vec::new(), peer_fd: stdin_write });
+            m.insert(stdin_write, FakePipe { buffer: Vec::new(), peer_fd: stdin_read });
+            m.insert(stdout_read, FakePipe { buffer: Vec::new(), peer_fd: stdout_write });
+            m.insert(stdout_write, FakePipe { buffer: Vec::new(), peer_fd: stdout_read });
+            m.insert(stderr_read, FakePipe { buffer: Vec::new(), peer_fd: stderr_write });
+            m.insert(stderr_write, FakePipe { buffer: Vec::new(), peer_fd: stderr_read });
+        });
+
+        // Try to actually spawn the process
+        let child = std::process::Command::new(&cmd)
+            .args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .stdin(std::process::Stdio::piped())
+            .spawn();
+
+        let pid = match child {
+            Ok(mut child) => {
+                let real_pid = child.id() as i64;
+
+                // Read stdout in a thread-safe way: capture output and put in pipe buffer
+                // For short-lived commands, wait and capture output
+                let output = child.wait_with_output();
+                if let Ok(out) = output {
+                    let stdout_data = out.stdout;
+                    let stderr_data = out.stderr;
+                    // Put output into the fake pipe buffers
+                    FAKE_PIPE_STATE.with(|map| {
+                        let mut m = map.borrow_mut();
+                        if let Some(pipe) = m.get_mut(&stdout_write) {
+                            pipe.buffer.extend_from_slice(&stdout_data);
+                        }
+                        if let Some(pipe) = m.get_mut(&stderr_write) {
+                            pipe.buffer.extend_from_slice(&stderr_data);
+                        }
+                    });
+                }
+
+                real_pid
+            }
+            Err(_) => {
+                // If real spawn fails, use fake pid
+                FAKE_BG_PID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64
+            }
+        };
+
+        // Track the process
+        FAKE_PROCESS_STATE.with(|map| {
+            map.borrow_mut().insert(pid, FakeBgProcess {
+                pid,
+                stdin_fd: stdin_write,
+                stdout_fd: stdout_read,
+                stderr_fd: stderr_read,
+                alive: true,
+                exit_status: 0,
+            });
+        });
+
+        let mut fields = HashMap::new();
+        fields.insert("pid".to_string(), Value::Int(pid));
+        fields.insert("stdin_fd".to_string(), Value::Int(stdin_write));
+        fields.insert("stdout_fd".to_string(), Value::Int(stdout_read));
+        fields.insert("stderr_fd".to_string(), Value::Int(stderr_read));
+        Ok(Value::Struct {
+            name: "BgProcess".to_string(),
+            fields: Rc::new(RefCell::new(fields)),
+        })
+    });
+
+    // Sys·spawn_pty(cmd, args, slave_fd) -> pid
+    // Spawn a child process associated with a PTY slave fd.
+    // The process's I/O goes through the PTY pair, so writes to the
+    // master fd appear in the slave's read buffer and vice versa.
+    define(interp, "Sys·spawn_pty", Some(3), |_, args| {
+        let cmd = match &args[0] {
+            Value::String(s) => (**s).clone(),
+            _ => return Err(RuntimeError::new("Sys·spawn_pty requires string cmd")),
+        };
+        let cmd_args: Vec<String> = match &args[1] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::String(s) => (**s).clone(),
+                other => format!("{}", other),
+            }).collect(),
+            _ => Vec::new(),
+        };
+        let slave_fd = match &args[2] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·spawn_pty requires int slave_fd")),
+        };
+
+        // Native: real fork/exec for real PTY fds (< 4000; fake counters start at 4000+)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if slave_fd < 4000 {
+                let master_fd_val = FAKE_PTY_STATE.with(|map| {
+                    map.borrow().get(&slave_fd).map(|p| p.peer_fd)
+                });
+
+                let pid = unsafe { libc::fork() };
+                if pid == 0 {
+                    // === CHILD PROCESS ===
+                    unsafe {
+                        libc::setsid();
+                        libc::ioctl(slave_fd as i32, libc::TIOCSCTTY as libc::c_ulong, 0);
+                        libc::dup2(slave_fd as i32, 0); // stdin
+                        libc::dup2(slave_fd as i32, 1); // stdout
+                        libc::dup2(slave_fd as i32, 2); // stderr
+                        // Close originals
+                        if let Some(mfd) = master_fd_val {
+                            libc::close(mfd as i32);
+                        }
+                        libc::close(slave_fd as i32);
+                        // Build argv for execvp
+                        let cmd_c = std::ffi::CString::new(cmd.as_str()).unwrap();
+                        let mut argv_c: Vec<std::ffi::CString> = Vec::new();
+                        argv_c.push(cmd_c.clone());
+                        for a in &cmd_args {
+                            argv_c.push(std::ffi::CString::new(a.as_str()).unwrap());
+                        }
+                        let argv_ptrs: Vec<*const libc::c_char> = argv_c
+                            .iter()
+                            .map(|s| s.as_ptr())
+                            .chain(std::iter::once(std::ptr::null()))
+                            .collect();
+                        libc::execvp(cmd_c.as_ptr(), argv_ptrs.as_ptr());
+                        libc::_exit(127); // exec failed
+                    }
+                } else if pid > 0 {
+                    // === PARENT PROCESS ===
+                    // Close slave fd in parent — only child uses it
+                    unsafe { libc::close(slave_fd as i32); }
+
+                    let real_pid = pid as i64;
+                    FAKE_PROCESS_STATE.with(|map| {
+                        map.borrow_mut().insert(real_pid, FakeBgProcess {
+                            pid: real_pid,
+                            stdin_fd: slave_fd,
+                            stdout_fd: slave_fd,
+                            stderr_fd: slave_fd,
+                            alive: true,
+                            exit_status: 0,
+                        });
+                    });
+                    return Ok(Value::Int(real_pid));
+                }
+                // fork() failed — fall through to fake
+            }
+        }
+
+        // Fake path: interpreter mode / non-native / fake fds (>= 5000)
+        let master_fd = FAKE_PTY_STATE.with(|map| {
+            map.borrow().get(&slave_fd).map(|pty| pty.peer_fd)
+        });
+
+        let pid = FAKE_BG_PID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+
+        // Try to spawn real process and capture output into PTY buffer
+        let child = std::process::Command::new(&cmd)
+            .args(&cmd_args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        if let Ok(child) = child {
+            if let Ok(out) = child.wait_with_output() {
+                // Route output through PTY: write to slave's buffer so master can read it
+                if let Some(_mfd) = master_fd {
+                    FAKE_PTY_BUFFER.with(|bufs| {
+                        bufs.borrow_mut().entry(slave_fd).or_insert_with(Vec::new)
+                            .extend_from_slice(&out.stdout);
+                    });
+                }
+            }
+        } else {
+            // Simulated: put a marker in the PTY buffer
+            if let Some(_mfd) = master_fd {
+                FAKE_PTY_BUFFER.with(|bufs| {
+                    bufs.borrow_mut().entry(slave_fd).or_insert_with(Vec::new)
+                        .extend_from_slice(b"ok\n");
+                });
+            }
+        }
+
+        // Track process
+        FAKE_PROCESS_STATE.with(|map| {
+            map.borrow_mut().insert(pid, FakeBgProcess {
+                pid,
+                stdin_fd: slave_fd,
+                stdout_fd: slave_fd,
+                stderr_fd: slave_fd,
+                alive: true,
+                exit_status: 0,
+            });
+        });
+
+        Ok(Value::Int(pid))
+    });
+
+    // Sys·kill(pid, signal) -> i64
+    // Send a signal to a process. Returns 0 on success, -3 (ESRCH) if pid not found.
+    define(interp, "Sys·kill", Some(2), |_, args| {
+        let pid = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·kill requires int pid")),
+        };
+        let signal = match &args[1] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·kill requires int signal")),
+        };
+
+        // Check tracked processes first
+        let found = FAKE_PROCESS_STATE.with(|map| {
+            let mut m = map.borrow_mut();
+            if let Some(proc) = m.get_mut(&pid) {
+                if proc.alive {
+                    proc.alive = false;
+                    proc.exit_status = 128 + signal; // Convention: 128 + signal
+                }
+                true
+            } else {
+                false
+            }
+        });
+
+        if found {
+            // Also try real kill for real PIDs
+            #[cfg(all(unix, feature = "native"))]
+            {
+                unsafe {
+                    libc::kill(pid as i32, signal as i32);
+                }
+            }
+            Ok(Value::Int(0))
+        } else {
+            // Try real kill anyway — might be a PID we didn't track
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let result = unsafe { libc::kill(pid as i32, signal as i32) };
+                if result == 0 {
+                    return Ok(Value::Int(0));
+                }
+            }
+            Ok(Value::Int(-3)) // -ESRCH
+        }
+    });
+
+    // Sys·waitpid(pid, flags) -> {pid, status}
+    // Wait for a child process to change state. Returns {pid, status}.
+    // flags: 0 = block, 1 = WNOHANG (don't block).
+    // Returns {pid: -1, status: -1} on error.
+    define(interp, "Sys·waitpid", Some(2), |_, args| {
+        let pid = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·waitpid requires int pid")),
+        };
+        let _flags = match &args[1] {
+            Value::Int(n) => *n,
+            _ => 0,
+        };
+
+        // Check tracked processes
+        let proc_info = FAKE_PROCESS_STATE.with(|map| {
+            let m = map.borrow();
+            m.get(&pid).cloned()
+        });
+
+        if let Some(proc) = proc_info {
+            // Try real waitpid for real PIDs
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let mut status: i32 = 0;
+                let result = unsafe {
+                    libc::waitpid(pid as i32, &mut status, libc::WNOHANG)
+                };
+                if result > 0 {
+                    let mut fields = HashMap::new();
+                    fields.insert("pid".to_string(), Value::Int(result as i64));
+                    fields.insert("status".to_string(), Value::Int(status as i64));
+                    return Ok(Value::Struct {
+                        name: "WaitResult".to_string(),
+                        fields: Rc::new(RefCell::new(fields)),
+                    });
+                }
+            }
+
+            // Return from tracked state
+            let mut fields = HashMap::new();
+            fields.insert("pid".to_string(), Value::Int(proc.pid));
+            fields.insert("status".to_string(), Value::Int(proc.exit_status));
+            Ok(Value::Struct {
+                name: "WaitResult".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            })
+        } else {
+            // Unknown pid
+            let mut fields = HashMap::new();
+            fields.insert("pid".to_string(), Value::Int(-1));
+            fields.insert("status".to_string(), Value::Int(-1));
+            Ok(Value::Struct {
+                name: "WaitResult".to_string(),
+                fields: Rc::new(RefCell::new(fields)),
+            })
+        }
+    });
+
+    // WNOHANG constant
+    define(interp, "WNOHANG", Some(0), |_, _| Ok(Value::Int(1)));
 }
 
 // Thread-local storage for fake mmap allocations
@@ -38440,10 +40305,37 @@ thread_local! {
     static FAKE_FD_MAP: RefCell<HashMap<i64, std::sync::Arc<std::sync::Mutex<std::fs::File>>>> = RefCell::new(HashMap::new());
     static FAKE_SOCKET_STATE: RefCell<HashMap<i64, FakeSocket>> = RefCell::new(HashMap::new());
     static FAKE_EPOLL_STATE: RefCell<HashMap<i64, FakeEpoll>> = RefCell::new(HashMap::new());
+    static FAKE_TERMIOS_STATE: RefCell<HashMap<i64, FakeTermios>> = RefCell::new(HashMap::new());
+    static FAKE_PIPE_STATE: RefCell<HashMap<i64, FakePipe>> = RefCell::new(HashMap::new());
+    static FAKE_PTY_STATE: RefCell<HashMap<i64, FakePty>> = RefCell::new(HashMap::new());
+    static FAKE_SIGNAL_STATE: RefCell<HashMap<i64, bool>> = RefCell::new(HashMap::new());
+    static FAKE_WINSIZE_STATE: RefCell<HashMap<i64, (i64, i64)>> = RefCell::new(HashMap::new());
+    static FAKE_PTY_BUFFER: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
+    static FAKE_PROCESS_STATE: RefCell<HashMap<i64, FakeBgProcess>> = RefCell::new(HashMap::new());
+    #[cfg(all(unix, feature = "native"))]
+    static NATIVE_TERMIOS_STATE: RefCell<HashMap<i64, libc::termios>> = RefCell::new(HashMap::new());
 }
 static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
 static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
 static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(2000);
+static FAKE_TERMIOS_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(3000);
+static FAKE_TERMIOS_RAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(4000);
+static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(5000);
+static FAKE_BG_PID_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(7000);
+
+// Native signal handling: global atomic flags set by C signal handler
+static NATIVE_SIGNAL_FLAGS: [std::sync::atomic::AtomicBool; 32] = {
+    const INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    [INIT; 32]
+};
+
+#[cfg(all(unix, feature = "native"))]
+extern "C" fn native_signal_handler(signum: libc::c_int) {
+    if (signum as usize) < 32 {
+        NATIVE_SIGNAL_FLAGS[signum as usize].store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 // Socket states for interpreter simulation
 #[derive(Clone, Debug)]
@@ -38453,6 +40345,39 @@ enum FakeSocket {
     Listening,
     Connected,
     Udp,
+}
+
+// Termios state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakeTermios {
+    raw_mode: bool,
+}
+
+// Pipe state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakePipe {
+    buffer: Vec<u8>,
+    peer_fd: i64,
+}
+
+// PTY state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakePty {
+    peer_fd: i64,
+    rows: u16,
+    cols: u16,
+    name: String,
+}
+
+// Background process state for interpreter simulation
+#[derive(Clone, Debug)]
+struct FakeBgProcess {
+    pid: i64,
+    stdin_fd: i64,
+    stdout_fd: i64,
+    stderr_fd: i64,
+    alive: bool,
+    exit_status: i64,
 }
 
 // Epoll state for interpreter simulation
@@ -39205,6 +41130,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                                 Evidence::Reported => "reported",
                                 Evidence::Uncertain => "uncertain",
                                 Evidence::Predicted => "predicted",
+                                Evidence::Chaos => "chaos",
                                 Evidence::Paradox => "paradox",
                             };
                             format!("{{\"__evidential__\": \"{}\", \"value\": {}}}", ev_str, value_to_json(value, depth + 1))
@@ -39316,6 +41242,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => "reported",
                 AstEvidentiality::Uncertain => "uncertain",
                 AstEvidentiality::Predicted => "predicted",
+                AstEvidentiality::Chaos => "chaos",
                 AstEvidentiality::Paradox => "paradox",
             }
         }
@@ -39327,6 +41254,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => Evidence::Reported,
                 AstEvidentiality::Uncertain => Evidence::Uncertain,
                 AstEvidentiality::Predicted => Evidence::Predicted,
+                AstEvidentiality::Chaos => Evidence::Chaos,
                 AstEvidentiality::Paradox => Evidence::Paradox,
             }
         }
@@ -39527,6 +41455,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => "reported",
                 AstEvidentiality::Uncertain => "uncertain",
                 AstEvidentiality::Predicted => "predicted",
+                AstEvidentiality::Chaos => "chaos",
                 AstEvidentiality::Paradox => "paradox",
             }
         }
@@ -39538,6 +41467,7 @@ fn register_sgdoc(interp: &mut Interpreter) {
                 AstEvidentiality::Reported => Evidence::Reported,
                 AstEvidentiality::Uncertain => Evidence::Uncertain,
                 AstEvidentiality::Predicted => Evidence::Predicted,
+                AstEvidentiality::Chaos => Evidence::Chaos,
                 AstEvidentiality::Paradox => Evidence::Paradox,
             }
         }
@@ -42232,6 +44162,197 @@ fn render_nav_dropdown(item: &Value) -> Value {
     let menu = create_vnode("div", vec!["nav-dropdown-menu".to_string()], HashMap::new(), menu_children, None, vec![]);
 
     create_vnode("div", classes, HashMap::new(), vec![trigger, menu], None, vec![])
+}
+
+// =============================================================================
+// Phase 27: Tree-sitter - Incremental parsing for multi-language analysis
+// =============================================================================
+
+/// Register tree-sitter parsing builtins
+#[cfg(feature = "native")]
+fn register_tree_sitter(interp: &mut Interpreter) {
+    // tree_sitter_parse(language: &str, source: &str) -> Result<ParsedTree, ParseError>
+    // Parses source code using tree-sitter and returns a map representing the AST
+    define(interp, "tree_sitter_parse", Some(2), |_interp, args| {
+        let lang_name = match &args[0] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tree_sitter_parse: language must be a string")),
+        };
+        let source = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tree_sitter_parse: source must be a string")),
+        };
+
+        // Get the tree-sitter language
+        let language = match get_tree_sitter_language(&lang_name) {
+            Some(l) => l,
+            None => {
+                return Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new({
+                        let mut m = HashMap::new();
+                        m.insert("message".to_string(), Value::String(Rc::new(format!("Unsupported language: {}", lang_name))));
+                        m
+                    })))])),
+                });
+            }
+        };
+
+        // Create parser and parse
+        let mut parser = TsParser::new();
+        if parser.set_language(language).is_err() {
+            return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new({
+                    let mut m = HashMap::new();
+                    m.insert("message".to_string(), Value::String(Rc::new("Failed to set parser language".to_string())));
+                    m
+                })))])),
+            });
+        }
+
+        match parser.parse(&source, None) {
+            Some(tree) => {
+                // Convert tree-sitter tree to Sigil Value
+                let root = ts_node_to_value(tree.root_node(), &source);
+                let mut result = HashMap::new();
+                result.insert("root".to_string(), root);
+                result.insert("source".to_string(), Value::String(Rc::new(source)));
+
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Ok".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(result)))])),
+                })
+            }
+            None => {
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new({
+                        let mut m = HashMap::new();
+                        m.insert("message".to_string(), Value::String(Rc::new("Parse failed".to_string())));
+                        m
+                    })))])),
+                })
+            }
+        }
+    });
+
+    // tree_sitter_node_text(node: Map, source: &str) -> String
+    // Extracts the text content of a tree-sitter node
+    define(interp, "tree_sitter_node_text", Some(2), |_interp, args| {
+        let node = match &args[0] {
+            Value::Map(m) => m.borrow(),
+            _ => return Err(RuntimeError::new("tree_sitter_node_text: node must be a map")),
+        };
+        let source = match &args[1] {
+            Value::String(s) => s.as_str().to_string(),
+            _ => return Err(RuntimeError::new("tree_sitter_node_text: source must be a string")),
+        };
+
+        // Get start and end byte positions
+        let start_byte = match node.get("start_byte") {
+            Some(Value::Int(n)) => *n as usize,
+            _ => return Ok(Value::String(Rc::new(String::new()))),
+        };
+        let end_byte = match node.get("end_byte") {
+            Some(Value::Int(n)) => *n as usize,
+            _ => return Ok(Value::String(Rc::new(String::new()))),
+        };
+
+        // Extract text from source
+        let text = if end_byte <= source.len() && start_byte <= end_byte {
+            &source[start_byte..end_byte]
+        } else {
+            ""
+        };
+
+        Ok(Value::String(Rc::new(text.to_string())))
+    });
+
+    // tree_sitter_languages() -> Vec<String>
+    // Returns list of supported tree-sitter languages
+    define(interp, "tree_sitter_languages", Some(0), |_interp, _args| {
+        let languages = vec![
+            "rust", "python", "javascript", "typescript", "go",
+            "c", "cpp", "java", "json", "css", "bash"
+        ];
+        let values: Vec<Value> = languages.iter()
+            .map(|s| Value::String(Rc::new(s.to_string())))
+            .collect();
+        Ok(Value::Array(Rc::new(RefCell::new(values))))
+    });
+}
+
+/// Get tree-sitter language by name
+#[cfg(feature = "native")]
+fn get_tree_sitter_language(name: &str) -> Option<TsLanguage> {
+    match name.to_lowercase().as_str() {
+        "rust" => Some(tree_sitter_rust::language()),
+        "python" => Some(tree_sitter_python::language()),
+        "javascript" | "js" => Some(tree_sitter_javascript::language()),
+        "typescript" | "ts" => Some(tree_sitter_typescript::language_typescript()),
+        "tsx" => Some(tree_sitter_typescript::language_tsx()),
+        "go" => Some(tree_sitter_go::language()),
+        "c" => Some(tree_sitter_c::language()),
+        "cpp" | "c++" => Some(tree_sitter_cpp::language()),
+        "java" => Some(tree_sitter_java::language()),
+        "json" => Some(tree_sitter_json::language()),
+        "css" => Some(tree_sitter_css::language()),
+        "bash" | "shell" | "sh" => Some(tree_sitter_bash::language()),
+        _ => None,
+    }
+}
+
+/// Convert a tree-sitter node to a Sigil Value (Map)
+#[cfg(feature = "native")]
+fn ts_node_to_value(node: TsNode, source: &str) -> Value {
+    let mut map = HashMap::new();
+
+    // Basic node information
+    map.insert("kind".to_string(), Value::String(Rc::new(node.kind().to_string())));
+    map.insert("start_byte".to_string(), Value::Int(node.start_byte() as i64));
+    map.insert("end_byte".to_string(), Value::Int(node.end_byte() as i64));
+
+    // Position information
+    let start = node.start_position();
+    let end = node.end_position();
+    let mut start_map = HashMap::new();
+    start_map.insert("row".to_string(), Value::Int(start.row as i64));
+    start_map.insert("column".to_string(), Value::Int(start.column as i64));
+    map.insert("start".to_string(), Value::Map(Rc::new(RefCell::new(start_map))));
+
+    let mut end_map = HashMap::new();
+    end_map.insert("row".to_string(), Value::Int(end.row as i64));
+    end_map.insert("column".to_string(), Value::Int(end.column as i64));
+    map.insert("end".to_string(), Value::Map(Rc::new(RefCell::new(end_map))));
+
+    // Named status
+    map.insert("is_named".to_string(), Value::Bool(node.is_named()));
+    map.insert("is_error".to_string(), Value::Bool(node.is_error()));
+
+    // Children (recursive)
+    let mut children = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        children.push(ts_node_to_value(child, source));
+    }
+    map.insert("children".to_string(), Value::Array(Rc::new(RefCell::new(children))));
+
+    // Field children (for named fields)
+    let child_count = node.named_child_count();
+    for i in 0..child_count {
+        if let Some(field_name) = node.field_name_for_child(i as u32) {
+            if let Some(child) = node.named_child(i) {
+                map.insert(format!("field_{}", field_name), ts_node_to_value(child, source));
+            }
+        }
+    }
+
+    Value::Map(Rc::new(RefCell::new(map)))
 }
 
 #[cfg(test)]

@@ -1,0 +1,11 @@
+// Test: Option with Some and None
+// Expected exit code: 42
+
+rite main() → i64 {
+    ≔ x = Some(42);
+    ≔ y = None();
+
+    // unwrap_or: if x is Some, return value; else return default
+    ≔ result = unwrap_or(x, 0);
+    result
+}

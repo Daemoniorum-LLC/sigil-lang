@@ -1,0 +1,14 @@
+// Test: Mutable field assignment
+// Expected exit code: 42
+
+Σ MutablePoint {
+    x: i64,
+    y: i64,
+}
+
+rite main() → i64 {
+    ≔ p = MutablePoint { x: 0, y: 0 };
+    p.x = 20;
+    p.y = 22;
+    p.x + p.y
+}

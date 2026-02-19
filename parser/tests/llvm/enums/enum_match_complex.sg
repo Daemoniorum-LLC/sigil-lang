@@ -1,0 +1,36 @@
+// G44: Complex enum match with multiple variant patterns
+//
+// This tests enum match expressions with field destructuring
+// Expected: Should compile and run correctly
+// Actual: "Instruction does not dominate all uses" IR verification error
+
+ᛈ MyError {
+    Simple,
+    WithMessage { message: String },
+    WithPair { from: i64, to: i64 },
+}
+
+rite describe_error(err: MyError) → String {
+    ⌥ err {
+        MyError·Simple => String·from("simple error"),
+        MyError·WithMessage { message } => message,
+        MyError·WithPair { from, to } => {
+            String·from("pair error")
+        }
+    }
+}
+
+rite main() {
+    println!("Testing enum match...");
+
+    ≔ e1 = MyError·Simple;
+    println!("e1: simple");
+
+    ≔ e2 = MyError·WithMessage { message: String·from("oops") };
+    println!("e2: with message");
+
+    ≔ e3 = MyError·WithPair { from: 10, to: 20 };
+    println!("e3: with pair");
+
+    println!("Done!");
+}

@@ -1,0 +1,130 @@
+//! Test: zip pipe method
+//! Spec: 09-STDLIB.md §3.3
+//! Priority: P1
+//! Pairs elements from two collections into tuples
+
+rite main() {
+    println("=== Testing zip pipe method ===");
+    println("");
+
+    // =========================================================================
+    // Basic Cases
+    // =========================================================================
+
+    // Test 1: Basic zip of two arrays
+    ≔ a = [1, 2, 3];
+    ≔ b = ["a", "b", "c"];
+    ≔ zipped = a|zip(b);
+    assert(zipped|len == 3, "Zipped length matches");
+    println("  [1] Basic zip: passed");
+
+    // Test 2: Access tuple elements
+    ≔ first = zipped[0];
+    assert(first.0 == 1, "First tuple element");
+    assert(first.1 == "a", "Second tuple element");
+    println("  [2] Tuple access: passed");
+
+    // Test 3: Zip integers with floats
+    ≔ ints = [1, 2, 3];
+    ≔ floats = [1.1, 2.2, 3.3];
+    ≔ mixed = ints|zip(floats);
+    ≔ m0 = mixed[0];
+    assert(m0.0 == 1, "Int preserved");
+    assert(m0.1 > 1.0, "Float preserved");
+    println("  [3] Mixed types: passed");
+
+    println("");
+
+    // =========================================================================
+    // Length Handling
+    // =========================================================================
+
+    // Test 4: Unequal lengths - shorter wins
+    ≔ short = [1, 2];
+    ≔ long = [10, 20, 30, 40];
+    ≔ z = short|zip(long);
+    assert(z|len == 2, "Zip stops at shorter");
+    println("  [4] Shorter wins: passed");
+
+    // Test 5: Reverse order - still shorter wins
+    ≔ z2 = long|zip(short);
+    assert(z2|len == 2, "Zip stops at shorter (reversed)");
+    println("  [5] Shorter wins (reversed): passed");
+
+    // Test 6: Single element
+    ≔ single = [42];
+    ≔ multi = [1, 2, 3];
+    ≔ z3 = single|zip(multi);
+    assert(z3|len == 1, "Single element zip");
+    println("  [6] Single element: passed");
+
+    // Test 7: Empty first array
+    ≔ empty: [i64] = [];
+    ≔ z4 = empty|zip([1, 2, 3]);
+    assert(z4|len == 0, "Empty zip is empty");
+    println("  [7] Empty array: passed");
+
+    println("");
+
+    // =========================================================================
+    // Iteration Patterns
+    // =========================================================================
+
+    // Test 8: Enumerate pattern (index + value)
+    ≔ items = ["apple", "banana", "cherry"];
+    ≔ indices = [0, 1, 2];
+    ≔ indexed = indices|zip(items);
+    ≔ i1 = indexed[1];
+    assert(i1.0 == 1, "Index correct");
+    assert(i1.1 == "banana", "Value correct");
+    println("  [8] Enumerate pattern: passed");
+
+    // Test 9: Iterate over zipped
+    ≔ nums = [1, 2, 3];
+    ≔ names = ["one", "two", "three"];
+    ≔ pairs = nums|zip(names);
+    ≔ Δ sum = 0;
+    ∀ pair ∈ pairs {
+        sum = sum + pair.0;
+    }
+    assert(sum == 6, "Iteration over zip works");
+    println("  [9] Iteration: passed");
+
+    println("");
+
+    // =========================================================================
+    // Type Variations
+    // =========================================================================
+
+    // Test 10: Zip booleans
+    ≔ bools = [yea, nay, yea];
+    ≔ vals = [1, 2, 3];
+    ≔ bz = bools|zip(vals);
+    assert(bz|len == 3, "Bool zip");
+    println("  [10] Boolean zip: passed");
+
+    // Test 11: Zip with self (pairs of consecutive via index trick)
+    ≔ arr = [10, 20, 30, 40];
+    ≔ arr2 = [20, 30, 40, 50];  // Shifted version
+    ≔ consecutive = arr|zip(arr2);
+    ≔ c0 = consecutive[0];
+    assert(c0.0 == 10, "First of pair");
+    assert(c0.1 == 20, "Second of pair");
+    println("  [11] Consecutive pairs: passed");
+
+    println("");
+
+    // =========================================================================
+    // Tensor Zip (if supported)
+    // =========================================================================
+
+    // Test 12: Tensor element-wise pairing
+    // Note: May need special handling for tensors
+    // ≔ t1 = Tensor·from([1.0, 2.0, 3.0]);
+    // ≔ t2 = Tensor·from([4.0, 5.0, 6.0]);
+    // ≔ pairs = t1|zip(t2);
+    println("  [12] Tensor zip: SKIPPED (Phase 2)");
+
+    println("");
+    println("=== All zip tests passed ===");
+}

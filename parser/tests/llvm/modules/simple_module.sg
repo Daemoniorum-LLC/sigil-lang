@@ -1,0 +1,12 @@
+// Test: Simple module with inline items
+// Expected exit code: 42
+
+scroll math {
+    ☉ rite add(a: i64, b: i64) → i64 {
+        a + b
+    }
+}
+
+rite main() → i64 {
+    math·add(20, 22)
+}

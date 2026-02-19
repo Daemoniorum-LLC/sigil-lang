@@ -1,0 +1,41 @@
+//! Test intrinsic functions directly
+//! This file is self-contained - no prelude needed
+
+// Intrinsic declarations
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+    rite __intrinsic_exit(code: i64);
+}
+
+◆ STDOUT: i64 = 1;
+
+// Write a single byte to stdout
+☉ rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(STDOUT, buf, 1);
+    __intrinsic_free(buf);
+}
+
+// Print a digit (0-9)
+☉ rite print_digit(d: i64) {
+    write_byte(d + 48);  // '0' = 48
+}
+
+// Print newline
+☉ rite print_newline() {
+    write_byte(10);  // '\n'
+}
+
+rite main() {
+    // Print "42" then newline
+    print_digit(4);
+    print_digit(2);
+    print_newline();
+
+    // Print "0" then newline
+    print_digit(0);
+    print_newline();
+}

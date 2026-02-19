@@ -18,7 +18,7 @@ struct Square {
 
 impl Drawable for Circle {
     fn draw(&self) {
-        println!("Drawing circle with radius: {}", self.radius.to_string());
+        println!("Drawing circle with radius: {}", self.radius);
     }
 
     fn area(&self) -> f64 {
@@ -34,7 +34,7 @@ impl Named for Circle {
 
 impl Drawable for Square {
     fn draw(&self) {
-        println!("Drawing square with side: {}", self.side.to_string());
+        println!("Drawing square with side: {}", self.side);
     }
 
     fn area(&self) -> f64 {
@@ -45,7 +45,7 @@ impl Drawable for Square {
 fn draw_shape<T: Drawable>(shape: &T) {
     shape.draw();
     let a = shape.area();
-    println!("Area: {}", a.to_string());
+    println!("Area: {}", a);
 }
 
 fn main() {

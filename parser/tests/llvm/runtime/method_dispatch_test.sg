@@ -1,0 +1,45 @@
+// G51: Method dispatch debug
+
+Σ Inner {
+    val: i64,
+}
+
+⊢ Inner {
+    rite fetch(&this) → i64 {
+        println!("    Inner.fetch called");
+        this.val
+    }
+}
+
+Σ Outer {
+    inner: Inner,
+}
+
+⊢ Outer {
+    rite new(v: i64) → Self {
+        Self { inner: Inner { val: v } }
+    }
+
+    rite fetch(&this) → i64 {
+        println!("    Outer.fetch called");
+        this.inner.fetch()
+    }
+}
+
+rite main() {
+    println!("=== Direct call ===");
+    ≔ outer = Outer·new(42);
+    ≔ v1 = outer.fetch();
+    println!("v1 = {}", v1);
+
+    println!("");
+    println!("=== Vec iteration ===");
+    ≔ outers = vec![Outer·new(100)];
+    ∀ o ∈ &outers {
+        println!("Calling o.fetch()...");
+        ≔ v = o.fetch();
+        println!("v = {}", v);
+    }
+
+    println!("Done!");
+}

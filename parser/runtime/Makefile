@@ -15,21 +15,30 @@ LTO_CFLAGS = -O3 -fPIC -Wall -Wextra -flto
 TLS_CFLAGS = -DSIGIL_TLS_SUPPORT
 TLS_LIBS = -lssl -lcrypto
 
+# CUDA flags
+NVCC ?= nvcc
+CUDA_CFLAGS = -O3 -I/usr/local/cuda/include
+CUDA_LIBS = -lcuda -lnvrtc
+
 # Output files
 STATIC_LIB = libsigil_runtime.a
 LTO_LIB = libsigil_runtime_lto.a
 TLS_LIB = libsigil_runtime_tls.a
+CUDA_LIB = libsigil_runtime_cuda.a
 OBJECT = sigil_runtime.o
 LTO_OBJECT = sigil_runtime_lto.o
 TLS_OBJECT = sigil_runtime_tls.o
+CUDA_OBJECT = sigil_runtime_cuda.o
 
-.PHONY: all lto tls clean help
+.PHONY: all lto tls cuda clean help
 
 all: $(STATIC_LIB)
 
 lto: $(LTO_LIB)
 
 tls: $(TLS_LIB)
+
+cuda: $(CUDA_LIB)
 
 help:
 	@echo "Sigil Runtime Makefile"
@@ -67,5 +76,21 @@ $(TLS_LIB): $(TLS_OBJECT)
 	@echo "Built $(TLS_LIB) (with TLS/OpenSSL support)"
 	@echo "Link with: $(TLS_LIBS)"
 
+# CUDA runtime - base runtime (without CUDA stubs) + CUDA extensions
+# Note: sigil_runtime_cuda.c provides the actual CUDA implementations.
+# SIGIL_CUDA_EXTERNAL tells sigil_runtime.c to not define any CUDA functions.
+CUDA_BASE_OBJECT = sigil_runtime_cuda_base.o
+
+$(CUDA_BASE_OBJECT): sigil_runtime.c
+	$(CC) $(CFLAGS) -DSIGIL_CUDA_EXTERNAL -c sigil_runtime.c -o $(CUDA_BASE_OBJECT)
+
+$(CUDA_OBJECT): sigil_runtime_cuda.c
+	$(CC) $(CFLAGS) $(CUDA_CFLAGS) -c sigil_runtime_cuda.c -o $(CUDA_OBJECT)
+
+$(CUDA_LIB): $(CUDA_BASE_OBJECT) $(CUDA_OBJECT)
+	$(AR) rcs $(CUDA_LIB) $(CUDA_BASE_OBJECT) $(CUDA_OBJECT)
+	@echo "Built $(CUDA_LIB) (with CUDA/Nihil support)"
+	@echo "Link with: $(CUDA_LIBS)"
+
 clean:
-	rm -f $(OBJECT) $(LTO_OBJECT) $(TLS_OBJECT) $(STATIC_LIB) $(LTO_LIB) $(TLS_LIB)
+	rm -f $(OBJECT) $(LTO_OBJECT) $(TLS_OBJECT) $(CUDA_OBJECT) $(STATIC_LIB) $(LTO_LIB) $(TLS_LIB) $(CUDA_LIB)

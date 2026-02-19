@@ -1,0 +1,110 @@
+//! Test &vec[i].field pattern - Stage 7 BPE line 165
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Struct with Vec field (like VocabEntry with bytes: Vec<u8>)
+Σ Entry { id: i64, data: Vec<i64> }
+
+rite main() {
+    println_int(1);
+
+    // Create entries with data
+    ≔ vary entries = vec![];
+
+    // Entry 0: [10, 20]
+    ≔ vary data0 = vec![];
+    data0.push(10);
+    data0.push(20);
+    entries.push(Entry { id: 0, data: data0 });
+
+    // Entry 1: [30, 40, 50]
+    ≔ vary data1 = vec![];
+    data1.push(30);
+    data1.push(40);
+    data1.push(50);
+    entries.push(Entry { id: 1, data: data1 });
+
+    println_int(2);
+    println_int(entries.len() as i64);  // Should be 2
+
+    // Test: Access vec[i].field.method() pattern
+    println_int(3);
+    ≔ len0 = entries[0].data.len();
+    println_int(len0 as i64);  // Should be 2
+
+    println_int(4);
+    ≔ len1 = entries[1].data.len();
+    println_int(len1 as i64);  // Should be 3
+
+    // Test: Take reference to vec[i].field - THE CRITICAL PATTERN
+    println_int(5);
+    ≔ ref_data = &entries[1].data;
+    println_int(6);
+    println_int(ref_data.len() as i64);  // Should be 3
+
+    // Test: Index into that reference
+    println_int(7);
+    ≔ val = ref_data[0];
+    println_int(val);  // Should be 30
+
+    // Test: Iterate using the reference
+    println_int(8);
+    ∀ i ∈ 0..ref_data.len() {
+        println_int(ref_data[i]);  // 30, 40, 50
+    }
+
+    // Test: clone() then reference (BPE pattern)
+    println_int(9);
+    ≔ vary cloned = entries[0].data.clone();
+    ≔ other = &entries[1].data;
+    ∀ i ∈ 0..other.len() {
+        cloned.push(other[i]);
+    }
+    println_int(10);
+    println_int(cloned.len() as i64);  // Should be 5
+
+    // Print cloned contents
+    ∀ i ∈ 0..cloned.len() {
+        println_int(cloned[i]);  // 10, 20, 30, 40, 50
+    }
+}

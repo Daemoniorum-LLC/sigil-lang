@@ -1,0 +1,134 @@
+//! Test: count pipe method
+//! Spec: 09-STDLIB.md §3.3
+//! Priority: P1
+//! Counts elements matching a predicate, or total elements if no predicate
+
+rite main() {
+    println("=== Testing count pipe method ===");
+    println("");
+
+    // =========================================================================
+    // Basic Count (no predicate = length)
+    // =========================================================================
+
+    // Test 1: Count all elements
+    ≔ arr = [1, 2, 3, 4, 5];
+    ≔ total = arr|count;
+    assert(total == 5, "Count all elements");
+    println("  [1] Count all: passed");
+
+    // Test 2: Empty array count
+    ≔ empty: [i64] = [];
+    assert(empty|count == 0, "Empty count is 0");
+    println("  [2] Empty count: passed");
+
+    // Test 3: Single element
+    ≔ single = [42];
+    assert(single|count == 1, "Single element count");
+    println("  [3] Single element: passed");
+
+    println("");
+
+    // =========================================================================
+    // Count with Predicate
+    // =========================================================================
+
+    // Test 4: Count positive numbers
+    ≔ mixed = [-2, -1, 0, 1, 2, 3];
+    ≔ positives = mixed|count{x => x > 0};
+    assert(positives == 3, "Count positives");
+    println("  [4] Count positives: passed");
+
+    // Test 5: Count even numbers
+    ≔ nums = [1, 2, 3, 4, 5, 6, 7, 8];
+    ≔ evens = nums|count{x => x % 2 == 0};
+    assert(evens == 4, "Count evens");
+    println("  [5] Count evens: passed");
+
+    // Test 6: Count none matching
+    ≔ all_pos = [1, 2, 3, 4, 5];
+    ≔ negatives = all_pos|count{x => x < 0};
+    assert(negatives == 0, "Count none matching");
+    println("  [6] None matching: passed");
+
+    // Test 7: Count all matching
+    ≔ all_match = all_pos|count{x => x > 0};
+    assert(all_match == 5, "Count all matching");
+    println("  [7] All matching: passed");
+
+    println("");
+
+    // =========================================================================
+    // String and Boolean Predicates
+    // =========================================================================
+
+    // Test 8: Count strings by length
+    ≔ words = ["a", "bb", "ccc", "dd", "e"];
+    ≔ short_words = words|count{w => w|len < 2};
+    assert(short_words == 2, "Count short words");
+    println("  [8] String predicate: passed");
+
+    // Test 9: Count true values
+    ≔ bools = [yea, nay, yea, yea, nay];
+    ≔ trues = bools|count{b => b};
+    assert(trues == 3, "Count true values");
+    println("  [9] Boolean predicate: passed");
+
+    // Test 10: Count false values
+    ≔ falses = bools|count{b => !b};
+    assert(falses == 2, "Count false values");
+    println("  [10] Count false: passed");
+
+    println("");
+
+    // =========================================================================
+    // Float Predicates
+    // =========================================================================
+
+    // Test 11: Count above threshold
+    ≔ scores = [0.1, 0.5, 0.7, 0.3, 0.9, 0.8];
+    ≔ passing = scores|count{s => s >= 0.5};
+    assert(passing == 4, "Count passing scores");
+    println("  [11] Float threshold: passed");
+
+    // Test 12: Count NaN-like (if applicable)
+    // For now, just count finite values
+    ≔ vals = [1.0, 2.0, 3.0];
+    ≔ finite = vals|count{v => v > 0.0};
+    assert(finite == 3, "Count finite");
+    println("  [12] Float predicate: passed");
+
+    println("");
+
+    // =========================================================================
+    // Complex Predicates
+    // =========================================================================
+
+    // Test 13: Count with multiple conditions
+    ≔ data = [1, 5, 10, 15, 20, 25];
+    ≔ in_range = data|count{x => x >= 10 && x <= 20};
+    assert(in_range == 3, "Count in range");
+    println("  [13] Range predicate: passed");
+
+    // Test 14: Count using external variable
+    ≔ threshold = 12;
+    ≔ above_threshold = data|count{x => x > threshold};
+    assert(above_threshold == 3, "Count above threshold");
+    println("  [14] External variable: passed");
+
+    println("");
+
+    // =========================================================================
+    // Tensor Count (if supported)
+    // =========================================================================
+
+    // Test 15: Count tensor elements above zero
+    ≔ t = Tensor·from([-1.0, 0.0, 1.0, 2.0, -0.5]);
+    // Tensor count might need special handling
+    // ≔ pos_count = t|count{x => x > 0.0};
+    // assert(pos_count == 2, "Tensor count");
+    println("  [15] Tensor count: SKIPPED (Phase 2)");
+
+    println("");
+    println("=== All count tests passed ===");
+}

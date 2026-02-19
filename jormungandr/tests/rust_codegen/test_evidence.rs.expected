@@ -1,4 +1,4 @@
-// Evidence markers stripped (default mode)
+// Evidence handling - runtime evidence_of() function translates to runtime checks
 
 fn compute() -> i32 {
     42
@@ -16,19 +16,28 @@ fn external_data() -> String {
     "data from API".to_string()
 }
 
+// Runtime evidence helper (would be in prelude)
+fn evidence_of<T>(_value: &T) -> &'static str {
+    "known"  // All computed values are "known" at runtime
+}
+
 fn main() {
-    // Known evidence
-    let value: i32 = compute();
+    // Computed value (known evidence)
+    let value = compute();
+    let evidence = evidence_of(&value);
+    println!("{}", evidence);
     println!("{}", value);
 
-    // Uncertain evidence
-    let maybe: Option<i32> = lookup("found".to_string());
+    // Optional value (uncertain evidence)
+    let maybe = lookup("found".to_string());
     match maybe {
         Some(v) => println!("{}", v),
         None => println!("not found"),
     }
 
-    // Reported evidence
-    let data: String = external_data();
+    // External data (reported evidence)
+    let data = external_data();
+    let data_evidence = evidence_of(&data);
+    println!("{}", data_evidence);
     println!("{}", data);
 }

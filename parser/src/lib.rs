@@ -49,10 +49,13 @@ macro_rules! sigil_warn {
 pub mod ast;
 pub mod diagnostic;
 pub mod ffi;
+pub mod impl_registry;
 pub mod interpreter;
 pub mod ir;
 pub mod lexer;
 pub mod lower;
+pub mod monomorph;
+pub mod const_eval;
 pub mod optimize;
 pub mod parser;
 pub mod plurality;
@@ -79,6 +82,10 @@ pub mod codegen;
 #[cfg(feature = "llvm")]
 pub mod llvm_codegen;
 
+pub mod rust_codegen;
+
+pub mod async_transform;
+
 #[cfg(feature = "wasm")]
 pub mod wasm;
 
@@ -90,6 +97,9 @@ pub mod websocket;
 
 #[cfg(feature = "playground")]
 pub mod playground_api;
+
+#[cfg(feature = "react-migrate")]
+pub mod migrate;
 
 pub use ast::*;
 pub use diagnostic::{Diagnostic, DiagnosticBuilder, Diagnostics, FixSuggestion, Severity};
@@ -142,3 +152,5 @@ pub use llvm_codegen::llvm::{CompileMode, LlvmCompiler};
 
 #[cfg(feature = "wasm")]
 pub use wasm::WasmCompiler;
+
+pub use rust_codegen::{RustCompiler, RustCodegenOptions, RustCodegenError, RustEdition};

@@ -1733,6 +1733,7 @@ impl Optimizer {
 
             // Block-containing expressions
             Expr::Unsafe(block) | Expr::Block(block) => self.contains_inline_asm_in_block(block),
+            Expr::Attributed { expr, .. } => self.contains_inline_asm_in_expr(expr),
             Expr::Loop { body, .. } | Expr::While { body, .. } | Expr::For { body, .. } => {
                 self.contains_inline_asm_in_block(body)
             }
@@ -2187,6 +2188,10 @@ impl Optimizer {
                 value: Box::new(self.pass_loop_unroll_expr(value)),
             },
             Expr::Unsafe(block) => Expr::Unsafe(self.pass_loop_unroll_block(block)),
+            Expr::Attributed { attrs, expr } => Expr::Attributed {
+                attrs: attrs.clone(),
+                expr: Box::new(self.pass_loop_unroll_expr(expr)),
+            },
             other => other.clone(),
         }
     }
@@ -2536,6 +2541,10 @@ impl Optimizer {
                 value: Box::new(self.pass_licm_expr(value)),
             },
             Expr::Unsafe(inner) => Expr::Unsafe(self.pass_licm_block(inner)),
+            Expr::Attributed { attrs, expr } => Expr::Attributed {
+                attrs: attrs.clone(),
+                expr: Box::new(self.pass_licm_expr(expr)),
+            },
             other => other.clone(),
         }
     }

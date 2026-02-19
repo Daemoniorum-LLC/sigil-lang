@@ -1,0 +1,61 @@
+// G44: Enum match in trait impl with many variants
+//
+// This matches the NihilError_fmt pattern more closely
+
+// A simpler error type (the full one has 7 variants)
+ᛈ ErrorKind {
+    Shape { dim: i64 },
+    Device { message: String },
+    Numeric { op: String, message: String },
+    Autograd { message: String },
+    Cast { from: String, to: String },
+    IndexOOB { index: i64, size: i64, axis: i64 },
+    Internal { message: String },
+}
+
+⊢ ErrorKind {
+    rite fmt(&this) → i64 {
+        ⌥ this {
+            This·Shape { dim } => {
+                println!("Shape error: {}", dim);
+                0
+            }
+            This·Device { message } => {
+                println!("Device error");
+                1
+            }
+            This·Numeric { op, message } => {
+                println!("Numeric error");
+                2
+            }
+            This·Autograd { message } => {
+                println!("Autograd error");
+                3
+            }
+            This·Cast { from, to } => {
+                println!("Cast error");
+                4
+            }
+            This·IndexOOB { index, size, axis } => {
+                println!("Index OOB: {} {} {}", index, size, axis);
+                5
+            }
+            This·Internal { message } => {
+                println!("Internal error");
+                6
+            }
+        }
+    }
+}
+
+rite main() {
+    println!("Testing enum match in impl...");
+
+    ≔ e1 = ErrorKind·Shape { dim: 42 };
+    e1.fmt();
+
+    ≔ e2 = ErrorKind·IndexOOB { index: 5, size: 3, axis: 0 };
+    e2.fmt();
+
+    println!("Done!");
+}

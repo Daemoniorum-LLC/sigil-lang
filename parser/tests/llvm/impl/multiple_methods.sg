@@ -1,0 +1,22 @@
+// Test: Multiple methods and method with parameters
+// Expected exit code: 100
+
+Σ Rectangle {
+    width: i64,
+    height: i64,
+}
+
+⊢ Rectangle {
+    rite area(self) → i64 {
+        self.width * self.height
+    }
+
+    rite scale(self, factor: i64) → i64 {
+        self.width * self.height * factor
+    }
+}
+
+rite main() → i64 {
+    ≔ r = Rectangle { width: 5, height: 4 };
+    r.scale(5)
+}

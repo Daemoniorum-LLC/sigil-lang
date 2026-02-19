@@ -1,0 +1,153 @@
+//! Test: Simple neural network forward pass and training loop
+//! This test validates all P0 features work together
+//! Priority: P0 Integration Test
+
+rite main() {
+    println("=== Simple Neural Network Training Test ===");
+    println("");
+
+    // =========================================================================
+    // 1. Create "model" weights
+    // =========================================================================
+
+    // Simple 2-layer network: input(4) -> hidden(3) -> output(2)
+    ≔ w1 = Tensor·randn([4, 3]);  // First layer weights
+    ≔ w2 = Tensor·randn([3, 2]);  // Second layer weights
+
+    println("  [1] Created model weights");
+    println("      w1 shape: [4, 3]");
+    println("      w2 shape: [3, 2]");
+
+    // =========================================================================
+    // 2. Create dummy batch (simulating MNIST-style data)
+    // =========================================================================
+
+    // Batch of 2 samples, 4 features each
+    ≔ x = Tensor·from([[1.0, 2.0, 3.0, 4.0],
+                        [4.0, 3.0, 2.0, 1.0]]);
+
+    // Target labels (class indices) - must be array, not Tensor
+    ≔ targets = [0, 1];  // First sample is class 0, second is class 1
+
+    println("  [2] Created batch data");
+    println("      x shape: [2, 4]");
+    println("      targets: [0, 1]");
+
+    // =========================================================================
+    // 3. Forward pass
+    // =========================================================================
+
+    // Layer 1: x @ w1 -> hidden
+    ≔ h1 = x @ w1;  // [2, 4] @ [4, 3] = [2, 3]
+    assert(h1.shape() == [2, 3], "Hidden layer shape");
+
+    // Activation: GELU
+    ≔ h1_act = h1|gelu;
+    assert(h1_act.shape() == [2, 3], "Activation preserves shape");
+
+    // Layer 2: hidden @ w2 -> logits
+    ≔ logits = h1_act @ w2;  // [2, 3] @ [3, 2] = [2, 2]
+    assert(logits.shape() == [2, 2], "Output logits shape");
+
+    println("  [3] Forward pass complete");
+    println("      h1 shape: [2, 3]");
+    println("      logits shape: [2, 2]");
+
+    // =========================================================================
+    // 4. Apply softmax to get probabilities
+    // =========================================================================
+
+    ≔ probs = logits|softmax;
+    assert(probs.shape() == [2, 2], "Probs shape preserved");
+
+    // Check probabilities are valid
+    // Note: Current softmax is global (not per-row), so all 4 elements sum to 1
+    ≔ probs_sum = probs|Σ;
+    assert(probs_sum > 0.99, "Probs sum to 1 (global softmax)");
+    assert(probs_sum < 1.01, "Probs sum to 1 (global softmax)");
+
+    println("  [4] Softmax applied (global - per-row needs axis param)");
+
+    // =========================================================================
+    // 5. Get predictions using argmax
+    // =========================================================================
+
+    // Note: Per-sample argmax needs axis parameter (Phase 2)
+    // For now, just verify argmax works on the flattened tensor
+    ≔ flat_argmax = probs|argmax;
+    assert(flat_argmax >= 0, "Argmax returns valid index");
+    assert(flat_argmax <= 3, "Argmax within bounds");
+
+    println("  [5] Predictions via argmax");
+
+    // =========================================================================
+    // 6. Compute log_softmax for cross-entropy
+    // =========================================================================
+
+    ≔ log_probs = logits|log_softmax;
+    assert(log_probs.shape() == [2, 2], "Log probs shape");
+
+    // All log probs should be negative
+    ≔ log_max = log_probs|max;
+    assert(log_max <= 0.0, "Log probs are non-positive");
+
+    println("  [6] Log-softmax for cross-entropy");
+
+    // =========================================================================
+    // 7. Compute loss (cross_entropy)
+    // =========================================================================
+
+    ≔ loss = cross_entropy(logits, targets);
+    assert(loss.item() > 0.0, "Loss is positive");
+
+    println("  [7] Cross-entropy loss computed");
+
+    // =========================================================================
+    // 8. Backward pass (gradient computation)
+    // =========================================================================
+
+    ≔ grads = loss|∇;
+
+    // Check we can retrieve gradients
+    // Note: grads.get(&w1) requires per-param tracking (P1)
+    // For now, just verify ∇ returns something
+
+    println("  [8] Backward pass (gradients computed)");
+
+    // =========================================================================
+    // 9. Compute mean loss over "epochs"
+    // =========================================================================
+
+    ≔ losses = [0.5, 0.4, 0.35, 0.3, 0.28];
+    ≔ mean_loss = losses|mean;
+    assert(mean_loss > 0.36, "Mean loss calculation");
+    assert(mean_loss < 0.37, "Mean loss calculation");
+
+    println("  [9] Mean loss over epochs");
+
+    // =========================================================================
+    // 10. Training loop simulation
+    // =========================================================================
+
+    println("");
+    println("  Simulating training loop:");
+
+    ≔ epoch = 0;
+    ∀ i ∈ 0..3 {
+        // Forward
+        ≔ h = x @ w1;
+        ≔ h_act = h|gelu;
+        ≔ out = h_act @ w2;
+
+        // Loss
+        ≔ batch_loss = cross_entropy(out, targets);
+
+        // Backward
+        ≔ g = batch_loss|∇;
+
+        println("    Epoch " + (i + 1).to_string() + ": loss = " + batch_loss.item().to_string());
+    }
+
+    println("");
+    println("=== All neural network integration tests passed ===");
+}

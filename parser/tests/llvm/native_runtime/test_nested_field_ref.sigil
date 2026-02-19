@@ -1,0 +1,97 @@
+//! Test &struct.vec[i].field pattern
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Nested struct: Outer { items: Vec<Inner> }
+Σ Inner { data: Vec<i64> }
+
+Σ Outer { items: Vec<Inner> }
+
+rite main() {
+    println_int(1);
+
+    // Build outer struct with items
+    ≔ vary outer = Outer { items: vec![] };
+
+    // Add item 0: data = [10, 20, 30]
+    ≔ vary data0 = vec![];
+    data0.push(10);
+    data0.push(20);
+    data0.push(30);
+    outer.items.push(Inner { data: data0 });
+
+    // Add item 1: data = [100, 200]
+    ≔ vary data1 = vec![];
+    data1.push(100);
+    data1.push(200);
+    outer.items.push(Inner { data: data1 });
+
+    println_int(2);
+    println_int(outer.items.len() as i64);  // Should be 2
+
+    // Test 1: Direct access
+    println_int(10);
+    println_int(outer.items[0].data.len() as i64);  // Should be 3
+    println_int(outer.items[1].data.len() as i64);  // Should be 2
+
+    // Test 2: Take reference to nested field - THE CRITICAL PATTERN
+    println_int(20);
+    ≔ ref0 = &outer.items[0].data;
+    println_int(21);
+    println_int(ref0.len() as i64);  // Should be 3
+
+    // Test 3: Same but different index
+    println_int(30);
+    ≔ ref1 = &outer.items[1].data;
+    println_int(31);
+    println_int(ref1.len() as i64);  // Should be 2
+
+    // Test 4: Use index variable
+    println_int(40);
+    ≔ idx = 1;
+    ≔ ref_idx = &outer.items[idx].data;
+    println_int(41);
+    println_int(ref_idx.len() as i64);  // Should be 2
+
+    println_int(999);
+}

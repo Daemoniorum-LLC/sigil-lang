@@ -1,0 +1,86 @@
+// Test: Path Separator Resolution
+// Spec: RUST-CODEGEN-PARSER-GAPS-SPEC.md § 9 (Gap H)
+// Priority: P0 - Remove hardcoded crate lists
+//
+// Purpose: Validate · separator becomes :: or . based on context
+//
+// Key rules:
+//   - Type position: always ::
+//   - Use statement: always ::
+//   - Expression: depends on what path refers to
+//   - PascalCase: :: (type convention)
+//   - Known crates: :: (std, core, etc.)
+//   - Local bindings: . (value/field access)
+
+// EC₁: Standard library path in type position
+rite use_hashmap() {
+    ≔ Δ map: std·collections·HashMap<String, i32> = std·collections·HashMap·new();
+    map.insert("key".to_string(), 42);
+}
+
+// EC₇: Enum constructor (PascalCase → ::)
+rite use_option() → Option<i32> {
+    Option·Some(42)
+}
+
+// EC₈: Associated function on type (PascalCase → ::)
+rite create_vec() → Vec<i32> {
+    Vec·new()
+}
+
+// EC₉: Method call on local binding (lowercase → .)
+rite push_to_vec() {
+    ≔ Δ vec = Vec·new();
+    vec·push(1);
+    vec·push(2);
+}
+
+// EC₂: self.field access
+sigil Point {
+    x: f64,
+    y: f64,
+}
+
+⊢ Point {
+    rite get_x(&self) → f64 {
+        self·x
+    }
+
+    rite distance(&self) → f64 {
+        (self·x * self·x + self·y * self·y).sqrt()
+    }
+}
+
+// EC₅: Type parameter associated function
+rite default_value<T: Default>() → T {
+    T·default()
+}
+
+// String methods (lowercase binding → .)
+rite string_methods() {
+    ≔ s = "hello".to_string();
+    ≔ len = s·len();
+    ≔ upper = s·to_uppercase();
+    println!("{} {} {}", s, len, upper);
+}
+
+// Mixed: type path then method chain
+rite mixed_paths() {
+    ≔ v: Vec<i32> = Vec·new();
+    ≔ iter = v·iter();
+    ≔ count = iter·count();
+    println!("{}", count);
+}
+
+// Main
+rite main() {
+    use_hashmap();
+    ≔ opt = use_option();
+    ≔ vec = create_vec();
+    push_to_vec();
+    string_methods();
+    mixed_paths();
+
+    ≔ p = Point { x: 3.0, y: 4.0 };
+    println!("x = {}, distance = {}", p.get_x(), p.distance());
+}

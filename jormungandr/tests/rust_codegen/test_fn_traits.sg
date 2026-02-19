@@ -1,0 +1,134 @@
+//! Test: Fn Trait Syntax (Gap G)
+//!
+//! Spec Reference: RUST-CODEGEN-PARSER-GAPS-SPEC.md Section 8
+//!
+//! This test verifies that Fn, FnMut, and FnOnce traits are emitted
+//! with correct Rust syntax: Fn(Args) -> Return, NOT Fn<Args, Return>.
+//!
+//! Key behaviors:
+//! 1. Fn with no arguments
+//! 2. Fn with single argument
+//! 3. Fn with multiple arguments
+//! 4. FnMut syntax
+//! 5. FnOnce syntax
+//! 6. Nested Fn types
+//! 7. Fn as generic bounds
+//! 8. Fn in type aliases
+//! 9. Fn returning Fn
+
+// Test 1: Fn with no arguments
+☉ rite run_thunk<F>(f: F) → i32
+∋ F: Fn() → i32
+{
+    f()
+}
+
+// Test 2: Fn with single argument
+☉ rite apply_unary<T, F>(x: T, f: F) → T
+∋ F: Fn(T) → T
+{
+    f(x)
+}
+
+// Test 3: Fn with multiple arguments
+☉ rite apply_binary<A, B, C, F>(a: A, b: B, f: F) → C
+∋ F: Fn(A, B) → C
+{
+    f(a, b)
+}
+
+// Test 4: Fn with three arguments
+☉ rite apply_ternary<A, B, C, D, F>(a: A, b: B, c: C, f: F) → D
+∋ F: Fn(A, B, C) → D
+{
+    f(a, b, c)
+}
+
+// Test 5: FnMut - mutable closure
+☉ rite mutate_and_apply<T, F>(x: T, vary f: F) → T
+∋ F: FnMut(T) → T
+{
+    f(x)
+}
+
+// Test 6: FnMut with multiple calls
+☉ rite apply_twice<T: Clone, F>(x: T, vary f: F) → T
+∋ F: FnMut(T) → T
+{
+    ≔ first = f(x.clone());
+    f(first)
+}
+
+// Test 7: FnOnce - consuming closure
+☉ rite consume_and_apply<T, F>(x: T, f: F) → T
+∋ F: FnOnce(T) → T
+{
+    f(x)
+}
+
+// Test 8: FnOnce with owned data
+☉ rite take_ownership<T, U, F>(value: T, f: F) → U
+∋ F: FnOnce(T) → U
+{
+    f(value)
+}
+
+// Test 9: Multiple Fn constraints
+☉ rite compose<A, B, C, F, G>(a: A, f: F, g: G) → C
+∋ F: Fn(A) → B,
+  G: Fn(B) → C
+{
+    g(f(a))
+}
+
+// Test 10: Fn returning unit
+☉ rite side_effect<F>(f: F)
+∋ F: Fn() → ()
+{
+    f();
+}
+
+// Test 11: Generic struct with Fn field type (boxed)
+☉ sigil Callback<T> {
+    handler: Box<dyn Fn(T) → ()>,
+}
+
+// Test 12: Fn in impl block
+☉ sigil Processor<T> {
+    value: T,
+}
+
+⊢<T> Processor<T> {
+    ☉ rite map<U, F>(this, f: F) → Processor<U>
+    ∋ F: Fn(T) → U
+    {
+        Processor { value: f(this.value) }
+    }
+
+    ☉ rite and_then<U, F>(this, f: F) → Processor<U>
+    ∋ F: FnOnce(T) → U
+    {
+        Processor { value: f(this.value) }
+    }
+}
+
+// Test 13: Higher-order function returning Fn (boxed)
+// Note: impl Trait return types not yet supported (use Box<dyn Fn> instead)
+☉ rite make_adder(n: i32) → Box<dyn Fn(i32) → i32> {
+    Box·new(move |x| x + n)
+}
+
+// Test 14: Fn with reference arguments
+☉ rite apply_ref<'a, T, F>(x: &'a T, f: F) → &'a T
+∋ F: Fn(&'a T) → &'a T
+{
+    f(x)
+}
+
+// Test 15: Complex Fn bounds with other traits
+☉ rite parallel_apply<T, F>(values: Vec<T>, f: F) → Vec<T>
+∋ T: Send + Sync,
+  F: Fn(T) → T + Send + Sync
+{
+    values.into_iter().map(f).collect()
+}

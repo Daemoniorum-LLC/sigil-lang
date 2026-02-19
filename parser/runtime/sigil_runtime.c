@@ -54,6 +54,25 @@ int64_t sigil_now(void) {
 #endif
 }
 
+/* Get current time in microseconds since Unix epoch */
+int64_t sigil_now_micros(void) {
+#ifdef _WIN32
+    /* Windows: Use GetSystemTimeAsFileTime (100-ns intervals) */
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER ull;
+    ull.LowPart = ft.dwLowDateTime;
+    ull.HighPart = ft.dwHighDateTime;
+    /* Convert to microseconds since Unix epoch */
+    return (int64_t)((ull.QuadPart - 116444736000000000ULL) / 10);
+#else
+    /* POSIX: Use gettimeofday */
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (int64_t)(tv.tv_sec * 1000000 + tv.tv_usec);
+#endif
+}
+
 /* ============================================================================
  * Print Functions
  * ============================================================================ */
@@ -108,6 +127,12 @@ void eprintln(const char* str) {
     fprintf(stderr, "%s\n", str);
 }
 
+/* Print just a newline */
+void sigil_print_newline(void) {
+    printf("\n");
+    fflush(stdout);
+}
+
 /* Get string length */
 int64_t sigil_strlen(const char* str) {
     if (str == NULL) return 0;
@@ -134,55 +159,127 @@ void sigil_free(void* ptr) {
 }
 
 /* ============================================================================
- * Vec Operations (simple fixed-size array on heap)
- * Vec is represented as: ptr to {len: i64, capacity: i64, data: i64[]}
+ * Vec Operations (growable array on heap)
+ * Vec is represented as: ptr to {len: i64, capacity: i64, data_ptr: i64*}
+ * The data is stored in a separate heap allocation pointed to by data_ptr.
+ * This allows growing without invalidating the Vec pointer itself.
+ *
+ * TODO: Consider moving Vec to pure LLVM IR generation to eliminate runtime
+ * dependency. Would require implementing growth logic directly in codegen.
  * ============================================================================ */
+
+typedef struct {
+    int64_t len;
+    int64_t capacity;
+    int64_t* data;  // separate heap allocation for data
+} SigilVec;
 
 /* Create a new Vec with given capacity */
 void* sigil_vec_new(int64_t capacity) {
-    if (capacity < 4) capacity = 4;
-    // Allocate: 2 i64s for len/cap + data
-    size_t size = 2 * sizeof(int64_t) + (size_t)capacity * sizeof(int64_t);
-    int64_t* vec = (int64_t*)malloc(size);
-    if (vec) {
-        vec[0] = 0;         // len
-        vec[1] = capacity;  // capacity
+    if (capacity < 8) capacity = 8;
+
+    SigilVec* vec = (SigilVec*)malloc(sizeof(SigilVec));
+    if (!vec) return NULL;
+
+    vec->len = 0;
+    vec->capacity = capacity;
+    vec->data = (int64_t*)malloc((size_t)capacity * sizeof(int64_t));
+    if (!vec->data) {
+        free(vec);
+        return NULL;
     }
+
     return vec;
 }
 
-/* Push a value to the Vec */
+/* Push a value to the Vec (grows automatically if needed) */
 void sigil_vec_push(void* vec_ptr, int64_t value) {
     if (!vec_ptr) return;
-    int64_t* vec = (int64_t*)vec_ptr;
-    int64_t len = vec[0];
-    int64_t cap = vec[1];
+    SigilVec* vec = (SigilVec*)vec_ptr;
 
-    if (len >= cap) {
-        // Need to grow - this would require returning new pointer
-        // For simplicity, we panic (don't support growing yet)
-        return;
+    // Grow if needed
+    if (vec->len >= vec->capacity) {
+        int64_t new_cap = vec->capacity * 2;
+        int64_t* new_data = (int64_t*)realloc(vec->data, (size_t)new_cap * sizeof(int64_t));
+        if (!new_data) return;  // allocation failed, silently fail
+        vec->data = new_data;
+        vec->capacity = new_cap;
     }
 
-    vec[2 + len] = value;  // data starts at index 2
-    vec[0] = len + 1;
+    vec->data[vec->len] = value;
+    vec->len++;
 }
 
 /* Get a value from the Vec */
 int64_t sigil_vec_get(void* vec_ptr, int64_t index) {
     if (!vec_ptr) return 0;
-    int64_t* vec = (int64_t*)vec_ptr;
-    int64_t len = vec[0];
+    SigilVec* vec = (SigilVec*)vec_ptr;
 
-    if (index < 0 || index >= len) return 0;
+    if (index < 0 || index >= vec->len) return 0;
 
-    return vec[2 + index];
+    return vec->data[index];
+}
+
+/* Set a value in the Vec */
+void sigil_vec_set(void* vec_ptr, int64_t index, int64_t value) {
+    if (!vec_ptr) return;
+    SigilVec* vec = (SigilVec*)vec_ptr;
+
+    if (index < 0 || index >= vec->len) return;
+
+    vec->data[index] = value;
 }
 
 /* Get Vec length */
 int64_t sigil_vec_len(void* vec_ptr) {
     if (!vec_ptr) return 0;
-    return ((int64_t*)vec_ptr)[0];
+    return ((SigilVec*)vec_ptr)->len;
+}
+
+/* Get Vec capacity */
+int64_t sigil_vec_capacity(void* vec_ptr) {
+    if (!vec_ptr) return 0;
+    return ((SigilVec*)vec_ptr)->capacity;
+}
+
+/* Free a Vec and its data */
+void sigil_vec_free(void* vec_ptr) {
+    if (!vec_ptr) return;
+    SigilVec* vec = (SigilVec*)vec_ptr;
+    free(vec->data);
+    free(vec);
+}
+
+/* G75: Get raw pointer to Vec data for slice conversion */
+void* sigil_vec_u8_as_ptr(void* vec_ptr) {
+    if (!vec_ptr) return NULL;
+    return (void*)((SigilVec*)vec_ptr)->data;
+}
+
+/* Clone a Vec (deep copy) */
+void* sigil_vec_clone(void* vec_ptr) {
+    if (!vec_ptr) return NULL;
+    SigilVec* src = (SigilVec*)vec_ptr;
+
+    // Create new Vec with same capacity as source length
+    SigilVec* dest = (SigilVec*)malloc(sizeof(SigilVec));
+    if (!dest) return NULL;
+
+    int64_t new_cap = src->len < 8 ? 8 : src->len;
+    dest->data = (int64_t*)malloc((size_t)new_cap * sizeof(int64_t));
+    if (!dest->data) {
+        free(dest);
+        return NULL;
+    }
+
+    // Copy elements
+    dest->len = src->len;
+    dest->capacity = new_cap;
+    for (int64_t i = 0; i < src->len; i++) {
+        dest->data[i] = src->data[i];
+    }
+
+    return dest;
 }
 
 
@@ -333,6 +430,85 @@ void sigil_string_free(void* str_ptr) {
 }
 
 /* ============================================================================
+ * File I/O Functions
+ * ============================================================================ */
+
+/* Read entire file into a Sigil String (inline layout: [len, capacity, data...])
+ * Returns pointer to new String, or NULL on error
+ */
+void* sigil_fs_read(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open file: %s\n", path);
+        return NULL;
+    }
+
+    /* Get file size */
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    /* Allocate String: [len, capacity, data...] */
+    int64_t capacity = size + 16;  /* Extra space */
+    size_t alloc_size = 2 * sizeof(int64_t) + (size_t)capacity + 1;
+    int64_t* str = (int64_t*)malloc(alloc_size);
+    if (!str) {
+        fclose(f);
+        return NULL;
+    }
+
+    /* Read file */
+    char* data = (char*)(str + 2);
+    size_t read = fread(data, 1, size, f);
+    fclose(f);
+
+    data[read] = '\0';
+    str[0] = (int64_t)read;      /* len */
+    str[1] = capacity;            /* capacity */
+
+    return str;
+}
+
+/* Get bytes pointer from Sigil String (compatible with String layout)
+ * Returns pointer to the underlying byte data
+ */
+const char* sigil_rust_string_as_bytes(void* str_ptr) {
+    if (!str_ptr) return NULL;
+    /* String layout is [len, capacity, data...] */
+    return (const char*)((int64_t*)str_ptr + 2);
+}
+
+/* Create a substring from a Sigil String
+ * Returns a new String containing the slice [start, end)
+ */
+void* sigil_rust_string_slice(void* str_ptr, int64_t start, int64_t end) {
+    if (!str_ptr) return sigil_string_new(16);
+
+    int64_t* src = (int64_t*)str_ptr;
+    int64_t src_len = src[0];
+    const char* src_data = (const char*)(src + 2);
+
+    /* Clamp indices */
+    if (start < 0) start = 0;
+    if (end > src_len) end = src_len;
+    if (start > end) start = end;
+
+    int64_t slice_len = end - start;
+    int64_t capacity = slice_len + 16;
+    size_t alloc_size = 2 * sizeof(int64_t) + (size_t)capacity + 1;
+    int64_t* dest = (int64_t*)malloc(alloc_size);
+    if (!dest) return NULL;
+
+    char* dest_data = (char*)(dest + 2);
+    memcpy(dest_data, src_data + start, slice_len);
+    dest_data[slice_len] = '\0';
+    dest[0] = slice_len;      /* len */
+    dest[1] = capacity;       /* capacity */
+
+    return dest;
+}
+
+/* ============================================================================
  * Math Functions (operate on i64 bits representing f64)
  *
  * These functions take f64 values encoded as i64 bit patterns and return
@@ -357,6 +533,11 @@ static inline int64_t double_to_bits(double d) {
 /* Square root */
 int64_t sigil_sqrt(int64_t x) {
     return double_to_bits(sqrt(bits_to_double(x)));
+}
+
+/* PI constant */
+int64_t sigil_pi(void) {
+    return double_to_bits(3.14159265358979323846);
 }
 
 /* Sine */
@@ -774,6 +955,10 @@ float sigil_simd_dot_f32x16(const float* a, const float* b) {
  * CUDA Functions (using CUDA Driver API)
  * ============================================================================ */
 
+/* When linking with sigil_runtime_cuda.c, define SIGIL_CUDA_EXTERNAL to avoid
+ * duplicate definitions. sigil_runtime_cuda.c provides the full implementations. */
+#ifndef SIGIL_CUDA_EXTERNAL
+
 #ifdef SIGIL_CUDA_SUPPORT
 #include <cuda.h>
 #include <nvrtc.h>
@@ -1074,6 +1259,8 @@ int64_t sigil_cuda_compile_kernel(const char* src, const char* name) {
 }
 
 #endif /* SIGIL_CUDA_SUPPORT */
+
+#endif /* SIGIL_CUDA_EXTERNAL */
 
 /* ============================================================================
  * System Functions

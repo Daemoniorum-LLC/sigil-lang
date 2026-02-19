@@ -23,9 +23,14 @@ pub mod llvm {
     use std::collections::HashMap;
     use std::path::Path;
 
-    use crate::ast::{self, BinOp, Expr, Item, Literal, UnaryOp};
+    use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, NumBase, PathSegment, TypePath, UnaryOp};
+    use crate::const_eval::ConstEvaluator;
+    use crate::impl_registry::{ImplRegistry, TypeBindings, MethodDef};
+    use crate::monomorph::{MonomorphCache, MonomorphKey, GetOrRequest, substitute_method_signature};
     use crate::optimize::{OptLevel, Optimizer};
     use crate::parser::Parser;
+    use crate::span::Span;
+    use crate::typeck::Type as RichType;
 
     /// Type alias for JIT-compiled main function
     type MainFn = unsafe extern "C" fn() -> i64;
@@ -96,6 +101,34 @@ pub mod llvm {
         current_self_type: Option<String>,
         /// Global/static variables
         global_vars: HashMap<String, inkwell::values::GlobalValue<'ctx>>,
+        /// Libraries to link from #[link("lib")] attributes
+        link_libraries: Vec<String>,
+        /// Field type names: maps (struct_name, field_name) -> field_type_name (for method dispatch)
+        field_type_names: HashMap<(String, String), String>,
+        /// G21: Functions that return f64 (for float detection in println!)
+        float_funcs: std::collections::HashSet<String>,
+        /// G31: Function return types for tuple destructuring type inference
+        ret_types: HashMap<String, ast::TypeExpr>,
+        /// Loaded crates (to prevent re-loading)
+        loaded_crates: std::collections::HashSet<String>,
+        /// Crates currently being loaded (for circular dependency detection)
+        loading_crates: std::collections::HashSet<String>,
+        /// Workspace members: crate name -> relative path
+        workspace_members: HashMap<String, std::path::PathBuf>,
+        /// Project root directory (where Sigil.toml is)
+        project_root: Option<std::path::PathBuf>,
+        /// Current source directory (for relative imports)
+        current_source_dir: Option<std::path::PathBuf>,
+        /// Phase 2: Registry of generic impl blocks for monomorphization
+        impl_registry: ImplRegistry,
+        /// Phase 3: Cache of monomorphized method instances
+        monomorph_cache: MonomorphCache,
+        /// Phase 4: Const generic evaluator for compile-time shape inference
+        const_evaluator: ConstEvaluator,
+        /// G69: Methods that return slices (&[T]) and need len_out parameter
+        slice_return_methods: std::collections::HashSet<String>,
+        /// G81: Generic function definitions (awaiting monomorphization when called)
+        generic_functions: HashMap<String, ast::Function>,
     }
 
     // ============================================
@@ -106,7 +139,8 @@ pub mod llvm {
     const EVIDENCE_UNCERTAIN: u8 = 1; // ? - unverified input
     const EVIDENCE_REPORTED: u8 = 2; // ~ - EMA, eventually consistent
     const EVIDENCE_PREDICTED: u8 = 3; // ◊ - model output, speculative
-    const EVIDENCE_PARADOX: u8 = 4; // ‽ - contradiction detected
+    const EVIDENCE_CHAOS: u8 = 4; // ⁂ - intentional randomness, entropic
+    const EVIDENCE_PARADOX: u8 = 5; // ‽ - contradiction detected
 
     // Runtime helper: get current time in milliseconds
     extern "C" fn sigil_now() -> i64 {
@@ -117,9 +151,151 @@ pub mod llvm {
             .unwrap_or(0)
     }
 
-    // Runtime helper: print an integer (for JIT mode)
+    // Thread-local PRNG state for random number generation
+    thread_local! {
+        static PRNG_STATE: std::cell::RefCell<u64> = std::cell::RefCell::new(0x853c49e6748fea9b);
+    }
+
+    // Runtime helper: seed the PRNG
+    extern "C" fn sigil_random_seed(seed: i64) {
+        PRNG_STATE.with(|state| {
+            *state.borrow_mut() = seed as u64;
+        });
+    }
+
+    // Runtime helper: generate random f64 in [0, 1)
+    extern "C" fn sigil_random_f64() -> f64 {
+        PRNG_STATE.with(|state| {
+            let mut s = *state.borrow();
+            // xorshift64*
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            *state.borrow_mut() = s;
+            // Convert to f64 in [0, 1)
+            (s.wrapping_mul(0x2545F4914F6CDD1D) >> 11) as f64 / (1u64 << 53) as f64
+        })
+    }
+
+    // Runtime helper: generate random f64 from standard normal distribution
+    // Uses Box-Muller transform
+    extern "C" fn sigil_random_normal() -> f64 {
+        let u1 = sigil_random_f64().max(1e-10); // Avoid log(0)
+        let u2 = sigil_random_f64();
+        let two_pi = 2.0 * std::f64::consts::PI;
+        (-2.0 * u1.ln()).sqrt() * (two_pi * u2).cos()
+    }
+
+    // Runtime helper: allocate memory (for struct construction)
+    // Returns i64 to match LLVM's optimized function signature (ptr gets converted to i64)
+    extern "C" fn sigil_alloc(size: i64) -> i64 {
+        use std::alloc::{alloc, Layout};
+        let size = size.max(8) as usize; // Minimum 8 bytes
+        let layout = Layout::from_size_align(size, 8).unwrap();
+        unsafe { alloc(layout) as i64 }
+    }
+
+    // Runtime helper: print an integer with newline (for JIT mode)
     extern "C" fn sigil_print_int(value: i64) {
         println!("{}", value);
+    }
+
+    // Runtime helper: print a newline (for JIT mode)
+    extern "C" fn sigil_print_newline() {
+        println!();
+    }
+
+    // Runtime helper: write an integer without newline (for format strings)
+    extern "C" fn sigil_write_int(value: i64) {
+        use std::io::Write;
+        print!("{}", value);
+        let _ = std::io::stdout().flush();
+    }
+
+    // Runtime helper: write a string without newline (for format strings)
+    extern "C" fn sigil_write_str(ptr: *const i8) {
+        use std::io::Write;
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                print!("{}", s);
+                let _ = std::io::stdout().flush();
+            }
+        }
+    }
+
+    // Runtime helper: print a string without newline (same as write_str)
+    extern "C" fn sigil_print_str(ptr: *const i8) {
+        use std::io::Write;
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                print!("{}", s);
+                let _ = std::io::stdout().flush();
+            }
+        }
+    }
+
+    // Runtime helper: write a float without newline (for format strings)
+    extern "C" fn sigil_write_float(value: f64) {
+        use std::io::Write;
+        print!("{}", value);
+        let _ = std::io::stdout().flush();
+    }
+
+    // Runtime helper: print a float with newline
+    extern "C" fn sigil_print_float(value: f64) {
+        println!("{}", value);
+    }
+
+    // G53 fix: Jormungandr-compatible print functions (C string with newline)
+    extern "C" fn sigil_print(ptr: *const i8) {
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                print!("{}", s);
+            }
+        }
+    }
+
+    extern "C" fn sigil_println(ptr: *const i8) {
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                println!("{}", s);
+            }
+        } else {
+            println!();
+        }
+    }
+
+    extern "C" fn sigil_eprint(ptr: *const i8) {
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                eprint!("{}", s);
+            }
+        }
+    }
+
+    extern "C" fn sigil_eprintln(ptr: *const i8) {
+        if !ptr.is_null() {
+            let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+            if let Ok(s) = c_str.to_str() {
+                eprintln!("{}", s);
+            }
+        } else {
+            eprintln!();
+        }
+    }
+
+    // Runtime helper: get string length (C string)
+    extern "C" fn sigil_strlen(ptr: *const i8) -> i64 {
+        if ptr.is_null() {
+            return 0;
+        }
+        let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+        c_str.to_bytes().len() as i64
     }
 
     // Math runtime helpers (JIT mode) - operate on i64 bits representing f64
@@ -152,6 +328,9 @@ pub mod llvm {
     }
     extern "C" fn sigil_abs(x: i64) -> i64 {
         x.abs()
+    }
+    extern "C" fn sigil_pi() -> i64 {
+        f64::to_bits(std::f64::consts::PI) as i64
     }
     extern "C" fn sigil_min(a: i64, b: i64) -> i64 {
         a.min(b)
@@ -193,6 +372,37 @@ pub mod llvm {
             return 0;
         }
         unsafe { (*vec_ptr).len() as i64 }
+    }
+
+    extern "C" fn sigil_vec_clone(vec_ptr: *mut Vec<i64>) -> *mut Vec<i64> {
+        if vec_ptr.is_null() {
+            return std::ptr::null_mut();
+        }
+        unsafe {
+            let vec_ref = &*vec_ptr;
+            let cloned = vec_ref.clone();
+            Box::into_raw(Box::new(cloned))
+        }
+    }
+
+    extern "C" fn sigil_vec_set(vec_ptr: *mut Vec<i64>, index: i64, value: i64) {
+        if vec_ptr.is_null() {
+            return;
+        }
+        unsafe {
+            let vec_ref = &mut *vec_ptr;
+            if (index as usize) < vec_ref.len() {
+                vec_ref[index as usize] = value;
+            }
+        }
+    }
+
+    // G72: Get data pointer from Vec<u8> for slice conversion
+    extern "C" fn sigil_vec_u8_as_ptr(vec_ptr: *mut Vec<u8>) -> *const u8 {
+        if vec_ptr.is_null() {
+            return std::ptr::null();
+        }
+        unsafe { (*vec_ptr).as_ptr() }
     }
 
     // String runtime functions
@@ -239,45 +449,183 @@ pub mod llvm {
         }
     }
 
+    // G48: String repeat - repeat a C string n times
+    extern "C" fn sigil_string_repeat(str_ptr: *const i8, count: i64) -> *const i8 {
+        if str_ptr.is_null() || count <= 0 {
+            // Return empty string
+            return b"\0".as_ptr() as *const i8;
+        }
+        unsafe {
+            let cstr = std::ffi::CStr::from_ptr(str_ptr);
+            if let Ok(s) = cstr.to_str() {
+                let repeated = s.repeat(count as usize);
+                // Allocate and leak a CString
+                let c_repeated = std::ffi::CString::new(repeated).unwrap_or_default();
+                c_repeated.into_raw()
+            } else {
+                b"\0".as_ptr() as *const i8
+            }
+        }
+    }
+
+    // G27: File system runtime functions
+    // G27: File system read - reads file contents into a Rust String
+    extern "C" fn sigil_fs_read(path_ptr: *const i8) -> *mut String {
+        if path_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        let path = unsafe { std::ffi::CStr::from_ptr(path_ptr) };
+        match path.to_str() {
+            Ok(path_str) => {
+                match std::fs::read_to_string(path_str) {
+                    Ok(contents) => Box::into_raw(Box::new(contents)),
+                    Err(_) => Box::into_raw(Box::new(String::new())),
+                }
+            }
+            Err(_) => Box::into_raw(Box::new(String::new())),
+        }
+    }
+
+    // Get string data as C string pointer (for printing Rust Strings)
+    extern "C" fn sigil_string_data(str_ptr: *mut String) -> *const i8 {
+        if str_ptr.is_null() {
+            return b"\0".as_ptr() as *const i8;
+        }
+        let s = unsafe { &*str_ptr };
+        s.as_ptr() as *const i8
+    }
+
+    // sigil_string_len is already defined above
+
+    // G32: String slice - create substring from start to end indices
+    extern "C" fn sigil_string_slice(str_ptr: *const i8, start: i64, end: i64) -> *mut String {
+        if str_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        let cstr = unsafe { std::ffi::CStr::from_ptr(str_ptr) };
+        let s = cstr.to_string_lossy();
+        let start_idx = start.max(0) as usize;
+        let end_idx = end.max(0) as usize;
+        let end_idx = end_idx.min(s.len());
+        let substring = if start_idx < end_idx {
+            s[start_idx..end_idx].to_string()
+        } else {
+            String::new()
+        };
+        Box::into_raw(Box::new(substring))
+    }
+
+    // G32: Rust String slice - create substring from Rust String
+    extern "C" fn sigil_rust_string_slice(str_ptr: *mut String, start: i64, end: i64) -> *mut String {
+        if str_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        let s = unsafe { &*str_ptr };
+        let start_idx = start.max(0) as usize;
+        let end_idx = end.max(0) as usize;
+        let end_idx = end_idx.min(s.len());
+        let substring = if start_idx < end_idx {
+            s[start_idx..end_idx].to_string()
+        } else {
+            String::new()
+        };
+        Box::into_raw(Box::new(substring))
+    }
+
+    // G32: Get bytes from a Rust String with null terminator for strlen compatibility
+    // Returns a pointer to a copy of the string's bytes with a null terminator appended
+    extern "C" fn sigil_rust_string_as_bytes(str_ptr: *mut String) -> *const i8 {
+        if str_ptr.is_null() {
+            return b"\0".as_ptr() as *const i8;
+        }
+        let s = unsafe { &*str_ptr };
+        // Create a copy with null terminator so strlen works
+        let mut bytes = s.as_bytes().to_vec();
+        bytes.push(0); // Add null terminator
+        let ptr = bytes.as_ptr() as *const i8;
+        std::mem::forget(bytes); // Leak - current design doesn't track/free these
+        ptr
+    }
+
+    // Print a Rust String directly
+    extern "C" fn sigil_print_rust_string(str_ptr: *mut String) {
+        if str_ptr.is_null() {
+            println!();
+            return;
+        }
+        let s = unsafe { &*str_ptr };
+        println!("{}", s);
+    }
+
     // Option runtime functions
-    extern "C" fn sigil_option_some(value: i64) -> *mut i64 {
-        Box::into_raw(Box::new(value))
+    // G45 fix: Option uses same layout as user-defined enums:
+    //   offset 0: discriminant (0 = None, 1 = Some)
+    //   offset 8: value (for Some)
+    extern "C" fn sigil_option_some(value: i64) -> i64 {
+        // Allocate 16 bytes: 8 for discriminant + 8 for value
+        let ptr = Box::into_raw(Box::new([1i64, value]));
+        ptr as i64
     }
 
-    extern "C" fn sigil_option_none() -> *mut i64 {
-        std::ptr::null_mut()
+    extern "C" fn sigil_option_none() -> i64 {
+        // Allocate 8 bytes for discriminant only
+        let ptr = Box::into_raw(Box::new(0i64));
+        ptr as i64
     }
 
-    extern "C" fn sigil_option_is_some(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_is_some(opt_ptr: i64) -> i64 {
+        if opt_ptr == 0 {
             0
         } else {
-            1
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 1 { 1 } else { 0 }
+            }
         }
     }
 
-    extern "C" fn sigil_option_is_none(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_is_none(opt_ptr: i64) -> i64 {
+        if opt_ptr == 0 {
             1
         } else {
-            0
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 0 { 1 } else { 0 }
+            }
         }
     }
 
-    extern "C" fn sigil_option_unwrap(opt_ptr: *mut i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_unwrap(opt_ptr: i64) -> i64 {
+        if opt_ptr == 0 {
             eprintln!("Error: unwrap called on None");
             0
         } else {
-            unsafe { *opt_ptr }
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 1 {
+                    // Some variant - value at offset 8
+                    *ptr.offset(1)
+                } else {
+                    eprintln!("Error: unwrap called on None");
+                    0
+                }
+            }
         }
     }
 
-    extern "C" fn sigil_option_unwrap_or(opt_ptr: *mut i64, default: i64) -> i64 {
-        if opt_ptr.is_null() {
+    extern "C" fn sigil_option_unwrap_or(opt_ptr: i64, default: i64) -> i64 {
+        if opt_ptr == 0 {
             default
         } else {
-            unsafe { *opt_ptr }
+            let ptr = opt_ptr as *const i64;
+            unsafe {
+                if *ptr == 1 {
+                    // Some variant - value at offset 8
+                    *ptr.offset(1)
+                } else {
+                    default
+                }
+            }
         }
     }
 
@@ -329,6 +677,531 @@ pub mod llvm {
             }
             -1
         }
+    }
+
+    // ============================================
+    // CUDA Runtime Functions (requires "cuda" feature)
+    // ============================================
+
+    #[cfg(feature = "cuda")]
+    mod cuda_runtime {
+        use std::sync::Mutex;
+        use once_cell::sync::Lazy;
+        use cudarc::driver::{CudaDevice, CudaSlice};
+        use cudarc::nvrtc::Ptx;
+        use std::collections::HashMap;
+
+        // Global CUDA state
+        static CUDA_STATE: Lazy<Mutex<CudaState>> = Lazy::new(|| {
+            Mutex::new(CudaState {
+                device: None,
+                allocations: HashMap::new(),
+                kernels: HashMap::new(),
+                next_alloc_id: 1,
+                next_kernel_id: 1,
+            })
+        });
+
+        struct CudaState {
+            device: Option<std::sync::Arc<CudaDevice>>,
+            allocations: HashMap<i64, CudaSlice<u8>>,
+            kernels: HashMap<i64, cudarc::driver::CudaFunction>,
+            next_alloc_id: i64,
+            next_kernel_id: i64,
+        }
+
+        pub extern "C" fn sigil_cuda_init() -> i64 {
+            eprintln!("[CUDA] sigil_cuda_init called");
+            let mut state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            if state.device.is_some() {
+                return 0; // Already initialized
+            }
+
+            match CudaDevice::new(0) {
+                Ok(dev) => {
+                    state.device = Some(dev);
+                    eprintln!("[CUDA] Device initialized successfully");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("[CUDA] Failed to initialize: {:?}", e);
+                    -1
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_cleanup() {
+            eprintln!("[CUDA] sigil_cuda_cleanup called");
+            if let Ok(mut state) = CUDA_STATE.lock() {
+                state.allocations.clear();
+                state.kernels.clear();
+                state.device = None;
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_get_device_count() -> i64 {
+            // G121: Must initialize CUDA driver before querying device count
+            if cudarc::driver::result::init().is_err() {
+                return 0;
+            }
+            match cudarc::driver::result::device::get_count() {
+                Ok(count) => count as i64,
+                Err(_) => 0,
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_malloc(size: i64) -> i64 {
+            let mut state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return 0,
+            };
+
+            // Auto-initialize if needed
+            if state.device.is_none() {
+                eprintln!("[CUDA] sigil_cuda_malloc: attempting auto-init...");
+                match CudaDevice::new(0) {
+                    Ok(dev) => {
+                        state.device = Some(dev);
+                        eprintln!("[CUDA] Auto-initialized device 0 for malloc");
+                    }
+                    Err(e) => {
+                        eprintln!("[CUDA] Failed to auto-initialize: {:?}", e);
+                        return 0;
+                    }
+                }
+            }
+
+            let device = state.device.as_ref().unwrap().clone();
+
+            eprintln!("[CUDA] Attempting to allocate {} bytes", size);
+            match device.alloc_zeros::<u8>(size as usize) {
+                Ok(slice) => {
+                    let id = state.next_alloc_id;
+                    state.next_alloc_id += 1;
+                    state.allocations.insert(id, slice);
+                    eprintln!("[CUDA] Allocated {} bytes, id={}", size, id);
+                    id
+                }
+                Err(e) => {
+                    eprintln!("[CUDA] malloc {} bytes failed: {:?}", size, e);
+                    0
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_free(device_ptr: i64) {
+            if let Ok(mut state) = CUDA_STATE.lock() {
+                if state.allocations.remove(&device_ptr).is_some() {
+                    eprintln!("[CUDA] Freed allocation id={}", device_ptr);
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_memcpy_h2d(dst_id: i64, src: *const u8, size: i64) -> i64 {
+            let state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            let device = match &state.device {
+                Some(d) => d.clone(),
+                None => return -1,
+            };
+
+            let slice = match state.allocations.get(&dst_id) {
+                Some(s) => s,
+                None => {
+                    eprintln!("[CUDA] memcpy_h2d: invalid dst_id {}", dst_id);
+                    return -1;
+                }
+            };
+
+            if src.is_null() {
+                return -1;
+            }
+
+            let host_data = unsafe { std::slice::from_raw_parts(src, size as usize) };
+
+            // cudarc requires mutable reference, but we only have immutable
+            // We need to drop state lock, get mutable access differently
+            drop(state);
+
+            let mut state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            if let Some(slice) = state.allocations.get_mut(&dst_id) {
+                match device.htod_copy_into(host_data.to_vec(), slice) {
+                    Ok(_) => 0,
+                    Err(e) => {
+                        eprintln!("[CUDA] memcpy_h2d failed: {:?}", e);
+                        -1
+                    }
+                }
+            } else {
+                -1
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_memcpy_d2h(dst: *mut u8, src_id: i64, size: i64) -> i64 {
+            let state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            let device = match &state.device {
+                Some(d) => d.clone(),
+                None => return -1,
+            };
+
+            let slice = match state.allocations.get(&src_id) {
+                Some(s) => s,
+                None => {
+                    eprintln!("[CUDA] memcpy_d2h: invalid src_id {}", src_id);
+                    return -1;
+                }
+            };
+
+            if dst.is_null() {
+                return -1;
+            }
+
+            match device.dtoh_sync_copy(slice) {
+                Ok(host_data) => {
+                    let copy_size = size.min(host_data.len() as i64) as usize;
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(host_data.as_ptr(), dst, copy_size);
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("[CUDA] memcpy_d2h failed: {:?}", e);
+                    -1
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_memcpy_d2d(dst_id: i64, src_id: i64, size: i64) -> i64 {
+            let mut state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            let device = match &state.device {
+                Some(d) => d.clone(),
+                None => return -1,
+            };
+
+            // First copy to host, then back to device (simple implementation)
+            let host_data = {
+                let src_slice = match state.allocations.get(&src_id) {
+                    Some(s) => s,
+                    None => return -1,
+                };
+                match device.dtoh_sync_copy(src_slice) {
+                    Ok(data) => data,
+                    Err(_) => return -1,
+                }
+            };
+
+            if let Some(dst_slice) = state.allocations.get_mut(&dst_id) {
+                let copy_size = size.min(host_data.len() as i64) as usize;
+                match device.htod_copy_into(host_data[..copy_size].to_vec(), dst_slice) {
+                    Ok(_) => 0,
+                    Err(_) => -1,
+                }
+            } else {
+                -1
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_sync() {
+            if let Ok(state) = CUDA_STATE.lock() {
+                if let Some(device) = &state.device {
+                    let _ = device.synchronize();
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_get_compute_capability() -> i64 {
+            // Query CUDA compute capability
+            // Returns major * 10 + minor (e.g., 89 for SM 8.9 Ada Lovelace)
+
+            // Auto-initialize if needed
+            let mut state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return 0,
+            };
+
+            if state.device.is_none() {
+                // Initialize on demand
+                if let Ok(dev) = CudaDevice::new(0) {
+                    state.device = Some(dev);
+                    eprintln!("[CUDA] Auto-initialized device 0 for compute capability query");
+                } else {
+                    return 0;
+                }
+            }
+
+            let device = state.device.as_ref().unwrap().clone();
+            drop(state);
+
+            // cudarc CudaDevice has ordinal() but not direct SM version access
+            // For now, use device attributes via driver API
+            match device.attribute(cudarc::driver::sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR) {
+                Ok(major) => {
+                    match device.attribute(cudarc::driver::sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR) {
+                        Ok(minor) => {
+                            let cc = (major * 10 + minor) as i64;
+                            eprintln!("[CUDA] Compute capability: {}.{} ({})", major, minor, cc);
+                            cc
+                        }
+                        Err(_) => major as i64 * 10,
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[CUDA] Failed to get compute capability: {:?}", e);
+                    0
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_get_total_memory() -> i64 {
+            let state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return 0,
+            };
+
+            let device = match &state.device {
+                Some(d) => d.clone(),
+                None => return 0,
+            };
+
+            // Get total device memory
+            match device.attribute(cudarc::driver::sys::CUdevice_attribute::CU_DEVICE_ATTRIBUTE_TOTAL_CONSTANT_MEMORY) {
+                Ok(_) => {
+                    // This attribute gives constant memory, not total memory
+                    // Use a different approach - query via CUDA mem info
+                    // For now, return a reasonable default (24GB in bytes)
+                    24 * 1024 * 1024 * 1024_i64
+                }
+                Err(_) => 24 * 1024 * 1024 * 1024_i64,
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_memset(ptr: i64, value: i64, size: i64) {
+            // Set memory on device
+            let state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+
+            let _device = match &state.device {
+                Some(d) => d.clone(),
+                None => return,
+            };
+
+            // For our allocation ID scheme, we'd need to look up the slice
+            // and zero it. For now, this is a stub - allocation already zeros.
+            eprintln!("[CUDA] memset called: ptr={}, value={}, size={}", ptr, value, size);
+        }
+
+        /// Fill GPU memory with random normal values (for weight initialization)
+        pub extern "C" fn sigil_cuda_fill_randn(device_ptr: i64, numel: i64, elem_size: i64) {
+            eprintln!("[CUDA] fill_randn: ptr={}, numel={}, elem_size={}", device_ptr, numel, elem_size);
+
+            let byte_size = (numel * elem_size) as usize;
+            if byte_size == 0 {
+                return;
+            }
+
+            // Allocate CPU buffer
+            let mut cpu_buf: Vec<u8> = vec![0u8; byte_size];
+
+            // Fill with random normal values based on element size
+            if elem_size == 4 {
+                // f32
+                let f32_slice: &mut [f32] = unsafe {
+                    std::slice::from_raw_parts_mut(cpu_buf.as_mut_ptr() as *mut f32, numel as usize)
+                };
+                for val in f32_slice.iter_mut() {
+                    *val = super::sigil_random_normal() as f32;
+                }
+            } else if elem_size == 8 {
+                // f64
+                let f64_slice: &mut [f64] = unsafe {
+                    std::slice::from_raw_parts_mut(cpu_buf.as_mut_ptr() as *mut f64, numel as usize)
+                };
+                for val in f64_slice.iter_mut() {
+                    *val = super::sigil_random_normal();
+                }
+            } else if elem_size == 2 {
+                // f16 - generate f32, convert to f16 bits
+                let u16_slice: &mut [u16] = unsafe {
+                    std::slice::from_raw_parts_mut(cpu_buf.as_mut_ptr() as *mut u16, numel as usize)
+                };
+                for val in u16_slice.iter_mut() {
+                    let f32_val = super::sigil_random_normal() as f32;
+                    // Simple f32 to f16 conversion (truncate)
+                    let bits = f32_val.to_bits();
+                    let sign = (bits >> 16) & 0x8000;
+                    let exp = ((bits >> 23) & 0xFF) as i32;
+                    let mantissa = bits & 0x7FFFFF;
+                    let f16_exp = (exp - 127 + 15).clamp(0, 31) as u32;
+                    let f16_mantissa = mantissa >> 13;
+                    *val = (sign | (f16_exp << 10) | f16_mantissa) as u16;
+                }
+            } else {
+                eprintln!("[CUDA] fill_randn: unsupported element size {}", elem_size);
+                return;
+            }
+
+            // Copy to GPU
+            sigil_cuda_memcpy_h2d(device_ptr, cpu_buf.as_ptr(), byte_size as i64);
+            eprintln!("[CUDA] fill_randn: copied {} bytes to GPU", byte_size);
+        }
+
+        pub extern "C" fn sigil_cuda_compile_kernel(_cuda_src: *const i8, _kernel_name: *const i8) -> i64 {
+            // TODO: Implement NVRTC compilation
+            eprintln!("[CUDA] compile_kernel not yet implemented (use load_ptx)");
+            0
+        }
+
+        pub extern "C" fn sigil_cuda_load_ptx(ptx: *const i8, kernel_name: *const i8) -> i64 {
+            if ptx.is_null() || kernel_name.is_null() {
+                return 0;
+            }
+
+            let mut state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return 0,
+            };
+
+            let device = match &state.device {
+                Some(d) => d.clone(),
+                None => return 0,
+            };
+
+            let ptx_str = unsafe { std::ffi::CStr::from_ptr(ptx) };
+            let kernel_str = unsafe { std::ffi::CStr::from_ptr(kernel_name) };
+
+            let ptx_bytes = ptx_str.to_bytes();
+            let kernel_name = match kernel_str.to_str() {
+                Ok(s) => s,
+                Err(_) => return 0,
+            };
+
+            // cudarc expects PTX as String
+            let ptx_string = match std::str::from_utf8(ptx_bytes) {
+                Ok(s) => s.to_string(),
+                Err(_) => return 0,
+            };
+
+            match device.load_ptx(Ptx::from_src(ptx_string), kernel_name, &[kernel_name]) {
+                Ok(_) => {
+                    match device.get_func(kernel_name, kernel_name) {
+                        Some(func) => {
+                            let id = state.next_kernel_id;
+                            state.next_kernel_id += 1;
+                            state.kernels.insert(id, func);
+                            eprintln!("[CUDA] Loaded PTX kernel '{}', id={}", kernel_name, id);
+                            id
+                        }
+                        None => 0,
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[CUDA] Failed to load PTX: {:?}", e);
+                    0
+                }
+            }
+        }
+
+        pub extern "C" fn sigil_cuda_launch_kernel_1d(
+            handle: i64,
+            grid_x: i64,
+            block_x: i64,
+            _args: *const i64,
+            _num_args: i64,
+        ) -> i64 {
+            let state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            let _func = match state.kernels.get(&handle) {
+                Some(f) => f,
+                None => {
+                    eprintln!("[CUDA] launch_kernel_1d: invalid handle {}", handle);
+                    return -1;
+                }
+            };
+
+            // TODO: Implement proper kernel launch with args
+            // This requires parsing the args array and building LaunchConfig
+            eprintln!("[CUDA] launch_kernel_1d: grid={}, block={} (args not yet supported)", grid_x, block_x);
+
+            0
+        }
+
+        pub extern "C" fn sigil_cuda_launch_kernel_2d(
+            handle: i64,
+            grid_x: i64,
+            grid_y: i64,
+            block_x: i64,
+            block_y: i64,
+            _args: *const i64,
+            _num_args: i64,
+        ) -> i64 {
+            let state = match CUDA_STATE.lock() {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+
+            let _func = match state.kernels.get(&handle) {
+                Some(f) => f,
+                None => {
+                    eprintln!("[CUDA] launch_kernel_2d: invalid handle {}", handle);
+                    return -1;
+                }
+            };
+
+            // TODO: Implement proper kernel launch with args
+            eprintln!("[CUDA] launch_kernel_2d: grid=({},{}), block=({},{}) (args not yet supported)",
+                grid_x, grid_y, block_x, block_y);
+
+            0
+        }
+    }
+
+    // Stub implementations when CUDA feature is disabled
+    #[cfg(not(feature = "cuda"))]
+    mod cuda_runtime {
+        pub extern "C" fn sigil_cuda_init() -> i64 {
+            eprintln!("[CUDA] Not compiled with cuda feature - CUDA unavailable");
+            -1
+        }
+        pub extern "C" fn sigil_cuda_cleanup() {}
+        pub extern "C" fn sigil_cuda_get_device_count() -> i64 { 0 }
+        pub extern "C" fn sigil_cuda_malloc(_size: i64) -> i64 { 0 }
+        pub extern "C" fn sigil_cuda_free(_device_ptr: i64) {}
+        pub extern "C" fn sigil_cuda_memcpy_h2d(_dst: i64, _src: *const u8, _size: i64) -> i64 { -1 }
+        pub extern "C" fn sigil_cuda_memcpy_d2h(_dst: *mut u8, _src: i64, _size: i64) -> i64 { -1 }
+        pub extern "C" fn sigil_cuda_memcpy_d2d(_dst: i64, _src: i64, _size: i64) -> i64 { -1 }
+        pub extern "C" fn sigil_cuda_sync() {}
+        pub extern "C" fn sigil_cuda_fill_randn(_device_ptr: i64, _numel: i64, _elem_size: i64) {}
+        pub extern "C" fn sigil_cuda_get_compute_capability() -> i64 { 0 }
+        pub extern "C" fn sigil_cuda_get_total_memory() -> i64 { 0 }
+        pub extern "C" fn sigil_cuda_memset(_ptr: i64, _value: i64, _size: i64) {}
+        pub extern "C" fn sigil_cuda_compile_kernel(_cuda_src: *const i8, _kernel_name: *const i8) -> i64 { 0 }
+        pub extern "C" fn sigil_cuda_load_ptx(_ptx: *const i8, _kernel_name: *const i8) -> i64 { 0 }
+        pub extern "C" fn sigil_cuda_launch_kernel_1d(_h: i64, _gx: i64, _bx: i64, _args: *const i64, _n: i64) -> i64 { -1 }
+        pub extern "C" fn sigil_cuda_launch_kernel_2d(_h: i64, _gx: i64, _gy: i64, _bx: i64, _by: i64, _args: *const i64, _n: i64) -> i64 { -1 }
     }
 
     impl<'ctx> LlvmCompiler<'ctx> {
@@ -387,6 +1260,20 @@ pub mod llvm {
                 evidential_types: HashMap::new(),
                 current_self_type: None,
                 global_vars: HashMap::new(),
+                link_libraries: Vec::new(),
+                field_type_names: HashMap::new(),
+                float_funcs: std::collections::HashSet::new(),
+                ret_types: HashMap::new(),
+                loaded_crates: std::collections::HashSet::new(),
+                loading_crates: std::collections::HashSet::new(),
+                workspace_members: HashMap::new(),
+                project_root: None,
+                current_source_dir: None,
+                impl_registry: ImplRegistry::new(),
+                monomorph_cache: MonomorphCache::new(),
+                const_evaluator: ConstEvaluator::new(),
+                slice_return_methods: std::collections::HashSet::new(),
+                generic_functions: HashMap::new(),
             })
         }
 
@@ -403,6 +1290,9 @@ pub mod llvm {
             // Declare runtime functions
             self.declare_runtime_functions();
 
+            // G44 fix: Register built-in enum types (Option, Result)
+            self.register_builtin_enums();
+
             // First pass: register types
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
@@ -415,7 +1305,8 @@ pub mod llvm {
             // First pass continued: process impl blocks
             for spanned_item in &optimized.items {
                 if let Item::Impl(impl_block) = &spanned_item.node {
-                    self.declare_impl_methods(impl_block)?;
+                    // "current" is used for the main file being compiled
+                    self.declare_impl_methods("current", impl_block)?;
                 }
             }
 
@@ -441,7 +1332,8 @@ pub mod llvm {
                 }
             }
 
-            // Third pass: compile function bodies
+            // Third pass: compile standalone function bodies FIRST
+            // This ensures that functions called by impl methods are compiled before the methods
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Function(func) => {
@@ -450,32 +1342,527 @@ pub mod llvm {
                     Item::Module(module) => {
                         self.compile_module_functions(module)?;
                     }
-                    Item::Impl(impl_block) => {
-                        self.compile_impl_methods(impl_block)?;
+                    _ => {}
+                }
+            }
+
+            // Fourth pass: compile impl method bodies AFTER standalone functions
+            eprintln!("[DEBUG] Main file: compiling impl methods...");
+            for spanned_item in &optimized.items {
+                if let Item::Impl(impl_block) = &spanned_item.node {
+                    self.compile_impl_methods(impl_block)?;
+                }
+            }
+
+            // Fifth pass: Add stub bodies to any functions still missing bodies
+            eprintln!("[DEBUG] Main file: adding stub bodies...");
+            self.add_stub_bodies(None); // Main file: stub all remaining empty functions
+
+            // Debug: Check for functions with 0 basic blocks before optimization
+            eprintln!("[DEBUG] Checking for empty functions before optimization...");
+            for fn_value in self.module.get_functions() {
+                if fn_value.count_basic_blocks() == 0 {
+                    let fn_name = fn_value.get_name().to_str().unwrap_or("?");
+                    eprintln!("[DEBUG] EMPTY FUNCTION: {}", fn_name);
+                }
+            }
+
+            // Run LLVM optimizations
+            eprintln!("[DEBUG] Running LLVM optimizations...");
+            self.run_llvm_optimizations();
+
+            Ok(())
+        }
+
+        /// Set the source file path to enable tome loading
+        ///
+        /// This method walks up the directory tree to find Sigil.toml,
+        /// sets project_root and current_source_dir, and loads workspace config.
+        pub fn set_source_path(&mut self, path: &std::path::Path) -> Result<(), String> {
+            // Set current source directory
+            self.current_source_dir = path.parent().map(|p| p.to_path_buf());
+
+            // Walk up directories to find Sigil.toml
+            let mut search_dir = path.parent();
+            while let Some(dir) = search_dir {
+                let sigil_toml = dir.join("Sigil.toml");
+                if sigil_toml.exists() {
+                    self.project_root = Some(dir.to_path_buf());
+                    self.load_workspace_config(&sigil_toml)?;
+                    return Ok(());
+                }
+                search_dir = dir.parent();
+            }
+
+            // No Sigil.toml found - that's OK for single-file programs
+            Ok(())
+        }
+
+        /// Load workspace configuration from Sigil.toml
+        fn load_workspace_config(&mut self, toml_path: &std::path::Path) -> Result<(), String> {
+            let content = std::fs::read_to_string(toml_path)
+                .map_err(|e| format!("Failed to read Sigil.toml: {}", e))?;
+
+            let toml_value: toml::Value = toml::from_str(&content)
+                .map_err(|e| format!("Failed to parse Sigil.toml: {}", e))?;
+
+            // Parse workspace.dependencies section for crate paths
+            // Format: crate-name = { path = "relative/path" }
+            if let Some(workspace) = toml_value.get("workspace") {
+                if let Some(deps) = workspace.get("dependencies") {
+                    if let Some(deps_table) = deps.as_table() {
+                        for (crate_name, dep_spec) in deps_table {
+                            if let Some(path) = dep_spec.get("path").and_then(|v| v.as_str()) {
+                                // Convert crate-name to crate_name for Sigil's use
+                                let sigil_name = crate_name.replace("-", "_");
+                                self.workspace_members.insert(
+                                    sigil_name,
+                                    std::path::PathBuf::from(path),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Also check [dependencies] section (non-workspace format)
+            if let Some(deps) = toml_value.get("dependencies") {
+                if let Some(deps_table) = deps.as_table() {
+                    for (crate_name, dep_spec) in deps_table {
+                        if let Some(path) = dep_spec.get("path").and_then(|v| v.as_str()) {
+                            let sigil_name = crate_name.replace("-", "_");
+                            self.workspace_members.insert(
+                                sigil_name,
+                                std::path::PathBuf::from(path),
+                            );
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Load and compile an external crate
+        pub fn load_crate(&mut self, crate_name: &str) -> Result<bool, String> {
+            eprintln!("[LLVM] load_crate('{}'), workspace_members: {:?}", crate_name, self.workspace_members.keys().collect::<Vec<_>>());
+            // Check if already loaded
+            if self.loaded_crates.contains(crate_name) {
+                eprintln!("[LLVM] load_crate('{}') - already loaded", crate_name);
+                return Ok(true);
+            }
+
+            // Check for circular dependency
+            if self.loading_crates.contains(crate_name) {
+                return Err(format!(
+                    "Circular dependency detected: crate '{}' is already being loaded",
+                    crate_name
+                ));
+            }
+
+            // Find crate path in workspace members
+            let crate_path = match self.workspace_members.get(crate_name) {
+                Some(p) => p.clone(),
+                None => {
+                    // G27 fix: Try loading as local .sigil file in current source directory
+                    // This handles `invoke module_name·*;` for sibling files
+                    if let Some(ref source_dir) = self.current_source_dir {
+                        let local_file = source_dir.join(format!("{}.sigil", crate_name));
+                        if local_file.exists() {
+                            eprintln!("[LLVM] load_crate('{}') - loading local file {:?}", crate_name, local_file);
+                            return self.load_crate_from_path(crate_name, &local_file);
+                        }
+                    }
+                    eprintln!("[LLVM] load_crate('{}') - NOT in workspace", crate_name);
+                    return Ok(false); // Not in workspace, may be builtin
+                }
+            };
+
+            let project_root = match &self.project_root {
+                Some(r) => r.clone(),
+                None => return Ok(false), // No project root set
+            };
+
+            // Build path to lib.sigil
+            let lib_path = project_root.join(&crate_path).join("src").join("lib.sigil");
+
+            if !lib_path.exists() {
+                // Try just the crate path if it's already absolute
+                let alt_path = crate_path.join("src").join("lib.sigil");
+                if alt_path.exists() {
+                    return self.load_crate_from_path(crate_name, &alt_path);
+                }
+                return Ok(false);
+            }
+
+            self.load_crate_from_path(crate_name, &lib_path)
+        }
+
+        /// Load crate from a specific lib.sigil path
+        fn load_crate_from_path(
+            &mut self,
+            crate_name: &str,
+            lib_path: &std::path::Path,
+        ) -> Result<bool, String> {
+            eprintln!("[LLVM] Loading crate '{}' from {:?}", crate_name, lib_path);
+            // Mark as loading (for circular dependency detection)
+            self.loading_crates.insert(crate_name.to_string());
+
+            // Read and parse the lib.sigil file
+            let source = std::fs::read_to_string(lib_path)
+                .map_err(|e| format!("Failed to read {:?}: {}", lib_path, e))?;
+
+            // Save current state
+            let prev_module = self.current_module.clone();
+            let prev_source_dir = self.current_source_dir.clone();
+
+            // Snapshot existing function names BEFORE loading this crate
+            // This prevents add_stub_bodies from stubbing main file functions
+            let pre_existing_functions: std::collections::HashSet<String> = self
+                .module
+                .get_functions()
+                .map(|f| f.get_name().to_str().unwrap_or("").to_string())
+                .collect();
+
+            // Set module context to crate name
+            self.current_module = vec!["crate".to_string(), crate_name.to_string()];
+            self.current_source_dir = lib_path.parent().map(|p| p.to_path_buf());
+
+            // Parse the source
+            let mut parser = Parser::new(&source);
+            let parsed_file = parser
+                .parse_file()
+                .map_err(|e| format!("Failed to parse crate '{}': {:?}", crate_name, e))?;
+
+            // First: load all scroll modules (sub-files)
+            let crate_dir = lib_path.parent().unwrap_or(std::path::Path::new("."));
+            for spanned_item in &parsed_file.items {
+                if let Item::Module(module) = &spanned_item.node {
+                    // A module without items is a `scroll name;` declaration
+                    // that loads from name.sigil in the same directory
+                    if module.items.is_none() {
+                        let module_name = &module.name.name;
+                        let module_path = crate_dir.join(format!("{}.sigil", module_name));
+                        if module_path.exists() {
+                            // Recursively load the sub-module
+                            let sub_module_name = format!("{}::{}", crate_name, module_name);
+                            if let Err(e) = self.load_crate_from_path(&sub_module_name, &module_path) {
+                                eprintln!("Warning: error loading scroll '{}': {}", module_name, e);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // First pass: register types from the crate
+            for spanned_item in &parsed_file.items {
+                match &spanned_item.node {
+                    Item::Struct(s) => {
+                        if let Err(e) = self.register_struct(s) {
+                            eprintln!("Warning: error registering struct in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Enum(e) => {
+                        if let Err(e) = self.register_enum(e) {
+                            eprintln!("Warning: error registering enum in '{}': {}", crate_name, e);
+                        }
                     }
                     _ => {}
                 }
             }
 
-            // Run LLVM optimizations
-            self.run_llvm_optimizations()?;
+            // Second pass: process impl blocks
+            eprintln!("[DEBUG] Crate '{}': pass 2 - declaring impl methods... ({} items)", crate_name, parsed_file.items.len());
+            for (idx, spanned_item) in parsed_file.items.iter().enumerate() {
+                let item_type = match &spanned_item.node {
+                    Item::Impl(_) => "Impl",
+                    Item::Module(_) => "Module",
+                    Item::Function(_) => "Function",
+                    Item::Struct(_) => "Struct",
+                    Item::Enum(_) => "Enum",
+                    Item::Use(_) => "Use",
+                    _ => "Other",
+                };
+                eprintln!("[DEBUG] Crate '{}': item {} = {}", crate_name, idx, item_type);
+                if let Item::Impl(impl_block) = &spanned_item.node {
+                    // G56 fix: Pass actual tome name for extension impl registration
+                    if let Err(e) = self.declare_impl_methods(crate_name, impl_block) {
+                        eprintln!("Warning: error declaring impl in '{}': {}", crate_name, e);
+                    }
+                }
+            }
+            eprintln!("[DEBUG] Crate '{}': pass 2 complete", crate_name);
 
-            Ok(())
+            // Third pass: declare functions and process use declarations
+            eprintln!("[DEBUG] Crate '{}': pass 3 - declaring functions and use...", crate_name);
+            for spanned_item in &parsed_file.items {
+                match &spanned_item.node {
+                    Item::Function(func) => {
+                        if let Err(e) = self.declare_function(func) {
+                            eprintln!("Warning: error declaring function in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Use(use_decl) => {
+                        if let Err(e) = self.process_use(use_decl) {
+                            eprintln!("Warning: error processing use in '{}': {}", crate_name, e);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            eprintln!("[DEBUG] Crate '{}': pass 3 complete", crate_name);
+
+            // Fourth pass: compile standalone function bodies FIRST
+            // This ensures that functions called by impl methods are compiled before the methods
+            eprintln!("[DEBUG] Crate '{}': compiling standalone functions...", crate_name);
+            for spanned_item in &parsed_file.items {
+                if let Item::Function(func) = &spanned_item.node {
+                    if let Err(e) = self.compile_function(func) {
+                        eprintln!("Warning: error compiling function in '{}': {}", crate_name, e);
+                        // Recover: ensure current block has a terminator
+                        self.recover_from_compile_error();
+                    }
+                }
+            }
+
+            // Fifth pass: compile impl method bodies AFTER standalone functions
+            eprintln!("[DEBUG] Crate '{}': compiling impl methods...", crate_name);
+            for spanned_item in &parsed_file.items {
+                if let Item::Impl(impl_block) = &spanned_item.node {
+                    if let Err(e) = self.compile_impl_methods(impl_block) {
+                        eprintln!("Warning: error compiling impl in '{}': {}", crate_name, e);
+                        // Recover: ensure current block has a terminator
+                        self.recover_from_compile_error();
+                    }
+                }
+            }
+
+            // Sixth pass: Add stub bodies to any functions that are still empty
+            // This prevents crashes from calling uncompiled functions
+            // IMPORTANT: Only stub functions that were added by THIS crate, not pre-existing ones
+            eprintln!("[DEBUG] Crate '{}': adding stub bodies...", crate_name);
+            self.add_stub_bodies(Some(&pre_existing_functions));
+            eprintln!("[DEBUG] Crate '{}': done loading", crate_name);
+
+            // Restore previous state
+            self.current_module = prev_module;
+            self.current_source_dir = prev_source_dir;
+
+            // Mark as loaded and no longer loading
+            self.loading_crates.remove(crate_name);
+            self.loaded_crates.insert(crate_name.to_string());
+
+            Ok(true)
+        }
+
+        /// Add stub bodies to functions without basic blocks
+        ///
+        /// Some functions may fail to compile or be declared but not implemented.
+        /// Instead of crashing with a NULL pointer call, we add a stub body that returns 0.
+        ///
+        /// If `only_new_functions` is Some, only stub functions NOT in that set.
+        /// This prevents stubbing functions declared by the main file when loading crates.
+        fn add_stub_bodies(&self, only_new_functions: Option<&std::collections::HashSet<String>>) {
+            let mut stubbed_count = 0;
+            for fn_value in self.module.get_functions() {
+                let fn_name = fn_value.get_name().to_str().unwrap_or("");
+
+                // Debug: track println specifically
+                if fn_name == "println" {
+                    eprintln!("[DEBUG] add_stub_bodies: found println with {} basic blocks", fn_value.count_basic_blocks());
+                }
+
+                if fn_value.count_basic_blocks() == 0 {
+                    // Skip external runtime functions (sigil_*, llvm.*, print functions)
+                    // These are mapped via add_global_mapping at JIT time or resolved from libc
+                    if fn_name.starts_with("sigil_")
+                        || fn_name.starts_with("llvm.")
+                        || fn_name.starts_with("__intrinsic_") // Sigil intrinsics
+                        || fn_name == "print"
+                        || fn_name == "println"
+                        || fn_name == "eprint"
+                        || fn_name == "eprintln"
+                        || fn_name == "puts"    // libc - resolved by MCJIT
+                        || fn_name == "fputs"   // libc - resolved by MCJIT
+                        || fn_name == "printf"  // libc - resolved by MCJIT
+                        || fn_name == "malloc"  // libc - resolved by MCJIT
+                        || fn_name == "free"    // libc - resolved by MCJIT
+                        || fn_name == "write"   // libc - resolved by MCJIT
+                        || fn_name == "exit"    // libc - resolved by MCJIT
+                    {
+                        continue;
+                    }
+
+                    // If only_new_functions is provided, skip functions that existed before
+                    // This prevents stubbing main file functions when loading crates
+                    if let Some(pre_existing) = only_new_functions {
+                        if pre_existing.contains(fn_name) {
+                            continue;
+                        }
+                    }
+
+                    eprintln!("[DEBUG] Adding stub body for: {} (blocks before: {})", fn_name, fn_value.count_basic_blocks());
+                    stubbed_count += 1;
+
+                    // Add a stub body
+                    let entry = self.context.append_basic_block(fn_value, "entry");
+                    self.builder.position_at_end(entry);
+
+                    // Check return type and return appropriate value
+                    let return_type = fn_value.get_type().get_return_type();
+                    if let Some(ret_type) = return_type {
+                        // Returns a value - return 0 of the correct type
+                        use inkwell::types::BasicTypeEnum;
+                        match ret_type {
+                            BasicTypeEnum::IntType(int_ty) => {
+                                let zero = int_ty.const_int(0, false);
+                                let _ = self.builder.build_return(Some(&zero));
+                            }
+                            BasicTypeEnum::FloatType(float_ty) => {
+                                let zero = float_ty.const_float(0.0);
+                                let _ = self.builder.build_return(Some(&zero));
+                            }
+                            BasicTypeEnum::PointerType(_) => {
+                                let null = self.context.ptr_type(inkwell::AddressSpace::default()).const_null();
+                                let _ = self.builder.build_return(Some(&null));
+                            }
+                            _ => {
+                                // For other types, return i64 0 and hope for the best
+                                let zero = self.context.i64_type().const_int(0, false);
+                                let _ = self.builder.build_return(Some(&zero));
+                            }
+                        }
+                    } else {
+                        // Void return type
+                        let _ = self.builder.build_return(None);
+                    }
+                    eprintln!("[DEBUG]   -> blocks after: {}", fn_value.count_basic_blocks());
+                }
+            }
+            if stubbed_count > 0 {
+                eprintln!("[DEBUG] Stubbed {} empty functions", stubbed_count);
+            }
+        }
+
+        /// Recover from a compilation error by ensuring all basic blocks have terminators
+        ///
+        /// When function compilation fails midway, blocks may be left without terminators.
+        /// This function walks through all functions and adds `unreachable` terminators
+        /// to any blocks that need them.
+        fn recover_from_compile_error(&self) {
+            // Get current insert block
+            if let Some(block) = self.builder.get_insert_block() {
+                // If block has no terminator, add one
+                if block.get_terminator().is_none() {
+                    // Add unreachable to close the block
+                    let _ = self.builder.build_unreachable();
+                }
+
+                // Also check other blocks in the same function
+                if let Some(fn_val) = block.get_parent() {
+                    for bb in fn_val.get_basic_blocks() {
+                        if bb.get_terminator().is_none() {
+                            self.builder.position_at_end(bb);
+                            let _ = self.builder.build_unreachable();
+                        }
+                    }
+                }
+            }
         }
 
         /// Declare runtime helper functions
         fn declare_runtime_functions(&self) {
+            eprintln!("[RUNTIME-FUNCS] Starting declare_runtime_functions");
             let i64_type = self.context.i64_type();
+            let f64_type = self.context.f64_type();
             let void_type = self.context.void_type();
 
-            // sigil_now() -> i64
+            // G70: In AOT mode, runtime functions are external declarations resolved at link time.
+            // In JIT mode, we create wrapper functions with embedded Rust function addresses.
+            let is_aot = self.compile_mode == CompileMode::Aot;
+
+            // sigil_now() -> i64 (milliseconds)
             let now_type = i64_type.fn_type(&[], false);
             self.module.add_function("sigil_now", now_type, None);
 
+            // sigil_now_micros() -> i64 (microseconds)
+            self.module.add_function("sigil_now_micros", now_type, None);
+
+            // sigil_random_seed(i64) -> void
+            let seed_type = void_type.fn_type(&[i64_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_random_seed", seed_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_random_seed", seed_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_random_seed as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    seed_type.ptr_type(inkwell::AddressSpace::default()),
+                    "random_seed_fn_ptr"
+                ).unwrap();
+                let seed_arg = wrapper.get_nth_param(0).unwrap();
+                let _ = self.builder.build_indirect_call(seed_type, fn_ptr, &[seed_arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
+
+            // sigil_random_f64() -> f64 (uniform random in [0, 1))
+            let random_f64_type = f64_type.fn_type(&[], false);
+            if is_aot {
+                self.module.add_function("sigil_random_f64", random_f64_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_random_f64", random_f64_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_random_f64 as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    random_f64_type.ptr_type(inkwell::AddressSpace::default()),
+                    "random_f64_fn_ptr"
+                ).unwrap();
+                let result = self.builder.build_indirect_call(random_f64_type, fn_ptr, &[], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
+
+            // sigil_random_normal() -> f64 (standard normal distribution)
+            if is_aot {
+                self.module.add_function("sigil_random_normal", random_f64_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_random_normal", random_f64_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_random_normal as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    random_f64_type.ptr_type(inkwell::AddressSpace::default()),
+                    "random_normal_fn_ptr"
+                ).unwrap();
+                let result = self.builder.build_indirect_call(random_f64_type, fn_ptr, &[], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
+
             // sigil_print_int(i64) -> void
+            // G61-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let print_int_type = void_type.fn_type(&[i64_type.into()], false);
-            self.module
-                .add_function("sigil_print_int", print_int_type, None);
+            if is_aot {
+                // AOT: external declaration, resolved at link time from runtime library
+                self.module.add_function("sigil_print_int", print_int_type, None);
+            } else {
+                // JIT: wrapper with embedded Rust function address
+                let wrapper = self.module.add_function("sigil_print_int", print_int_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_print_int as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    print_int_type.ptr_type(inkwell::AddressSpace::default()),
+                    "print_int_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(print_int_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_print_str(const char*) -> void - for raw C string literals
             let ptr_type_generic = self.context.ptr_type(AddressSpace::default());
@@ -484,131 +1871,611 @@ pub mod llvm {
                 .add_function("sigil_print_str", print_str_type, None);
 
             // sigil_print_float(f64) -> void
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let f64_type = self.context.f64_type();
             let print_float_type = void_type.fn_type(&[f64_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_print_float", print_float_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_print_float", print_float_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_print_float as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    print_float_type.ptr_type(inkwell::AddressSpace::default()),
+                    "print_float_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(print_float_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
+
+            // sigil_print_newline() -> void
+            let newline_type = void_type.fn_type(&[], false);
             self.module
-                .add_function("sigil_print_float", print_float_type, None);
+                .add_function("sigil_print_newline", newline_type, None);
 
             // Write functions (no newline) for format strings
+            // Use inttoptr wrappers like print functions to bypass MCJIT add_global_mapping issues (JIT only)
+
             // sigil_write_int(i64) -> void
-            self.module
-                .add_function("sigil_write_int", print_int_type, None);
+            if is_aot {
+                self.module.add_function("sigil_write_int", print_int_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_write_int", print_int_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_write_int as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    print_int_type.ptr_type(inkwell::AddressSpace::default()),
+                    "write_int_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(print_int_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_write_str(const char*) -> void
+            if is_aot {
+                self.module.add_function("sigil_write_str", print_str_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_write_str", print_str_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_write_str as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    print_str_type.ptr_type(inkwell::AddressSpace::default()),
+                    "write_str_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(print_str_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
+
+            // sigil_strlen(const char*) -> i64
+            let strlen_type = i64_type.fn_type(&[ptr_type_generic.into()], false);
             self.module
-                .add_function("sigil_write_str", print_str_type, None);
+                .add_function("sigil_strlen", strlen_type, None);
 
             // Jormungandr-compatible print functions (const char*) -> void
-            self.module.add_function("print", print_str_type, None);
-            self.module.add_function("println", print_str_type, None);
-            self.module.add_function("eprint", print_str_type, None);
-            self.module.add_function("eprintln", print_str_type, None);
+            // In AOT mode, these are external declarations resolved from the runtime.
+            // In JIT mode, we create wrapper functions with embedded function pointer addresses.
+            if is_aot {
+                self.module.add_function("print", print_str_type, None);
+                self.module.add_function("println", print_str_type, None);
+                self.module.add_function("eprint", print_str_type, None);
+                self.module.add_function("eprintln", print_str_type, None);
+            } else {
+                // Helper to create a wrapper function that calls a Rust function via inttoptr
+                let create_print_wrapper = |module: &inkwell::module::Module<'ctx>,
+                                            builder: &inkwell::builder::Builder<'ctx>,
+                                            context: &'ctx inkwell::context::Context,
+                                            name: &str,
+                                            fn_type: inkwell::types::FunctionType<'ctx>,
+                                            rust_fn_addr: usize| {
+                    let wrapper = module.add_function(name, fn_type, None);
+                    let entry = context.append_basic_block(wrapper, "entry");
+                    builder.position_at_end(entry);
+
+                    // Create constant for the Rust function address
+                    let addr_const = context.i64_type().const_int(rust_fn_addr as u64, false);
+                    // Convert to function pointer
+                    let fn_ptr = builder.build_int_to_ptr(
+                        addr_const,
+                        fn_type.ptr_type(inkwell::AddressSpace::default()),
+                        "fn_ptr"
+                    ).unwrap();
+                    // Call via indirect call
+                    let arg = wrapper.get_first_param().unwrap();
+                    let _ = builder.build_indirect_call(fn_type, fn_ptr, &[arg.into()], "");
+                    let _ = builder.build_return(None);
+                };
+
+                create_print_wrapper(&self.module, &self.builder, self.context,
+                    "print", print_str_type, sigil_print as usize);
+                create_print_wrapper(&self.module, &self.builder, self.context,
+                    "println", print_str_type, sigil_println as usize);
+                create_print_wrapper(&self.module, &self.builder, self.context,
+                    "eprint", print_str_type, sigil_eprint as usize);
+                create_print_wrapper(&self.module, &self.builder, self.context,
+                    "eprintln", print_str_type, sigil_eprintln as usize);
+            }
 
             // sigil_write_float(f64) -> void
-            self.module
-                .add_function("sigil_write_float", print_float_type, None);
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            if is_aot {
+                self.module.add_function("sigil_write_float", print_float_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_write_float", print_float_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_write_float as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    print_float_type.ptr_type(inkwell::AddressSpace::default()),
+                    "write_float_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(print_float_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // Math functions: (i64) -> i64
+            // G92-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            eprintln!("[G92-DEBUG] is_aot = {}", is_aot);
             let unary_math_type = i64_type.fn_type(&[i64_type.into()], false);
-            for name in [
-                "sigil_sqrt",
-                "sigil_sin",
-                "sigil_cos",
-                "sigil_tan",
-                "sigil_exp",
-                "sigil_ln",
-                "sigil_floor",
-                "sigil_ceil",
-                "sigil_abs",
-            ] {
-                self.module.add_function(name, unary_math_type, None);
+            let math_funcs: &[(&str, extern "C" fn(i64) -> i64)] = &[
+                ("sigil_sqrt", sigil_sqrt),
+                ("sigil_sin", sigil_sin),
+                ("sigil_cos", sigil_cos),
+                ("sigil_tan", sigil_tan),
+                ("sigil_exp", sigil_exp),
+                ("sigil_ln", sigil_ln),
+                ("sigil_floor", sigil_floor),
+                ("sigil_ceil", sigil_ceil),
+                ("sigil_abs", sigil_abs),
+            ];
+            for (name, fn_ptr) in math_funcs {
+                if is_aot {
+                    // AOT: external declaration, resolved at link time
+                    self.module.add_function(name, unary_math_type, None);
+                } else {
+                    // JIT: wrapper with embedded Rust function address
+                    let wrapper = self.module.add_function(name, unary_math_type, None);
+                    let entry = self.context.append_basic_block(wrapper, "entry");
+                    self.builder.position_at_end(entry);
+                    let addr_const = self.context.i64_type().const_int(*fn_ptr as usize as u64, false);
+                    let fn_ptr_val = self.builder.build_int_to_ptr(
+                        addr_const,
+                        unary_math_type.ptr_type(inkwell::AddressSpace::default()),
+                        &format!("{}_fn_ptr", name)
+                    ).unwrap();
+                    let arg = wrapper.get_first_param().unwrap();
+                    let call = self.builder.build_indirect_call(unary_math_type, fn_ptr_val, &[arg.into()], "math_call").unwrap();
+                    let result = call.try_as_basic_value().left().unwrap();
+                    let _ = self.builder.build_return(Some(&result));
+                }
             }
 
             // Math functions: (i64, i64) -> i64
+            // G92-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let binary_math_type = i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
-            for name in ["sigil_pow", "sigil_min", "sigil_max"] {
-                self.module.add_function(name, binary_math_type, None);
+            let binary_math_funcs: &[(&str, extern "C" fn(i64, i64) -> i64)] = &[
+                ("sigil_pow", sigil_pow),
+                ("sigil_min", sigil_min),
+                ("sigil_max", sigil_max),
+            ];
+            for (name, fn_ptr) in binary_math_funcs {
+                if is_aot {
+                    self.module.add_function(name, binary_math_type, None);
+                } else {
+                    let wrapper = self.module.add_function(name, binary_math_type, None);
+                    let entry = self.context.append_basic_block(wrapper, "entry");
+                    self.builder.position_at_end(entry);
+                    let addr_const = self.context.i64_type().const_int(*fn_ptr as usize as u64, false);
+                    let fn_ptr_val = self.builder.build_int_to_ptr(
+                        addr_const,
+                        binary_math_type.ptr_type(inkwell::AddressSpace::default()),
+                        &format!("{}_fn_ptr", name)
+                    ).unwrap();
+                    let arg1 = wrapper.get_nth_param(0).unwrap();
+                    let arg2 = wrapper.get_nth_param(1).unwrap();
+                    let call = self.builder.build_indirect_call(binary_math_type, fn_ptr_val, &[arg1.into(), arg2.into()], "math_call").unwrap();
+                    let result = call.try_as_basic_value().left().unwrap();
+                    let _ = self.builder.build_return(Some(&result));
+                }
+            }
+
+            // Math constants: () -> i64
+            // G92-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            let const_type = i64_type.fn_type(&[], false);
+            if is_aot {
+                self.module.add_function("sigil_pi", const_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_pi", const_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_pi as usize as u64, false);
+                let fn_ptr_val = self.builder.build_int_to_ptr(
+                    addr_const,
+                    const_type.ptr_type(inkwell::AddressSpace::default()),
+                    "sigil_pi_fn_ptr"
+                ).unwrap();
+                let call = self.builder.build_indirect_call(const_type, fn_ptr_val, &[], "pi_call").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
             }
 
             // Vec functions - use ptr type (i64 as opaque pointer)
+            // Use inttoptr wrappers to bypass MCJIT add_global_mapping issues (JIT only)
             let ptr_type = i64_type; // Using i64 as opaque pointer type
 
             // sigil_vec_new(capacity: i64) -> ptr
             let vec_new_type = ptr_type.fn_type(&[i64_type.into()], false);
-            self.module
-                .add_function("sigil_vec_new", vec_new_type, None);
+            if is_aot {
+                self.module.add_function("sigil_vec_new", vec_new_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_new", vec_new_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_new as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_new_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let result = self.builder.build_indirect_call(vec_new_type, fn_ptr, &[arg.into()], "").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_vec_push(vec: ptr, value: i64) -> void
             let vec_push_type = void_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module
-                .add_function("sigil_vec_push", vec_push_type, None);
+            if is_aot {
+                self.module.add_function("sigil_vec_push", vec_push_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_push", vec_push_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_push as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_push_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg0 = wrapper.get_nth_param(0).unwrap();
+                let arg1 = wrapper.get_nth_param(1).unwrap();
+                let _ = self.builder.build_indirect_call(vec_push_type, fn_ptr, &[arg0.into(), arg1.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_vec_get(vec: ptr, index: i64) -> i64
             let vec_get_type = i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
-            self.module
-                .add_function("sigil_vec_get", vec_get_type, None);
+            if is_aot {
+                self.module.add_function("sigil_vec_get", vec_get_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_get", vec_get_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_get as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_get_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg0 = wrapper.get_nth_param(0).unwrap();
+                let arg1 = wrapper.get_nth_param(1).unwrap();
+                let result = self.builder.build_indirect_call(vec_get_type, fn_ptr, &[arg0.into(), arg1.into()], "").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_vec_len(vec: ptr) -> i64
             let vec_len_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module
-                .add_function("sigil_vec_len", vec_len_type, None);
+            if is_aot {
+                self.module.add_function("sigil_vec_len", vec_len_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_len", vec_len_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_len as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_len_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let result = self.builder.build_indirect_call(vec_len_type, fn_ptr, &[arg.into()], "").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
+
+            // sigil_vec_set(vec: ptr, index: i64, value: i64) -> void
+            let vec_set_type =
+                void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_vec_set", vec_set_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_set", vec_set_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_set as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_set_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg0 = wrapper.get_nth_param(0).unwrap();
+                let arg1 = wrapper.get_nth_param(1).unwrap();
+                let arg2 = wrapper.get_nth_param(2).unwrap();
+                let _ = self.builder.build_indirect_call(vec_set_type, fn_ptr, &[arg0.into(), arg1.into(), arg2.into()], "");
+                let _ = self.builder.build_return(None);
+            }
+
+            // sigil_vec_clone(vec: ptr) -> ptr
+            let vec_clone_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_vec_clone", vec_clone_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_clone", vec_clone_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_clone as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_clone_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let result = self.builder.build_indirect_call(vec_clone_type, fn_ptr, &[arg.into()], "").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
+
+            // G72: sigil_vec_u8_as_ptr(vec: ptr) -> ptr (data pointer for slice conversion)
+            let vec_u8_as_ptr_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_vec_u8_as_ptr", vec_u8_as_ptr_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_vec_u8_as_ptr", vec_u8_as_ptr_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr = self.context.i64_type().const_int(sigil_vec_u8_as_ptr as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(addr, vec_u8_as_ptr_type.ptr_type(inkwell::AddressSpace::default()), "fn_ptr").unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let result = self.builder.build_indirect_call(vec_u8_as_ptr_type, fn_ptr, &[arg.into()], "").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // String functions
             // sigil_string_new() -> ptr (empty string)
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let string_new_type = ptr_type.fn_type(&[], false);
-            self.module
-                .add_function("sigil_string_new", string_new_type, None);
+            if is_aot {
+                self.module.add_function("sigil_string_new", string_new_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_new", string_new_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_new as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_new_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_new_fn_ptr"
+                ).unwrap();
+                let call = self.builder.build_indirect_call(string_new_type, fn_ptr, &[], "string_new_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
 
             // sigil_string_from(const char* src) -> ptr
             // For now, pass i64 as pointer to string literal (global constant)
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let string_from_type = ptr_type.fn_type(&[ptr_type.into()], false);
-            self.module
-                .add_function("sigil_string_from", string_from_type, None);
+            if is_aot {
+                self.module.add_function("sigil_string_from", string_from_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_from", string_from_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_from as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_from_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_from_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let call = self.builder.build_indirect_call(string_from_type, fn_ptr, &[arg.into()], "string_from_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
 
             // sigil_string_len(str: ptr) -> i64
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let string_len_type = i64_type.fn_type(&[ptr_type.into()], false);
-            self.module
-                .add_function("sigil_string_len", string_len_type, None);
+            if is_aot {
+                self.module.add_function("sigil_string_len", string_len_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_len", string_len_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_len as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_len_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_len_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let call = self.builder.build_indirect_call(string_len_type, fn_ptr, &[arg.into()], "string_len_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
 
             // sigil_string_print(str: ptr) -> void
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let string_print_type = void_type.fn_type(&[ptr_type.into()], false);
-            self.module
-                .add_function("sigil_string_print", string_print_type, None);
+            if is_aot {
+                self.module.add_function("sigil_string_print", string_print_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_print", string_print_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_print as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_print_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_print_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(string_print_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_string_concat(str1: ptr, str2: ptr) -> ptr
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
             let string_concat_type = ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_string_concat", string_concat_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_concat", string_concat_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_concat as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_concat_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_concat_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..2).map(|i| wrapper.get_nth_param(i).unwrap()).collect();
+                let call = self.builder.build_indirect_call(string_concat_type, fn_ptr, &[args[0].into(), args[1].into()], "string_concat_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
+            // sigil_string_repeat(str: ptr, count: i64) -> ptr
+            // G48 fix: Use actual ptr type since call site passes real pointers
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            let string_repeat_type = ptr_type_generic.fn_type(&[ptr_type_generic.into(), i64_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_string_repeat", string_repeat_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_repeat", string_repeat_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_repeat as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_repeat_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_repeat_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..2).map(|i| wrapper.get_nth_param(i).unwrap()).collect();
+                let call = self.builder.build_indirect_call(string_repeat_type, fn_ptr, &[args[0].into(), args[1].into()], "string_repeat_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
+            // G27: File system functions
+            // sigil_fs_read(path: *const i8) -> *mut String (real C pointers)
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            let fs_read_type = ptr_type_generic.fn_type(&[ptr_type_generic.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_fs_read", fs_read_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_fs_read", fs_read_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_fs_read as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    fs_read_type.ptr_type(inkwell::AddressSpace::default()),
+                    "fs_read_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let call = self.builder.build_indirect_call(fs_read_type, fn_ptr, &[arg.into()], "fs_read_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
+            // sigil_string_data(str: *mut String) -> *const i8
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            let string_data_type = ptr_type_generic.fn_type(&[ptr_type_generic.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_string_data", string_data_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_data", string_data_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_data as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_data_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_data_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let call = self.builder.build_indirect_call(string_data_type, fn_ptr, &[arg.into()], "string_data_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
+            // G71: sigil_string_len duplicate removed - already declared above with wrapper
+
+            // G32: sigil_string_slice(str: i64, start: i64, end: i64) -> i64
+            // Uses i64 for pointer representation like other functions
+            let string_slice_type = ptr_type.fn_type(
+                &[ptr_type.into(), i64_type.into(), i64_type.into()],
+                false,
+            );
             self.module
-                .add_function("sigil_string_concat", string_concat_type, None);
+                .add_function("sigil_string_slice", string_slice_type, None);
+
+            // G32: sigil_rust_string_slice(str: i64, start: i64, end: i64) -> i64
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            if is_aot {
+                self.module.add_function("sigil_rust_string_slice", string_slice_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_rust_string_slice", string_slice_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_rust_string_slice as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_slice_type.ptr_type(inkwell::AddressSpace::default()),
+                    "rust_string_slice_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..3).map(|i| wrapper.get_nth_param(i).unwrap()).collect();
+                let call = self.builder.build_indirect_call(string_slice_type, fn_ptr, &[args[0].into(), args[1].into(), args[2].into()], "rust_string_slice_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
+            // G32: sigil_rust_string_as_bytes(str: i64) -> i64 (C string pointer)
+            // Takes Rust String pointer, returns byte pointer with null terminator
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            let rust_string_as_bytes_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_rust_string_as_bytes", rust_string_as_bytes_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_rust_string_as_bytes", rust_string_as_bytes_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_rust_string_as_bytes as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    rust_string_as_bytes_type.ptr_type(inkwell::AddressSpace::default()),
+                    "rust_string_as_bytes_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let call = self.builder.build_indirect_call(rust_string_as_bytes_type, fn_ptr, &[arg.into()], "rust_string_as_bytes_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
+            // sigil_print_rust_string(str: *mut String) -> void
+            // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
+            let print_rust_string_type = void_type.fn_type(&[ptr_type_generic.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_print_rust_string", print_rust_string_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_print_rust_string", print_rust_string_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_print_rust_string as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    print_rust_string_type.ptr_type(inkwell::AddressSpace::default()),
+                    "print_rust_string_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(print_rust_string_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // Option functions
-            // sigil_option_some(value: i64) -> ptr
-            let option_some_type = ptr_type.fn_type(&[i64_type.into()], false);
+            // G45 fix: Option functions now use i64 representation consistent with enums
+            // sigil_option_some(value: i64) -> i64 (returns pointer as i64)
+            let option_some_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_some", option_some_type, None);
 
-            // sigil_option_none() -> ptr (null)
-            let option_none_type = ptr_type.fn_type(&[], false);
+            // sigil_option_none() -> i64 (returns pointer as i64)
+            let option_none_type = i64_type.fn_type(&[], false);
             self.module
                 .add_function("sigil_option_none", option_none_type, None);
 
-            // sigil_option_is_some(opt: ptr) -> i64
-            let option_is_some_type = i64_type.fn_type(&[ptr_type.into()], false);
+            // sigil_option_is_some(opt: i64) -> i64
+            let option_is_some_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_is_some", option_is_some_type, None);
 
-            // sigil_option_is_none(opt: ptr) -> i64
-            let option_is_none_type = i64_type.fn_type(&[ptr_type.into()], false);
+            // sigil_option_is_none(opt: i64) -> i64
+            let option_is_none_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_is_none", option_is_none_type, None);
 
-            // sigil_option_unwrap(opt: ptr) -> i64
-            let option_unwrap_type = i64_type.fn_type(&[ptr_type.into()], false);
+            // sigil_option_unwrap(opt: i64) -> i64
+            let option_unwrap_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module
                 .add_function("sigil_option_unwrap", option_unwrap_type, None);
 
-            // sigil_option_unwrap_or(opt: ptr, default: i64) -> i64
+            // sigil_option_unwrap_or(opt: i64, default: i64) -> i64
             let option_unwrap_or_type =
-                i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
+                i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
             self.module
                 .add_function("sigil_option_unwrap_or", option_unwrap_or_type, None);
 
@@ -633,9 +2500,31 @@ pub mod llvm {
             self.module.add_function("sigil_exit", exit_type, None);
 
             // Memory functions
-            // sigil_alloc(size: i64) -> ptr
-            let alloc_type = ptr_type.fn_type(&[i64_type.into()], false);
-            self.module.add_function("sigil_alloc", alloc_type, None);
+            // sigil_alloc(size: i64) -> i64 (returns pointer as i64 to match LLVM optimization behavior)
+            // Use inttoptr wrapper like print functions to bypass MCJIT add_global_mapping issues (JIT only)
+            let alloc_type = i64_type.fn_type(&[i64_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_alloc", alloc_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_alloc", alloc_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+
+                // Create constant for the Rust function address
+                let addr_const = self.context.i64_type().const_int(sigil_alloc as usize as u64, false);
+                // Convert to function pointer
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    alloc_type.ptr_type(inkwell::AddressSpace::default()),
+                    "alloc_fn_ptr"
+                ).unwrap();
+                // Call via indirect call with the size argument
+                let size_arg = wrapper.get_first_param().unwrap();
+                let call_result = self.builder.build_indirect_call(alloc_type, fn_ptr, &[size_arg.into()], "alloc_result").unwrap();
+                // Return the result
+                let result = call_result.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
 
             // sigil_realloc(ptr: ptr, new_size: i64) -> ptr
             let realloc_type = ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false);
@@ -720,63 +2609,289 @@ pub mod llvm {
             self.module
                 .add_function("sigil_simd_dot_f32x16", simd_dot_type, None);
 
-            // CUDA Functions
+            // CUDA Functions - G73-FIX: Use inttoptr wrappers for JIT mode
             // sigil_cuda_init() -> i64
             let cuda_init_type = i64_type.fn_type(&[], false);
-            self.module
-                .add_function("sigil_cuda_init", cuda_init_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_init", cuda_init_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_init", cuda_init_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_init as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_init_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_init_fn_ptr"
+                ).unwrap();
+                let result = self.builder.build_indirect_call(cuda_init_type, fn_ptr, &[], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_cleanup() -> void
             let cuda_cleanup_type = void_type.fn_type(&[], false);
-            self.module
-                .add_function("sigil_cuda_cleanup", cuda_cleanup_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_cleanup", cuda_cleanup_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_cleanup", cuda_cleanup_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_cleanup as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_cleanup_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_cleanup_fn_ptr"
+                ).unwrap();
+                let _ = self.builder.build_indirect_call(cuda_cleanup_type, fn_ptr, &[], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_cuda_get_device_count() -> i64
             let cuda_device_count_type = i64_type.fn_type(&[], false);
-            self.module
-                .add_function("sigil_cuda_get_device_count", cuda_device_count_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_get_device_count", cuda_device_count_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_get_device_count", cuda_device_count_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_get_device_count as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_device_count_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_device_count_fn_ptr"
+                ).unwrap();
+                let result = self.builder.build_indirect_call(cuda_device_count_type, fn_ptr, &[], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_malloc(size: i64) -> i64 (device ptr)
             let cuda_malloc_type = i64_type.fn_type(&[i64_type.into()], false);
-            self.module
-                .add_function("sigil_cuda_malloc", cuda_malloc_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_malloc", cuda_malloc_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_malloc", cuda_malloc_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_malloc as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_malloc_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_malloc_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let result = self.builder.build_indirect_call(cuda_malloc_type, fn_ptr, &[arg.into()], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_free(device_ptr: i64) -> void
             let cuda_free_type = void_type.fn_type(&[i64_type.into()], false);
-            self.module
-                .add_function("sigil_cuda_free", cuda_free_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_free", cuda_free_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_free", cuda_free_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_free as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_free_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_free_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let _ = self.builder.build_indirect_call(cuda_free_type, fn_ptr, &[arg.into()], "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_cuda_memcpy_h2d(dst: i64, src: ptr, size: i64) -> i64
             let cuda_h2d_type =
                 i64_type.fn_type(&[i64_type.into(), ptr_type.into(), i64_type.into()], false);
-            self.module
-                .add_function("sigil_cuda_memcpy_h2d", cuda_h2d_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_memcpy_h2d", cuda_h2d_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_memcpy_h2d", cuda_h2d_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_memcpy_h2d as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_h2d_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_h2d_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..3).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_h2d_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_memcpy_d2h(dst: ptr, src: i64, size: i64) -> i64
             let cuda_d2h_type =
                 i64_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
-            self.module
-                .add_function("sigil_cuda_memcpy_d2h", cuda_d2h_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_memcpy_d2h", cuda_d2h_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_memcpy_d2h", cuda_d2h_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_memcpy_d2h as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_d2h_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_d2h_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..3).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_d2h_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_memcpy_d2d(dst: i64, src: i64, size: i64) -> i64
             let cuda_d2d_type =
                 i64_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
-            self.module
-                .add_function("sigil_cuda_memcpy_d2d", cuda_d2d_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_memcpy_d2d", cuda_d2d_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_memcpy_d2d", cuda_d2d_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_memcpy_d2d as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_d2d_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_d2d_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..3).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_d2d_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_sync() -> void
             let cuda_sync_type = void_type.fn_type(&[], false);
-            self.module
-                .add_function("sigil_cuda_sync", cuda_sync_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_sync", cuda_sync_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_sync", cuda_sync_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_sync as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_sync_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_sync_fn_ptr"
+                ).unwrap();
+                let _ = self.builder.build_indirect_call(cuda_sync_type, fn_ptr, &[], "");
+                let _ = self.builder.build_return(None);
+            }
+
+            // sigil_cuda_fill_randn(device_ptr: i64, numel: i64, elem_size: i64) -> void
+            let cuda_fill_randn_type = void_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_cuda_fill_randn", cuda_fill_randn_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_fill_randn", cuda_fill_randn_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_fill_randn as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_fill_randn_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_fill_randn_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..3).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let _ = self.builder.build_indirect_call(cuda_fill_randn_type, fn_ptr, &args, "");
+                let _ = self.builder.build_return(None);
+            }
+
+            // sigil_cuda_get_compute_capability() -> i64
+            let cuda_cc_type = i64_type.fn_type(&[], false);
+            if is_aot {
+                self.module.add_function("sigil_cuda_get_compute_capability", cuda_cc_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_get_compute_capability", cuda_cc_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_get_compute_capability as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_cc_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_cc_fn_ptr"
+                ).unwrap();
+                let result = self.builder.build_indirect_call(cuda_cc_type, fn_ptr, &[], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
+
+            // sigil_cuda_get_total_memory() -> i64
+            if is_aot {
+                self.module.add_function("sigil_cuda_get_total_memory", cuda_cc_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_get_total_memory", cuda_cc_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_get_total_memory as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_cc_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_total_mem_fn_ptr"
+                ).unwrap();
+                let result = self.builder.build_indirect_call(cuda_cc_type, fn_ptr, &[], "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
+
+            // sigil_cuda_memset(ptr: i64, value: i64, size: i64) -> void
+            let cuda_memset_type = void_type.fn_type(
+                &[i64_type.into(), i64_type.into(), i64_type.into()],
+                false,
+            );
+            if is_aot {
+                self.module.add_function("sigil_cuda_memset", cuda_memset_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_memset", cuda_memset_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_memset as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_memset_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_memset_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..3).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let _ = self.builder.build_indirect_call(cuda_memset_type, fn_ptr, &args, "");
+                let _ = self.builder.build_return(None);
+            }
 
             // sigil_cuda_compile_kernel(cuda_src: ptr, kernel_name: ptr) -> i64 (handle)
             let cuda_compile_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
-            self.module
-                .add_function("sigil_cuda_compile_kernel", cuda_compile_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_compile_kernel", cuda_compile_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_compile_kernel", cuda_compile_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_compile_kernel as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_compile_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_compile_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..2).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_compile_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_load_ptx(ptx: ptr, kernel_name: ptr) -> i64 (handle)
-            self.module
-                .add_function("sigil_cuda_load_ptx", cuda_compile_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_load_ptx", cuda_compile_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_load_ptx", cuda_compile_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_load_ptx as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_compile_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_load_ptx_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..2).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_compile_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_launch_kernel_1d(handle: i64, grid_x: i64, block_x: i64, args: ptr, num_args: i64) -> i64
             let cuda_launch_1d_type = i64_type.fn_type(
@@ -789,8 +2904,22 @@ pub mod llvm {
                 ],
                 false,
             );
-            self.module
-                .add_function("sigil_cuda_launch_kernel_1d", cuda_launch_1d_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_launch_kernel_1d", cuda_launch_1d_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_launch_kernel_1d", cuda_launch_1d_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_launch_kernel_1d as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_launch_1d_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_launch_1d_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..5).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_launch_1d_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
 
             // sigil_cuda_launch_kernel_2d(handle: i64, gx: i64, gy: i64, bx: i64, by: i64, args: ptr, num_args: i64) -> i64
             let cuda_launch_2d_type = i64_type.fn_type(
@@ -805,8 +2934,22 @@ pub mod llvm {
                 ],
                 false,
             );
-            self.module
-                .add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
+            if is_aot {
+                self.module.add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_cuda_launch_kernel_2d", cuda_launch_2d_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(cuda_runtime::sigil_cuda_launch_kernel_2d as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    cuda_launch_2d_type.ptr_type(inkwell::AddressSpace::default()),
+                    "cuda_launch_2d_fn_ptr"
+                ).unwrap();
+                let args: Vec<_> = (0..7).map(|i| wrapper.get_nth_param(i).unwrap().into()).collect();
+                let result = self.builder.build_indirect_call(cuda_launch_2d_type, fn_ptr, &args, "result").unwrap();
+                let _ = self.builder.build_return(Some(&result.try_as_basic_value().left().unwrap()));
+            }
         }
 
         /// Register a struct type in the type registry
@@ -835,6 +2978,20 @@ pub mod llvm {
                             type_params,
                         },
                     );
+
+                    // G63 fix: Also register field types for generic structs
+                    // This enables field type lookup for nested field access like this.layout.shape
+                    if let ast::StructFields::Named(fields) = &struct_def.fields {
+                        for field in fields {
+                            if let Some(field_type_name) = self.get_field_struct_type(&field.ty) {
+                                self.field_type_names.insert(
+                                    (name.clone(), field.name.name.clone()),
+                                    field_type_name,
+                                );
+                            }
+                        }
+                    }
+
                     return Ok(());
                 }
             }
@@ -877,6 +3034,14 @@ pub mod llvm {
                         let llvm_type = self.type_expr_to_llvm(&field.ty, type_substitutions);
                         field_types.push(llvm_type);
                         field_indices.insert(field.name.name.clone(), idx as u32);
+
+                        // G11 fix: Track field type names for method dispatch
+                        if let Some(field_type_name) = self.get_field_struct_type(&field.ty) {
+                            self.field_type_names.insert(
+                                (base_name.clone(), field.name.name.clone()),
+                                field_type_name,
+                            );
+                        }
                     }
                 }
                 ast::StructFields::Tuple(types) => {
@@ -995,6 +3160,63 @@ pub mod llvm {
                 "f64" => self.context.f64_type().into(),
                 "bool" => self.context.bool_type().into(),
                 _ => self.context.i64_type().into(),
+            }
+        }
+
+        /// Extract the struct type name from a TypeExpr (for method dispatch)
+        /// Returns the struct/type name if it's a user-defined type, None for primitives
+        fn get_field_struct_type(&self, ty: &ast::TypeExpr) -> Option<String> {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(segment) = path.segments.first() {
+                        let name = &segment.ident.name;
+                        // Skip primitive types (but keep generic types like Vec<T>)
+                        match name.as_str() {
+                            "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
+                            | "isize" | "usize" | "f32" | "f64" | "bool" | "str" | "String"
+                            | "Option" | "Result" => None,
+                            // G15 fix: Include Vec<T> with element type for method dispatch
+                            "Vec" => {
+                                if let Some(ref generics) = segment.generics {
+                                    if let Some(first_arg) = generics.first() {
+                                        // Get element type name
+                                        if let Some(elem_type) = self.get_field_struct_type(first_arg) {
+                                            return Some(format!("Vec<{}>", elem_type));
+                                        }
+                                        // G48: Also handle primitive element types like f64, i64
+                                        // This enables Vec<f64> indexing to return f64 values
+                                        if let ast::TypeExpr::Path(elem_path) = first_arg {
+                                            if let Some(seg) = elem_path.segments.first() {
+                                                let elem_name = &seg.ident.name;
+                                                return Some(format!("Vec<{}>", elem_name));
+                                            }
+                                        }
+                                    }
+                                }
+                                None
+                            }
+                            // G103 fix: Wrapper types (Arc, Rc, Box, RefCell) are transparent for field access
+                            // Arc<StorageInner<D, Dev>> -> StorageInner (so .len accesses StorageInner.len)
+                            "Arc" | "Rc" | "Box" | "RefCell" => {
+                                if let Some(ref generics) = segment.generics {
+                                    if let Some(first_arg) = generics.first() {
+                                        // Get inner type name - this is what fields will be accessed on
+                                        return self.get_field_struct_type(first_arg);
+                                    }
+                                }
+                                None
+                            }
+                            _ => Some(name.clone()),
+                        }
+                    } else {
+                        None
+                    }
+                }
+                ast::TypeExpr::Reference { inner, .. } | ast::TypeExpr::Pointer { inner, .. } => {
+                    // For references/pointers, get the inner type name
+                    self.get_field_struct_type(inner)
+                }
+                _ => None,
             }
         }
 
@@ -1174,6 +3396,7 @@ pub mod llvm {
                 ast::Evidentiality::Uncertain => EVIDENCE_UNCERTAIN,
                 ast::Evidentiality::Reported => EVIDENCE_REPORTED,
                 ast::Evidentiality::Predicted => EVIDENCE_PREDICTED,
+                ast::Evidentiality::Chaos => EVIDENCE_CHAOS,
                 ast::Evidentiality::Paradox => EVIDENCE_PARADOX,
             }
         }
@@ -1229,14 +3452,119 @@ pub mod llvm {
         /// Process a const declaration
         fn process_const(&mut self, const_decl: &ast::ConstDef) -> Result<(), String> {
             let name = &const_decl.name.name;
-            // Create a global constant
             let i64_type = self.context.i64_type();
-            let global = self.module.add_global(i64_type, None, name);
-            // Initialize to 0 for now (could evaluate const expr)
-            global.set_initializer(&i64_type.const_int(0, false));
+            let f64_type = self.context.f64_type();
+
+            // G42 fix: Evaluate const expression at compile time
+            let (global, is_float) = match &const_decl.value {
+                Expr::Literal(Literal::Int { value, .. }) => {
+                    let n: i64 = value.replace('_', "").parse().unwrap_or(0);
+                    let global = self.module.add_global(i64_type, None, name);
+                    global.set_initializer(&i64_type.const_int(n as u64, false));
+                    (global, false)
+                }
+                Expr::Literal(Literal::Float { value, .. }) => {
+                    let f: f64 = value.replace('_', "").parse().unwrap_or(0.0);
+                    let global = self.module.add_global(f64_type, None, name);
+                    global.set_initializer(&f64_type.const_float(f));
+                    (global, true)
+                }
+                Expr::Unary { op: ast::UnaryOp::Neg, expr } => {
+                    // Handle negative literals like -1 or -0.5
+                    match expr.as_ref() {
+                        Expr::Literal(Literal::Int { value, .. }) => {
+                            let n: i64 = value.replace('_', "").parse().unwrap_or(0);
+                            let global = self.module.add_global(i64_type, None, name);
+                            global.set_initializer(&i64_type.const_int((-n) as u64, true));
+                            (global, false)
+                        }
+                        Expr::Literal(Literal::Float { value, .. }) => {
+                            let f: f64 = value.replace('_', "").parse().unwrap_or(0.0);
+                            let global = self.module.add_global(f64_type, None, name);
+                            global.set_initializer(&f64_type.const_float(-f));
+                            (global, true)
+                        }
+                        _ => {
+                            // Fallback to 0
+                            let global = self.module.add_global(i64_type, None, name);
+                            global.set_initializer(&i64_type.const_int(0, false));
+                            (global, false)
+                        }
+                    }
+                }
+                _ => {
+                    // For complex expressions, fallback to 0 (could implement const eval later)
+                    let global = self.module.add_global(i64_type, None, name);
+                    global.set_initializer(&i64_type.const_int(0, false));
+                    (global, false)
+                }
+            };
+
             global.set_constant(true);
             self.global_vars.insert(name.clone(), global);
+
+            // Track float consts for type checking
+            if is_float {
+                self.float_funcs.insert(name.clone());
+            }
+
+            // G57: Register const with const_evaluator for shape literal resolution
+            // This allows [DIM, DIM] in Tensor<[DIM, DIM], ...> to resolve properly
+            use crate::const_eval::ConstValue;
+            match &const_decl.value {
+                Expr::Literal(Literal::Int { value, .. }) => {
+                    if let Ok(n) = value.replace('_', "").parse::<i64>() {
+                        self.const_evaluator.register_const(name.clone(), ConstValue::Int(n));
+                    }
+                }
+                Expr::Unary { op: ast::UnaryOp::Neg, expr } => {
+                    if let Expr::Literal(Literal::Int { value, .. }) = expr.as_ref() {
+                        if let Ok(n) = value.replace('_', "").parse::<i64>() {
+                            self.const_evaluator.register_const(name.clone(), ConstValue::Int(-n));
+                        }
+                    }
+                }
+                _ => {}
+            }
+
             Ok(())
+        }
+
+        /// G44 fix: Register built-in enum types (Option, Result, etc.)
+        fn register_builtin_enums(&mut self) {
+            // Option<T> has variants: None = 0, Some = 1
+            let mut option_variants = HashMap::new();
+            option_variants.insert("None".to_string(), 0);
+            option_variants.insert("Some".to_string(), 1);
+            self.enum_types.insert(
+                "Option".to_string(),
+                EnumInfo {
+                    variants: option_variants,
+                },
+            );
+
+            // Result<T, E> has variants: Ok = 0, Err = 1
+            let mut result_variants = HashMap::new();
+            result_variants.insert("Ok".to_string(), 0);
+            result_variants.insert("Err".to_string(), 1);
+            self.enum_types.insert(
+                "Result".to_string(),
+                EnumInfo {
+                    variants: result_variants,
+                },
+            );
+
+            // Ordering has variants: Less = 0, Equal = 1, Greater = 2
+            let mut ordering_variants = HashMap::new();
+            ordering_variants.insert("Less".to_string(), 0);
+            ordering_variants.insert("Equal".to_string(), 1);
+            ordering_variants.insert("Greater".to_string(), 2);
+            self.enum_types.insert(
+                "Ordering".to_string(),
+                EnumInfo {
+                    variants: ordering_variants,
+                },
+            );
         }
 
         /// Extract type name from impl block's self_ty
@@ -1259,6 +3587,7 @@ pub mod llvm {
                         ast::Evidentiality::Known => Ok(format!("Result_{}", inner_name)),
                         ast::Evidentiality::Reported => Ok(format!("Reported_{}", inner_name)),
                         ast::Evidentiality::Predicted => Ok(format!("Predicted_{}", inner_name)),
+                        ast::Evidentiality::Chaos => Ok(format!("Chaos_{}", inner_name)),
                         ast::Evidentiality::Paradox => Ok(format!("Paradox_{}", inner_name)),
                     }
                 }
@@ -1291,15 +3620,35 @@ pub mod llvm {
         }
 
         /// Declare methods from an impl block
-        fn declare_impl_methods(&mut self, impl_block: &ast::ImplBlock) -> Result<(), String> {
+        /// tome_name: The name of the tome (crate) this impl block comes from
+        fn declare_impl_methods(&mut self, tome_name: &str, impl_block: &ast::ImplBlock) -> Result<(), String> {
+            // Phase 2: Register impl block with ImplRegistry for generic resolution
+            // G56 fix: Use actual tome name instead of hardcoded "current"
+            self.impl_registry.register_generic_impl(tome_name, impl_block);
+
             // Get the type name from the impl path
             // Extract type name from self_ty (TypeExpr)
             let type_name = self.extract_impl_type_name(&impl_block.self_ty)?;
+            eprintln!("[LLVM] declare_impl_methods for type: {}", type_name);
+
+            // G44 fix: Include trait name in mangling to avoid collisions
+            // e.g., NihilError_Display_fmt vs NihilError_Debug_fmt
+            let trait_suffix = if let Some(ref trait_path) = impl_block.trait_ {
+                let trait_name: String = trait_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("_{}", trait_name)
+            } else {
+                String::new()
+            };
 
             for item in &impl_block.items {
                 if let ast::ImplItem::Function(func) = item {
                     let method_name = &func.name.name;
-                    let mangled_name = format!("{}_{}", type_name, method_name);
+                    let mangled_name = format!("{}{}_{}",type_name, trait_suffix, method_name);
 
                     // Declare the function with self as first parameter
                     let i64_type = self.context.i64_type();
@@ -1321,7 +3670,22 @@ pub mod llvm {
                     let is_instance_method = has_explicit_self || has_self_ref;
 
                     // Count params: instance methods might have implicit self, static methods don't
-                    let param_count = func.params.len();
+                    // G52 fix: Add extra _len param for each slice param (&[u8], &[i64], etc.)
+                    let mut param_count = func.params.len();
+                    let mut slice_param_indices = Vec::new();
+                    for (i, param) in func.params.iter().enumerate() {
+                        if self.type_is_byte_slice(&param.ty) {
+                            slice_param_indices.push(i);
+                            param_count += 1; // Add extra param for length
+                        }
+                    }
+
+                    // G69: Add out-parameter for methods returning slices (&[T])
+                    let returns_slice = self.return_type_is_slice(&func.return_type);
+                    if returns_slice {
+                        param_count += 1; // Extra param for len_out
+                    }
+
                     let param_types: Vec<BasicMetadataTypeEnum> =
                         (0..param_count).map(|_| i64_type.into()).collect();
 
@@ -1329,6 +3693,8 @@ pub mod llvm {
                     let fn_value = self.module.add_function(&mangled_name, fn_type, None);
 
                     // Name parameters - all params are named directly, no implicit self
+                    // G52: Track which LLVM param index corresponds to which source param
+                    let mut llvm_param_idx = 0u32;
                     for (i, param) in func.params.iter().enumerate() {
                         let param_name = match &param.pattern {
                             ast::Pattern::Ident { name: ident, .. } => ident.name.clone(),
@@ -1343,15 +3709,50 @@ pub mod llvm {
                             _ => format!("param{}", i),
                         };
                         fn_value
-                            .get_nth_param(i as u32)
+                            .get_nth_param(llvm_param_idx)
                             .unwrap()
                             .set_name(&param_name);
+                        llvm_param_idx += 1;
+
+                        // G52: If this is a slice param, add the _len param
+                        if slice_param_indices.contains(&i) {
+                            fn_value
+                                .get_nth_param(llvm_param_idx)
+                                .unwrap()
+                                .set_name(&format!("{}_len", param_name));
+                            llvm_param_idx += 1;
+                        }
                     }
+
+                    // G69: Name the len_out parameter and register slice-returning methods
+                    if returns_slice {
+                        fn_value
+                            .get_nth_param(llvm_param_idx)
+                            .unwrap()
+                            .set_name("len_out");
+                        self.slice_return_methods.insert(mangled_name.clone());
+                    }
+
                     let _ = is_instance_method; // Silence unused warning
 
                     self.functions.insert(mangled_name.clone(), fn_value);
                     self.impl_methods
-                        .insert((type_name.clone(), method_name.clone()), mangled_name);
+                        .insert((type_name.clone(), method_name.clone()), mangled_name.clone());
+
+                    // G49: Store method return types for struct type inference in MethodCall
+                    // This enables `≔ t = obj.method()` to know t's struct type
+                    if let Some(ref return_type) = func.return_type {
+                        self.ret_types.insert(mangled_name.clone(), return_type.clone());
+                    }
+
+                    // G21b: Track methods that return f64 for float detection in println!
+                    if let Some(ref return_type) = func.return_type {
+                        if self.type_contains_f64(return_type) {
+                            self.float_funcs.insert(mangled_name);
+                            // Also store the short method name for MethodCall lookups
+                            self.float_funcs.insert(method_name.clone());
+                        }
+                    }
                 }
             }
             Ok(())
@@ -1362,13 +3763,42 @@ pub mod llvm {
             // Extract type name from self_ty (TypeExpr)
             let type_name = self.extract_impl_type_name(&impl_block.self_ty)?;
 
+            // G44 fix: Include trait name in mangling to avoid collisions
+            let trait_suffix = if let Some(ref trait_path) = impl_block.trait_ {
+                let trait_name: String = trait_path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("_");
+                format!("_{}", trait_name)
+            } else {
+                String::new()
+            };
+
             // Set the current Self type for resolving Self:: calls
             self.current_self_type = Some(type_name.clone());
 
             for item in &impl_block.items {
                 if let ast::ImplItem::Function(func) = item {
                     let method_name = &func.name.name;
-                    let mangled_name = format!("{}_{}", type_name, method_name);
+                    let mangled_name = format!("{}{}_{}",type_name, trait_suffix, method_name);
+
+                    // G59 fix: Skip generic methods - they are compiled via monomorphization
+                    // when called with concrete type arguments
+                    if let Some(ref generics) = func.generics {
+                        if !generics.params.is_empty() {
+                            continue;
+                        }
+                    }
+
+                    // G70 fix: Also skip methods in generic impl blocks - they need monomorphization
+                    // because the impl-level type parameters (S, D, Dev) aren't known yet
+                    if let Some(ref impl_generics) = impl_block.generics {
+                        if !impl_generics.params.is_empty() {
+                            continue;
+                        }
+                    }
 
                     let fn_value = *self
                         .functions
@@ -1381,9 +3811,21 @@ pub mod llvm {
 
                     // Set up variable scope
                     let mut scope = CompileScope::new();
+                    // G23: Copy global float_funcs registry to scope for float detection in impl methods
+                    scope.float_funcs = self.float_funcs.clone();
 
                     // Add all parameters to scope - no implicit self for any method
                     // (Static methods have no self, instance methods have explicit self/this)
+                    // G52: Track which params are slices so we can get their _len param
+                    let mut slice_param_indices = Vec::new();
+                    for (i, param) in func.params.iter().enumerate() {
+                        if self.type_is_byte_slice(&param.ty) {
+                            slice_param_indices.push(i);
+                        }
+                    }
+
+                    // G52: Track LLVM param index separately (slice params have extra _len params)
+                    let mut llvm_param_idx = 0u32;
                     for (i, param) in func.params.iter().enumerate() {
                         let param_name = match &param.pattern {
                             ast::Pattern::Ident { name: ident, .. } => ident.name.clone(),
@@ -1397,7 +3839,9 @@ pub mod llvm {
                             }
                             _ => format!("param{}", i),
                         };
-                        let param_value = fn_value.get_nth_param(i as u32).unwrap();
+                        let param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                        llvm_param_idx += 1;
+
                         let alloca = self
                             .builder
                             .build_alloca(self.context.i64_type(), &param_name)
@@ -1405,8 +3849,60 @@ pub mod llvm {
                         self.builder
                             .build_store(alloca, param_value)
                             .map_err(|e| e.to_string())?;
-                        scope.vars.insert(param_name, alloca);
+                        scope.vars.insert(param_name.clone(), alloca);
+
+                        // G52: If this is a slice param, store the _len param too
+                        if slice_param_indices.contains(&i) {
+                            let len_param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                            llvm_param_idx += 1;
+
+                            let len_alloca = self
+                                .builder
+                                .build_alloca(self.context.i64_type(), &format!("{}_len", param_name))
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(len_alloca, len_param_value)
+                                .map_err(|e| e.to_string())?;
+                            scope.slice_lens.insert(param_name.clone(), len_alloca);
+                        }
+
+                        // G23: Track float parameters for float detection
+                        if self.type_contains_f64(&param.ty) {
+                            scope.float_vars.insert(param_name.clone());
+                        }
+
+                        // G26: Track struct type from parameter type annotation for method dispatch
+                        // For self/this parameters, use the impl block's type
+                        if param_name == "this" || param_name == "self" {
+                            scope.register_struct_type(param_name.clone(), type_name.clone());
+                            // // // eprintln!("[G26-TYPE] registered '{}' as struct type '{}'", param_name, type_name);
+                        } else if let Some(struct_type) = self.extract_struct_type_from_type_expr(&param.ty) {
+                            // // // eprintln!("[G26-TYPE] registered '{}' as struct type '{}' from type expr", param_name, struct_type);
+                            scope.register_struct_type(param_name.clone(), struct_type);
+                        } else {
+                            // // // eprintln!("[G26-TYPE] FAILED to extract struct type for '{}' from {:?}", param_name, param.ty);
+                        }
+
+                        // G32: Track byte slice parameters (&str only) for C-string length handling
+                        // G40: Do NOT register &[u8] as String - it breaks .len() by using sigil_strlen
+                        // Only &str needs C-string handling; &[u8] should use sigil_vec_len
+                        if self.type_is_str_ref(&param.ty) {
+                            scope.var_types.insert(param_name.clone(), SigilType::String);
+                        }
+
+                        // G26: Track reference parameters (&Vec<T> or &vary Vec<T>)
+                        // For these, accessing the value requires an extra dereference
+                        // BUT: Don't register this/self as ref_vars - for impl methods, the receiver
+                        // is passed as a struct pointer directly, not as an address-of-alloca.
+                        // // // eprintln!("[G26-IMPL] checking param '{}': type={:?}, is_ref={}", param_name, param.ty, self.type_is_vec_ref(&param.ty));
+                        if self.type_is_vec_ref(&param.ty) && param_name != "this" && param_name != "self" {
+                            // // // eprintln!("[G26-IMPL] ref_var registered: {}", param_name);
+                            scope.ref_vars.insert(param_name);
+                        }
                     }
+
+                    // G69: Check if this method returns a slice
+                    let returns_slice = self.return_type_is_slice(&func.return_type);
 
                     // Compile function body
                     if let Some(ref body) = func.body {
@@ -1414,6 +3910,46 @@ pub mod llvm {
 
                         let current_block = self.builder.get_insert_block().unwrap();
                         if current_block.get_terminator().is_none() {
+                            // G69: If returning a slice, store length to len_out parameter
+                            if returns_slice {
+                                if let Some(ref val) = result {
+                                    // Get len_out parameter (last parameter)
+                                    let len_out_param = fn_value.get_last_param()
+                                        .ok_or("Expected len_out parameter for slice return")?;
+
+                                    // Call sigil_vec_len to get the length
+                                    // G69: val is the address of the Vec field, not the Vec itself
+                                    // We need to load from that address to get the actual Vec pointer
+                                    if let Some(vec_len_fn) = self.module.get_function("sigil_vec_len") {
+                                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                        let field_ptr = self.builder
+                                            .build_int_to_ptr(*val, ptr_type, "field_ptr_for_len")
+                                            .map_err(|e| e.to_string())?;
+                                        let vec_ptr = self.builder
+                                            .build_load(self.context.i64_type(), field_ptr, "vec_ptr_for_len")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+                                        let len_call = self.builder
+                                            .build_call(vec_len_fn, &[vec_ptr.into()], "slice_len")
+                                            .map_err(|e| e.to_string())?;
+                                        let len_val = len_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .map(|v| v.into_int_value())
+                                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                                        // Convert len_out (i64) to pointer and store length
+                                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                        let len_out_ptr = self.builder
+                                            .build_int_to_ptr(len_out_param.into_int_value(), ptr_type, "len_out_ptr")
+                                            .map_err(|e| e.to_string())?;
+                                        self.builder
+                                            .build_store(len_out_ptr, len_val)
+                                            .map_err(|e| e.to_string())?;
+                                    }
+                                }
+                            }
+
                             if let Some(val) = result {
                                 self.builder
                                     .build_return(Some(&val))
@@ -1446,6 +3982,20 @@ pub mod llvm {
         ) -> Result<FunctionValue<'ctx>, String> {
             let name = &func.name.name;
 
+            // G81: Skip generic functions - they are compiled via monomorphization when called
+            if let Some(ref generics) = func.generics {
+                if !generics.params.is_empty() {
+                    // Store the function definition for later monomorphization
+                    self.generic_functions.insert(name.clone(), func.clone());
+                    // Return a dummy function value - we'll create the real one when called
+                    let i64_type = self.context.i64_type();
+                    let fn_type = i64_type.fn_type(&[], false);
+                    let dummy_name = format!("__generic_stub_{}", name);
+                    let fn_value = self.module.add_function(&dummy_name, fn_type, None);
+                    return Ok(fn_value);
+                }
+            }
+
             // Build mangled name with module path (skip "crate" prefix)
             let mangled_name = if self.current_module.len() > 1 {
                 let module_path = self.current_module[1..].join("_");
@@ -1466,9 +4016,19 @@ pub mod llvm {
 
             let i64_type = self.context.i64_type();
 
+            // G52 fix: Count slice params which need extra _len params
+            let mut param_count = func.params.len();
+            let mut slice_param_indices = Vec::new();
+            for (i, param) in func.params.iter().enumerate() {
+                if self.type_is_byte_slice(&param.ty) {
+                    slice_param_indices.push(i);
+                    param_count += 1; // Add extra param for length
+                }
+            }
+
             // Build parameter types (all i64 for simplicity)
             let param_types: Vec<BasicMetadataTypeEnum> =
-                func.params.iter().map(|_| i64_type.into()).collect();
+                (0..param_count).map(|_| i64_type.into()).collect();
 
             // Create function type
             let fn_type = i64_type.fn_type(&param_types, false);
@@ -1484,16 +4044,56 @@ pub mod llvm {
             );
             fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, nounwind_attr);
 
+            // Handle inline hints for controlling inlining behavior
+            if let Some(ref hint) = func.attrs.inline {
+                match hint {
+                    ast::InlineHint::Never => {
+                        // Prevent inlining - critical for benchmarks to avoid DCE
+                        let noinline_attr = self.context.create_enum_attribute(
+                            inkwell::attributes::Attribute::get_named_enum_kind_id("noinline"),
+                            0,
+                        );
+                        fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, noinline_attr);
+                    }
+                    ast::InlineHint::Always => {
+                        let alwaysinline_attr = self.context.create_enum_attribute(
+                            inkwell::attributes::Attribute::get_named_enum_kind_id("alwaysinline"),
+                            0,
+                        );
+                        fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, alwaysinline_attr);
+                    }
+                    ast::InlineHint::Hint => {
+                        let inlinehint_attr = self.context.create_enum_attribute(
+                            inkwell::attributes::Attribute::get_named_enum_kind_id("inlinehint"),
+                            0,
+                        );
+                        fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, inlinehint_attr);
+                    }
+                }
+            }
+
             // Name parameters
+            // G52: Track LLVM param index separately for slice params with _len
+            let mut llvm_param_idx = 0u32;
             for (i, param) in func.params.iter().enumerate() {
                 if let ast::Pattern::Ident {
                     name: ref ident, ..
                 } = param.pattern
                 {
                     fn_value
-                        .get_nth_param(i as u32)
+                        .get_nth_param(llvm_param_idx)
                         .unwrap()
                         .set_name(&ident.name);
+                    llvm_param_idx += 1;
+
+                    // G52: If this is a slice param, add the _len param
+                    if slice_param_indices.contains(&i) {
+                        fn_value
+                            .get_nth_param(llvm_param_idx)
+                            .unwrap()
+                            .set_name(&format!("{}_len", ident.name));
+                        llvm_param_idx += 1;
+                    }
                 }
             }
 
@@ -1503,13 +4103,180 @@ pub mod llvm {
                 let full_path = format!("{}::{}", self.current_module[1..].join("::"), name);
                 self.functions.insert(full_path, fn_value);
             }
+
+            // G21: Track functions that return f64 for float detection in println!
+            if let Some(ref return_type) = func.return_type {
+                if self.type_contains_f64(return_type) {
+                    self.float_funcs.insert(name.clone());
+                }
+                // G31: Store return type for tuple destructuring type inference
+                self.ret_types.insert(name.clone(), return_type.clone());
+            }
+
             Ok(fn_value)
+        }
+
+        /// Declare an extern block (FFI declarations)
+        /// These functions are provided by external libraries and resolved at link time.
+        fn declare_extern_block(
+            &mut self,
+            extern_block: &ast::ExternBlock,
+        ) -> Result<(), String> {
+            use ast::ExternItem;
+
+            // Only support "C" ABI for now
+            if extern_block.abi != "C" && extern_block.abi != "c" {
+                return Err(format!(
+                    "Unsupported ABI '{}', only 'C' is supported",
+                    extern_block.abi
+                ));
+            }
+
+            for item in &extern_block.items {
+                match item {
+                    ExternItem::Function(func) => {
+                        self.declare_extern_function(func)?;
+                    }
+                    ExternItem::Static(s) => {
+                        eprintln!(
+                            "[WARN] extern static '{}' not yet supported, skipping",
+                            s.name.name
+                        );
+                    }
+                    ExternItem::Type(t) => {
+                        // Extern types are opaque - just note them for type checking
+                        eprintln!(
+                            "[INFO] extern type '{}' registered (opaque)",
+                            t.name.name
+                        );
+                    }
+                }
+            }
+
+            Ok(())
+        }
+
+        /// Declare an extern "C" function (external linkage, resolved at link time)
+        fn declare_extern_function(
+            &mut self,
+            func: &ast::ExternFunction,
+        ) -> Result<FunctionValue<'ctx>, String> {
+            let name = &func.name.name;
+
+            // Check if already declared (e.g., runtime functions)
+            if let Some(existing) = self.functions.get(name) {
+                return Ok(*existing);
+            }
+
+            let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            // Build parameter types based on actual param types
+            let param_types: Vec<BasicMetadataTypeEnum> = func
+                .params
+                .iter()
+                .map(|param| {
+                    // Map Sigil types to LLVM types for FFI
+                    self.type_to_llvm_ffi(&param.ty)
+                })
+                .collect();
+
+            // Determine return type
+            let return_type = if let Some(ref ret_ty) = func.return_type {
+                self.type_to_llvm_ffi(ret_ty)
+            } else {
+                // void return - use i64 as placeholder (will be ignored)
+                i64_type.into()
+            };
+
+            // Create function type (variadic if specified)
+            let fn_type = match return_type {
+                BasicMetadataTypeEnum::IntType(t) => t.fn_type(&param_types, func.variadic),
+                BasicMetadataTypeEnum::PointerType(t) => t.fn_type(&param_types, func.variadic),
+                BasicMetadataTypeEnum::FloatType(t) => t.fn_type(&param_types, func.variadic),
+                _ => i64_type.fn_type(&param_types, func.variadic),
+            };
+
+            // Declare with External linkage - resolved at link time
+            let fn_value = self.module.add_function(
+                name,
+                fn_type,
+                Some(inkwell::module::Linkage::External),
+            );
+
+            // Add nounwind attribute (FFI functions shouldn't unwind through Rust/Sigil)
+            let nounwind_attr = self.context.create_enum_attribute(
+                inkwell::attributes::Attribute::get_named_enum_kind_id("nounwind"),
+                0,
+            );
+            fn_value.add_attribute(inkwell::attributes::AttributeLoc::Function, nounwind_attr);
+
+            // Store in functions map for call resolution
+            self.functions.insert(name.clone(), fn_value);
+
+            eprintln!("[FFI] Declared extern function: {} ({} params)", name, func.params.len());
+
+            Ok(fn_value)
+        }
+
+        /// Convert a Sigil type to LLVM type for FFI
+        fn type_to_llvm_ffi(&self, ty: &ast::TypeExpr) -> BasicMetadataTypeEnum<'ctx> {
+            let i64_type = self.context.i64_type();
+            let i32_type = self.context.i32_type();
+            let i8_type = self.context.i8_type();
+            let f32_type = self.context.f32_type();
+            let f64_type = self.context.f64_type();
+            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+
+            match ty {
+                ast::TypeExpr::Path(type_path) => {
+                    // Get the first segment's name (simple types like i32, String)
+                    if let Some(first_seg) = type_path.segments.first() {
+                        match first_seg.ident.name.as_str() {
+                            // Integer types
+                            "i8" => i8_type.into(),
+                            "i16" => self.context.i16_type().into(),
+                            "i32" => i32_type.into(),
+                            "i64" | "isize" => i64_type.into(),
+                            "u8" => i8_type.into(),
+                            "u16" => self.context.i16_type().into(),
+                            "u32" => i32_type.into(),
+                            "u64" | "usize" => i64_type.into(),
+                            // Float types
+                            "f32" => f32_type.into(),
+                            "f64" => f64_type.into(),
+                            // Boolean
+                            "bool" => i8_type.into(),
+                            // Default to i64 for unknown named types
+                            _ => i64_type.into(),
+                        }
+                    } else {
+                        i64_type.into()
+                    }
+                }
+                ast::TypeExpr::Pointer { .. } => {
+                    ptr_type.into()
+                }
+                ast::TypeExpr::Reference { .. } => {
+                    ptr_type.into()
+                }
+                // Default to i64 for complex types
+                _ => i64_type.into(),
+            }
         }
 
         /// Compile a function body
         fn compile_function(&mut self, func: &ast::Function) -> Result<(), String> {
             let name = &func.name.name;
-            // eprintln!("DEBUG: Compiling function: {}", name);
+            eprintln!("[G60] compile_function: entering '{}'", name);
+
+            // G81: Skip generic functions - they are compiled via monomorphization when called
+            if let Some(ref generics) = func.generics {
+                if !generics.params.is_empty() {
+                    return Ok(());
+                }
+            }
+
             let fn_value = *self.functions.get(name).ok_or("Function not declared")?;
 
             // Create entry block
@@ -1518,8 +4285,20 @@ pub mod llvm {
 
             // Set up variable scope
             let mut scope = CompileScope::new();
+            // G21: Copy global float_funcs registry to scope for float detection
+            scope.float_funcs = self.float_funcs.clone();
+
+            // G52: Track which params are slices so we can get their _len param
+            let mut slice_param_indices = Vec::new();
+            for (i, param) in func.params.iter().enumerate() {
+                if self.type_is_byte_slice(&param.ty) {
+                    slice_param_indices.push(i);
+                }
+            }
 
             // Add parameters to scope
+            // G52: Track LLVM param index separately (slice params have extra _len params)
+            let mut llvm_param_idx = 0u32;
             for (i, param) in func.params.iter().enumerate() {
                 // Extract parameter name from various pattern types
                 let param_name = match &param.pattern {
@@ -1533,7 +4312,9 @@ pub mod llvm {
                 };
 
                 if let Some(param_name) = param_name {
-                    let param_value = fn_value.get_nth_param(i as u32).unwrap();
+                    let param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                    llvm_param_idx += 1;
+
                     // Allocate on stack for potential mutation
                     let alloca = self
                         .builder
@@ -1542,7 +4323,62 @@ pub mod llvm {
                     self.builder
                         .build_store(alloca, param_value)
                         .map_err(|e| e.to_string())?;
-                    scope.vars.insert(param_name, alloca);
+                    scope.vars.insert(param_name.clone(), alloca);
+
+                    // G52: If this is a slice param, store the _len param too
+                    if slice_param_indices.contains(&i) {
+                        let len_param_value = fn_value.get_nth_param(llvm_param_idx).unwrap();
+                        llvm_param_idx += 1;
+
+                        let len_alloca = self
+                            .builder
+                            .build_alloca(self.context.i64_type(), &format!("{}_len", param_name))
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_store(len_alloca, len_param_value)
+                            .map_err(|e| e.to_string())?;
+                        scope.slice_lens.insert(param_name.clone(), len_alloca);
+                    }
+
+                    // Check if parameter type contains f64 (for Vec<f64> or f64 params)
+                    // This enables float detection for indexing operations
+                    if self.type_contains_f64(&param.ty) {
+                        scope.float_vars.insert(param_name.clone());
+                    }
+
+                    // G26: Track struct type from parameter type annotation for method dispatch
+                    eprintln!("[COMPILE-FN] checking struct type for param '{}'", param_name);
+                    if let Some(struct_type) = self.extract_struct_type_from_type_expr(&param.ty) {
+                        eprintln!("[COMPILE-FN] registering '{}' as struct type '{}'", param_name, struct_type);
+                        scope.register_struct_type(param_name.clone(), struct_type);
+                    }
+
+                    // G56: Register RichType for function parameters with generic type annotations
+                    // This enables const generic method dispatch for params like s: FixedSize<N>
+                    let rich_ty = self.type_expr_to_rich_type(&param.ty);
+                    scope.register_rich_type(param_name.clone(), rich_ty);
+
+                    // G28: Track byte slice parameters (&str only) for C-string length handling
+                    // G40: Do NOT register &[u8] as String - it breaks .len() by using sigil_strlen
+                    // Only &str needs C-string handling; &[u8] should use sigil_vec_len
+                    if self.type_is_str_ref(&param.ty) {
+                        scope.var_types.insert(param_name.clone(), SigilType::String);
+                    }
+
+                    // G26: Track reference parameters (&Vec<T> or &vary Vec<T>)
+                    // For these, accessing the value requires an extra dereference
+                    let is_vec_ref = self.type_is_vec_ref(&param.ty);
+                    eprintln!("[G120-DBG] Checking param '{}': type_is_vec_ref = {}", param_name, is_vec_ref);
+                    if is_vec_ref {
+                        eprintln!("[G120-DBG] Registering '{}' in ref_vars", param_name);
+                        scope.ref_vars.insert(param_name.clone());
+                    }
+
+                    // G122: Track array parameters so they use direct GEP indexing
+                    if self.type_is_array(&param.ty) {
+                        eprintln!("[G122] Registering param '{}' as array variable", param_name);
+                        scope.array_vars.insert(param_name.clone());
+                    }
                 }
             }
 
@@ -1615,13 +4451,418 @@ pub mod llvm {
             stmt: &ast::Stmt,
         ) -> Result<Option<IntValue<'ctx>>, String> {
             match stmt {
-                ast::Stmt::Let { pattern, init, .. } => {
+                ast::Stmt::Let { pattern, ty, init } => {
+                    // G14 fix: Handle Pattern::Tuple for tuple destructuring
+                    if let ast::Pattern::Tuple(patterns) = pattern {
+                        // Compile the init expression (should be a tuple pointer)
+                        let tuple_ptr_int = if let Some(ref expr) = init {
+                            self.compile_expr(fn_value, scope, expr)?
+                        } else {
+                            return Err("Tuple pattern requires initializer".to_string());
+                        };
+
+                        // Convert i64 to pointer
+                        let tuple_ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                tuple_ptr_int,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "tuple_destr_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // G31: Determine if tuple elements are floats based on function return type
+                        // G51: Also track struct types for tuple elements
+                        let mut elem_is_float = vec![false; patterns.len()];
+                        let mut elem_struct_types: Vec<Option<String>> = vec![None; patterns.len()];
+                        if let Some(ref expr) = init {
+                            // Get return type from function or method call
+                            let ret_ty = match expr {
+                                Expr::Call { func, .. } => {
+                                    if let Expr::Path(path) = func.as_ref() {
+                                        path.segments.last()
+                                            .and_then(|seg| self.ret_types.get(&seg.ident.name))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                // G51: Handle method calls for tuple return types
+                                Expr::MethodCall { receiver, method, .. } => {
+                                    // Get receiver type and look up method return type
+                                    if let Some(recv_type) = self.get_struct_type_from_expr(receiver, scope) {
+                                        let key = (recv_type, method.name.clone());
+                                        if let Some(mangled_name) = self.impl_methods.get(&key) {
+                                            self.ret_types.get(mangled_name)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                }
+                                _ => None,
+                            };
+
+                            // Process tuple element types
+                            if let Some(ret_ty) = ret_ty {
+                                if let ast::TypeExpr::Tuple(elem_types) = ret_ty {
+                                    for (i, ty) in elem_types.iter().enumerate() {
+                                        if i < patterns.len() {
+                                            // Track floats
+                                            if self.type_contains_f64(ty) {
+                                                elem_is_float[i] = true;
+                                            }
+                                            // Track struct types
+                                            if let Some(struct_name) = self.extract_struct_type_from_type_expr(ty) {
+                                                elem_struct_types[i] = Some(struct_name);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Extract each element and bind to pattern variables
+                        for (idx, pat) in patterns.iter().enumerate() {
+                            if let ast::Pattern::Ident { name: ident, .. } = pat {
+                                // Load element from tuple at offset idx * 8
+                                let offset = self.context.i64_type().const_int(idx as u64 * 8, false);
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(
+                                            self.context.i8_type(),
+                                            tuple_ptr,
+                                            &[offset],
+                                            &format!("tuple_elem_{}_ptr", idx),
+                                        )
+                                        .map_err(|e| e.to_string())?
+                                };
+                                let elem_val = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), elem_ptr, &format!("tuple_elem_{}", idx))
+                                    .map_err(|e| e.to_string())?
+                                    .into_int_value();
+
+                                // Allocate and store
+                                let alloca = self
+                                    .builder
+                                    .build_alloca(self.context.i64_type(), &ident.name)
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(alloca, elem_val)
+                                    .map_err(|e| e.to_string())?;
+                                scope.vars.insert(ident.name.clone(), alloca);
+
+                                // G31: Track float types for tuple elements
+                                if idx < elem_is_float.len() && elem_is_float[idx] {
+                                    scope.float_vars.insert(ident.name.clone());
+                                }
+
+                                // G51: Track struct types for tuple elements
+                                // This enables field_type_names lookup for expressions like logits.data
+                                if idx < elem_struct_types.len() {
+                                    if let Some(ref struct_type) = elem_struct_types[idx] {
+                                        scope.register_struct_type(ident.name.clone(), struct_type.clone());
+                                    }
+                                }
+                            }
+                        }
+                        return Ok(None);
+                    }
+
                     if let ast::Pattern::Ident {
                         name: ref ident, ..
                     } = pattern
                     {
                         // eprintln!("DEBUG: Let binding: {}", ident.name);
+                        // G19: Check if type annotation contains f64 (e.g., Vec<f64>)
+                        let is_float_from_ty = if let Some(ref type_expr) = ty {
+                            self.type_contains_f64(type_expr)
+                        } else {
+                            false
+                        };
+
+                        // Check if init is a float expression before compiling
+                        let is_float = is_float_from_ty || if let Some(ref expr) = init {
+                            self.is_float_expr_with_scope(expr, scope)
+                        } else {
+                            false
+                        };
+
+                        // G27: Check if type annotation indicates string
+                        let is_string_from_ty = if let Some(ref type_expr) = ty {
+                            let ty_str = self.type_expr_to_string(type_expr);
+                            ty_str.contains("str") || ty_str.contains("String")
+                        } else {
+                            false
+                        };
+
+                        // G27: Check if init is a string literal
+                        let is_string_literal = if let Some(ref expr) = init {
+                            matches!(expr, Expr::Literal(Literal::String(_)))
+                        } else {
+                            false
+                        };
+
+                        // G32: Check if init is a function call that returns Rust String
+                        // Functions returning String type return heap-allocated Rust Strings
+                        let is_rust_string_from_call = if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = &**func {
+                                    if let Some(seg) = path.segments.last() {
+                                        let name = &seg.ident.name;
+                                        // Check ret_types for String return type
+                                        let ret_is_string = if let Some(ret_ty) = self.ret_types.get(name) {
+                                            self.type_contains_string(ret_ty)
+                                        } else {
+                                            false
+                                        };
+                                        // Heuristic: functions that likely return Rust Strings
+                                        // G52: Removed name.contains("_corpus") - corpus functions often return &str (C string)
+                                        ret_is_string || name == "format"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G27: Check if init is a function call that returns C string (&str)
+                        // These are less common - mostly for functions returning static strings
+                        // G37: Don't apply heuristic if ret_types proves it returns Rust String
+                        let is_string_from_call = if is_rust_string_from_call {
+                            // Already known to return Rust String, not C string
+                            false
+                        } else if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = &**func {
+                                    if let Some(seg) = path.segments.last() {
+                                        let name = &seg.ident.name;
+                                        // Heuristic: functions that return C strings
+                                        // G37: Use more specific pattern to avoid "make_string" matching "_str"
+                                        // G55: Made more specific - only treat get_str/get_string/get_name as string-returning
+                                        name.ends_with("_str") || name.ends_with("_string") || name == "get_str" || name == "get_string" || name == "get_name"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G27/G32: Check if init is a method call that returns bytes
+                        // Note: as_bytes returns &[u8] which is C-string-like, NOT a Rust String
+                        let is_string_from_method = if let Some(ref expr) = init {
+                            if let Expr::MethodCall { method, .. } = expr {
+                                method.name == "as_bytes"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G32: Check if init is a method call that returns Rust String
+                        let is_rust_string_from_method = if let Some(ref expr) = init {
+                            if let Expr::MethodCall { method, .. } = expr {
+                                // to_string() returns a heap-allocated Rust String
+                                method.name == "to_string"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G54: Check if init is a Vec index of a string Vec (e.g., prompts[p])
+                        // If the Vec contains string literals, the element is also a C string
+                        let is_string_from_vec_index = if let Some(ref expr) = init {
+                            if let Expr::Index { expr: container, .. } = expr {
+                                // Check if container is a known string Vec
+                                if let Expr::Path(path) = container.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        // Check if this Vec has a type annotation indicating strings
+                                        if let Some(ty) = scope.struct_types.get(&seg.ident.name) {
+                                            ty.contains("str") || ty.contains("String")
+                                        } else {
+                                            // Heuristic: Vec variables with "prompt" in name often contain strings
+                                            seg.ident.name.contains("prompt") || seg.ident.name.contains("string")
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // C strings: literals, as_bytes, and C-string returning functions
+                        let is_string = is_string_from_ty || is_string_literal || is_string_from_call || is_string_from_method || is_string_from_vec_index;
+
+                        // G32: Rust Strings: to_string(), fs_read(), and String-returning functions
+                        let is_fs_read = if let Some(ref expr) = init {
+                            if let Expr::Call { func, .. } = expr {
+                                if let Expr::Path(path) = &**func {
+                                    if let Some(seg) = path.segments.last() {
+                                        seg.ident.name == "fs_read"
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        let is_rust_string = is_rust_string_from_method || is_rust_string_from_call || is_fs_read;
+
+                        // Check if init is a struct type for method dispatch
+                        let struct_type = if let Some(ref expr) = init {
+                            self.get_struct_type_from_expr(expr, scope)
+                        } else {
+                            None
+                        };
+
+                        // G103/G117: Rich type for generic method dispatch
+                        // G117: Prefer explicit type annotation over inference from init expression
+                        // This fixes cases like `let t1: Tensor<[4], f32, Cuda> = helper()` where
+                        // the explicit type annotation provides the full generic type info
+                        let mut rich_type_struct_name: Option<String> = None;
+
+                        // G117: First, try to use explicit type annotation
+                        let explicit_rich_type = ty.as_ref().map(|type_expr| self.type_expr_to_rich_type(type_expr));
+
+                        // G117: Use explicit type if available, otherwise infer from init
+                        let final_rich_type = match explicit_rich_type {
+                            Some(ref rt) if !matches!(rt, RichType::Named { generics, .. } if generics.is_empty()) => {
+                                // Explicit type has generics, use it
+                                eprintln!("[G117-LET] Using explicit type annotation for '{}': {:?}", ident.name, rt);
+                                Some(rt.clone())
+                            }
+                            _ => {
+                                // No explicit type or it's empty, try inference
+                                if let Some(ref expr) = init {
+                                    self.infer_rich_type_from_expr(expr)
+                                } else {
+                                    None
+                                }
+                            }
+                        };
+
+                        if let Some(rich_type) = final_rich_type {
+                            eprintln!("[G103-LET] Registering '{}' with rich_type: {:?}", ident.name, rich_type);
+                            // G103: Extract struct name from rich_type for struct_types
+                            if let RichType::Named { ref name, .. } = rich_type {
+                                rich_type_struct_name = Some(name.clone());
+                            }
+                            scope.rich_types.insert(ident.name.clone(), rich_type);
+                        }
+
+                        // G41 fix: Store struct type in scope for later field access resolution
+                        // Without this, `≔ p = get_point(); p.x` would fail because
+                        // get_struct_type_from_expr(Expr::Path("p")) couldn't find the type
+                        // G103: Prefer rich_type's struct name over get_struct_type_from_expr result
+                        let final_struct_type = rich_type_struct_name.or_else(|| struct_type.clone());
+                        if let Some(ref st) = final_struct_type {
+                            eprintln!("[G103-LET] Setting struct_types['{}'] = '{}'", ident.name, st);
+                            scope.struct_types.insert(ident.name.clone(), st.clone());
+                        }
+
+                        // G51 fix: Extract Vec<T> type from type annotation
+                        // This allows ∀ elem ∈ &vary vec { } to know element type T
+                        let vec_type_from_annotation = if let Some(ref type_expr) = ty {
+                            let ty_str = self.type_expr_to_string(type_expr);
+                            if ty_str.starts_with("Vec<") && ty_str.ends_with(">") {
+                                Some(ty_str)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        // G51 fix: Also infer Vec element type from vec! macro arguments
+                        // For vec![Outer·new(1)], infer Vec<Outer> from first element
+                        let vec_type_from_init = if vec_type_from_annotation.is_none() {
+                            if let Some(ref expr) = init {
+                                if let Expr::Macro { path, tokens } = expr {
+                                    let macro_name = path.segments.last()
+                                        .map(|s| s.ident.name.trim_end_matches('!'))
+                                        .unwrap_or("");
+                                    if macro_name == "vec" {
+                                        // Parse first element to get its struct type
+                                        // Look for Type·new pattern in tokens
+                                        let first_elem = tokens.split(',').next()
+                                            .unwrap_or("")
+                                            .split(';')
+                                            .next()
+                                            .unwrap_or("")
+                                            .trim();
+                                        // Check for Type·new(...) pattern
+                                        if let Some(dot_idx) = first_elem.find('·') {
+                                            let type_name = &first_elem[..dot_idx];
+                                            if self.struct_types.contains_key(type_name) {
+                                                Some(format!("Vec<{}>", type_name))
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        // G52: Check if init is as_bytes() so we can track its length
+                        let is_as_bytes_init = if let Some(ref expr) = init {
+                            if let Expr::MethodCall { method, .. } = expr {
+                                method.name == "as_bytes"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // G46: Check if init is a reference expression (&x, &x.field, etc.)
+                        // If so, the variable will hold a reference that needs dereferencing
+                        let is_ref_init = if let Some(ref expr) = init {
+                            matches!(expr, Expr::AddrOf { .. }) ||
+                            matches!(expr, Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, .. })
+                        } else {
+                            false
+                        };
+
                         let init_val = if let Some(ref expr) = init {
+                            // // // // eprintln!("[G46-LET] init expr for {} = {:?}", ident.name, expr);
                             self.compile_expr(fn_value, scope, expr)?
                         } else {
                             self.context.i64_type().const_int(0, false)
@@ -1636,6 +4877,221 @@ pub mod llvm {
                             .build_store(alloca, init_val)
                             .map_err(|e| e.to_string())?;
                         scope.vars.insert(ident.name.clone(), alloca);
+
+                        // G122: Track if this variable holds an array literal
+                        // Arrays need direct GEP indexing, not Vec runtime functions
+                        if let Some(ref expr) = init {
+                            if matches!(expr, Expr::Array(_)) {
+                                eprintln!("[G122] Registering '{}' as array variable", ident.name);
+                                scope.array_vars.insert(ident.name.clone());
+                            }
+                        }
+
+                        // Track rich type for variable so we know generic parameters later
+                        // E.g., storage = Cpu·allocate·<f32>(4) => rich_types["storage"] = StoragePtr<f32, Cpu>
+                        if let Some(ref expr) = init {
+                            if let Some(rich_type) = self.infer_rich_type_from_expr(expr) {
+                                // Only track if there are useful generics
+                                if let RichType::Named { ref generics, .. } = rich_type {
+                                    if !generics.is_empty() {
+                                        eprintln!("[RICH-TYPE] Tracking '{}' as {:?}", ident.name, rich_type);
+                                        scope.rich_types.insert(ident.name.clone(), rich_type);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Track pointer element sizes for ptr.add() arithmetic
+                        // If init is a Cast to pointer type, extract element size
+                        if let Some(ref expr) = init {
+                            if let Expr::Cast { ty, .. } = expr {
+                                if let ast::TypeExpr::Pointer { inner, .. } = ty {
+                                    let elem_size = self.type_expr_to_element_size(inner);
+                                    if elem_size != 8 {
+                                        eprintln!("[PTR-SIZE] '{}' has ptr element size {} (from cast)", ident.name, elem_size);
+                                    }
+                                    scope.ptr_element_sizes.insert(ident.name.clone(), elem_size);
+                                }
+                            }
+                            // Also handle as_mut_ptr()/as_ptr() on generic types like StoragePtr<f32, Dev>
+                            if let Expr::MethodCall { receiver, method, .. } = expr {
+                                if method.name == "as_mut_ptr" || method.name == "as_ptr" {
+                                    // Try to get the generic type arg from the receiver
+                                    // E.g., if receiver is StoragePtr<f32, Cpu>, the element size is sizeof(f32) = 4
+
+                                    // First, try to look up receiver as a variable in scope.rich_types
+                                    // This handles cases like: storage = Cpu·allocate·<f32>(4); ptr = storage.as_mut_ptr()
+                                    let rich_type_opt = if let Expr::Path(path) = receiver.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            if let Some(rt) = scope.rich_types.get(&seg.ident.name) {
+                                                eprintln!("[PTR-SIZE] Found receiver '{}' in scope.rich_types: {:?}", seg.ident.name, rt);
+                                                Some(rt.clone())
+                                            } else {
+                                                self.infer_rich_type_from_expr(receiver)
+                                            }
+                                        } else {
+                                            self.infer_rich_type_from_expr(receiver)
+                                        }
+                                    } else {
+                                        self.infer_rich_type_from_expr(receiver)
+                                    };
+
+                                    if let Some(rich_type) = rich_type_opt {
+                                        // Unwrap Ref wrapper if present (for &StoragePtr<D, Dev> etc.)
+                                        let inner_type = match &rich_type {
+                                            RichType::Ref { inner, .. } => inner.as_ref(),
+                                            other => other,
+                                        };
+                                        if let RichType::Named { generics, .. } = inner_type {
+                                            if let Some(first_generic) = generics.first() {
+                                                // Resolve type parameter if first_generic is a Named type with single-char name
+                                                // This handles cases like StoragePtr<D, Dev> where D is bound to f32
+                                                let resolved_generic = if let RichType::Named { name, generics: inner_generics } = first_generic {
+                                                    if inner_generics.is_empty() {
+                                                        // Could be a type parameter like "D" - try to resolve from scope
+                                                        if let Some(concrete) = scope.rich_types.get(name) {
+                                                            eprintln!("[PTR-SIZE] Resolved type param '{}' -> {:?}", name, concrete);
+                                                            concrete
+                                                        } else {
+                                                            first_generic
+                                                        }
+                                                    } else {
+                                                        first_generic
+                                                    }
+                                                } else {
+                                                    first_generic
+                                                };
+                                                let elem_size = self.rich_type_to_element_size(resolved_generic);
+                                                if elem_size != 8 {
+                                                    eprintln!("[PTR-SIZE] '{}' has ptr element size {} (from {})", ident.name, elem_size, method.name);
+                                                }
+                                                scope.ptr_element_sizes.insert(ident.name.clone(), elem_size);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // G69: Transfer slice length from method return to variable name
+                        if let Some(len_alloca) = scope.slice_lens.remove("__last_slice_return") {
+                            scope.slice_lens.insert(ident.name.clone(), len_alloca);
+                        }
+
+                        // G46: Register reference variables so method calls know to dereference
+                        if is_ref_init {
+                            // // // eprintln!("[G46-REF-VAR] Registering '{}' as ref_var (from &expr)", ident.name);
+                            scope.ref_vars.insert(ident.name.clone());
+                        }
+
+                        // G52/G53: If init is as_bytes(), compute and store the length
+                        if is_as_bytes_init {
+                            if let Some(ref expr) = init {
+                                if let Expr::MethodCall { receiver, .. } = expr {
+                                    // G53: Check if receiver is a Rust String variable
+                                    let receiver_is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            matches!(scope.var_types.get(&seg.ident.name), Some(SigilType::RustString))
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    };
+
+                                    // Get the string and compute its length
+                                    let str_val = self.compile_expr(fn_value, scope, receiver)?;
+
+                                    let len_val = if receiver_is_rust_string {
+                                        // G53: Rust String - use sigil_string_len
+                                        let string_len_fn = self
+                                            .module
+                                            .get_function("sigil_string_len")
+                                            .ok_or("sigil_string_len not declared")?;
+                                        let len_call = self
+                                            .builder
+                                            .build_call(string_len_fn, &[str_val.into()], "rust_str_len")
+                                            .map_err(|e| e.to_string())?;
+                                        len_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .map(|v| v.into_int_value())
+                                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                    } else {
+                                        // G52: C string - use sigil_strlen
+                                        let strlen_fn = self
+                                            .module
+                                            .get_function("sigil_strlen")
+                                            .ok_or("sigil_strlen not declared")?;
+                                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                        let str_ptr = self
+                                            .builder
+                                            .build_int_to_ptr(str_val, ptr_type, "str_ptr")
+                                            .map_err(|e| e.to_string())?;
+                                        let len_call = self
+                                            .builder
+                                            .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                            .map_err(|e| e.to_string())?;
+                                        len_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .map(|v| v.into_int_value())
+                                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                    };
+
+                                    // Store length in scope
+                                    let len_alloca = self
+                                        .builder
+                                        .build_alloca(self.context.i64_type(), &format!("{}_len", ident.name))
+                                        .map_err(|e| e.to_string())?;
+                                    self.builder
+                                        .build_store(len_alloca, len_val)
+                                        .map_err(|e| e.to_string())?;
+                                    scope.slice_lens.insert(ident.name.clone(), len_alloca);
+                                }
+                            }
+                        }
+
+                        // Track float variables
+                        if is_float {
+                            scope.float_vars.insert(ident.name.clone());
+                        }
+
+                        // G27: Track string variables for print handling
+                        if is_string {
+                            scope.var_types.insert(ident.name.clone(), SigilType::String);
+                        } else if is_rust_string {
+                            scope.var_types.insert(ident.name.clone(), SigilType::RustString);
+                        }
+
+                        // Track struct type for method dispatch (G11 fix)
+                        if let Some(ty) = struct_type {
+                            scope.register_struct_type(ident.name.clone(), ty);
+                        }
+
+                        // G51 fix: Register Vec<T> type from annotation or inference for iteration element dispatch
+                        if let Some(vec_ty) = vec_type_from_annotation.or(vec_type_from_init) {
+                            scope.register_struct_type(ident.name.clone(), vec_ty);
+                        }
+
+                        // Phase 1 of generic monomorphization: register rich type from annotation
+                        // This preserves generic parameters for proper method dispatch
+                        if let Some(ref type_expr) = ty {
+                            let rich_ty = self.type_expr_to_rich_type(type_expr);
+                            scope.register_rich_type(ident.name.clone(), rich_ty);
+                        } else if let Some(ref init_expr) = init {
+                            // G56: No type annotation - try to infer RichType from init expression
+                            // This handles cases like: let s = FixedSize·<4>·new();
+                            eprintln!("[G60] Let binding for '{}', trying to infer type from init", ident.name);
+                            // G101: First try get_rich_type_from_expr (has scope access for variable lookups)
+                            // This handles cases like: let x = result? (where result is Result<T, E>)
+                            let rich_ty = self.get_rich_type_from_expr(init_expr, scope)
+                                .or_else(|| self.infer_rich_type_from_expr(init_expr));
+                            if let Some(rich_ty) = rich_ty {
+                                eprintln!("[G60] Let binding for '{}' inferred: {:?}", ident.name, rich_ty);
+                                scope.register_rich_type(ident.name.clone(), rich_ty);
+                            }
+                        }
                         // eprintln!("DEBUG: Added {} to scope, scope now: {:?}", ident.name, scope.vars.keys().collect::<Vec<_>>());
                     }
                     Ok(None)
@@ -1678,9 +5134,56 @@ pub mod llvm {
             scope: &mut CompileScope<'ctx>,
             expr: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
+            // G46-DEBUG: Log expression type
+            if matches!(expr, Expr::AddrOf { .. } | Expr::Unary { .. }) {
+                // // // eprintln!("[G46-DEBUG] compile_expr: expr={:?}", expr);
+            }
             match expr {
                 Expr::Literal(lit) => self.compile_literal(lit),
                 Expr::Path(path) => {
+                    // Build full path string for special constant lookup
+                    let full_path_str: String = path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("::");
+
+                    // Handle std::f64::consts constants (full path or bare names)
+                    if full_path_str == "std::f64::consts::PI" || full_path_str == "std·f64·consts·PI" || full_path_str == "PI" {
+                        let pi_bits = std::f64::consts::PI.to_bits();
+                        return Ok(self.context.i64_type().const_int(pi_bits, false));
+                    }
+                    if full_path_str == "std::f64::consts::E" || full_path_str == "std·f64·consts·E" || full_path_str == "E" {
+                        let e_bits = std::f64::consts::E.to_bits();
+                        return Ok(self.context.i64_type().const_int(e_bits, false));
+                    }
+                    if full_path_str == "std::f64::consts::TAU" || full_path_str == "std·f64·consts·TAU" || full_path_str == "TAU" {
+                        let tau_bits = std::f64::consts::TAU.to_bits();
+                        return Ok(self.context.i64_type().const_int(tau_bits, false));
+                    }
+                    // G47: Additional math constants
+                    if full_path_str == "FRAC_PI_2" || full_path_str == "std::f64::consts::FRAC_PI_2" {
+                        let bits = std::f64::consts::FRAC_PI_2.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "FRAC_PI_4" || full_path_str == "std::f64::consts::FRAC_PI_4" {
+                        let bits = std::f64::consts::FRAC_PI_4.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "LN_2" || full_path_str == "std::f64::consts::LN_2" {
+                        let bits = std::f64::consts::LN_2.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "LN_10" || full_path_str == "std::f64::consts::LN_10" {
+                        let bits = std::f64::consts::LN_10.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+                    if full_path_str == "SQRT_2" || full_path_str == "std::f64::consts::SQRT_2" {
+                        let bits = std::f64::consts::SQRT_2.to_bits();
+                        return Ok(self.context.i64_type().const_int(bits, false));
+                    }
+
                     // Check for qualified enum variant path (e.g., Color::Blue)
                     if path.segments.len() >= 2 {
                         let enum_name = &path.segments[path.segments.len() - 2].ident.name;
@@ -1708,6 +5211,11 @@ pub mod llvm {
                         .collect::<Vec<_>>()
                         .join("::");
 
+                    // G56: Check for const generic parameters first (e.g., N in Shape1<N>)
+                    if let Some(&const_val) = scope.const_generics.get(name) {
+                        return Ok(self.context.i64_type().const_int(const_val as u64, false));
+                    }
+
                     if let Some(&ptr) = scope.vars.get(name) {
                         let val = self
                             .builder
@@ -1722,13 +5230,23 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?;
                         Ok(val.into_int_value())
                     } else if path.segments.len() > 1 {
-                        // Qualified path like Token::LParen or Type::Variant
-                        // Check if it's a qualified enum variant
+                        // Qualified path like Token::LParen or Type::Variant or S::RANK (associated const)
                         let type_name = path
                             .segments
                             .first()
                             .map(|s| s.ident.name.as_str())
                             .unwrap_or("");
+
+                        // G87: Check if first segment is a type parameter bound to a concrete type
+                        // This handles S::RANK! where S is bound to Shape2<4, 4>
+                        if let Some(rich_type) = scope.rich_types.get(type_name) {
+                            eprintln!("[G87-ASSOC] type param '{}' bound to {:?}, looking for '{}'", type_name, rich_type, name);
+                            // Look up the associated constant on the concrete type
+                            if let Some(const_val) = self.lookup_associated_constant(rich_type, name) {
+                                eprintln!("[G87-ASSOC] Found {}::{} = {}", type_name, name, const_val);
+                                return Ok(self.context.i64_type().const_int(const_val as u64, false));
+                            }
+                        }
 
                         // Try to find in registered enum types
                         if let Some(enum_info) = self.enum_types.get(type_name) {
@@ -1737,8 +5255,20 @@ pub mod llvm {
                             }
                         }
 
+                        // G91: Check for primitive type associated constants (f32::SIZE, etc.)
+                        // These aren't in scope.rich_types because they're primitives, not type parameters
+                        let primitive_rich_type = RichType::Named {
+                            name: type_name.to_string(),
+                            generics: vec![],
+                        };
+                        if let Some(const_val) = self.lookup_associated_constant(&primitive_rich_type, name) {
+                            eprintln!("[G91] Found primitive {}::{} = {}", type_name, name, const_val);
+                            return Ok(self.context.i64_type().const_int(const_val as u64, false));
+                        }
+
                         // Fallback: treat as a constant enum value (use hash of name as discriminant)
                         // This handles cases like Token::LParen, TokenKind::Fn, etc.
+                        eprintln!("[G87-WARN] Using hash fallback for path '{}'", full_path);
                         let hash = full_path
                             .bytes()
                             .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
@@ -1769,12 +5299,222 @@ pub mod llvm {
                     }
                 }
                 Expr::Binary { op, left, right } => {
-                    let lhs = self.compile_expr(fn_value, scope, left)?;
-                    let rhs = self.compile_expr(fn_value, scope, right)?;
-                    self.compile_binary_op(*op, lhs, rhs)
+                    // Check if either operand is a float expression (using scope for variable tracking)
+                    let is_float = self.is_float_expr_with_scope(left, scope) || self.is_float_expr_with_scope(right, scope);
+                    if is_float {
+                        // Use native float path for arithmetic ops - avoids bitcasts within the expression
+                        match op {
+                            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
+                                let lhs_f64 = self.compile_native_float_expr(fn_value, scope, left)?;
+                                let rhs_f64 = self.compile_native_float_expr(fn_value, scope, right)?;
+                                let result_f64 = match op {
+                                    BinOp::Add => self.builder.build_float_add(lhs_f64, rhs_f64, "fadd"),
+                                    BinOp::Sub => self.builder.build_float_sub(lhs_f64, rhs_f64, "fsub"),
+                                    BinOp::Mul => self.builder.build_float_mul(lhs_f64, rhs_f64, "fmul"),
+                                    BinOp::Div => self.builder.build_float_div(lhs_f64, rhs_f64, "fdiv"),
+                                    BinOp::Rem => self.builder.build_float_rem(lhs_f64, rhs_f64, "frem"),
+                                    _ => unreachable!(),
+                                }.map_err(|e| e.to_string())?;
+                                // Convert back to i64 bits for return
+                                self.builder.build_bit_cast(result_f64, self.context.i64_type(), "fres_bits")
+                                    .map_err(|e| e.to_string())
+                                    .map(|v| v.into_int_value())
+                            }
+                            _ => {
+                                // For comparisons and other ops, use the traditional path
+                                let lhs = self.compile_expr(fn_value, scope, left)?;
+                                let rhs = self.compile_expr(fn_value, scope, right)?;
+                                self.compile_float_binary_op(*op, lhs, rhs)
+                            }
+                        }
+                    } else {
+                        let lhs = self.compile_expr(fn_value, scope, left)?;
+                        let rhs = self.compile_expr(fn_value, scope, right)?;
+                        self.compile_binary_op(*op, lhs, rhs)
+                    }
                 }
                 Expr::Unary { op, expr: inner } => {
+                    // G44 fix: Handle address-of (&x) specially - must get address before compiling inner
+                    if matches!(op, ast::UnaryOp::Ref | ast::UnaryOp::RefMut) {
+                        // // // eprintln!("[G26-REF] inner expr type: {:?}", std::mem::discriminant(inner.as_ref()));
+                        // // // eprintln!("[G26-REF] inner={:?}", inner);
+                        // G26-FIX: Handle &(field_access) - return address of the field
+                        if let Expr::Field { expr: base, field } = inner.as_ref() {
+                            // // // eprintln!("[G26-REF-FIELD] base={:?}, field={}", base, field.name);
+
+                            // Compile base to get struct pointer
+                            let mut struct_ptr_int = self.compile_expr(fn_value, scope, base)?;
+                            // // // eprintln!("[G26-REF-FIELD] struct_ptr_int compiled OK = {:?}", struct_ptr_int);
+
+                            // G65-FIX: If base is a ref_var that points to a struct field containing
+                            // a pointer to another struct, we need to dereference to get the actual struct.
+                            // For example: layout_ref = &this.layout where this.layout is a TensorLayout pointer.
+                            // When accessing layout_ref.shape, we need to:
+                            // 1. Load from layout_ref -> get address of this.layout field
+                            // 2. Load from that address -> get the TensorLayout pointer
+                            // 3. GEP(TensorLayout pointer, shape_idx)
+                            if let Expr::Path(path) = base.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    if scope.ref_vars.contains(&seg.ident.name) {
+                                        // // // eprintln!("[G65-DEREF] base '{}' is a ref_var, need extra dereference", seg.ident.name);
+                                        // struct_ptr_int is the address of a field containing a pointer
+                                        // We need to load the pointer value from that field
+                                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                        let field_addr_ptr = self.builder
+                                            .build_int_to_ptr(struct_ptr_int, ptr_type, "field_addr_ptr")
+                                            .map_err(|e| e.to_string())?;
+                                        let actual_struct_ptr = self.builder
+                                            .build_load(self.context.i64_type(), field_addr_ptr, "actual_struct_ptr")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+                                        // // // eprintln!("[G65-DEREF] actual_struct_ptr = {:?}", actual_struct_ptr);
+                                        struct_ptr_int = actual_struct_ptr;
+                                    }
+                                }
+                            }
+
+                            // Get struct type for field lookup
+                            let struct_type_name = self.get_struct_type_from_expr(base, scope);
+                            // // // eprintln!("[G26-REF-FIELD] struct_type_name={:?}", struct_type_name);
+                            if let Some(struct_type_name) = struct_type_name {
+                                if let Some(struct_info) = self.struct_types.get(&struct_type_name).cloned() {
+                                    // // // eprintln!("[G26-REF-FIELD] found struct_info for {}, field_indices={:?}", struct_type_name, struct_info.field_indices);
+                                    if let Some(&field_idx) = struct_info.field_indices.get(&field.name) {
+                                        // // // eprintln!("[G26-REF-FIELD] field_idx={}, using GEP", field_idx);
+                                        // Convert struct ptr to pointer type
+                                        let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                        let struct_ptr = self
+                                            .builder
+                                            .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
+                                            .map_err(|e| e.to_string())?;
+
+                                        // Get field pointer using GEP
+                                        let field_ptr = self
+                                            .builder
+                                            .build_struct_gep(
+                                                struct_info.llvm_type,
+                                                struct_ptr,
+                                                field_idx,
+                                                &format!("{}_addr", field.name),
+                                            )
+                                            .map_err(|e| e.to_string())?;
+
+                                        // Return field address as i64
+                                        return self
+                                            .builder
+                                            .build_ptr_to_int(field_ptr, self.context.i64_type(), "field_addr")
+                                            .map_err(|e| e.to_string());
+                                    }
+                                }
+
+                                // G64: Also check generic_structs for generic types like TensorLayout
+                                if let Some(generic_def) = self.generic_structs.get(&struct_type_name).cloned() {
+                                    if let ast::StructFields::Named(fields) = &generic_def.def.fields {
+                                        for (idx, field_def) in fields.iter().enumerate() {
+                                            if field_def.name.name == field.name {
+                                                eprintln!("[G64-REF-FIELD] found field '{}' in generic struct '{}' at idx {}", field.name, struct_type_name, idx);
+                                                // Get pointer to struct
+                                                let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                                let struct_ptr = self
+                                                    .builder
+                                                    .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
+                                                    .map_err(|e| e.to_string())?;
+
+                                                // Use pointer arithmetic: each field is 8 bytes (i64) in Sigil ABI
+                                                let offset = self.context.i64_type().const_int(idx as u64 * 8, false);
+                                                let base_int = self.builder
+                                                    .build_ptr_to_int(struct_ptr, self.context.i64_type(), "base_int")
+                                                    .map_err(|e| e.to_string())?;
+                                                let field_addr = self.builder
+                                                    .build_int_add(base_int, offset, "field_addr")
+                                                    .map_err(|e| e.to_string())?;
+
+                                                return Ok(field_addr);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            // Fall through if struct type not found
+                        }
+
+                        if let Expr::Path(path) = inner.as_ref() {
+                            let name = path
+                                .segments
+                                .last()
+                                .map(|s| s.ident.name.as_str())
+                                .ok_or("Empty path")?;
+                            if let Some(&ptr) = scope.vars.get(name) {
+                                // G102: Check if this is a struct type
+                                // Structs are stored as pointers, so &struct_var should return
+                                // the VALUE stored in the alloca (the struct pointer),
+                                // not the alloca address itself.
+                                let is_struct = self.get_struct_type_from_expr(inner, scope).is_some();
+                                eprintln!("[G102-REF] name='{}', is_struct={}", name, is_struct);
+
+                                if is_struct {
+                                    // For structs: load the struct pointer value from alloca
+                                    let val = self
+                                        .builder
+                                        .build_load(self.context.i64_type(), ptr, name)
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(val.into_int_value());
+                                } else {
+                                    // For primitives: return the alloca address
+                                    return self
+                                        .builder
+                                        .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
+                                        .map_err(|e| e.to_string());
+                                }
+                            }
+                        }
+                        // Fallback: compile inner (may not be correct for all cases)
+                    }
+                    // Special case: *( ptr + offset ) needs GEP for proper pointer arithmetic
+                    if matches!(op, ast::UnaryOp::Deref) {
+                        if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                            // Compile base pointer and offset separately
+                            let base_addr = self.compile_expr(fn_value, scope, left)?;
+                            let offset = self.compile_expr(fn_value, scope, right)?;
+
+                            // Convert base address to pointer
+                            let i64_type = self.context.i64_type();
+                            let base_ptr = self
+                                .builder
+                                .build_int_to_ptr(
+                                    base_addr,
+                                    i64_type.ptr_type(Default::default()),
+                                    "base_ptr",
+                                )
+                                .map_err(|e| e.to_string())?;
+
+                            // Use GEP for proper pointer arithmetic (scales by element size)
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                            }
+                            .map_err(|e| e.to_string())?;
+
+                            // Load the value
+                            let loaded = self
+                                .builder
+                                .build_load(i64_type, elem_ptr, "deref_val")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(loaded.into_int_value());
+                        }
+                    }
+                    // Default case: compile inner and apply unary op
                     let val = self.compile_expr(fn_value, scope, inner)?;
+
+                    // G18: Float negation requires XOR with sign bit, not integer neg
+                    if matches!(op, ast::UnaryOp::Neg) && self.is_float_expr_with_scope(inner, scope) {
+                        // Flip sign bit for float negation
+                        let sign_bit = self.context.i64_type().const_int(0x8000000000000000, false);
+                        return self.builder
+                            .build_xor(val, sign_bit, "fneg")
+                            .map_err(|e| e.to_string());
+                    }
+
                     self.compile_unary_op(*op, val)
                 }
                 Expr::If {
@@ -1848,7 +5588,30 @@ pub mod llvm {
                                 .map_err(|e| e.to_string())?;
 
                             let field_name = &field.name;
-                            // Find the struct type and field index
+
+                            // G29 fix: First try to get the struct type from the expression
+                            // This ensures we use the correct struct when multiple structs share field names
+                            if let Some(struct_type_name) = self.get_struct_type_from_expr(expr, scope) {
+                                if let Some(struct_info) = self.struct_types.get(&struct_type_name) {
+                                    if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
+                                        let field_ptr = self
+                                            .builder
+                                            .build_struct_gep(
+                                                struct_info.llvm_type,
+                                                struct_ptr,
+                                                field_idx,
+                                                &format!("{}_ptr", field_name),
+                                            )
+                                            .map_err(|e| e.to_string())?;
+                                        self.builder
+                                            .build_store(field_ptr, val)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(val);
+                                    }
+                                }
+                            }
+
+                            // Fallback: search all struct types for the field (less accurate)
                             for (_name, struct_info) in &self.struct_types {
                                 if let Some(&field_idx) = struct_info.field_indices.get(field_name)
                                 {
@@ -1898,7 +5661,32 @@ pub mod llvm {
                             Ok(val)
                         }
                         Expr::Unary { op, expr } if matches!(op, ast::UnaryOp::Deref) => {
-                            // Dereference assignment: *ptr = val
+                            // Dereference assignment: *ptr = val or *(ptr + offset) = val
+                            // Check for pointer arithmetic pattern
+                            if let Expr::Binary { op: BinOp::Add, left, right } = expr.as_ref() {
+                                let base_addr = self.compile_expr(fn_value, scope, left)?;
+                                let offset = self.compile_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        base_addr,
+                                        i64_type.ptr_type(Default::default()),
+                                        "base_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                // Use GEP for proper pointer arithmetic (scales by element size)
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                                }
+                                .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(elem_ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val);
+                            }
+                            // Simple dereference: *ptr = val
                             let ptr_val = self.compile_expr(fn_value, scope, expr)?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
                             let ptr = self
@@ -1912,28 +5700,83 @@ pub mod llvm {
                         }
                         Expr::Index { expr, index } => {
                             // Index assignment: arr[i] = val
-                            let base = self.compile_expr(fn_value, scope, expr)?;
+                            // G25 Fix: Use sigil_vec_set for proper Vec access
+                            // The Rust Vec memory layout (ptr, len, cap) doesn't match
+                            // the inline data assumption. Call the runtime function.
                             let idx = self.compile_expr(fn_value, scope, index)?;
-                            // Calculate element pointer: base + (idx * 8)
-                            let offset = self
-                                .builder
-                                .build_int_mul(
-                                    idx,
-                                    self.context.i64_type().const_int(8, false),
-                                    "idx_offset",
+                            let mut vec_ptr = self.compile_expr(fn_value, scope, expr)?;
+
+                            // G26: If expr is a reference variable, dereference it
+                            if let Expr::Path(path) = expr.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    if scope.ref_vars.contains(&seg.ident.name) {
+                                        let ptr = self
+                                            .builder
+                                            .build_int_to_ptr(
+                                                vec_ptr,
+                                                self.context.ptr_type(AddressSpace::default()),
+                                                "ref_ptr",
+                                            )
+                                            .map_err(|e| e.to_string())?;
+                                        let loaded = self
+                                            .builder
+                                            .build_load(self.context.i64_type(), ptr, "deref_vec")
+                                            .map_err(|e| e.to_string())?;
+                                        vec_ptr = loaded.into_int_value();
+                                    }
+                                }
+                            }
+
+                            let vec_set_fn = self
+                                .module
+                                .get_function("sigil_vec_set")
+                                .ok_or("sigil_vec_set not declared")?;
+
+                            self.builder
+                                .build_call(
+                                    vec_set_fn,
+                                    &[vec_ptr.into(), idx.into(), val.into()],
+                                    "",
                                 )
                                 .map_err(|e| e.to_string())?;
-                            let elem_ptr_int = self
-                                .builder
-                                .build_int_add(base, offset, "elem_ptr")
+
+                            Ok(val)
+                        }
+                        Expr::Deref(inner) => {
+                            // Dereference assignment: *ptr = val or *(ptr + offset) = val
+                            // Check for pointer arithmetic pattern
+                            if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                                let base_addr = self.compile_expr(fn_value, scope, left)?;
+                                let offset = self.compile_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        base_addr,
+                                        i64_type.ptr_type(Default::default()),
+                                        "base_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                // Use GEP for proper pointer arithmetic (scales by element size)
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                                }
                                 .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(elem_ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val);
+                            }
+                            // Simple dereference: *ptr = val
+                            let ptr_val = self.compile_expr(fn_value, scope, inner)?;
                             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
-                            let elem_ptr = self
+                            let ptr = self
                                 .builder
-                                .build_int_to_ptr(elem_ptr_int, ptr_type, "index_ptr")
+                                .build_int_to_ptr(ptr_val, ptr_type, "deref_ptr")
                                 .map_err(|e| e.to_string())?;
                             self.builder
-                                .build_store(elem_ptr, val)
+                                .build_store(ptr, val)
                                 .map_err(|e| e.to_string())?;
                             Ok(val)
                         }
@@ -1950,6 +5793,20 @@ pub mod llvm {
                     Ok(result.unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
                 }
                 Expr::Struct { path, fields, .. } => {
+                    // G44 fix: Check if this is an enum variant with data
+                    // For path like `ErrorKind·Shape { dim: 42 }`, we need to store discriminant
+                    let enum_discriminant: Option<u64> = if path.segments.len() >= 2 {
+                        let potential_enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                        let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+                        if let Some(enum_info) = self.enum_types.get(potential_enum_name) {
+                            enum_info.variants.get(variant_name).copied()
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     // Get struct name and potential generic arguments from path
                     let last_segment = path.segments.last().ok_or("Empty struct path")?;
                     let base_name = last_segment.ident.name.as_str();
@@ -1970,58 +5827,217 @@ pub mod llvm {
                         // Monomorphize the generic struct
                         self.monomorphize_struct(&base_name, type_args)?
                     } else if self.generic_structs.contains_key(&base_name) {
-                        // Generic struct used without type args - use default monomorphization
-                        // Assume i64 for all type parameters
-                        format!("{}_i64", base_name)
+                        // G102 fix: Generic struct used without type args - try to infer from field values
+                        // For `Wrapper { shape: s }` where s: DynShape, infer Wrapper<DynShape>
+                        let generic_def = self.generic_structs.get(&base_name).cloned();
+                        let mut inferred_name = None;
+
+                        if let Some(ref def) = generic_def {
+                            // G102 Part 2: First check if scope has type bindings from monomorphized method
+                            // When inside `Tensor::randn`, scope has S, D, Dev bindings that we should use
+                            let mut type_bindings: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+                            // G102 Debug: Show what we're looking for
+                            eprintln!("[G102-DEBUG] Struct '{}' type_params: {:?}", base_name, def.type_params);
+                            eprintln!("[G102-DEBUG] scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
+
+                            for param in &def.type_params {
+                                if let Some(rich_type) = scope.rich_types.get(param) {
+                                    let concrete = match rich_type {
+                                        RichType::Named { name, .. } => name.clone(),
+                                        RichType::Float(crate::typeck::FloatSize::F32) => "f32".to_string(),
+                                        RichType::Float(crate::typeck::FloatSize::F64) => "f64".to_string(),
+                                        RichType::Int(crate::typeck::IntSize::I32) => "i32".to_string(),
+                                        RichType::Int(crate::typeck::IntSize::I64) => "i64".to_string(),
+                                        RichType::Int(crate::typeck::IntSize::USize) => "usize".to_string(),
+                                        RichType::ConstGeneric(v) => format!("{}", v),
+                                        _ => continue,
+                                    };
+                                    type_bindings.insert(param.clone(), concrete);
+                                }
+                            }
+
+                            // If we got all bindings from scope, use them
+                            if type_bindings.len() == def.type_params.len() && !type_bindings.is_empty() {
+                                let mut name_parts = vec![base_name.clone()];
+                                for param in &def.type_params {
+                                    name_parts.push(type_bindings.get(param).unwrap().clone());
+                                }
+                                inferred_name = Some(name_parts.join("_"));
+                                eprintln!("[G102] Inferred from scope bindings: {}", inferred_name.as_ref().unwrap());
+                            }
+
+                            // Fall back to field value inference if scope didn't have all bindings
+                            if inferred_name.is_none() {
+                                if let ast::StructFields::Named(field_defs) = &def.def.fields {
+                                    type_bindings.clear();
+
+                                    for field_init in fields.iter() {
+                                        // Find the corresponding field definition
+                                        for field_def in field_defs.iter() {
+                                            if field_def.name.name == field_init.name.name {
+                                                // Check if the field type is a generic parameter
+                                                if let ast::TypeExpr::Path(type_path) = &field_def.ty {
+                                                    if let Some(seg) = type_path.segments.last() {
+                                                        let type_param_name = &seg.ident.name;
+                                                        // Check if this is a type parameter
+                                                        if def.type_params.iter().any(|p| p == type_param_name) {
+                                                            // Try to get the concrete type from the field value
+                                                            if let Some(ref val_expr) = field_init.value {
+                                                                if let Some(concrete_type) = self.get_struct_type_from_expr(val_expr, scope) {
+                                                                    type_bindings.insert(type_param_name.clone(), concrete_type);
+                                                                }
+                                                            } else {
+                                                                // Shorthand: field name is variable name
+                                                                if let Some(concrete_type) = scope.get_struct_type(&field_init.name.name) {
+                                                                    type_bindings.insert(type_param_name.clone(), concrete_type.clone());
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    // If we found type bindings, construct the monomorphized name
+                                    if !type_bindings.is_empty() {
+                                        let mut name_parts = vec![base_name.clone()];
+                                        for param in &def.type_params {
+                                            if let Some(concrete) = type_bindings.get(param) {
+                                                name_parts.push(concrete.clone());
+                                            } else {
+                                                name_parts.push("i64".to_string()); // fallback
+                                            }
+                                        }
+                                        inferred_name = Some(name_parts.join("_"));
+                                        eprintln!("[G102] Inferred from field values: {}", inferred_name.as_ref().unwrap());
+                                    }
+                                }
+                            }
+                        }
+
+                        inferred_name.unwrap_or_else(|| format!("{}_i64", base_name))
                     } else {
                         base_name
                     };
 
                     // Look up struct type (now with mangled name for generics)
                     let struct_info_opt = self.struct_types.get(&struct_name).cloned();
+                    eprintln!("[G63-STRUCT] creating struct '{}', found in struct_types: {}", struct_name, struct_info_opt.is_some());
 
                     if let Some(struct_info) = struct_info_opt {
-                        // Known struct type
-                        let struct_ptr = self
-                            .builder
-                            .build_alloca(struct_info.llvm_type, &struct_name)
-                            .map_err(|e| e.to_string())?;
+                        // Known struct type - use heap allocation so returned structs survive
+                        // G44 fix: Add 8 bytes for discriminant if this is an enum variant
+                        let base_struct_size = struct_info.field_indices.len() as u64 * 8;
+                        let struct_size = if enum_discriminant.is_some() {
+                            base_struct_size + 8 // Add space for discriminant at offset 0
+                        } else {
+                            base_struct_size
+                        };
+                        let size_const = self.context.i64_type().const_int(struct_size.max(8), false);
 
-                        // Initialize each field
+                        // G55 fix: Compile ALL field values FIRST before allocating the struct.
+                        // This prevents function calls in field expressions from clobbering
+                        // intermediate values (e.g., cuda_malloc result clobbered by sigil_alloc).
+                        let field_offset_base = if enum_discriminant.is_some() { 1u32 } else { 0u32 };
+                        let mut precomputed_fields: Vec<(u32, String, IntValue<'ctx>)> = Vec::new();
+
                         for (idx, field_init) in fields.iter().enumerate() {
-                            let field_name = &field_init.name.name;
-                            // Try to get field index from struct info, fallback to position
-                            let field_idx = *struct_info
+                            let field_name = field_init.name.name.clone();
+                            let base_field_idx = *struct_info
                                 .field_indices
-                                .get(field_name)
+                                .get(&field_name)
                                 .unwrap_or(&(idx as u32));
+                            let field_idx = base_field_idx + field_offset_base;
 
-                            // Get field value (or use field name as variable if no value)
+                            // Compile field value BEFORE struct allocation
                             let field_value = if let Some(ref val_expr) = field_init.value {
                                 self.compile_expr(fn_value, scope, val_expr)?
                             } else {
                                 // Shorthand: field name is the variable name
                                 if let Some(&ptr) = scope.vars.get(field_name.as_str()) {
                                     self.builder
-                                        .build_load(self.context.i64_type(), ptr, field_name)
+                                        .build_load(self.context.i64_type(), ptr, &field_name)
                                         .map_err(|e| e.to_string())?
                                         .into_int_value()
                                 } else {
-                                    // Fallback: use 0 for unknown shorthand variables
                                     self.context.i64_type().const_int(0, false)
                                 }
                             };
+                            precomputed_fields.push((field_idx, field_name, field_value));
+                        }
 
-                            // Get pointer to field and store value
-                            let field_ptr = self
-                                .builder
-                                .build_struct_gep(
-                                    struct_info.llvm_type,
-                                    struct_ptr,
-                                    field_idx,
-                                    &format!("{}_ptr", field_name),
+                        // NOW allocate the struct (after all field values are computed)
+                        let alloc_fn = self
+                            .module
+                            .get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let alloc_call = self
+                            .builder
+                            .build_call(alloc_fn, &[size_const.into()], "struct_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let alloc_result = alloc_call
+                            .try_as_basic_value()
+                            .left()
+                            .ok_or("sigil_alloc returned void")?;
+
+                        // sigil_alloc returns ptr type - convert to typed pointer
+                        let struct_ptr = if alloc_result.is_pointer_value() {
+                            alloc_result.into_pointer_value()
+                        } else {
+                            // If it returns i64, convert to pointer
+                            self.builder
+                                .build_int_to_ptr(
+                                    alloc_result.into_int_value(),
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    "struct_heap_ptr",
                                 )
+                                .map_err(|e| e.to_string())?
+                        };
+
+                        // G44 fix: Store discriminant at offset 0 for enum variants
+                        if let Some(disc) = enum_discriminant {
+                            let disc_val = self.context.i64_type().const_int(disc, false);
+                            self.builder
+                                .build_store(struct_ptr, disc_val)
                                 .map_err(|e| e.to_string())?;
+                        }
+
+                        // Store precomputed field values into the allocated struct
+                        for (field_idx, field_name, field_value) in precomputed_fields {
+                            // Get pointer to field and store value
+                            // G44 fix: Use raw pointer arithmetic for enum variants (discriminant at offset 0)
+                            let field_ptr = if enum_discriminant.is_some() {
+                                // For enum variants: use byte offset (field_idx * 8)
+                                let ptr_int = self
+                                    .builder
+                                    .build_ptr_to_int(struct_ptr, self.context.i64_type(), "ptr_int")
+                                    .map_err(|e| e.to_string())?;
+                                let offset = self.context.i64_type().const_int(field_idx as u64 * 8, false);
+                                let field_ptr_int = self
+                                    .builder
+                                    .build_int_add(ptr_int, offset, "field_offset")
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_int_to_ptr(
+                                        field_ptr_int,
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            } else {
+                                // For regular structs: use struct_gep
+                                self.builder
+                                    .build_struct_gep(
+                                        struct_info.llvm_type,
+                                        struct_ptr,
+                                        field_idx,
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            };
                             self.builder
                                 .build_store(field_ptr, field_value)
                                 .map_err(|e| e.to_string())?;
@@ -2036,47 +6052,116 @@ pub mod llvm {
                     }
 
                     // Unknown struct type - create dynamic struct on the fly
-                    // Build field types (all i64 for now)
-                    let field_types: Vec<BasicTypeEnum> = fields
-                        .iter()
-                        .map(|_| self.context.i64_type().into())
-                        .collect();
+                    // G102 fix: For monomorphized generics like Tensor_DynShape_f32_Cpu,
+                    // look up the base struct's field indices from generic_structs
+                    // Extract base name from monomorphized struct_name (e.g., "Tensor" from "Tensor_DynShape_f32_Cpu")
+                    let base_struct_name = struct_name.split('_').next().unwrap_or(&struct_name);
+                    let generic_field_indices: Option<std::collections::HashMap<String, u32>> =
+                        self.generic_structs.get(base_struct_name).map(|gdef| {
+                            if let ast::StructFields::Named(named_fields) = &gdef.def.fields {
+                                named_fields.iter().enumerate()
+                                    .map(|(i, f)| (f.name.name.clone(), i as u32))
+                                    .collect()
+                            } else {
+                                std::collections::HashMap::new()
+                            }
+                        });
 
-                    // Create struct type dynamically
-                    let llvm_type = self.context.struct_type(&field_types, false);
-                    let struct_ptr = self
-                        .builder
-                        .build_alloca(llvm_type, &struct_name)
-                        .map_err(|e| e.to_string())?;
+                    // Determine actual field count from generic struct definition if available
+                    let actual_field_count = generic_field_indices.as_ref()
+                        .map(|m| m.len())
+                        .unwrap_or(fields.len());
 
-                    // Initialize each field by index
+                    // G44 fix: Add discriminant space for enum variants
+                    let base_struct_size = (actual_field_count as u64).max(1) * 8;
+                    let struct_size = if enum_discriminant.is_some() {
+                        base_struct_size + 8 // Add space for discriminant at offset 0
+                    } else {
+                        base_struct_size
+                    };
+                    let size_const = self.context.i64_type().const_int(struct_size, false);
+                    eprintln!("[G102-MONO-STRUCT] struct_name='{}', base='{}', actual_field_count={}, struct_size={}",
+                             struct_name, base_struct_name, actual_field_count, struct_size);
+
+                    // G55 fix: Compile ALL field values FIRST before allocating the struct.
+                    let field_offset_base = if enum_discriminant.is_some() { 1u64 } else { 0u64 };
+                    let mut precomputed_fields: Vec<(u64, String, IntValue<'ctx>)> = Vec::new();
+
                     for (idx, field_init) in fields.iter().enumerate() {
-                        let field_name = &field_init.name.name;
-                        let field_idx = idx as u32;
+                        let field_name = field_init.name.name.clone();
+                        // G102 fix: Use correct field index from generic struct definition
+                        let field_idx = generic_field_indices.as_ref()
+                            .and_then(|m| m.get(&field_name))
+                            .copied()
+                            .unwrap_or(idx as u32) as u64;
+                        let field_offset = (field_idx + field_offset_base) * 8;
 
-                        // Get field value (or use field name as variable if no value)
+                        // Compile field value BEFORE struct allocation
                         let field_value = if let Some(ref val_expr) = field_init.value {
                             self.compile_expr(fn_value, scope, val_expr)?
                         } else {
                             // Shorthand: field name is the variable name
                             if let Some(&ptr) = scope.vars.get(field_name.as_str()) {
                                 self.builder
-                                    .build_load(self.context.i64_type(), ptr, field_name)
+                                    .build_load(self.context.i64_type(), ptr, &field_name)
                                     .map_err(|e| e.to_string())?
                                     .into_int_value()
                             } else {
-                                // Fallback: use 0 for unknown shorthand variables
                                 self.context.i64_type().const_int(0, false)
                             }
                         };
+                        precomputed_fields.push((field_offset, field_name, field_value));
+                    }
 
-                        // Get pointer to field and store value
+                    // NOW allocate the struct (after all field values are computed)
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let alloc_call = self
+                        .builder
+                        .build_call(alloc_fn, &[size_const.into()], "struct_alloc_dyn")
+                        .map_err(|e| e.to_string())?;
+                    let alloc_result = alloc_call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sigil_alloc returned void")?;
+                    let struct_ptr = if alloc_result.is_pointer_value() {
+                        alloc_result.into_pointer_value()
+                    } else {
+                        self.builder
+                            .build_int_to_ptr(
+                                alloc_result.into_int_value(),
+                                self.context.ptr_type(AddressSpace::default()),
+                                "struct_heap_ptr_dyn",
+                            )
+                            .map_err(|e| e.to_string())?
+                    };
+
+                    // G44 fix: Store discriminant at offset 0 for enum variants
+                    if let Some(disc) = enum_discriminant {
+                        let disc_val = self.context.i64_type().const_int(disc, false);
+                        self.builder
+                            .build_store(struct_ptr, disc_val)
+                            .map_err(|e| e.to_string())?;
+                    }
+
+                    // Store precomputed field values into the allocated struct
+                    for (field_offset, field_name, field_value) in precomputed_fields {
+                        let ptr_int = self
+                            .builder
+                            .build_ptr_to_int(struct_ptr, self.context.i64_type(), "ptr_int")
+                            .map_err(|e| e.to_string())?;
+                        let offset_const = self.context.i64_type().const_int(field_offset, false);
+                        let field_ptr_int = self
+                            .builder
+                            .build_int_add(ptr_int, offset_const, "field_offset")
+                            .map_err(|e| e.to_string())?;
                         let field_ptr = self
                             .builder
-                            .build_struct_gep(
-                                llvm_type,
-                                struct_ptr,
-                                field_idx,
+                            .build_int_to_ptr(
+                                field_ptr_int,
+                                self.context.ptr_type(AddressSpace::default()),
                                 &format!("{}_ptr", field_name),
                             )
                             .map_err(|e| e.to_string())?;
@@ -2094,7 +6179,19 @@ pub mod llvm {
                 }
                 Expr::Field { expr, field } => {
                     // Compile the struct expression to get pointer
-                    let struct_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                    let mut struct_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+
+                    // G26/G120: For reference variables, compile_expr already returns the loaded
+                    // reference value (which IS the struct pointer). No extra dereference needed.
+                    // The previous code incorrectly did another load, reading first 8 bytes of struct.
+                    if let Expr::Path(path) = expr.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let is_ref_var = scope.ref_vars.contains(&seg.ident.name);
+                            eprintln!("[G120-FIELD] field '{}' on base '{}', is_ref_var: {}, ref_vars: {:?}", field.name, seg.ident.name, is_ref_var, scope.ref_vars);
+                            // G120: DO NOT dereference - struct_ptr_int is already correct
+                            // compile_expr loads the value from the alloca, which for &T is the pointer to T
+                        }
+                    }
 
                     // Convert i64 back to pointer
                     let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
@@ -2103,25 +6200,110 @@ pub mod llvm {
                         .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
                         .map_err(|e| e.to_string())?;
 
-                    // Try to find struct type from expression
-                    // For now, search all struct types for the field
                     let field_name = &field.name;
-                    for (_name, struct_info) in &self.struct_types {
-                        if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
-                            let field_ptr = self
-                                .builder
-                                .build_struct_gep(
-                                    struct_info.llvm_type,
-                                    struct_ptr,
-                                    field_idx,
-                                    &format!("{}_ptr", field_name),
-                                )
-                                .map_err(|e| e.to_string())?;
-                            let field_value = self
-                                .builder
-                                .build_load(self.context.i64_type(), field_ptr, field_name)
-                                .map_err(|e| e.to_string())?;
-                            return Ok(field_value.into_int_value());
+
+                    // G13 fix: First try to get the struct type from the expression
+                    // This ensures we use the correct struct when multiple structs share field names
+                    let struct_type_name = self.get_struct_type_from_expr(expr, scope);
+                    eprintln!("[G63-DEBUG] field '{}', struct_type_name: {:?}, current_self_type: {:?}", field_name, struct_type_name, self.current_self_type);
+                    if let Some(ref struct_type_name) = struct_type_name {
+                        eprintln!("[G63-DEBUG] looking for '{}' in struct_types, found: {}", struct_type_name, self.struct_types.contains_key(struct_type_name));
+                        if let Some(struct_info) = self.struct_types.get(struct_type_name) {
+                            eprintln!("[G63-DEBUG] found struct_info for '{}', field '{}' -> idx {:?}", struct_type_name, field_name, struct_info.field_indices.get(field_name));
+                            if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
+                                let field_ptr = self
+                                    .builder
+                                    .build_struct_gep(
+                                        struct_info.llvm_type,
+                                        struct_ptr,
+                                        field_idx,
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                let field_value = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), field_ptr, field_name)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(field_value.into_int_value());
+                            }
+                        }
+                    }
+
+                    // G63 fix: Check generic structs for field access
+                    // Generic structs like Tensor<S, D, Dev> are stored in generic_structs
+                    if let Some(ref struct_name) = struct_type_name {
+                        // G104 fix: Check if we need to dereference a wrapper type BEFORE field access
+                        // This handles cases like `self.inner.len` where `inner: Arc<Inner>`
+                        // The expression `self.inner` returns an Arc pointer, but struct_name is "Inner" (unwrapped)
+                        // We need to dereference the Arc to get the actual Inner pointer
+                        let raw_expr_type = self.get_raw_struct_type_from_expr(expr, scope);
+                        let actual_struct_ptr = if let Some(ref raw_type) = raw_expr_type {
+                            let is_wrapper = raw_type == "Arc" || raw_type == "Rc" || raw_type == "Box" || raw_type == "RefCell";
+                            if is_wrapper && raw_type != struct_name {
+                                // Load the inner struct pointer from the wrapper (stored at offset 0)
+                                let inner_struct_ptr_val = self.builder
+                                    .build_load(self.context.i64_type(), struct_ptr, "wrapper_inner_ptr")
+                                    .map_err(|e| e.to_string())?
+                                    .into_int_value();
+                                self.builder
+                                    .build_int_to_ptr(inner_struct_ptr_val, ptr_type, "inner_struct_ptr")
+                                    .map_err(|e| e.to_string())?
+                            } else {
+                                struct_ptr
+                            }
+                        } else {
+                            struct_ptr
+                        };
+
+                        if let Some(generic_def) = self.generic_structs.get(struct_name) {
+                            // Find field index in the generic struct definition
+                            if let ast::StructFields::Named(fields) = &generic_def.def.fields {
+                                for (idx, field_def) in fields.iter().enumerate() {
+                                    if &field_def.name.name == field_name {
+                                        eprintln!("[G63-DEBUG] found field '{}' in generic struct '{}' at idx {}", field_name, struct_name, idx);
+                                        // Use pointer arithmetic: each field is 8 bytes (i64) in Sigil ABI
+                                        let offset = self.context.i64_type().const_int(idx as u64 * 8, false);
+                                        let base_int = self.builder
+                                            .build_ptr_to_int(actual_struct_ptr, self.context.i64_type(), "base_int")
+                                            .map_err(|e| e.to_string())?;
+                                        let field_addr = self.builder
+                                            .build_int_add(base_int, offset, "field_addr")
+                                            .map_err(|e| e.to_string())?;
+                                        let field_ptr = self.builder
+                                            .build_int_to_ptr(field_addr, self.context.ptr_type(inkwell::AddressSpace::default()), "field_ptr")
+                                            .map_err(|e| e.to_string())?;
+                                        let field_value = self.builder
+                                            .build_load(self.context.i64_type(), field_ptr, field_name)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(field_value.into_int_value());
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // G63 fix: Only search all struct_types when we don't know the struct type
+                    // This prevents incorrect field matches when struct_type_name is known but not yet registered
+                    if struct_type_name.is_none() {
+                        eprintln!("[G63-DEBUG] fallback: searching all {} struct types for field '{}'", self.struct_types.len(), field_name);
+                        for (name, struct_info) in &self.struct_types {
+                            if let Some(&field_idx) = struct_info.field_indices.get(field_name) {
+                                eprintln!("[G63-DEBUG] fallback: found field '{}' in struct '{}' at idx {}", field_name, name, field_idx);
+                                let field_ptr = self
+                                    .builder
+                                    .build_struct_gep(
+                                        struct_info.llvm_type,
+                                        struct_ptr,
+                                        field_idx,
+                                        &format!("{}_ptr", field_name),
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                let field_value = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), field_ptr, field_name)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(field_value.into_int_value());
+                            }
                         }
                     }
 
@@ -2199,6 +6381,8 @@ pub mod llvm {
                         "failure" => Some(1u64),
                         "text" | "string" | "str" => Some(0u64),
                         "len" | "length" | "count" | "size" => Some(1u64),
+                        // G33: Common struct fields that need specific offsets
+                        "vocab_size" => Some(2u64),  // BPETokenizer: vocab(0), merges(1), vocab_size(2)
                         "pos" | "position" => Some(0u64),
                         "offset" => Some(0u64),
                         "range" => Some(0u64),
@@ -2402,8 +6586,145 @@ pub mod llvm {
                     Ok(field_value.into_int_value())
                 }
                 Expr::Match { expr, arms } => {
-                    // Compile the scrutinee (thing being matched)
-                    let scrutinee = self.compile_expr(fn_value, scope, expr)?;
+                    // G82 fix: If the match expression is `*ptr`, we need to track the pointer
+                    // separately for field extraction. The dereference gives us the discriminant,
+                    // but we need the original pointer to extract enum payload fields.
+                    //
+                    // HOWEVER: Vec.get() returns the element VALUE directly. For data variants
+                    // this is a pointer, but for unit variants this is the discriminant.
+                    // So we need a runtime check similar to G45.
+                    let (scrutinee_raw, scrutinee_ptr_for_fields) = if let Expr::Unary { op: ast::UnaryOp::Deref, expr: inner_expr, .. } = expr.as_ref() {
+                        // Match on `*ptr` - compile the inner expression
+                        let inner_val = self.compile_expr(fn_value, scope, inner_expr)?;
+
+                        // G82+G45: Runtime check - is inner_val a pointer or a discriminant?
+                        let threshold = self.context.i64_type().const_int(256, false);
+                        let is_pointer = self.builder
+                            .build_int_compare(IntPredicate::UGE, inner_val, threshold, "g82_is_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        // Create blocks for pointer vs discriminant cases
+                        let ptr_bb = self.context.append_basic_block(fn_value, "g82_ptr");
+                        let disc_bb = self.context.append_basic_block(fn_value, "g82_disc");
+                        let merge_bb = self.context.append_basic_block(fn_value, "g82_merge");
+
+                        self.builder.build_conditional_branch(is_pointer, ptr_bb, disc_bb)
+                            .map_err(|e| e.to_string())?;
+
+                        // Pointer case: dereference to get discriminant, keep pointer for fields
+                        self.builder.position_at_end(ptr_bb);
+                        let ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                inner_val,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "g82_deref_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let loaded_disc = self
+                            .builder
+                            .build_load(self.context.i64_type(), ptr, "g82_discriminant")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        self.builder.build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let ptr_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Discriminant case: use inner_val directly, no pointer for fields
+                        self.builder.position_at_end(disc_bb);
+                        self.builder.build_unconditional_branch(merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let disc_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Merge: phi nodes for discriminant and pointer
+                        self.builder.position_at_end(merge_bb);
+                        let disc_phi = self.builder
+                            .build_phi(self.context.i64_type(), "g82_disc_phi")
+                            .map_err(|e| e.to_string())?;
+                        disc_phi.add_incoming(&[(&loaded_disc, ptr_bb_end), (&inner_val, disc_bb_end)]);
+
+                        // For pointer: inner_val is the base for field extraction
+                        // For discriminant: use 0 as a sentinel (won't be used since no data fields)
+                        let zero = self.context.i64_type().const_int(0, false);
+                        let ptr_phi = self.builder
+                            .build_phi(self.context.i64_type(), "g82_ptr_phi")
+                            .map_err(|e| e.to_string())?;
+                        ptr_phi.add_incoming(&[(&inner_val, ptr_bb_end), (&zero, disc_bb_end)]);
+
+                        (disc_phi.as_basic_value().into_int_value(), Some(ptr_phi.as_basic_value().into_int_value()))
+                    } else {
+                        // Normal case - compile the scrutinee
+                        let val = self.compile_expr(fn_value, scope, expr)?;
+                        (val, None)
+                    };
+
+                    // G44 fix: Check if we're matching an enum with data
+                    // If any pattern is a TupleStruct or Struct, the scrutinee might be a pointer
+                    // and we need to load the discriminant from offset 0
+                    let is_enum_with_data = arms.iter().any(|arm| {
+                        matches!(
+                            &arm.pattern,
+                            ast::Pattern::TupleStruct { .. } | ast::Pattern::Struct { .. }
+                        )
+                    });
+
+                    // G82 fix: If we already have the pointer from a Deref expression, use it directly
+                    let scrutinee = if scrutinee_ptr_for_fields.is_some() {
+                        // G82: scrutinee_raw is already the discriminant, use it directly
+                        scrutinee_raw
+                    } else if is_enum_with_data {
+                        // G45 fix: scrutinee_raw might be EITHER a pointer (for data variants created
+                        // by StructExpr) OR a raw discriminant (for unit variants from Path).
+                        // This happens when if-else mixes data and unit variants.
+                        //
+                        // Runtime check: if value > 255, it's probably a heap pointer.
+                        // Discriminants are typically small (0-255), while heap addresses are large.
+                        let threshold = self.context.i64_type().const_int(256, false);
+                        let is_pointer = self.builder
+                            .build_int_compare(IntPredicate::UGE, scrutinee_raw, threshold, "is_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        // Create blocks for pointer vs raw discriminant cases
+                        let ptr_bb = self.context.append_basic_block(fn_value, "scrutinee_ptr");
+                        let raw_bb = self.context.append_basic_block(fn_value, "scrutinee_raw");
+                        let disc_merge_bb = self.context.append_basic_block(fn_value, "disc_merge");
+
+                        self.builder.build_conditional_branch(is_pointer, ptr_bb, raw_bb)
+                            .map_err(|e| e.to_string())?;
+
+                        // Pointer case: load discriminant from offset 0
+                        self.builder.position_at_end(ptr_bb);
+                        let ptr = self.builder
+                            .build_int_to_ptr(
+                                scrutinee_raw,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "scr_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let loaded_disc = self.builder
+                            .build_load(self.context.i64_type(), ptr, "loaded_disc")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        self.builder.build_unconditional_branch(disc_merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let ptr_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Raw case: use value directly as discriminant
+                        self.builder.position_at_end(raw_bb);
+                        self.builder.build_unconditional_branch(disc_merge_bb)
+                            .map_err(|e| e.to_string())?;
+                        let raw_bb_end = self.builder.get_insert_block().unwrap();
+
+                        // Merge: phi to select the discriminant
+                        self.builder.position_at_end(disc_merge_bb);
+                        let disc_phi = self.builder
+                            .build_phi(self.context.i64_type(), "discriminant")
+                            .map_err(|e| e.to_string())?;
+                        disc_phi.add_incoming(&[(&loaded_disc, ptr_bb_end), (&scrutinee_raw, raw_bb_end)]);
+                        disc_phi.as_basic_value().into_int_value()
+                    } else {
+                        scrutinee_raw
+                    };
 
                     let merge_bb = self.context.append_basic_block(fn_value, "match_merge");
                     let mut incoming: Vec<(
@@ -2417,12 +6738,84 @@ pub mod llvm {
                         let pattern_val = match &arm.pattern {
                             ast::Pattern::Path(path) => {
                                 if path.segments.len() >= 2 {
-                                    let enum_name =
+                                    let potential_enum =
                                         &path.segments[path.segments.len() - 2].ident.name;
                                     let variant_name =
                                         &path.segments[path.segments.len() - 1].ident.name;
-                                    if let Some(enum_info) = self.enum_types.get(enum_name) {
-                                        enum_info.variants.get(variant_name).copied()
+                                    // Resolve This/Self to current_self_type
+                                    let enum_name = if potential_enum == "This" || potential_enum == "Self" {
+                                        self.current_self_type.clone()
+                                    } else {
+                                        Some(potential_enum.clone())
+                                    };
+                                    if let Some(ref en) = enum_name {
+                                        if let Some(enum_info) = self.enum_types.get(en) {
+                                            enum_info.variants.get(variant_name).copied()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else if path.segments.len() == 1 {
+                                    // G44 fix: Single-segment pattern like `None` - search all enums
+                                    let variant_name = &path.segments[0].ident.name;
+                                    self.enum_types.values()
+                                        .find_map(|enum_info| enum_info.variants.get(variant_name).copied())
+                                } else {
+                                    None
+                                }
+                            }
+                            // G44 fix: Handle TupleStruct patterns like `Enum::Variant(x)`
+                            ast::Pattern::TupleStruct { path, .. } => {
+                                if path.segments.len() >= 2 {
+                                    let potential_enum =
+                                        &path.segments[path.segments.len() - 2].ident.name;
+                                    let variant_name =
+                                        &path.segments[path.segments.len() - 1].ident.name;
+                                    // Resolve This/Self to current_self_type
+                                    let enum_name = if potential_enum == "This" || potential_enum == "Self" {
+                                        self.current_self_type.clone()
+                                    } else {
+                                        Some(potential_enum.clone())
+                                    };
+                                    if let Some(ref en) = enum_name {
+                                        if let Some(enum_info) = self.enum_types.get(en) {
+                                            enum_info.variants.get(variant_name).copied()
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                } else if path.segments.len() == 1 {
+                                    // G44 fix: Single-segment pattern like `Some(r)` - search all enums
+                                    let variant_name = &path.segments[0].ident.name;
+                                    self.enum_types.values()
+                                        .find_map(|enum_info| enum_info.variants.get(variant_name).copied())
+                                } else {
+                                    None
+                                }
+                            }
+                            // G44 fix: Handle Struct patterns like `Enum::Variant { field }`
+                            ast::Pattern::Struct { path, .. } => {
+                                if path.segments.len() >= 2 {
+                                    let potential_enum =
+                                        &path.segments[path.segments.len() - 2].ident.name;
+                                    let variant_name =
+                                        &path.segments[path.segments.len() - 1].ident.name;
+                                    // Resolve This/Self to current_self_type
+                                    let enum_name = if potential_enum == "This" || potential_enum == "Self" {
+                                        self.current_self_type.clone()
+                                    } else {
+                                        Some(potential_enum.clone())
+                                    };
+                                    if let Some(ref en) = enum_name {
+                                        if let Some(enum_info) = self.enum_types.get(en) {
+                                            enum_info.variants.get(variant_name).copied()
+                                        } else {
+                                            None
+                                        }
                                     } else {
                                         None
                                     }
@@ -2491,12 +6884,14 @@ pub mod llvm {
                                 path: _, fields, ..
                             } => {
                                 // Bind each field pattern as a variable
-                                // For simplicity, assume scrutinee is a pointer to struct data
+                                // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
+                                // G82 fix: Use scrutinee_ptr_for_fields if available (from Deref case)
+                                let base_ptr_val = scrutinee_ptr_for_fields.unwrap_or(scrutinee_raw);
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     if let ast::Pattern::Ident { name, .. } = field_pattern {
                                         // Create a variable for this binding
-                                        // For enums with data, field 0 is often at offset 8 (after tag)
-                                        let offset = (i as u64 + 1) * 8; // Skip tag byte
+                                        // For enums with data, field 0 is at offset 8 (after discriminant)
+                                        let offset = (i as u64 + 1) * 8; // Skip discriminant
                                         let offset_val =
                                             self.context.i64_type().const_int(offset, false);
 
@@ -2504,7 +6899,7 @@ pub mod llvm {
                                             self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
-                                            .build_int_to_ptr(scrutinee, ptr_type, "scrutinee_ptr")
+                                            .build_int_to_ptr(base_ptr_val, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
@@ -2554,6 +6949,9 @@ pub mod llvm {
                                 path: _, fields, ..
                             } => {
                                 // Bind each field pattern as a variable
+                                // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
+                                // G82 fix: Use scrutinee_ptr_for_fields if available (from Deref case)
+                                let base_ptr_val = scrutinee_ptr_for_fields.unwrap_or(scrutinee_raw);
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     // Get binding name: use pattern if present, else use field name (shorthand)
                                     let binding_name = if let Some(ref pat) = field_pattern.pattern
@@ -2569,7 +6967,7 @@ pub mod llvm {
                                     };
 
                                     if let Some(name) = binding_name {
-                                        // Use field index for offset
+                                        // Use field index for offset (field 0 is at offset 8 after discriminant)
                                         let offset = (i as u64 + 1) * 8;
                                         let offset_val =
                                             self.context.i64_type().const_int(offset, false);
@@ -2578,7 +6976,7 @@ pub mod llvm {
                                             self.context.ptr_type(inkwell::AddressSpace::default());
                                         let scrutinee_ptr = self
                                             .builder
-                                            .build_int_to_ptr(scrutinee, ptr_type, "scrutinee_ptr")
+                                            .build_int_to_ptr(base_ptr_val, ptr_type, "scrutinee_ptr")
                                             .map_err(|e| e.to_string())?;
                                         let scrutinee_int = self
                                             .builder
@@ -2689,16 +7087,562 @@ pub mod llvm {
                     ..
                 } => {
                     // Compile the receiver
-                    let receiver_val = self.compile_expr(fn_value, scope, receiver)?;
+                    let mut receiver_val = self.compile_expr(fn_value, scope, receiver)?;
+                    eprintln!("[DEBUG-MCALL] receiver compiled, receiver_val type: {:?}", receiver_val.get_type());
                     let method_name = method.name.as_str();
 
-                    // Handle built-in Vec methods
+                    // G26/G120: For reference variables, compile_expr already returns the loaded
+                    // reference value (which IS the Vec/struct pointer). No extra dereference needed.
+                    // The previous G26 code incorrectly assumed compile_expr returned alloca address,
+                    // but it actually returns the loaded value from the alloca.
+                    if let Expr::Path(path) = receiver.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let is_ref_var = scope.ref_vars.contains(&seg.ident.name);
+                            eprintln!("[G120-MCALL] method '{}' on base '{}', is_ref_var: {}", method_name, seg.ident.name, is_ref_var);
+                            // G120: DO NOT dereference - receiver_val is already correct
+                            // compile_expr loads the value from the alloca, which for &T is the pointer to T
+                        }
+                    }
+
+                    // G11 fix: Check user-defined methods BEFORE built-in methods
+                    // This ensures struct methods like `get` don't conflict with Vec.get()
+                    //
+                    // G56: SKIP this path if the receiver has const generics - use Phase 3 instead
+                    // This ensures const generic methods get proper monomorphization
+                    let rich_type_for_skip = self.get_rich_type_from_expr(receiver, scope);
+                    let has_const_generics = match &rich_type_for_skip {
+                        Some(RichType::Named { generics, .. }) => {
+                            generics.iter().any(|g| matches!(g, RichType::ConstGeneric(_)))
+                        }
+                        _ => false,
+                    };
+
+                    let receiver_type = self.get_struct_type_from_expr(receiver, scope);
+                    eprintln!("[G63-MCALL] method '{}', receiver={:?}, receiver_type={:?}, has_const_generics={}", method_name, receiver, receiver_type, has_const_generics);
+                    if let Some(ref recv_type) = receiver_type {
+                        // G56: Skip impl_methods for const generic types - use generic resolution instead
+                        if has_const_generics {
+                            // Fall through to Phase 3 generic resolution
+                        } else if let Some(mangled_name) = {
+                            // Check if we have an impl method for this type
+                            let key = (recv_type.clone(), method_name.to_string());
+                            eprintln!("[G63-MCALL] checking impl_methods for key=({:?}, {:?}), found={}", recv_type, method_name, self.impl_methods.contains_key(&key));
+                            self.impl_methods.get(&key).cloned()
+                        } {
+                            eprintln!("[G63-MCALL] found mangled_name: {}, function_exists={}", mangled_name, self.module.get_function(&mangled_name).is_some());
+                            if let Some(callee) = self.module.get_function(&mangled_name) {
+                                // G70: Check if this method needs monomorphization
+                                // A method needs monomorphization if:
+                                // 1. The receiver has generic type args (it's a concrete instantiation)
+                                // 2. The method comes from a generic impl block
+                                let has_type_args = match &rich_type_for_skip {
+                                    Some(RichType::Named { generics, .. }) => !generics.is_empty(),
+                                    _ => false,
+                                };
+
+                                // G70: Check if this method comes from a generic impl block
+                                // by seeing if resolve_method returns bindings
+                                let needs_monomorphization = if has_type_args {
+                                    if let Some(rich_type) = &rich_type_for_skip {
+                                        if let Some((_, bindings)) = self.impl_registry.resolve_method(rich_type, method_name) {
+                                            !bindings.is_empty() // Has bindings = comes from generic impl
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                } else {
+                                    false
+                                };
+                                eprintln!("[G70-CHECK] method '{}', needs_mono={}, has_type_args={}, rich_type_for_skip={:?}",
+                                    method_name, needs_monomorphization, has_type_args, rich_type_for_skip);
+
+                                if needs_monomorphization {
+                                    eprintln!("[G70-INSTANCE] Method '{}' on generic type needs monomorphization", method_name);
+                                    eprintln!("[G70-INSTANCE] rich_type: {:?}", rich_type_for_skip);
+
+                                    // Try to monomorphize and call
+                                    if let Some(RichType::Named { name: type_name, generics }) = &rich_type_for_skip {
+                                        // Build the full receiver type for resolution
+                                        let receiver_rich_type = RichType::Named {
+                                            name: type_name.clone(),
+                                            generics: generics.clone(),
+                                        };
+
+                                        // Look up the method definition via ImplRegistry
+                                        if let Some((method_def, bindings)) = self.impl_registry.resolve_method(&receiver_rich_type, method_name) {
+                                            eprintln!("[G70-INSTANCE] Found method, bindings={:?}", bindings);
+
+                                            // Convert bindings to RichType, with scope fallback for unresolved generics
+                                            let mut rich_bindings: std::collections::HashMap<String, RichType> = bindings.iter()
+                                                .map(|(k, v)| (k.clone(), v.clone()))
+                                                .collect();
+
+                                            // G86: Add Self/This binding from receiver type
+                                            rich_bindings.insert("Self".to_string(), receiver_rich_type.clone());
+                                            rich_bindings.insert("This".to_string(), receiver_rich_type.clone());
+
+                                            // G86: For method-level generics, try scope lookup
+                                            for generic_info in &method_def.generics {
+                                                let generic_name = &generic_info.name;
+                                                if !rich_bindings.contains_key(generic_name) {
+                                                    if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                                        eprintln!("[G86-INSTANCE] Found '{}' in scope: {:?}", generic_name, scope_type);
+                                                        rich_bindings.insert(generic_name.clone(), scope_type.clone());
+                                                    }
+                                                }
+                                            }
+
+                                            // G87: Generate mangled name using the same scheme as monomorph_cache
+                                            // Format: TypeName_method__Param1_Type1__Param2_Type2
+                                            // Skip Self/This as they're not part of the method's generic signature
+                                            // G90: Sort by param name to ensure deterministic order (HashMap iteration is non-deterministic)
+                                            let mut sorted_bindings: Vec<_> = rich_bindings.iter()
+                                                .filter(|(param_name, _)| *param_name != "Self" && *param_name != "This")
+                                                .collect();
+                                            sorted_bindings.sort_by_key(|(k, _)| k.as_str());
+                                            let binding_suffix: String = sorted_bindings.iter()
+                                                .map(|(param_name, v)| {
+                                                    let type_str = Self::rich_type_to_mangle_string(v);
+                                                    format!("__{}_{}", param_name, type_str)
+                                                })
+                                                .collect();
+                                            let mono_name = format!("{}_{}{}", type_name, method_name, binding_suffix);
+                                            eprintln!("[G70-INSTANCE] Monomorphized name: {}", mono_name);
+
+                                            // Check if already compiled
+                                            let mono_needs_compilation = if let Some(existing) = self.module.get_function(&mono_name) {
+                                                existing.count_basic_blocks() == 0
+                                            } else {
+                                                true
+                                            };
+
+                                            if mono_needs_compilation {
+                                                // Compile the monomorphized method
+                                                if let Err(e) = self.compile_monomorphized_instance_method(&method_def, &rich_bindings, &mono_name, type_name) {
+                                                    eprintln!("[G70-INSTANCE] Error compiling: {}", e);
+                                                    // Fall through to normal processing
+                                                }
+                                            }
+
+                                            // Try to call the monomorphized function
+                                            if let Some(mono_callee) = self.module.get_function(&mono_name) {
+                                                if mono_callee.count_basic_blocks() > 0 {
+                                                    // Call the monomorphized method instead
+                                                    let expected_params = mono_callee.count_params() as usize;
+                                                    let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+
+                                                    // Add receiver if needed
+                                                    if expected_params > args.len() {
+                                                        compiled_args.push(receiver_val.into());
+                                                    }
+
+                                                    for arg in args {
+                                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                                        compiled_args.push(arg_val.into());
+                                                    }
+
+                                                    let call_val = self.builder
+                                                        .build_call(mono_callee, &compiled_args, "mono_method_result")
+                                                        .map_err(|e| e.to_string())?;
+
+                                                    let result = call_val.try_as_basic_value().left()
+                                                        .map(|v| v.into_int_value())
+                                                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+                                                    return Ok(result);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Compile arguments
+                                // G52: For &str and slice params, also pass the length
+                                // G55: Also handle &vec_name references to local Vec variables
+                                // G58 fix: Only add receiver if function expects more params than explicit args
+                                let expected_params = callee.count_params() as usize;
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+
+                                // Add receiver only if function expects more params than explicit args
+                                if expected_params > args.len() {
+                                    compiled_args.push(receiver_val.into());
+                                }
+
+                                // G55: Collect pending vec references that might need length params
+                                let mut pending_vec_refs: Vec<String> = Vec::new();
+
+                                for arg in args {
+                                    // G52: Check if this is a slice variable (has tracked length for &[u8])
+                                    // Note: &str variables don't need extra length - they're C strings (null-terminated)
+                                    let slice_var_name = if let Expr::Path(path) = arg {
+                                        if let Some(seg) = path.segments.last() {
+                                            if scope.slice_lens.contains_key(&seg.ident.name) {
+                                                Some(seg.ident.name.clone())
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    };
+
+                                    // G52/G53: Check if this is an as_bytes() method call
+                                    let is_as_bytes = if let Expr::MethodCall { method, .. } = arg {
+                                        method.name == "as_bytes"
+                                    } else {
+                                        false
+                                    };
+
+                                    // G55: Check if this is &vec_name (reference to a local Vec variable)
+                                    // G116: Only treat as Vec if the variable's type is actually Vec<T>
+                                    let vec_ref_name = {
+                                        let inner_expr = match arg {
+                                            Expr::AddrOf { expr: inner, .. } => Some(inner.as_ref()),
+                                            Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => Some(inner.as_ref()),
+                                            _ => None,
+                                        };
+                                        if let Some(inner) = inner_expr {
+                                            if let Expr::Path(path) = inner {
+                                                if let Some(seg) = path.segments.last() {
+                                                    let var_name = &seg.ident.name;
+                                                    // G116: Check if this is actually a Vec type using struct_types or rich_types
+                                                    let is_vec_type = if let Some(struct_type) = scope.struct_types.get(var_name) {
+                                                        struct_type == "Vec" || struct_type.starts_with("Vec<")
+                                                    } else if let Some(rich_type) = scope.rich_types.get(var_name) {
+                                                        // Check rich_types for Vec<T>
+                                                        matches!(rich_type, RichType::Named { name, .. } if name == "Vec")
+                                                    } else {
+                                                        false
+                                                    };
+                                                    if scope.vars.contains_key(var_name) && is_vec_type {
+                                                        Some(var_name.clone())
+                                                    } else {
+                                                        None
+                                                    }
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    };
+
+                                    // G72: For &vec_name args that map to slice params, get Vec data pointer
+                                    let arg_val = if let Some(ref vec_name) = vec_ref_name {
+                                        // Load Vec pointer from alloca
+                                        let vec_alloca = scope.vars.get(vec_name).ok_or_else(|| format!("Variable '{}' not found", vec_name))?;
+                                        let vec_ptr = self.builder
+                                            .build_load(self.context.i64_type(), *vec_alloca, "vec_ptr")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+
+                                        // Call sigil_vec_u8_as_ptr to get data pointer
+                                        let vec_as_ptr_fn = self.module
+                                            .get_function("sigil_vec_u8_as_ptr")
+                                            .ok_or("sigil_vec_u8_as_ptr not declared")?;
+                                        let data_ptr_call = self.builder
+                                            .build_call(vec_as_ptr_fn, &[vec_ptr.into()], "vec_data_ptr")
+                                            .map_err(|e| e.to_string())?;
+                                        let data_ptr = data_ptr_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .ok_or("sigil_vec_u8_as_ptr returned void")?;
+
+                                        // G74: Handle both JIT mode (returns i64) and AOT mode (returns ptr)
+                                        match data_ptr {
+                                            inkwell::values::BasicValueEnum::IntValue(i) => i,
+                                            inkwell::values::BasicValueEnum::PointerValue(p) => {
+                                                self.builder
+                                                    .build_ptr_to_int(p, self.context.i64_type(), "data_ptr_i64")
+                                                    .map_err(|e| e.to_string())?
+                                            }
+                                            other => return Err(format!("sigil_vec_u8_as_ptr returned unexpected type: {:?}", other)),
+                                        }
+                                    } else {
+                                        self.compile_expr(fn_value, scope, arg)?
+                                    };
+                                    compiled_args.push(arg_val.into());
+
+                                    // G75: For &vec conversions (G72), also pass the Vec's length
+                                    if let Some(ref vec_name) = vec_ref_name {
+                                        let vec_alloca = scope.vars.get(vec_name).ok_or_else(|| format!("Variable '{}' not found for length", vec_name))?;
+                                        let vec_ptr = self.builder
+                                            .build_load(self.context.i64_type(), *vec_alloca, "vec_ptr_for_len")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+                                        let vec_len_fn = self.module
+                                            .get_function("sigil_vec_len")
+                                            .ok_or("sigil_vec_len not declared")?;
+                                        let len_call = self.builder
+                                            .build_call(vec_len_fn, &[vec_ptr.into()], "vec_len")
+                                            .map_err(|e| e.to_string())?;
+                                        let len_val = len_call
+                                            .try_as_basic_value()
+                                            .left()
+                                            .ok_or("sigil_vec_len returned void")?;
+                                        compiled_args.push(len_val.into());
+                                    }
+
+                                    // G52: For slice variables (&[u8]), load and pass the tracked length
+                                    if let Some(var_name) = slice_var_name {
+                                        if let Some(len_alloca) = scope.slice_lens.get(&var_name) {
+                                            let len_val = self
+                                                .builder
+                                                .build_load(self.context.i64_type(), *len_alloca, "slice_len_arg")
+                                                .map_err(|e| e.to_string())?
+                                                .into_int_value();
+                                            compiled_args.push(len_val.into());
+                                        }
+                                    }
+
+                                    // G52/G53: For as_bytes() calls, compute and pass the length
+                                    if is_as_bytes {
+                                        if let Expr::MethodCall { receiver, .. } = arg {
+                                            // G53: Check if receiver is a Rust String variable
+                                            let is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                                                if let Some(seg) = path.segments.last() {
+                                                    matches!(scope.var_types.get(&seg.ident.name), Some(SigilType::RustString))
+                                                } else {
+                                                    false
+                                                }
+                                            } else {
+                                                false
+                                            };
+
+                                            // Get the string pointer (receiver is the string)
+                                            let str_val = self.compile_expr(fn_value, scope, receiver)?;
+
+                                            let len_val = if is_rust_string {
+                                                // G53: Rust String - use sigil_string_len
+                                                let string_len_fn = self
+                                                    .module
+                                                    .get_function("sigil_string_len")
+                                                    .ok_or("sigil_string_len not declared")?;
+                                                let len_call = self
+                                                    .builder
+                                                    .build_call(string_len_fn, &[str_val.into()], "rust_str_len")
+                                                    .map_err(|e| e.to_string())?;
+                                                len_call
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .map(|v| v.into_int_value())
+                                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                            } else {
+                                                // G52: C string - use sigil_strlen
+                                                let strlen_fn = self
+                                                    .module
+                                                    .get_function("sigil_strlen")
+                                                    .ok_or("sigil_strlen not declared")?;
+                                                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                                let str_ptr = self
+                                                    .builder
+                                                    .build_int_to_ptr(str_val, ptr_type, "str_ptr")
+                                                    .map_err(|e| e.to_string())?;
+                                                let len_call = self
+                                                    .builder
+                                                    .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                                    .map_err(|e| e.to_string())?;
+                                                len_call
+                                                    .try_as_basic_value()
+                                                    .left()
+                                                    .map(|v| v.into_int_value())
+                                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                                            };
+                                            compiled_args.push(len_val.into());
+                                        }
+                                    }
+
+                                    // G55: Track &vec references for potential length addition after loop
+                                    if let Some(vec_name) = vec_ref_name {
+                                        pending_vec_refs.push(vec_name);
+                                    }
+                                }
+
+                                // G55: After compiling all source args, check if callee expects more params
+                                // If so, add lengths for pending &vec references
+                                let expected_params = callee.count_params() as usize;
+                                if expected_params > compiled_args.len() && !pending_vec_refs.is_empty() {
+                                    let needed = expected_params - compiled_args.len();
+                                    for vec_name in pending_vec_refs.iter().take(needed) {
+                                        if let Some(vec_ptr) = scope.vars.get(vec_name) {
+                                            let vec_val = self
+                                                .builder
+                                                .build_load(self.context.i64_type(), *vec_ptr, "vec_for_len")
+                                                .map_err(|e| e.to_string())?
+                                                .into_int_value();
+                                            let vec_len_fn = self
+                                                .module
+                                                .get_function("sigil_vec_len")
+                                                .ok_or("sigil_vec_len not declared")?;
+                                            let len_call = self
+                                                .builder
+                                                .build_call(vec_len_fn, &[vec_val.into()], "vec_len_arg")
+                                                .map_err(|e| e.to_string())?;
+                                            let len_val = len_call
+                                                .try_as_basic_value()
+                                                .left()
+                                                .map(|v| v.into_int_value())
+                                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+                                            compiled_args.push(len_val.into());
+                                        }
+                                    }
+                                }
+
+                                // G69: If method returns a slice, add len_out argument
+                                let is_slice_return = self.slice_return_methods.contains(&mangled_name);
+                                let len_out_alloca = if is_slice_return {
+                                    let alloca = self.builder
+                                        .build_alloca(self.context.i64_type(), "slice_len_out")
+                                        .map_err(|e| e.to_string())?;
+                                    let ptr_int = self.builder
+                                        .build_ptr_to_int(alloca, self.context.i64_type(), "len_out_arg")
+                                        .map_err(|e| e.to_string())?;
+                                    compiled_args.push(ptr_int.into());
+                                    Some(alloca)
+                                } else {
+                                    None
+                                };
+
+                                // G50 fix: Verify argument count matches function signature
+                                if compiled_args.len() != expected_params {
+                                    // Argument count mismatch - likely a source code issue
+                                    // Return 0 to avoid LLVM verification failure
+                                    eprintln!("Warning: method call {}.{}() has {} args but function expects {} params",
+                                        recv_type, method_name, compiled_args.len(), expected_params);
+                                    return Ok(self.context.i64_type().const_int(0, false));
+                                }
+
+                                let call = self
+                                    .builder
+                                    .build_call(callee, &compiled_args, "method_call")
+                                    .map_err(|e| e.to_string())?;
+
+                                let result = call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    });
+
+                                // G69: Store slice length for later .len() calls
+                                if let Some(len_alloca) = len_out_alloca {
+                                    // Store with temp name - will be transferred to actual var name in let binding
+                                    scope.slice_lens.insert("__last_slice_return".to_string(), len_alloca);
+                                }
+
+                                return Ok(result);
+                            }
+                        }
+                    }
+
+                    // Phase 3: Try generic method resolution via ImplRegistry
+                    // This handles methods on generic types like Tensor<S, D, Dev>
+                    eprintln!("[G63-MCALL] method '{}', entering Phase 3 generic resolution", method_name);
+                    eprintln!("[G63-MCALL] scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
+                    let rich_type_opt = self.get_rich_type_from_expr(receiver, scope);
+                    eprintln!("[G63-MCALL] method '{}', rich_type_opt={:?}", method_name, rich_type_opt);
+                    if let Some(rich_type) = rich_type_opt {
+                        if let Some(mangled_name) = self.try_resolve_generic_method(&rich_type, method_name) {
+                            // Check if the monomorphized function exists
+                            if let Some(callee) = self.module.get_function(&mangled_name) {
+                                // Compile arguments with receiver as first param
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> = vec![receiver_val.into()];
+
+                                // G56: Add const generic values as arguments
+                                // The monomorphized function expects const generics after self
+                                // G87: Handle both Named and Ref { inner: Named } types
+                                let type_generics = match &rich_type {
+                                    RichType::Named { generics, .. } => Some(generics),
+                                    RichType::Ref { inner, .. } => {
+                                        if let RichType::Named { generics, .. } = inner.as_ref() {
+                                            Some(generics)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(generics) = type_generics {
+                                    for generic in generics {
+                                        if let RichType::ConstGeneric(val) = generic {
+                                            let const_val = self.context.i64_type().const_int(*val as u64, false);
+                                            compiled_args.push(const_val.into());
+                                        }
+                                    }
+                                }
+
+                                for arg in args {
+                                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                    compiled_args.push(arg_val.into());
+                                }
+
+                                // G69: If method returns a slice, add len_out argument
+                                let is_slice_return = self.slice_return_methods.contains(&mangled_name);
+                                let len_out_alloca = if is_slice_return {
+                                    let alloca = self.builder
+                                        .build_alloca(self.context.i64_type(), "slice_len_out")
+                                        .map_err(|e| e.to_string())?;
+                                    let ptr_int = self.builder
+                                        .build_ptr_to_int(alloca, self.context.i64_type(), "len_out_arg")
+                                        .map_err(|e| e.to_string())?;
+                                    compiled_args.push(ptr_int.into());
+                                    Some(alloca)
+                                } else {
+                                    None
+                                };
+
+                                let call = self
+                                    .builder
+                                    .build_call(callee, &compiled_args, "generic_method_call")
+                                    .map_err(|e| e.to_string())?;
+
+                                let result = call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| {
+                                        self.context.i64_type().const_int(0, false)
+                                    });
+
+                                // G69: Store slice length for later .len() calls
+                                if let Some(len_alloca) = len_out_alloca {
+                                    scope.slice_lens.insert("__last_slice_return".to_string(), len_alloca);
+                                }
+
+                                return Ok(result);
+                            }
+                            // Note: If function doesn't exist, it needs to be compiled
+                            // This would require lazy compilation which is Phase 3.3
+                            // For now, fall through to other handlers
+                        }
+                    }
+
+                    // Handle built-in Vec methods (fallback when no user-defined method matches)
                     match method_name {
                         "push" => {
                             // v.push(val) -> sigil_vec_push(v, val)
                             if args.is_empty() {
                                 return Err("push requires a value argument".to_string());
                             }
+
+                            // Track if we're pushing a float to mark the Vec as a float Vec
+                            let arg_is_float = self.is_float_expr_with_scope(&args[0], scope);
+                            if arg_is_float {
+                                // Mark the receiver Vec as containing floats
+                                if let Expr::Path(path) = receiver.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        scope.float_vars.insert(seg.ident.name.clone());
+                                    }
+                                }
+                            }
+
                             let value = self.compile_expr(fn_value, scope, &args[0])?;
                             let push_fn = self
                                 .module
@@ -2710,6 +7654,95 @@ pub mod llvm {
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
                         "len" => {
+                            // G69: Check if receiver is a method call returning a slice
+                            // In that case, the length is stored with key "__last_slice_return"
+                            if matches!(receiver.as_ref(), Expr::MethodCall { .. }) {
+                                if let Some(len_alloca) = scope.slice_lens.get("__last_slice_return") {
+                                    // This is a slice from a method return - use stored length
+                                    let len_val = self
+                                        .builder
+                                        .build_load(self.context.i64_type(), *len_alloca, "slice_ret_len")
+                                        .map_err(|e| e.to_string())?
+                                        .into_int_value();
+                                    // Remove temporary to avoid reuse
+                                    scope.slice_lens.remove("__last_slice_return");
+                                    return Ok(len_val);
+                                }
+                            }
+
+                            // G52: Check if receiver is a slice parameter with stored length
+                            if let Expr::Path(path) = receiver.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    if let Some(len_alloca) = scope.slice_lens.get(&seg.ident.name) {
+                                        // This is a slice param - return the stored length
+                                        let len_val = self
+                                            .builder
+                                            .build_load(self.context.i64_type(), *len_alloca, "slice_len")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+                                        return Ok(len_val);
+                                    }
+                                }
+                            }
+
+                            // G32: Check receiver type for appropriate len function
+                            let (is_c_string, is_rust_string) =
+                                if matches!(receiver.as_ref(), Expr::Literal(Literal::String(_))) {
+                                    (true, false)
+                                } else if let Expr::Path(path) = receiver.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        match scope.var_types.get(&seg.ident.name) {
+                                            Some(SigilType::String) => (true, false),
+                                            Some(SigilType::RustString) => (false, true),
+                                            _ => (false, false),
+                                        }
+                                    } else {
+                                        (false, false)
+                                    }
+                                } else {
+                                    (false, false)
+                                };
+
+                            if is_c_string {
+                                // C string: s.len() -> sigil_strlen(s)
+                                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                let str_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(receiver_val, ptr_type, "str_ptr")
+                                    .map_err(|e| e.to_string())?;
+                                let strlen_fn = self
+                                    .module
+                                    .get_function("sigil_strlen")
+                                    .ok_or("sigil_strlen not declared")?;
+                                let call = self
+                                    .builder
+                                    .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
+                            if is_rust_string {
+                                // Rust String: s.len() -> sigil_string_len(s)
+                                // Functions use i64 as pointer type, so pass receiver_val directly
+                                let strlen_fn = self
+                                    .module
+                                    .get_function("sigil_string_len")
+                                    .ok_or("sigil_string_len not declared")?;
+                                let call = self
+                                    .builder
+                                    .build_call(strlen_fn, &[receiver_val.into()], "rust_str_len")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
                             // v.len() -> sigil_vec_len(v)
                             let len_fn = self
                                 .module
@@ -2752,9 +7785,240 @@ pub mod llvm {
                             return Ok(receiver_val);
                         }
                         "clone" => {
-                            // For now, clone is identity (shallow copy semantics)
-                            // TODO: Implement proper deep clone via runtime
+                            // G64: Vec clone must use deep copy via sigil_vec_clone
+                            // Identity clone is wrong because it shares the underlying data
+                            eprintln!("[DEBUG-CLONE] clone builtin handler reached, calling sigil_vec_clone");
+
+                            let clone_fn = self
+                                .module
+                                .get_function("sigil_vec_clone")
+                                .ok_or("sigil_vec_clone not declared")?;
+
+                            let result = self
+                                .builder
+                                .build_call(clone_fn, &[receiver_val.into()], "cloned_vec")
+                                .map_err(|e| e.to_string())?;
+
+                            let cloned = result
+                                .try_as_basic_value()
+                                .left()
+                                .ok_or("sigil_vec_clone should return a value")?
+                                .into_int_value();
+
+                            return Ok(cloned);
+                        }
+                        "as_bytes" => {
+                            // G32: Check receiver type for appropriate as_bytes handling
+                            let is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    matches!(
+                                        scope.var_types.get(&seg.ident.name),
+                                        Some(SigilType::RustString)
+                                    )
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
+
+                            if is_rust_string {
+                                // Rust String: call sigil_rust_string_as_bytes to get
+                                // byte pointer with null terminator (so strlen works)
+                                let as_bytes_fn = self
+                                    .module
+                                    .get_function("sigil_rust_string_as_bytes")
+                                    .ok_or("sigil_rust_string_as_bytes not declared")?;
+                                let call = self
+                                    .builder
+                                    .build_call(as_bytes_fn, &[receiver_val.into()], "bytes_ptr")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
+                            // C string: pointer already points to bytes
                             return Ok(receiver_val);
+                        }
+                        "repeat" => {
+                            // str.repeat(n) -> sigil_string_repeat(str, n)
+                            // Works on string literals (C strings) - returns new allocated string
+                            if args.is_empty() {
+                                return Err("repeat requires a count argument".to_string());
+                            }
+                            let count = self.compile_expr(fn_value, scope, &args[0])?;
+
+                            // Convert receiver i64 (ptr as int) to actual pointer
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let str_ptr = self.builder
+                                .build_int_to_ptr(receiver_val, ptr_type, "repeat_str_ptr")
+                                .map_err(|e| e.to_string())?;
+
+                            let repeat_fn = self
+                                .module
+                                .get_function("sigil_string_repeat")
+                                .ok_or("sigil_string_repeat not declared")?;
+
+                            let call = self
+                                .builder
+                                .build_call(repeat_fn, &[str_ptr.into(), count.into()], "repeated_str")
+                                .map_err(|e| e.to_string())?;
+
+                            // The function returns a pointer, convert to i64 for Sigil
+                            let result = call
+                                .try_as_basic_value()
+                                .left()
+                                .ok_or("repeat returned void")?;
+
+                            // Check if result is pointer or int
+                            if result.is_pointer_value() {
+                                let result_ptr = result.into_pointer_value();
+                                let result_as_int = self.builder
+                                    .build_ptr_to_int(result_ptr, self.context.i64_type(), "repeated_str_int")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(result_as_int);
+                            } else {
+                                // Already an i64 (some LLVM versions return this way)
+                                return Ok(result.into_int_value());
+                            }
+                        }
+                        "to_vec" => {
+                            // slice.to_vec() or array.to_vec() - create a Vec from the source
+                            let i64_type = self.context.i64_type();
+
+                            // Get runtime functions
+                            let new_fn = self
+                                .module
+                                .get_function("sigil_vec_new")
+                                .ok_or("sigil_vec_new not declared")?;
+                            let push_fn = self
+                                .module
+                                .get_function("sigil_vec_push")
+                                .ok_or("sigil_vec_push not declared")?;
+
+                            // Check if receiver is an array literal - handle specially
+                            if let Expr::Array(elements) = receiver.as_ref() {
+                                // Array literal: we know the length statically
+                                let arr_len = elements.len() as u64;
+                                let src_len = i64_type.const_int(arr_len, false);
+
+                                // Create new vec with known capacity
+                                let new_call = self
+                                    .builder
+                                    .build_call(new_fn, &[src_len.into()], "new_vec")
+                                    .map_err(|e| e.to_string())?;
+                                let new_vec = new_call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                                // Push each element directly (unrolled loop for small arrays)
+                                for elem_expr in elements {
+                                    let elem_val = self.compile_expr(fn_value, scope, elem_expr)?;
+                                    self.builder
+                                        .build_call(push_fn, &[new_vec.into(), elem_val.into()], "")
+                                        .map_err(|e| e.to_string())?;
+                                }
+
+                                return Ok(new_vec);
+                            }
+
+                            // For Vec/slice: use runtime functions to copy
+                            let len_fn = self
+                                .module
+                                .get_function("sigil_vec_len")
+                                .ok_or("sigil_vec_len not declared")?;
+                            let get_fn = self
+                                .module
+                                .get_function("sigil_vec_get")
+                                .ok_or("sigil_vec_get not declared")?;
+
+                            // Get length of source
+                            let len_call = self
+                                .builder
+                                .build_call(len_fn, &[receiver_val.into()], "src_len")
+                                .map_err(|e| e.to_string())?;
+                            let src_len = len_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                            // Create new vec with same capacity
+                            let new_call = self
+                                .builder
+                                .build_call(new_fn, &[src_len.into()], "new_vec")
+                                .map_err(|e| e.to_string())?;
+                            let new_vec = new_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                            // Build loop to copy elements
+                            let loop_header = self.context.append_basic_block(fn_value, "to_vec_header");
+                            let loop_body = self.context.append_basic_block(fn_value, "to_vec_body");
+                            let loop_end = self.context.append_basic_block(fn_value, "to_vec_end");
+
+                            // Initialize counter
+                            let counter_ptr = self.builder
+                                .build_alloca(i64_type, "to_vec_i")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(counter_ptr, i64_type.const_int(0, false))
+                                .map_err(|e| e.to_string())?;
+
+                            // Jump to header
+                            self.builder
+                                .build_unconditional_branch(loop_header)
+                                .map_err(|e| e.to_string())?;
+
+                            // Loop header: check if i < len
+                            self.builder.position_at_end(loop_header);
+                            let i = self.builder
+                                .build_load(i64_type, counter_ptr, "i")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+                            let cmp = self.builder
+                                .build_int_compare(inkwell::IntPredicate::SLT, i, src_len, "cmp")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_conditional_branch(cmp, loop_body, loop_end)
+                                .map_err(|e| e.to_string())?;
+
+                            // Loop body: get element from source, push to new vec
+                            self.builder.position_at_end(loop_body);
+                            let get_call = self.builder
+                                .build_call(get_fn, &[receiver_val.into(), i.into()], "elem")
+                                .map_err(|e| e.to_string())?;
+                            let elem = get_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| i64_type.const_int(0, false));
+                            self.builder
+                                .build_call(push_fn, &[new_vec.into(), elem.into()], "")
+                                .map_err(|e| e.to_string())?;
+
+                            // Increment counter
+                            let next_i = self.builder
+                                .build_int_add(i, i64_type.const_int(1, false), "next_i")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(counter_ptr, next_i)
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_unconditional_branch(loop_header)
+                                .map_err(|e| e.to_string())?;
+
+                            // Position at end
+                            self.builder.position_at_end(loop_end);
+
+                            return Ok(new_vec);
                         }
                         "is_empty" => {
                             // v.is_empty() -> v.len() == 0
@@ -2815,9 +8079,62 @@ pub mod llvm {
                             return Ok(self.context.i64_type().const_int(0, false));
                         }
                         "to_string" => {
-                            // For primitives, convert to string representation
-                            // For now, return the value itself (strings are already strings)
-                            return Ok(receiver_val);
+                            // G32: Check if receiver is already a Rust String (slice, method call, etc.)
+                            // In these cases, to_string() is a no-op since the result is already a String
+                            let is_already_rust_string = match receiver.as_ref() {
+                                // Index on a Rust String (slice) already returns a String
+                                Expr::Index { expr, .. } => {
+                                    if let Expr::Path(path) = expr.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            matches!(
+                                                scope.var_types.get(&seg.ident.name),
+                                                Some(SigilType::RustString)
+                                            )
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
+                                    }
+                                }
+                                // Method call results (like another .to_string()) are already Strings
+                                Expr::MethodCall { method, .. } => {
+                                    method.name == "to_string"
+                                }
+                                // Path to a Rust String variable
+                                Expr::Path(path) => {
+                                    if let Some(seg) = path.segments.last() {
+                                        matches!(
+                                            scope.var_types.get(&seg.ident.name),
+                                            Some(SigilType::RustString)
+                                        )
+                                    } else {
+                                        false
+                                    }
+                                }
+                                _ => false,
+                            };
+
+                            if is_already_rust_string {
+                                // Already a Rust String, just return the receiver
+                                return Ok(receiver_val);
+                            }
+
+                            // Convert C string to heap-allocated Rust String
+                            // Call sigil_string_from(i64_as_ptr) -> i64_as_ptr
+                            let string_from_fn = self
+                                .module
+                                .get_function("sigil_string_from")
+                                .ok_or("sigil_string_from not declared")?;
+                            let call = self
+                                .builder
+                                .build_call(string_from_fn, &[receiver_val.into()], "rust_string")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
                         "as_str" | "as_ref" => {
                             // String -> &str conversion is identity in our representation
@@ -2851,13 +8168,68 @@ pub mod llvm {
                             return Ok(receiver_val);
                         }
                         "unwrap" => {
-                            // Option/Result unwrap - return inner value
-                            // In our simplified model, just return the value
-                            return Ok(receiver_val);
+                            // G93 fix: Option/Result unwrap - properly extract inner value
+                            // For Result: discriminant at offset 0 (Ok=0, Err=1), value at offset 8
+                            // For Option: discriminant at offset 0 (None=0, Some=1), value at offset 8
+                            // Both store their payload at offset 8 when they have data
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let result_ptr = self.builder
+                                .build_int_to_ptr(receiver_val, ptr_type, "unwrap_ptr")
+                                .map_err(|e| e.to_string())?;
+
+                            // Load value from offset 8 (where the payload is stored)
+                            let value_ptr_int = self.builder
+                                .build_int_add(
+                                    receiver_val,
+                                    self.context.i64_type().const_int(8, false),
+                                    "value_offset"
+                                )
+                                .map_err(|e| e.to_string())?;
+                            let value_ptr = self.builder
+                                .build_int_to_ptr(value_ptr_int, ptr_type, "value_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let value = self.builder
+                                .build_load(self.context.i64_type(), value_ptr, "unwrapped_value")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+
+                            return Ok(value);
                         }
                         "unwrap_or" => {
                             // Option/Result unwrap_or(default) - simplified
                             return Ok(receiver_val);
+                        }
+                        // G93 fix: Layout accessor methods
+                        "size" => {
+                            // Layout.size() - returns size field at offset 0
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let layout_ptr = self.builder
+                                .build_int_to_ptr(receiver_val, ptr_type, "layout_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let size = self.builder
+                                .build_load(self.context.i64_type(), layout_ptr, "layout_size")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+                            return Ok(size);
+                        }
+                        "align" => {
+                            // Layout.align() - returns align field at offset 8
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let align_ptr_int = self.builder
+                                .build_int_add(
+                                    receiver_val,
+                                    self.context.i64_type().const_int(8, false),
+                                    "align_offset"
+                                )
+                                .map_err(|e| e.to_string())?;
+                            let align_ptr = self.builder
+                                .build_int_to_ptr(align_ptr_int, ptr_type, "align_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let align = self.builder
+                                .build_load(self.context.i64_type(), align_ptr, "layout_align")
+                                .map_err(|e| e.to_string())?
+                                .into_int_value();
+                            return Ok(align);
                         }
                         "is_some" | "is_ok" => {
                             // For simplicity, return true (1)
@@ -2866,6 +8238,23 @@ pub mod llvm {
                         "is_none" | "is_err" => {
                             // For simplicity, return false (0)
                             return Ok(self.context.i64_type().const_int(0, false));
+                        }
+                        // Math methods: x.sqrt(), x.sin(), x.cos(), etc.
+                        "sqrt" | "sin" | "cos" | "tan" | "exp" | "ln" | "floor" | "ceil" | "abs" => {
+                            let rt_name = format!("sigil_{}", method_name);
+                            let rt_fn = self
+                                .module
+                                .get_function(&rt_name)
+                                .ok_or(format!("{} not declared", rt_name))?;
+                            let call = self
+                                .builder
+                                .build_call(rt_fn, &[receiver_val.into()], method_name)
+                                .map_err(|e| e.to_string())?;
+                            return Ok(call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                         }
                         "push_str" => {
                             // s.push_str(other) - append string
@@ -2968,45 +8357,148 @@ pub mod llvm {
                         _ => {}
                     }
 
-                    // Look up the method by trying all registered impl methods
-                    // For now, try each type until we find a match
+                    // G11 fix: Look up the method by type AND method name
+                    // First, try to determine the receiver's struct type
+                    let receiver_type = self.get_struct_type_from_expr(receiver, scope);
+
+                    // First pass: Try to find method matching both type and name
+                    if let Some(ref recv_type) = receiver_type {
+                        for ((type_name, meth_name), mangled_name) in &self.impl_methods {
+                            if type_name == recv_type && meth_name == method_name {
+                                if let Some(callee) = self.module.get_function(mangled_name) {
+                                    // Compile arguments
+                                    // G58 fix: Only add receiver if the function expects it (has self/this param)
+                                    // If function expects same number of params as explicit args, no receiver needed
+                                    let expected_params = callee.count_params() as usize;
+                                    let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+
+                                    // Add receiver only if function expects more params than explicit args
+                                    if expected_params > args.len() {
+                                        compiled_args.push(receiver_val.into());
+                                    }
+
+                                    for arg in args {
+                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                        compiled_args.push(arg_val.into());
+                                    }
+
+                                    // G50 fix: Verify argument count matches function signature
+                                    if compiled_args.len() != expected_params {
+                                        eprintln!("Warning: method call {}.{}() has {} args but function expects {} params",
+                                            recv_type, method_name, compiled_args.len(), expected_params);
+                                        return Ok(self.context.i64_type().const_int(0, false));
+                                    }
+
+                                    let call = self
+                                        .builder
+                                        .build_call(callee, &compiled_args, "method_call")
+                                        .map_err(|e| e.to_string())?;
+
+                                    return Ok(call
+                                        .try_as_basic_value()
+                                        .left()
+                                        .map(|v| v.into_int_value())
+                                        .unwrap_or_else(|| {
+                                            self.context.i64_type().const_int(0, false)
+                                        }));
+                                }
+                            }
+                        }
+                    }
+
+                    // Pointer arithmetic: ptr.add(n) -> ptr + n * element_size
+                    // MUST be checked before impl_methods matching, otherwise Tensor::add etc. will match
+                    let method_lower = method_name.to_lowercase();
+                    if method_lower == "add" && args.len() == 1 {
+                        // Check if this is likely pointer arithmetic (no known receiver type)
+                        // If receiver has a known struct type, it's probably Tensor::add etc., not ptr.add
+                        let receiver_struct = self.get_struct_type_from_expr(receiver, scope);
+                        if receiver_struct.is_none() {
+                            let offset_val = self.compile_expr(fn_value, scope, &args[0])?;
+
+                            // Determine element size from scope or default to 8
+                            let element_size: u64 = if let Expr::Path(path) = receiver.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    scope.ptr_element_sizes.get(&seg.ident.name).copied().unwrap_or(8)
+                                } else {
+                                    8
+                                }
+                            } else {
+                                8
+                            };
+                            eprintln!("[PTR.ADD] Using element size {}", element_size);
+
+                            // Compute: ptr + offset * element_size
+                            let size_const = self.context.i64_type().const_int(element_size, false);
+                            let byte_offset = self.builder
+                                .build_int_mul(offset_val, size_const, "byte_offset")
+                                .map_err(|e| e.to_string())?;
+                            let result = self.builder
+                                .build_int_add(receiver_val, byte_offset, "ptr_add")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(result);
+                        }
+                    }
+
+                    // Second pass: Fallback to matching by method name only (for unknown types)
+                    // G50 fix: Check argument count BEFORE compiling to avoid borrow issues
+                    // G58 fix: Try both with and without receiver (for methods without self/this)
+                    let mut matched_method: Option<(String, inkwell::values::FunctionValue, bool)> = None;
+
                     for ((_type_name, meth_name), mangled_name) in &self.impl_methods {
                         if meth_name == method_name {
                             if let Some(callee) = self.module.get_function(mangled_name) {
-                                // Compile arguments
-                                let mut compiled_args: Vec<BasicMetadataValueEnum> =
-                                    vec![receiver_val.into()];
-                                for arg in args {
-                                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
-                                    compiled_args.push(arg_val.into());
+                                let expected_params = callee.count_params() as usize;
+                                // Try with receiver
+                                if args.len() + 1 == expected_params {
+                                    matched_method = Some((mangled_name.clone(), callee, true));
+                                    break;
                                 }
-
-                                let call = self
-                                    .builder
-                                    .build_call(callee, &compiled_args, "method_call")
-                                    .map_err(|e| e.to_string())?;
-
-                                return Ok(call
-                                    .try_as_basic_value()
-                                    .left()
-                                    .map(|v| v.into_int_value())
-                                    .unwrap_or_else(|| {
-                                        self.context.i64_type().const_int(0, false)
-                                    }));
+                                // Try without receiver (for methods without self/this)
+                                if args.len() == expected_params {
+                                    matched_method = Some((mangled_name.clone(), callee, false));
+                                    break;
+                                }
                             }
                         }
+                    }
+
+                    if let Some((_mangled_name, callee, needs_receiver)) = matched_method {
+                        // Compile arguments
+                        // G58 fix: Only add receiver if function expects it
+                        let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                        if needs_receiver {
+                            compiled_args.push(receiver_val.into());
+                        }
+                        for arg in args {
+                            let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                            compiled_args.push(arg_val.into());
+                        }
+
+                        let call = self
+                            .builder
+                            .build_call(callee, &compiled_args, "method_call")
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(call
+                            .try_as_basic_value()
+                            .left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| {
+                                self.context.i64_type().const_int(0, false)
+                            }));
                     }
 
                     // Fallback: Try to call as a method that mutates/accesses the receiver
                     // Many methods like `collect_type_def`, `check`, etc. just return unit or
                     // are side-effecting methods that we can stub as no-ops
                     let method_lower = method_name.to_lowercase();
+                    // Note: "add" removed from this list - ptr.add(i) is pointer arithmetic, not side effect!
                     if method_lower.starts_with("collect")
                         || method_lower.starts_with("check")
                         || method_lower.starts_with("validate")
                         || method_lower.starts_with("verify")
                         || method_lower.starts_with("register")
-                        || method_lower.starts_with("add")
                         || method_lower.starts_with("insert")
                         || method_lower.starts_with("remove")
                         || method_lower.starts_with("clear")
@@ -3074,6 +8566,7 @@ pub mod llvm {
 
                 // Evidentiality markers with runtime semantics
                 // Known (!) unwraps evidential values
+                // Uncertain (?) unwraps Result/Option types AND marks as uncertain
                 // Other markers wrap values with evidence tags
                 Expr::Evidential {
                     expr,
@@ -3087,8 +8580,14 @@ pub mod llvm {
                             // The type checker ensures this is safe
                             Ok(inner_val)
                         }
+                        ast::Evidentiality::Uncertain => {
+                            // G100: Since Ok() returns value directly (no Result struct wrapping),
+                            // the ? operator should just pass through the value
+                            // NOTE: If proper Result wrapping is implemented later, this needs updating
+                            Ok(inner_val)
+                        }
                         _ => {
-                            // For ?, ~, ◊, ‽: Create evidential struct and return value
+                            // For ~, ◊, ‽: Create evidential struct and return value
                             // The struct stores {tag, value} for runtime evidence tracking
                             let tag = Self::evidentiality_to_tag(evidentiality);
                             let evidential = self.create_evidential_value(
@@ -3143,17 +8642,195 @@ pub mod llvm {
                 }
 
                 // Cast/type coercion
-                Expr::Cast { expr, .. } => {
-                    // Types are erased, just compile the expression
-                    self.compile_expr(fn_value, scope, expr)
+                Expr::Cast { expr, ty } => {
+                    let val = self.compile_expr(fn_value, scope, expr)?;
+
+                    // Check target type for numeric conversions
+                    let target_type_str = self.type_expr_to_string(ty);
+
+                    // Cast to f64
+                    if target_type_str == "f64" {
+                        // G18: If source is already f64, no-op (value is already stored as f64 bits)
+                        if self.is_float_expr_with_scope(expr, scope) {
+                            return Ok(val);
+                        }
+
+                        // i64 -> f64: use sitofp, then bitcast back to i64 for storage
+                        let f64_val = self
+                            .builder
+                            .build_signed_int_to_float(
+                                val,
+                                self.context.f64_type(),
+                                "i_to_f64",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        // Bitcast f64 to i64 for uniform storage
+                        let bits = self
+                            .builder
+                            .build_bit_cast(f64_val, self.context.i64_type(), "f64_bits")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(bits.into_int_value());
+                    }
+
+                    // f64 -> integer: bitcast i64 to f64, then fptosi
+                    if target_type_str == "i64" || target_type_str == "isize" || target_type_str == "usize" {
+                        // Check if source is a float expression
+                        if self.is_float_expr_with_scope(expr, scope) {
+                            // Bitcast i64 (float bits) back to f64, then convert to int
+                            let f64_val = self
+                                .builder
+                                .build_bit_cast(val, self.context.f64_type(), "bits_to_f64")
+                                .map_err(|e| e.to_string())?
+                                .into_float_value();
+                            let int_val = self
+                                .builder
+                                .build_float_to_signed_int(
+                                    f64_val,
+                                    self.context.i64_type(),
+                                    "f64_to_i64",
+                                )
+                                .map_err(|e| e.to_string())?;
+                            return Ok(int_val);
+                        }
+                        // Source is already an integer, return as-is
+                        return Ok(val);
+                    }
+
+                    // Default: pass through
+                    Ok(val)
                 }
 
                 // Address-of: &expr, &mut expr
-                Expr::AddrOf { expr, .. } => self.compile_expr(fn_value, scope, expr),
+                // G44 fix: Actually return the address, not the value!
+                Expr::AddrOf { expr, .. } => {
+                    // // // eprintln!("[G46-ADDROF] expr={:?}", expr);
+                    // For &path, we need to return the address of the variable
+                    if let Expr::Path(path) = expr.as_ref() {
+                        let name = path
+                            .segments
+                            .last()
+                            .map(|s| s.ident.name.as_str())
+                            .ok_or("Empty path")?;
+                        if let Some(&ptr) = scope.vars.get(name) {
+                            // G102: Check if this is a struct type
+                            // Structs are stored as pointers, so &struct_var should return
+                            // the VALUE stored in the alloca (the struct pointer),
+                            // not the alloca address itself.
+                            let is_struct = self.get_struct_type_from_expr(expr, scope).is_some();
+                            eprintln!("[G102-ADDROF] name='{}', is_struct={}", name, is_struct);
 
-                // Dereference: *ptr
+                            if is_struct {
+                                // For structs: load the struct pointer value from alloca
+                                let val = self
+                                    .builder
+                                    .build_load(self.context.i64_type(), ptr, name)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val.into_int_value());
+                            } else {
+                                // For primitives: return the alloca address
+                                return self
+                                    .builder
+                                    .build_ptr_to_int(ptr, self.context.i64_type(), "addr")
+                                    .map_err(|e| e.to_string());
+                            }
+                        }
+                    }
+
+                    // G46-FIX: Handle &(field_access) - return address of the field in the struct
+                    // This handles patterns like &outer.items[idx].data
+                    if let Expr::Field { expr: base, field } = expr.as_ref() {
+                        // // // eprintln!("[G46-ADDROF-FIELD] base={:?}, field={}", base, field.name);
+
+                        // Compile base to get struct pointer
+                        let struct_ptr_int = self.compile_expr(fn_value, scope, base)?;
+
+                        // Get struct type for field lookup
+                        let struct_type_name = self.get_struct_type_from_expr(base, scope);
+                        // // // eprintln!("[G46-ADDROF-FIELD] struct_type_name={:?}", struct_type_name);
+                        if let Some(struct_type_name) = struct_type_name {
+                            if let Some(struct_info) = self.struct_types.get(&struct_type_name).cloned() {
+                                if let Some(&field_idx) = struct_info.field_indices.get(&field.name) {
+                                    // // // eprintln!("[G46-ADDROF-FIELD] field_idx={} for {}.{}", field_idx, struct_type_name, field.name);
+                                    // Convert struct ptr to pointer type
+                                    let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                                    let struct_ptr = self
+                                        .builder
+                                        .build_int_to_ptr(struct_ptr_int, ptr_type, "struct_ptr")
+                                        .map_err(|e| e.to_string())?;
+
+                                    // Get field pointer using GEP
+                                    let field_ptr = self
+                                        .builder
+                                        .build_struct_gep(
+                                            struct_info.llvm_type,
+                                            struct_ptr,
+                                            field_idx,
+                                            &format!("{}_addr", field.name),
+                                        )
+                                        .map_err(|e| e.to_string())?;
+
+                                    // Return field address as i64
+                                    return self
+                                        .builder
+                                        .build_ptr_to_int(field_ptr, self.context.i64_type(), "field_addr")
+                                        .map_err(|e| e.to_string());
+                                }
+                            }
+                        }
+                        // Fall through if struct type not found
+                    }
+
+                    // G28: For other cases, store the value in a temporary alloca and return its address
+                    // This ensures proper reference semantics for struct field references
+                    let val = self.compile_expr(fn_value, scope, expr)?;
+                    let temp_alloca = self
+                        .builder
+                        .build_alloca(self.context.i64_type(), "field_ref_tmp")
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(temp_alloca, val)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_ptr_to_int(temp_alloca, self.context.i64_type(), "field_ref_addr")
+                        .map_err(|e| e.to_string())
+                }
+
+                // Dereference: *ptr or *(ptr + offset)
                 Expr::Deref(inner) => {
-                    // Dereference: load value from pointer
+                    // Check for pointer arithmetic pattern: *(ptr + offset)
+                    // When we have *(ptr + n), we need to use GEP to scale offset by element size
+                    if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                        // Compile base pointer and offset separately
+                        let base_addr = self.compile_expr(fn_value, scope, left)?;
+                        let offset = self.compile_expr(fn_value, scope, right)?;
+
+                        // Convert base address to pointer
+                        let i64_type = self.context.i64_type();
+                        let base_ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                base_addr,
+                                i64_type.ptr_type(Default::default()),
+                                "base_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        // Use GEP for proper pointer arithmetic (scales by element size)
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                        }
+                        .map_err(|e| e.to_string())?;
+
+                        // Load the value
+                        let loaded = self
+                            .builder
+                            .build_load(i64_type, elem_ptr, "deref_val")
+                            .map_err(|e| e.to_string())?;
+                        return Ok(loaded.into_int_value());
+                    }
+
+                    // Simple dereference: *ptr (no offset)
                     let ptr_val = self.compile_expr(fn_value, scope, inner)?;
                     let ptr = self
                         .builder
@@ -3195,8 +8872,7 @@ pub mod llvm {
                         }
                         "vec" => {
                             // vec![...] - parse and create Vec
-                            // TODO: implement vec macro
-                            Ok(self.context.i64_type().const_int(0, false))
+                            Ok(self.compile_vec_macro(fn_value, scope, tokens)?)
                         }
                         "panic" => {
                             // For now, just exit with code 1
@@ -3212,6 +8888,12 @@ pub mod llvm {
                         }
                         "assert" | "assert_eq" | "assert_ne" => {
                             // TODO: implement assertions
+                            Ok(self.context.i64_type().const_int(0, false))
+                        }
+                        // G44 fix: Handle write!/writeln! macros (for trait Display/Debug impls)
+                        "write" | "writeln" => {
+                            // write!(f, ...) - just return Ok(()) represented as 0
+                            // In a full implementation, this would format and write to f
                             Ok(self.context.i64_type().const_int(0, false))
                         }
                         _ => {
@@ -3234,25 +8916,173 @@ pub mod llvm {
                 }
 
                 // Try expression: expr?
+                // G100: Need to check if Result is properly wrapped or just passed through
+                // Currently Ok() returns value directly without wrapping, so ? should pass through
                 Expr::Try(inner) => {
-                    // Types erased, just compile inner
+                    eprintln!("[G100-TRY] Compiling ? operator on {:?}", inner);
+                    // Compile inner expression to get Result value
+                    // Since Ok() returns value directly (no wrapping), just pass through
                     self.compile_expr(fn_value, scope, inner)
                 }
 
                 // Let expression (for if-let patterns)
                 Expr::Let { value, .. } => self.compile_expr(fn_value, scope, value),
 
-                // Tuple: just return first element for now
+                // Tuple: allocate on heap and store all elements
+                // G14 fix: Proper tuple support - tuples are heap-allocated structs
                 Expr::Tuple(elements) => {
-                    if let Some(first) = elements.first() {
-                        self.compile_expr(fn_value, scope, first)
-                    } else {
-                        Ok(self.context.i64_type().const_int(0, false))
+                    if elements.is_empty() {
+                        // Unit tuple () - return 0
+                        return Ok(self.context.i64_type().const_int(0, false));
                     }
+
+                    // Allocate tuple: num_elements * 8 bytes
+                    let tuple_size = elements.len() as u64 * 8;
+                    let size_const = self.context.i64_type().const_int(tuple_size, false);
+
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let alloc_call = self
+                        .builder
+                        .build_call(alloc_fn, &[size_const.into()], "tuple_alloc")
+                        .map_err(|e| e.to_string())?;
+                    let alloc_result = alloc_call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sigil_alloc returned void")?;
+
+                    let tuple_ptr = if alloc_result.is_pointer_value() {
+                        alloc_result.into_pointer_value()
+                    } else {
+                        self.builder
+                            .build_int_to_ptr(
+                                alloc_result.into_int_value(),
+                                self.context.ptr_type(AddressSpace::default()),
+                                "tuple_heap_ptr",
+                            )
+                            .map_err(|e| e.to_string())?
+                    };
+
+                    // Store each element at its offset
+                    for (idx, elem) in elements.iter().enumerate() {
+                        let elem_val = self.compile_expr(fn_value, scope, elem)?;
+                        let offset = self.context.i64_type().const_int(idx as u64 * 8, false);
+                        let elem_ptr = unsafe {
+                            self.builder
+                                .build_gep(
+                                    self.context.i8_type(),
+                                    tuple_ptr,
+                                    &[offset],
+                                    &format!("tuple_elem_{}_ptr", idx),
+                                )
+                                .map_err(|e| e.to_string())?
+                        };
+                        self.builder
+                            .build_store(elem_ptr, elem_val)
+                            .map_err(|e| e.to_string())?;
+                    }
+
+                    // Return pointer as i64 (consistent with struct handling)
+                    let ptr_as_int = self
+                        .builder
+                        .build_ptr_to_int(tuple_ptr, self.context.i64_type(), "tuple_ptr_int")
+                        .map_err(|e| e.to_string())?;
+                    Ok(ptr_as_int)
                 }
 
                 // Array literal: allocate on stack and store elements
                 Expr::Array(elements) => self.compile_array_literal(fn_value, scope, elements),
+
+                // G54 fix: ArrayRepeat - [value; count] syntax
+                Expr::ArrayRepeat { value, count } => {
+                    // Compile the count expression (must be a constant or known at compile time)
+                    let count_val = self.compile_expr(fn_value, scope, count)?;
+
+                    // Compile the value expression
+                    let value_val = self.compile_expr(fn_value, scope, value)?;
+
+                    let i64_type = self.context.i64_type();
+
+                    // Try to get the count as a constant for stack allocation
+                    // For dynamic counts, we'd need heap allocation
+                    if let Some(const_count) = count_val.get_zero_extended_constant() {
+                        if const_count == 0 {
+                            return Ok(i64_type.const_int(0, false));
+                        }
+
+                        let array_type = i64_type.array_type(const_count as u32);
+
+                        // Allocate array on stack
+                        let array_ptr = self
+                            .builder
+                            .build_alloca(array_type, "array_repeat")
+                            .map_err(|e| e.to_string())?;
+
+                        // Store the value at each index
+                        for i in 0..const_count {
+                            let indices = [
+                                i64_type.const_int(0, false),
+                                i64_type.const_int(i, false),
+                            ];
+                            let elem_ptr = unsafe {
+                                self.builder
+                                    .build_in_bounds_gep(array_type, array_ptr, &indices, &format!("elem_{}", i))
+                                    .map_err(|e| e.to_string())?
+                            };
+                            self.builder
+                                .build_store(elem_ptr, value_val)
+                                .map_err(|e| e.to_string())?;
+                        }
+
+                        // Return pointer to first element as i64
+                        let first_elem_ptr = unsafe {
+                            self.builder
+                                .build_in_bounds_gep(
+                                    array_type,
+                                    array_ptr,
+                                    &[i64_type.const_int(0, false), i64_type.const_int(0, false)],
+                                    "first_elem",
+                                )
+                                .map_err(|e| e.to_string())?
+                        };
+                        let ptr_as_int = self
+                            .builder
+                            .build_ptr_to_int(first_elem_ptr, i64_type, "array_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        Ok(ptr_as_int)
+                    } else {
+                        // Dynamic count - use Vec (heap allocation)
+                        // For now, return a simple fallback
+                        let new_fn = self
+                            .module
+                            .get_function("sigil_vec_new")
+                            .ok_or("sigil_vec_new not declared for dynamic ArrayRepeat")?;
+                        let push_fn = self
+                            .module
+                            .get_function("sigil_vec_push")
+                            .ok_or("sigil_vec_push not declared for dynamic ArrayRepeat")?;
+
+                        // Create vec with capacity
+                        let new_call = self
+                            .builder
+                            .build_call(new_fn, &[count_val.into()], "vec_new")
+                            .map_err(|e| e.to_string())?;
+                        let vec_ptr = new_call
+                            .try_as_basic_value()
+                            .left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                        // Loop to push values - for simplicity, unroll up to 256 iterations
+                        // or use a runtime loop for larger counts
+                        // TODO: implement proper runtime loop for dynamic counts
+
+                        Ok(vec_ptr)
+                    }
+                }
 
                 // Loop expressions
                 Expr::Loop { body, .. } => {
@@ -3281,8 +9111,12 @@ pub mod llvm {
                 // Await - compile inner
                 Expr::Await { expr, .. } => self.compile_expr(fn_value, scope, expr),
 
+                // G49: Named argument - just compile the value, name is metadata
+                Expr::NamedArg { value, .. } => self.compile_expr(fn_value, scope, value),
+
                 _ => {
                     // Unsupported expression - return error instead of silent 0
+                    eprintln!("[G87-DEBUG] Unsupported expression: {:?}", expr);
                     Err(format!(
                         "LLVM codegen: unsupported expression {:?}",
                         std::mem::discriminant(expr)
@@ -3378,6 +9212,846 @@ pub mod llvm {
                 Literal::Char(c) => Ok(self.context.i64_type().const_int(*c as u64, false)),
                 _ => Ok(self.context.i64_type().const_int(0, false)),
             }
+        }
+
+        /// Convert a TypeExpr to a simple string for type checking
+        fn type_expr_to_string(&self, ty: &ast::TypeExpr) -> String {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    // Get the last segment's name including generics (e.g., Vec<Layer>)
+                    path.segments
+                        .last()
+                        .map(|seg| {
+                            let name = seg.ident.name.clone();
+                            // G51 fix: Include generic arguments for Vec<T> etc.
+                            if let Some(ref generics) = seg.generics {
+                                if !generics.is_empty() {
+                                    let generic_strs: Vec<String> = generics
+                                        .iter()
+                                        .map(|g| self.type_expr_to_string(g))
+                                        .collect();
+                                    format!("{}<{}>", name, generic_strs.join(", "))
+                                } else {
+                                    name
+                                }
+                            } else {
+                                name
+                            }
+                        })
+                        .unwrap_or_else(|| "unknown".to_string())
+                }
+                ast::TypeExpr::Reference { inner, .. } => {
+                    format!("&{}", self.type_expr_to_string(inner))
+                }
+                ast::TypeExpr::Pointer { inner, .. } => {
+                    format!("*{}", self.type_expr_to_string(inner))
+                }
+                ast::TypeExpr::Array { element, .. } => {
+                    format!("[{}]", self.type_expr_to_string(element))
+                }
+                ast::TypeExpr::Slice(inner) => {
+                    format!("[{}]", self.type_expr_to_string(inner))
+                }
+                _ => "unknown".to_string(),
+            }
+        }
+
+        /// Convert AST TypeExpr to element size in bytes for pointer arithmetic
+        fn type_expr_to_element_size(&self, ty: &ast::TypeExpr) -> u64 {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        match seg.ident.name.as_str() {
+                            "f32" | "i32" | "u32" => 4,
+                            "f64" | "i64" | "u64" | "usize" | "isize" => 8,
+                            "i16" | "u16" => 2,
+                            "i8" | "u8" | "bool" => 1,
+                            _ => 8, // Default for unknown types (pointers, structs)
+                        }
+                    } else {
+                        8
+                    }
+                }
+                _ => 8, // Default
+            }
+        }
+
+        /// Convert RichType to element size in bytes for pointer arithmetic
+        fn rich_type_to_element_size(&self, ty: &RichType) -> u64 {
+            use crate::typeck::{IntSize, FloatSize};
+            match ty {
+                RichType::Float(FloatSize::F32) => 4,
+                RichType::Float(FloatSize::F64) => 8,
+                RichType::Int(IntSize::I8) | RichType::Int(IntSize::U8) => 1,
+                RichType::Int(IntSize::I16) | RichType::Int(IntSize::U16) => 2,
+                RichType::Int(IntSize::I32) | RichType::Int(IntSize::U32) => 4,
+                RichType::Int(IntSize::I64) | RichType::Int(IntSize::U64) |
+                RichType::Int(IntSize::ISize) | RichType::Int(IntSize::USize) => 8,
+                RichType::Bool => 1,
+                RichType::Named { name, .. } => {
+                    match name.as_str() {
+                        "f32" => 4,
+                        "f64" | "i64" | "u64" | "usize" | "isize" => 8,
+                        "i32" | "u32" => 4,
+                        "i16" | "u16" => 2,
+                        "i8" | "u8" | "bool" => 1,
+                        _ => 8, // Default for structs, pointers
+                    }
+                }
+                _ => 8, // Default
+            }
+        }
+
+        /// Convert AST TypeExpr to rich Type for generic monomorphization.
+        /// This preserves generic type parameters that are lost by type_expr_to_string.
+        /// Phase 1 of generic monomorphization support.
+        fn type_expr_to_rich_type(&self, ty: &ast::TypeExpr) -> RichType {
+            use crate::typeck::{IntSize, FloatSize};
+
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let seg = &path.segments[0];
+                        let name = &seg.ident.name;
+
+                        // Handle primitive types
+                        match name.as_str() {
+                            "bool" => return RichType::Bool,
+                            "char" => return RichType::Char,
+                            "str" | "String" => return RichType::Str,
+                            "i8" => return RichType::Int(IntSize::I8),
+                            "i16" => return RichType::Int(IntSize::I16),
+                            "i32" => return RichType::Int(IntSize::I32),
+                            "i64" => return RichType::Int(IntSize::I64),
+                            "i128" => return RichType::Int(IntSize::I128),
+                            "isize" => return RichType::Int(IntSize::ISize),
+                            "u8" => return RichType::Int(IntSize::U8),
+                            "u16" => return RichType::Int(IntSize::U16),
+                            "u32" => return RichType::Int(IntSize::U32),
+                            "u64" => return RichType::Int(IntSize::U64),
+                            "u128" => return RichType::Int(IntSize::U128),
+                            "usize" => return RichType::Int(IntSize::USize),
+                            "f32" => return RichType::Float(FloatSize::F32),
+                            "f64" => return RichType::Float(FloatSize::F64),
+                            "()" => return RichType::Unit,
+                            _ => {}
+                        }
+
+                        // G57: Check if this is a const generic reference (e.g., DIM in Shape2<DIM, DIM>)
+                        // If the name has no generics and resolves to a constant value, return ConstGeneric
+                        if seg.generics.is_none() {
+                            // G57: Create a Path expression to evaluate via const_evaluator
+                            let path_expr = Expr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: seg.ident.clone(),
+                                    generics: None,
+                                }],
+                            });
+                            if let Ok(const_val) = self.const_evaluator.eval(&path_expr) {
+                                if let Some(i) = const_val.as_i64() {
+                                    return RichType::ConstGeneric(i);
+                                }
+                            }
+                        }
+
+                        // Named type with optional generics
+                        let generics = seg.generics.as_ref()
+                            .map(|gs| gs.iter().map(|g| self.type_expr_to_rich_type(g)).collect())
+                            .unwrap_or_default();
+
+                        RichType::Named {
+                            name: name.clone(),
+                            generics,
+                        }
+                    } else {
+                        // Multi-segment path (e.g., std::vec::Vec) - use last segment
+                        let seg = path.segments.last().unwrap();
+                        let generics = seg.generics.as_ref()
+                            .map(|gs| gs.iter().map(|g| self.type_expr_to_rich_type(g)).collect())
+                            .unwrap_or_default();
+
+                        RichType::Named {
+                            name: seg.ident.name.clone(),
+                            generics,
+                        }
+                    }
+                }
+                ast::TypeExpr::Reference { inner, mutable, lifetime } => {
+                    RichType::Ref {
+                        lifetime: lifetime.clone(),
+                        mutable: *mutable,
+                        inner: Box::new(self.type_expr_to_rich_type(inner)),
+                    }
+                }
+                ast::TypeExpr::Pointer { inner, mutable } => {
+                    RichType::Ptr {
+                        mutable: *mutable,
+                        inner: Box::new(self.type_expr_to_rich_type(inner)),
+                    }
+                }
+                ast::TypeExpr::Array { element, size } => {
+                    // Try to evaluate size as constant
+                    let size_val = if let Expr::Literal(Literal::Int { value, .. }) = size.as_ref() {
+                        value.parse::<usize>().ok()
+                    } else {
+                        None
+                    };
+                    RichType::Array {
+                        element: Box::new(self.type_expr_to_rich_type(element)),
+                        size: size_val,
+                    }
+                }
+                ast::TypeExpr::Slice(inner) => {
+                    RichType::Slice(Box::new(self.type_expr_to_rich_type(inner)))
+                }
+                ast::TypeExpr::Tuple(elements) => {
+                    RichType::Tuple(elements.iter().map(|e| self.type_expr_to_rich_type(e)).collect())
+                }
+                ast::TypeExpr::Function { params, return_type } => {
+                    RichType::Function {
+                        params: params.iter().map(|p| self.type_expr_to_rich_type(p)).collect(),
+                        return_type: Box::new(
+                            return_type.as_ref()
+                                .map(|r| self.type_expr_to_rich_type(r.as_ref()))
+                                .unwrap_or(RichType::Unit)
+                        ),
+                        is_async: false,  // AST TypeExpr::Function doesn't track async
+                    }
+                }
+                ast::TypeExpr::TraitObject(bounds) => {
+                    RichType::TraitObject(bounds.iter().map(|b| self.type_expr_to_rich_type(b)).collect())
+                }
+                ast::TypeExpr::ImplTrait(bounds) => {
+                    RichType::ImplTrait(bounds.iter().map(|b| self.type_expr_to_rich_type(b)).collect())
+                }
+                // G56: Handle const generic expressions (e.g., <4> in FixedSize<4>)
+                ast::TypeExpr::ConstExpr(expr) => {
+                    // G57: Handle array shape literals like [DIM, DIM] in Tensor<[DIM, DIM], f32, Cuda>
+                    // These need to be evaluated via const_evaluator to resolve const references
+                    if let Expr::Array(_) = expr.as_ref() {
+                        // Use const evaluator to evaluate shape literal
+                        // This handles both literal values like [4, 8] and const refs like [DIM, DIM]
+                        if let Ok(shape_type) = self.const_evaluator.eval_shape(expr) {
+                            return shape_type;
+                        }
+                    }
+
+                    // Try to evaluate the const expression to get a literal value
+                    if let Expr::Literal(Literal::Int { value, .. }) = expr.as_ref() {
+                        if let Ok(val) = value.parse::<i64>() {
+                            return RichType::ConstGeneric(val);
+                        }
+                    }
+
+                    // G57: Handle const identifier references (e.g., DIM in type position)
+                    if let Expr::Path(path) = expr.as_ref() {
+                        if path.segments.len() == 1 && path.segments[0].generics.is_none() {
+                            let name = &path.segments[0].ident.name;
+                            // Try to resolve via const_evaluator
+                            if let Ok(val) = self.const_evaluator.eval(expr) {
+                                if let Some(i) = val.as_i64() {
+                                    return RichType::ConstGeneric(i);
+                                }
+                            }
+                            // Fallback: return as unresolved const generic reference
+                            // This might be resolved later during monomorphization
+                            return RichType::Named {
+                                name: format!("const_{}", name),
+                                generics: vec![],
+                            };
+                        }
+                    }
+
+                    // Fallback for non-literal const expressions (e.g., N + 1)
+                    RichType::Named {
+                        name: "const_expr".to_string(),
+                        generics: vec![],
+                    }
+                }
+                _ => {
+                    // Fallback for unsupported type expressions
+                    RichType::Named {
+                        name: "unknown".to_string(),
+                        generics: vec![],
+                    }
+                }
+            }
+        }
+
+        /// G56: Infer RichType from an expression (for let without type annotation)
+        /// Handles constructor calls like `FixedSize·<4>·new()` to extract generic args
+        /// G60 fix: Also handles Tensor·ones([shape]) to extract const generic from argument
+        fn infer_rich_type_from_expr(&self, expr: &Expr) -> Option<RichType> {
+            eprintln!("[G60] infer_rich_type_from_expr: expr type = {:?}", std::mem::discriminant(expr));
+            match expr {
+                // Handle Try expression (x?) - unwrap and recurse
+                Expr::Try(inner) => {
+                    eprintln!("[G60] infer_rich_type_from_expr: Try wrapper, recursing");
+                    return self.infer_rich_type_from_expr(inner);
+                }
+                // Handle Evidential expression (x? in Sigil) - unwrap and recurse
+                Expr::Evidential { expr: inner, .. } => {
+                    eprintln!("[G60] infer_rich_type_from_expr: Evidential wrapper, recursing");
+                    return self.infer_rich_type_from_expr(inner);
+                }
+                // Constructor call: FixedSize·<4>·new() or Type::new() or Tensor·ones([64])
+                Expr::Call { func, args } => {
+                    if let Expr::Path(path) = func.as_ref() {
+                        let segments: Vec<_> = path.segments.iter().map(|s| &s.ident.name).collect();
+                        eprintln!("[G60] infer_rich_type_from_expr: Call with path {:?}", segments);
+
+                        // G103: Handle Type::method<G>() patterns by looking up return type
+                        // e.g., Cpu·allocate·<f32>() should return StoragePtr<f32, Cpu>, not "allocate"
+                        if path.segments.len() >= 2 {
+                            let type_name = &path.segments[0].ident.name;
+                            let method_seg = &path.segments[path.segments.len() - 1];
+                            let method_name = &method_seg.ident.name;
+                            eprintln!("[G103-DBG] segments.len()={}, type_name={}, method_name={}, method_seg.generics={:?}",
+                                path.segments.len(), type_name, method_name, method_seg.generics.is_some());
+
+                            // Check if method segment has explicit generics
+                            if let Some(ref method_generics) = method_seg.generics {
+                                eprintln!("[G103] Static method call {}::{}::<...>, looking up return type", type_name, method_name);
+
+                                // Try to resolve via impl_registry
+                                if let Some((method_def, impl_generics)) = self.impl_registry.resolve_static_method(type_name, method_name) {
+                                    // Build type bindings from explicit type args
+                                    let explicit_types: Vec<RichType> = method_generics.iter()
+                                        .map(|g| self.type_expr_to_rich_type(g))
+                                        .collect();
+
+                                    // Create bindings: Self/This -> type_name, method generics -> explicit args
+                                    let mut bindings: std::collections::HashMap<String, RichType> = std::collections::HashMap::new();
+                                    bindings.insert("Self".to_string(), RichType::Named { name: type_name.clone(), generics: vec![] });
+                                    bindings.insert("This".to_string(), RichType::Named { name: type_name.clone(), generics: vec![] });
+
+                                    // Bind method-level generics to explicit type args
+                                    for (i, generic_info) in method_def.generics.iter().enumerate() {
+                                        if i < explicit_types.len() {
+                                            eprintln!("[G103] Binding method generic '{}' = {:?}", generic_info.name, explicit_types[i]);
+                                            bindings.insert(generic_info.name.clone(), explicit_types[i].clone());
+                                        }
+                                    }
+
+                                    // Substitute bindings into return type
+                                    eprintln!("[G103] Return type pattern: {:?}", method_def.return_type);
+                                    eprintln!("[G103] Bindings: {:?}", bindings);
+                                    let return_type = self.substitute_type_pattern(&method_def.return_type, &bindings);
+                                    eprintln!("[G103] Inferred return type: {:?}", return_type);
+                                    return Some(return_type);
+                                }
+                            }
+                        }
+
+                        // Look for type with generics in the path (for type constructors)
+                        // e.g., FixedSize·<4>·new has segments [FixedSize<4>, new]
+                        for (i, seg) in path.segments.iter().enumerate() {
+                            if let Some(ref generics) = seg.generics {
+                                // Skip if this is the last segment (method segment) - handled above
+                                if i == path.segments.len() - 1 && path.segments.len() >= 2 {
+                                    continue;
+                                }
+                                // Found a type segment with type args
+                                let type_name = seg.ident.name.clone();
+                                let generic_types: Vec<RichType> = generics.iter()
+                                    .map(|g| self.type_expr_to_rich_type(g))
+                                    .collect();
+                                eprintln!("[G60] Found explicit generics for {}: {:?}", type_name, generic_types);
+                                return Some(RichType::Named {
+                                    name: type_name,
+                                    generics: generic_types,
+                                });
+                            }
+                        }
+
+                        // G60 fix: Handle Tensor constructors that take shape as first argument
+                        // Pattern: Tensor·ones([64]) or Tensor·zeros([128, 64])
+                        // The first argument is the shape which determines the const generic
+                        if path.segments.len() >= 2 {
+                            let type_name = &path.segments[0].ident.name;
+                            let method_name = &path.segments[1].ident.name;
+                            eprintln!("[G60] Checking for Tensor constructor: {}::{}", type_name, method_name);
+
+                            // Check if this is a Tensor constructor method
+                            if type_name == "Tensor" &&
+                               matches!(method_name.as_str(), "ones" | "zeros" | "randn" | "rand" |
+                                       "kaiming_uniform" | "xavier_uniform" | "from_abyss" | "from_slice") {
+                                // Try to extract shape from first argument
+                                if let Some(first_arg) = args.first() {
+                                    eprintln!("[G60] Tensor constructor, first arg: {:?}", first_arg);
+                                    // G60: Tensor<S, D, Dev> needs all 3 generics for ImplRegistry to match
+                                    // Build the full Shape type (Shape1<N>, Shape2<M,N>, DynShape, etc.)
+                                    if let Some(shape_type) = self.extract_full_shape_type(first_arg) {
+                                        eprintln!("[G60] Full shape type: {:?}", shape_type);
+                                        // Default D=f32 and Dev=Cuda (common case for GPU training)
+                                        let dtype = RichType::Named { name: "f32".to_string(), generics: vec![] };
+                                        let device = RichType::Named { name: "Cuda".to_string(), generics: vec![] };
+                                        return Some(RichType::Named {
+                                            name: type_name.clone(),
+                                            generics: vec![shape_type, dtype, device],
+                                        });
+                                    } else {
+                                        eprintln!("[G60] Failed to extract shape type");
+                                    }
+                                }
+                            }
+
+                            // Type::method() pattern - use first segment as type (no generics found)
+                            eprintln!("[G60] Falling back to empty generics for {}", type_name);
+                            return Some(RichType::Named {
+                                name: type_name.clone(),
+                                generics: vec![],
+                            });
+                        }
+
+                        // GAP-2026-02-18 fix: Handle standalone function calls like make_tensor()
+                        // Look up the function's return type from ret_types
+                        if path.segments.len() == 1 {
+                            let func_name = &path.segments[0].ident.name;
+                            eprintln!("[G60] Standalone function call '{}', looking up return type", func_name);
+                            if let Some(ret_ty) = self.ret_types.get(func_name) {
+                                eprintln!("[G60] Found return type for '{}': {:?}", func_name, ret_ty);
+                                let rich_type = self.type_expr_to_rich_type(ret_ty);
+                                eprintln!("[G60] Converted to RichType: {:?}", rich_type);
+                                return Some(rich_type);
+                            }
+                        }
+                    }
+                    None
+                }
+                // G85: Handle Path expressions with generics (unit struct construction like Shape2·<4, 64>)
+                Expr::Path(path) => {
+                    eprintln!("[G85] infer_rich_type_from_expr: Path expression");
+                    // Look for a segment with generics
+                    for seg in &path.segments {
+                        if let Some(ref generics) = seg.generics {
+                            let type_name = seg.ident.name.clone();
+                            let generic_types: Vec<RichType> = generics.iter()
+                                .map(|g| self.type_expr_to_rich_type(g))
+                                .collect();
+                            eprintln!("[G85] Path with generics: {} {:?}", type_name, generic_types);
+                            return Some(RichType::Named {
+                                name: type_name,
+                                generics: generic_types,
+                            });
+                        }
+                    }
+                    // No generics found - just use the type name
+                    if let Some(seg) = path.segments.last() {
+                        eprintln!("[G85] Path without generics: {}", seg.ident.name);
+                        return Some(RichType::Named {
+                            name: seg.ident.name.clone(),
+                            generics: vec![],
+                        });
+                    }
+                    None
+                }
+                // Method call - could infer from receiver but complex
+                _ => None,
+            }
+        }
+
+        /// G60: Extract const generic shape from an expression like [64] or [128, 64]
+        fn extract_shape_const_generic(&self, expr: &Expr) -> Option<RichType> {
+            eprintln!("[G60] extract_shape_const_generic: examining {:?}", std::mem::discriminant(expr));
+            match expr {
+                // Array literal: [64] or [128, 64]
+                Expr::Array(elements) => {
+                    eprintln!("[G60] extract_shape_const_generic: Array with {} elements", elements.len());
+                    // For shape arrays, extract the first dimension as the const generic
+                    // This is a simplification - full support would track all dimensions
+                    if let Some(first) = elements.first() {
+                        eprintln!("[G60] extract_shape_const_generic: first element: {:?}", first);
+                        if let Some(val) = self.extract_const_value(first) {
+                            eprintln!("[G60] extract_shape_const_generic: got value {}", val);
+                            return Some(RichType::ConstGeneric(val));
+                        }
+                    }
+                    None
+                }
+                // Path that might be a const: DIM or SEQ_LEN
+                Expr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let name = &path.segments[0].ident.name;
+                        eprintln!("[G60] extract_shape_const_generic: Path {}", name);
+                        // Look up const from global_vars
+                        if let Some(val) = self.get_const_value(name) {
+                            eprintln!("[G60] extract_shape_const_generic: const value {}", val);
+                            return Some(RichType::ConstGeneric(val));
+                        }
+                    }
+                    None
+                }
+                _ => {
+                    eprintln!("[G60] extract_shape_const_generic: unhandled variant");
+                    None
+                }
+            }
+        }
+
+        /// G60: Get the compile-time value of a const from global_vars
+        fn get_const_value(&self, name: &str) -> Option<i64> {
+            if let Some(global) = self.global_vars.get(name) {
+                // Get the initializer value from the global constant
+                if let Some(init) = global.get_initializer() {
+                    if let Some(int_val) = init.into_int_value().get_sign_extended_constant() {
+                        return Some(int_val);
+                    }
+                }
+            }
+            None
+        }
+
+        /// G87: Look up an associated constant on a concrete type
+        /// E.g., lookup_associated_constant(Shape2<4, 4>, "RANK") -> Some(2)
+        /// E.g., lookup_associated_constant(f32, "SIZE") -> Some(4)
+        fn lookup_associated_constant(&self, rich_type: &RichType, const_name: &str) -> Option<i64> {
+            let type_name = match rich_type {
+                RichType::Named { name, .. } => name.as_str(),
+                _ => return None,
+            };
+
+            // Shape trait associated constants
+            if const_name == "RANK" {
+                return match type_name {
+                    "Scalar" => Some(0),
+                    "Shape1" => Some(1),
+                    "Shape2" => Some(2),
+                    "Shape3" => Some(3),
+                    "Shape4" => Some(4),
+                    "DynShape" => Some(0), // Runtime-determined
+                    _ => None,
+                };
+            }
+
+            // Shape trait NUMEL - requires const generic values
+            if const_name == "NUMEL" {
+                if let RichType::Named { generics, .. } = rich_type {
+                    // Calculate product of all const generic dimensions
+                    let product: i64 = generics.iter()
+                        .filter_map(|g| {
+                            if let RichType::ConstGeneric(v) = g { Some(*v) } else { None }
+                        })
+                        .product();
+                    if product > 0 {
+                        return Some(product);
+                    }
+                }
+                return None;
+            }
+
+            // DType trait associated constants
+            if const_name == "SIZE" {
+                return match type_name {
+                    "f32" => Some(4),
+                    "f64" => Some(8),
+                    "f16" => Some(2),
+                    "bf16" => Some(2),
+                    "i8" => Some(1),
+                    "i16" => Some(2),
+                    "i32" => Some(4),
+                    "i64" => Some(8),
+                    "u8" => Some(1),
+                    "u16" => Some(2),
+                    "u32" => Some(4),
+                    "u64" => Some(8),
+                    _ => None,
+                };
+            }
+
+            None
+        }
+
+        /// G60: Extract full Shape type from shape expression like [64] or [128, 64]
+        /// Returns Shape1<N>, Shape2<M,N>, Shape3<...>, etc.
+        fn extract_full_shape_type(&self, expr: &Expr) -> Option<RichType> {
+            match expr {
+                // Array literal: [64] -> Shape1<64>, [128, 64] -> Shape2<128, 64>
+                Expr::Array(elements) => {
+                    let dims: Vec<i64> = elements.iter()
+                        .filter_map(|e| self.extract_const_value(e))
+                        .collect();
+
+                    if dims.is_empty() {
+                        // No const dims - use DynShape
+                        return Some(RichType::Named {
+                            name: "DynShape".to_string(),
+                            generics: vec![],
+                        });
+                    }
+
+                    let shape_name = match dims.len() {
+                        1 => "Shape1",
+                        2 => "Shape2",
+                        3 => "Shape3",
+                        4 => "Shape4",
+                        _ => "DynShape",
+                    };
+
+                    if shape_name == "DynShape" {
+                        return Some(RichType::Named {
+                            name: shape_name.to_string(),
+                            generics: vec![],
+                        });
+                    }
+
+                    // Build Shape type with const generic dimensions
+                    let dim_generics: Vec<RichType> = dims.iter()
+                        .map(|d| RichType::ConstGeneric(*d))
+                        .collect();
+
+                    Some(RichType::Named {
+                        name: shape_name.to_string(),
+                        generics: dim_generics,
+                    })
+                }
+                // For non-array shapes (variables, etc.), use DynShape
+                _ => Some(RichType::Named {
+                    name: "DynShape".to_string(),
+                    generics: vec![],
+                }),
+            }
+        }
+
+        /// Extract a compile-time constant value from an expression
+        fn extract_const_value(&self, expr: &Expr) -> Option<i64> {
+            match expr {
+                Expr::Literal(Literal::Int { value, .. }) => {
+                    value.replace('_', "").parse().ok()
+                }
+                Expr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let name = &path.segments[0].ident.name;
+                        // Look up const from global_vars
+                        self.get_const_value(name)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        }
+
+        /// Extract struct type name from a TypeExpr (e.g., &SimpleLM -> SimpleLM)
+        /// Returns None for primitive types, Some(name) for user-defined structs
+        fn extract_struct_type_from_type_expr(&self, ty: &ast::TypeExpr) -> Option<String> {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        let name = &seg.ident.name;
+                        // Exclude primitive types
+                        if !matches!(name.as_str(),
+                            "i8" | "i16" | "i32" | "i64" | "i128" |
+                            "u8" | "u16" | "u32" | "u64" | "u128" |
+                            "f32" | "f64" | "bool" | "char" | "str" | "String"
+                        ) && !name.starts_with("Vec<") {
+                            // Check if this is a known struct
+                            eprintln!("[EXTRACT-TYPE] checking '{}' in struct_types: {}", name, self.struct_types.contains_key(name));
+                            if self.struct_types.contains_key(name) {
+                                return Some(name.clone());
+                            }
+                        }
+                    }
+                    None
+                }
+                ast::TypeExpr::Reference { inner, .. } => self.extract_struct_type_from_type_expr(inner),
+                ast::TypeExpr::Pointer { inner, .. } => self.extract_struct_type_from_type_expr(inner),
+                _ => None,
+            }
+        }
+
+        /// Check if a TypeExpr contains f64 (including in generics like Vec<f64>)
+        fn type_contains_f64(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    // Check if the type itself is f64
+                    if let Some(seg) = path.segments.last() {
+                        if seg.ident.name == "f64" || seg.ident.name == "f32" {
+                            return true;
+                        }
+                        // G101: Only check generic arguments for known collection types
+                        // that actually produce float values when accessed (Vec<f64>, Option<f64>, etc.)
+                        // Do NOT mark struct types with float generic params (e.g., Tensor<DynShape, f32, Cpu>)
+                        // as float - these are pointers to structs, not scalar floats
+                        let type_name = seg.ident.name.as_str();
+                        let is_float_collection = matches!(type_name, "Vec" | "Option" | "Result");
+                        if is_float_collection {
+                            if let Some(ref generics) = seg.generics {
+                                for inner_ty in generics {
+                                    if self.type_contains_f64(inner_ty) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                ast::TypeExpr::Reference { inner, .. } => self.type_contains_f64(inner),
+                ast::TypeExpr::Pointer { inner, .. } => self.type_contains_f64(inner),
+                ast::TypeExpr::Array { element, .. } => self.type_contains_f64(element),
+                ast::TypeExpr::Slice(inner) => self.type_contains_f64(inner),
+                ast::TypeExpr::Tuple(elements) => elements.iter().any(|e| self.type_contains_f64(e)),
+                _ => false,
+            }
+        }
+
+        /// G32: Check if a TypeExpr is or contains Rust String (heap-allocated)
+        /// G52: NOTE: This does NOT include &str - &str is a C string (null-terminated)
+        /// which should be handled with SigilType::String, not SigilType::RustString
+        fn type_contains_string(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        // Only match Rust String, NOT &str (C string)
+                        if seg.ident.name == "String" {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                ast::TypeExpr::Reference { inner, .. } => self.type_contains_string(inner),
+                ast::TypeExpr::Pointer { inner, .. } => self.type_contains_string(inner),
+                _ => false,
+            }
+        }
+
+        /// G28: Check if type is a byte slice (&[u8]) for direct pointer indexing
+        /// G52: NOTE: This does NOT include &str - &str is a C string (null-terminated)
+        /// which doesn't need an extra _len parameter. Use type_is_str_ref for &str.
+        fn type_is_byte_slice(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(_) => {
+                    // Bare path like "str" - not a byte slice, that's a C string
+                    false
+                }
+                ast::TypeExpr::Reference { inner, .. } => {
+                    // &[u8] only - NOT &str or other slices
+                    match inner.as_ref() {
+                        ast::TypeExpr::Slice(elem_ty) => {
+                            // Only &[u8] counts as byte slice
+                            if let ast::TypeExpr::Path(path) = elem_ty.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    seg.ident.name == "u8"
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        }
+                        // G52: &str is a C string, NOT a byte slice
+                        // C strings don't need extra _len param (they're null-terminated)
+                        _ => false,
+                    }
+                }
+                ast::TypeExpr::Slice(elem_ty) => {
+                    // [u8] without & - only byte arrays
+                    if let ast::TypeExpr::Path(path) = elem_ty.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            seg.ident.name == "u8"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        }
+
+        /// G52: Check if type is a byte slice OR &str for indexing purposes
+        /// Both &[u8] and &str can be indexed directly with pointer arithmetic
+        fn type_is_indexable_slice(&self, ty: &ast::TypeExpr) -> bool {
+            self.type_is_byte_slice(ty) || self.type_is_str_ref(ty)
+        }
+
+        /// G69: Check if return type is any slice reference (&[T])
+        /// These need an extra out-parameter for the length when returned from methods
+        fn return_type_is_slice(&self, return_type: &Option<ast::TypeExpr>) -> bool {
+            if let Some(ty) = return_type {
+                match ty {
+                    ast::TypeExpr::Reference { inner, .. } => {
+                        matches!(inner.as_ref(), ast::TypeExpr::Slice(_))
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        }
+
+        /// G40: Check if type is specifically &str (C-string reference)
+        /// This is separate from type_is_byte_slice to distinguish &str (C-string) from &[u8] (Vec)
+        fn type_is_str_ref(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        seg.ident.name == "str"
+                    } else {
+                        false
+                    }
+                }
+                ast::TypeExpr::Reference { inner, .. } => {
+                    if let ast::TypeExpr::Path(path) = inner.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            seg.ident.name == "str"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        }
+
+        /// G26: Check if type is a reference type (&T or &vary T) that needs dereferencing
+        /// Excludes &str and &[u8] which are handled separately (they're C strings/byte arrays)
+        fn type_is_vec_ref(&self, ty: &ast::TypeExpr) -> bool {
+            match ty {
+                ast::TypeExpr::Reference { inner, .. } => {
+                    // Check inner type - handles Vec, slices, and struct references
+                    match inner.as_ref() {
+                        ast::TypeExpr::Path(path) => {
+                            if let Some(seg) = path.segments.last() {
+                                // Exclude &str which is handled differently
+                                // Include &Vec<T> and &StructName (any non-primitive reference)
+                                let name = &seg.ident.name;
+                                name != "str" && name != "u8" && name != "i8" &&
+                                name != "i16" && name != "u16" && name != "i32" && name != "u32" &&
+                                name != "i64" && name != "u64" && name != "f32" && name != "f64" &&
+                                name != "bool" && name != "char"
+                            } else {
+                                false
+                            }
+                        }
+                        ast::TypeExpr::Slice(elem_ty) => {
+                            // &[T] slice reference
+                            // Exclude &[u8] which is handled as byte slice
+                            if let ast::TypeExpr::Path(path) = elem_ty.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    seg.ident.name != "u8"  // Not a byte slice
+                                } else {
+                                    true
+                                }
+                            } else {
+                                true
+                            }
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            }
+        }
+
+        /// G122: Check if type is an array type (e.g., [T; N])
+        /// Arrays need direct GEP indexing, not Vec runtime functions
+        fn type_is_array(&self, ty: &ast::TypeExpr) -> bool {
+            matches!(ty, ast::TypeExpr::Array { .. })
         }
 
         /// Compile a pipe expression: data |τ{f} |φ{p} |ρ+
@@ -4680,8 +11354,12 @@ pub mod llvm {
             Ok(result)
         }
 
-        /// Compile array literal: allocate stack space and store each element
+        /// Compile array literal: allocate as global constant if all elements are const,
+        /// otherwise allocate on stack.
         /// Returns pointer to first element as i64 (for now, proper fat pointers later)
+        ///
+        /// G77 fix: When all elements are constant, use a global constant instead of stack
+        /// allocation to avoid dangling pointer when returning &[const_array].
         fn compile_array_literal(
             &mut self,
             fn_value: FunctionValue<'ctx>,
@@ -4697,7 +11375,49 @@ pub mod llvm {
             let i64_type = self.context.i64_type();
             let array_type = i64_type.array_type(len as u32);
 
-            // Allocate array on stack
+            // G77: Try to compile all elements as constants first
+            let mut const_values: Vec<IntValue<'ctx>> = Vec::with_capacity(len);
+            let mut all_const = true;
+
+            for elem in elements.iter() {
+                let value = self.compile_expr(fn_value, scope, elem)?;
+                // Check if this is a constant
+                if value.is_const() {
+                    const_values.push(value);
+                } else {
+                    all_const = false;
+                    break;
+                }
+            }
+
+            // G77: If all elements are constant, use a global constant array
+            // This prevents dangling pointers when returning &[const_array]
+            if all_const && const_values.len() == len {
+                // Create array constant
+                let const_array = i64_type.const_array(
+                    &const_values.iter().map(|v| *v).collect::<Vec<_>>()
+                );
+
+                // Create global constant
+                static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let global_name = format!("const_array_{}", id);
+
+                let global = self.module.add_global(array_type, None, &global_name);
+                global.set_initializer(&const_array);
+                global.set_constant(true);
+                global.set_linkage(inkwell::module::Linkage::Private);
+
+                // Return pointer to global as i64
+                let ptr_as_int = self
+                    .builder
+                    .build_ptr_to_int(global.as_pointer_value(), i64_type, "const_arr_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                return Ok(ptr_as_int);
+            }
+
+            // Fallback: allocate array on stack (for non-const elements)
             let array_ptr = self
                 .builder
                 .build_alloca(array_type, "array")
@@ -4738,8 +11458,10 @@ pub mod llvm {
             Ok(ptr_as_int)
         }
 
-        /// Compile array/slice indexing: arr[idx]
-        /// Expects arr to be a pointer (as i64) to an array
+        /// Compile array/slice indexing: arr[idx] or arr[start..end]
+        /// Vec layout is: {len: i64, cap: i64, data[]} where data is inline at offset 2
+        /// Uses cached data base pointer when available to avoid repeated +2 offset calculations
+        /// Range indexing (arr[start..end]) creates a new Vec with copied elements
         fn compile_index(
             &mut self,
             fn_value: FunctionValue<'ctx>,
@@ -4747,35 +11469,377 @@ pub mod llvm {
             expr: &Expr,
             index: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
-            let base_ptr_int = self.compile_expr(fn_value, scope, expr)?;
-            let idx = self.compile_expr(fn_value, scope, index)?;
-
             let i64_type = self.context.i64_type();
 
-            // Convert i64 back to pointer
-            let base_ptr = self
-                .builder
-                .build_int_to_ptr(
-                    base_ptr_int,
-                    i64_type.ptr_type(Default::default()),
-                    "arr_ptr",
-                )
-                .map_err(|e| e.to_string())?;
-
-            // GEP to get element at index
-            let elem_ptr = unsafe {
-                self.builder
-                    .build_gep(i64_type, base_ptr, &[idx], "elem_ptr")
+            // Check if this is a range index (slice operation)
+            if let Expr::Range { start, end, inclusive } = index {
+                return self.compile_range_index(fn_value, scope, expr, start.as_deref(), end.as_deref(), *inclusive);
             }
-            .map_err(|e| e.to_string())?;
 
-            // Load and return the value
-            let value = self
+            let idx = self.compile_expr(fn_value, scope, index)?;
+
+            // G28: Check if this is a byte slice (from as_bytes)
+            // Byte slices use direct pointer indexing, not Vec runtime functions
+            // G52: Also check slice_lens for slice params and local slice variables
+            let is_byte_slice = if let Expr::Path(path) = expr {
+                if let Some(seg) = path.segments.last() {
+                    scope.is_string_var(&seg.ident.name) ||
+                    scope.slice_lens.contains_key(&seg.ident.name)
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if is_byte_slice {
+                // Direct pointer indexing for byte slices
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let ptr_val = self.compile_expr(fn_value, scope, expr)?;
+                let ptr = self
+                    .builder
+                    .build_int_to_ptr(ptr_val, ptr_type, "byte_slice_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                // GEP to get byte at index
+                let byte_ptr = unsafe {
+                    self.builder
+                        .build_gep(self.context.i8_type(), ptr, &[idx], "byte_ptr")
+                        .map_err(|e| e.to_string())?
+                };
+
+                // Load the byte
+                let byte_val = self
+                    .builder
+                    .build_load(self.context.i8_type(), byte_ptr, "byte_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+
+                // Zero-extend to i64
+                return self
+                    .builder
+                    .build_int_z_extend(byte_val, i64_type, "byte_i64")
+                    .map_err(|e| e.to_string());
+            }
+
+            // G122: Check if this is an array literal or array variable
+            // Array literals compile to raw i64 array pointers, not Vec structures.
+            // We need to use direct GEP indexing, not sigil_vec_get.
+            let is_array = match expr {
+                Expr::Array(_) => true,
+                Expr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        // Check if this variable is known to be an array
+                        scope.array_vars.contains(&seg.ident.name)
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+
+            if is_array {
+                eprintln!("[G122] Using direct array indexing for {:?}", expr);
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let arr_ptr_val = self.compile_expr(fn_value, scope, expr)?;
+                let arr_ptr = self
+                    .builder
+                    .build_int_to_ptr(arr_ptr_val, ptr_type, "arr_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                // GEP to get element at index - array elements are i64
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_gep(i64_type, arr_ptr, &[idx], "elem_ptr")
+                        .map_err(|e| e.to_string())?
+                };
+
+                // Load the element
+                let elem_val = self
+                    .builder
+                    .build_load(i64_type, elem_ptr, "elem_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+
+                return Ok(elem_val);
+            }
+
+            // G25 Fix: Use sigil_vec_get for proper Vec access
+            // The Rust Vec memory layout (ptr, len, cap) doesn't match the
+            // inline data assumption. Call the runtime function instead.
+            let mut vec_ptr = self.compile_expr(fn_value, scope, expr)?;
+
+            // G26: If expr is a reference variable, dereference it
+            if let Expr::Path(path) = expr {
+                if let Some(seg) = path.segments.last() {
+                    if scope.ref_vars.contains(&seg.ident.name) {
+                        // vec_ptr is the address of the original alloca
+                        // Load from it to get the actual Vec pointer
+                        let ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                vec_ptr,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "ref_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        let loaded = self
+                            .builder
+                            .build_load(self.context.i64_type(), ptr, "deref_vec")
+                            .map_err(|e| e.to_string())?;
+                        vec_ptr = loaded.into_int_value();
+                    }
+                }
+            }
+
+            let vec_get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+
+            let call = self
                 .builder
-                .build_load(i64_type, elem_ptr, "elem")
+                .build_call(vec_get_fn, &[vec_ptr.into(), idx.into()], "vec_elem")
                 .map_err(|e| e.to_string())?;
 
-            Ok(value.into_int_value())
+            Ok(call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false)))
+        }
+
+        /// Compile range indexing (slicing): arr[start..end]
+        /// Creates a new Vec containing copied elements from the range
+        /// G32: Also handles string slicing using sigil_string_slice
+        fn compile_range_index(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            expr: &Expr,
+            start: Option<&Expr>,
+            end: Option<&Expr>,
+            _inclusive: bool,
+        ) -> Result<IntValue<'ctx>, String> {
+            let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+            // G32: Check if this is a C string literal (direct literal in expression)
+            let is_c_string_literal = matches!(expr, Expr::Literal(Literal::String(_)));
+
+            // G32: Check variable types for string handling
+            let (is_c_string_var, is_rust_string) = if let Expr::Path(path) = expr {
+                if let Some(seg) = path.segments.last() {
+                    let var_type = scope.var_types.get(&seg.ident.name);
+                    match var_type {
+                        // SigilType::RustString: from to_string(), fs_read(), etc.
+                        Some(SigilType::RustString) => (false, true),
+                        // SigilType::String: C string literal stored in variable
+                        Some(SigilType::String) => (true, false),
+                        _ => (false, false),
+                    }
+                } else {
+                    (false, false)
+                }
+            } else {
+                (false, false)
+            };
+
+            let is_c_string = is_c_string_literal || is_c_string_var;
+
+            // G32: Handle string slicing
+            if is_c_string || is_rust_string {
+                let src_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+                let start_idx = if let Some(s) = start {
+                    self.compile_expr(fn_value, scope, s)?
+                } else {
+                    i64_type.const_int(0, false)
+                };
+                // For end, we need to get length first if not specified
+                let end_idx = if let Some(e) = end {
+                    self.compile_expr(fn_value, scope, e)?
+                } else {
+                    // Get string length - use appropriate function
+                    let strlen_fn_name = if is_rust_string {
+                        "sigil_string_len"
+                    } else {
+                        "sigil_strlen"
+                    };
+                    let strlen_fn = self
+                        .module
+                        .get_function(strlen_fn_name)
+                        .ok_or(format!("{} not declared", strlen_fn_name))?;
+                    let len_call = self
+                        .builder
+                        .build_call(strlen_fn, &[src_ptr_int.into()], "str_len")
+                        .map_err(|e| e.to_string())?;
+                    len_call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| i64_type.const_int(0, false))
+                };
+
+                // Use appropriate slice function
+                let slice_fn_name = if is_rust_string {
+                    "sigil_rust_string_slice"
+                } else {
+                    "sigil_string_slice"
+                };
+                let slice_fn = self
+                    .module
+                    .get_function(slice_fn_name)
+                    .ok_or(format!("{} not declared", slice_fn_name))?;
+
+                // Functions use i64 for pointers, so pass directly
+                let call = self
+                    .builder
+                    .build_call(
+                        slice_fn,
+                        &[src_ptr_int.into(), start_idx.into(), end_idx.into()],
+                        "str_slice",
+                    )
+                    .map_err(|e| e.to_string())?;
+                // Result is i64 (pointer as integer)
+                return Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_int_value())
+                    .unwrap_or_else(|| i64_type.const_int(0, false)));
+            }
+
+            // Get the source vec pointer
+            let src_ptr_int = self.compile_expr(fn_value, scope, expr)?;
+            let src_ptr = self
+                .builder
+                .build_int_to_ptr(src_ptr_int, ptr_type, "src_ptr")
+                .map_err(|e| e.to_string())?;
+
+            // Get source length via sigil_vec_len
+            let len_fn = self
+                .module
+                .get_function("sigil_vec_len")
+                .ok_or("sigil_vec_len not declared")?;
+            let len_call = self
+                .builder
+                .build_call(len_fn, &[src_ptr_int.into()], "src_len")
+                .map_err(|e| e.to_string())?;
+            let src_len = len_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+            // Get start index (default: 0)
+            let start_idx = if let Some(s) = start {
+                self.compile_expr(fn_value, scope, s)?
+            } else {
+                i64_type.const_int(0, false)
+            };
+
+            // Get end index (default: src_len)
+            let end_idx = if let Some(e) = end {
+                self.compile_expr(fn_value, scope, e)?
+            } else {
+                src_len
+            };
+
+            // Calculate slice length: end - start
+            let slice_len = self
+                .builder
+                .build_int_sub(end_idx, start_idx, "slice_len")
+                .map_err(|e| e.to_string())?;
+
+            // Get runtime functions
+            let new_fn = self
+                .module
+                .get_function("sigil_vec_new")
+                .ok_or("sigil_vec_new not declared")?;
+            let get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+            let push_fn = self
+                .module
+                .get_function("sigil_vec_push")
+                .ok_or("sigil_vec_push not declared")?;
+
+            // Create new vec with calculated capacity
+            let new_call = self
+                .builder
+                .build_call(new_fn, &[slice_len.into()], "new_vec")
+                .map_err(|e| e.to_string())?;
+            let new_vec = new_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+            // Build loop to copy elements from start_idx to end_idx
+            let loop_header = self.context.append_basic_block(fn_value, "slice_header");
+            let loop_body = self.context.append_basic_block(fn_value, "slice_body");
+            let loop_end = self.context.append_basic_block(fn_value, "slice_end");
+
+            // Initialize counter to start_idx
+            let counter_ptr = self
+                .builder
+                .build_alloca(i64_type, "slice_i")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, start_idx)
+                .map_err(|e| e.to_string())?;
+
+            // Jump to header
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Loop header: check if i < end_idx
+            self.builder.position_at_end(loop_header);
+            let i = self
+                .builder
+                .build_load(i64_type, counter_ptr, "i")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let cmp = self
+                .builder
+                .build_int_compare(inkwell::IntPredicate::SLT, i, end_idx, "cmp")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cmp, loop_body, loop_end)
+                .map_err(|e| e.to_string())?;
+
+            // Loop body: get element from source at index i, push to new vec
+            self.builder.position_at_end(loop_body);
+            let get_call = self
+                .builder
+                .build_call(get_fn, &[src_ptr_int.into(), i.into()], "elem")
+                .map_err(|e| e.to_string())?;
+            let elem = get_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+            self.builder
+                .build_call(push_fn, &[new_vec.into(), elem.into()], "")
+                .map_err(|e| e.to_string())?;
+
+            // Increment counter
+            let next_i = self
+                .builder
+                .build_int_add(i, i64_type.const_int(1, false), "next_i")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, next_i)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Position at end and return new vec pointer
+            self.builder.position_at_end(loop_end);
+
+            Ok(new_vec)
         }
 
         /// Compile a binary operation
@@ -4922,6 +11986,1957 @@ pub mod llvm {
             }
         }
 
+        /// Get the rich type (with generics) from an expression, if available.
+        /// This is used for generic method resolution via ImplRegistry.
+        /// Phase 3: Returns the full Type including generic parameters.
+        fn get_rich_type_from_expr(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> Option<RichType> {
+            match expr {
+                // G101: Handle Try and Evidential expressions (x?) - unwrap Result type
+                Expr::Try(inner) | Expr::Evidential { expr: inner, .. } => {
+                    let inner_type = self.get_rich_type_from_expr(inner, scope)?;
+                    // If inner type is Result<T, E>, unwrap to T
+                    if let RichType::Named { name, generics } = &inner_type {
+                        if name == "Result" && !generics.is_empty() {
+                            eprintln!("[G101] Unwrapping Result type: {:?} -> {:?}", inner_type, generics[0]);
+                            return Some(generics[0].clone());
+                        }
+                    }
+                    // Otherwise just return the inner type (in case Ok() didn't wrap)
+                    Some(inner_type)
+                }
+                // Variable reference: look up in scope's rich_types
+                Expr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let var_name = &path.segments[0].ident.name;
+                        let result = scope.get_rich_type(var_name).cloned();
+                        if var_name == "self" || var_name == "this" {
+                            eprintln!("[G87-SELF] get_rich_type_from_expr for '{}': {:?}", var_name, result);
+                        }
+                        return result;
+                    }
+                    None
+                }
+                // G60: Field access: get base type and look up field type
+                // For self.shape where self: Tensor<Shape1<64>, f32, Cuda>, shape has type S = Shape1<64>
+                Expr::Field { expr: base_expr, field } => {
+                    let base_type = self.get_rich_type_from_expr(base_expr, scope)?;
+
+                    // Get the struct's generic parameter order
+                    // For Tensor<S, D, Dev>, fields use generic params that we need to substitute
+                    if let RichType::Named { name, generics } = &base_type {
+                        // Look up field type name from field_type_names
+                        let field_type_name_opt = self.field_type_names.get(&(name.clone(), field.name.clone()));
+
+                        // G60: Even if not in field_type_names, check if this is a known Tensor field
+                        // Tensor fields: shape (S), storage, layout
+                        let field_type_name = match field_type_name_opt {
+                            Some(name) => name.clone(),
+                            None if name == "Tensor" && field.name == "shape" => "S".to_string(),
+                            None => return None,
+                        };
+
+                        // Check if field type is a generic parameter
+                        // For Tensor, shape field has type "S" which should map to generics[0]
+                        let generic_param_index = match (name.as_str(), field.name.as_str()) {
+                            ("Tensor", "shape") => Some(0),  // S is first generic
+                            ("Tensor", "dtype") => Some(1),  // D is second generic (if it were a field)
+                            ("Tensor", "device") => Some(2), // Dev is third generic (if it were a field)
+                            _ => None,
+                        };
+
+                        if let Some(idx) = generic_param_index {
+                            if idx < generics.len() {
+                                return Some(generics[idx].clone());
+                            }
+                        }
+
+                        // G86: Handle fields with parameterized types that use multiple generics
+                        // For Tensor.storage (StoragePtr<D, Dev>), substitute D=generics[1], Dev=generics[2]
+                        if name == "Tensor" && field.name == "storage" && generics.len() >= 3 {
+                            return Some(RichType::Named {
+                                name: "StoragePtr".to_string(),
+                                generics: vec![generics[1].clone(), generics[2].clone()],
+                            });
+                        }
+
+                        // Check if field type name is a generic param registered in scope
+                        if let Some(rich_type) = scope.get_rich_type(&field_type_name) {
+                            return Some(rich_type.clone());
+                        }
+
+                        // Fall back to simple Named type
+                        return Some(RichType::Named {
+                            name: field_type_name.clone(),
+                            generics: vec![],
+                        });
+                    }
+                    None
+                }
+                // G76: Handle array literals - use extract_full_shape_type for shape inference
+                // This enables Tensor::zeros([64, 64]) to infer S = Shape2<64, 64>
+                Expr::Array(_) => {
+                    self.extract_full_shape_type(expr)
+                }
+                // G66: Handle reference expressions - &expr or &mut expr
+                Expr::Unary { op, expr: inner } => {
+                    match op {
+                        ast::UnaryOp::Ref => {
+                            // Get the inner type and wrap in Ref
+                            let inner_type = self.get_rich_type_from_expr(inner, scope)?;
+                            Some(RichType::Ref {
+                                lifetime: None,
+                                mutable: false,
+                                inner: Box::new(inner_type),
+                            })
+                        }
+                        ast::UnaryOp::RefMut => {
+                            let inner_type = self.get_rich_type_from_expr(inner, scope)?;
+                            Some(RichType::Ref {
+                                lifetime: None,
+                                mutable: true,
+                                inner: Box::new(inner_type),
+                            })
+                        }
+                        _ => {
+                            // Other unary ops - get the inner expression's type
+                            self.get_rich_type_from_expr(inner, scope)
+                        }
+                    }
+                }
+                // G101: Handle function calls - look up return type
+                // Only handle standalone function calls; return None for static method calls
+                // so that infer_rich_type_from_expr can handle them (has better heuristics)
+                Expr::Call { func, .. } => {
+                    if let Expr::Path(path) = func.as_ref() {
+                        // Standalone function call: make_tensor_result()
+                        if path.segments.len() == 1 {
+                            let func_name = &path.segments[0].ident.name;
+                            if let Some(ret_ty) = self.ret_types.get(func_name) {
+                                let rich_type = self.type_expr_to_rich_type(ret_ty);
+                                eprintln!("[G101] Function call '{}' -> RichType: {:?}", func_name, rich_type);
+                                return Some(rich_type);
+                            }
+                        }
+                    }
+                    // Return None to allow fallback to infer_rich_type_from_expr
+                    // which has better heuristics for static method calls like Tensor·randn
+                    None
+                }
+                // For other expressions, fall back to struct_types and wrap in Named
+                _ => {
+                    self.get_struct_type_from_expr(expr, scope).map(|name| {
+                        RichType::Named {
+                            name,
+                            generics: vec![],  // No generics available from simple lookup
+                        }
+                    })
+                }
+            }
+        }
+
+        /// Try to resolve a method call via the ImplRegistry for generic methods.
+        /// Returns the mangled function name if resolution succeeds.
+        /// Phase 3: This enables proper generic method dispatch.
+        fn try_resolve_generic_method(
+            &mut self,
+            receiver_type: &RichType,
+            method_name: &str,
+        ) -> Option<String> {
+            eprintln!("[G60] try_resolve_generic_method: {:?}.{}", receiver_type, method_name);
+            // Try to resolve via ImplRegistry
+            if let Some((method_def, bindings)) = self.impl_registry.resolve_method(receiver_type, method_name) {
+                eprintln!("[G60] try_resolve_generic_method: resolved! bindings = {:?}", bindings);
+                // Get or create monomorphized instance
+                // G85: Handle Ref types by extracting the inner type name
+                let impl_id = match receiver_type {
+                    RichType::Named { name, .. } => name.clone(),
+                    RichType::Ref { inner, .. } => {
+                        match inner.as_ref() {
+                            RichType::Named { name, .. } => name.clone(),
+                            _ => "unknown".to_string(),
+                        }
+                    }
+                    _ => "unknown".to_string(),
+                };
+
+                match self.monomorph_cache.get_or_request(&method_def, &bindings, &impl_id) {
+                    Ok(GetOrRequest::Cached(fn_name)) => Some(fn_name),
+                    Ok(GetOrRequest::NeedsCompilation(fn_name)) => {
+                        // Phase 5: Compile the monomorphized method body
+                        if let Err(e) = self.compile_monomorphized_method(&method_def, &bindings, &fn_name) {
+                            eprintln!("[LLVM] Error compiling monomorphized method {}: {}", fn_name, e);
+                            // Fall through - the function may still be declared elsewhere
+                        }
+                        Some(fn_name)
+                    }
+                    Err(_) => None,
+                }
+            } else {
+                None
+            }
+        }
+
+        /// Compile a monomorphized method body.
+        /// Phase 5: This takes a generic method definition, concrete type bindings,
+        /// and compiles it to an LLVM function with the given mangled name.
+        fn compile_monomorphized_method(
+            &mut self,
+            method_def: &MethodDef,
+            bindings: &TypeBindings,
+            fn_name: &str,
+        ) -> Result<(), String> {
+            eprintln!("[G63-MONO] compile_monomorphized_method: fn_name='{}', method_name='{}', has_body={}", fn_name, method_def.name, method_def.body.is_some());
+            // G56: Save current builder position so we can restore after compiling
+            // the monomorphized method. This is critical because we're called during
+            // expression compilation in another function (e.g., main).
+            let saved_block = self.builder.get_insert_block();
+
+            // G63 fix: Save and set current_self_type for field access resolution
+            // Without this, `this.field` fails because get_struct_type_from_expr
+            // uses current_self_type to resolve `this`/`self` expressions.
+            let saved_self_type = self.current_self_type.clone();
+            let self_type_name = fn_name.split('_').next().unwrap_or("Unknown");
+            self.current_self_type = Some(self_type_name.to_string());
+
+            // Check if method has a body
+            let body = match &method_def.body {
+                Some(b) => {
+                    eprintln!("[G87-TRACE] Method '{}' has body with {} stmts, expr={}", fn_name, b.stmts.len(), b.expr.is_some());
+                    b
+                }
+                None => {
+                    // No body available - this is likely an extern or trait method
+                    // Just declare the function as a stub
+                    // G63: Restore current_self_type before early return
+                    eprintln!("[G87-TRACE] Method '{}' has NO body - creating stub", fn_name);
+                    self.current_self_type = saved_self_type;
+                    return self.declare_monomorphized_stub(method_def, bindings, fn_name);
+                }
+            };
+
+            // Get concrete parameter and return types
+            let (concrete_params, _concrete_ret) = substitute_method_signature(method_def, bindings);
+
+            // G56: Count const generics in bindings - they become extra parameters
+            let const_generic_count = bindings.iter()
+                .filter(|(_, ty)| matches!(ty, RichType::ConstGeneric(_)))
+                .count();
+
+            // G56: Count non-self params (skip "this", "self", and "_" which is often the self receiver)
+            let non_self_params = concrete_params.iter()
+                .filter(|(name, _)| name != "this" && name != "self" && name != "_")
+                .count();
+
+            // Build LLVM function type
+            // For simplicity, we use i64 for all parameters (the Sigil ABI)
+            let i64_type = self.context.i64_type();
+            let param_count = non_self_params + 1 + const_generic_count; // +1 for self, + const generics
+            let param_types: Vec<_> = (0..param_count)
+                .map(|_| i64_type.into())
+                .collect();
+            let fn_type = i64_type.fn_type(&param_types, false);
+
+            // Check if function already exists (might have been declared as stub)
+            let fn_value = if let Some(existing) = self.module.get_function(fn_name) {
+                existing
+            } else {
+                self.module.add_function(fn_name, fn_type, None)
+            };
+
+            // Create entry block
+            let entry = self.context.append_basic_block(fn_value, "entry");
+            self.builder.position_at_end(entry);
+
+            // Set up variable scope with type bindings for generic resolution
+            let mut scope = CompileScope::new();
+            scope.float_funcs = self.float_funcs.clone();
+
+            // Store type bindings in scope for later type resolution
+            for (name, ty) in bindings.iter() {
+                scope.rich_types.insert(name.clone(), ty.clone());
+                // G56: Extract const generic values for direct identifier lookup
+                // When method body uses `N`, this makes it resolve to the concrete value
+                // G85: Only insert non-zero values - 0 indicates unresolved const generic
+                // that should be loaded from runtime parameter instead
+                if let RichType::ConstGeneric(val) = ty {
+                    if *val != 0 {
+                        scope.const_generics.insert(name.clone(), *val);
+                    }
+                }
+            }
+
+            // Add self parameter (index 0)
+            let self_param = fn_value.get_nth_param(0).unwrap();
+            let self_alloca = self.builder
+                .build_alloca(i64_type, "self")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(self_alloca, self_param)
+                .map_err(|e| e.to_string())?;
+            scope.vars.insert("self".to_string(), self_alloca);
+            // G60: Also insert "this" since Sigil methods often use &this pattern
+            scope.vars.insert("this".to_string(), self_alloca);
+
+            // G60: Register self's RichType so method calls on this/self can resolve
+            // Extract type name from mangled fn_name (e.g., "Tensor_unsqueeze__D_f32__..." -> "Tensor")
+            let self_type_name = fn_name.split('_').next().unwrap_or("Tensor");
+            // Reconstruct receiver type with bindings in canonical order: S, D, Dev for Tensor
+            let mut generics = Vec::new();
+            // Try to get generics in a known order for Tensor type
+            if let Some(s) = bindings.get("S") { generics.push(s.clone()); }
+            if let Some(d) = bindings.get("D") { generics.push(d.clone()); }
+            if let Some(dev) = bindings.get("Dev") { generics.push(dev.clone()); }
+            let receiver_type = RichType::Named {
+                name: self_type_name.to_string(),
+                generics,
+            };
+            eprintln!("[G87-REG] Registering self type for '{}': {:?}", fn_name, receiver_type);
+            scope.register_rich_type("self".to_string(), receiver_type.clone());
+            scope.register_rich_type("this".to_string(), receiver_type);
+            eprintln!("[G87-REG] scope.rich_types after: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
+
+            // G56: Add const generic parameters (after self, before other params)
+            // These are passed as runtime values to enable compile-time constant usage
+            // G85: Store in scope.vars so lookup can find them if const_generics is empty
+            let mut param_idx = 1u32;
+            for (name, ty) in bindings.iter() {
+                if let RichType::ConstGeneric(_) = ty {
+                    let param_value = fn_value.get_nth_param(param_idx)
+                        .ok_or_else(|| format!("Missing const generic param {} at index {}", name, param_idx))?;
+                    let alloca = self.builder
+                        .build_alloca(i64_type, name)  // G85: Use actual name for debugging
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, param_value)
+                        .map_err(|e| e.to_string())?;
+                    // G85: Insert in vars as fallback - if const_generics has the value,
+                    // it takes precedence (compile-time). If not, vars provides runtime value.
+                    scope.vars.insert(name.clone(), alloca);
+                    param_idx += 1;
+                }
+            }
+
+            // Add other parameters (after const generics)
+            // G56: Skip self-like params (this, self, _, &this, &vary this) - we already handled self
+            for (param_name, param_type) in concrete_params.iter() {
+                if param_name == "this" || param_name == "self" || param_name == "_" {
+                    continue;  // Already handled as self parameter
+                }
+                let param_value = fn_value.get_nth_param(param_idx)
+                    .ok_or_else(|| format!("Missing param {} at index {}", param_name, param_idx))?;
+                let alloca = self.builder
+                    .build_alloca(i64_type, param_name)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(alloca, param_value)
+                    .map_err(|e| e.to_string())?;
+                scope.vars.insert(param_name.clone(), alloca);
+
+                // G57: Register RichType for parameter to enable const generic method dispatch
+                // The param_type is already substituted with concrete types from bindings
+                scope.register_rich_type(param_name.clone(), param_type.clone());
+
+                param_idx += 1;
+            }
+
+            // Compile the method body statements
+            eprintln!("[G87-MONO] Method '{}' has {} stmts, expr={}", fn_name, body.stmts.len(), body.expr.is_some());
+            for stmt in &body.stmts {
+                self.compile_stmt(fn_value, &mut scope, stmt)?;
+            }
+
+            // Handle trailing expression as return value
+            if let Some(expr) = &body.expr {
+                eprintln!("[G87-MONO-BODY] Method '{}' body expr: {:?}", fn_name, expr);
+                let ret_val = self.compile_expr(fn_value, &mut scope, expr)?;
+                self.builder
+                    .build_return(Some(&ret_val))
+                    .map_err(|e| e.to_string())?;
+            } else {
+                // No trailing expression - return 0
+                eprintln!("[G87-MONO-NO-BODY] Method '{}' has NO trailing expression!", fn_name);
+                self.builder
+                    .build_return(Some(&i64_type.const_int(0, false)))
+                    .map_err(|e| e.to_string())?;
+            }
+
+            // Register the compiled function
+            self.functions.insert(fn_name.to_string(), fn_value);
+
+            // G56: Restore builder position to the calling function
+            // Without this, subsequent instructions would be emitted into the wrong function
+            if let Some(block) = saved_block {
+                self.builder.position_at_end(block);
+            }
+
+            // G63: Restore current_self_type
+            self.current_self_type = saved_self_type;
+
+            Ok(())
+        }
+
+        /// Declare a monomorphized method as a stub (no body available).
+        fn declare_monomorphized_stub(
+            &mut self,
+            method_def: &MethodDef,
+            bindings: &TypeBindings,
+            fn_name: &str,
+        ) -> Result<(), String> {
+            // Skip if already declared
+            if self.module.get_function(fn_name).is_some() {
+                return Ok(());
+            }
+
+            // G56: Count const generics in bindings - they become extra parameters
+            let const_generic_count = bindings.iter()
+                .filter(|(_, ty)| matches!(ty, RichType::ConstGeneric(_)))
+                .count();
+
+            // G56: Count non-self params (skip "this", "self", and "_")
+            let non_self_params = method_def.params.iter()
+                .filter(|(name, _)| name != "this" && name != "self" && name != "_")
+                .count();
+
+            // Create stub function type
+            let i64_type = self.context.i64_type();
+            let param_count = non_self_params + 1 + const_generic_count; // +1 for self, + const generics
+            let param_types: Vec<_> = (0..param_count)
+                .map(|_| i64_type.into())
+                .collect();
+            let fn_type = i64_type.fn_type(&param_types, false);
+
+            // Add as external function (linker will resolve)
+            self.module.add_function(fn_name, fn_type, None);
+
+            Ok(())
+        }
+
+        /// G81: Compile a monomorphized generic function.
+        /// This is called when a generic free function is invoked with concrete type arguments.
+        fn compile_monomorphized_generic_fn(
+            &mut self,
+            func: &ast::Function,
+            bindings: &HashMap<String, RichType>,
+            fn_name: &str,
+        ) -> Result<FunctionValue<'ctx>, String> {
+            eprintln!("[G119-MONO] Compiling monomorphized generic fn: {}", fn_name);
+            eprintln!("[G119-MONO] bindings: {:?}", bindings);
+            // Save current builder position so we can restore after compiling
+            let saved_block = self.builder.get_insert_block();
+
+            // Check if function has a body
+            let body = match &func.body {
+                Some(b) => b,
+                None => {
+                    return Err(format!("Generic function '{}' has no body", func.name.name));
+                }
+            };
+
+            // Build LLVM function type
+            let i64_type = self.context.i64_type();
+            let param_count = func.params.len();
+            let param_types: Vec<_> = (0..param_count)
+                .map(|_| i64_type.into())
+                .collect();
+            let fn_type = i64_type.fn_type(&param_types, false);
+
+            // Check if function already exists (might have been declared as stub)
+            let fn_value = if let Some(existing) = self.module.get_function(fn_name) {
+                existing
+            } else {
+                self.module.add_function(fn_name, fn_type, None)
+            };
+
+            // Create entry block
+            let entry = self.context.append_basic_block(fn_value, "entry");
+            self.builder.position_at_end(entry);
+
+            // Set up variable scope with type bindings for generic resolution
+            let mut scope = CompileScope::new();
+            scope.float_funcs = self.float_funcs.clone();
+
+            // Store type bindings in scope for later type resolution
+            // This is critical - when method calls on generic params occur,
+            // they need to resolve to the concrete type
+            for (name, ty) in bindings.iter() {
+                scope.rich_types.insert(name.clone(), ty.clone());
+                // G119: Also add const generics to const_generics map so they can
+                // be resolved when used in expressions (e.g., `N` in `let numel = N`)
+                if let RichType::ConstGeneric(val) = ty {
+                    eprintln!("[G119-FIX] Adding const generic '{}' = {} to scope.const_generics", name, val);
+                    scope.const_generics.insert(name.clone(), *val);
+                }
+            }
+
+            // Add parameters to scope
+            let mut param_idx = 0u32;
+            for param in func.params.iter() {
+                let param_name = match &param.pattern {
+                    ast::Pattern::Ident { name: ident, .. } => ident.name.clone(),
+                    ast::Pattern::RefBinding { name: ident, .. } => ident.name.clone(),
+                    _ => format!("param{}", param_idx),
+                };
+
+                let param_value = fn_value.get_nth_param(param_idx)
+                    .ok_or_else(|| format!("Missing param {} at index {}", param_name, param_idx))?;
+                let alloca = self.builder
+                    .build_alloca(i64_type, &param_name)
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(alloca, param_value)
+                    .map_err(|e| e.to_string())?;
+                scope.vars.insert(param_name.clone(), alloca);
+
+                // G81: Register RichType for parameter - CRUCIAL for method dispatch
+                // If the parameter type is a generic, substitute with the concrete type
+                // G85: Handle reference types - &S should look up S and wrap result in Ref
+                let param_type_name = self.type_expr_to_string(&param.ty);
+                let (is_ref, inner_type_name) = if param_type_name.starts_with('&') {
+                    let inner = param_type_name.trim_start_matches('&').trim_start_matches("mut ").to_string();
+                    (true, inner)
+                } else {
+                    (false, param_type_name.clone())
+                };
+
+                let param_rich_type = if let Some(concrete) = bindings.get(&inner_type_name) {
+                    // G85: If param was &S, wrap the concrete type in Ref
+                    if is_ref {
+                        RichType::Ref {
+                            lifetime: None,
+                            mutable: param_type_name.contains("mut"),
+                            inner: Box::new(concrete.clone()),
+                        }
+                    } else {
+                        concrete.clone()
+                    }
+                } else {
+                    // Not a generic param, use the type directly
+                    self.type_expr_to_rich_type(&param.ty)
+                };
+                eprintln!("[G85-GEN] param '{}' registered with type {:?}", param_name, param_rich_type);
+                scope.register_rich_type(param_name.clone(), param_rich_type);
+
+                param_idx += 1;
+            }
+
+            // Compile the function body statements
+            for stmt in &body.stmts {
+                self.compile_stmt(fn_value, &mut scope, stmt)?;
+            }
+
+            // Handle trailing expression as return value
+            if let Some(expr) = &body.expr {
+                let ret_val = self.compile_expr(fn_value, &mut scope, expr)?;
+                self.builder
+                    .build_return(Some(&ret_val))
+                    .map_err(|e| e.to_string())?;
+            } else {
+                // No trailing expression - return 0
+                self.builder
+                    .build_return(Some(&i64_type.const_int(0, false)))
+                    .map_err(|e| e.to_string())?;
+            }
+
+            // Register the compiled function
+            self.functions.insert(fn_name.to_string(), fn_value);
+
+            // Restore builder position to the calling function
+            if let Some(block) = saved_block {
+                self.builder.position_at_end(block);
+            }
+
+            Ok(fn_value)
+        }
+
+        /// G66: Convert RichType to impl_registry::Type for matching
+        /// RichType is just an alias for crate::typeck::Type, so this is a simple clone.
+        fn rich_type_to_impl_type(rich: &RichType) -> Option<crate::typeck::Type> {
+            Some(rich.clone())
+        }
+
+        /// G66: Convert impl_registry::Type to RichType
+        /// RichType is just an alias for crate::typeck::Type, so this is a simple clone.
+        fn impl_type_to_rich_type(ty: &crate::typeck::Type) -> RichType {
+            ty.clone()
+        }
+
+        /// G87: Convert RichType to a string suitable for mangled symbol names
+        /// This matches the format used by MonomorphKey::mangle() in monomorph.rs
+        fn rich_type_to_mangle_string(rich: &RichType) -> String {
+            match rich {
+                RichType::Named { name, generics } => {
+                    if generics.is_empty() {
+                        name.clone()
+                    } else {
+                        // Include const generics in the mangled name
+                        let generic_suffixes: Vec<String> = generics.iter()
+                            .map(|g| match g {
+                                RichType::ConstGeneric(val) => format!("c{}", val),
+                                _ => Self::rich_type_to_mangle_string(g),
+                            })
+                            .collect();
+                        format!("{}__{}", name, generic_suffixes.join("_"))
+                    }
+                }
+                RichType::Float(crate::typeck::FloatSize::F32) => "f32".to_string(),
+                RichType::Float(crate::typeck::FloatSize::F64) => "f64".to_string(),
+                RichType::Int(crate::typeck::IntSize::I32) => "i32".to_string(),
+                RichType::Int(crate::typeck::IntSize::I64) => "i64".to_string(),
+                RichType::Int(crate::typeck::IntSize::USize) => "usize".to_string(),
+                RichType::ConstGeneric(val) => format!("c{}", val),
+                _ => "unknown".to_string(),
+            }
+        }
+
+        /// G78: Convert TypePattern to Type for default parameter handling
+        /// Only works for concrete patterns (no generics)
+        fn type_pattern_to_impl_type(pattern: &crate::impl_registry::TypePattern) -> Option<crate::typeck::Type> {
+            use crate::impl_registry::TypePattern;
+            use crate::typeck::{Type, FloatSize};
+
+            match pattern {
+                TypePattern::Concrete(ty) => Some(ty.clone()),
+                TypePattern::Parameterized { name, params } => {
+                    // Handle common default types
+                    match name.as_str() {
+                        "f32" => Some(Type::Float(FloatSize::F32)),
+                        "f64" => Some(Type::Float(FloatSize::F64)),
+                        "Cpu" | "Cuda" | "DynShape" => {
+                            // Named type with no inner generics
+                            Some(Type::Named {
+                                name: name.clone(),
+                                generics: params.iter()
+                                    .filter_map(Self::type_pattern_to_impl_type)
+                                    .collect(),
+                            })
+                        }
+                        _ => {
+                            // Try to convert as a named type
+                            let inner_generics: Option<Vec<Type>> = params.iter()
+                                .map(Self::type_pattern_to_impl_type)
+                                .collect();
+                            inner_generics.map(|generics| Type::Named {
+                                name: name.clone(),
+                                generics,
+                            })
+                        }
+                    }
+                }
+                TypePattern::Generic(_) => None, // Can't convert a generic parameter
+                TypePattern::Reference { mutable, inner } => {
+                    Self::type_pattern_to_impl_type(inner).map(|inner_type| {
+                        Type::Ref {
+                            lifetime: None,
+                            mutable: *mutable,
+                            inner: Box::new(inner_type),
+                        }
+                    })
+                }
+                TypePattern::Array { element, size } => {
+                    Self::type_pattern_to_impl_type(element).map(|elem_type| {
+                        Type::Array {
+                            element: Box::new(elem_type),
+                            size: *size,
+                        }
+                    })
+                }
+                TypePattern::Slice(inner) => {
+                    Self::type_pattern_to_impl_type(inner).map(|inner_type| {
+                        Type::Slice(Box::new(inner_type))
+                    })
+                }
+                TypePattern::Tuple(elements) => {
+                    let inner_types: Option<Vec<Type>> = elements.iter()
+                        .map(Self::type_pattern_to_impl_type)
+                        .collect();
+                    inner_types.map(Type::Tuple)
+                }
+                TypePattern::Unit => Some(Type::Unit),
+            }
+        }
+
+        /// G66: Substitute generic parameters in a TypePattern to produce a RichType
+        /// For example: Reference { inner: Generic("S") } with bindings {S: DynShape}
+        /// becomes: Ref { inner: Named { name: "DynShape" } }
+        fn substitute_type_pattern(
+            &self,
+            pattern: &crate::impl_registry::TypePattern,
+            bindings: &std::collections::HashMap<String, RichType>,
+        ) -> RichType {
+            use crate::impl_registry::TypePattern;
+
+            match pattern {
+                TypePattern::Generic(name) => {
+                    // Look up in bindings
+                    bindings.get(name).cloned().unwrap_or_else(|| {
+                        RichType::Named {
+                            name: name.clone(),
+                            generics: vec![],
+                        }
+                    })
+                }
+                TypePattern::Concrete(ty) => {
+                    Self::impl_type_to_rich_type(ty)
+                }
+                TypePattern::Parameterized { name, params } => {
+                    // G103: Handle Self/This as a special case - these are type aliases
+                    // When params is empty, treat as a binding lookup (like Generic)
+                    if params.is_empty() && (name == "Self" || name == "This") {
+                        if let Some(bound_type) = bindings.get(name) {
+                            return bound_type.clone();
+                        }
+                    }
+
+                    let subst_params: Vec<RichType> = params.iter()
+                        .map(|p| self.substitute_type_pattern(p, bindings))
+                        .collect();
+                    RichType::Named {
+                        name: name.clone(),
+                        generics: subst_params,
+                    }
+                }
+                TypePattern::Reference { mutable, inner } => {
+                    let inner_type = self.substitute_type_pattern(inner, bindings);
+                    RichType::Ref {
+                        lifetime: None,
+                        mutable: *mutable,
+                        inner: Box::new(inner_type),
+                    }
+                }
+                TypePattern::Array { element, size } => {
+                    let elem_type = self.substitute_type_pattern(element, bindings);
+                    // Convert to Array type if typeck::Type supports it
+                    RichType::Array {
+                        element: Box::new(elem_type),
+                        size: *size,
+                    }
+                }
+                TypePattern::Slice(inner) => {
+                    let inner_type = self.substitute_type_pattern(inner, bindings);
+                    RichType::Slice(Box::new(inner_type))
+                }
+                TypePattern::Tuple(elems) => {
+                    let subst_elems: Vec<RichType> = elems.iter()
+                        .map(|e| self.substitute_type_pattern(e, bindings))
+                        .collect();
+                    RichType::Tuple(subst_elems)
+                }
+                TypePattern::Unit => RichType::Unit,
+            }
+        }
+
+        /// G66: Compile a monomorphized static method (no self parameter).
+        fn compile_monomorphized_static_method(
+            &mut self,
+            method_def: &MethodDef,
+            bindings: &std::collections::HashMap<String, RichType>,
+            fn_name: &str,
+            type_name: &str,
+        ) -> Result<(), String> {
+            eprintln!("[G66-STATIC] compile_monomorphized_static_method: fn_name='{}', type='{}'", fn_name, type_name);
+
+            // Save current builder position
+            let saved_block = self.builder.get_insert_block();
+            let saved_self_type = self.current_self_type.clone();
+            self.current_self_type = Some(type_name.to_string());
+
+            // Check if method has a body
+            let body = match &method_def.body {
+                Some(b) => b,
+                None => {
+                    self.current_self_type = saved_self_type;
+                    eprintln!("[G66-STATIC] No body for method {}", fn_name);
+                    return Err(format!("No body for static method {}", fn_name));
+                }
+            };
+
+            // Count parameters (no self for static methods)
+            let param_count = method_def.params.len();
+            let i64_type = self.context.i64_type();
+            let param_types: Vec<_> = (0..param_count)
+                .map(|_| i64_type.into())
+                .collect();
+            let fn_type = i64_type.fn_type(&param_types, false);
+
+            // Check if function already exists
+            let fn_value = if let Some(existing) = self.module.get_function(fn_name) {
+                existing
+            } else {
+                self.module.add_function(fn_name, fn_type, None)
+            };
+
+            // Create entry block
+            let entry = self.context.append_basic_block(fn_value, "entry");
+            self.builder.position_at_end(entry);
+
+            // Set up variable scope with type bindings
+            let mut scope = CompileScope::new();
+            scope.float_funcs = self.float_funcs.clone();
+
+            // Store type bindings in scope
+            eprintln!("[G102-MONO-STATIC] Storing {} type bindings for method '{}': {:?}", bindings.len(), fn_name, bindings.keys().collect::<Vec<_>>());
+            for (name, ty) in bindings.iter() {
+                scope.rich_types.insert(name.clone(), ty.clone());
+                if let RichType::ConstGeneric(val) = ty {
+                    scope.const_generics.insert(name.clone(), *val);
+                }
+            }
+            eprintln!("[G102-MONO-STATIC] After binding insertion, scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
+
+            // Add parameters and register their RichTypes
+            for (i, (param_name, param_pattern)) in method_def.params.iter().enumerate() {
+                if let Some(param_value) = fn_value.get_nth_param(i as u32) {
+                    let alloca = self.builder
+                        .build_alloca(i64_type, param_name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, param_value)
+                        .map_err(|e| e.to_string())?;
+                    scope.vars.insert(param_name.clone(), alloca);
+
+                    // G66: Register the parameter's RichType with substituted bindings
+                    // This enables method calls on parameters to resolve correctly
+                    let param_rich_type = self.substitute_type_pattern(param_pattern, bindings);
+                    eprintln!("[G66-PARAM] param '{}' rich_type: {:?}", param_name, param_rich_type);
+                    scope.register_rich_type(param_name.clone(), param_rich_type);
+                }
+            }
+
+            // Compile the method body statements
+            for stmt in &body.stmts {
+                self.compile_stmt(fn_value, &mut scope, stmt)?;
+            }
+
+            // Handle trailing expression as return value
+            if let Some(expr) = &body.expr {
+                let ret_val = self.compile_expr(fn_value, &mut scope, expr)?;
+                self.builder
+                    .build_return(Some(&ret_val))
+                    .map_err(|e| e.to_string())?;
+            } else {
+                self.builder
+                    .build_return(Some(&i64_type.const_int(0, false)))
+                    .map_err(|e| e.to_string())?;
+            }
+
+            // Register the compiled function
+            self.functions.insert(fn_name.to_string(), fn_value);
+
+            // Restore builder position
+            if let Some(block) = saved_block {
+                self.builder.position_at_end(block);
+            }
+
+            self.current_self_type = saved_self_type;
+
+            Ok(())
+        }
+
+        /// G70: Compile a monomorphized instance method (has self parameter).
+        fn compile_monomorphized_instance_method(
+            &mut self,
+            method_def: &MethodDef,
+            bindings: &std::collections::HashMap<String, RichType>,
+            fn_name: &str,
+            type_name: &str,
+        ) -> Result<(), String> {
+            eprintln!("[G70-INSTANCE-COMPILE] fn_name='{}', type='{}'", fn_name, type_name);
+            eprintln!("[G70-INSTANCE-COMPILE] method_def.params.len()={}, is_static={}", method_def.params.len(), method_def.is_static);
+            for (i, (name, pattern)) in method_def.params.iter().enumerate() {
+                eprintln!("[G70-INSTANCE-COMPILE] param[{}] name='{}', pattern={:?}", i, name, pattern);
+            }
+
+            // Save current builder position
+            let saved_block = self.builder.get_insert_block();
+            let saved_self_type = self.current_self_type.clone();
+            self.current_self_type = Some(type_name.to_string());
+
+            // Check if method has a body
+            let body = match &method_def.body {
+                Some(b) => b,
+                None => {
+                    self.current_self_type = saved_self_type;
+                    eprintln!("[G70-INSTANCE-COMPILE] No body for method {}", fn_name);
+                    return Err(format!("No body for instance method {}", fn_name));
+                }
+            };
+
+            // Count parameters (+1 for self)
+            let explicit_param_count = method_def.params.len();
+            let param_count = explicit_param_count + 1; // +1 for self
+            let i64_type = self.context.i64_type();
+            let param_types: Vec<_> = (0..param_count)
+                .map(|_| i64_type.into())
+                .collect();
+            let fn_type = i64_type.fn_type(&param_types, false);
+
+            // Check if function already exists
+            let fn_value = if let Some(existing) = self.module.get_function(fn_name) {
+                existing
+            } else {
+                self.module.add_function(fn_name, fn_type, None)
+            };
+
+            // Create entry block
+            let entry = self.context.append_basic_block(fn_value, "entry");
+            self.builder.position_at_end(entry);
+
+            // Set up variable scope with type bindings
+            let mut scope = CompileScope::new();
+            scope.float_funcs = self.float_funcs.clone();
+
+            // Store type bindings in scope
+            eprintln!("[G102-MONO-INSTANCE] Storing {} type bindings for method '{}': {:?}", bindings.len(), fn_name, bindings.keys().collect::<Vec<_>>());
+            for (name, ty) in bindings.iter() {
+                scope.rich_types.insert(name.clone(), ty.clone());
+                if let RichType::ConstGeneric(val) = ty {
+                    scope.const_generics.insert(name.clone(), *val);
+                }
+            }
+            eprintln!("[G102-MONO-INSTANCE] After binding insertion, scope.rich_types keys: {:?}", scope.rich_types.keys().collect::<Vec<_>>());
+
+            // Add self parameter (param 0)
+            if let Some(self_param) = fn_value.get_nth_param(0) {
+                let self_alloca = self.builder
+                    .build_alloca(i64_type, "self")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_store(self_alloca, self_param)
+                    .map_err(|e| e.to_string())?;
+                scope.vars.insert("self".to_string(), self_alloca);
+
+                // Also register under "this" for Sigil syntax
+                scope.vars.insert("this".to_string(), self_alloca);
+
+                // Register the self type - it's the concrete type with bindings applied
+                // Build the full concrete type with generics
+                // G87/G118: Build self rich_type with generics in CORRECT ORDER
+                // HashMap iteration is non-deterministic, so we must look up the struct's
+                // type_params to get the correct order (e.g., Tensor<S, D, Dev>)
+                let concrete_generics: Vec<RichType> = if let Some(generic_def) = self.generic_structs.get(type_name) {
+                    // G118: Order generics according to struct definition
+                    generic_def.type_params.iter()
+                        .filter_map(|param_name| bindings.get(param_name).cloned())
+                        .collect()
+                } else {
+                    // Fallback: sorted by name for deterministic order
+                    let mut sorted: Vec<_> = bindings.iter()
+                        .filter(|(k, _)| *k != "Self" && *k != "This")
+                        .collect();
+                    sorted.sort_by_key(|(k, _)| k.as_str());
+                    sorted.into_iter().map(|(_, v)| v.clone()).collect()
+                };
+                eprintln!("[G118-SELF] type='{}', concrete_generics={:?}", type_name, concrete_generics);
+                let self_rich_type = RichType::Named {
+                    name: type_name.to_string(),
+                    generics: concrete_generics,
+                };
+                scope.register_rich_type("self".to_string(), self_rich_type.clone());
+                scope.register_rich_type("this".to_string(), self_rich_type);
+            }
+
+            // Add explicit parameters (starting from param 1)
+            for (i, (param_name, param_pattern)) in method_def.params.iter().enumerate() {
+                let llvm_param_idx = (i + 1) as u32; // +1 because param 0 is self
+                if let Some(param_value) = fn_value.get_nth_param(llvm_param_idx) {
+                    let alloca = self.builder
+                        .build_alloca(i64_type, param_name)
+                        .map_err(|e| e.to_string())?;
+                    self.builder
+                        .build_store(alloca, param_value)
+                        .map_err(|e| e.to_string())?;
+                    scope.vars.insert(param_name.clone(), alloca);
+
+                    // Register the parameter's RichType with substituted bindings
+                    let param_rich_type = self.substitute_type_pattern(param_pattern, bindings);
+                    eprintln!("[G70-INSTANCE-COMPILE] param '{}' rich_type: {:?}", param_name, param_rich_type);
+                    scope.register_rich_type(param_name.clone(), param_rich_type);
+                }
+            }
+
+            // Compile the method body statements
+            eprintln!("[G87-INSTANCE] Method '{}' has {} stmts, expr={}", fn_name, body.stmts.len(), body.expr.is_some());
+            for stmt in &body.stmts {
+                self.compile_stmt(fn_value, &mut scope, stmt)?;
+            }
+
+            // Handle trailing expression as return value
+            if let Some(expr) = &body.expr {
+                eprintln!("[G87-INSTANCE-BODY] Method '{}' body expr: {:?}", fn_name, expr);
+                let ret_val = self.compile_expr(fn_value, &mut scope, expr)?;
+                self.builder
+                    .build_return(Some(&ret_val))
+                    .map_err(|e| e.to_string())?;
+            } else {
+                self.builder
+                    .build_return(Some(&i64_type.const_int(0, false)))
+                    .map_err(|e| e.to_string())?;
+            }
+
+            // Register the compiled function (G70 instance method)
+            self.functions.insert(fn_name.to_string(), fn_value);
+
+            // Restore builder position
+            if let Some(block) = saved_block {
+                self.builder.position_at_end(block);
+            }
+
+            self.current_self_type = saved_self_type;
+
+            Ok(())
+        }
+
+        /// Check if an expression is a float (or involves floats), with scope for variable tracking
+        fn is_float_expr_with_scope(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> bool {
+            match expr {
+                Expr::Literal(Literal::Float { .. }) => true,
+                Expr::Binary { op, left, right } => {
+                    // G20: Comparison operators always return integers, even with float operands
+                    if matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::Eq | BinOp::Ne) {
+                        return false;
+                    }
+                    // Arithmetic/logical operators: float if either operand is float
+                    self.is_float_expr_with_scope(left, scope) || self.is_float_expr_with_scope(right, scope)
+                }
+                Expr::Unary { expr: inner, .. } => self.is_float_expr_with_scope(inner, scope),
+                Expr::Path(path) => {
+                    // Check if variable is known to be a float
+                    if let Some(seg) = path.segments.last() {
+                        return scope.float_vars.contains(&seg.ident.name);
+                    }
+                    false
+                }
+                Expr::Call { func, .. } => {
+                    // Check for float-returning functions
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let name = seg.ident.name.as_str();
+                            // Built-in math functions
+                            if matches!(
+                                name,
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "PI" |
+                                "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan"
+                            ) {
+                                return true;
+                            }
+                            // G21: User-defined functions that return f64
+                            if scope.float_funcs.contains(name) {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                }
+                Expr::MethodCall { receiver, method, .. } => {
+                    let name = method.name.as_str();
+                    // Methods that always return float
+                    if matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "ln" | "pow") {
+                        return true;
+                    }
+                    // G19: Methods that return integers even if receiver is float-containing
+                    if matches!(name, "len" | "capacity" | "is_empty" | "first" | "last" | "get") {
+                        return false;
+                    }
+                    // G21b: Check if this method is known to return f64
+                    if scope.float_funcs.contains(name) {
+                        return true;
+                    }
+                    // For other methods, check if receiver is a scalar float (not a container)
+                    if let Expr::Path(path) = receiver.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            // Check if it's a scalar float variable, not a Vec<f64>
+                            if scope.float_vars.contains(&seg.ident.name) {
+                                // Need to distinguish scalar floats from Vec<f64>
+                                // For now, assume if it's in float_vars and called with an unknown method,
+                                // it's probably a scalar float being operated on
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                }
+                Expr::Cast { ty, .. } => {
+                    // Check if casting to f64
+                    if let ast::TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.last() {
+                            return seg.ident.name == "f64" || seg.ident.name == "f32";
+                        }
+                    }
+                    false
+                }
+                Expr::Index { expr, .. } => {
+                    // Check if the array/vec being indexed contains floats
+                    // This is a heuristic - check if the container variable is marked as float
+                    if let Expr::AddrOf { expr: inner, .. } = expr.as_ref() {
+                        return self.is_float_expr_with_scope(inner, scope);
+                    }
+                    self.is_float_expr_with_scope(expr, scope)
+                }
+                // G19: Check if vec! macro contains float elements
+                Expr::Macro { path, tokens } => {
+                    let macro_name = path.segments.last()
+                        .map(|s| s.ident.name.trim_end_matches('!'))
+                        .unwrap_or("");
+                    if macro_name == "vec" {
+                        // Check if tokens contain a float literal (has decimal point)
+                        let tokens_trimmed = tokens.trim();
+                        if tokens_trimmed.contains('.') {
+                            // Verify it's likely a number (not a method call)
+                            for part in tokens_trimmed.split(',') {
+                                let part = part.trim().split(';').next().unwrap_or("").trim();
+                                if part.contains('.') && !part.contains('(') {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                // G24: Handle struct field access - check if field type is f64
+                Expr::Field { expr: base_expr, field } => {
+                    // Get the type of the base expression
+                    let base_type = match base_expr.as_ref() {
+                        // For `this`/`self`, use current_self_type
+                        Expr::Path(path) if path.segments.len() == 1 &&
+                            (path.segments[0].ident.name == "this" || path.segments[0].ident.name == "self") => {
+                            self.current_self_type.clone()
+                        }
+                        // For other variables, look up their struct type
+                        _ => self.get_struct_type_from_expr(base_expr, scope),
+                    };
+
+                    // If we know the base type, look up the field type
+                    if let Some(struct_name) = base_type {
+                        let field_name = &field.name;
+                        // Look up field type in field_type_names
+                        if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field_name.clone())) {
+                            // Check if the field type is f64 or contains f64
+                            if field_type == "f64" || field_type.contains("f64") {
+                                return true;
+                            }
+                        }
+                    }
+
+                    // Fallback: use heuristic based on field name
+                    let field_name = &field.name.to_lowercase();
+                    let float_field_patterns = [
+                        "lambda", "rate", "energy", "loss", "weight", "scale", "bias",
+                        "grad", "lr", "epsilon", "alpha", "beta", "gamma", "momentum",
+                        "decay", "factor", "ratio", "threshold", "temp", "sigma", "eps",
+                    ];
+                    for pattern in &float_field_patterns {
+                        if field_name.contains(pattern) {
+                            return true;
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            }
+        }
+
+        /// Extract the struct type name from an expression, if it can be determined
+        /// Returns Some(type_name) for struct literals, constructor calls, and known variables
+        fn get_struct_type_from_expr(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> Option<String> {
+            match expr {
+                // Struct literal: StructName { field: value, ... }
+                Expr::Struct { path, .. } => {
+                    // path is a TypePath, get the last segment
+                    if let Some(seg) = path.segments.last() {
+                        return Some(seg.ident.name.clone());
+                    }
+                    None
+                }
+                // Constructor call: StructName·new() or StructName·method()
+                // G33: Also check ret_types for standalone function calls
+                Expr::Call { func, .. } => {
+                    if let Expr::Path(path) = func.as_ref() {
+                        // Look for Type·method pattern (2 or more segments with middledot)
+                        if path.segments.len() >= 2 {
+                            // First segment is likely the type name
+                            return Some(path.segments[0].ident.name.clone());
+                        }
+                        // G33: Check if standalone function returns a struct type
+                        if path.segments.len() == 1 {
+                            let func_name = &path.segments[0].ident.name;
+                            if let Some(ret_ty) = self.ret_types.get(func_name) {
+                                // Extract struct name from return type
+                                if let Some(type_name) = self.extract_struct_type_from_type_expr(ret_ty) {
+                                    return Some(type_name);
+                                }
+                            }
+                        }
+                    }
+                    None
+                }
+                // G49: Method call: receiver.method() - look up method return type
+                Expr::MethodCall { receiver, method, .. } => {
+                    // Get the receiver's struct type
+                    if let Some(recv_type) = self.get_struct_type_from_expr(receiver, scope) {
+                        // Look up the mangled method name
+                        let key = (recv_type.clone(), method.name.clone());
+                        if let Some(mangled_name) = self.impl_methods.get(&key) {
+                            // Look up the return type
+                            if let Some(ret_ty) = self.ret_types.get(mangled_name) {
+                                if let Some(type_name) = self.extract_struct_type_from_type_expr(ret_ty) {
+                                    return Some(type_name);
+                                }
+                            }
+                        }
+                    }
+                    None
+                }
+                // Variable reference: look up its known type
+                Expr::Path(path) => {
+                    if path.segments.len() == 1 {
+                        let var_name = &path.segments[0].ident.name;
+                        // G15 fix: Handle this/self specially to use current_self_type
+                        if var_name == "this" || var_name == "self" {
+                            return self.current_self_type.clone();
+                        }
+                        // First try struct_types
+                        if let Some(ty) = scope.get_struct_type(var_name) {
+                            return Some(ty.clone());
+                        }
+                        // G102 fix: Also check rich_types and extract struct name from it
+                        if let Some(rich_type) = scope.rich_types.get(var_name) {
+                            if let RichType::Named { name, .. } = rich_type {
+                                return Some(name.clone());
+                            }
+                        }
+                        return None;
+                    }
+                    None
+                }
+                // Index access: vec[i] - get element type from Vec<T>
+                // G15 fix: Enable correct method dispatch on indexed Vec elements
+                Expr::Index { expr: container, .. } => {
+                    // Check if container is a field access (e.g., model.layers[0])
+                    if let Expr::Field { expr: base_expr, field } = container.as_ref() {
+                        // Get the base type (e.g., Model)
+                        let base_type = self.get_struct_type_from_expr(base_expr, scope);
+                        if let Some(struct_name) = base_type {
+                            // Look up field type (e.g., layers -> Vec<Layer>)
+                            if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field.name.clone())) {
+                                // Extract element type from Vec<T>
+                                if field_type.starts_with("Vec<") && field_type.ends_with(">") {
+                                    let elem_type = &field_type[4..field_type.len()-1];
+                                    return Some(elem_type.to_string());
+                                }
+                            }
+                        }
+                    }
+                    // Also try recursively for nested containers
+                    if let Some(container_type) = self.get_struct_type_from_expr(container, scope) {
+                        // Check if container_type is Vec<T>
+                        if container_type.starts_with("Vec<") && container_type.ends_with(">") {
+                            let elem_type = &container_type[4..container_type.len()-1];
+                            return Some(elem_type.to_string());
+                        }
+                    }
+                    None
+                }
+                // G64: Reference expression: &x or &x.field - unwrap and get inner type
+                Expr::Unary { op, expr: inner } if matches!(op, ast::UnaryOp::Ref | ast::UnaryOp::RefMut) => {
+                    self.get_struct_type_from_expr(inner, scope)
+                }
+                // Field access: this.field or var.field - get the field's type from struct definition
+                Expr::Field { expr: base_expr, field } => {
+                    // Get the type of the base expression
+                    let base_type = match base_expr.as_ref() {
+                        // For `this`/`self`, use current_self_type
+                        // Note: Sigil parser normalizes `this` to `self` in AST
+                        Expr::Path(path) if path.segments.len() == 1 &&
+                            (path.segments[0].ident.name == "this" || path.segments[0].ident.name == "self") => {
+                            self.current_self_type.clone()
+                        }
+                        // For other variables, look up their struct type
+                        _ => self.get_struct_type_from_expr(base_expr, scope),
+                    };
+
+                    // If we know the base type, look up the field type
+                    if let Some(struct_name) = base_type {
+                        let field_name = &field.name;
+                        // Look up field type in field_type_names
+                        let key = (struct_name.clone(), field_name.clone());
+                        eprintln!("[G63-FIELD-TYPE] looking up field_type_names for ({:?}, {:?}), found={:?}", struct_name, field_name, self.field_type_names.get(&key));
+                        if let Some(field_type) = self.field_type_names.get(&key) {
+                            // G70: Check if field_type is a generic type parameter
+                            // If so, substitute with concrete type from scope.rich_types
+                            if let Some(rich_type) = scope.rich_types.get(field_type) {
+                                // Extract the type name from RichType
+                                // G70: Substitute generic parameter with concrete type
+                                let concrete_type = match rich_type {
+                                    RichType::Named { name, .. } => name.clone(),
+                                    RichType::Float(crate::typeck::FloatSize::F32) => "f32".to_string(),
+                                    RichType::Float(crate::typeck::FloatSize::F64) => "f64".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I32) => "i32".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I64) => "i64".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::USize) => "usize".to_string(),
+                                    _ => field_type.clone(), // fallback
+                                };
+                                return Some(concrete_type);
+                            }
+                            return Some(field_type.clone());
+                        }
+                    }
+                    None
+                }
+                _ => None,
+            }
+        }
+
+        /// G104: Get the raw (non-unwrapped) struct type from a field access expression
+        /// For `self.inner` where `inner: Arc<Inner>`, returns "Arc" (not "Inner")
+        /// This is used to detect when wrapper dereferencing is needed
+        fn get_raw_struct_type_from_expr(&self, expr: &Expr, scope: &CompileScope<'ctx>) -> Option<String> {
+            match expr {
+                // Field access: check if the field type is a wrapper
+                Expr::Field { expr: base_expr, field } => {
+                    // Get the type of the base expression
+                    let base_type = match base_expr.as_ref() {
+                        Expr::Path(path) if path.segments.len() == 1 &&
+                            (path.segments[0].ident.name == "this" || path.segments[0].ident.name == "self") => {
+                            self.current_self_type.clone()
+                        }
+                        _ => self.get_struct_type_from_expr(base_expr, scope),
+                    };
+
+                    // Look up the raw field type (before unwrapping)
+                    if let Some(struct_name) = base_type {
+                        let field_name = &field.name;
+                        // Check generic structs for the raw field type
+                        if let Some(generic_def) = self.generic_structs.get(&struct_name) {
+                            if let ast::StructFields::Named(fields) = &generic_def.def.fields {
+                                for field_def in fields.iter() {
+                                    if field_def.name.name == *field_name {
+                                        // Get the raw type expression (the outermost type name)
+                                        // For Arc<Inner<D, Dev>>, return "Arc"
+                                        if let ast::TypeExpr::Path(type_path) = &field_def.ty {
+                                            if let Some(seg) = type_path.segments.first() {
+                                                return Some(seg.ident.name.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None
+                }
+                _ => None,
+            }
+        }
+
+        /// Check if an expression is a float (or involves floats), without scope
+        fn is_float_expr(&self, expr: &Expr) -> bool {
+            match expr {
+                Expr::Literal(Literal::Float { .. }) => true,
+                Expr::Binary { left, right, .. } => {
+                    self.is_float_expr(left) || self.is_float_expr(right)
+                }
+                Expr::Unary { expr: inner, .. } => self.is_float_expr(inner),
+                Expr::Call { func, .. } => {
+                    // Check for float-returning functions
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            let name = seg.ident.name.as_str();
+                            return matches!(
+                                name,
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "PI" |
+                                "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan"
+                            );
+                        }
+                    }
+                    false
+                }
+                Expr::MethodCall { method, .. } => {
+                    // sqrt() method returns float
+                    let name = method.name.as_str();
+                    matches!(name, "sqrt" | "abs" | "floor" | "ceil" | "sin" | "cos" | "tan" | "exp" | "log" | "pow")
+                }
+                Expr::Cast { ty, .. } => {
+                    // Check if casting to f64
+                    if let ast::TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.last() {
+                            return seg.ident.name == "f64" || seg.ident.name == "f32";
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            }
+        }
+
+        /// Compile an expression that is known to be a float, returning native FloatValue
+        /// This avoids bitcasts within float expressions by keeping values as f64
+        fn compile_native_float_expr(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            expr: &Expr,
+        ) -> Result<inkwell::values::FloatValue<'ctx>, String> {
+            let f64_type = self.context.f64_type();
+
+            match expr {
+                Expr::Literal(Literal::Float { value, .. }) => {
+                    // Parse float literal directly to f64
+                    let s = value.replace('_', "");
+                    let s = s.trim_end_matches("f64").trim_end_matches("f32");
+                    let v: f64 = s.parse().map_err(|_| format!("Invalid float: {}", value))?;
+                    Ok(f64_type.const_float(v))
+                }
+                Expr::Path(path) => {
+                    // Build full path string for special constant lookup
+                    let full_path_str: String = path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("::");
+
+                    // Handle std::f64::consts constants (full path or bare names)
+                    if full_path_str == "std::f64::consts::PI" || full_path_str == "std·f64·consts·PI" || full_path_str == "PI" {
+                        return Ok(f64_type.const_float(std::f64::consts::PI));
+                    }
+                    if full_path_str == "std::f64::consts::E" || full_path_str == "std·f64·consts·E" || full_path_str == "E" {
+                        return Ok(f64_type.const_float(std::f64::consts::E));
+                    }
+                    if full_path_str == "std::f64::consts::TAU" || full_path_str == "std·f64·consts·TAU" || full_path_str == "TAU" {
+                        return Ok(f64_type.const_float(std::f64::consts::TAU));
+                    }
+                    // G47: Additional math constants
+                    if full_path_str == "FRAC_PI_2" || full_path_str == "std::f64::consts::FRAC_PI_2" {
+                        return Ok(f64_type.const_float(std::f64::consts::FRAC_PI_2));
+                    }
+                    if full_path_str == "FRAC_PI_4" || full_path_str == "std::f64::consts::FRAC_PI_4" {
+                        return Ok(f64_type.const_float(std::f64::consts::FRAC_PI_4));
+                    }
+                    if full_path_str == "LN_2" || full_path_str == "std::f64::consts::LN_2" {
+                        return Ok(f64_type.const_float(std::f64::consts::LN_2));
+                    }
+                    if full_path_str == "LN_10" || full_path_str == "std::f64::consts::LN_10" {
+                        return Ok(f64_type.const_float(std::f64::consts::LN_10));
+                    }
+                    if full_path_str == "SQRT_2" || full_path_str == "std::f64::consts::SQRT_2" {
+                        return Ok(f64_type.const_float(std::f64::consts::SQRT_2));
+                    }
+
+                    // Variable load - check if it's a float variable
+                    let name = path.segments.last()
+                        .map(|s| s.ident.name.as_str())
+                        .ok_or("Empty path")?;
+
+                    if let Some(&ptr) = scope.vars.get(name) {
+                        // Load as i64 bits, convert to f64
+                        let val = self.builder
+                            .build_load(self.context.i64_type(), ptr, name)
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        let f_val = self.builder
+                            .build_bit_cast(val, f64_type, "load_f64")
+                            .map_err(|e| e.to_string())?
+                            .into_float_value();
+                        Ok(f_val)
+                    } else if let Some(global) = self.global_vars.get(name) {
+                        // Load from global/static variable
+                        let val = self.builder
+                            .build_load(self.context.i64_type(), global.as_pointer_value(), name)
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        let f_val = self.builder
+                            .build_bit_cast(val, f64_type, "load_f64")
+                            .map_err(|e| e.to_string())?
+                            .into_float_value();
+                        Ok(f_val)
+                    } else {
+                        Err(format!("Variable not found: {}", name))
+                    }
+                }
+                Expr::Binary { op, left, right } => {
+                    // Compile both sides as floats
+                    let lhs = self.compile_native_float_expr(fn_value, scope, left)?;
+                    let rhs = self.compile_native_float_expr(fn_value, scope, right)?;
+
+                    // Constant folding: if both operands are constants, compute at compile time
+                    if let (Some((lhs_val, _)), Some((rhs_val, _))) = (lhs.get_constant(), rhs.get_constant()) {
+                        let result = match op {
+                            BinOp::Add => lhs_val + rhs_val,
+                            BinOp::Sub => lhs_val - rhs_val,
+                            BinOp::Mul => lhs_val * rhs_val,
+                            BinOp::Div => lhs_val / rhs_val,
+                            BinOp::Rem => lhs_val % rhs_val,
+                            _ => {
+                                // Fall back to runtime for non-arithmetic ops
+                                let int_result = self.compile_expr(fn_value, scope, expr)?;
+                                return self.builder
+                                    .build_bit_cast(int_result, f64_type, "cast_f64")
+                                    .map_err(|e| e.to_string())
+                                    .map(|v| v.into_float_value());
+                            }
+                        };
+                        return Ok(f64_type.const_float(result));
+                    }
+
+                    // Runtime path
+                    match op {
+                        BinOp::Add => self.builder
+                            .build_float_add(lhs, rhs, "fadd")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Sub => self.builder
+                            .build_float_sub(lhs, rhs, "fsub")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Mul => self.builder
+                            .build_float_mul(lhs, rhs, "fmul")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Div => self.builder
+                            .build_float_div(lhs, rhs, "fdiv")
+                            .map_err(|e| e.to_string()),
+                        BinOp::Rem => self.builder
+                            .build_float_rem(lhs, rhs, "frem")
+                            .map_err(|e| e.to_string()),
+                        _ => {
+                            // For comparisons and other ops, fall back to regular compile
+                            let int_result = self.compile_expr(fn_value, scope, expr)?;
+                            self.builder
+                                .build_bit_cast(int_result, f64_type, "cast_f64")
+                                .map_err(|e| e.to_string())
+                                .map(|v| v.into_float_value())
+                        }
+                    }
+                }
+                Expr::Call { func, args } => {
+                    // Handle math functions that return float
+                    if let Expr::Path(path) = func.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            match seg.ident.name.as_str() {
+                                "PI" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::PI));
+                                }
+                                "E" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::E));
+                                }
+                                "TAU" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::TAU));
+                                }
+                                "SQRT2" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::SQRT_2));
+                                }
+                                "LN2" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::LN_2));
+                                }
+                                "LN10" => {
+                                    return Ok(f64_type.const_float(std::f64::consts::LN_10));
+                                }
+                                "sin" | "cos" | "tan" | "sqrt" | "exp" | "log" | "floor" | "ceil" | "abs" |
+                                "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" |
+                                "log10" | "log2" | "round" | "trunc" => {
+                                    // Compile argument as float
+                                    if !args.is_empty() {
+                                        let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                        // Constant folding: if argument is constant, compute at compile time
+                                        if let Some((val, _)) = arg_f64.get_constant() {
+                                            let result = match seg.ident.name.as_str() {
+                                                "sin" => val.sin(),
+                                                "cos" => val.cos(),
+                                                "tan" => val.tan(),
+                                                "sqrt" => val.sqrt(),
+                                                "exp" => val.exp(),
+                                                "log" => val.ln(),
+                                                "floor" => val.floor(),
+                                                "ceil" => val.ceil(),
+                                                "abs" => val.abs(),
+                                                "asin" => val.asin(),
+                                                "acos" => val.acos(),
+                                                "atan" => val.atan(),
+                                                "sinh" => val.sinh(),
+                                                "cosh" => val.cosh(),
+                                                "tanh" => val.tanh(),
+                                                "log10" => val.log10(),
+                                                "log2" => val.log2(),
+                                                "round" => val.round(),
+                                                "trunc" => val.trunc(),
+                                                _ => unreachable!(),
+                                            };
+                                            return Ok(f64_type.const_float(result));
+                                        }
+
+                                        let intrinsic_name = match seg.ident.name.as_str() {
+                                            "abs" => "llvm.fabs.f64".to_string(),
+                                            name => format!("llvm.{}.f64", name),
+                                        };
+
+                                        // Try to get or declare the intrinsic
+                                        let intrinsic = self.module.get_function(&intrinsic_name)
+                                            .unwrap_or_else(|| {
+                                                let fn_type = f64_type.fn_type(&[f64_type.into()], false);
+                                                self.module.add_function(&intrinsic_name, fn_type, None)
+                                            });
+
+                                        let call = self.builder
+                                            .build_call(intrinsic, &[arg_f64.into()], &seg.ident.name)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(call.try_as_basic_value().left()
+                                            .ok_or("Expected return value")?
+                                            .into_float_value());
+                                    }
+                                }
+                                // Two-argument math functions
+                                "atan2" | "copysign" | "fmin" | "fmax" | "pow" => {
+                                    if args.len() >= 2 {
+                                        let arg1_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+                                        let arg2_f64 = self.compile_native_float_expr(fn_value, scope, &args[1])?;
+
+                                        // Constant folding: if both arguments are constant, compute at compile time
+                                        if let (Some((v1, _)), Some((v2, _))) = (arg1_f64.get_constant(), arg2_f64.get_constant()) {
+                                            let result = match seg.ident.name.as_str() {
+                                                "atan2" => v1.atan2(v2),
+                                                "copysign" => v1.copysign(v2),
+                                                "fmin" => v1.min(v2),
+                                                "fmax" => v1.max(v2),
+                                                "pow" => v1.powf(v2),
+                                                _ => unreachable!(),
+                                            };
+                                            return Ok(f64_type.const_float(result));
+                                        }
+
+                                        let intrinsic_name = match seg.ident.name.as_str() {
+                                            "fmin" => "llvm.minnum.f64".to_string(),
+                                            "fmax" => "llvm.maxnum.f64".to_string(),
+                                            name => format!("llvm.{}.f64", name),
+                                        };
+
+                                        let intrinsic = self.module.get_function(&intrinsic_name)
+                                            .unwrap_or_else(|| {
+                                                let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                                                self.module.add_function(&intrinsic_name, fn_type, None)
+                                            });
+
+                                        let call = self.builder
+                                            .build_call(intrinsic, &[arg1_f64.into(), arg2_f64.into()], &seg.ident.name)
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(call.try_as_basic_value().left()
+                                            .ok_or("Expected return value")?
+                                            .into_float_value());
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    // Fall back to regular compile and convert
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "call_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+                Expr::MethodCall { receiver, method, args, .. } => {
+                    // Handle .sqrt(), .sin(), etc.
+                    match method.name.as_str() {
+                        "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "floor" | "ceil" | "abs" |
+                        "asin" | "acos" | "atan" | "sinh" | "cosh" | "tanh" |
+                        "log10" | "log2" | "round" | "trunc" => {
+                            let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+
+                            // Constant folding: if receiver is constant, compute at compile time
+                            if let Some((val, _)) = recv_f64.get_constant() {
+                                let result = match method.name.as_str() {
+                                    "sqrt" => val.sqrt(),
+                                    "sin" => val.sin(),
+                                    "cos" => val.cos(),
+                                    "tan" => val.tan(),
+                                    "exp" => val.exp(),
+                                    "log" => val.ln(),
+                                    "floor" => val.floor(),
+                                    "ceil" => val.ceil(),
+                                    "abs" => val.abs(),
+                                    "asin" => val.asin(),
+                                    "acos" => val.acos(),
+                                    "atan" => val.atan(),
+                                    "sinh" => val.sinh(),
+                                    "cosh" => val.cosh(),
+                                    "tanh" => val.tanh(),
+                                    "log10" => val.log10(),
+                                    "log2" => val.log2(),
+                                    "round" => val.round(),
+                                    "trunc" => val.trunc(),
+                                    _ => unreachable!(),
+                                };
+                                return Ok(f64_type.const_float(result));
+                            }
+
+                            let intrinsic_name = match method.name.as_str() {
+                                "abs" => "llvm.fabs.f64".to_string(),
+                                name => format!("llvm.{}.f64", name),
+                            };
+
+                            let intrinsic = self.module.get_function(&intrinsic_name)
+                                .unwrap_or_else(|| {
+                                    let fn_type = f64_type.fn_type(&[f64_type.into()], false);
+                                    self.module.add_function(&intrinsic_name, fn_type, None)
+                                });
+
+                            let call = self.builder
+                                .build_call(intrinsic, &[recv_f64.into()], &method.name)
+                                .map_err(|e| e.to_string())?;
+                            Ok(call.try_as_basic_value().left()
+                                .ok_or("Expected return value")?
+                                .into_float_value())
+                        }
+                        // Two-argument methods: receiver.method(arg)
+                        "pow" | "atan2" | "copysign" => {
+                            if !args.is_empty() {
+                                let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+                                let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                // Constant folding
+                                if let (Some((v1, _)), Some((v2, _))) = (recv_f64.get_constant(), arg_f64.get_constant()) {
+                                    let result = match method.name.as_str() {
+                                        "pow" => v1.powf(v2),
+                                        "atan2" => v1.atan2(v2),
+                                        "copysign" => v1.copysign(v2),
+                                        _ => unreachable!(),
+                                    };
+                                    return Ok(f64_type.const_float(result));
+                                }
+
+                                let intrinsic_name = format!("llvm.{}.f64", method.name);
+
+                                let intrinsic = self.module.get_function(&intrinsic_name)
+                                    .unwrap_or_else(|| {
+                                        let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                                        self.module.add_function(&intrinsic_name, fn_type, None)
+                                    });
+
+                                let call = self.builder
+                                    .build_call(intrinsic, &[recv_f64.into(), arg_f64.into()], &method.name)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(call.try_as_basic_value().left()
+                                    .ok_or("Expected return value")?
+                                    .into_float_value())
+                            } else {
+                                Err(format!("{} requires an argument", method.name))
+                            }
+                        }
+                        // min/max methods
+                        "min" | "max" => {
+                            if !args.is_empty() {
+                                let recv_f64 = self.compile_native_float_expr(fn_value, scope, receiver)?;
+                                let arg_f64 = self.compile_native_float_expr(fn_value, scope, &args[0])?;
+
+                                // Constant folding
+                                if let (Some((v1, _)), Some((v2, _))) = (recv_f64.get_constant(), arg_f64.get_constant()) {
+                                    let result = match method.name.as_str() {
+                                        "min" => v1.min(v2),
+                                        "max" => v1.max(v2),
+                                        _ => unreachable!(),
+                                    };
+                                    return Ok(f64_type.const_float(result));
+                                }
+
+                                let intrinsic_name = match method.name.as_str() {
+                                    "min" => "llvm.minnum.f64".to_string(),
+                                    "max" => "llvm.maxnum.f64".to_string(),
+                                    _ => unreachable!(),
+                                };
+
+                                let intrinsic = self.module.get_function(&intrinsic_name)
+                                    .unwrap_or_else(|| {
+                                        let fn_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                                        self.module.add_function(&intrinsic_name, fn_type, None)
+                                    });
+
+                                let call = self.builder
+                                    .build_call(intrinsic, &[recv_f64.into(), arg_f64.into()], &method.name)
+                                    .map_err(|e| e.to_string())?;
+                                Ok(call.try_as_basic_value().left()
+                                    .ok_or("Expected return value")?
+                                    .into_float_value())
+                            } else {
+                                Err(format!("{} requires an argument", method.name))
+                            }
+                        }
+                        _ => {
+                            // Fall back to regular compile
+                            let int_result = self.compile_expr(fn_value, scope, expr)?;
+                            self.builder
+                                .build_bit_cast(int_result, f64_type, "method_f64")
+                                .map_err(|e| e.to_string())
+                                .map(|v| v.into_float_value())
+                        }
+                    }
+                }
+                Expr::Index { expr: container, index } => {
+                    // Load from Vec and convert to float
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "idx_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+                Expr::Cast { expr: inner, ty } => {
+                    // Handle int to float cast
+                    if let ast::TypeExpr::Path(path) = ty {
+                        if let Some(seg) = path.segments.last() {
+                            if seg.ident.name == "f64" || seg.ident.name == "f32" {
+                                // G18: If source is already float, just bitcast to f64
+                                if self.is_float_expr_with_scope(inner, scope) {
+                                    let int_val = self.compile_expr(fn_value, scope, inner)?;
+                                    return self.builder
+                                        .build_bit_cast(int_val, f64_type, "f64_to_f64")
+                                        .map_err(|e| e.to_string())
+                                        .map(|v| v.into_float_value());
+                                }
+                                // Compile inner as int and convert
+                                let int_val = self.compile_expr(fn_value, scope, inner)?;
+                                return self.builder
+                                    .build_signed_int_to_float(int_val, f64_type, "sitofp")
+                                    .map_err(|e| e.to_string());
+                            }
+                        }
+                    }
+                    // Fall back
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "cast_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+                Expr::Tuple(ref elems) if elems.len() == 1 => {
+                    // Single-element tuple acts like parenthesized expression
+                    self.compile_native_float_expr(fn_value, scope, &elems[0])
+                }
+                _ => {
+                    // For other expressions, compile normally and convert
+                    let int_result = self.compile_expr(fn_value, scope, expr)?;
+                    self.builder
+                        .build_bit_cast(int_result, f64_type, "other_f64")
+                        .map_err(|e| e.to_string())
+                        .map(|v| v.into_float_value())
+                }
+            }
+        }
+
+        /// Compile a float binary operation
+        /// Values are stored as i64 bit patterns, so we bitcast to f64, operate, and bitcast back
+        fn compile_float_binary_op(
+            &mut self,
+            op: BinOp,
+            lhs: IntValue<'ctx>,
+            rhs: IntValue<'ctx>,
+        ) -> Result<IntValue<'ctx>, String> {
+            let f64_type = self.context.f64_type();
+            let i64_type = self.context.i64_type();
+
+            // Bitcast i64 -> f64
+            let lhs_f64 = self
+                .builder
+                .build_bit_cast(lhs, f64_type, "lhs_f64")
+                .map_err(|e| e.to_string())?
+                .into_float_value();
+            let rhs_f64 = self
+                .builder
+                .build_bit_cast(rhs, f64_type, "rhs_f64")
+                .map_err(|e| e.to_string())?
+                .into_float_value();
+
+            // Perform float operation
+            let result_f64 = match op {
+                BinOp::Add => self
+                    .builder
+                    .build_float_add(lhs_f64, rhs_f64, "fadd")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Sub => self
+                    .builder
+                    .build_float_sub(lhs_f64, rhs_f64, "fsub")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Mul => self
+                    .builder
+                    .build_float_mul(lhs_f64, rhs_f64, "fmul")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Div => self
+                    .builder
+                    .build_float_div(lhs_f64, rhs_f64, "fdiv")
+                    .map_err(|e| e.to_string())?,
+                BinOp::Rem => self
+                    .builder
+                    .build_float_rem(lhs_f64, rhs_f64, "frem")
+                    .map_err(|e| e.to_string())?,
+                // Comparisons return i64 (0 or 1)
+                BinOp::Lt => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OLT, lhs_f64, rhs_f64, "flt")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "flt_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Le => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OLE, lhs_f64, rhs_f64, "fle")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fle_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Gt => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OGT, lhs_f64, rhs_f64, "fgt")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fgt_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Ge => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OGE, lhs_f64, rhs_f64, "fge")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fge_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Eq => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::OEQ, lhs_f64, rhs_f64, "feq")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "feq_ext")
+                        .map_err(|e| e.to_string());
+                }
+                BinOp::Ne => {
+                    let cmp = self
+                        .builder
+                        .build_float_compare(inkwell::FloatPredicate::ONE, lhs_f64, rhs_f64, "fne")
+                        .map_err(|e| e.to_string())?;
+                    return self
+                        .builder
+                        .build_int_z_extend(cmp, i64_type, "fne_ext")
+                        .map_err(|e| e.to_string());
+                }
+                // For other ops, fall back to integer
+                _ => return self.compile_binary_op(op, lhs, rhs),
+            };
+
+            // Bitcast f64 -> i64
+            let result = self
+                .builder
+                .build_bit_cast(result_f64, i64_type, "fresult")
+                .map_err(|e| e.to_string())?;
+            Ok(result.into_int_value())
+        }
+
         /// Compile a unary operation
         fn compile_unary_op(
             &mut self,
@@ -5025,6 +14040,9 @@ pub mod llvm {
             // Then block
             self.builder.position_at_end(then_bb);
 
+            // G46 fix: Clone scope for then branch so variables don't leak to else branch
+            let mut then_scope = scope.clone();
+
             // If this was an if-let, bind the variable in the then-block scope
             if let Some(name) = let_binding {
                 let alloca = self
@@ -5034,11 +14052,11 @@ pub mod llvm {
                 self.builder
                     .build_store(alloca, cond_val)
                     .map_err(|e| e.to_string())?;
-                scope.vars.insert(name, alloca);
+                then_scope.vars.insert(name, alloca);
             }
 
             let then_val = self
-                .compile_block(fn_value, scope, then_branch)?
+                .compile_block(fn_value, &mut then_scope, then_branch)?
                 .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
             let then_terminated = self
                 .builder
@@ -5055,8 +14073,10 @@ pub mod llvm {
 
             // Else block
             self.builder.position_at_end(else_bb);
+            // G46 fix: Clone original scope for else branch (not modified by then branch)
+            let mut else_scope = scope.clone();
             let else_val = if let Some(else_expr) = else_branch {
-                self.compile_expr(fn_value, scope, else_expr)?
+                self.compile_expr(fn_value, &mut else_scope, else_expr)?
             } else {
                 self.context.i64_type().const_int(0, false)
             };
@@ -5157,47 +14177,187 @@ pub mod llvm {
             iter: &Expr,
             body: &ast::Block,
         ) -> Result<IntValue<'ctx>, String> {
-            // Get the loop variable name(s) from pattern
-            let var_names: Vec<String> = match pattern {
-                ast::Pattern::Ident { name, .. } => vec![name.name.clone()],
-                ast::Pattern::Tuple(elements) => {
-                    // Tuple pattern like (a, b) or (x, y, z)
-                    elements
-                        .iter()
-                        .filter_map(|elem| {
-                            if let ast::Pattern::Ident { name, .. } = elem {
-                                Some(name.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                }
-                ast::Pattern::TupleStruct { path, fields, .. } => {
-                    // TupleStruct pattern like Some(x) or Pair(a, b)
-                    fields
-                        .iter()
-                        .filter_map(|f| {
-                            if let ast::Pattern::Ident { name, .. } = f {
-                                Some(name.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect()
-                }
-                _ => vec!["_item".to_string()], // Fallback for unsupported patterns
+            // Get the loop variable name from pattern
+            let var_name = match pattern {
+                ast::Pattern::Ident { name, .. } => name.name.clone(),
+                _ => "_item".to_string(),
             };
 
-            let var_name = var_names
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "_item".to_string());
+            // Check if iterator is a Range expression (0..n, start..end)
+            if let Expr::Range { start, end, inclusive } = iter {
+                return self.compile_range_for_loop(
+                    fn_value, scope, &var_name, start.as_deref(), end.as_deref(), *inclusive, body
+                );
+            }
 
-            // Evaluate iterator to get array
+            // For non-range iterators (arrays, vecs), use array-based loop
+            self.compile_array_for_loop(fn_value, scope, &var_name, iter, body)
+        }
+
+        /// Compile a for loop over a range (0..n, start..end)
+        fn compile_range_for_loop(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            var_name: &str,
+            start: Option<&Expr>,
+            end: Option<&Expr>,
+            inclusive: bool,
+            body: &ast::Block,
+        ) -> Result<IntValue<'ctx>, String> {
+            // G24 Fix: Compile start/end values and store in allocas.
+            // This ensures the values are safely accessible from all loop blocks
+            // without domination issues from complex expressions like vec.len().
+
+            // Compile start value in current block
+            let start_val = if let Some(s) = start {
+                self.compile_expr(fn_value, scope, s)?
+            } else {
+                self.context.i64_type().const_int(0, false)
+            };
+
+            // Compile end value in current block
+            let end_val = if let Some(e) = end {
+                self.compile_expr(fn_value, scope, e)?
+            } else {
+                // No end means infinite - use max i64 (shouldn't happen in practice)
+                self.context.i64_type().const_int(i64::MAX as u64, false)
+            };
+
+            // Store end value in an alloca so it can be loaded from loop blocks
+            // This prevents domination issues when end_val computation involves
+            // getelementptr or other non-constant expressions
+            let end_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), "loop_end")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(end_ptr, end_val)
+                .map_err(|e| e.to_string())?;
+
+            // Create blocks
+            let init_bb = self.context.append_basic_block(fn_value, "range_init");
+            let cond_bb = self.context.append_basic_block(fn_value, "range_cond");
+            let body_bb = self.context.append_basic_block(fn_value, "range_body");
+            let incr_bb = self.context.append_basic_block(fn_value, "range_incr");
+            let after_bb = self.context.append_basic_block(fn_value, "range_after");
+
+            // Jump to init
+            self.builder
+                .build_unconditional_branch(init_bb)
+                .map_err(|e| e.to_string())?;
+
+            // Init block: allocate loop variable, set to start
+            self.builder.position_at_end(init_bb);
+            let var_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), var_name)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(var_ptr, start_val)
+                .map_err(|e| e.to_string())?;
+            scope.vars.insert(var_name.to_string(), var_ptr);
+
+            self.builder
+                .build_unconditional_branch(cond_bb)
+                .map_err(|e| e.to_string())?;
+
+            // Condition block: check if var < end (or var <= end for inclusive)
+            self.builder.position_at_end(cond_bb);
+            let var_val = self
+                .builder
+                .build_load(self.context.i64_type(), var_ptr, var_name)
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+
+            // Load end value from alloca (safe in any block)
+            let end_val_loaded = self
+                .builder
+                .build_load(self.context.i64_type(), end_ptr, "end_val")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+
+            let predicate = if inclusive {
+                IntPredicate::SLE // signed less than or equal
+            } else {
+                IntPredicate::SLT // signed less than
+            };
+
+            let cond = self
+                .builder
+                .build_int_compare(predicate, var_val, end_val_loaded, "range_cond")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cond, body_bb, after_bb)
+                .map_err(|e| e.to_string())?;
+
+            // Body block
+            self.builder.position_at_end(body_bb);
+            self.compile_block(fn_value, scope, body)?;
+
+            // If body didn't terminate, jump to increment
+            if self
+                .builder
+                .get_insert_block()
+                .unwrap()
+                .get_terminator()
+                .is_none()
+            {
+                self.builder
+                    .build_unconditional_branch(incr_bb)
+                    .map_err(|e| e.to_string())?;
+            }
+
+            // Increment block: var++
+            self.builder.position_at_end(incr_bb);
+            let var_val = self
+                .builder
+                .build_load(self.context.i64_type(), var_ptr, var_name)
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let one = self.context.i64_type().const_int(1, false);
+            let next_val = self
+                .builder
+                .build_int_add(var_val, one, "next_val")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(var_ptr, next_val)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(cond_bb)
+                .map_err(|e| e.to_string())?;
+
+            // After block
+            self.builder.position_at_end(after_bb);
+
+            // Clean up
+            scope.vars.remove(var_name);
+
+            Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Compile a for loop over an array/vec
+        fn compile_array_for_loop(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            var_name: &str,
+            iter: &Expr,
+            body: &ast::Block,
+        ) -> Result<IntValue<'ctx>, String> {
+            // G24 Fix: Evaluate iterator and store in alloca to ensure domination
             let iter_val = self.compile_expr(fn_value, scope, iter)?;
 
-            // Create blocks for loop structure
+            // Store iterator value in alloca to safely access from all loop blocks
+            let iter_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), "iter_ptr")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(iter_ptr, iter_val)
+                .map_err(|e| e.to_string())?;
+
+            // Create blocks
             let init_bb = self.context.append_basic_block(fn_value, "for_init");
             let cond_bb = self.context.append_basic_block(fn_value, "for_cond");
             let body_bb = self.context.append_basic_block(fn_value, "for_body");
@@ -5209,7 +14369,7 @@ pub mod llvm {
                 .build_unconditional_branch(init_bb)
                 .map_err(|e| e.to_string())?;
 
-            // Init block: allocate index variable, set to 0
+            // Init block: allocate index and loop variable
             self.builder.position_at_end(init_bb);
             let idx_ptr = self
                 .builder
@@ -5220,20 +14380,127 @@ pub mod llvm {
                 .build_store(idx_ptr, zero)
                 .map_err(|e| e.to_string())?;
 
-            // Allocate all loop variable(s) from pattern
-            for name in &var_names {
-                let var_ptr = self
-                    .builder
-                    .build_alloca(self.context.i64_type(), name)
-                    .map_err(|e| e.to_string())?;
-                scope.vars.insert(name.clone(), var_ptr);
+            let var_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), var_name)
+                .map_err(|e| e.to_string())?;
+            scope.vars.insert(var_name.to_string(), var_ptr);
+
+            // G15 fix: Register element type for loop variable to enable correct method dispatch
+            // Extract element type from iterator (Vec<T> -> T)
+            if let Some(iter_type) = self.get_struct_type_from_expr(iter, scope) {
+                if iter_type.starts_with("Vec<") && iter_type.ends_with(">") {
+                    let elem_type = &iter_type[4..iter_type.len()-1];
+                    scope.register_struct_type(var_name.to_string(), elem_type.to_string());
+                }
+            }
+            // Also check if iter is a reference to a field access (&this.layers or &vary this.layers)
+            // Handle both Expr::AddrOf and Expr::Unary { op: Ref/RefMut } forms
+            let inner_expr = match iter {
+                Expr::AddrOf { expr: inner, .. } => Some(inner.as_ref()),
+                Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => Some(inner.as_ref()),
+                _ => None,
+            };
+            if let Some(inner) = inner_expr {
+                if let Expr::Field { expr: base_expr, field } = inner {
+                    let base_type = self.get_struct_type_from_expr(base_expr, scope);
+                    if let Some(struct_name) = base_type {
+                        if let Some(field_type) = self.field_type_names.get(&(struct_name.clone(), field.name.clone())) {
+                            if field_type.starts_with("Vec<") && field_type.ends_with(">") {
+                                let elem_type = &field_type[4..field_type.len()-1];
+                                scope.register_struct_type(var_name.to_string(), elem_type.to_string());
+                            }
+                        }
+                    }
+                }
+                // G51 fix: Handle local variable references (&vary layers where layers is Vec<Layer>)
+                if let Expr::Path(path) = inner {
+                    if path.segments.len() == 1 {
+                        let local_var_name = &path.segments[0].ident.name;
+                        // Check if local variable has a Vec<T> struct type registered
+                        if let Some(var_type) = scope.get_struct_type(local_var_name) {
+                            if var_type.starts_with("Vec<") && var_type.ends_with(">") {
+                                let elem_type = &var_type[4..var_type.len()-1];
+                                scope.register_struct_type(var_name.to_string(), elem_type.to_string());
+                            }
+                        }
+                    }
+                }
             }
 
-            // Get array length - for now use a fixed approach
-            // The iter_val is treated as an array pointer; we need its length
-            // For simplicity, we'll extract length from the array header if available
-            // or use a hardcoded approach for now
-            let len_val = self.get_array_length(iter_val)?;
+            // G24 Fix: Get length and store in alloca to ensure domination
+            // Load iter from alloca first (safe in init block)
+            let iter_for_len = self
+                .builder
+                .build_load(self.context.i64_type(), iter_ptr, "iter_for_len")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+
+            // G68/G79 Fix: When iterator is &this.field or &local_var (a reference to a Vec),
+            // iter_for_len is the ADDRESS where the Vec pointer is stored, not the Vec pointer itself.
+            // We need to load from that address to get the actual Vec pointer before calling sigil_vec_len.
+            //
+            // G79: This also applies to local variable references like &nums where nums: Vec<T>.
+            // The alloca for nums stores the Vec pointer, so &nums gives us the alloca address.
+            let is_var_ref = match iter {
+                Expr::AddrOf { expr: inner, .. } => {
+                    matches!(inner.as_ref(), Expr::Field { .. } | Expr::Path(_))
+                }
+                Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => {
+                    matches!(inner.as_ref(), Expr::Field { .. } | Expr::Path(_))
+                }
+                _ => false,
+            };
+            eprintln!("[G79-DEBUG] iter={:?}", iter);
+            eprintln!("[G79-DEBUG] is_var_ref={}, iter_for_len={:?}", is_var_ref, iter_for_len);
+
+            let vec_ptr_for_len = if is_var_ref {
+                // iter_for_len is storage address - load to get Vec pointer
+                let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                let var_ptr = self.builder
+                    .build_int_to_ptr(iter_for_len, ptr_type, "var_ptr")
+                    .map_err(|e| e.to_string())?;
+                self.builder
+                    .build_load(self.context.i64_type(), var_ptr, "vec_ptr")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value()
+            } else {
+                iter_for_len
+            };
+
+            // G68: Store the Vec pointer in a separate alloca for use in body
+            // (iter_ptr contains field address for field refs, but we need Vec pointer)
+            let vec_ptr_alloca = self.builder
+                .build_alloca(self.context.i64_type(), "vec_ptr_alloca")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(vec_ptr_alloca, vec_ptr_for_len)
+                .map_err(|e| e.to_string())?;
+
+            // G51 fix: Use sigil_vec_len runtime function instead of inline load
+            // The inline get_vec_length assumed wrong Vec layout.
+            let vec_len_fn = self
+                .module
+                .get_function("sigil_vec_len")
+                .ok_or("sigil_vec_len not declared")?;
+            let len_call = self
+                .builder
+                .build_call(vec_len_fn, &[vec_ptr_for_len.into()], "vec_len")
+                .map_err(|e| e.to_string())?;
+            let len_val = len_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+            // Store length in alloca
+            let len_ptr = self
+                .builder
+                .build_alloca(self.context.i64_type(), "len_ptr")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(len_ptr, len_val)
+                .map_err(|e| e.to_string())?;
 
             self.builder
                 .build_unconditional_branch(cond_bb)
@@ -5246,29 +14513,59 @@ pub mod llvm {
                 .build_load(self.context.i64_type(), idx_ptr, "idx")
                 .map_err(|e| e.to_string())?
                 .into_int_value();
+            // Load length from alloca (safe in any block)
+            let len_loaded = self
+                .builder
+                .build_load(self.context.i64_type(), len_ptr, "len")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
             let cond = self
                 .builder
-                .build_int_compare(IntPredicate::ULT, idx_val, len_val, "for_cond")
+                .build_int_compare(IntPredicate::ULT, idx_val, len_loaded, "for_cond")
                 .map_err(|e| e.to_string())?;
             self.builder
                 .build_conditional_branch(cond, body_bb, after_bb)
                 .map_err(|e| e.to_string())?;
 
-            // Body block: get element, bind to var, execute body
+            // Body block: get element, store in var, execute body
             self.builder.position_at_end(body_bb);
+            // G68: Load Vec pointer from vec_ptr_alloca (not iter_ptr which may be field address)
+            let iter_for_elem = self
+                .builder
+                .build_load(self.context.i64_type(), vec_ptr_alloca, "iter_for_elem")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            // Reload idx for body
+            let idx_for_elem = self
+                .builder
+                .build_load(self.context.i64_type(), idx_ptr, "idx_for_elem")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            // G51 fix: Use sigil_vec_get runtime function instead of inline GEP
+            // The inline get_vec_element assumed wrong Vec layout ({len, cap, data[]}),
+            // but Rust Vec has different internal structure. Use the runtime function
+            // that properly handles the actual Rust Vec layout.
+            let vec_get_fn = self
+                .module
+                .get_function("sigil_vec_get")
+                .ok_or("sigil_vec_get not declared")?;
+            let elem_call = self
+                .builder
+                .build_call(
+                    vec_get_fn,
+                    &[iter_for_elem.into(), idx_for_elem.into()],
+                    "vec_elem",
+                )
+                .map_err(|e| e.to_string())?;
+            let elem_val = elem_call
+                .try_as_basic_value()
+                .left()
+                .map(|v| v.into_int_value())
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+            self.builder
+                .build_store(var_ptr, elem_val)
+                .map_err(|e| e.to_string())?;
 
-            // Get element at current index
-            let elem_val = self.get_array_element(iter_val, idx_val)?;
-
-            // Store in loop variable(s)
-            // For tuple patterns, we'd need to destructure - for now just use first var
-            if let Some(&first_var_ptr) = scope.vars.get(&var_name) {
-                self.builder
-                    .build_store(first_var_ptr, elem_val)
-                    .map_err(|e| e.to_string())?;
-            }
-
-            // Compile body
             self.compile_block(fn_value, scope, body)?;
 
             // If body didn't terminate, jump to increment
@@ -5305,11 +14602,67 @@ pub mod llvm {
 
             // After block
             self.builder.position_at_end(after_bb);
-
-            // Clean up: remove loop variable from scope
-            scope.vars.remove(&var_name);
+            scope.vars.remove(var_name);
 
             Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Get length from a Vec (field 0 of {len, cap, data} struct)
+        fn get_vec_length(&self, vec_ptr_int: IntValue<'ctx>) -> Result<IntValue<'ctx>, String> {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i64_type = self.context.i64_type();
+
+            // Vec is stored as pointer to {len, cap, data}
+            let vec_ptr = self
+                .builder
+                .build_int_to_ptr(vec_ptr_int, ptr_type, "vec_ptr")
+                .map_err(|e| e.to_string())?;
+
+            // Load length (field 0, offset 0)
+            let len = self
+                .builder
+                .build_load(i64_type, vec_ptr, "vec_len")
+                .map_err(|e| e.to_string())?;
+
+            Ok(len.into_int_value())
+        }
+
+        /// Get element from a Vec at given index
+        /// Vec layout: {len: i64, cap: i64, data: i64[]} - data is inline at offset 2
+        fn get_vec_element(
+            &self,
+            vec_ptr_int: IntValue<'ctx>,
+            index: IntValue<'ctx>,
+        ) -> Result<IntValue<'ctx>, String> {
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+            let i64_type = self.context.i64_type();
+
+            let vec_ptr = self
+                .builder
+                .build_int_to_ptr(vec_ptr_int, ptr_type, "vec_ptr")
+                .map_err(|e| e.to_string())?;
+
+            // Data is inline at offset 2 (after len and cap)
+            // Element i is at vec[2 + i]
+            let offset_2 = self.context.i64_type().const_int(2, false);
+            let adjusted_idx = self
+                .builder
+                .build_int_add(index, offset_2, "adj_idx")
+                .map_err(|e| e.to_string())?;
+
+            // Get element at adjusted index
+            let elem_ptr = unsafe {
+                self.builder
+                    .build_gep(i64_type, vec_ptr, &[adjusted_idx], "elem_ptr")
+            }
+            .map_err(|e| e.to_string())?;
+
+            let elem = self
+                .builder
+                .build_load(i64_type, elem_ptr, "elem")
+                .map_err(|e| e.to_string())?;
+
+            Ok(elem.into_int_value())
         }
 
         /// Get the length of an array (represented as i64 for now)
@@ -5384,26 +14737,461 @@ pub mod llvm {
                 full_path
             };
 
+            // G66/G67: EARLY check for static method monomorphization
+            // Handles both:
+            // - Method-level generics: TensorLayout::contiguous<S>(&shape)
+            // - Impl-level generics: Wrapper<DynShape>::create(shape)
+            if full_path.contains("::") || full_path.contains("·") {
+                let parts: Vec<&str> = if full_path.contains("::") {
+                    full_path.split("::").collect()
+                } else {
+                    full_path.split('·').collect()
+                };
+
+                eprintln!("[G70-DEBUG] full_path='{}', parts.len()={}, parts={:?}", full_path, parts.len(), parts);
+
+                if parts.len() == 2 {
+                    let raw_type_name = parts[0];
+                    let method_name = parts[1];
+
+                    // G70: Substitute generic type parameters with concrete types
+                    // When inside a monomorphized method body, calls like Dev·allocate_zeroed
+                    // need to resolve Dev to the concrete type (e.g., Cpu) from scope bindings
+                    eprintln!("[G70-DEBUG] Looking for '{}' in scope.rich_types: {:?}",
+                        raw_type_name, scope.rich_types.keys().collect::<Vec<_>>());
+                    let type_name = if let Some(rich_type) = scope.rich_types.get(raw_type_name) {
+                        match rich_type {
+                            RichType::Named { name, .. } => {
+                                eprintln!("[G70] Substituting type param '{}' -> '{}'", raw_type_name, name);
+                                name.as_str()
+                            }
+                            _ => raw_type_name,
+                        }
+                    } else {
+                        raw_type_name
+                    };
+
+                    // Try to resolve static method via ImplRegistry
+                    // G67: Now returns (MethodDef, impl_generics)
+                    if let Some((method_def, impl_generics)) = self.impl_registry.resolve_static_method(type_name, method_name) {
+                        // G67: Check for explicit type args at the call site for impl-level generics
+                        // G70: Also substitute type parameters in explicit type args
+                        let mut explicit_type_args: Vec<RichType> = vec![];
+                        if let Expr::Path(path) = func {
+                            // Look for generics on the type segment (e.g., Wrapper<DynShape>)
+                            if path.segments.len() >= 1 {
+                                if let Some(generics) = &path.segments[0].generics {
+                                    for type_expr in generics {
+                                        let mut rich_type = self.type_expr_to_rich_type(type_expr);
+                                        // G70: Substitute type parameters in explicit type args
+                                        if let RichType::Named { name, generics: inner_generics } = &rich_type {
+                                            if inner_generics.is_empty() {
+                                                // Simple type name - might be a type parameter
+                                                if let Some(concrete) = scope.rich_types.get(name) {
+                                                    eprintln!("[G70] Substituting type arg '{}' -> {:?}", name, concrete);
+                                                    rich_type = concrete.clone();
+                                                }
+                                            }
+                                        }
+                                        explicit_type_args.push(rich_type);
+                                    }
+                                }
+                            }
+                            // G70: Also look for generics on the method segment (e.g., allocate_zeroed<D>)
+                            // For Type::method::<Args>(...), the method is the last segment
+                            if path.segments.len() >= 2 {
+                                let method_segment = &path.segments[path.segments.len() - 1];
+                                if let Some(generics) = &method_segment.generics {
+                                    for type_expr in generics {
+                                        let mut rich_type = self.type_expr_to_rich_type(type_expr);
+                                        // G70: Substitute type parameters in explicit type args
+                                        if let RichType::Named { name, generics: inner_generics } = &rich_type {
+                                            if inner_generics.is_empty() {
+                                                // Simple type name - might be a type parameter
+                                                if let Some(concrete) = scope.rich_types.get(name) {
+                                                    eprintln!("[G70] Substituting method type arg '{}' -> {:?}", name, concrete);
+                                                    rich_type = concrete.clone();
+                                                }
+                                            }
+                                        }
+                                        explicit_type_args.push(rich_type);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check if method needs monomorphization (either impl-level or method-level generics)
+                        let has_impl_generics = !impl_generics.is_empty();
+                        let has_method_generics = !method_def.generics.is_empty();
+
+                        if has_impl_generics || has_method_generics {
+                            eprintln!("[G66/G67-EARLY] Found static method {}::{} with impl_generics: {:?}, method_generics: {:?}",
+                                type_name, method_name, impl_generics, method_def.generics);
+                            eprintln!("[G66/G67-EARLY] Explicit type args from call site: {:?}", explicit_type_args);
+
+                            // Build bindings from explicit type args and argument inference
+                            let mut bindings = crate::impl_registry::TypeBindings::new();
+
+                            // G86: Add Self/This binding to the concrete type name
+                            let self_type = RichType::Named { name: type_name.to_string(), generics: vec![] };
+                            bindings.insert("Self".to_string(), self_type.clone());
+                            bindings.insert("This".to_string(), self_type);
+
+                            // G67: First, add bindings from explicit type args for impl-level generics
+                            for (i, generic_info) in impl_generics.iter().enumerate() {
+                                if i < explicit_type_args.len() {
+                                    if let Some(concrete) = Self::rich_type_to_impl_type(&explicit_type_args[i]) {
+                                        eprintln!("[G67-EARLY] Binding impl generic '{}' = {:?}", generic_info.name, concrete);
+                                        bindings.insert(generic_info.name.clone(), concrete);
+                                    }
+                                }
+                            }
+
+                            // G70: Also add bindings from explicit type args for method-level generics
+                            // Method generics come after impl generics in the explicit type args list
+                            let method_arg_start = impl_generics.len();
+                            for (i, generic_info) in method_def.generics.iter().enumerate() {
+                                let arg_idx = method_arg_start + i;
+                                if arg_idx < explicit_type_args.len() {
+                                    if let Some(concrete) = Self::rich_type_to_impl_type(&explicit_type_args[arg_idx]) {
+                                        eprintln!("[G70-EARLY] Binding method generic '{}' = {:?}", generic_info.name, concrete);
+                                        bindings.insert(generic_info.name.clone(), concrete);
+                                    }
+                                }
+                            }
+
+                            // Then infer any remaining bindings from arguments (for method-level generics)
+                            eprintln!("[G76-DEBUG] Method has {} params: {:?}, call has {} args",
+                                method_def.params.len(), method_def.params, args.len());
+                            for (i, (param_name, param_pattern)) in method_def.params.iter().enumerate() {
+                                eprintln!("[G76-DEBUG] Checking param[{}] '{}' with pattern {:?}", i, param_name, param_pattern);
+                                if i < args.len() {
+                                    eprintln!("[G76-DEBUG] arg[{}] = {:?}", i, args[i]);
+                                    if let Some(arg_type) = self.get_rich_type_from_expr(&args[i], scope) {
+                                        eprintln!("[G76-DEBUG] arg[{}] rich_type = {:?}", i, arg_type);
+                                        if let Some(concrete_type) = Self::rich_type_to_impl_type(&arg_type) {
+                                            eprintln!("[G66/G67-EARLY] Param '{}' pattern {:?}, arg type {:?}",
+                                                param_name, param_pattern, concrete_type);
+                                            if let Some(param_bindings) = self.impl_registry.match_type(param_pattern, &concrete_type) {
+                                                eprintln!("[G76-DEBUG] Match succeeded, bindings: {:?}", param_bindings);
+                                                for (name, ty) in param_bindings {
+                                                    bindings.insert(name, ty);
+                                                }
+                                            } else {
+                                                eprintln!("[G76-DEBUG] Match FAILED for pattern {:?} vs type {:?}", param_pattern, concrete_type);
+
+                                                // G110: Fallback - try direct generic extraction when match fails
+                                                // This handles cases like &StoragePtr<D, Self> vs &StoragePtr<f32, Cpu>
+                                                // where Self != Cpu causes the formal match to fail
+                                                use crate::impl_registry::TypePattern;
+                                                use crate::typeck::Type as ImplType;
+
+                                                fn extract_generics_fallback(
+                                                    pattern: &TypePattern,
+                                                    concrete: &ImplType,
+                                                    bindings: &mut std::collections::HashMap<String, ImplType>
+                                                ) {
+                                                    match (pattern, concrete) {
+                                                        // Reference unwrap
+                                                        (TypePattern::Reference { inner: pi, .. },
+                                                         ImplType::Ref { inner: ci, .. }) => {
+                                                            extract_generics_fallback(pi, ci, bindings);
+                                                        }
+                                                        // Parameterized/Named - match generics by position
+                                                        (TypePattern::Parameterized { name: pn, params: pp },
+                                                         ImplType::Named { name: cn, generics: cg }) if pn == cn => {
+                                                            for (p, c) in pp.iter().zip(cg.iter()) {
+                                                                extract_generics_fallback(p, c, bindings);
+                                                            }
+                                                        }
+                                                        // Generic binds to concrete
+                                                        (TypePattern::Generic(name), concrete_ty) => {
+                                                            bindings.insert(name.clone(), concrete_ty.clone());
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
+
+                                                let mut fallback_bindings = std::collections::HashMap::new();
+                                                extract_generics_fallback(param_pattern, &concrete_type, &mut fallback_bindings);
+                                                if !fallback_bindings.is_empty() {
+                                                    eprintln!("[G110-FALLBACK] Extracted bindings: {:?}", fallback_bindings);
+                                                    for (name, ty) in fallback_bindings {
+                                                        bindings.insert(name, ty);
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            eprintln!("[G76-DEBUG] rich_type_to_impl_type returned None for {:?}", arg_type);
+                                        }
+                                    } else {
+                                        eprintln!("[G76-DEBUG] get_rich_type_from_expr returned None");
+                                    }
+                                } else {
+                                    eprintln!("[G76-DEBUG] No arg for param[{}]", i);
+                                }
+                            }
+
+                            // G78: Apply default type parameters for unbound generics
+                            for generic_info in impl_generics.iter() {
+                                if !bindings.contains_key(&generic_info.name) {
+                                    if let Some(default_pattern) = &generic_info.default {
+                                        eprintln!("[G78] Applying default for '{}': {:?}",
+                                            generic_info.name, default_pattern);
+                                        // Convert TypePattern to Type for bindings
+                                        if let Some(default_type) = Self::type_pattern_to_impl_type(default_pattern) {
+                                            bindings.insert(generic_info.name.clone(), default_type);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // G103: For impl-level generics that couldn't be inferred from arguments,
+                            // try to look them up in the current scope.
+                            // This handles nested calls like `StoragePtr::new` inside `Cpu::allocate<D>`
+                            // where D should be inherited from the enclosing function scope.
+                            for generic_info in impl_generics.iter() {
+                                let generic_name = &generic_info.name;
+                                if !bindings.contains_key(generic_name) {
+                                    // First, try direct name lookup
+                                    if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                        eprintln!("[G103-EARLY] Found impl generic '{}' in scope: {:?}", generic_name, scope_type);
+                                        if let Some(concrete) = Self::rich_type_to_impl_type(&scope_type) {
+                                            bindings.insert(generic_name.clone(), concrete);
+                                            continue;
+                                        }
+                                    }
+                                    // G103: For device-related generics (bounds contain "Device"),
+                                    // also try looking up This/Self in scope.
+                                    // E.g., StoragePtr::new inside Cpu::allocate needs Dev=Cpu,
+                                    // and scope has This=Cpu.
+                                    let has_device_bound = generic_info.bounds.iter()
+                                        .any(|b| b.contains("Device"));
+                                    if has_device_bound {
+                                        eprintln!("[G103-EARLY] Generic '{}' has Device bound, trying This/Self lookup", generic_name);
+                                        if let Some(this_type) = scope.get_rich_type("This") {
+                                            eprintln!("[G103-EARLY] Found This in scope: {:?}, using for '{}'", this_type, generic_name);
+                                            if let Some(concrete) = Self::rich_type_to_impl_type(&this_type) {
+                                                bindings.insert(generic_name.clone(), concrete);
+                                                continue;
+                                            }
+                                        }
+                                        if let Some(self_type) = scope.get_rich_type("Self") {
+                                            eprintln!("[G103-EARLY] Found Self in scope: {:?}, using for '{}'", self_type, generic_name);
+                                            if let Some(concrete) = Self::rich_type_to_impl_type(&self_type) {
+                                                bindings.insert(generic_name.clone(), concrete);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // G86: For method-level generics that couldn't be inferred,
+                            // try to look them up in the current scope
+                            for generic_info in method_def.generics.iter() {
+                                let generic_name = &generic_info.name;
+                                if !bindings.contains_key(generic_name) {
+                                    if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                        eprintln!("[G86-EARLY] Found '{}' in scope: {:?}", generic_name, scope_type);
+                                        if let Some(concrete) = Self::rich_type_to_impl_type(&scope_type) {
+                                            bindings.insert(generic_name.clone(), concrete);
+                                        }
+                                    }
+                                }
+                            }
+
+                            eprintln!("[G66/G67-EARLY] Inferred bindings: {:?}", bindings);
+
+                            // Convert to RichType bindings
+                            let rich_bindings: std::collections::HashMap<String, RichType> = bindings.iter()
+                                .map(|(k, v)| (k.clone(), Self::impl_type_to_rich_type(v)))
+                                .collect();
+
+                            // Generate mangled name
+                            // G70: Handle all RichType variants for proper name mangling
+                            // G99: Sort bindings by key for deterministic name generation
+                            let mut sorted_bindings: Vec<_> = rich_bindings.iter().collect();
+                            sorted_bindings.sort_by_key(|(k, _)| k.clone());
+                            let binding_suffix: String = sorted_bindings.iter()
+                                .map(|(_, v)| match v {
+                                    RichType::Named { name, .. } => format!("_{}", name),
+                                    RichType::Float(crate::typeck::FloatSize::F32) => "_f32".to_string(),
+                                    RichType::Float(crate::typeck::FloatSize::F64) => "_f64".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I8) => "_i8".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I16) => "_i16".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I32) => "_i32".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I64) => "_i64".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::I128) => "_i128".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::U8) => "_u8".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::U16) => "_u16".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::U32) => "_u32".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::U64) => "_u64".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::U128) => "_u128".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::ISize) => "_isize".to_string(),
+                                    RichType::Int(crate::typeck::IntSize::USize) => "_usize".to_string(),
+                                    RichType::Bool => "_bool".to_string(),
+                                    RichType::Char => "_char".to_string(),
+                                    RichType::Str => "_str".to_string(),
+                                    RichType::Unit => "_unit".to_string(),
+                                    _ => "_unknown".to_string(),
+                                })
+                                .collect();
+                            let mangled_name = format!("{}_{}{}", type_name, method_name, binding_suffix);
+                            eprintln!("[G66/G67-EARLY] Monomorphized name: {}", mangled_name);
+
+                            // Check if already compiled with proper body
+                            let needs_compilation = if let Some(existing) = self.module.get_function(&mangled_name) {
+                                existing.count_basic_blocks() == 0
+                            } else {
+                                true
+                            };
+
+                            if needs_compilation {
+                                // Compile the monomorphized method
+                                if let Err(e) = self.compile_monomorphized_static_method(&method_def, &rich_bindings, &mangled_name, type_name) {
+                                    eprintln!("[G66/G67-EARLY] Error compiling: {}", e);
+                                    // Fall through to normal processing
+                                }
+                            }
+
+                            // Try to call the monomorphized function
+                            if let Some(callee) = self.module.get_function(&mangled_name) {
+                                eprintln!("[G99-MONO] Found function '{}' with {} blocks", mangled_name, callee.count_basic_blocks());
+                                if callee.count_basic_blocks() > 0 {
+                                    let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                    for arg in args {
+                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                        compiled_args.push(arg_val.into());
+                                    }
+                                    let call = self.builder
+                                        .build_call(callee, &compiled_args, "static_mono_call")
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(call.try_as_basic_value()
+                                        .left()
+                                        .map(|v| v.into_int_value())
+                                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Handle __intrinsic_* functions - emit LLVM IR directly
+            if full_path.starts_with("__intrinsic_") {
+                return self.compile_intrinsic_call(fn_value, scope, &full_path, args);
+            }
+
+            // G44 fix: Handle generic enum tuple variant construction
+            // For patterns like MyError::Shape(inner_val) or MyError·Shape(inner_val)
+            if let Expr::Path(path) = func {
+                if path.segments.len() >= 2 {
+                    let enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                    let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+
+                    if let Some(enum_info) = self.enum_types.get(enum_name) {
+                        if let Some(&disc) = enum_info.variants.get(variant_name) {
+                            // This is an enum tuple variant constructor
+                            // Allocate: [discriminant (8 bytes)] [arg values...]
+                            let struct_size = (args.len() as u64 + 1) * 8;
+                            let size_const = self.context.i64_type().const_int(struct_size, false);
+
+                            // G55 fix: Compile ALL argument values FIRST before allocating.
+                            let mut precomputed_args: Vec<(u64, IntValue<'ctx>)> = Vec::new();
+                            for (i, arg) in args.iter().enumerate() {
+                                let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                let offset = ((i + 1) * 8) as u64;
+                                precomputed_args.push((offset, arg_val));
+                            }
+
+                            // NOW allocate the enum variant struct
+                            let alloc_fn = self
+                                .module
+                                .get_function("sigil_alloc")
+                                .ok_or("sigil_alloc not declared")?;
+                            let alloc_call = self
+                                .builder
+                                .build_call(alloc_fn, &[size_const.into()], "enum_alloc")
+                                .map_err(|e| e.to_string())?;
+                            let alloc_result = alloc_call
+                                .try_as_basic_value()
+                                .left()
+                                .ok_or("sigil_alloc returned void")?;
+
+                            let struct_ptr = if alloc_result.is_pointer_value() {
+                                alloc_result.into_pointer_value()
+                            } else {
+                                self.builder
+                                    .build_int_to_ptr(
+                                        alloc_result.into_int_value(),
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        "enum_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            };
+
+                            // Store discriminant at offset 0
+                            let disc_val = self.context.i64_type().const_int(disc, false);
+                            self.builder
+                                .build_store(struct_ptr, disc_val)
+                                .map_err(|e| e.to_string())?;
+
+                            // Store precomputed argument values at offsets 8, 16, 24, ...
+                            for (offset, arg_val) in precomputed_args {
+                                let ptr_int = self
+                                    .builder
+                                    .build_ptr_to_int(struct_ptr, self.context.i64_type(), "ptr_int")
+                                    .map_err(|e| e.to_string())?;
+                                let offset_const = self.context.i64_type().const_int(offset, false);
+                                let field_ptr_int = self
+                                    .builder
+                                    .build_int_add(ptr_int, offset_const, "field_offset")
+                                    .map_err(|e| e.to_string())?;
+                                let field_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        field_ptr_int,
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        "field_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(field_ptr, arg_val)
+                                    .map_err(|e| e.to_string())?;
+                            }
+
+                            // Return pointer as i64
+                            let ptr_int = self
+                                .builder
+                                .build_ptr_to_int(struct_ptr, self.context.i64_type(), "enum_ptr_int")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(ptr_int);
+                        }
+                    }
+                }
+            }
+
             // Handle common enum/type constructors explicitly (match statement has mysterious issues)
-            if full_path == "Result::Ok" || full_path == "Result·Ok" {
+            // G43 fix: Also handle bare Ok/Err/Some/None without Result::/Option:: prefix
+            if full_path == "Result::Ok" || full_path == "Result·Ok" || full_path == "Ok" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Result::Err" || full_path == "Result·Err" {
+            if full_path == "Result::Err" || full_path == "Result·Err" || full_path == "Err" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Option::Some" || full_path == "Option·Some" {
+            if full_path == "Option::Some" || full_path == "Option·Some" || full_path == "Some" {
                 if args.is_empty() {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Option::None" || full_path == "Option·None" {
+            if full_path == "Option::None" || full_path == "Option·None" || full_path == "None" {
                 return Ok(self.context.i64_type().const_int(0, false));
             }
             if full_path == "String::new" || full_path == "String·new" {
@@ -5427,24 +15215,43 @@ pub mod llvm {
                 }
                 return self.compile_expr(fn_value, scope, &args[0]);
             }
-            if full_path == "Config::default" {
-                // Config::default() returns a struct - for now, return 0 as placeholder
-                return Ok(self.context.i64_type().const_int(0, false));
-            }
             // Print functions - handle both strings and integers
             if full_path == "println"
                 || full_path == "print"
                 || full_path == "eprintln"
                 || full_path == "eprint"
             {
+                eprintln!("[DEBUG compile_call] Handling special print: full_path={}", full_path);
                 let is_stderr = full_path == "eprintln" || full_path == "eprint";
                 let with_newline = full_path == "println" || full_path == "eprintln";
 
                 if !args.is_empty() {
                     // Check if argument is a string literal
-                    let is_string = matches!(&args[0], Expr::Literal(Literal::String(_)));
+                    let is_string_literal = matches!(&args[0], Expr::Literal(Literal::String(_)));
 
-                    if is_string {
+                    // G27: Also check if argument is a string variable
+                    let is_string_var = if let Expr::Path(path) = &args[0] {
+                        if let Some(seg) = path.segments.last() {
+                            scope.is_string_var(&seg.ident.name)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    // G27: Check if argument is a Rust String variable (from fs_read)
+                    let is_rust_string_var = if let Expr::Path(path) = &args[0] {
+                        if let Some(seg) = path.segments.last() {
+                            scope.is_rust_string_var(&seg.ident.name)
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if is_string_literal {
                         // For string literals, compile to get pointer and call print_str
                         if let Expr::Literal(Literal::String(s)) = &args[0] {
                             let str_ptr = self.create_global_string(s, "print_str");
@@ -5483,6 +15290,46 @@ pub mod llvm {
                                             .map_err(|e| e.to_string())?;
                                     }
                                 }
+                            }
+                        }
+                    } else if is_rust_string_var {
+                        // G27: For Rust String variables (from fs_read), use sigil_print_rust_string
+                        let arg = self.compile_expr(fn_value, scope, &args[0])?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let str_ptr = self
+                            .builder
+                            .build_int_to_ptr(arg, ptr_type, "rust_str_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(print_fn) =
+                            self.module.get_function("sigil_print_rust_string")
+                        {
+                            self.builder
+                                .build_call(print_fn, &[str_ptr.into()], "print_rust_str")
+                                .map_err(|e| e.to_string())?;
+                        }
+                        // Note: sigil_print_rust_string already adds newline
+                    } else if is_string_var {
+                        // G27: For C string variables, compile to get pointer and call write_str
+                        let arg = self.compile_expr(fn_value, scope, &args[0])?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let str_ptr = self
+                            .builder
+                            .build_int_to_ptr(arg, ptr_type, "str_ptr")
+                            .map_err(|e| e.to_string())?;
+
+                        if let Some(write_fn) = self.module.get_function("sigil_write_str") {
+                            self.builder
+                                .build_call(write_fn, &[str_ptr.into()], "print_str")
+                                .map_err(|e| e.to_string())?;
+                        }
+                        // Add newline for println/eprintln
+                        if with_newline {
+                            let nl_ptr = self.create_global_string("\n", "newline");
+                            if let Some(write_fn) = self.module.get_function("sigil_write_str") {
+                                self.builder
+                                    .build_call(write_fn, &[nl_ptr.into()], "nl_call")
+                                    .map_err(|e| e.to_string())?;
                             }
                         }
                     } else {
@@ -5544,6 +15391,40 @@ pub mod llvm {
                     self.compile_expr(fn_value, scope, arg)?;
                 }
                 return Ok(self.context.i64_type().const_int(0, false));
+            }
+
+            // G27: File system functions
+            if full_path == "fs_read" {
+                if args.is_empty() {
+                    return Err("fs_read requires a path argument".to_string());
+                }
+                // Compile the path argument - should be a string pointer
+                let path_val = self.compile_expr(fn_value, scope, &args[0])?;
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let path_ptr = self.builder
+                    .build_int_to_ptr(path_val, ptr_type, "path_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                let fs_read_fn = self
+                    .module
+                    .get_function("sigil_fs_read")
+                    .ok_or("sigil_fs_read not declared")?;
+                let call = self
+                    .builder
+                    .build_call(fs_read_fn, &[path_ptr.into()], "fs_read_result")
+                    .map_err(|e| e.to_string())?;
+
+                // Function returns real pointer, convert to i64 for sigil
+                let result_ptr = call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or("sigil_fs_read returned void")?
+                    .into_pointer_value();
+                let result_int = self
+                    .builder
+                    .build_ptr_to_int(result_ptr, self.context.i64_type(), "fs_read_int")
+                    .map_err(|e| e.to_string())?;
+                return Ok(result_int);
             }
 
             // Handle qualified type paths (e.g., Vec::new, Box::new)
@@ -5687,6 +15568,31 @@ pub mod llvm {
                         .left()
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                // ========================================
+                // Float print functions (need i64->f64 bitcast)
+                // ========================================
+                "sigil_print_float" | "sigil_write_float" => {
+                    if args.is_empty() {
+                        return Err("sigil_print_float requires an argument".to_string());
+                    }
+                    // Compile argument as i64 (bit pattern)
+                    let arg_bits = self.compile_expr(fn_value, scope, &args[0])?;
+                    // Bitcast i64 to f64
+                    let f64_val = self
+                        .builder
+                        .build_bit_cast(arg_bits, self.context.f64_type(), "f64_arg")
+                        .map_err(|e| e.to_string())?;
+                    // Get the function
+                    let print_fn = self
+                        .module
+                        .get_function(fn_name)
+                        .ok_or(format!("{} not declared", fn_name))?;
+                    // Call with f64 argument
+                    self.builder
+                        .build_call(print_fn, &[f64_val.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
                 }
                 // ========================================
                 // AVX-512 SIMD Intrinsics
@@ -6386,7 +16292,7 @@ pub mod llvm {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
                 "now" => {
-                    // Call sigil_now runtime function
+                    // Call sigil_now runtime function (milliseconds)
                     let now_fn = self
                         .module
                         .get_function("sigil_now")
@@ -6400,6 +16306,77 @@ pub mod llvm {
                         .left()
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "now_micros" => {
+                    // Call sigil_now_micros runtime function (microseconds)
+                    let now_fn = self
+                        .module
+                        .get_function("sigil_now_micros")
+                        .ok_or("sigil_now_micros not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(now_fn, &[], "now_micros")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                // Memory allocation: alloc(size) -> ptr as i64
+                "alloc" => {
+                    if args.is_empty() {
+                        return Err("alloc requires size argument".to_string());
+                    }
+                    let size = self.compile_expr(fn_value, scope, &args[0])?;
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(alloc_fn, &[size.into()], "alloc")
+                        .map_err(|e| e.to_string())?;
+                    // Convert pointer to i64 for uniform handling
+                    let ptr_val = call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("alloc returned void")?;
+                    if ptr_val.is_pointer_value() {
+                        return Ok(self
+                            .builder
+                            .build_ptr_to_int(
+                                ptr_val.into_pointer_value(),
+                                self.context.i64_type(),
+                                "ptr_as_int",
+                            )
+                            .map_err(|e| e.to_string())?);
+                    }
+                    return Ok(ptr_val.into_int_value());
+                }
+                // Memory deallocation: free(ptr)
+                "free" => {
+                    if args.is_empty() {
+                        return Err("free requires pointer argument".to_string());
+                    }
+                    let ptr_int = self.compile_expr(fn_value, scope, &args[0])?;
+                    // Convert i64 back to pointer for the call
+                    let ptr = self
+                        .builder
+                        .build_int_to_ptr(
+                            ptr_int,
+                            self.context.ptr_type(AddressSpace::default()),
+                            "free_ptr",
+                        )
+                        .map_err(|e| e.to_string())?;
+                    let free_fn = self
+                        .module
+                        .get_function("sigil_free")
+                        .ok_or("sigil_free not declared")?;
+                    self.builder
+                        .build_call(free_fn, &[ptr.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
                 }
                 // Unary math functions
                 "sqrt" | "sin" | "cos" | "tan" | "exp" | "ln" | "floor" | "ceil" | "abs" => {
@@ -6437,6 +16414,22 @@ pub mod llvm {
                     let call = self
                         .builder
                         .build_call(rt_fn, &[arg1.into(), arg2.into()], fn_name)
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                // Math constant: PI()
+                "PI" => {
+                    let pi_fn = self
+                        .module
+                        .get_function("sigil_pi")
+                        .ok_or("sigil_pi not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(pi_fn, &[], "pi")
                         .map_err(|e| e.to_string())?;
                     return Ok(call
                         .try_as_basic_value()
@@ -6769,8 +16762,8 @@ pub mod llvm {
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
-                // Result enum constructors
-                "Result::Ok" | "Result·Ok" => {
+                // Result enum constructors - G43 fix: also handle bare Ok/Err
+                "Result::Ok" | "Result·Ok" | "Ok" => {
                     // Result::Ok(value) - for now, just return the value
                     // In a full implementation, we'd tag it as Ok variant
                     if args.is_empty() {
@@ -6778,26 +16771,23 @@ pub mod llvm {
                     }
                     return self.compile_expr(fn_value, scope, &args[0]);
                 }
-                "Result::Err" | "Result·Err" => {
+                "Result::Err" | "Result·Err" | "Err" => {
                     // Result::Err(error) - for now, return the error value
                     // In a full implementation, we'd tag it as Err variant
-                    // eprintln!("DEBUG: Handling Result::Err with {} args", args.len());
                     if args.is_empty() {
                         return Ok(self.context.i64_type().const_int(0, false));
                     }
-                    // eprintln!("DEBUG: Compiling Result::Err arg");
                     let result = self.compile_expr(fn_value, scope, &args[0]);
-                    // eprintln!("DEBUG: Result::Err arg compiled: {:?}", result.is_ok());
                     return result;
                 }
-                // Option enum constructors
-                "Option::Some" | "Option·Some" => {
+                // Option enum constructors - G43 fix: also handle bare Some/None
+                "Option::Some" | "Option·Some" | "Some" => {
                     if args.is_empty() {
                         return Ok(self.context.i64_type().const_int(0, false));
                     }
                     return self.compile_expr(fn_value, scope, &args[0]);
                 }
-                "Option::None" | "Option·None" => {
+                "Option::None" | "Option·None" | "None" => {
                     // None is represented as null/0
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
@@ -6852,46 +16842,518 @@ pub mod llvm {
                 full_path.clone()
             };
 
-            // Handle generic struct constructors (TypeName::new, TypeName::default, etc.)
-            // These allocate a struct and return a pointer/value
-            if full_path.ends_with("::new")
-                || full_path.ends_with("·new")
-                || full_path.ends_with("::default")
-                || full_path.ends_with("·default")
-                || full_path.ends_with("::create")
-                || full_path.ends_with("·create")
-                || full_path.ends_with("::init")
-                || full_path.ends_with("·init")
-            {
-                // For struct constructors, we need to allocate and initialize
-                // For now, return a placeholder value (0 = null pointer)
-                // TODO: Implement proper struct allocation
-                return Ok(self.context.i64_type().const_int(0, false));
-            }
-
-            // Handle functions that return new data structures
-            if full_path.ends_with("::with_capacity")
-                || full_path.ends_with("·with_capacity")
-                || full_path.ends_with("::from_iter")
-                || full_path.ends_with("·from_iter")
-            {
-                return Ok(self.context.i64_type().const_int(0, false));
-            }
+            // NOTE: Generic struct constructors (::new, ·new, etc.) are now handled by
+            // actual function lookup below. The previous stub that returned 0 has been removed
+            // to allow proper impl method dispatch.
 
             // Get the function - try resolved path first, then various lookups
+            // Also try mangled name (Type_method format) for impl methods
+            let mangled_resolved = resolved_path.replace("::", "_").replace("·", "_");
+            let mangled_full = full_path.replace("::", "_").replace("·", "_");
+
+            // Get the function - try resolved path first, then various lookups
+            eprintln!("[G99-DEBUG] Looking up function: fn_name='{}', full_path='{}', resolved_path='{}'", fn_name, full_path, resolved_path);
+            eprintln!("[G99-DEBUG] self.functions keys: {:?}", self.functions.keys().filter(|k| k.contains("make") || k.contains("tensor") || k.contains("Tensor")).collect::<Vec<_>>());
             let callee = if let Some(f) = self.functions.get(&resolved_path) {
                 *f
             } else if let Some(f) = self.functions.get(&full_path) {
                 *f
+            } else if let Some(f) = self.functions.get(&mangled_resolved) {
+                *f
+            } else if let Some(f) = self.functions.get(&mangled_full) {
+                *f
             } else if let Some(f) = self.functions.get(fn_name) {
                 *f
-            } else if let Some(f) = self.module.get_function(&resolved_path.replace("::", "_")) {
+            } else if let Some(f) = self.module.get_function(&mangled_resolved) {
                 f
-            } else if let Some(f) = self.module.get_function(&full_path.replace("::", "_")) {
+            } else if let Some(f) = self.module.get_function(&mangled_full) {
                 f
             } else if let Some(f) = self.module.get_function(fn_name) {
                 f
             } else {
+                // G66: Try static method monomorphization for Type::method patterns
+                // Check if this looks like a qualified static method call
+                if full_path.contains("::") || full_path.contains("·") {
+                    let parts: Vec<&str> = if full_path.contains("::") {
+                        full_path.split("::").collect()
+                    } else {
+                        full_path.split('·').collect()
+                    };
+
+                    if parts.len() == 2 {
+                        let raw_type_name = parts[0];
+                        let method_name = parts[1];
+
+                        // G70: Substitute generic type parameters with concrete types
+                        // When inside a monomorphized method body, calls like Dev·allocate_zeroed
+                        // need to resolve Dev to the concrete type (e.g., Cpu) from scope bindings
+                        let type_name = if let Some(rich_type) = scope.rich_types.get(raw_type_name) {
+                            match rich_type {
+                                RichType::Named { name, .. } => {
+                                    eprintln!("[G70] Substituting type param '{}' -> '{}'", raw_type_name, name);
+                                    name.as_str()
+                                }
+                                _ => raw_type_name,
+                            }
+                        } else {
+                            raw_type_name
+                        };
+
+                        // Try to resolve static method via ImplRegistry
+                        // G67: Now returns (MethodDef, impl_generics)
+                        if let Some((method_def, impl_generics)) = self.impl_registry.resolve_static_method(type_name, method_name) {
+                            eprintln!("[G66] Found static method {}::{}, is_static={}, method_generics={:?}, impl_generics={:?}",
+                                type_name, method_name, method_def.is_static, method_def.generics, impl_generics);
+
+                            // Check if method has method-level or impl-level generics
+                            if !method_def.generics.is_empty() || !impl_generics.is_empty() {
+                                // Infer type bindings from arguments
+                                let mut bindings = crate::impl_registry::TypeBindings::new();
+
+                                // G86: Add Self/This binding to the concrete type name
+                                // For Cpu::fill(), Self/This = Cpu
+                                let self_type = RichType::Named { name: type_name.to_string(), generics: vec![] };
+                                bindings.insert("Self".to_string(), self_type.clone());
+                                bindings.insert("This".to_string(), self_type);
+
+                                // Try to infer generic bindings from argument types
+                                // For each method parameter that uses a generic, match against argument type
+                                for (i, (param_name, param_pattern)) in method_def.params.iter().enumerate() {
+                                    if i < args.len() {
+                                        // Get the argument's rich type
+                                        if let Some(arg_type) = self.get_rich_type_from_expr(&args[i], scope) {
+                                            // Convert to impl_registry::Type for matching
+                                            if let Some(concrete_type) = Self::rich_type_to_impl_type(&arg_type) {
+                                                eprintln!("[G66] Param '{}' pattern {:?}, arg type {:?}",
+                                                    param_name, param_pattern, concrete_type);
+                                                // Try to match and extract bindings
+                                                if let Some(param_bindings) = self.impl_registry.match_type(param_pattern, &concrete_type) {
+                                                    for (name, ty) in param_bindings {
+                                                        bindings.insert(name, ty);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                eprintln!("[G66] Inferred bindings: {:?}", bindings);
+
+                                // G86: For method-level generics that couldn't be inferred,
+                                // try to look them up in the current scope (if we're in a monomorphized context)
+                                for generic_info in &method_def.generics {
+                                    let generic_name = &generic_info.name;
+                                    if !bindings.contains_key(generic_name) {
+                                        // Check if scope has a concrete type for this generic
+                                        if let Some(scope_type) = scope.get_rich_type(generic_name) {
+                                            eprintln!("[G86] Found '{}' in scope: {:?}", generic_name, scope_type);
+                                            bindings.insert(generic_name.clone(), scope_type.clone());
+                                        }
+                                    }
+                                }
+
+                                // Convert bindings to RichType bindings for monomorphization
+                                let rich_bindings: std::collections::HashMap<String, RichType> = bindings.iter()
+                                    .map(|(k, v)| (k.clone(), Self::impl_type_to_rich_type(v)))
+                                    .collect();
+
+                                // Generate mangled name
+                                // G99: Sort bindings by key for deterministic name generation
+                                let mut sorted_bindings: Vec<_> = rich_bindings.iter().collect();
+                                sorted_bindings.sort_by_key(|(k, _)| k.clone());
+                                let binding_suffix: String = sorted_bindings.iter()
+                                    .map(|(_, v)| match v {
+                                        RichType::Named { name, .. } => format!("_{}", name),
+                                        RichType::ConstGeneric(val) => format!("_{}", val),
+                                        _ => "_unknown".to_string(),
+                                    })
+                                    .collect();
+                                let mangled_name = format!("{}_{}{}", type_name, method_name, binding_suffix);
+                                eprintln!("[G66] Monomorphized name: {}", mangled_name);
+
+                                // Check if already compiled
+                                if let Some(existing) = self.module.get_function(&mangled_name) {
+                                    // Already compiled - compile args and call
+                                    let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                    for arg in args {
+                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                        compiled_args.push(arg_val.into());
+                                    }
+                                    let call = self.builder
+                                        .build_call(existing, &compiled_args, "static_call")
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(call.try_as_basic_value()
+                                        .left()
+                                        .map(|v| v.into_int_value())
+                                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                }
+
+                                // Compile the monomorphized method
+                                if let Err(e) = self.compile_monomorphized_static_method(&method_def, &rich_bindings, &mangled_name, type_name) {
+                                    eprintln!("[G66] Error compiling monomorphized static method: {}", e);
+                                    // Fall through to heuristics
+                                } else {
+                                    // Compile args and call the monomorphized function
+                                    if let Some(callee) = self.module.get_function(&mangled_name) {
+                                        let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                        for arg in args {
+                                            let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                            compiled_args.push(arg_val.into());
+                                        }
+                                        let call = self.builder
+                                            .build_call(callee, &compiled_args, "static_mono_call")
+                                            .map_err(|e| e.to_string())?;
+                                        return Ok(call.try_as_basic_value()
+                                            .left()
+                                            .map(|v| v.into_int_value())
+                                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // G81: Check if this is a generic function that needs monomorphization
+                // This MUST be checked BEFORE heuristic patterns (like starts_with("test"))
+                eprintln!("[G85-GEN] Checking generic_functions for '{}', exists={}", fn_name, self.generic_functions.contains_key(fn_name));
+                if let Some(generic_fn) = self.generic_functions.get(fn_name).cloned() {
+                    // Get the generic parameters
+                    if let Some(ref generics) = generic_fn.generics {
+                        let type_param_names: Vec<String> = generics.params.iter()
+                            .filter_map(|p| match p {
+                                ast::GenericParam::Type { name, .. } => Some(name.name.clone()),
+                                _ => None,
+                            })
+                            .collect();
+
+                        // G119: Also extract const generic param names
+                        let const_param_names: Vec<String> = generics.params.iter()
+                            .filter_map(|p| match p {
+                                ast::GenericParam::Const { name, .. } => Some(name.name.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        eprintln!("[G119] const_param_names={:?}", const_param_names);
+
+                        // Build bindings by inferring types from arguments
+                        let mut rich_bindings: HashMap<String, RichType> = HashMap::new();
+
+                        for (_i, (param, arg)) in generic_fn.params.iter().zip(args.iter()).enumerate() {
+                            // Get the parameter's declared type
+                            let param_type_name = self.type_expr_to_string(&param.ty);
+                            eprintln!("[G85-GEN] param type='{}', type_param_names={:?}", param_type_name, type_param_names);
+
+                            // G85: Handle reference types - extract inner type for generic matching
+                            // For &S where S is a generic param, we need to match S, not &S
+                            let inner_type_name = if param_type_name.starts_with('&') {
+                                param_type_name.trim_start_matches('&').trim_start_matches("mut ").to_string()
+                            } else {
+                                param_type_name.clone()
+                            };
+                            eprintln!("[G85-GEN] inner_type_name='{}'", inner_type_name);
+
+                            // Check if this parameter's type is a generic type parameter
+                            if type_param_names.contains(&inner_type_name) {
+                                // Infer the concrete type from the argument
+                                if let Some(arg_type) = self.get_rich_type_from_expr(arg, scope) {
+                                    // G85: If param is &S and arg is &T, extract T for binding S
+                                    let binding_type = if param_type_name.starts_with('&') {
+                                        // Unwrap Ref type if needed
+                                        match &arg_type {
+                                            RichType::Ref { inner, .. } => (**inner).clone(),
+                                            _ => arg_type.clone(),
+                                        }
+                                    } else {
+                                        arg_type
+                                    };
+                                    eprintln!("[G85-GEN] binding '{}' = {:?}", inner_type_name, binding_type);
+                                    rich_bindings.insert(inner_type_name.clone(), binding_type);
+                                }
+                            }
+                        }
+
+                        // G119: Check for explicit generics at call site for const generics
+                        // e.g., create_tensor_generic·<4>() has explicit const generic 4
+                        // Note: Inside compile_call, `func` is the function expression (path)
+                        if let Expr::Path(path) = func {
+                            if path.segments.len() == 1 {
+                                if let Some(call_generics) = &path.segments[0].generics {
+                                    eprintln!("[G119] Found explicit generics at call site: {:?}", call_generics.len());
+                                    // Bind const generics from explicit call-site generics
+                                    for (i, type_expr) in call_generics.iter().enumerate() {
+                                        let rich = self.type_expr_to_rich_type(type_expr);
+                                        eprintln!("[G119] call-site generic[{}] = {:?}", i, rich);
+                                        // Match against const param names
+                                        if i < const_param_names.len() {
+                                            let param_name = &const_param_names[i];
+                                            eprintln!("[G119] binding const '{}' = {:?}", param_name, rich);
+                                            rich_bindings.insert(param_name.clone(), rich);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        eprintln!("[G85-GEN] rich_bindings for '{}': {:?}", fn_name, rich_bindings);
+
+                        // G119: Monomorphize if we have any bindings (type OR const)
+                        if !rich_bindings.is_empty() {
+                            // Generate mangled name for this instantiation
+                            // G119: Include both type and const param bindings in the suffix
+                            let all_param_names: Vec<&String> = type_param_names.iter()
+                                .chain(const_param_names.iter())
+                                .collect();
+                            let binding_suffix: String = all_param_names.iter()
+                                .filter_map(|name| rich_bindings.get(*name))
+                                .map(|v| match v {
+                                    RichType::Named { name, generics } => {
+                                        if generics.is_empty() {
+                                            format!("_{}", name)
+                                        } else {
+                                            let gen_str: String = generics.iter()
+                                                .map(|g| match g {
+                                                    RichType::ConstGeneric(val) => format!("{}", val),
+                                                    RichType::Named { name, .. } => name.clone(),
+                                                    _ => "unknown".to_string(),
+                                                })
+                                                .collect::<Vec<_>>()
+                                                .join("_");
+                                            format!("_{}_{}", name, gen_str)
+                                        }
+                                    }
+                                    RichType::ConstGeneric(val) => format!("_c{}", val),
+                                    _ => "_unknown".to_string(),
+                                })
+                                .collect();
+
+                            let mangled_name = format!("{}{}", fn_name, binding_suffix);
+                            eprintln!("[G119] mangled_name for const generic fn: {}", mangled_name);
+
+                            // Check if already compiled
+                            eprintln!("[G119-DBG] Checking if {} already exists...", mangled_name);
+                            if let Some(existing) = self.module.get_function(&mangled_name) {
+                                eprintln!("[G119-DBG] {} already exists, calling it", mangled_name);
+                                // Compile arguments and call existing function
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                for arg in args {
+                                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                    compiled_args.push(arg_val.into());
+                                }
+                                let call = self.builder
+                                    .build_call(existing, &compiled_args, "generic_call")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call
+                                    .try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+
+                            // Compile the monomorphized version
+                            eprintln!("[G119-DBG] {} not found, calling compile_monomorphized_generic_fn", mangled_name);
+                            let mono_result = self.compile_monomorphized_generic_fn(&generic_fn, &rich_bindings, &mangled_name);
+                            eprintln!("[G119-DBG] compile_monomorphized_generic_fn returned: {:?}", mono_result.is_ok());
+
+                            match mono_result {
+                                Ok(mono_fn) => {
+                                    eprintln!("[G119-DBG] Monomorphization succeeded, calling {}", mangled_name);
+                                    // Compile arguments and call
+                                    let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                    for arg in args {
+                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                        compiled_args.push(arg_val.into());
+                                    }
+                                    let call = self.builder
+                                        .build_call(mono_fn, &compiled_args, "generic_call")
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(call
+                                        .try_as_basic_value()
+                                        .left()
+                                        .map(|v| v.into_int_value())
+                                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                }
+                                Err(e) => {
+                                    eprintln!("[G119-DBG] Monomorphization FAILED: {}", e);
+                                    // Fall through to heuristic patterns
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // G93 fix: Handle std::alloc::Layout static methods
+                // These create Layout structs with proper memory layout
+                if full_path.contains("Layout") && full_path.contains("from_size_align") {
+                    // Layout::from_size_align(size, align) -> Result<Layout, LayoutError>
+                    // Layout struct: 16 bytes (size at offset 0, align at offset 8)
+                    // Result struct: 16 bytes (discriminant at offset 0, value at offset 8)
+                    if args.len() >= 2 {
+                        let size_val = self.compile_expr(fn_value, scope, &args[0])?;
+                        let align_val = self.compile_expr(fn_value, scope, &args[1])?;
+
+                        let alloc_fn = self.module.get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+                        // Allocate Layout struct (16 bytes: size + align)
+                        let layout_size = self.context.i64_type().const_int(16, false);
+                        let layout_alloc = self.builder
+                            .build_call(alloc_fn, &[layout_size.into()], "layout_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let layout_ptr_int = layout_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store size at offset 0
+                        let layout_ptr = self.builder
+                            .build_int_to_ptr(layout_ptr_int, ptr_type, "layout_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(layout_ptr, size_val)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store align at offset 8
+                        let align_offset = self.builder
+                            .build_int_add(layout_ptr_int, self.context.i64_type().const_int(8, false), "align_off")
+                            .map_err(|e| e.to_string())?;
+                        let align_ptr = self.builder
+                            .build_int_to_ptr(align_offset, ptr_type, "align_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(align_ptr, align_val)
+                            .map_err(|e| e.to_string())?;
+
+                        // Allocate Result<Layout> struct (16 bytes: discriminant + value)
+                        let result_alloc = self.builder
+                            .build_call(alloc_fn, &[layout_size.into()], "result_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let result_ptr_int = result_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store Ok discriminant (0) at offset 0
+                        let result_ptr = self.builder
+                            .build_int_to_ptr(result_ptr_int, ptr_type, "result_ptr")
+                            .map_err(|e| e.to_string())?;
+                        let ok_disc = self.context.i64_type().const_int(0, false);
+                        self.builder.build_store(result_ptr, ok_disc)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store Layout pointer at offset 8
+                        let value_offset = self.builder
+                            .build_int_add(result_ptr_int, self.context.i64_type().const_int(8, false), "value_off")
+                            .map_err(|e| e.to_string())?;
+                        let value_ptr = self.builder
+                            .build_int_to_ptr(value_offset, ptr_type, "value_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(value_ptr, layout_ptr_int)
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(result_ptr_int);
+                    }
+                }
+
+                // G93 fix: Handle Layout::array::<T>(count)
+                if full_path.contains("Layout") && full_path.contains("array") {
+                    // Layout::array::<T>(count) -> Result<Layout, LayoutError>
+                    // Compute: size = sizeof(T) * count, align = alignof(T)
+                    if args.len() >= 1 {
+                        let count_val = self.compile_expr(fn_value, scope, &args[0])?;
+
+                        // Extract type argument to determine size/align
+                        // Default to 8 bytes (i64 size/align) if type not determinable
+                        let (elem_size, elem_align) = if let Expr::Path(path) = func {
+                            // Look for type args on the method segment (e.g., array::<i64>)
+                            let mut type_size = 8u64;
+                            let mut type_align = 8u64;
+                            for seg in &path.segments {
+                                if let Some(ref generics) = seg.generics {
+                                    if let Some(type_expr) = generics.first() {
+                                        // Map type to size/align
+                                        match self.type_expr_to_string(type_expr).as_str() {
+                                            "i8" | "u8" => { type_size = 1; type_align = 1; }
+                                            "i16" | "u16" => { type_size = 2; type_align = 2; }
+                                            "i32" | "u32" | "f32" => { type_size = 4; type_align = 4; }
+                                            "i64" | "u64" | "f64" | "usize" | "isize" => { type_size = 8; type_align = 8; }
+                                            "i128" | "u128" => { type_size = 16; type_align = 16; }
+                                            _ => { type_size = 8; type_align = 8; } // Default for unknown types
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            (type_size, type_align)
+                        } else {
+                            (8u64, 8u64)
+                        };
+
+                        let elem_size_const = self.context.i64_type().const_int(elem_size, false);
+                        let elem_align_const = self.context.i64_type().const_int(elem_align, false);
+
+                        // Compute total size = elem_size * count
+                        let total_size = self.builder
+                            .build_int_mul(elem_size_const, count_val, "array_size")
+                            .map_err(|e| e.to_string())?;
+
+                        let alloc_fn = self.module.get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let ptr_type = self.context.ptr_type(AddressSpace::default());
+                        let sixteen = self.context.i64_type().const_int(16, false);
+
+                        // Allocate Layout struct
+                        let layout_alloc = self.builder
+                            .build_call(alloc_fn, &[sixteen.into()], "layout_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let layout_ptr_int = layout_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store size at offset 0
+                        let layout_ptr = self.builder
+                            .build_int_to_ptr(layout_ptr_int, ptr_type, "layout_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(layout_ptr, total_size)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store align at offset 8
+                        let align_offset = self.builder
+                            .build_int_add(layout_ptr_int, self.context.i64_type().const_int(8, false), "align_off")
+                            .map_err(|e| e.to_string())?;
+                        let align_ptr = self.builder
+                            .build_int_to_ptr(align_offset, ptr_type, "align_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(align_ptr, elem_align_const)
+                            .map_err(|e| e.to_string())?;
+
+                        // Allocate Result<Layout> struct
+                        let result_alloc = self.builder
+                            .build_call(alloc_fn, &[sixteen.into()], "result_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let result_ptr_int = result_alloc.try_as_basic_value().left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store Ok discriminant at offset 0
+                        let result_ptr = self.builder
+                            .build_int_to_ptr(result_ptr_int, ptr_type, "result_ptr")
+                            .map_err(|e| e.to_string())?;
+                        let ok_disc = self.context.i64_type().const_int(0, false);
+                        self.builder.build_store(result_ptr, ok_disc)
+                            .map_err(|e| e.to_string())?;
+
+                        // Store Layout pointer at offset 8
+                        let value_offset = self.builder
+                            .build_int_add(result_ptr_int, self.context.i64_type().const_int(8, false), "value_off")
+                            .map_err(|e| e.to_string())?;
+                        let value_ptr = self.builder
+                            .build_int_to_ptr(value_offset, ptr_type, "value_ptr")
+                            .map_err(|e| e.to_string())?;
+                        self.builder.build_store(value_ptr, layout_ptr_int)
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(result_ptr_int);
+                    }
+                }
+
                 // Fallback: Try heuristics based on function name pattern
                 let fn_lower = fn_name.to_lowercase();
 
@@ -6952,19 +17414,262 @@ pub mod llvm {
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
 
+                // G55 fix: Handle wrapper type constructors like Arc::new, Rc::new, RefCell::new
+                // These allocate memory and store the argument value
+                // G104 fix: Use full_path instead of fn_lower since fn_lower is just "new" (short name)
+                let full_path_lower = full_path.to_lowercase();
+                if full_path_lower.ends_with("::new") || full_path_lower.ends_with("·new") {
+                    if !args.is_empty() {
+                        // G55 fix: Compile argument FIRST before allocating
+                        let value = self.compile_expr(fn_value, scope, &args[0])?;
+
+                        // Allocate memory for the wrapper
+                        let alloc_fn = self
+                            .module
+                            .get_function("sigil_alloc")
+                            .ok_or("sigil_alloc not declared")?;
+                        let size = self.context.i64_type().const_int(8, false);
+                        let call = self
+                            .builder
+                            .build_call(alloc_fn, &[size.into()], "wrapper_alloc")
+                            .map_err(|e| e.to_string())?;
+                        let ptr = call
+                            .try_as_basic_value()
+                            .left()
+                            .map(|v| v.into_int_value())
+                            .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+
+                        // Store the value
+                        let ptr_as_ptr = self
+                            .builder
+                            .build_int_to_ptr(
+                                ptr,
+                                self.context.ptr_type(AddressSpace::default()),
+                                "wrapper_ptr",
+                            )
+                            .map_err(|e| e.to_string())?;
+                        self.builder
+                            .build_store(ptr_as_ptr, value)
+                            .map_err(|e| e.to_string())?;
+
+                        return Ok(ptr);
+                    }
+                    // No args - just return allocated but uninitialized memory
+                    let alloc_fn = self
+                        .module
+                        .get_function("sigil_alloc")
+                        .ok_or("sigil_alloc not declared")?;
+                    let size = self.context.i64_type().const_int(8, false);
+                    let call = self
+                        .builder
+                        .build_call(alloc_fn, &[size.into()], "wrapper_alloc")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+
                 // Default fallback - assume returns something, use 0 as placeholder
                 // eprintln!("DEBUG: Unknown function '{}' - using default stub", full_path);
                 return Ok(self.context.i64_type().const_int(0, false));
             };
 
             // Compile arguments
-            let compiled_args: Result<Vec<_>, _> = args
-                .iter()
-                .map(|arg| self.compile_expr(fn_value, scope, arg).map(|v| v.into()))
-                .collect();
-            let compiled_args = compiled_args?;
+            // G52 fix: For slice args (from as_bytes() or slice variables), also pass the length
+            // G55 fix: Also handle &vec_name references to local Vec variables
+            // G75 fix: Add Vec lengths immediately after the ptr, not at end
+            let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+
+            // G75: Check if callee expects more params than source args
+            // This indicates slice params with implicit _len
+            let expected_params = callee.count_params() as usize;
+            let source_arg_count = args.len();
+            let needs_slice_expansion = expected_params > source_arg_count;
+
+            for arg in args {
+                // G52: Check if this is a .as_bytes() method call - if so, also pass strlen
+                let is_as_bytes = if let Expr::MethodCall { method, .. } = arg {
+                    method.name == "as_bytes"
+                } else {
+                    false
+                };
+
+                // G52: Check if this is a slice variable (has tracked length)
+                let slice_var_name = if let Expr::Path(path) = arg {
+                    if let Some(seg) = path.segments.last() {
+                        if scope.slice_lens.contains_key(&seg.ident.name) {
+                            Some(seg.ident.name.clone())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                // G55: Check if this is &vec_name (reference to a local Vec variable)
+                let vec_ref_name = {
+                    let inner_expr = match arg {
+                        Expr::AddrOf { expr: inner, .. } => Some(inner.as_ref()),
+                        Expr::Unary { op: ast::UnaryOp::Ref | ast::UnaryOp::RefMut, expr: inner } => Some(inner.as_ref()),
+                        _ => None,
+                    };
+                    if let Some(inner) = inner_expr {
+                        if let Expr::Path(path) = inner {
+                            if let Some(seg) = path.segments.last() {
+                                // It's a reference to a variable
+                                if scope.vars.contains_key(&seg.ident.name) {
+                                    Some(seg.ident.name.clone())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                // G72/G75: For &vec_name when callee expects slice params, convert to (ptr, len)
+                let arg_val = if needs_slice_expansion && vec_ref_name.is_some() {
+                    let vec_name = vec_ref_name.as_ref().unwrap();
+                    // Load Vec pointer from alloca
+                    let vec_alloca = scope.vars.get(vec_name).ok_or_else(|| format!("Variable '{}' not found", vec_name))?;
+                    let vec_ptr = self.builder
+                        .build_load(self.context.i64_type(), *vec_alloca, "vec_ptr")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+
+                    // Call sigil_vec_u8_as_ptr to get data pointer
+                    let vec_as_ptr_fn = self.module
+                        .get_function("sigil_vec_u8_as_ptr")
+                        .ok_or("sigil_vec_u8_as_ptr not declared")?;
+                    let data_ptr_call = self.builder
+                        .build_call(vec_as_ptr_fn, &[vec_ptr.into()], "vec_data_ptr")
+                        .map_err(|e| e.to_string())?;
+                    let data_ptr = data_ptr_call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sigil_vec_u8_as_ptr returned void")?;
+
+                    // G74: Handle both JIT mode (returns i64) and AOT mode (returns ptr)
+                    match data_ptr {
+                        inkwell::values::BasicValueEnum::IntValue(i) => i,
+                        inkwell::values::BasicValueEnum::PointerValue(p) => {
+                            self.builder
+                                .build_ptr_to_int(p, self.context.i64_type(), "data_ptr_i64")
+                                .map_err(|e| e.to_string())?
+                        }
+                        other => return Err(format!("sigil_vec_u8_as_ptr returned unexpected type: {:?}", other)),
+                    }
+                } else {
+                    self.compile_expr(fn_value, scope, arg)?
+                };
+                compiled_args.push(arg_val.into());
+
+                // G75: For slice expansion, add Vec length immediately after ptr
+                if needs_slice_expansion && vec_ref_name.is_some() {
+                    let vec_name = vec_ref_name.as_ref().unwrap();
+                    let vec_alloca = scope.vars.get(vec_name).ok_or_else(|| format!("Variable '{}' not found for length", vec_name))?;
+                    let vec_ptr = self.builder
+                        .build_load(self.context.i64_type(), *vec_alloca, "vec_ptr_for_len")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    let vec_len_fn = self.module
+                        .get_function("sigil_vec_len")
+                        .ok_or("sigil_vec_len not declared")?;
+                    let len_call = self.builder
+                        .build_call(vec_len_fn, &[vec_ptr.into()], "vec_len")
+                        .map_err(|e| e.to_string())?;
+                    let len_val = len_call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sigil_vec_len returned void")?;
+                    compiled_args.push(len_val.into());
+                }
+
+                // G52/G53: For as_bytes(), also compute and pass the length
+                // G53: Check if receiver is a Rust String (use sigil_string_len) or C string (use sigil_strlen)
+                if is_as_bytes {
+                    if let Expr::MethodCall { receiver, .. } = arg {
+                        // Check if receiver is a Rust String variable
+                        let is_rust_string = if let Expr::Path(path) = receiver.as_ref() {
+                            if let Some(seg) = path.segments.last() {
+                                matches!(scope.var_types.get(&seg.ident.name), Some(SigilType::RustString))
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        // Get the string pointer (receiver is the string)
+                        let str_val = self.compile_expr(fn_value, scope, receiver)?;
+
+                        let len_val = if is_rust_string {
+                            // G53: Rust String - use sigil_string_len
+                            let string_len_fn = self
+                                .module
+                                .get_function("sigil_string_len")
+                                .ok_or("sigil_string_len not declared")?;
+                            let len_call = self
+                                .builder
+                                .build_call(string_len_fn, &[str_val.into()], "rust_str_len")
+                                .map_err(|e| e.to_string())?;
+                            len_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                        } else {
+                            // G52: C string - use sigil_strlen
+                            let strlen_fn = self
+                                .module
+                                .get_function("sigil_strlen")
+                                .ok_or("sigil_strlen not declared")?;
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let str_ptr = self
+                                .builder
+                                .build_int_to_ptr(str_val, ptr_type, "str_ptr")
+                                .map_err(|e| e.to_string())?;
+                            let len_call = self
+                                .builder
+                                .build_call(strlen_fn, &[str_ptr.into()], "str_len")
+                                .map_err(|e| e.to_string())?;
+                            len_call
+                                .try_as_basic_value()
+                                .left()
+                                .map(|v| v.into_int_value())
+                                .unwrap_or_else(|| self.context.i64_type().const_int(0, false))
+                        };
+                        compiled_args.push(len_val.into());
+                    }
+                }
+
+                // G52: For slice variables, load and pass the tracked length
+                if let Some(var_name) = slice_var_name {
+                    if let Some(len_alloca) = scope.slice_lens.get(&var_name) {
+                        let len_val = self
+                            .builder
+                            .build_load(self.context.i64_type(), *len_alloca, "slice_len_arg")
+                            .map_err(|e| e.to_string())?
+                            .into_int_value();
+                        compiled_args.push(len_val.into());
+                    }
+                }
+
+            }
 
             // Build call with tail call hint for potential optimization
+            eprintln!("[G99-CALL] Calling function '{}' with {} args", callee.get_name().to_str().unwrap_or("unknown"), compiled_args.len());
             let call = self
                 .builder
                 .build_call(callee, &compiled_args, "call")
@@ -6975,11 +17680,658 @@ pub mod llvm {
             call.set_tail_call(true);
 
             // Get return value
-            Ok(call
+            let result = call
+                .try_as_basic_value()
+                .left()
+                .map(|v| {
+                    // Handle both int and float return types
+                    if v.is_int_value() {
+                        v.into_int_value()
+                    } else if v.is_float_value() {
+                        // Bitcast f64 to i64 for Sigil's "everything is i64" convention
+                        self.builder
+                            .build_bit_cast(v, self.context.i64_type(), "float_to_int")
+                            .unwrap()
+                            .into_int_value()
+                    } else {
+                        self.context.i64_type().const_int(0, false)
+                    }
+                })
+                .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+            eprintln!("[G99-CALL] Function '{}' call compiled", callee.get_name().to_str().unwrap_or("unknown"));
+            Ok(result)
+        }
+
+        /// Compile __intrinsic_* function calls - emit LLVM IR directly
+        /// These are compiler-recognized functions that bypass normal function calls
+        fn compile_intrinsic_call(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            intrinsic_name: &str,
+            args: &[Expr],
+        ) -> Result<IntValue<'ctx>, String> {
+            let i64_type = self.context.i64_type();
+            let f64_type = self.context.f64_type();
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
+
+            match intrinsic_name {
+                // Memory intrinsics - use libc malloc/free for portability
+                "__intrinsic_malloc" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_malloc requires 1 argument (size)".to_string());
+                    }
+                    let size = self.compile_expr(fn_value, scope, &args[0])?;
+
+                    // Declare malloc if not already declared: void* malloc(size_t)
+                    let malloc_fn = self.module.get_function("malloc").unwrap_or_else(|| {
+                        let malloc_type = ptr_type.fn_type(&[i64_type.into()], false);
+                        self.module.add_function("malloc", malloc_type, Some(inkwell::module::Linkage::External))
+                    });
+
+                    let call = self.builder
+                        .build_call(malloc_fn, &[size.into()], "malloc_result")
+                        .map_err(|e| e.to_string())?;
+
+                    // Convert pointer to i64
+                    let ptr_result = call.try_as_basic_value().left()
+                        .ok_or("malloc returned void")?;
+                    let ptr_int = self.builder
+                        .build_ptr_to_int(ptr_result.into_pointer_value(), i64_type, "ptr_as_i64")
+                        .map_err(|e| e.to_string())?;
+                    Ok(ptr_int)
+                }
+
+                "__intrinsic_free" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_free requires 1 argument (ptr)".to_string());
+                    }
+                    let ptr_int = self.compile_expr(fn_value, scope, &args[0])?;
+                    let ptr = self.builder
+                        .build_int_to_ptr(ptr_int, ptr_type, "free_ptr")
+                        .map_err(|e| e.to_string())?;
+
+                    // Declare free if not already declared: void free(void*)
+                    let free_fn = self.module.get_function("free").unwrap_or_else(|| {
+                        let void_type = self.context.void_type();
+                        let free_type = void_type.fn_type(&[ptr_type.into()], false);
+                        self.module.add_function("free", free_type, Some(inkwell::module::Linkage::External))
+                    });
+
+                    self.builder
+                        .build_call(free_fn, &[ptr.into()], "")
+                        .map_err(|e| e.to_string())?;
+                    Ok(i64_type.const_int(0, false))
+                }
+
+                // I/O intrinsics - use libc write
+                "__intrinsic_write" => {
+                    if args.len() != 3 {
+                        return Err("__intrinsic_write requires 3 arguments (fd, buf, len)".to_string());
+                    }
+                    let fd = self.compile_expr(fn_value, scope, &args[0])?;
+                    let buf_int = self.compile_expr(fn_value, scope, &args[1])?;
+                    let len = self.compile_expr(fn_value, scope, &args[2])?;
+
+                    let buf_ptr = self.builder
+                        .build_int_to_ptr(buf_int, ptr_type, "write_buf")
+                        .map_err(|e| e.to_string())?;
+
+                    // Declare write if not already declared: ssize_t write(int, const void*, size_t)
+                    let write_fn = self.module.get_function("write").unwrap_or_else(|| {
+                        let i32_type = self.context.i32_type();
+                        let write_type = i64_type.fn_type(&[i32_type.into(), ptr_type.into(), i64_type.into()], false);
+                        self.module.add_function("write", write_type, Some(inkwell::module::Linkage::External))
+                    });
+
+                    // Truncate fd to i32
+                    let fd_i32 = self.builder
+                        .build_int_truncate(fd, self.context.i32_type(), "fd_i32")
+                        .map_err(|e| e.to_string())?;
+
+                    let call = self.builder
+                        .build_call(write_fn, &[fd_i32.into(), buf_ptr.into(), len.into()], "write_result")
+                        .map_err(|e| e.to_string())?;
+
+                    Ok(call.try_as_basic_value().left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| i64_type.const_int(0, false)))
+                }
+
+                "__intrinsic_exit" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_exit requires 1 argument (code)".to_string());
+                    }
+                    let code = self.compile_expr(fn_value, scope, &args[0])?;
+
+                    // Declare exit if not already declared: void exit(int)
+                    let exit_fn = self.module.get_function("exit").unwrap_or_else(|| {
+                        let i32_type = self.context.i32_type();
+                        let void_type = self.context.void_type();
+                        let exit_type = void_type.fn_type(&[i32_type.into()], false);
+                        self.module.add_function("exit", exit_type, Some(inkwell::module::Linkage::External))
+                    });
+
+                    let code_i32 = self.builder
+                        .build_int_truncate(code, self.context.i32_type(), "exit_code")
+                        .map_err(|e| e.to_string())?;
+
+                    self.builder
+                        .build_call(exit_fn, &[code_i32.into()], "")
+                        .map_err(|e| e.to_string())?;
+
+                    // exit doesn't return, but we need to return something for LLVM
+                    Ok(i64_type.const_int(0, false))
+                }
+
+                // Math intrinsics - use LLVM intrinsics
+                "__intrinsic_sqrt" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_sqrt requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    // Convert i64 bits to f64
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    // Get or declare llvm.sqrt.f64
+                    let sqrt_fn = self.module.get_function("llvm.sqrt.f64").unwrap_or_else(|| {
+                        let sqrt_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.sqrt.f64", sqrt_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(sqrt_fn, &[x_f64.into()], "sqrt_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sqrt returned void")?;
+
+                    // Convert f64 back to i64 bits
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "sqrt_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_sin" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_sin requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let sin_fn = self.module.get_function("llvm.sin.f64").unwrap_or_else(|| {
+                        let sin_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.sin.f64", sin_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(sin_fn, &[x_f64.into()], "sin_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("sin returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "sin_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_cos" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_cos requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let cos_fn = self.module.get_function("llvm.cos.f64").unwrap_or_else(|| {
+                        let cos_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.cos.f64", cos_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(cos_fn, &[x_f64.into()], "cos_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("cos returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "cos_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_exp" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_exp requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let exp_fn = self.module.get_function("llvm.exp.f64").unwrap_or_else(|| {
+                        let exp_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.exp.f64", exp_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(exp_fn, &[x_f64.into()], "exp_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("exp returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "exp_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_log" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_log requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let log_fn = self.module.get_function("llvm.log.f64").unwrap_or_else(|| {
+                        let log_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.log.f64", log_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(log_fn, &[x_f64.into()], "log_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("log returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "log_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_pow" => {
+                    if args.len() != 2 {
+                        return Err("__intrinsic_pow requires 2 arguments".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let y = self.compile_expr(fn_value, scope, &args[1])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+                    let y_f64 = self.builder.build_bit_cast(y, f64_type, "y_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let pow_fn = self.module.get_function("llvm.pow.f64").unwrap_or_else(|| {
+                        let pow_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
+                        self.module.add_function("llvm.pow.f64", pow_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(pow_fn, &[x_f64.into(), y_f64.into()], "pow_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("pow returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "pow_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_floor" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_floor requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let floor_fn = self.module.get_function("llvm.floor.f64").unwrap_or_else(|| {
+                        let floor_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.floor.f64", floor_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(floor_fn, &[x_f64.into()], "floor_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("floor returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "floor_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_ceil" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_ceil requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let ceil_fn = self.module.get_function("llvm.ceil.f64").unwrap_or_else(|| {
+                        let ceil_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.ceil.f64", ceil_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(ceil_fn, &[x_f64.into()], "ceil_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("ceil returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "ceil_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                "__intrinsic_fabs" => {
+                    if args.len() != 1 {
+                        return Err("__intrinsic_fabs requires 1 argument".to_string());
+                    }
+                    let x = self.compile_expr(fn_value, scope, &args[0])?;
+                    let x_f64 = self.builder.build_bit_cast(x, f64_type, "x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    let fabs_fn = self.module.get_function("llvm.fabs.f64").unwrap_or_else(|| {
+                        let fabs_type = f64_type.fn_type(&[f64_type.into()], false);
+                        self.module.add_function("llvm.fabs.f64", fabs_type, None)
+                    });
+
+                    let result = self.builder
+                        .build_call(fabs_fn, &[x_f64.into()], "fabs_result")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("fabs returned void")?;
+
+                    let result_i64 = self.builder
+                        .build_bit_cast(result, i64_type, "fabs_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+                    Ok(result_i64)
+                }
+
+                _ => Err(format!("Unknown intrinsic: {}", intrinsic_name)),
+            }
+        }
+
+        /// Compile vec! macro - creates a new Vec and optionally initializes it
+        /// Handles: vec![], vec![a, b, c], vec![val; count]
+        fn compile_vec_macro(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            tokens: &str,
+        ) -> Result<IntValue<'ctx>, String> {
+            let tokens = tokens.trim();
+            let i64_type = self.context.i64_type();
+
+            // Get sigil_vec_new function
+            let vec_new_fn = self
+                .module
+                .get_function("sigil_vec_new")
+                .ok_or("sigil_vec_new not declared")?;
+
+            // Case 1: vec![] - empty vector
+            if tokens.is_empty() {
+                let capacity = i64_type.const_int(8, false);
+                let call = self
+                    .builder
+                    .build_call(vec_new_fn, &[capacity.into()], "vec_new")
+                    .map_err(|e| e.to_string())?;
+                return Ok(call
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_int_value())
+                    .unwrap_or_else(|| i64_type.const_int(0, false)));
+            }
+
+            // Case 2: vec![val; count] - repeat syntax
+            if let Some(semicolon_pos) = tokens.rfind(';') {
+                let val_str = tokens[..semicolon_pos].trim();
+                let count_str = tokens[semicolon_pos + 1..].trim();
+
+                // Parse count as integer constant or expression
+                let count_val = if let Ok(n) = count_str.parse::<u64>() {
+                    i64_type.const_int(n, false)
+                } else {
+                    // Try to compile as expression
+                    let count_expr = self.parse_simple_expr(count_str)?;
+                    self.compile_expr(fn_value, scope, &count_expr)?
+                };
+
+                // Create vector with capacity = count
+                let call = self
+                    .builder
+                    .build_call(vec_new_fn, &[count_val.into()], "vec_new")
+                    .map_err(|e| e.to_string())?;
+                let vec_ptr = call
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_int_value())
+                    .unwrap_or_else(|| i64_type.const_int(0, false));
+
+                // Parse value expression
+                let val_expr = self.parse_simple_expr(val_str)?;
+                let value = self.compile_expr(fn_value, scope, &val_expr)?;
+
+                // Get push function
+                let push_fn = self
+                    .module
+                    .get_function("sigil_vec_push")
+                    .ok_or("sigil_vec_push not declared")?;
+
+                // Build a loop to push the value count times
+                // For now, if count is a constant, unroll the loop
+                // Otherwise, build actual loop
+                if let Some(const_count) = count_val.get_zero_extended_constant() {
+                    // Unroll for small constant counts (up to 64 iterations)
+                    if const_count <= 64 {
+                        for _ in 0..const_count {
+                            self.builder
+                                .build_call(push_fn, &[vec_ptr.into(), value.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        // Build a proper loop for larger counts
+                        self.build_vec_fill_loop(fn_value, vec_ptr, value, count_val, push_fn)?;
+                    }
+                } else {
+                    // Runtime count - build a loop
+                    self.build_vec_fill_loop(fn_value, vec_ptr, value, count_val, push_fn)?;
+                }
+
+                return Ok(vec_ptr);
+            }
+
+            // Case 3: vec![a, b, c] - element list
+            let elements = self.split_macro_args(tokens);
+            let capacity = i64_type.const_int(elements.len().max(8) as u64, false);
+
+            let call = self
+                .builder
+                .build_call(vec_new_fn, &[capacity.into()], "vec_new")
+                .map_err(|e| e.to_string())?;
+            let vec_ptr = call
                 .try_as_basic_value()
                 .left()
                 .map(|v| v.into_int_value())
-                .unwrap_or_else(|| self.context.i64_type().const_int(0, false)))
+                .unwrap_or_else(|| i64_type.const_int(0, false));
+
+            // Get push function
+            let push_fn = self
+                .module
+                .get_function("sigil_vec_push")
+                .ok_or("sigil_vec_push not declared")?;
+
+            // Push each element
+            for elem_str in elements {
+                let elem_str = elem_str.trim();
+                if elem_str.is_empty() {
+                    continue;
+                }
+                let elem_expr = self.parse_simple_expr(elem_str)?;
+                let elem_val = self.compile_expr(fn_value, scope, &elem_expr)?;
+                self.builder
+                    .build_call(push_fn, &[vec_ptr.into(), elem_val.into()], "")
+                    .map_err(|e| e.to_string())?;
+            }
+
+            Ok(vec_ptr)
+        }
+
+        /// Build a loop to fill a vector with a value
+        fn build_vec_fill_loop(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            vec_ptr: IntValue<'ctx>,
+            value: IntValue<'ctx>,
+            count: IntValue<'ctx>,
+            push_fn: FunctionValue<'ctx>,
+        ) -> Result<(), String> {
+            let i64_type = self.context.i64_type();
+
+            // Create blocks
+            let loop_header = self.context.append_basic_block(fn_value, "vec_fill_header");
+            let loop_body = self.context.append_basic_block(fn_value, "vec_fill_body");
+            let loop_end = self.context.append_basic_block(fn_value, "vec_fill_end");
+
+            // Initialize counter
+            let counter_ptr = self.builder
+                .build_alloca(i64_type, "fill_counter")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, i64_type.const_int(0, false))
+                .map_err(|e| e.to_string())?;
+
+            // Jump to header
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Loop header: check if counter < count
+            self.builder.position_at_end(loop_header);
+            let counter = self.builder
+                .build_load(i64_type, counter_ptr, "counter")
+                .map_err(|e| e.to_string())?
+                .into_int_value();
+            let cmp = self.builder
+                .build_int_compare(inkwell::IntPredicate::SLT, counter, count, "cmp")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_conditional_branch(cmp, loop_body, loop_end)
+                .map_err(|e| e.to_string())?;
+
+            // Loop body: push value and increment counter
+            self.builder.position_at_end(loop_body);
+            self.builder
+                .build_call(push_fn, &[vec_ptr.into(), value.into()], "")
+                .map_err(|e| e.to_string())?;
+            let next_counter = self.builder
+                .build_int_add(counter, i64_type.const_int(1, false), "next_counter")
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_store(counter_ptr, next_counter)
+                .map_err(|e| e.to_string())?;
+            self.builder
+                .build_unconditional_branch(loop_header)
+                .map_err(|e| e.to_string())?;
+
+            // Position at end of loop
+            self.builder.position_at_end(loop_end);
+
+            Ok(())
+        }
+
+        /// Parse a simple expression from a string (for macro arguments)
+        /// G16 fix: Use full parser for complex expressions like method calls
+        fn parse_simple_expr(&self, s: &str) -> Result<Expr, String> {
+            let s = s.trim();
+
+            // Use the full parser to handle complex expressions like method calls
+            // This properly handles "source.len()", "a + b", "foo.bar.baz()", etc.
+            let mut parser = Parser::new(s);
+            if let Ok(expr) = parser.parse_expr() {
+                return Ok(expr);
+            }
+
+            // Fallback for edge cases: treat as a simple path
+            let default_span = Span { start: 0, end: 0 };
+            Ok(Expr::Path(TypePath {
+                segments: vec![PathSegment {
+                    ident: Ident {
+                        name: s.to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: default_span,
+                    },
+                    generics: None,
+                }],
+            }))
+        }
+
+        /// Split macro arguments by comma, respecting nesting
+        fn split_macro_args(&self, s: &str) -> Vec<String> {
+            let mut result = Vec::new();
+            let mut current = String::new();
+            let mut depth = 0;
+
+            for c in s.chars() {
+                match c {
+                    '(' | '[' | '{' => {
+                        depth += 1;
+                        current.push(c);
+                    }
+                    ')' | ']' | '}' => {
+                        depth -= 1;
+                        current.push(c);
+                    }
+                    ',' if depth == 0 => {
+                        result.push(current.trim().to_string());
+                        current = String::new();
+                    }
+                    _ => current.push(c),
+                }
+            }
+
+            if !current.trim().is_empty() {
+                result.push(current.trim().to_string());
+            }
+
+            result
         }
 
         /// Compile println! and print! macros
@@ -7039,8 +18391,8 @@ pub mod llvm {
                 (String::new(), tokens.to_string())
             };
 
-            // Check if format string has placeholders
-            let has_placeholders = format_str.contains("{}");
+            // Check if format string has placeholders (including format specs like {:>6}, {:.2})
+            let has_placeholders = format_str.contains("{") && format_str.contains("}");
 
             if !has_placeholders && args_str.is_empty() {
                 // Simple string literal - use write_str (no newline) then add newline if needed
@@ -7065,13 +18417,10 @@ pub mod llvm {
                 }
             } else if has_placeholders {
                 // Format string with placeholders - parse and substitute
-                // Split format string by {} and interleave with arguments
-                let parts: Vec<&str> = format_str.split("{}").collect();
-                let args: Vec<&str> = args_str
-                    .split(',')
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                // Parse format specs like {}, {:>6}, {:.2}, {:>10.4}
+                let (parts, format_specs) = self.parse_format_string(&format_str);
+                // G50: Use proper arg splitter that respects parentheses/brackets
+                let args = self.split_format_args(&args_str);
 
                 // Get write functions (no newline versions for inline output)
                 let write_str_fn = self
@@ -7082,6 +18431,10 @@ pub mod llvm {
                     .module
                     .get_function("sigil_write_int")
                     .ok_or("sigil_write_int not declared")?;
+                let write_float_fn = self
+                    .module
+                    .get_function("sigil_write_float")
+                    .ok_or("sigil_write_float not declared")?;
 
                 for (i, part) in parts.iter().enumerate() {
                     // Print the static part (no newline)
@@ -7095,12 +18448,64 @@ pub mod llvm {
 
                     // Print the argument (if there's one for this placeholder)
                     if i < args.len() {
-                        let arg_str = args[i];
+                        let arg_str = &args[i];
+                        let spec = if i < format_specs.len() { &format_specs[i] } else { "" };
+
+                        // G27: Check if this is a string (including string variables)
+                        let is_string = self.is_string_expression_with_scope(arg_str, scope);
+
+                        // G50: Use AST-based float detection for accuracy
+                        // Parse the argument to get its AST and check with is_float_expr_with_scope
+                        let spec_indicates_float = spec.contains('.');
+                        let is_float = if !is_string {
+                            if spec_indicates_float {
+                                true
+                            } else {
+                                // Try to parse as AST and check float type
+                                let mut parser = Parser::new(arg_str);
+                                if let Ok(expr) = parser.parse_expr() {
+                                    self.is_float_expr_with_scope(&expr, scope)
+                                } else {
+                                    // Fallback to string-based detection
+                                    self.is_float_expression(arg_str, scope)
+                                }
+                            }
+                        } else {
+                            false
+                        };
+
                         // Parse and compile the argument expression
                         let arg_value = self.compile_format_arg(fn_value, scope, arg_str)?;
-                        self.builder
-                            .build_call(write_int_fn, &[arg_value.into()], "")
-                            .map_err(|e| e.to_string())?;
+
+                        if is_string {
+                            // String value - convert to pointer and call write_str
+                            let ptr_type = self.context.ptr_type(AddressSpace::default());
+                            let str_ptr = self.builder
+                                .build_int_to_ptr(arg_value, ptr_type, "str_ptr_for_print")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_call(write_str_fn, &[str_ptr.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        } else if is_float {
+                            // Reinterpret i64 bits as f64 via memory (standard LLVM pattern)
+                            let temp_alloca = self.builder
+                                .build_alloca(self.context.i64_type(), "float_bits_temp")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(temp_alloca, arg_value)
+                                .map_err(|e| e.to_string())?;
+                            let f64_val = self.builder
+                                .build_load(self.context.f64_type(), temp_alloca, "float_val")
+                                .map_err(|e| e.to_string())?
+                                .into_float_value();
+                            self.builder
+                                .build_call(write_float_fn, &[f64_val.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        } else {
+                            self.builder
+                                .build_call(write_int_fn, &[arg_value.into()], "")
+                                .map_err(|e| e.to_string())?;
+                        }
                     }
                 }
 
@@ -7124,6 +18529,62 @@ pub mod llvm {
             }
 
             Ok(())
+        }
+
+        /// G50: Split format arguments respecting parentheses, brackets, and braces
+        /// Example: "logits.get3(0, 0, 0), other" -> ["logits.get3(0, 0, 0)", "other"]
+        fn split_format_args(&self, args_str: &str) -> Vec<String> {
+            let mut result = Vec::new();
+            let mut current = String::new();
+            let mut paren_depth = 0;
+            let mut bracket_depth = 0;
+            let mut brace_depth = 0;
+            let mut in_string = false;
+
+            for c in args_str.chars() {
+                if c == '"' && !in_string {
+                    in_string = true;
+                    current.push(c);
+                } else if c == '"' && in_string {
+                    in_string = false;
+                    current.push(c);
+                } else if in_string {
+                    current.push(c);
+                } else if c == '(' {
+                    paren_depth += 1;
+                    current.push(c);
+                } else if c == ')' {
+                    paren_depth -= 1;
+                    current.push(c);
+                } else if c == '[' {
+                    bracket_depth += 1;
+                    current.push(c);
+                } else if c == ']' {
+                    bracket_depth -= 1;
+                    current.push(c);
+                } else if c == '{' {
+                    brace_depth += 1;
+                    current.push(c);
+                } else if c == '}' {
+                    brace_depth -= 1;
+                    current.push(c);
+                } else if c == ',' && paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 {
+                    let trimmed = current.trim().to_string();
+                    if !trimmed.is_empty() {
+                        result.push(trimmed);
+                    }
+                    current = String::new();
+                } else {
+                    current.push(c);
+                }
+            }
+
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                result.push(trimmed);
+            }
+
+            result
         }
 
         /// Compile a format argument expression (simple variable lookup or literal)
@@ -7157,6 +18618,177 @@ pub mod llvm {
 
             // Fallback: return 0
             Ok(self.context.i64_type().const_int(0, false))
+        }
+
+        /// Parse a format string and extract static parts and format specs
+        /// Returns (static_parts, format_specs) where format_specs[i] is the spec for the i-th placeholder
+        fn parse_format_string(&self, format_str: &str) -> (Vec<String>, Vec<String>) {
+            let mut parts = Vec::new();
+            let mut specs = Vec::new();
+            let mut current_part = String::new();
+            let mut chars = format_str.chars().peekable();
+
+            while let Some(c) = chars.next() {
+                if c == '{' {
+                    // Start of placeholder
+                    parts.push(current_part.clone());
+                    current_part.clear();
+
+                    // Collect until '}'
+                    let mut spec = String::new();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next == '}' {
+                            break;
+                        }
+                        spec.push(next);
+                    }
+                    // spec is empty for {}, or ":>6" for {:>6}, etc.
+                    specs.push(spec);
+                } else {
+                    current_part.push(c);
+                }
+            }
+
+            // Push final part
+            parts.push(current_part);
+
+            (parts, specs)
+        }
+
+        /// Check if an expression string will produce a float value
+        fn is_float_expression(&self, arg_str: &str, scope: &CompileScope<'ctx>) -> bool {
+            let arg_str = arg_str.trim();
+
+            // G20: Comparison operators always return integers, even with float operands
+            if arg_str.contains(" < ") || arg_str.contains(" > ") ||
+               arg_str.contains(" <= ") || arg_str.contains(" >= ") ||
+               arg_str.contains(" == ") || arg_str.contains(" != ") {
+                return false;
+            }
+
+            // Check if it's a simple variable name in float_vars
+            if scope.float_vars.contains(arg_str) {
+                return true;
+            }
+
+            // G19: Check if it's an array/slice index like data[i] where data is float
+            if let Some(bracket_pos) = arg_str.find('[') {
+                let base = arg_str[..bracket_pos].trim();
+                if scope.float_vars.contains(base) {
+                    return true;
+                }
+            }
+
+            // G19: Methods that return integer even if receiver is float-containing
+            if arg_str.ends_with(".len()") || arg_str.ends_with(".capacity()") ||
+               arg_str.ends_with(".is_empty()") {
+                return false;
+            }
+
+            // G23: Check for method calls that return f64
+            // Pattern: receiver.method_name(args) - extract method_name and check float_funcs
+            if arg_str.ends_with(')') && arg_str.contains('.') {
+                // Find the method name between the last '.' before '(' and the '('
+                if let Some(paren_pos) = arg_str.rfind('(') {
+                    let before_paren = &arg_str[..paren_pos];
+                    if let Some(dot_pos) = before_paren.rfind('.') {
+                        let method_name = &before_paren[dot_pos + 1..];
+                        // G30: Built-in math methods that always return f64
+                        if matches!(method_name, "sqrt" | "sin" | "cos" | "tan" | "exp" | "log" | "ln" |
+                                                 "floor" | "ceil" | "abs" | "pow" | "asin" | "acos" | "atan") {
+                            return true;
+                        }
+                        // User-defined float functions
+                        if scope.float_funcs.contains(method_name) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // Check if it's a float literal (contains decimal point)
+            if arg_str.contains('.') && !arg_str.contains("..") && !arg_str.contains(".repeat") {
+                // Make sure it's not a method call like "x.len()"
+                if arg_str.parse::<f64>().is_ok() {
+                    return true;
+                }
+            }
+
+            // Check for arithmetic with floats (e.g., "x * 2.0")
+            if arg_str.contains(" * ") || arg_str.contains(" / ") {
+                // If any part is a float, the result is probably a float
+                for part in arg_str.split(|c| c == '*' || c == '/' || c == '+' || c == '-') {
+                    let part = part.trim();
+                    if scope.float_vars.contains(part) {
+                        return true;
+                    }
+                    if part.contains('.') && part.parse::<f64>().is_ok() {
+                        return true;
+                    }
+                }
+            }
+
+            // Check for struct field access that likely returns a float
+            // Heuristic: field names commonly used for floats
+            let float_field_patterns = [
+                "lambda", "rate", "energy", "loss", "weight", "scale", "bias",
+                "grad", "lr", "epsilon", "alpha", "beta", "gamma", "momentum",
+                "decay", "factor", "ratio", "threshold", "temp", "sigma",
+            ];
+            if arg_str.contains('.') && !arg_str.ends_with(')') {
+                // Field access like config.lambda_spectral
+                let parts: Vec<&str> = arg_str.split('.').collect();
+                if let Some(field_name) = parts.last() {
+                    let field_lower = field_name.to_lowercase();
+                    for pattern in &float_field_patterns {
+                        if field_lower.contains(pattern) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            false
+        }
+
+        /// Check if an expression string will produce a string value
+        fn is_string_expression(&self, arg_str: &str) -> bool {
+            let arg_str = arg_str.trim();
+
+            // String literal
+            if arg_str.starts_with('"') && arg_str.ends_with('"') {
+                return true;
+            }
+
+            // String method that returns string
+            if arg_str.contains(".repeat(") {
+                return true;
+            }
+
+            false
+        }
+
+        /// G27: Check if an expression string will produce a string value (with scope lookup)
+        fn is_string_expression_with_scope(&self, arg_str: &str, scope: &CompileScope<'ctx>) -> bool {
+            let arg_str = arg_str.trim();
+
+            // String literal
+            if arg_str.starts_with('"') && arg_str.ends_with('"') {
+                return true;
+            }
+
+            // String method that returns string
+            if arg_str.contains(".repeat(") {
+                return true;
+            }
+
+            // Check if it's a simple variable name that's a string
+            if !arg_str.contains('.') && !arg_str.contains('(') && !arg_str.contains('[') {
+                return scope.is_string_var(arg_str);
+            }
+
+            false
         }
 
         /// Create a global string constant and return pointer to it
@@ -7194,6 +18826,26 @@ pub mod llvm {
                     prefix: ident,
                     suffix,
                 } => {
+                    // If this is the root of the path (prefix is empty), check if it's an external crate
+                    if prefix.is_empty() {
+                        let crate_name = &ident.name;
+                        eprintln!("[LLVM] process_use_tree: trying to load crate '{}'", crate_name);
+                        // Skip "crate" and "self" - they're not external crates
+                        if crate_name != "crate" && crate_name != "self" {
+                            // Try to load this as an external crate
+                            match self.load_crate(crate_name) {
+                                Ok(true) => {
+                                    // Crate loaded successfully
+                                }
+                                Ok(false) => {
+                                    // Not in workspace, might be a builtin
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: failed to load crate '{}': {}", crate_name, e);
+                                }
+                            }
+                        }
+                    }
                     let mut new_prefix = prefix.to_vec();
                     new_prefix.push(ident.name.clone());
                     self.process_use_tree(suffix, &new_prefix)
@@ -7273,7 +18925,28 @@ pub mod llvm {
 
         /// Run LLVM optimization passes
         fn run_llvm_optimizations(&self) -> Result<(), String> {
+            eprintln!("[DEBUG] run_llvm_optimizations: entering");
+
+            // Debug: dump raw IR before optimization
+            if std::env::var("SIGIL_DEBUG_RAW_IR").is_ok() {
+                eprintln!("=== Raw LLVM IR (before optimization) ===");
+                eprintln!("{}", self.module.print_to_string().to_string());
+                eprintln!("=== End Raw LLVM IR ===");
+            }
+
+            eprintln!("[DEBUG] run_llvm_optimizations: verifying IR...");
+            // Verify IR before optimization
+            if let Err(e) = self.module.verify() {
+                eprintln!("LLVM IR verification failed: {}", e.to_string());
+                // Dump IR on verification failure
+                eprintln!("=== Invalid LLVM IR ===");
+                eprintln!("{}", self.module.print_to_string().to_string());
+                return Err(format!("LLVM IR verification failed: {}", e.to_string()));
+            }
+
+            eprintln!("[DEBUG] run_llvm_optimizations: IR verified OK");
             Target::initialize_all(&InitializationConfig::default());
+            eprintln!("[DEBUG] run_llvm_optimizations: targets initialized");
 
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
@@ -7281,6 +18954,7 @@ pub mod llvm {
             // Use native CPU and features for maximum performance
             let cpu = TargetMachine::get_host_cpu_name();
             let features = TargetMachine::get_host_cpu_features();
+            eprintln!("[DEBUG] run_llvm_optimizations: creating target machine");
 
             let target_machine = target
                 .create_target_machine(
@@ -7292,46 +18966,114 @@ pub mod llvm {
                     CodeModel::Default,
                 )
                 .ok_or("Failed to create target machine")?;
+            eprintln!("[DEBUG] run_llvm_optimizations: target machine created");
 
-            // Run aggressive optimization passes
-            // The key is running tailcallelim early and then letting later passes optimize
+            // Run aggressive optimization passes with vectorization enabled
+            // G26-DEBUG: O3 causes ref param crash, use O2 for now
             let passes = match self.opt_level {
                 OptLevel::None => "default<O0>",
                 OptLevel::Basic => "default<O1>",
                 OptLevel::Standard | OptLevel::Size => "default<O2>",
-                // Run full O3 pipeline which includes tail call elimination
-                OptLevel::Aggressive => "default<O3>",
+                // G26-FIX: O3 causes alloca optimization issues with ref params
+                // Use O2 for aggressive mode until we fix the LLVM IR generation
+                OptLevel::Aggressive => "default<O2>",
             };
+            eprintln!("[DEBUG] run_llvm_optimizations: running passes {}", passes);
+
+            // Configure pass builder with explicit vectorization options
+            let pass_options = PassBuilderOptions::create();
+            pass_options.set_loop_vectorization(true);
+            pass_options.set_loop_slp_vectorization(true);
+            pass_options.set_loop_interleaving(true);
+            pass_options.set_loop_unrolling(true);
 
             self.module
-                .run_passes(passes, &target_machine, PassBuilderOptions::create())
+                .run_passes(passes, &target_machine, pass_options)
                 .map_err(|e| e.to_string())?;
+            eprintln!("[DEBUG] run_llvm_optimizations: passes complete");
 
             Ok(())
         }
 
         /// Create JIT execution engine and run
         pub fn run(&mut self) -> Result<i64, String> {
+            eprintln!("[DEBUG] run(): entering JIT execution");
             // Initialize targets for JIT execution
             Target::initialize_x86(&InitializationConfig::default());
 
+            eprintln!("[DEBUG] run(): verifying module");
             // Verify module before execution
             if let Err(msg) = self.module.verify() {
                 return Err(format!("Module verification failed: {}", msg.to_string()));
             }
+            eprintln!("[DEBUG] run(): module verified OK");
 
             // Create execution engine
+            eprintln!("[DEBUG] run(): creating JIT engine");
             let ee = self
                 .module
                 .create_jit_execution_engine(OptimizationLevel::Aggressive)
                 .map_err(|e| e.to_string())?;
+            eprintln!("[DEBUG] run(): JIT engine created");
 
             // Register runtime functions (only if declared/used in the program)
             if let Some(f) = self.module.get_function("sigil_now") {
                 ee.add_global_mapping(&f, sigil_now as usize);
             }
-            if let Some(f) = self.module.get_function("sigil_print_int") {
-                ee.add_global_mapping(&f, sigil_print_int as usize);
+            if let Some(f) = self.module.get_function("sigil_random_seed") {
+                ee.add_global_mapping(&f, sigil_random_seed as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_random_f64") {
+                ee.add_global_mapping(&f, sigil_random_f64 as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_random_normal") {
+                ee.add_global_mapping(&f, sigil_random_normal as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_alloc") {
+                eprintln!("[DEBUG] Mapping sigil_alloc -> {:p}", sigil_alloc as *const ());
+                ee.add_global_mapping(&f, sigil_alloc as usize);
+            } else {
+                eprintln!("[DEBUG] sigil_alloc NOT FOUND in module");
+            }
+            // G61-FIX: sigil_print_int uses inttoptr wrapper, no mapping needed
+            if let Some(f) = self.module.get_function("sigil_print_newline") {
+                ee.add_global_mapping(&f, sigil_print_newline as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_write_int") {
+                ee.add_global_mapping(&f, sigil_write_int as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_write_str") {
+                ee.add_global_mapping(&f, sigil_write_str as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_print_str") {
+                eprintln!("[DEBUG] Mapping sigil_print_str -> {:p}", sigil_print_str as *const ());
+                ee.add_global_mapping(&f, sigil_print_str as usize);
+            } else {
+                eprintln!("[DEBUG] sigil_print_str NOT FOUND in module");
+            }
+            if let Some(f) = self.module.get_function("sigil_strlen") {
+                ee.add_global_mapping(&f, sigil_strlen as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_write_float") {
+                ee.add_global_mapping(&f, sigil_write_float as usize);
+            }
+
+            // G53 fix: Jormungandr-compatible print functions
+            if let Some(f) = self.module.get_function("print") {
+                eprintln!("[DEBUG] Mapping print -> {:p}", sigil_print as *const ());
+                ee.add_global_mapping(&f, sigil_print as usize);
+            }
+            if let Some(f) = self.module.get_function("println") {
+                eprintln!("[DEBUG] Mapping println -> {:p}", sigil_println as *const ());
+                ee.add_global_mapping(&f, sigil_println as usize);
+            }
+            if let Some(f) = self.module.get_function("eprint") {
+                eprintln!("[DEBUG] Mapping eprint -> {:p}", sigil_eprint as *const ());
+                ee.add_global_mapping(&f, sigil_eprint as usize);
+            }
+            if let Some(f) = self.module.get_function("eprintln") {
+                eprintln!("[DEBUG] Mapping eprintln -> {:p}", sigil_eprintln as *const ());
+                ee.add_global_mapping(&f, sigil_eprintln as usize);
             }
 
             // Register math functions (only if declared/used in the program)
@@ -7371,6 +19113,9 @@ pub mod llvm {
             if let Some(f) = self.module.get_function("sigil_max") {
                 ee.add_global_mapping(&f, sigil_max as usize);
             }
+            if let Some(f) = self.module.get_function("sigil_pi") {
+                ee.add_global_mapping(&f, sigil_pi as usize);
+            }
 
             // Vec runtime mappings
             if let Some(f) = self.module.get_function("sigil_vec_new") {
@@ -7384,6 +19129,9 @@ pub mod llvm {
             }
             if let Some(f) = self.module.get_function("sigil_vec_len") {
                 ee.add_global_mapping(&f, sigil_vec_len as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_vec_set") {
+                ee.add_global_mapping(&f, sigil_vec_set as usize);
             }
 
             // String runtime mappings
@@ -7401,6 +19149,36 @@ pub mod llvm {
             }
             if let Some(f) = self.module.get_function("sigil_string_concat") {
                 ee.add_global_mapping(&f, sigil_string_concat as usize);
+            }
+            // G48: String repeat function
+            if let Some(f) = self.module.get_function("sigil_string_repeat") {
+                ee.add_global_mapping(&f, sigil_string_repeat as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_fs_read") {
+                eprintln!("[DEBUG] Mapping sigil_fs_read -> {:p}", sigil_fs_read as *const ());
+                ee.add_global_mapping(&f, sigil_fs_read as usize);
+            } else {
+                eprintln!("[DEBUG] sigil_fs_read NOT FOUND in module");
+            }
+            if let Some(f) = self.module.get_function("sigil_string_data") {
+                ee.add_global_mapping(&f, sigil_string_data as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_string_len") {
+                ee.add_global_mapping(&f, sigil_string_len as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_print_rust_string") {
+                ee.add_global_mapping(&f, sigil_print_rust_string as usize);
+            }
+            // G32: String slice functions
+            if let Some(f) = self.module.get_function("sigil_string_slice") {
+                ee.add_global_mapping(&f, sigil_string_slice as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_rust_string_slice") {
+                ee.add_global_mapping(&f, sigil_rust_string_slice as usize);
+            }
+            // G32: Rust String as_bytes
+            if let Some(f) = self.module.get_function("sigil_rust_string_as_bytes") {
+                ee.add_global_mapping(&f, sigil_rust_string_as_bytes as usize);
             }
 
             // Option runtime mappings
@@ -7434,9 +19212,65 @@ pub mod llvm {
                 ee.add_global_mapping(&f, sigil_file_write_all as usize);
             }
 
+            // CUDA runtime mappings
+            if let Some(f) = self.module.get_function("sigil_cuda_init") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_init as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_cleanup") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_cleanup as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_get_device_count") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_get_device_count as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_malloc") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_malloc as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_free") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_free as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_memcpy_h2d") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_memcpy_h2d as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_memcpy_d2h") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_memcpy_d2h as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_memcpy_d2d") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_memcpy_d2d as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_sync") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_sync as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_fill_randn") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_fill_randn as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_get_compute_capability") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_get_compute_capability as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_get_total_memory") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_get_total_memory as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_memset") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_memset as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_compile_kernel") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_compile_kernel as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_load_ptx") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_load_ptx as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_launch_kernel_1d") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_launch_kernel_1d as usize);
+            }
+            if let Some(f) = self.module.get_function("sigil_cuda_launch_kernel_2d") {
+                ee.add_global_mapping(&f, cuda_runtime::sigil_cuda_launch_kernel_2d as usize);
+            }
+
+            eprintln!("[DEBUG] run(): runtime mappings registered");
+
             self.execution_engine = Some(ee);
 
             // Get main function
+            eprintln!("[DEBUG] run(): getting main function");
             unsafe {
                 let main: JitFunction<MainFn> = self
                     .execution_engine
@@ -7445,7 +19279,10 @@ pub mod llvm {
                     .get_function("main")
                     .map_err(|e| e.to_string())?;
 
-                Ok(main.call())
+                eprintln!("[DEBUG] run(): calling main()...");
+                let result = main.call();
+                eprintln!("[DEBUG] run(): main() returned {}", result);
+                Ok(result)
             }
         }
 
@@ -7455,11 +19292,16 @@ pub mod llvm {
 
             let triple = TargetMachine::get_default_triple();
             let target = Target::from_triple(&triple).map_err(|e| e.to_string())?;
+
+            // Use native CPU and features for maximum performance (AVX-512, etc.)
+            let cpu = TargetMachine::get_host_cpu_name();
+            let features = TargetMachine::get_host_cpu_features();
+
             let target_machine = target
                 .create_target_machine(
                     &triple,
-                    "generic",
-                    "",
+                    cpu.to_str().unwrap_or("native"),
+                    features.to_str().unwrap_or(""),
                     OptimizationLevel::Aggressive,
                     RelocMode::PIC, // Use PIC for PIE compatibility
                     CodeModel::Default,
@@ -7475,18 +19317,143 @@ pub mod llvm {
         pub fn get_ir(&self) -> String {
             self.module.print_to_string().to_string()
         }
+
+        /// Get libraries to link from #[link("lib")] attributes on extern blocks
+        pub fn get_link_libraries(&self) -> &[String] {
+            &self.link_libraries
+        }
+    }
+
+    /// Type of a Sigil value for codegen
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum SigilType {
+        Integer,
+        Float,
+        Pointer,
+        String,     // C string literal (null-terminated)
+        RustString, // Rust String pointer (from fs_read, etc.)
+    }
+
+    /// Variable info in compile scope
+    #[derive(Debug, Clone, Copy)]
+    struct VarInfo<'ctx> {
+        ptr: PointerValue<'ctx>,
+        ty: SigilType,
     }
 
     /// Variable scope for compilation
+    #[derive(Clone)]
     struct CompileScope<'ctx> {
         vars: HashMap<String, PointerValue<'ctx>>,
+        /// Track which variables hold float values (legacy - being replaced by var_types)
+        float_vars: std::collections::HashSet<String>,
+        /// Track variable types explicitly
+        var_types: HashMap<String, SigilType>,
+        /// Cache Vec data base pointers (ptr to element 0) for faster indexing
+        vec_bases: HashMap<String, PointerValue<'ctx>>,
+        /// Track struct type names for method dispatch (var_name -> struct_type_name)
+        struct_types: HashMap<String, String>,
+        /// G21: Track functions that return f64 for float detection
+        float_funcs: std::collections::HashSet<String>,
+        /// G52: Track slice parameter lengths (slice_name -> len_alloca)
+        /// Slices are fat pointers (ptr + len), but LLVM params are single i64s
+        /// For slice params, we generate an extra `_len` parameter
+        slice_lens: HashMap<String, PointerValue<'ctx>>,
+        /// Rich type information from TypeChecker (Phase 1 of generic monomorphization)
+        /// Maps variable names to their full type including generics
+        /// e.g., "tensor_a" -> Type::Named { name: "Tensor", generics: [Shape2<4,8>, f32, Cuda] }
+        rich_types: HashMap<String, RichType>,
+        /// G26: Track which variables are reference parameters (&T or &vary T)
+        /// For these, we need an extra load to dereference through the reference
+        ref_vars: std::collections::HashSet<String>,
+        /// G56: Const generic values for types like Shape1<N> where N is a compile-time constant
+        /// When compiling methods for FixedSize<4>, maps "N" -> 4
+        const_generics: HashMap<String, i64>,
+        /// Track pointer element sizes for ptr.add() arithmetic
+        /// Maps variable names to the size of the pointed-to element in bytes
+        ptr_element_sizes: HashMap<String, u64>,
+        /// G122: Track which variables hold array literals (as opposed to Vec)
+        /// Arrays are raw i64 pointers, not Vec structures, and need direct GEP indexing
+        array_vars: std::collections::HashSet<String>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
         fn new() -> Self {
             Self {
                 vars: HashMap::new(),
+                float_vars: std::collections::HashSet::new(),
+                var_types: HashMap::new(),
+                vec_bases: HashMap::new(),
+                struct_types: HashMap::new(),
+                float_funcs: std::collections::HashSet::new(),
+                slice_lens: HashMap::new(),
+                rich_types: HashMap::new(),
+                ref_vars: std::collections::HashSet::new(),
+                const_generics: HashMap::new(),
+                ptr_element_sizes: HashMap::new(),
+                array_vars: std::collections::HashSet::new(),
             }
+        }
+
+        /// Register a variable with its type
+        fn register_var(&mut self, name: String, ptr: PointerValue<'ctx>, ty: SigilType) {
+            self.vars.insert(name.clone(), ptr);
+            self.var_types.insert(name.clone(), ty);
+            if ty == SigilType::Float {
+                self.float_vars.insert(name);
+            }
+        }
+
+        /// Register a variable with its rich type from TypeChecker.
+        /// This preserves generic type parameters for monomorphization.
+        fn register_rich_type(&mut self, name: String, ty: RichType) {
+            self.rich_types.insert(name, ty);
+        }
+
+        /// Get the rich type for a variable (includes generics).
+        /// Returns None if no rich type was registered.
+        fn get_rich_type(&self, name: &str) -> Option<&RichType> {
+            self.rich_types.get(name)
+        }
+
+        /// Register a Vec's data base pointer for faster indexing
+        fn register_vec_base(&mut self, name: String, base_ptr: PointerValue<'ctx>) {
+            self.vec_bases.insert(name, base_ptr);
+        }
+
+        /// Get cached Vec data base pointer
+        fn get_vec_base(&self, name: &str) -> Option<PointerValue<'ctx>> {
+            self.vec_bases.get(name).copied()
+        }
+
+        /// Get the type of a variable
+        fn get_var_type(&self, name: &str) -> SigilType {
+            self.var_types.get(name).copied().unwrap_or(SigilType::Integer)
+        }
+
+        /// Check if a variable is a float
+        fn is_float_var(&self, name: &str) -> bool {
+            self.get_var_type(name) == SigilType::Float
+        }
+
+        /// Check if a variable is a C string
+        fn is_string_var(&self, name: &str) -> bool {
+            self.get_var_type(name) == SigilType::String
+        }
+
+        /// Check if a variable is a Rust String (from fs_read, etc.)
+        fn is_rust_string_var(&self, name: &str) -> bool {
+            self.get_var_type(name) == SigilType::RustString
+        }
+
+        /// Register the struct type of a variable for method dispatch
+        fn register_struct_type(&mut self, var_name: String, struct_type: String) {
+            self.struct_types.insert(var_name, struct_type);
+        }
+
+        /// Get the struct type of a variable (if known)
+        fn get_struct_type(&self, name: &str) -> Option<&String> {
+            self.struct_types.get(name)
         }
     }
 

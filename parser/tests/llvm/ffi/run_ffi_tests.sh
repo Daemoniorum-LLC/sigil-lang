@@ -11,6 +11,9 @@ TMP_DIR="/tmp/sigil_ffi_tests"
 
 mkdir -p "$TMP_DIR"
 
+# Change to parser directory so runtime can be found
+cd "$PARSER_DIR"
+
 PASSED=0
 FAILED=0
 TOTAL=0

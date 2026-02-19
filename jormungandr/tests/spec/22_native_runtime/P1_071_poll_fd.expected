@@ -1,0 +1,5 @@
+poll_pipe_data: OK
+poll_pipe_empty: OK
+poll_pty_data: OK
+poll_pty_empty: OK
+poll_invalid_fd: OK

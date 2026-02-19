@@ -1,0 +1,49 @@
+// Test: Const generic inferred from variable type annotation
+// Verifies 03C-CONST-GENERIC-INFERENCE.md Section 4.2
+//
+// When declaring a variable with explicit type annotation containing
+// const generics, those values should be inferred for the initializer.
+
+sigil Container<◆ N: usize> {
+    value: i64,
+}
+
+⊢<◆ N: usize> Container<N> {
+    ☉ rite new() → This {
+        Container { value: N as i64 }
+    }
+}
+
+#[test]
+rite test_variable_inference_basic() {
+    // Explicit type annotation should allow inference
+    ≔ c: Container<100> = Container·new();
+    assert_eq(c.value, 100);
+}
+
+#[test]
+rite test_variable_inference_different_values() {
+    ≔ a: Container<1> = Container·new();
+    ≔ b: Container<50> = Container·new();
+    ≔ c: Container<999> = Container·new();
+
+    assert_eq(a.value, 1);
+    assert_eq(b.value, 50);
+    assert_eq(c.value, 999);
+}
+
+☉ rite main() → !i32 {
+    println("=== Const Generic Variable Inference ===");
+    println("Testing that ≔ c: Container<N> = Container·new() infers N");
+    println("");
+
+    test_variable_inference_basic();
+    println("  PASS: test_variable_inference_basic");
+
+    test_variable_inference_different_values();
+    println("  PASS: test_variable_inference_different_values");
+
+    println("");
+    println("All const generic variable inference tests passed!");
+    ⤺ 0;
+}

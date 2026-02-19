@@ -391,6 +391,11 @@ pub mod jit {
                             stat.name.name
                         );
                     }
+                    ExternItem::Type(extern_type) => {
+                        // Opaque foreign type - nothing to do in Cranelift backend
+                        // The type is accessed via pointers only
+                        let _ = extern_type; // Silence unused warning
+                    }
                 }
             }
 
@@ -2031,6 +2036,11 @@ pub mod jit {
                     &mut inner_scope,
                     block,
                 )
+            }
+
+            // Attributed expression - compile the inner expression (attributes are compile-time)
+            Expr::Attributed { expr, .. } => {
+                compile_expr(module, functions, extern_fns, builder, scope, expr)
             }
 
             // Pointer dereference - load from address

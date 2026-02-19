@@ -1,0 +1,18 @@
+// Test: Use imports with module paths
+// Expected exit code: 100
+
+scroll math {
+    ☉ rite multiply(a: i64, b: i64) → i64 {
+        a * b
+    }
+
+    ☉ rite double(x: i64) → i64 {
+        multiply(x, 2)
+    }
+}
+
+invoke math·double;
+
+rite main() → i64 {
+    double(50)
+}

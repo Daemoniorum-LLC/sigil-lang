@@ -1,0 +1,118 @@
+// Test: Axum Router Pattern
+// Verifies Gap 1 from INTERPRETER-GAPS-SPEC.md
+//
+// nihil-serve uses axum-style method chaining:
+//   Router·new()
+//       |route("/health", get(handler))
+//       |with_state(state)
+//
+// The pipe methods |route, |with_state must delegate to the Router type's methods.
+
+// Mock Router that mimics axum's API
+sigil Router {
+    routes: Vec<(String, String)>,  // (path, handler_name)
+    state: Option<String>,
+}
+
+⊢ Router {
+    ☉ rite new() → Self {
+        Router {
+            routes: vec![],
+            state: ∅,
+        }
+    }
+
+    ☉ rite route(&Δ self, path: &str, handler: &str) → &Δ Self {
+        self.routes.push((path.to_string(), handler.to_string()));
+        self
+    }
+
+    ☉ rite with_state(&Δ self, state: String) → &Δ Self {
+        self.state = Some(state);
+        self
+    }
+
+    ☉ rite route_count(&self) → usize {
+        self.routes.len()
+    }
+
+    ☉ rite has_state(&self) → bool {
+        self.state.is_some()
+    }
+}
+
+// Mock handler functions
+rite get(name: &str) → String {
+    format!("GET:{}", name)
+}
+
+rite post(name: &str) → String {
+    format!("POST:{}", name)
+}
+
+#[test]
+rite test_router_pipe_route() {
+    ≔ Δ router = Router·new()
+        |route("/health", get("health_handler"));
+
+    assert_eq(router.route_count(), 1);
+}
+
+#[test]
+rite test_router_multiple_routes() {
+    ≔ Δ router = Router·new()
+        |route("/v1/completions", post("completions"))
+        |route("/v1/chat/completions", post("chat_completions"))
+        |route("/health", get("health"))
+        |route("/metrics", get("metrics"));
+
+    assert_eq(router.route_count(), 4);
+}
+
+#[test]
+rite test_router_with_state() {
+    ≔ Δ router = Router·new()
+        |route("/health", get("health"))
+        |with_state("app_state".to_string());
+
+    assert_eq(router.route_count(), 1);
+    assert(router.has_state());
+}
+
+#[test]
+rite test_full_nihil_serve_pattern() {
+    // This mirrors the exact pattern from nihil-serve/src/server.sigil:551-556
+    ≔ Δ router = Router·new()
+        |route("/v1/completions", post("handle_completions"))
+        |route("/v1/chat/completions", post("handle_chat_completions"))
+        |route("/health", get("handle_health"))
+        |route("/metrics", get("handle_metrics"))
+        |route("/v1/models", get("handle_list_models"))
+        |with_state("InferenceServer".to_string());
+
+    assert_eq(router.route_count(), 5);
+    assert(router.has_state());
+}
+
+☉ rite main() → !i32 {
+    println("=== Interpreter Gap: Axum Router Pattern ===");
+    println("Testing that |route() and |with_state() delegate properly");
+    println("");
+
+    // All these should fail with "Unknown pipe method: route" until gap is fixed
+    test_router_pipe_route();
+    println("  PASS: test_router_pipe_route");
+
+    test_router_multiple_routes();
+    println("  PASS: test_router_multiple_routes");
+
+    test_router_with_state();
+    println("  PASS: test_router_with_state");
+
+    test_full_nihil_serve_pattern();
+    println("  PASS: test_full_nihil_serve_pattern");
+
+    println("");
+    println("All axum pattern tests passed!");
+    ⤺ 0;
+}

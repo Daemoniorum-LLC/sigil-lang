@@ -1,0 +1,41 @@
+// G52: Slice passing test
+
+rite use_slice(data: &[u8]) {
+    println!("  use_slice: data.len() = {}", data.len());
+    ∀ i ∈ 0..data.len() {
+        println!("    data[{}] = {}", i, data[i] as i64);
+    }
+}
+
+rite use_vec(data: &Vec<u8>) {
+    println!("  use_vec: data.len() = {}", data.len());
+    ∀ i ∈ 0..data.len() {
+        println!("    data[{}] = {}", i, data[i] as i64);
+    }
+}
+
+rite main() {
+    println!("=== Test 1: Local slice ===");
+    ≔ s = "ABC";
+    ≔ bytes = s.as_bytes();
+    println!("Local bytes.len() = {}", bytes.len());
+
+    println!("");
+    println!("=== Test 2: Pass as_bytes() result ===");
+    use_slice(s.as_bytes());
+
+    println!("");
+    println!("=== Test 3: Pass via local var ===");
+    use_slice(bytes);
+
+    println!("");
+    println!("=== Test 4: Vec instead of slice ===");
+    ≔ vary vec_bytes = vec![];
+    ∀ i ∈ 0..bytes.len() {
+        vec_bytes.push(bytes[i]);
+    }
+    println!("vec_bytes.len() = {}", vec_bytes.len());
+    use_vec(&vec_bytes);
+
+    println!("Done!");
+}

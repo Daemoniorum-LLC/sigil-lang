@@ -1,0 +1,10 @@
+//! Simplest possible function call test
+
+☉ rite get_42() → i64 {
+    42
+}
+
+☉ rite main() {
+    ≔ x = get_42();
+    println!("{}", x);
+}

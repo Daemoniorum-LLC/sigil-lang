@@ -1,0 +1,184 @@
+// Pointer Arithmetic Specification Tests
+// These tests define correct pointer arithmetic behavior for LLVM codegen
+// Following Agent-TDD: tests as crystallized understanding
+
+// =============================================================================
+// SPEC: i64 Pointer Arithmetic
+// =============================================================================
+
+#[test]
+rite test_ptr_i64_sequential_write() {
+    // Allocate 5 i64 elements (40 bytes)
+    ≔ arr = alloc(40) as *i64;
+
+    // Write values at each index
+    *(arr + 0) = 100;
+    *(arr + 1) = 200;
+    *(arr + 2) = 300;
+    *(arr + 3) = 400;
+    *(arr + 4) = 500;
+
+    // Verify correct values at each index
+    assert_eq(*(arr + 0), 100);
+    assert_eq(*(arr + 1), 200);
+    assert_eq(*(arr + 2), 300);
+    assert_eq(*(arr + 3), 400);
+    assert_eq(*(arr + 4), 500);
+
+    free(arr as *u8);
+}
+
+#[test]
+rite test_ptr_i64_loop_write_read() {
+    ≔ n: i64 = 10;
+    ≔ arr = alloc(n * 8) as *i64;  // 10 * 8 = 80 bytes
+
+    // Write i*10 to each element
+    ≔ vary i: i64 = 0;
+    ⟳ i < n {
+        *(arr + i) = i * 10;
+        i = i + 1;
+    }
+
+    // Read back and verify
+    i = 0;
+    ⟳ i < n {
+        assert_eq(*(arr + i), i * 10);
+        i = i + 1;
+    }
+
+    free(arr as *u8);
+}
+
+#[test]
+rite test_ptr_i64_sum() {
+    ≔ n: i64 = 5;
+    ≔ arr = alloc(n * 8) as *i64;
+
+    // Write 1, 2, 3, 4, 5
+    ≔ vary i: i64 = 0;
+    ⟳ i < n {
+        *(arr + i) = i + 1;
+        i = i + 1;
+    }
+
+    // Sum should be 1+2+3+4+5 = 15
+    ≔ vary sum: i64 = 0;
+    i = 0;
+    ⟳ i < n {
+        sum = sum + *(arr + i);
+        i = i + 1;
+    }
+
+    assert_eq(sum, 15);
+    free(arr as *u8);
+}
+
+// =============================================================================
+// SPEC: Pointer Arithmetic with Expression Offsets
+// =============================================================================
+
+#[test]
+rite test_ptr_computed_offset() {
+    ≔ arr = alloc(80) as *i64;  // 10 elements
+
+    // Write using computed offsets
+    ≔ base: i64 = 2;
+    *(arr + base) = 42;
+    *(arr + base + 1) = 43;
+    *(arr + base * 2) = 44;  // index 4
+
+    assert_eq(*(arr + 2), 42);
+    assert_eq(*(arr + 3), 43);
+    assert_eq(*(arr + 4), 44);
+
+    free(arr as *u8);
+}
+
+#[test]
+rite test_ptr_nested_offset() {
+    ≔ arr = alloc(80) as *i64;
+
+    // Write at index 5
+    ≔ x: i64 = 2;
+    ≔ y: i64 = 3;
+    *(arr + x + y) = 999;
+
+    assert_eq(*(arr + 5), 999);
+
+    free(arr as *u8);
+}
+
+// =============================================================================
+// SPEC: First and Last Element Access
+// =============================================================================
+
+#[test]
+rite test_ptr_first_element() {
+    ≔ arr = alloc(8) as *i64;  // 1 element
+
+    *(arr + 0) = 777;
+
+    // Both forms should read same value
+    assert_eq(*(arr + 0), 777);
+    assert_eq(*arr, 777);
+
+    free(arr as *u8);
+}
+
+#[test]
+rite test_ptr_last_element() {
+    ≔ arr = alloc(80) as *i64;  // 10 elements, indices 0-9
+
+    *(arr + 9) = 888;
+
+    assert_eq(*(arr + 9), 888);
+
+    free(arr as *u8);
+}
+
+// =============================================================================
+// SPEC: Matrix-like 2D Access (flattened)
+// =============================================================================
+
+#[test]
+rite test_ptr_2d_access() {
+    // 3x3 matrix flattened to 9 elements
+    ≔ rows: i64 = 3;
+    ≔ cols: i64 = 3;
+    ≔ matrix = alloc(rows * cols * 8) as *i64;
+
+    // Write value at (row, col) using index = row * cols + col
+    *(matrix + 0 * cols + 0) = 11;  // (0,0)
+    *(matrix + 0 * cols + 1) = 12;  // (0,1)
+    *(matrix + 1 * cols + 0) = 21;  // (1,0)
+    *(matrix + 1 * cols + 1) = 22;  // (1,1)
+    *(matrix + 2 * cols + 2) = 33;  // (2,2)
+
+    // Verify
+    assert_eq(*(matrix + 0), 11);  // (0,0)
+    assert_eq(*(matrix + 1), 12);  // (0,1)
+    assert_eq(*(matrix + 3), 21);  // (1,0)
+    assert_eq(*(matrix + 4), 22);  // (1,1)
+    assert_eq(*(matrix + 8), 33);  // (2,2)
+
+    free(matrix as *u8);
+}
+
+// =============================================================================
+// SPEC: Main entry point for standalone execution
+// =============================================================================
+
+☉ rite main() → !i32 {
+    // Run all tests manually for LLVM AOT verification
+    test_ptr_i64_sequential_write();
+    test_ptr_i64_loop_write_read();
+    test_ptr_i64_sum();
+    test_ptr_computed_offset();
+    test_ptr_nested_offset();
+    test_ptr_first_element();
+    test_ptr_last_element();
+    test_ptr_2d_access();
+
+    ⤺ 0;  // All tests passed
+}

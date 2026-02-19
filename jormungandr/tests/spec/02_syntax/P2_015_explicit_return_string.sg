@@ -1,0 +1,7 @@
+// Test: explicit return with string value
+rite greet(name) {
+    ↩ "hello " + name;
+}
+rite main() {
+    println(greet("world"));
+}

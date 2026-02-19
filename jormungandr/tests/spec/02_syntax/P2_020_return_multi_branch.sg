@@ -1,0 +1,10 @@
+rite classify(n) {
+    ⎇ n > 0 { ↩ "positive"; }
+    ⎇ n < 0 { ↩ "negative"; }
+    ↩ "zero";
+}
+rite main() {
+    println(classify(5));
+    println(classify(-3));
+    println(classify(0));
+}

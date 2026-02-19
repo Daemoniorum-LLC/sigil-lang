@@ -377,10 +377,13 @@ pub enum MacroDelimiter {
 
 /// Foreign function interface block.
 /// `extern "C" { fn foo(x: c_int) -> c_int; }`
+/// `unsafe extern "C" { fn foo(x: c_int) -> c_int; }`
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternBlock {
     pub abi: String, // "C", "Rust", "system", etc.
     pub items: Vec<ExternItem>,
+    pub link_libraries: Vec<String>, // From #[link("lib")] attributes
+    pub is_unsafe: bool, // true for `unsafe extern "C" { ... }`
 }
 
 /// Items that can appear in an extern block.
@@ -388,6 +391,18 @@ pub struct ExternBlock {
 pub enum ExternItem {
     Function(ExternFunction),
     Static(ExternStatic),
+    Type(ExternType),
+}
+
+/// Foreign type declaration (opaque or alias).
+/// - Opaque: `type GtkWindow;` - a type defined in C whose layout is unknown.
+/// - Alias: `type Callback = rite(*void);` - a type alias for FFI.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternType {
+    pub visibility: Visibility,
+    pub name: Ident,
+    /// None for opaque types, Some for type aliases
+    pub ty: Option<TypeExpr>,
 }
 
 /// Foreign function declaration (no body).
@@ -511,6 +526,7 @@ pub enum Evidentiality {
     Uncertain, // ? - unverified input
     Reported,  // ~ - EMA, eventually consistent
     Predicted, // ◊ - model output, speculative
+    Chaos,     // ⁂ - intentional randomness, entropic
     Paradox,   // ‽ - contradiction detected
 }
 
@@ -813,6 +829,8 @@ pub enum StructFields {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
+    /// Attributes (including rune annotations) on this field
+    pub attributes: Vec<Attribute>,
     pub visibility: Visibility,
     pub name: Ident,
     pub ty: TypeExpr,
@@ -825,6 +843,8 @@ pub struct FieldDef {
 pub struct EnumDef {
     /// Doc comments attached to this enum (SGDOC)
     pub doc_comments: Vec<DocComment>,
+    /// Outer attributes (derives, repr, etc.)
+    pub outer_attrs: Vec<Attribute>,
     pub visibility: Visibility,
     pub name: Ident,
     pub generics: Option<Generics>,
@@ -833,6 +853,10 @@ pub struct EnumDef {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariant {
+    /// Doc comments attached to this variant (SGDOC)
+    pub doc_comments: Vec<DocComment>,
+    /// Attributes (including rune annotations) on this variant
+    pub attributes: Vec<Attribute>,
     pub name: Ident,
     pub fields: StructFields,
     pub discriminant: Option<Expr>,
@@ -862,9 +886,13 @@ pub enum TraitItem {
 pub struct ImplBlock {
     /// Doc comments attached to this impl block (SGDOC)
     pub doc_comments: Vec<DocComment>,
+    /// Whether this is an `unsafe impl` block
+    pub is_unsafe: bool,
     pub generics: Option<Generics>,
     pub trait_: Option<TypePath>,
     pub self_ty: TypeExpr,
+    /// Where clause constraints for the impl block
+    pub where_clause: Option<WhereClause>,
     pub items: Vec<ImplItem>,
 }
 
@@ -917,7 +945,7 @@ pub struct ConstDef {
     pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
-    pub ty: TypeExpr,
+    pub ty: Option<TypeExpr>,
     pub value: Expr,
 }
 
@@ -941,6 +969,7 @@ pub struct ActorDef {
     pub generics: Option<Generics>,
     pub state: Vec<FieldDef>,
     pub handlers: Vec<MessageHandler>,
+    pub methods: Vec<Function>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1156,6 +1185,12 @@ pub enum Expr {
         expr: Box<Expr>,
         evidentiality: Evidentiality,
     },
+    /// Attributed expression: `//@ rune: cfg(test) { ... }`
+    /// Used for conditional compilation and other expression-level attributes
+    Attributed {
+        attrs: Vec<Attribute>,
+        expr: Box<Expr>,
+    },
     /// Assignment: `x = value`
     Assign { target: Box<Expr>, value: Box<Expr> },
     /// Let expression (for if-let, while-let patterns): `let pattern = expr`
@@ -1164,12 +1199,21 @@ pub enum Expr {
     Unsafe(Block),
     /// Async block: `async { ... }` or `async move { ... }`
     Async { block: Block, is_move: bool },
+    /// No-gradient block: `no_grad { ... }` - disables gradient tracking inside
+    NoGrad(Block),
     /// Raw pointer dereference: `*ptr`
     Deref(Box<Expr>),
     /// Address-of: `&expr` or `&mut expr`
     AddrOf { mutable: bool, expr: Box<Expr> },
     /// Cast: `expr as Type`
     Cast { expr: Box<Expr>, ty: TypeExpr },
+
+    /// Turbofish: explicit type parameters on an expression
+    /// `expr·<T, U>` or `expr::<T, U>` - provides type/const generic arguments
+    Turbofish {
+        expr: Box<Expr>,
+        types: Vec<TypeExpr>,
+    },
 
     /// Inline assembly: `asm!("instruction", ...)`
     InlineAsm(InlineAsm),

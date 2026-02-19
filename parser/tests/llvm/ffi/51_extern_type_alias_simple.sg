@@ -1,0 +1,13 @@
+// FFI Test 51: Simple type alias in extern block
+// Tests: Basic type alias syntax
+// Expected exit code: 10
+
+extern "C" {
+    // Simple type alias (not function pointer)
+    type MyInt = i64;
+}
+
+rite main() → i64 {
+    // The type alias should be recognized by the parser
+    10
+}
