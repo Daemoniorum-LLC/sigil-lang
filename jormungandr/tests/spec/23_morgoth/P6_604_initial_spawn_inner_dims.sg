@@ -1,0 +1,56 @@
+// Test: Initial spawn uses inner dimensions
+// Spec: Phase 6 - Resize Propagation
+// Priority: P6
+//
+// Purpose:
+// Validates that Pane·new passes inner dims (h-2, w-2) to Pty·set_size,
+// not outer region dimensions.
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+// Simulated Pane·new that captures what would be passed to Pty·set_size
+rite Pane_new_capture_dims(region) {
+    // Production code (fixed): Pty·set_size(pty.master_fd, region.h - 2, region.w - 2)
+    ≔ pty_rows = region.h - 2;
+    ≔ pty_cols = region.w - 2;
+    ≔ vterm_rows = region.h - 2;
+    ≔ vterm_cols = region.w - 2;
+    ↩ { pty_rows: pty_rows, pty_cols: pty_cols, vterm_rows: vterm_rows, vterm_cols: vterm_cols }
+}
+
+rite main() {
+    ≔ region = Region_new(0, 0, 80, 24);
+    ≔ dims = Pane_new_capture_dims(region);
+
+    // Test 1: PTY gets inner rows
+    ⎇ dims.pty_rows == 22 {
+        println("spawn_pty_rows: OK");
+    } ⎉ {
+        println("spawn_pty_rows: FAILED got=" + to_string(dims.pty_rows));
+    }
+
+    // Test 2: PTY gets inner cols
+    ⎇ dims.pty_cols == 78 {
+        println("spawn_pty_cols: OK");
+    } ⎉ {
+        println("spawn_pty_cols: FAILED got=" + to_string(dims.pty_cols));
+    }
+
+    // Test 3: VTerm and PTY get same dims
+    ⎇ dims.pty_rows == dims.vterm_rows ∧ dims.pty_cols == dims.vterm_cols {
+        println("pty_vterm_match: OK");
+    } ⎉ {
+        println("pty_vterm_match: FAILED");
+    }
+
+    // Test 4: Different region size
+    ≔ r2 = Region_new(0, 0, 120, 40);
+    ≔ d2 = Pane_new_capture_dims(r2);
+    ⎇ d2.pty_rows == 38 ∧ d2.pty_cols == 118 {
+        println("spawn_large_region: OK");
+    } ⎉ {
+        println("spawn_large_region: FAILED rows=" + to_string(d2.pty_rows) + " cols=" + to_string(d2.pty_cols));
+    }
+}

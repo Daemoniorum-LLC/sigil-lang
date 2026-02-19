@@ -1,0 +1,52 @@
+// Test: PTY inner dimensions calculation
+// Spec: Phase 6 - Resize Propagation
+// Priority: P6
+//
+// Purpose:
+// Validates that a region {h:24, w:80} produces inner dims (22, 78)
+// by subtracting 2 for borders.
+
+rite Region_new(x, y, w, h) {
+    ↩ { x: x, y: y, w: w, h: h }
+}
+
+rite compute_inner_dims(region) {
+    ↩ { rows: region.h - 2, cols: region.w - 2 }
+}
+
+rite main() {
+    ≔ region = Region_new(0, 0, 80, 24);
+    ≔ inner = compute_inner_dims(region);
+
+    // Test 1: Inner rows = h - 2
+    ⎇ inner.rows == 22 {
+        println("inner_rows: OK");
+    } ⎉ {
+        println("inner_rows: FAILED got=" + to_string(inner.rows));
+    }
+
+    // Test 2: Inner cols = w - 2
+    ⎇ inner.cols == 78 {
+        println("inner_cols: OK");
+    } ⎉ {
+        println("inner_cols: FAILED got=" + to_string(inner.cols));
+    }
+
+    // Test 3: Larger region
+    ≔ r2 = Region_new(0, 0, 120, 40);
+    ≔ i2 = compute_inner_dims(r2);
+    ⎇ i2.rows == 38 ∧ i2.cols == 118 {
+        println("inner_large: OK");
+    } ⎉ {
+        println("inner_large: FAILED rows=" + to_string(i2.rows) + " cols=" + to_string(i2.cols));
+    }
+
+    // Test 4: Small region
+    ≔ r3 = Region_new(0, 0, 10, 5);
+    ≔ i3 = compute_inner_dims(r3);
+    ⎇ i3.rows == 3 ∧ i3.cols == 8 {
+        println("inner_small: OK");
+    } ⎉ {
+        println("inner_small: FAILED rows=" + to_string(i3.rows) + " cols=" + to_string(i3.cols));
+    }
+}

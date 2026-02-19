@@ -1,0 +1,125 @@
+// Test: vterm_resize clamps cursor on shrink
+// Spec: Phase 6 - Resize Propagation
+// Priority: P6
+//
+// Purpose:
+// Validates that cursor_row and cursor_col are clamped to new dimensions
+// when the grid shrinks.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_resize(vt, new_rows, new_cols) {
+    ≔ old_rows = vt.rows;
+    ≔ old_cols = vt.cols;
+
+    ⎇ new_rows < old_rows {
+        ≔ overflow = old_rows - new_rows;
+        ≔ mut i = 0;
+        ⟳ i < overflow {
+            ≔ mut row_cells = [];
+            ≔ mut c = 0;
+            ⟳ c < old_cols {
+                push(row_cells, vt.cells[i * old_cols + c]);
+                c = c + 1;
+            }
+            push(vt.scrollback, row_cells);
+            i = i + 1;
+        }
+        ⟳ len(vt.scrollback) > vt.scrollback_max {
+            ≔ mut trimmed = [];
+            ≔ mut ti = 1;
+            ⟳ ti < len(vt.scrollback) {
+                push(trimmed, vt.scrollback[ti]);
+                ti = ti + 1;
+            }
+            vt.scrollback = trimmed;
+        }
+    }
+
+    ≔ mut new_cells = [];
+    ≔ mut r = 0;
+    ⟳ r < new_rows {
+        ≔ old_r = r + (old_rows - new_rows);
+        ≔ mut c = 0;
+        ⟳ c < new_cols {
+            ⎇ old_r >= 0 ∧ old_r < old_rows ∧ c < old_cols {
+                push(new_cells, vt.cells[old_r * old_cols + c]);
+            } ⎉ {
+                push(new_cells, {ch: " ", fg: 7, bg: 0});
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    vt.cells = new_cells;
+    vt.rows = new_rows;
+    vt.cols = new_cols;
+    vt.scroll_top = 0;
+    vt.scroll_bottom = new_rows - 1;
+    vt.scroll_offset = 0;
+
+    ⎇ vt.cursor_row >= new_rows { vt.cursor_row = new_rows - 1; }
+    ⎇ vt.cursor_col >= new_cols { vt.cursor_col = new_cols - 1; }
+
+    vt.alt_cells = [];
+}
+
+rite main() {
+    ≔ vt = VTerm_new(24, 80);
+
+    // Place cursor at bottom-right
+    vt.cursor_row = 23;
+    vt.cursor_col = 79;
+
+    // Shrink to 10x40
+    vterm_resize(vt, 10, 40);
+
+    // Test 1: cursor_row clamped
+    ⎇ vt.cursor_row == 9 {
+        println("clamp_row: OK");
+    } ⎉ {
+        println("clamp_row: FAILED got=" + to_string(vt.cursor_row));
+    }
+
+    // Test 2: cursor_col clamped
+    ⎇ vt.cursor_col == 39 {
+        println("clamp_col: OK");
+    } ⎉ {
+        println("clamp_col: FAILED got=" + to_string(vt.cursor_col));
+    }
+
+    // Test 3: cursor within bounds is not changed
+    ≔ vt2 = VTerm_new(24, 80);
+    vt2.cursor_row = 5;
+    vt2.cursor_col = 10;
+    vterm_resize(vt2, 20, 60);
+    ⎇ vt2.cursor_row == 5 ∧ vt2.cursor_col == 10 {
+        println("no_clamp_within_bounds: OK");
+    } ⎉ {
+        println("no_clamp_within_bounds: FAILED row=" + to_string(vt2.cursor_row) + " col=" + to_string(vt2.cursor_col));
+    }
+}

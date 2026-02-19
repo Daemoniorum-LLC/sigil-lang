@@ -1,0 +1,4 @@
+spawn_pty_rows: OK
+spawn_pty_cols: OK
+pty_vterm_match: OK
+spawn_large_region: OK

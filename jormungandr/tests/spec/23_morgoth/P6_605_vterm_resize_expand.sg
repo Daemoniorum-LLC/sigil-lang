@@ -1,0 +1,160 @@
+// Test: vterm_resize expand adds blank cells and preserves existing
+// Spec: Phase 6 - Resize Propagation
+// Priority: P6
+//
+// Purpose:
+// Validates that growing the grid adds blank cells for new space
+// and preserves existing cell content.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_resize(vt, new_rows, new_cols) {
+    ≔ old_rows = vt.rows;
+    ≔ old_cols = vt.cols;
+
+    ⎇ new_rows < old_rows {
+        ≔ overflow = old_rows - new_rows;
+        ≔ mut i = 0;
+        ⟳ i < overflow {
+            ≔ mut row_cells = [];
+            ≔ mut c = 0;
+            ⟳ c < old_cols {
+                push(row_cells, vt.cells[i * old_cols + c]);
+                c = c + 1;
+            }
+            push(vt.scrollback, row_cells);
+            i = i + 1;
+        }
+        ⟳ len(vt.scrollback) > vt.scrollback_max {
+            ≔ mut trimmed = [];
+            ≔ mut ti = 1;
+            ⟳ ti < len(vt.scrollback) {
+                push(trimmed, vt.scrollback[ti]);
+                ti = ti + 1;
+            }
+            vt.scrollback = trimmed;
+        }
+    }
+
+    ≔ mut new_cells = [];
+    ≔ mut r = 0;
+    ⟳ r < new_rows {
+        ≔ old_r = r + (old_rows - new_rows);
+        ≔ mut c = 0;
+        ⟳ c < new_cols {
+            ⎇ old_r >= 0 ∧ old_r < old_rows ∧ c < old_cols {
+                push(new_cells, vt.cells[old_r * old_cols + c]);
+            } ⎉ {
+                push(new_cells, {ch: " ", fg: 7, bg: 0});
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    vt.cells = new_cells;
+    vt.rows = new_rows;
+    vt.cols = new_cols;
+    vt.scroll_top = 0;
+    vt.scroll_bottom = new_rows - 1;
+    vt.scroll_offset = 0;
+
+    ⎇ vt.cursor_row >= new_rows { vt.cursor_row = new_rows - 1; }
+    ⎇ vt.cursor_col >= new_cols { vt.cursor_col = new_cols - 1; }
+
+    vt.alt_cells = [];
+}
+
+rite main() {
+    // Create 3x3 grid with content
+    ≔ vt = VTerm_new(3, 3);
+    vt.cells[0] = {ch: "A", fg: 7, bg: 0};  // row 0, col 0
+    vt.cells[4] = {ch: "B", fg: 7, bg: 0};  // row 1, col 1
+    vt.cells[8] = {ch: "C", fg: 7, bg: 0};  // row 2, col 2
+
+    // Expand to 5x5
+    vterm_resize(vt, 5, 5);
+
+    // Test 1: Cell count correct
+    ⎇ len(vt.cells) == 25 {
+        println("expand_cell_count: OK");
+    } ⎉ {
+        println("expand_cell_count: FAILED got=" + to_string(len(vt.cells)));
+    }
+
+    // When expanding from 3 rows to 5 rows: old_rows - new_rows = -2
+    // New row 0: old_r = 0 + (3 - 5) = -2, blank
+    // New row 1: old_r = 1 + (3 - 5) = -1, blank
+    // New row 2: old_r = 2 + (3 - 5) = 0, old row 0
+    // New row 3: old_r = 3 + (3 - 5) = 1, old row 1
+    // New row 4: old_r = 4 + (3 - 5) = 2, old row 2
+
+    // Test 2: New top rows are blank
+    ⎇ vt.cells[0].ch == " " {
+        println("expand_top_blank: OK");
+    } ⎉ {
+        println("expand_top_blank: FAILED got=" + vt.cells[0].ch);
+    }
+
+    // Test 3: Old content preserved — "A" was at old (0,0), now at new (2,0)
+    // new row 2, col 0 = index 2*5 + 0 = 10
+    ⎇ vt.cells[10].ch == "A" {
+        println("expand_preserve_A: OK");
+    } ⎉ {
+        println("expand_preserve_A: FAILED got=" + vt.cells[10].ch);
+    }
+
+    // Test 4: "B" was at old (1,1), now at new (3,1)
+    // new row 3, col 1 = index 3*5 + 1 = 16
+    ⎇ vt.cells[16].ch == "B" {
+        println("expand_preserve_B: OK");
+    } ⎉ {
+        println("expand_preserve_B: FAILED got=" + vt.cells[16].ch);
+    }
+
+    // Test 5: "C" was at old (2,2), now at new (4,2)
+    // new row 4, col 2 = index 4*5 + 2 = 22
+    ⎇ vt.cells[22].ch == "C" {
+        println("expand_preserve_C: OK");
+    } ⎉ {
+        println("expand_preserve_C: FAILED got=" + vt.cells[22].ch);
+    }
+
+    // Test 6: New cols beyond old are blank — new (2,3) should be blank
+    // new row 2, col 3 = index 2*5 + 3 = 13
+    ⎇ vt.cells[13].ch == " " {
+        println("expand_new_col_blank: OK");
+    } ⎉ {
+        println("expand_new_col_blank: FAILED got=" + vt.cells[13].ch);
+    }
+
+    // Test 7: No scrollback on expand
+    ⎇ len(vt.scrollback) == 0 {
+        println("expand_no_scrollback: OK");
+    } ⎉ {
+        println("expand_no_scrollback: FAILED got=" + to_string(len(vt.scrollback)));
+    }
+}

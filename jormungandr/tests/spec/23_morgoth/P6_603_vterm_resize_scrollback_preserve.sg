@@ -1,0 +1,143 @@
+// Test: vterm_resize preserves overflow rows in scrollback
+// Spec: Phase 6 - Resize Propagation
+// Priority: P6
+//
+// Purpose:
+// Validates that shrinking pushes overflow (top) rows to scrollback
+// and that the content is preserved correctly.
+
+rite VTerm_new(rows, cols) {
+    ≔ total = rows * cols;
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < total {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells, rows: rows, cols: cols,
+        cursor_row: 0, cursor_col: 0,
+        attr_fg: 7, attr_bg: 0,
+        esc_state: "normal", esc_buf: "",
+        scroll_top: 0, scroll_bottom: rows - 1,
+        saved_row: 0, saved_col: 0,
+        scrollback: [], scrollback_max: 1000, scroll_offset: 0,
+        alt_cells: [], alt_cursor_row: 0, alt_cursor_col: 0,
+        alt_attr_fg: 7, alt_attr_bg: 0,
+        in_alt_screen: false, cursor_visible: true,
+        app_cursor_keys: false, auto_wrap: true,
+        bracketed_paste: false, mouse_mode: 0,
+        mouse_sgr: false, origin_mode: false, title: ""
+    }
+}
+
+rite vterm_resize(vt, new_rows, new_cols) {
+    ≔ old_rows = vt.rows;
+    ≔ old_cols = vt.cols;
+
+    ⎇ new_rows < old_rows {
+        ≔ overflow = old_rows - new_rows;
+        ≔ mut i = 0;
+        ⟳ i < overflow {
+            ≔ mut row_cells = [];
+            ≔ mut c = 0;
+            ⟳ c < old_cols {
+                push(row_cells, vt.cells[i * old_cols + c]);
+                c = c + 1;
+            }
+            push(vt.scrollback, row_cells);
+            i = i + 1;
+        }
+        ⟳ len(vt.scrollback) > vt.scrollback_max {
+            ≔ mut trimmed = [];
+            ≔ mut ti = 1;
+            ⟳ ti < len(vt.scrollback) {
+                push(trimmed, vt.scrollback[ti]);
+                ti = ti + 1;
+            }
+            vt.scrollback = trimmed;
+        }
+    }
+
+    ≔ mut new_cells = [];
+    ≔ mut r = 0;
+    ⟳ r < new_rows {
+        ≔ old_r = r + (old_rows - new_rows);
+        ≔ mut c = 0;
+        ⟳ c < new_cols {
+            ⎇ old_r >= 0 ∧ old_r < old_rows ∧ c < old_cols {
+                push(new_cells, vt.cells[old_r * old_cols + c]);
+            } ⎉ {
+                push(new_cells, {ch: " ", fg: 7, bg: 0});
+            }
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+
+    vt.cells = new_cells;
+    vt.rows = new_rows;
+    vt.cols = new_cols;
+    vt.scroll_top = 0;
+    vt.scroll_bottom = new_rows - 1;
+    vt.scroll_offset = 0;
+
+    ⎇ vt.cursor_row >= new_rows { vt.cursor_row = new_rows - 1; }
+    ⎇ vt.cursor_col >= new_cols { vt.cursor_col = new_cols - 1; }
+
+    vt.alt_cells = [];
+}
+
+rite main() {
+    // Create 5-row, 3-col grid and mark each row
+    ≔ vt = VTerm_new(5, 3);
+    // Mark row 0 with "A", row 1 with "B", etc.
+    vt.cells[0] = {ch: "A", fg: 7, bg: 0};   // row 0, col 0
+    vt.cells[3] = {ch: "B", fg: 7, bg: 0};   // row 1, col 0
+    vt.cells[6] = {ch: "C", fg: 7, bg: 0};   // row 2, col 0
+    vt.cells[9] = {ch: "D", fg: 7, bg: 0};   // row 3, col 0
+    vt.cells[12] = {ch: "E", fg: 7, bg: 0};  // row 4, col 0
+
+    // Shrink from 5 rows to 3 rows: top 2 rows (A, B) go to scrollback
+    vterm_resize(vt, 3, 3);
+
+    // Test 1: scrollback has 2 entries
+    ⎇ len(vt.scrollback) == 2 {
+        println("scrollback_count: OK");
+    } ⎉ {
+        println("scrollback_count: FAILED got=" + to_string(len(vt.scrollback)));
+    }
+
+    // Test 2: first scrollback row has "A" at col 0
+    ⎇ vt.scrollback[0][0].ch == "A" {
+        println("scrollback_row0_content: OK");
+    } ⎉ {
+        println("scrollback_row0_content: FAILED got=" + vt.scrollback[0][0].ch);
+    }
+
+    // Test 3: second scrollback row has "B" at col 0
+    ⎇ vt.scrollback[1][0].ch == "B" {
+        println("scrollback_row1_content: OK");
+    } ⎉ {
+        println("scrollback_row1_content: FAILED got=" + vt.scrollback[1][0].ch);
+    }
+
+    // Test 4: remaining grid has C, D, E
+    ⎇ vt.cells[0].ch == "C" {
+        println("grid_row0_after_shrink: OK");
+    } ⎉ {
+        println("grid_row0_after_shrink: FAILED got=" + vt.cells[0].ch);
+    }
+
+    ⎇ vt.cells[3].ch == "D" {
+        println("grid_row1_after_shrink: OK");
+    } ⎉ {
+        println("grid_row1_after_shrink: FAILED got=" + vt.cells[3].ch);
+    }
+
+    ⎇ vt.cells[6].ch == "E" {
+        println("grid_row2_after_shrink: OK");
+    } ⎉ {
+        println("grid_row2_after_shrink: FAILED got=" + vt.cells[6].ch);
+    }
+}

@@ -1,0 +1,4 @@
+eviction_count: OK
+eviction_oldest_removed: OK
+eviction_second: OK
+eviction_third: OK
