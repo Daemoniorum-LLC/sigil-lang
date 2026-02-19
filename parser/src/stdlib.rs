@@ -2421,21 +2421,16 @@ fn register_string(interp: &mut Interpreter) {
                 ))
             }
         };
-        // Use byte-based indexing
+        // Use char-based indexing (safe for multi-byte UTF-8)
+        let char_count = s.chars().count() as i64;
         let actual_idx = if idx < 0 {
-            // Negative indexing counts from end of string (in bytes)
-            (s.len() as i64 + idx) as usize
+            (char_count + idx) as usize
         } else {
             idx as usize
         };
-        if actual_idx < s.len() {
-            let remaining = &s[actual_idx..];
-            match remaining.chars().next() {
-                Some(c) => Ok(Value::Char(c)),
-                None => Ok(Value::Null),
-            }
-        } else {
-            Ok(Value::Null)
+        match s.chars().nth(actual_idx) {
+            Some(c) => Ok(Value::Char(c)),
+            None => Ok(Value::Null),
         }
     });
 
@@ -9807,13 +9802,22 @@ fn register_fs(interp: &mut Interpreter) {
             _ => format!("{}", args[1]),
         };
 
-        // args[2] is the length - we use the actual string length in interpreted mode
-        let len = match &args[2] {
+        // args[2] is the length - convert char count to byte boundary for UTF-8 safety
+        let requested_len = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => content.len(),
+            _ => content.chars().count(),
         };
 
-        let output = &content[..std::cmp::min(len, content.len())];
+        let char_count = content.chars().count();
+        let output = if requested_len >= char_count {
+            &content[..]
+        } else {
+            let byte_offset = content.char_indices()
+                .nth(requested_len)
+                .map(|(idx, _)| idx)
+                .unwrap_or(content.len());
+            &content[..byte_offset]
+        };
 
         match fd {
             1 => {
@@ -36870,11 +36874,32 @@ fn register_terminal(interp: &mut Interpreter) {
 
     // term_get_termios(fd) - save current terminal state, returns handle id
     define(interp, "term_get_termios", Some(1), |_, args| {
-        let _fd = match &args[0] {
+        let fd = match &args[0] {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("term_get_termios requires int fd")),
         };
-        // In interpreter mode: snapshot current raw_mode state and store it
+
+        // Native: capture real terminal state via tcgetattr
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+            let ret = unsafe { libc::tcgetattr(fd as i32, &mut termios) };
+            if ret == 0 {
+                let handle = FAKE_TERMIOS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
+                NATIVE_TERMIOS_STATE.with(|map| {
+                    map.borrow_mut().insert(handle, termios);
+                });
+                // Also store in fake state for consistency with tests
+                let is_raw = FAKE_TERMIOS_RAW.load(std::sync::atomic::Ordering::SeqCst);
+                FAKE_TERMIOS_STATE.with(|map| {
+                    map.borrow_mut().insert(handle, FakeTermios { raw_mode: is_raw });
+                });
+                return Ok(Value::Int(handle));
+            }
+        }
+        let _ = fd;
+
+        // Fake fallback: snapshot current raw_mode state and store it
         let is_raw = FAKE_TERMIOS_RAW.load(std::sync::atomic::Ordering::SeqCst);
         let handle = FAKE_TERMIOS_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
         FAKE_TERMIOS_STATE.with(|map| {
@@ -36885,17 +36910,35 @@ fn register_terminal(interp: &mut Interpreter) {
 
     // term_set_raw_mode(fd) - enable raw terminal mode, returns 0 on success
     define(interp, "term_set_raw_mode", Some(1), |_, args| {
-        let _fd = match &args[0] {
+        let fd = match &args[0] {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("term_set_raw_mode requires int fd")),
         };
+
+        // Native: real cfmakeraw + tcsetattr
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut raw: libc::termios = unsafe { std::mem::zeroed() };
+            let ret = unsafe { libc::tcgetattr(fd as i32, &mut raw) };
+            if ret == 0 {
+                unsafe { libc::cfmakeraw(&mut raw) };
+                // Single-byte reads with no timeout
+                raw.c_cc[libc::VMIN] = 1;
+                raw.c_cc[libc::VTIME] = 0;
+                // Keep ISIG so Ctrl-C generates SIGINT
+                raw.c_lflag |= libc::ISIG;
+                unsafe { libc::tcsetattr(fd as i32, libc::TCSAFLUSH, &raw) };
+            }
+        }
+        let _ = fd;
+
         FAKE_TERMIOS_RAW.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(Value::Int(0))
     });
 
     // term_restore_termios(fd, saved_handle) - restore saved terminal state
     define(interp, "term_restore_termios", Some(2), |_, args| {
-        let _fd = match &args[0] {
+        let fd = match &args[0] {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("term_restore_termios requires int fd")),
         };
@@ -36903,7 +36946,20 @@ fn register_terminal(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("term_restore_termios requires int handle")),
         };
-        // Look up the saved state and restore it
+
+        // Native: restore real terminal state via tcsetattr
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let native_saved = NATIVE_TERMIOS_STATE.with(|map| {
+                map.borrow().get(&handle).cloned()
+            });
+            if let Some(saved_termios) = native_saved {
+                unsafe { libc::tcsetattr(fd as i32, libc::TCSAFLUSH, &saved_termios) };
+            }
+        }
+        let _ = fd;
+
+        // Also restore fake state for consistency
         let saved = FAKE_TERMIOS_STATE.with(|map| {
             map.borrow().get(&handle).cloned()
         });
@@ -38419,12 +38475,22 @@ fn register_sys(interp: &mut Interpreter) {
             _ => format!("{}", args[1]),
         };
 
-        let len = match &args[2] {
+        let requested_len = match &args[2] {
             Value::Int(n) => *n as usize,
-            _ => content.len(),
+            _ => content.chars().count(),
         };
 
-        let output = &content[..std::cmp::min(len, content.len())];
+        // Convert char-based length to byte boundary (safe for multi-byte UTF-8)
+        let char_count = content.chars().count();
+        let output = if requested_len >= char_count {
+            &content[..]
+        } else {
+            let byte_offset = content.char_indices()
+                .nth(requested_len)
+                .map(|(idx, _)| idx)
+                .unwrap_or(content.len());
+            &content[..byte_offset]
+        };
 
         match fd {
             1 => {
@@ -39497,6 +39563,21 @@ fn register_sys(interp: &mut Interpreter) {
         FAKE_SIGNAL_STATE.with(|map| {
             map.borrow_mut().insert(signum, false); // registered, not pending
         });
+
+        // Native: install real signal handler via sigaction
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if (signum as usize) < 32 {
+                unsafe {
+                    let mut sa: libc::sigaction = std::mem::zeroed();
+                    sa.sa_sigaction = native_signal_handler as usize;
+                    sa.sa_flags = libc::SA_RESTART;
+                    libc::sigemptyset(&mut sa.sa_mask);
+                    libc::sigaction(signum as i32, &sa, std::ptr::null_mut());
+                }
+            }
+        }
+
         Ok(Value::Int(0))
     });
 
@@ -39506,8 +39587,24 @@ fn register_sys(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Sys·signal_pending requires int signum")),
         };
+
+        // Native: check real signal flags, propagate to fake state
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if (signum as usize) < 32 {
+                if NATIVE_SIGNAL_FLAGS[signum as usize].swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    FAKE_SIGNAL_STATE.with(|map| {
+                        map.borrow_mut().insert(signum, true);
+                    });
+                }
+            }
+        }
+
         let pending = FAKE_SIGNAL_STATE.with(|map| {
-            map.borrow().get(&signum).copied().unwrap_or(false)
+            let mut m = map.borrow_mut();
+            let p = m.get(&signum).copied().unwrap_or(false);
+            if p { m.insert(signum, false); } // clear-on-read
+            p
         });
         Ok(Value::Bool(pending))
     });
@@ -40019,6 +40116,8 @@ thread_local! {
     static FAKE_WINSIZE_STATE: RefCell<HashMap<i64, (i64, i64)>> = RefCell::new(HashMap::new());
     static FAKE_PTY_BUFFER: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
     static FAKE_PROCESS_STATE: RefCell<HashMap<i64, FakeBgProcess>> = RefCell::new(HashMap::new());
+    #[cfg(all(unix, feature = "native"))]
+    static NATIVE_TERMIOS_STATE: RefCell<HashMap<i64, libc::termios>> = RefCell::new(HashMap::new());
 }
 static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
 static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
@@ -40028,6 +40127,19 @@ static FAKE_TERMIOS_RAW: std::sync::atomic::AtomicBool = std::sync::atomic::Atom
 static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(4000);
 static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(5000);
 static FAKE_BG_PID_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(7000);
+
+// Native signal handling: global atomic flags set by C signal handler
+static NATIVE_SIGNAL_FLAGS: [std::sync::atomic::AtomicBool; 32] = {
+    const INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    [INIT; 32]
+};
+
+#[cfg(all(unix, feature = "native"))]
+extern "C" fn native_signal_handler(signum: libc::c_int) {
+    if (signum as usize) < 32 {
+        NATIVE_SIGNAL_FLAGS[signum as usize].store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
 
 // Socket states for interpreter simulation
 #[derive(Clone, Debug)]
