@@ -4373,6 +4373,12 @@ pub mod llvm {
                         eprintln!("[G120-DBG] Registering '{}' in ref_vars", param_name);
                         scope.ref_vars.insert(param_name.clone());
                     }
+
+                    // G122: Track array parameters so they use direct GEP indexing
+                    if self.type_is_array(&param.ty) {
+                        eprintln!("[G122] Registering param '{}' as array variable", param_name);
+                        scope.array_vars.insert(param_name.clone());
+                    }
                 }
             }
 
@@ -4871,6 +4877,15 @@ pub mod llvm {
                             .build_store(alloca, init_val)
                             .map_err(|e| e.to_string())?;
                         scope.vars.insert(ident.name.clone(), alloca);
+
+                        // G122: Track if this variable holds an array literal
+                        // Arrays need direct GEP indexing, not Vec runtime functions
+                        if let Some(ref expr) = init {
+                            if matches!(expr, Expr::Array(_)) {
+                                eprintln!("[G122] Registering '{}' as array variable", ident.name);
+                                scope.array_vars.insert(ident.name.clone());
+                            }
+                        }
 
                         // Track rich type for variable so we know generic parameters later
                         // E.g., storage = Cpu·allocate·<f32>(4) => rich_types["storage"] = StoragePtr<f32, Cpu>
@@ -10033,6 +10048,12 @@ pub mod llvm {
             }
         }
 
+        /// G122: Check if type is an array type (e.g., [T; N])
+        /// Arrays need direct GEP indexing, not Vec runtime functions
+        fn type_is_array(&self, ty: &ast::TypeExpr) -> bool {
+            matches!(ty, ast::TypeExpr::Array { .. })
+        }
+
         /// Compile a pipe expression: data |τ{f} |φ{p} |ρ+
         fn compile_pipe(
             &mut self,
@@ -11499,6 +11520,48 @@ pub mod llvm {
                     .builder
                     .build_int_z_extend(byte_val, i64_type, "byte_i64")
                     .map_err(|e| e.to_string());
+            }
+
+            // G122: Check if this is an array literal or array variable
+            // Array literals compile to raw i64 array pointers, not Vec structures.
+            // We need to use direct GEP indexing, not sigil_vec_get.
+            let is_array = match expr {
+                Expr::Array(_) => true,
+                Expr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        // Check if this variable is known to be an array
+                        scope.array_vars.contains(&seg.ident.name)
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+
+            if is_array {
+                eprintln!("[G122] Using direct array indexing for {:?}", expr);
+                let ptr_type = self.context.ptr_type(AddressSpace::default());
+                let arr_ptr_val = self.compile_expr(fn_value, scope, expr)?;
+                let arr_ptr = self
+                    .builder
+                    .build_int_to_ptr(arr_ptr_val, ptr_type, "arr_ptr")
+                    .map_err(|e| e.to_string())?;
+
+                // GEP to get element at index - array elements are i64
+                let elem_ptr = unsafe {
+                    self.builder
+                        .build_gep(i64_type, arr_ptr, &[idx], "elem_ptr")
+                        .map_err(|e| e.to_string())?
+                };
+
+                // Load the element
+                let elem_val = self
+                    .builder
+                    .build_load(i64_type, elem_ptr, "elem_val")
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+
+                return Ok(elem_val);
             }
 
             // G25 Fix: Use sigil_vec_get for proper Vec access
@@ -19309,6 +19372,9 @@ pub mod llvm {
         /// Track pointer element sizes for ptr.add() arithmetic
         /// Maps variable names to the size of the pointed-to element in bytes
         ptr_element_sizes: HashMap<String, u64>,
+        /// G122: Track which variables hold array literals (as opposed to Vec)
+        /// Arrays are raw i64 pointers, not Vec structures, and need direct GEP indexing
+        array_vars: std::collections::HashSet<String>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -19325,6 +19391,7 @@ pub mod llvm {
                 ref_vars: std::collections::HashSet::new(),
                 const_generics: HashMap::new(),
                 ptr_element_sizes: HashMap::new(),
+                array_vars: std::collections::HashSet::new(),
             }
         }
 
