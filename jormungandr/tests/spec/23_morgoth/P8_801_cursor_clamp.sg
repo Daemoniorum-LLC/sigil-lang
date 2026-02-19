@@ -1,0 +1,140 @@
+// Test: Cursor movement clamps to bounds
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite copy_clamp_col(cm) {
+    ⎇ len(cm.text_lines) > 0 ∧ cm.cursor_row < len(cm.text_lines) {
+        ≔ ll = len(cm.text_lines[cm.cursor_row]);
+        ⎇ ll > 0 ∧ cm.cursor_col >= ll {
+            cm.cursor_col = ll - 1;
+        }
+        ⎇ ll == 0 {
+            cm.cursor_col = 0;
+        }
+    }
+}
+
+rite copy_move_up(cm) {
+    ⎇ cm.cursor_row > 0 {
+        cm.cursor_row = cm.cursor_row - 1;
+        copy_clamp_col(cm);
+    }
+}
+
+rite copy_move_down(cm) {
+    ⎇ cm.cursor_row < len(cm.text_lines) - 1 {
+        cm.cursor_row = cm.cursor_row + 1;
+        copy_clamp_col(cm);
+    }
+}
+
+rite copy_move_left(cm) {
+    ⎇ cm.cursor_col > 0 { cm.cursor_col = cm.cursor_col - 1; }
+}
+
+rite copy_move_right(cm) {
+    ≔ line_len = len(cm.text_lines[cm.cursor_row]);
+    ⎇ cm.cursor_col < line_len - 1 {
+        cm.cursor_col = cm.cursor_col + 1;
+    }
+}
+
+rite main() {
+    ≔ cm = {
+        active: true,
+        cursor_row: 0,
+        cursor_col: 0,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["Hello", "World", "Test!"]
+    };
+
+    // Test 1: Can't go above row 0
+    cm.cursor_row = 0;
+    copy_move_up(cm);
+    ⎇ cm.cursor_row == 0 {
+        println("clamp_up: OK");
+    } ⎉ {
+        println("clamp_up: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    // Test 2: Can't go below last row
+    cm.cursor_row = 2;
+    copy_move_down(cm);
+    ⎇ cm.cursor_row == 2 {
+        println("clamp_down: OK");
+    } ⎉ {
+        println("clamp_down: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    // Test 3: Can't go left of col 0
+    cm.cursor_col = 0;
+    copy_move_left(cm);
+    ⎇ cm.cursor_col == 0 {
+        println("clamp_left: OK");
+    } ⎉ {
+        println("clamp_left: FAILED got=" + to_string(cm.cursor_col));
+    }
+
+    // Test 4: Can't go right past end of line
+    cm.cursor_row = 0;
+    cm.cursor_col = 4;
+    copy_move_right(cm);
+    ⎇ cm.cursor_col == 4 {
+        println("clamp_right: OK");
+    } ⎉ {
+        println("clamp_right: FAILED got=" + to_string(cm.cursor_col));
+    }
+
+    // Test 5: Normal movement works
+    cm.cursor_row = 1;
+    cm.cursor_col = 2;
+    copy_move_up(cm);
+    ⎇ cm.cursor_row == 0 {
+        println("move_up: OK");
+    } ⎉ {
+        println("move_up: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    cm.cursor_row = 0;
+    copy_move_down(cm);
+    ⎇ cm.cursor_row == 1 {
+        println("move_down: OK");
+    } ⎉ {
+        println("move_down: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    // Test 7: cursor_col re-clamped when moving to shorter line
+    // Lines: "Hello" (5), "World" (5), "Hi" (2)
+    ≔ cm2 = {
+        active: true,
+        cursor_row: 0,
+        cursor_col: 4,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["Hello", "Hi", "World"]
+    };
+    // At row 0, col 4 ("Hello"[4]='o'). Move down to "Hi" (len=2).
+    copy_move_down(cm2);
+    ⎇ cm2.cursor_row == 1 ∧ cm2.cursor_col == 1 {
+        println("col_reclamp_down: OK");
+    } ⎉ {
+        println("col_reclamp_down: FAILED row=" + to_string(cm2.cursor_row) + " col=" + to_string(cm2.cursor_col));
+    }
+
+    // Test 8: cursor_col re-clamped when moving up to shorter line
+    cm2.cursor_row = 2;
+    cm2.cursor_col = 4;
+    copy_move_up(cm2);
+    ⎇ cm2.cursor_row == 1 ∧ cm2.cursor_col == 1 {
+        println("col_reclamp_up: OK");
+    } ⎉ {
+        println("col_reclamp_up: FAILED row=" + to_string(cm2.cursor_row) + " col=" + to_string(cm2.cursor_col));
+    }
+}

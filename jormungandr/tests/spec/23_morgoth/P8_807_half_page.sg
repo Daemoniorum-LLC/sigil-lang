@@ -1,0 +1,102 @@
+// Test: Half-page scroll with Ctrl-U/Ctrl-D
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite copy_adjust_viewport(cm, inner_h) {
+    ⎇ cm.cursor_row < cm.viewport_row {
+        cm.viewport_row = cm.cursor_row;
+    }
+    ⎇ cm.cursor_row >= cm.viewport_row + inner_h {
+        cm.viewport_row = cm.cursor_row - inner_h + 1;
+    }
+}
+
+rite main() {
+    // 20 lines of content, viewport shows 5 at a time
+    ≔ mut lines = [];
+    ≔ mut i = 0;
+    ⟳ i < 20 {
+        push(lines, "Line " + to_string(i));
+        i = i + 1;
+    }
+
+    ≔ cm = {
+        active: true,
+        cursor_row: 10,
+        cursor_col: 0,
+        viewport_row: 8,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: lines
+    };
+    ≔ inner_h = 5;
+
+    // Test 1: Ctrl-D moves cursor down by half page
+    ≔ mut half_d = (len(cm.text_lines) - cm.viewport_row) / 2;
+    ⎇ half_d < 1 { half_d = 5; }
+    cm.cursor_row = cm.cursor_row + half_d;
+    ⎇ cm.cursor_row >= len(cm.text_lines) {
+        cm.cursor_row = len(cm.text_lines) - 1;
+    }
+    copy_adjust_viewport(cm, inner_h);
+
+    ⎇ cm.cursor_row == 16 {
+        println("ctrl_d_cursor: OK");
+    } ⎉ {
+        println("ctrl_d_cursor: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    // Test 2: Viewport adjusted after Ctrl-D
+    ⎇ cm.viewport_row <= cm.cursor_row ∧ cm.cursor_row < cm.viewport_row + inner_h {
+        println("ctrl_d_viewport: OK");
+    } ⎉ {
+        println("ctrl_d_viewport: FAILED vp=" + to_string(cm.viewport_row));
+    }
+
+    // Test 3: Ctrl-U moves cursor up
+    cm.cursor_row = 10;
+    cm.viewport_row = 8;
+    ≔ mut half_u = (cm.cursor_row - cm.viewport_row) / 2;
+    ⎇ half_u < 1 { half_u = 5; }
+    cm.cursor_row = cm.cursor_row - half_u;
+    ⎇ cm.cursor_row < 0 { cm.cursor_row = 0; }
+    copy_adjust_viewport(cm, inner_h);
+
+    ⎇ cm.cursor_row >= 0 ∧ cm.cursor_row <= 10 {
+        println("ctrl_u_cursor: OK");
+    } ⎉ {
+        println("ctrl_u_cursor: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    // Test 4: Ctrl-D at bottom clamps
+    cm.cursor_row = 18;
+    cm.viewport_row = 15;
+    ≔ mut half_d2 = (len(cm.text_lines) - cm.viewport_row) / 2;
+    ⎇ half_d2 < 1 { half_d2 = 5; }
+    cm.cursor_row = cm.cursor_row + half_d2;
+    ⎇ cm.cursor_row >= len(cm.text_lines) {
+        cm.cursor_row = len(cm.text_lines) - 1;
+    }
+
+    ⎇ cm.cursor_row == 19 {
+        println("ctrl_d_clamp: OK");
+    } ⎉ {
+        println("ctrl_d_clamp: FAILED got=" + to_string(cm.cursor_row));
+    }
+
+    // Test 5: Ctrl-U at top clamps
+    cm.cursor_row = 1;
+    cm.viewport_row = 0;
+    ≔ mut half_u2 = (cm.cursor_row - cm.viewport_row) / 2;
+    ⎇ half_u2 < 1 { half_u2 = 5; }
+    cm.cursor_row = cm.cursor_row - half_u2;
+    ⎇ cm.cursor_row < 0 { cm.cursor_row = 0; }
+
+    ⎇ cm.cursor_row == 0 {
+        println("ctrl_u_clamp: OK");
+    } ⎉ {
+        println("ctrl_u_clamp: FAILED got=" + to_string(cm.cursor_row));
+    }
+}

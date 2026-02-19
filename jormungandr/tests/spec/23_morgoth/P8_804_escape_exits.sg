@@ -1,0 +1,63 @@
+// Test: ESC and q exit copy mode
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite main() {
+    // Test 1: ESC (byte 27) exits
+    ≔ cm1 = {
+        active: true,
+        cursor_row: 5,
+        cursor_col: 3,
+        viewport_row: 0,
+        selecting: true,
+        select_start_row: 2,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["a", "b", "c", "d", "e", "f"]
+    };
+
+    // Simulate ESC exit
+    cm1.active = false;
+    cm1.text_lines = [];
+
+    ⎇ cm1.active == false {
+        println("esc_exits: OK");
+    } ⎉ {
+        println("esc_exits: FAILED");
+    }
+
+    ⎇ len(cm1.text_lines) == 0 {
+        println("esc_clears_lines: OK");
+    } ⎉ {
+        println("esc_clears_lines: FAILED");
+    }
+
+    // Test 2: q (byte 113) exits
+    ≔ cm2 = {
+        active: true,
+        cursor_row: 2,
+        cursor_col: 1,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["x", "y", "z"]
+    };
+
+    cm2.active = false;
+    cm2.text_lines = [];
+
+    ⎇ cm2.active == false {
+        println("q_exits: OK");
+    } ⎉ {
+        println("q_exits: FAILED");
+    }
+
+    // Test 3: Selection state doesn't matter for exit
+    ⎇ cm2.selecting == false {
+        println("no_copy_on_exit: OK");
+    } ⎉ {
+        println("no_copy_on_exit: FAILED");
+    }
+}

@@ -1,0 +1,119 @@
+// Test: Extract selected text
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite extract_selection(cm) {
+    ≔ mut sr = cm.select_start_row;
+    ≔ mut sc = cm.select_start_col;
+    ≔ mut er = cm.cursor_row;
+    ≔ mut ec = cm.cursor_col;
+    ⎇ sr > er ∨ (sr == er ∧ sc > ec) {
+        ≔ tr = sr;
+        ≔ tc = sc;
+        sr = er;
+        sc = ec;
+        er = tr;
+        ec = tc;
+    }
+    ≔ mut result = "";
+    ⎇ cm.line_mode == true {
+        ≔ mut r = sr;
+        ⟳ r <= er {
+            ⎇ r > sr { result = result + "\n"; }
+            result = result + cm.text_lines[r];
+            r = r + 1;
+        }
+    } ⎉ {
+        ⎇ sr == er {
+            result = substring(cm.text_lines[sr], sc, ec + 1);
+        } ⎉ {
+            result = substring(cm.text_lines[sr], sc, len(cm.text_lines[sr]));
+            ≔ mut r = sr + 1;
+            ⟳ r < er {
+                result = result + "\n" + cm.text_lines[r];
+                r = r + 1;
+            }
+            result = result + "\n" + substring(cm.text_lines[er], 0, ec + 1);
+        }
+    }
+    ↩ result
+}
+
+rite main() {
+    ≔ cm = {
+        active: true,
+        cursor_row: 0,
+        cursor_col: 0,
+        viewport_row: 0,
+        selecting: true,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["Hello World", "Foo Bar Baz", "Test Line 3"]
+    };
+
+    // Test 1: Single-line character selection "ello"
+    cm.select_start_row = 0;
+    cm.select_start_col = 1;
+    cm.cursor_row = 0;
+    cm.cursor_col = 4;
+    cm.line_mode = false;
+    ≔ r1 = extract_selection(cm);
+    ⎇ r1 == "ello" {
+        println("single_line_char: OK");
+    } ⎉ {
+        println("single_line_char: FAILED got=" + r1);
+    }
+
+    // Test 2: Multi-line character selection
+    cm.select_start_row = 0;
+    cm.select_start_col = 6;
+    cm.cursor_row = 1;
+    cm.cursor_col = 2;
+    cm.line_mode = false;
+    ≔ r2 = extract_selection(cm);
+    ⎇ r2 == "World\nFoo" {
+        println("multi_line_char: OK");
+    } ⎉ {
+        println("multi_line_char: FAILED got=" + r2);
+    }
+
+    // Test 3: Line mode single line
+    cm.select_start_row = 1;
+    cm.select_start_col = 0;
+    cm.cursor_row = 1;
+    cm.cursor_col = 5;
+    cm.line_mode = true;
+    ≔ r3 = extract_selection(cm);
+    ⎇ r3 == "Foo Bar Baz" {
+        println("line_mode_single: OK");
+    } ⎉ {
+        println("line_mode_single: FAILED got=" + r3);
+    }
+
+    // Test 4: Line mode multi-line
+    cm.select_start_row = 0;
+    cm.select_start_col = 0;
+    cm.cursor_row = 2;
+    cm.cursor_col = 0;
+    cm.line_mode = true;
+    ≔ r4 = extract_selection(cm);
+    ⎇ r4 == "Hello World\nFoo Bar Baz\nTest Line 3" {
+        println("line_mode_multi: OK");
+    } ⎉ {
+        println("line_mode_multi: FAILED got=" + r4);
+    }
+
+    // Test 5: Reversed selection (cursor before start) normalizes
+    cm.select_start_row = 1;
+    cm.select_start_col = 4;
+    cm.cursor_row = 0;
+    cm.cursor_col = 2;
+    cm.line_mode = false;
+    ≔ r5 = extract_selection(cm);
+    ⎇ r5 == "llo World\nFoo B" {
+        println("reversed_selection: OK");
+    } ⎉ {
+        println("reversed_selection: FAILED got=" + r5);
+    }
+}

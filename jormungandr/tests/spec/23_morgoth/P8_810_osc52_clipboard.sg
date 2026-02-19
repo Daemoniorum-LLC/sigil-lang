@@ -1,0 +1,48 @@
+// Test: OSC 52 clipboard output
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite main() {
+    // Test 1: base64_encode basic string
+    ≔ encoded = base64_encode("Hello");
+    ⎇ encoded == "SGVsbG8=" {
+        println("base64_hello: OK");
+    } ⎉ {
+        println("base64_hello: FAILED got=" + encoded);
+    }
+
+    // Test 2: base64_encode with spaces
+    ≔ encoded2 = base64_encode("Hello World");
+    ⎇ encoded2 == "SGVsbG8gV29ybGQ=" {
+        println("base64_spaces: OK");
+    } ⎉ {
+        println("base64_spaces: FAILED got=" + encoded2);
+    }
+
+    // Test 3: OSC 52 sequence format
+    ≔ ESC = "\x1b";
+    ≔ text = "test";
+    ≔ b64 = base64_encode(text);
+    ≔ osc = ESC + "]52;c;" + b64 + ESC + "\\";
+    // Verify it starts with ESC]52;c; and ends with ESC\
+    ⎇ starts_with(osc, ESC + "]52;c;") == true {
+        println("osc52_prefix: OK");
+    } ⎉ {
+        println("osc52_prefix: FAILED");
+    }
+
+    // Test 4: Verify the base64 payload is correct
+    ⎇ b64 == "dGVzdA==" {
+        println("base64_test: OK");
+    } ⎉ {
+        println("base64_test: FAILED got=" + b64);
+    }
+
+    // Test 5: Empty string
+    ≔ encoded_empty = base64_encode("");
+    ⎇ encoded_empty == "" {
+        println("base64_empty: OK");
+    } ⎉ {
+        println("base64_empty: FAILED got=" + encoded_empty);
+    }
+}

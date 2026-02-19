@@ -1,0 +1,71 @@
+// Test: Non-focused panes unaffected by copy mode
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite main() {
+    // Simulate 3 panes
+    ≔ mut panes = [];
+    push(panes, { id: 0, title: "bash", alive: true });
+    push(panes, { id: 1, title: "vim", alive: true });
+    push(panes, { id: 2, title: "htop", alive: true });
+
+    ≔ focus = 1;
+
+    ≔ cm = {
+        active: true,
+        cursor_row: 0,
+        cursor_col: 0,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["copy content"]
+    };
+
+    // Test 1: Copy mode active on focused pane
+    ⎇ cm.active == true {
+        println("focused_active: OK");
+    } ⎉ {
+        println("focused_active: FAILED");
+    }
+
+    // Test 2: Non-focused panes still alive
+    ⎇ panes[0].alive == true ∧ panes[2].alive == true {
+        println("others_alive: OK");
+    } ⎉ {
+        println("others_alive: FAILED");
+    }
+
+    // Test 3: Render guard — non-focused panes should render
+    // During copy mode: all panes render EXCEPT focused
+    ≔ mut i = 0;
+    ≔ mut rendered_count = 0;
+    ⟳ i < len(panes) {
+        ⎇ cm.active == false ∨ i != focus {
+            rendered_count = rendered_count + 1;
+        }
+        i = i + 1;
+    }
+    ⎇ rendered_count == 2 {
+        println("render_guard: OK");
+    } ⎉ {
+        println("render_guard: FAILED count=" + to_string(rendered_count));
+    }
+
+    // Test 4: Without copy mode, all panes render
+    cm.active = false;
+    ≔ mut j = 0;
+    ≔ mut all_count = 0;
+    ⟳ j < len(panes) {
+        ⎇ cm.active == false ∨ j != focus {
+            all_count = all_count + 1;
+        }
+        j = j + 1;
+    }
+    ⎇ all_count == 3 {
+        println("all_render_normal: OK");
+    } ⎉ {
+        println("all_render_normal: FAILED count=" + to_string(all_count));
+    }
+}

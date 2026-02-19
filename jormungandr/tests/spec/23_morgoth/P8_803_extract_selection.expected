@@ -1,0 +1,5 @@
+single_line_char: OK
+multi_line_char: OK
+line_mode_single: OK
+line_mode_multi: OK
+reversed_selection: OK

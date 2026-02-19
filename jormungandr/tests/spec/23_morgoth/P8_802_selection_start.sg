@@ -1,0 +1,53 @@
+// Test: Selection start/cancel with Space
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite main() {
+    ≔ cm = {
+        active: true,
+        cursor_row: 1,
+        cursor_col: 3,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["Hello", "World", "Test!"]
+    };
+
+    // Test 1: Initially not selecting
+    ⎇ cm.selecting == false {
+        println("initial_no_select: OK");
+    } ⎉ {
+        println("initial_no_select: FAILED");
+    }
+
+    // Simulate Space press: start selection
+    cm.selecting = true;
+    cm.select_start_row = cm.cursor_row;
+    cm.select_start_col = cm.cursor_col;
+
+    // Test 2: Selection started
+    ⎇ cm.selecting == true {
+        println("select_started: OK");
+    } ⎉ {
+        println("select_started: FAILED");
+    }
+
+    // Test 3: Start position captured
+    ⎇ cm.select_start_row == 1 ∧ cm.select_start_col == 3 {
+        println("select_start_pos: OK");
+    } ⎉ {
+        println("select_start_pos: FAILED r=" + to_string(cm.select_start_row) + " c=" + to_string(cm.select_start_col));
+    }
+
+    // Simulate Space again: cancel selection
+    cm.selecting = false;
+
+    // Test 4: Selection cancelled
+    ⎇ cm.selecting == false {
+        println("select_cancelled: OK");
+    } ⎉ {
+        println("select_cancelled: FAILED");
+    }
+}

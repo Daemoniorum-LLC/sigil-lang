@@ -1,0 +1,4 @@
+esc_exits: OK
+esc_clears_lines: OK
+q_exits: OK
+no_copy_on_exit: OK

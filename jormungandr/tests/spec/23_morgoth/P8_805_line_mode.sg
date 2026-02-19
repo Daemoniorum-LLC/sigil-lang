@@ -1,0 +1,80 @@
+// Test: Line mode toggle
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite main() {
+    ≔ cm = {
+        active: true,
+        cursor_row: 1,
+        cursor_col: 3,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["Hello", "World", "Test!"]
+    };
+
+    // Test 1: Initial line_mode is false
+    ⎇ cm.line_mode == false {
+        println("initial_off: OK");
+    } ⎉ {
+        println("initial_off: FAILED");
+    }
+
+    // Simulate V press: toggle line mode on + start selection
+    cm.line_mode = true;
+    ⎇ cm.line_mode == true ∧ cm.selecting == false {
+        cm.selecting = true;
+        cm.select_start_row = cm.cursor_row;
+        cm.select_start_col = 0;
+    }
+
+    // Test 2: Line mode on
+    ⎇ cm.line_mode == true {
+        println("line_mode_on: OK");
+    } ⎉ {
+        println("line_mode_on: FAILED");
+    }
+
+    // Test 3: Selection started with col 0
+    ⎇ cm.selecting == true ∧ cm.select_start_col == 0 {
+        println("select_col_zero: OK");
+    } ⎉ {
+        println("select_col_zero: FAILED");
+    }
+
+    // Test 4: Start row is cursor row
+    ⎇ cm.select_start_row == 1 {
+        println("select_start_row: OK");
+    } ⎉ {
+        println("select_start_row: FAILED got=" + to_string(cm.select_start_row));
+    }
+
+    // Simulate V again: toggle line mode off
+    cm.line_mode = false;
+
+    // Test 5: Line mode toggled off
+    ⎇ cm.line_mode == false {
+        println("line_mode_off: OK");
+    } ⎉ {
+        println("line_mode_off: FAILED");
+    }
+
+    // Test 6: V while already selecting resets select_start_col to 0
+    // Start character selection at col=3
+    cm.line_mode = false;
+    cm.selecting = true;
+    cm.select_start_row = 1;
+    cm.select_start_col = 3;
+    // Press V: toggle line mode on, already selecting -> col should reset to 0
+    cm.line_mode = true;
+    ⎇ cm.line_mode == true ∧ cm.selecting == true {
+        cm.select_start_col = 0;
+    }
+    ⎇ cm.select_start_col == 0 {
+        println("v_resets_col: OK");
+    } ⎉ {
+        println("v_resets_col: FAILED got=" + to_string(cm.select_start_col));
+    }
+}

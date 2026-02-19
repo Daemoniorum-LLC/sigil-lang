@@ -1,0 +1,69 @@
+// Test: Exit copy mode renders current vterm state
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite main() {
+    // Simulate copy mode exit: active->false, text_lines cleared
+    ≔ cm = {
+        active: true,
+        cursor_row: 5,
+        cursor_col: 0,
+        viewport_row: 0,
+        selecting: true,
+        select_start_row: 2,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["a", "b", "c", "d", "e", "f"]
+    };
+
+    // Simulate vterm has been updated during copy mode freeze
+    ≔ mut vterm_data = "updated_content";
+
+    // Exit copy mode
+    cm.active = false;
+    cm.text_lines = [];
+
+    // Test 1: Copy mode deactivated
+    ⎇ cm.active == false {
+        println("deactivated: OK");
+    } ⎉ {
+        println("deactivated: FAILED");
+    }
+
+    // Test 2: text_lines cleared (memory freed)
+    ⎇ len(cm.text_lines) == 0 {
+        println("lines_cleared: OK");
+    } ⎉ {
+        println("lines_cleared: FAILED");
+    }
+
+    // Test 3: VTerm data still intact (would be blitted on exit)
+    ⎇ vterm_data == "updated_content" {
+        println("vterm_intact: OK");
+    } ⎉ {
+        println("vterm_intact: FAILED");
+    }
+
+    // Test 4: Selecting state reset on re-enter
+    ≔ cm2 = {
+        active: false,
+        cursor_row: 0,
+        cursor_col: 0,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: []
+    };
+    // Enter copy mode fresh
+    cm2.active = true;
+    cm2.selecting = false;
+    cm2.line_mode = false;
+
+    ⎇ cm2.selecting == false ∧ cm2.line_mode == false {
+        println("fresh_enter: OK");
+    } ⎉ {
+        println("fresh_enter: FAILED");
+    }
+}

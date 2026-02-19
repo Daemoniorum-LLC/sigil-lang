@@ -1,0 +1,107 @@
+// Test: Vim navigation keys
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+rite copy_word_forward(cm) {
+    ≔ line = cm.text_lines[cm.cursor_row];
+    ≔ mut col = cm.cursor_col;
+    ⟳ col < len(line) ∧ to_string(char_at(line, col)) != " " {
+        col = col + 1;
+    }
+    ⟳ col < len(line) ∧ to_string(char_at(line, col)) == " " {
+        col = col + 1;
+    }
+    ⎇ col >= len(line) ∧ cm.cursor_row < len(cm.text_lines) - 1 {
+        cm.cursor_row = cm.cursor_row + 1;
+        cm.cursor_col = 0;
+    } ⎉ {
+        ⎇ col < len(line) { cm.cursor_col = col; }
+    }
+}
+
+rite copy_word_backward(cm) {
+    ≔ mut col = cm.cursor_col;
+    ⎇ col > 0 { col = col - 1; }
+    ≔ line = cm.text_lines[cm.cursor_row];
+    ⟳ col > 0 ∧ to_string(char_at(line, col)) == " " {
+        col = col - 1;
+    }
+    ⟳ col > 0 ∧ to_string(char_at(line, col - 1)) != " " {
+        col = col - 1;
+    }
+    cm.cursor_col = col;
+}
+
+rite main() {
+    ≔ cm = {
+        active: true,
+        cursor_row: 1,
+        cursor_col: 3,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: ["Hello World", "Foo Bar Baz", "Last Line"]
+    };
+
+    // Test 1: g goes to top
+    cm.cursor_row = 2;
+    cm.cursor_col = 5;
+    cm.cursor_row = 0;
+    cm.cursor_col = 0;
+    ⎇ cm.cursor_row == 0 ∧ cm.cursor_col == 0 {
+        println("g_top: OK");
+    } ⎉ {
+        println("g_top: FAILED");
+    }
+
+    // Test 2: G goes to bottom
+    cm.cursor_row = len(cm.text_lines) - 1;
+    cm.cursor_col = 0;
+    ⎇ cm.cursor_row == 2 ∧ cm.cursor_col == 0 {
+        println("G_bottom: OK");
+    } ⎉ {
+        println("G_bottom: FAILED");
+    }
+
+    // Test 3: 0 goes to start of line
+    cm.cursor_row = 1;
+    cm.cursor_col = 5;
+    cm.cursor_col = 0;
+    ⎇ cm.cursor_col == 0 {
+        println("zero_start: OK");
+    } ⎉ {
+        println("zero_start: FAILED");
+    }
+
+    // Test 4: $ goes to end of line
+    cm.cursor_row = 0;
+    ≔ ll = len(cm.text_lines[cm.cursor_row]);
+    ⎇ ll > 0 { cm.cursor_col = ll - 1; }
+    ⎇ cm.cursor_col == 10 {
+        println("dollar_end: OK");
+    } ⎉ {
+        println("dollar_end: FAILED got=" + to_string(cm.cursor_col));
+    }
+
+    // Test 5: w moves to next word
+    cm.cursor_row = 0;
+    cm.cursor_col = 0;
+    copy_word_forward(cm);
+    ⎇ cm.cursor_col == 6 {
+        println("word_forward: OK");
+    } ⎉ {
+        println("word_forward: FAILED got=" + to_string(cm.cursor_col));
+    }
+
+    // Test 6: b moves to previous word
+    cm.cursor_row = 0;
+    cm.cursor_col = 8;
+    copy_word_backward(cm);
+    ⎇ cm.cursor_col == 6 {
+        println("word_backward: OK");
+    } ⎉ {
+        println("word_backward: FAILED got=" + to_string(cm.cursor_col));
+    }
+}

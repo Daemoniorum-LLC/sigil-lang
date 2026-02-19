@@ -1,0 +1,8 @@
+clamp_up: OK
+clamp_down: OK
+clamp_left: OK
+clamp_right: OK
+move_up: OK
+move_down: OK
+col_reclamp_down: OK
+col_reclamp_up: OK

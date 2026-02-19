@@ -1,0 +1,137 @@
+// Test: Enter copy mode
+// Spec: Phase 8 - Copy/Paste Mode
+// Priority: P8
+
+// Minimal VTerm-like structure
+rite make_vterm(rows, cols) {
+    ≔ mut cells = [];
+    ≔ mut i = 0;
+    ⟳ i < rows * cols {
+        push(cells, {ch: " ", fg: 7, bg: 0});
+        i = i + 1;
+    }
+    ↩ {
+        cells: cells,
+        rows: rows,
+        cols: cols,
+        scrollback: []
+    }
+}
+
+rite extract_text_lines(vt) {
+    ≔ mut lines = [];
+    ≔ mut si = 0;
+    ⟳ si < len(vt.scrollback) {
+        ≔ mut line = "";
+        ≔ mut ci = 0;
+        ⟳ ci < len(vt.scrollback[si]) {
+            line = line + vt.scrollback[si][ci].ch;
+            ci = ci + 1;
+        }
+        push(lines, line);
+        si = si + 1;
+    }
+    ≔ mut row = 0;
+    ⟳ row < vt.rows {
+        ≔ mut line = "";
+        ≔ mut col = 0;
+        ⟳ col < vt.cols {
+            ≔ idx = row * vt.cols + col;
+            ⎇ idx < len(vt.cells) {
+                line = line + vt.cells[idx].ch;
+            }
+            col = col + 1;
+        }
+        push(lines, line);
+        row = row + 1;
+    }
+    ↩ lines
+}
+
+rite CopyModeState_new() {
+    ↩ {
+        active: false,
+        cursor_row: 0,
+        cursor_col: 0,
+        viewport_row: 0,
+        selecting: false,
+        select_start_row: 0,
+        select_start_col: 0,
+        line_mode: false,
+        text_lines: []
+    }
+}
+
+rite main() {
+    // Setup: 3 rows x 5 cols VTerm with some content
+    ≔ vt = make_vterm(3, 5);
+    // Fill first row with "Hello"
+    vt.cells[0].ch = "H";
+    vt.cells[1].ch = "e";
+    vt.cells[2].ch = "l";
+    vt.cells[3].ch = "l";
+    vt.cells[4].ch = "o";
+    // Fill second row with "World"
+    vt.cells[5].ch = "W";
+    vt.cells[6].ch = "o";
+    vt.cells[7].ch = "r";
+    vt.cells[8].ch = "l";
+    vt.cells[9].ch = "d";
+
+    // Add scrollback line
+    ≔ sb_line = [];
+    push(sb_line, {ch: "S", fg: 7, bg: 0});
+    push(sb_line, {ch: "B", fg: 7, bg: 0});
+    push(sb_line, {ch: "1", fg: 7, bg: 0});
+    push(sb_line, {ch: " ", fg: 7, bg: 0});
+    push(sb_line, {ch: " ", fg: 7, bg: 0});
+    push(vt.scrollback, sb_line);
+
+    // Enter copy mode
+    ≔ cm = CopyModeState_new();
+    cm.text_lines = extract_text_lines(vt);
+    cm.active = true;
+    cm.cursor_row = len(cm.text_lines) - 1;
+    cm.cursor_col = 0;
+
+    // Test 1: active flag
+    ⎇ cm.active == true {
+        println("active: OK");
+    } ⎉ {
+        println("active: FAILED");
+    }
+
+    // Test 2: text_lines count (1 scrollback + 3 visible)
+    ⎇ len(cm.text_lines) == 4 {
+        println("line_count: OK");
+    } ⎉ {
+        println("line_count: FAILED got=" + to_string(len(cm.text_lines)));
+    }
+
+    // Test 3: scrollback line content
+    ⎇ cm.text_lines[0] == "SB1  " {
+        println("scrollback_line: OK");
+    } ⎉ {
+        println("scrollback_line: FAILED got=" + cm.text_lines[0]);
+    }
+
+    // Test 4: visible line content
+    ⎇ cm.text_lines[1] == "Hello" {
+        println("visible_line_0: OK");
+    } ⎉ {
+        println("visible_line_0: FAILED got=" + cm.text_lines[1]);
+    }
+
+    ⎇ cm.text_lines[2] == "World" {
+        println("visible_line_1: OK");
+    } ⎉ {
+        println("visible_line_1: FAILED got=" + cm.text_lines[2]);
+    }
+
+    // Test 5: cursor at last line
+    ⎇ cm.cursor_row == 3 ∧ cm.cursor_col == 0 {
+        println("cursor_position: OK");
+    } ⎉ {
+        println("cursor_position: FAILED row=" + to_string(cm.cursor_row) + " col=" + to_string(cm.cursor_col));
+    }
+}
