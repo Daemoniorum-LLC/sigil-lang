@@ -74,12 +74,72 @@ fn loop_expr(body_stmts: Vec<Stmt>, body_expr: Option<Expr>) -> Expr {
     }
 }
 
+/// Helper to create a labeled loop expression.
+fn labeled_loop_expr(label: &str, body_stmts: Vec<Stmt>, body_expr: Option<Expr>) -> Expr {
+    Expr::Loop {
+        label: Some(crate::ast::Ident {
+            name: label.to_string(),
+            evidentiality: None,
+            affect: None,
+            span: crate::span::Span::default(),
+        }),
+        body: Block {
+            stmts: body_stmts,
+            expr: body_expr.map(Box::new),
+        },
+    }
+}
+
 /// Helper to create a break expression.
 fn break_expr(value: Option<Expr>) -> Expr {
     Expr::Break {
         label: None,
         value: value.map(Box::new),
     }
+}
+
+/// Helper to create a labeled break expression.
+fn labeled_break_expr(label: &str, value: Option<Expr>) -> Expr {
+    Expr::Break {
+        label: Some(crate::ast::Ident {
+            name: label.to_string(),
+            evidentiality: None,
+            affect: None,
+            span: crate::span::Span::default(),
+        }),
+        value: value.map(Box::new),
+    }
+}
+
+/// Helper to create a labeled continue expression.
+fn labeled_continue_expr(label: &str) -> Expr {
+    Expr::Continue {
+        label: Some(crate::ast::Ident {
+            name: label.to_string(),
+            evidentiality: None,
+            affect: None,
+            span: crate::span::Span::default(),
+        }),
+    }
+}
+
+/// Helper to create a match expression.
+fn match_expr(scrutinee: Expr, arms: Vec<(crate::ast::Pattern, Expr)>) -> Expr {
+    Expr::Match {
+        expr: Box::new(scrutinee),
+        arms: arms.into_iter().map(|(pattern, body)| {
+            crate::ast::MatchArm {
+                pattern,
+                guard: None,
+                body,
+            }
+        }).collect(),
+    }
+}
+
+/// Helper to create a wildcard pattern for match arms.
+fn wildcard_pattern() -> crate::ast::Pattern {
+    crate::ast::Pattern::Wildcard
 }
 
 /// Helper to create an if expression.
@@ -1544,4 +1604,193 @@ fn for_expr(binding: &str, iter: Expr, body_stmts: Vec<Stmt>) -> Expr {
             expr: None,
         },
     }
+}
+
+// =============================================================================
+// Additional specification tests for Phase 3
+// =============================================================================
+
+#[test]
+fn spec_break_with_await_value_returns_error() {
+    // async rite break_await() -> i64 {
+    //     loop {
+    //         break fetch()|await;
+    //     }
+    // }
+    let func = make_async_fn(
+        "break_await",
+        vec![
+            Stmt::Expr(loop_expr(
+                vec![
+                    Stmt::Expr(break_expr(Some(await_expr(call("fetch", vec![]))))),
+                ],
+                None,
+            )),
+        ],
+        None,
+    );
+
+    let result = transform_async_function(&func);
+    assert!(result.is_err(), "break with await value should return error");
+
+    let err = result.unwrap_err();
+    assert!(
+        err.message.contains("break") && err.message.contains("await"),
+        "Error should mention break and await, got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn spec_labeled_break_in_nested_loop() {
+    // async rite labeled_break() -> i64 {
+    //     'outer: loop {
+    //         loop {
+    //             let x = fetch()|await;
+    //             break 'outer;
+    //         }
+    //     }
+    //     42
+    // }
+    let inner_loop = loop_expr(
+        vec![
+            let_stmt("x", await_expr(call("fetch", vec![]))),
+            Stmt::Semi(labeled_break_expr("outer", None)),
+        ],
+        None,
+    );
+
+    let func = make_async_fn(
+        "labeled_break",
+        vec![
+            Stmt::Semi(labeled_loop_expr(
+                "outer",
+                vec![Stmt::Expr(inner_loop)],
+                None,
+            )),
+        ],
+        Some(int_lit(42)),
+    );
+
+    let result = transform_async_function(&func);
+    assert!(result.is_ok(), "labeled break should work: {:?}", result.err());
+
+    let ir = result.unwrap();
+    assert!(ir.validate().is_ok());
+}
+
+#[test]
+fn spec_labeled_continue_in_nested_loop() {
+    // async rite labeled_continue() -> i64 {
+    //     'outer: loop {
+    //         loop {
+    //             let x = fetch()|await;
+    //             continue 'outer;
+    //         }
+    //     }
+    // }
+    let inner_loop = loop_expr(
+        vec![
+            let_stmt("x", await_expr(call("fetch", vec![]))),
+            Stmt::Semi(labeled_continue_expr("outer")),
+        ],
+        None,
+    );
+
+    let func = make_async_fn(
+        "labeled_continue",
+        vec![
+            Stmt::Expr(labeled_loop_expr(
+                "outer",
+                vec![Stmt::Expr(inner_loop)],
+                None,
+            )),
+        ],
+        None,
+    );
+
+    let result = transform_async_function(&func);
+    assert!(result.is_ok(), "labeled continue should work: {:?}", result.err());
+
+    let ir = result.unwrap();
+    assert!(ir.validate().is_ok());
+}
+
+#[test]
+fn spec_match_with_await_returns_error() {
+    // async rite match_await() -> i64 {
+    //     match x {
+    //         _ => fetch()|await,
+    //     }
+    // }
+    let func = make_async_fn(
+        "match_await",
+        vec![
+            Stmt::Expr(match_expr(
+                ident_path("x"),
+                vec![(wildcard_pattern(), await_expr(call("fetch", vec![])))],
+            )),
+        ],
+        None,
+    );
+
+    let result = transform_async_function(&func);
+    assert!(result.is_err(), "match with await should return error");
+
+    let err = result.unwrap_err();
+    assert!(
+        err.message.contains("Match"),
+        "Error should mention 'Match', got: {}",
+        err.message
+    );
+}
+
+#[test]
+fn spec_nested_if_inside_loop_with_await() {
+    // async rite nested_if_loop() -> i64 {
+    //     loop {
+    //         if condition {
+    //             let x = fetch()|await;
+    //             if inner_cond {
+    //                 break;
+    //             }
+    //         }
+    //     }
+    //     42
+    // }
+    let inner_if = if_expr(
+        ident_path("inner_cond"),
+        vec![Stmt::Semi(break_expr(None))],
+        None,
+        None,
+        None,
+    );
+
+    let outer_if = if_expr(
+        ident_path("condition"),
+        vec![
+            let_stmt("x", await_expr(call("fetch", vec![]))),
+            Stmt::Semi(inner_if),
+        ],
+        None,
+        None,
+        None,
+    );
+
+    let func = make_async_fn(
+        "nested_if_loop",
+        vec![
+            Stmt::Semi(loop_expr(
+                vec![Stmt::Semi(outer_if)],
+                None,
+            )),
+        ],
+        Some(int_lit(42)),
+    );
+
+    let result = transform_async_function(&func);
+    assert!(result.is_ok(), "nested if inside loop with await should work: {:?}", result.err());
+
+    let ir = result.unwrap();
+    assert!(ir.validate().is_ok());
 }

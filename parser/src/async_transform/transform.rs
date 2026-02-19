@@ -167,6 +167,9 @@ fn count_awaits_in_expr(expr: &Expr) -> usize {
         Expr::Return(value) => {
             value.as_ref().map_or(0, |e| count_awaits_in_expr(e))
         }
+        Expr::Break { value, .. } => {
+            value.as_ref().map_or(0, |e| count_awaits_in_expr(e))
+        }
         Expr::Try(inner) => count_awaits_in_expr(inner),
         Expr::Index { expr, index, .. } => {
             count_awaits_in_expr(expr) + count_awaits_in_expr(index)
@@ -197,9 +200,6 @@ struct LoopContext {
     exit_state: u32,
     /// Optional label for labeled break/continue
     label: Option<String>,
-    /// Optional binding name for break values (for loops-as-expressions)
-    #[allow(dead_code)]
-    break_value_binding: Option<String>,
 }
 
 /// The async function transformer.
@@ -397,6 +397,26 @@ impl<'a> AsyncTransformer<'a> {
                     if count_awaits_in_block(body) > 0 {
                         return Err(TransformError::unsupported(
                             "For loops with await not yet supported (requires iterator desugaring)"
+                        ));
+                    }
+                }
+
+                // Match expressions with await - not yet supported
+                if let Expr::Match { expr: scrutinee, arms } = expr {
+                    let scrutinee_awaits = count_awaits_in_expr(scrutinee);
+                    let arms_awaits: usize = arms.iter().map(|arm| count_awaits_in_expr(&arm.body)).sum();
+                    if scrutinee_awaits > 0 || arms_awaits > 0 {
+                        return Err(TransformError::unsupported(
+                            "Match expressions with await not yet supported (requires control flow analysis)"
+                        ));
+                    }
+                }
+
+                // Break with await in value - not yet supported
+                if let Expr::Break { value: Some(value), .. } = expr {
+                    if count_awaits_in_expr(value) > 0 {
+                        return Err(TransformError::unsupported(
+                            "break with await in value expression not yet supported (deferred to Phase 4)"
                         ));
                     }
                 }
@@ -880,7 +900,6 @@ impl<'a> AsyncTransformer<'a> {
             head_state: loop_head_idx,
             exit_state: exit_state_idx,
             label: label.map(|l| l.name.clone()),
-            break_value_binding: None,
         });
 
         // Transform the loop body
@@ -944,7 +963,6 @@ impl<'a> AsyncTransformer<'a> {
             head_state: loop_head_idx,
             exit_state: exit_state_idx,
             label: label.map(|l| l.name.clone()),
-            break_value_binding: None,
         });
 
         // Transform the loop body
@@ -1021,6 +1039,14 @@ impl<'a> AsyncTransformer<'a> {
 
         // Handle break with value by creating a synthetic local
         if let Some(value_expr) = value {
+            // Check if the value expression contains an await - this is not yet supported
+            // because it would require creating a suspension point before the break
+            if count_awaits_in_expr(value_expr) > 0 {
+                return Err(TransformError::unsupported(
+                    "break with await in value expression not yet supported (deferred to Phase 4)"
+                ));
+            }
+
             // Generate a unique synthetic local name for the break value
             let synthetic_name = format!("__break_value_{}", self.synthetic_counter);
             self.synthetic_counter += 1;

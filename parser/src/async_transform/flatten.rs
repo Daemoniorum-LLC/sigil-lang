@@ -1712,7 +1712,8 @@ pub fn flatten_function(func: &mut Function) -> FlattenResult<()> {
     }
 
     // Flatten the body - take ownership of the body
-    let body = func.body.take().unwrap();
+    // SAFETY: func.body is guaranteed to be Some by the guard at line 1694
+    let body = func.body.take().expect("func.body guaranteed Some by earlier guard");
     let mut ctx = FlattenContext::new();
     func.body = Some(flatten_block(&mut ctx, body)?);
 
