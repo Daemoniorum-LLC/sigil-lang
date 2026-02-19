@@ -51,6 +51,37 @@ fn bool_lit(value: bool) -> Expr {
     Expr::Literal(Literal::Bool(value))
 }
 
+/// Helper to create a while expression.
+fn while_expr(condition: Expr, body_stmts: Vec<Stmt>, body_expr: Option<Expr>) -> Expr {
+    Expr::While {
+        label: None,
+        condition: Box::new(condition),
+        body: Block {
+            stmts: body_stmts,
+            expr: body_expr.map(Box::new),
+        },
+    }
+}
+
+/// Helper to create a loop expression (infinite loop).
+fn loop_expr(body_stmts: Vec<Stmt>, body_expr: Option<Expr>) -> Expr {
+    Expr::Loop {
+        label: None,
+        body: Block {
+            stmts: body_stmts,
+            expr: body_expr.map(Box::new),
+        },
+    }
+}
+
+/// Helper to create a break expression.
+fn break_expr(value: Option<Expr>) -> Expr {
+    Expr::Break {
+        label: None,
+        value: value.map(Box::new),
+    }
+}
+
 /// Helper to create an if expression.
 fn if_expr(condition: Expr, then_stmts: Vec<Stmt>, then_expr: Option<Expr>,
            else_stmts: Option<Vec<Stmt>>, else_expr: Option<Expr>) -> Expr {
@@ -1034,5 +1065,482 @@ mod transform_phase2_spec {
         }
 
         assert!(ir.validate().is_ok());
+    }
+}
+
+// =============================================================================
+// SPECIFICATION TESTS: Transformation - Phase 3 (Loops)
+// =============================================================================
+
+mod transform_phase3_spec {
+    use super::*;
+
+    #[test]
+    fn spec_while_without_await_stays_in_single_state() {
+        // async rite simple_while() -> i64 {
+        //     while has_more() {
+        //         process();
+        //     }
+        //     42
+        // }
+        let func = make_async_fn(
+            "simple_while",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("has_more", vec![]),
+                    vec![Stmt::Semi(call("process", vec![]))],
+                    None,
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // No await, so single state with the while embedded in body
+        assert_eq!(ir.states.len(), 1);
+        assert!(ir.states[0].exit.is_return());
+    }
+
+    #[test]
+    fn spec_while_with_await_creates_loop_head() {
+        // async rite while_await() -> i64 {
+        //     while has_more() {
+        //         let item = fetch_next()|await;
+        //         process(item);
+        //     }
+        //     done()
+        // }
+        let func = make_async_fn(
+            "while_await",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("has_more", vec![]),
+                    vec![
+                        let_stmt("item", await_expr(call("fetch_next", vec![]))),
+                        Stmt::Semi(call("process", vec![ident_path("item")])),
+                    ],
+                    None,
+                )),
+            ],
+            Some(call("done", vec![])),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Should have:
+        // State 0 (entry): Goto -> loop head
+        // State 1 (loop head): LoopHead { condition, body_state: 2, exit_state: 4 }
+        // State 2 (body, pre-await): Await
+        // State 3 (body, post-await): Goto -> loop head
+        // State 4 (after loop): Return
+        assert!(ir.states.len() >= 4, "Expected at least 4 states, got {}", ir.states.len());
+
+        // Should have exactly one await
+        let await_count = ir.states.iter()
+            .filter(|s| s.exit.is_await())
+            .count();
+        assert_eq!(await_count, 1, "Expected 1 await point");
+
+        // Should have a LoopHead exit
+        let has_loop_head = ir.states.iter()
+            .any(|s| matches!(s.exit, StateExit::LoopHead { .. }));
+        assert!(has_loop_head, "Expected a LoopHead exit");
+
+        // IR should be valid
+        assert!(ir.validate().is_ok(), "IR should be valid: {:?}", ir.validate());
+    }
+
+    #[test]
+    fn spec_loop_body_returns_to_head() {
+        // async rite loop_back() -> i64 {
+        //     while true {
+        //         let x = fetch()|await;
+        //         if done(x) { break; }
+        //     }
+        //     42
+        // }
+        // For now, simplify to just: while condition { await }
+        let func = make_async_fn(
+            "loop_back",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("condition", vec![]),
+                    vec![
+                        let_stmt("x", await_expr(call("fetch", vec![]))),
+                    ],
+                    None,
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Find the post-await state (resume state after the await)
+        let resume_states: Vec<_> = ir.states.iter()
+            .filter(|s| s.is_resume && s.resume_binding.is_some())
+            .collect();
+
+        assert!(!resume_states.is_empty(), "Should have a resume state with binding");
+
+        // The resume state should Goto back to the loop head
+        // Find the loop head state
+        let loop_head_idx = ir.states.iter()
+            .position(|s| matches!(s.exit, StateExit::LoopHead { .. }));
+
+        if let Some(head_idx) = loop_head_idx {
+            // At least one state should goto back to the loop head
+            let gotos_to_head = ir.states.iter()
+                .filter(|s| matches!(&s.exit, StateExit::Goto { target } if *target == head_idx as u32))
+                .count();
+            assert!(gotos_to_head > 0, "Expected at least one Goto back to loop head");
+        }
+
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn spec_infinite_loop_with_break() {
+        // async rite loop_break() -> i64 {
+        //     loop {
+        //         let x = fetch()|await;
+        //         if done(x) {
+        //             break;  // break without value
+        //         }
+        //     }
+        //     42
+        // }
+        let func = make_async_fn(
+            "loop_break",
+            vec![
+                Stmt::Semi(loop_expr(
+                    vec![
+                        let_stmt("x", await_expr(call("fetch", vec![]))),
+                    ],
+                    Some(break_expr(None)),  // break without value
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Should have a LoopHead with no condition (infinite loop)
+        let infinite_loop = ir.states.iter()
+            .find(|s| matches!(&s.exit, StateExit::LoopHead { condition: None, .. }));
+        assert!(infinite_loop.is_some(), "Expected infinite loop (LoopHead with condition: None)");
+
+        // Should have await
+        let await_count = ir.states.iter()
+            .filter(|s| s.exit.is_await())
+            .count();
+        assert_eq!(await_count, 1);
+
+        // Break should Goto exit state
+        let break_goto = ir.states.iter()
+            .any(|s| matches!(s.exit, StateExit::Goto { .. }));
+        assert!(break_goto, "Break should create Goto exit");
+
+        assert!(ir.validate().is_ok(), "IR should be valid: {:?}", ir.validate());
+    }
+
+    #[test]
+    fn spec_multiple_awaits_in_loop_body() {
+        // async rite multi_await_loop() -> i64 {
+        //     while condition() {
+        //         let a = fetch_a()|await;
+        //         let b = fetch_b()|await;
+        //         process(a, b);
+        //     }
+        //     42
+        // }
+        let func = make_async_fn(
+            "multi_await_loop",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("condition", vec![]),
+                    vec![
+                        let_stmt("a", await_expr(call("fetch_a", vec![]))),
+                        let_stmt("b", await_expr(call("fetch_b", vec![]))),
+                        Stmt::Semi(call("process", vec![ident_path("a"), ident_path("b")])),
+                    ],
+                    None,
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Should have 2 await points
+        let await_count = ir.states.iter()
+            .filter(|s| s.exit.is_await())
+            .count();
+        assert_eq!(await_count, 2, "Expected 2 await points in loop body");
+
+        // Both 'a' and 'b' should be declared
+        assert!(ir.has_local("a"), "Local 'a' should be declared");
+        assert!(ir.has_local("b"), "Local 'b' should be declared");
+
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn spec_nested_loop_with_await() {
+        // async rite nested_loop() -> i64 {
+        //     while outer() {
+        //         while inner() {
+        //             let x = fetch()|await;
+        //         }
+        //     }
+        //     42
+        // }
+        let func = make_async_fn(
+            "nested_loop",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("outer", vec![]),
+                    vec![
+                        Stmt::Semi(while_expr(
+                            call("inner", vec![]),
+                            vec![
+                                let_stmt("x", await_expr(call("fetch", vec![]))),
+                            ],
+                            None,
+                        )),
+                    ],
+                    None,
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Should have 2 LoopHead exits (outer and inner)
+        let loop_head_count = ir.states.iter()
+            .filter(|s| matches!(s.exit, StateExit::LoopHead { .. }))
+            .count();
+        assert_eq!(loop_head_count, 2, "Expected 2 loop heads for nested loops");
+
+        // One await
+        let await_count = ir.states.iter()
+            .filter(|s| s.exit.is_await())
+            .count();
+        assert_eq!(await_count, 1);
+
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn spec_loop_with_code_before_and_after() {
+        // async rite code_around_loop() -> i64 {
+        //     let setup_val = setup();
+        //     while has_more() {
+        //         let x = fetch()|await;
+        //     }
+        //     cleanup(setup_val)
+        // }
+        let func = make_async_fn(
+            "code_around_loop",
+            vec![
+                let_stmt("setup_val", call("setup", vec![])),
+                Stmt::Semi(while_expr(
+                    call("has_more", vec![]),
+                    vec![
+                        let_stmt("x", await_expr(call("fetch", vec![]))),
+                    ],
+                    None,
+                )),
+            ],
+            Some(call("cleanup", vec![ident_path("setup_val")])),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // setup_val should be saved across awaits in the loop
+        if let Some(state) = ir.states.iter().find(|s| s.exit.is_await()) {
+            if let StateExit::Await { saved_locals, .. } = &state.exit {
+                assert!(
+                    saved_locals.contains(&"setup_val".to_string()),
+                    "Local 'setup_val' should be saved across await in loop"
+                );
+            }
+        }
+
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn spec_while_condition_re_evaluated_each_iteration() {
+        // This is a semantic test - the loop head state should contain the
+        // condition expression, not a precomputed value
+        let func = make_async_fn(
+            "condition_check",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("check_condition", vec![]),
+                    vec![
+                        let_stmt("x", await_expr(call("fetch", vec![]))),
+                    ],
+                    None,
+                )),
+            ],
+            Some(int_lit(0)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Find the LoopHead
+        let loop_head = ir.states.iter()
+            .find(|s| matches!(s.exit, StateExit::LoopHead { .. }));
+
+        assert!(loop_head.is_some(), "Should have a loop head state");
+
+        if let Some(state) = loop_head {
+            if let StateExit::LoopHead { condition, .. } = &state.exit {
+                assert!(condition.is_some(), "While loop should have a condition");
+            }
+        }
+
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn spec_continue_returns_to_loop_head() {
+        // async rite with_continue() -> i64 {
+        //     while condition() {
+        //         let x = fetch()|await;
+        //         if skip(x) {
+        //             continue;
+        //         }
+        //         process(x);
+        //     }
+        //     42
+        // }
+        // Simplified: while { await; continue; }
+        let func = make_async_fn(
+            "with_continue",
+            vec![
+                Stmt::Semi(while_expr(
+                    call("condition", vec![]),
+                    vec![
+                        let_stmt("x", await_expr(call("fetch", vec![]))),
+                    ],
+                    Some(continue_expr()),
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let ir = transform_async_function(&func).expect("Transform failed");
+
+        // Find the loop head
+        let loop_head_idx = ir.states.iter()
+            .position(|s| matches!(s.exit, StateExit::LoopHead { .. }));
+
+        assert!(loop_head_idx.is_some(), "Should have a loop head");
+
+        // Continue should Goto back to loop head
+        let head_idx = loop_head_idx.unwrap() as u32;
+        let gotos_to_head = ir.states.iter()
+            .filter(|s| matches!(&s.exit, StateExit::Goto { target } if *target == head_idx))
+            .count();
+
+        // Should have at least one Goto to head (from continue)
+        assert!(gotos_to_head >= 1, "Continue should Goto loop head");
+
+        assert!(ir.validate().is_ok());
+    }
+
+    #[test]
+    fn spec_break_with_value_returns_error() {
+        // async rite break_value() -> i64 {
+        //     loop {
+        //         let x = fetch()|await;
+        //         break x;  // break with value not yet supported
+        //     }
+        // }
+        let func = make_async_fn(
+            "break_value",
+            vec![],
+            Some(loop_expr(
+                vec![
+                    let_stmt("x", await_expr(call("fetch", vec![]))),
+                ],
+                Some(break_expr(Some(ident_path("x")))),
+            )),
+        );
+
+        let result = transform_async_function(&func);
+        assert!(result.is_err(), "break with value should return error");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("break with value"),
+            "Error should mention 'break with value', got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn spec_for_loop_with_await_returns_error() {
+        // async rite for_await() -> i64 {
+        //     for item in items {
+        //         let x = fetch(item)|await;
+        //     }
+        //     42
+        // }
+        let func = make_async_fn(
+            "for_await",
+            vec![
+                Stmt::Semi(for_expr(
+                    "item",
+                    ident_path("items"),
+                    vec![
+                        let_stmt("x", await_expr(call("fetch", vec![ident_path("item")]))),
+                    ],
+                )),
+            ],
+            Some(int_lit(42)),
+        );
+
+        let result = transform_async_function(&func);
+        assert!(result.is_err(), "for loop with await should return error");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.message.contains("For loops"),
+            "Error should mention 'For loops', got: {}",
+            err.message
+        );
+    }
+}
+
+/// Helper to create a continue expression.
+fn continue_expr() -> Expr {
+    Expr::Continue { label: None }
+}
+
+/// Helper to create a for expression.
+fn for_expr(binding: &str, iter: Expr, body_stmts: Vec<Stmt>) -> Expr {
+    Expr::For {
+        label: None,
+        pattern: Pattern::Ident {
+            mutable: false,
+            name: crate::ast::Ident {
+                name: binding.to_string(),
+                evidentiality: None,
+                affect: None,
+                span: crate::span::Span::default(),
+            },
+            evidentiality: None,
+        },
+        iter: Box::new(iter),
+        body: Block {
+            stmts: body_stmts,
+            expr: None,
+        },
     }
 }

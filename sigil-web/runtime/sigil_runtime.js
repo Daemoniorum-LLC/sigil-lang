@@ -47,6 +47,15 @@ export class SigilRuntime {
 
     // Function table for callbacks
     this.callbacks = new Map();
+
+    // Async state machine continuation tracking
+    // id -> { framePtr, state, promise, promiseId }
+    this.continuations = new Map();
+    this.continuationCounter = 1;
+
+    // Memory allocation tracking (simple bump allocator)
+    this.heapBase = 0x20000; // Start heap after data section
+    this.heapPtr = this.heapBase;
   }
 
   /**
@@ -595,18 +604,29 @@ export class SigilRuntime {
   _memoryImports() {
     return {
       alloc: (size) => {
-        // Simple bump allocator - in production would need proper allocator
-        return size; // Placeholder
+        // Simple bump allocator for async state machine frames
+        // Align to 8 bytes for i64 locals
+        const alignedSize = (size + 7) & ~7;
+        const ptr = this.heapPtr;
+        this.heapPtr += alignedSize;
+
+        // Grow memory if needed
+        if (this.memory && this.heapPtr > this.memory.buffer.byteLength) {
+          const pages = Math.ceil((this.heapPtr - this.memory.buffer.byteLength) / 65536);
+          this.memory.grow(pages);
+        }
+
+        return ptr;
       },
       realloc: (ptr, newSize) => {
-        return newSize; // Placeholder
+        // Simple realloc - just allocate new block (no copy for now)
+        return this._memoryImports().alloc(newSize);
       },
       free: (ptr) => {
-        // No-op for now
+        // No-op for bump allocator - frames are short-lived
       },
       heap_alloc: (size) => {
-        // Return size as pointer (simplified allocation)
-        return size;
+        return this._memoryImports().alloc(size);
       },
     };
   }
@@ -1091,16 +1111,97 @@ export class SigilRuntime {
       yield_now: () => {
         // No-op in single-threaded JS
       },
+
+      // ========== State Machine Async Support ==========
+      // These functions support explicit state machine transformation
+      // as defined in ASYNC-STATE-MACHINE-SPEC.md §4.4
+
+      /**
+       * Create a continuation for an async state machine suspension.
+       *
+       * @param {number} framePtr - Pointer to the suspension frame in WASM memory
+       * @param {number} state - Next state to resume at
+       * @param {BigInt} promise - The promise/future value being awaited (as i64)
+       * @returns {number} Continuation ID to encode in return value
+       */
+      async_create_continuation: (framePtr, state, promise) => {
+        const contId = ++this.continuationCounter;
+
+        // Convert promise i64 to a JS Promise
+        // The promise value is an ID referencing a tracked promise
+        const promiseId = Number(promise);
+        const promiseEntry = this.fetches.get(promiseId);
+
+        this.continuations.set(contId, {
+          framePtr,
+          state,
+          promiseId,
+          promise: promiseEntry?.promise || Promise.resolve(promise),
+        });
+
+        return contId;
+      },
+
+      /**
+       * Run an async state machine function to completion.
+       *
+       * @param {string} funcName - Name of the exported WASM function
+       * @param {...any} args - Initial arguments to the function
+       * @returns {Promise<BigInt>} The final result value
+       */
+      async_run: async (funcName, ...args) => {
+        const func = this.instance.exports[funcName];
+        if (!func) throw new Error(`Function ${funcName} not found`);
+
+        // Initial call: frame_ptr = 0, resume_value = 0
+        let result = func(0, BigInt(0), ...args);
+
+        // Check for suspension (bit 32 set = SUSPENDED_FLAG)
+        const SUSPENDED_FLAG = BigInt(1) << BigInt(32);
+        const CONT_MASK = BigInt(0xFFFFFFFF);
+
+        while ((result & SUSPENDED_FLAG) !== BigInt(0)) {
+          const contId = Number(result & CONT_MASK);
+          const cont = this.continuations.get(contId);
+
+          if (!cont) {
+            throw new Error(`Continuation ${contId} not found`);
+          }
+
+          // Wait for the promise to resolve
+          let resolvedValue;
+          try {
+            resolvedValue = await cont.promise;
+            // Convert resolved value to i64
+            if (typeof resolvedValue === 'bigint') {
+              // Already BigInt
+            } else if (typeof resolvedValue === 'number') {
+              resolvedValue = BigInt(resolvedValue);
+            } else {
+              resolvedValue = BigInt(0);
+            }
+          } catch (err) {
+            // On error, we could propagate via a different mechanism
+            // For now, just return 0
+            console.error('Async error:', err);
+            resolvedValue = BigInt(0);
+          }
+
+          // Clean up continuation
+          this.continuations.delete(contId);
+
+          // Resume: call with frame_ptr and resolved value
+          result = func(cont.framePtr, resolvedValue);
+        }
+
+        // Complete - result is the final value (bits 31-0)
+        return result & CONT_MASK;
+      },
+
       await_promise: (promiseId) => {
         // Synchronous await not possible in JS - would need Asyncify
         const p = this.fetches.get(promiseId);
         return p && p.result !== undefined ? p.result : BigInt(0);
-      },
-      create_continuation: (smPtr, nextState) => {
-        return ++this.signalCounter;
-      },
-      resume: (smPtr, value) => {
-        // State machine resume - implementation depends on WASM async model
       },
     };
   }

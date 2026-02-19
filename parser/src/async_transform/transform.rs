@@ -169,6 +169,17 @@ fn pattern_to_name(pattern: &Pattern) -> Option<String> {
     }
 }
 
+/// Context for tracking loop state during transformation.
+#[derive(Debug, Clone)]
+struct LoopContext {
+    /// State index of the loop head (where condition is checked)
+    head_state: u32,
+    /// State index after the loop exits
+    exit_state: u32,
+    /// Optional label for labeled break/continue
+    label: Option<String>,
+}
+
 /// The async function transformer.
 struct AsyncTransformer<'a> {
     func: &'a Function,
@@ -176,6 +187,8 @@ struct AsyncTransformer<'a> {
     current_state_idx: u32,
     /// Locals that are currently live (defined and may be used later)
     live_locals: Vec<String>,
+    /// Stack of enclosing loops for break/continue handling
+    loop_stack: Vec<LoopContext>,
 }
 
 impl<'a> AsyncTransformer<'a> {
@@ -197,6 +210,7 @@ impl<'a> AsyncTransformer<'a> {
             ir: StateMachineIR::new(func.name.name.clone(), params, result_type),
             current_state_idx: 0,
             live_locals: Vec::new(),
+            loop_stack: Vec::new(),
         })
     }
 
@@ -337,6 +351,31 @@ impl<'a> AsyncTransformer<'a> {
                     }
                 }
 
+                // Handle while loops with awaits
+                if let Expr::While { label, condition, body } = expr {
+                    if count_awaits_in_block(body) > 0 {
+                        self.transform_while_expr(label.as_ref(), condition, body)?;
+                        return Ok(());
+                    }
+                }
+
+                // Handle infinite loops with awaits
+                if let Expr::Loop { label, body } = expr {
+                    if count_awaits_in_block(body) > 0 {
+                        self.transform_loop_expr(label.as_ref(), body)?;
+                        return Ok(());
+                    }
+                }
+
+                // For loops with await - not yet supported
+                if let Expr::For { body, .. } = expr {
+                    if count_awaits_in_block(body) > 0 {
+                        return Err(TransformError::unsupported(
+                            "For loops with await not yet supported (requires iterator desugaring)"
+                        ));
+                    }
+                }
+
                 if count_awaits_in_expr(expr) > 0 {
                     // Expression with await
                     if let Some(await_expr) = extract_direct_await(expr) {
@@ -403,6 +442,31 @@ impl<'a> AsyncTransformer<'a> {
                     else_branch.as_deref(),
                     IfContext::Trailing,
                 );
+            }
+        }
+
+        // Handle while loop in trailing position
+        if let Expr::While { label, condition, body } = expr {
+            if count_awaits_in_block(body) > 0 {
+                self.transform_while_expr(label.as_ref(), condition, body)?;
+                // After while, set return for the exit state
+                let state = self.ir.get_state_mut(self.current_state_idx).unwrap();
+                state.exit = StateExit::Return { value: Expr::Tuple(vec![]) };
+                return Ok(());
+            }
+        }
+
+        // Handle loop in trailing position
+        if let Expr::Loop { label, body } = expr {
+            if count_awaits_in_block(body) > 0 {
+                self.transform_loop_expr(label.as_ref(), body)?;
+                // After loop, the exit state should have a return
+                // Note: for infinite loops without break, exit state may be unreachable
+                let state = self.ir.get_state_mut(self.current_state_idx).unwrap();
+                if matches!(state.exit, StateExit::Unreachable) {
+                    state.exit = StateExit::Return { value: Expr::Tuple(vec![]) };
+                }
+                return Ok(());
             }
         }
 
@@ -731,6 +795,238 @@ impl<'a> AsyncTransformer<'a> {
 
         // Update current state
         self.current_state_idx = next_state_idx;
+
+        Ok(())
+    }
+
+    /// Transform a while loop with await points in its body.
+    ///
+    /// Creates a LoopHead state that checks the condition, with transitions
+    /// to the body or to the exit state.
+    fn transform_while_expr(
+        &mut self,
+        label: Option<&crate::ast::Ident>,
+        condition: &Expr,
+        body: &Block,
+    ) -> TransformResult<()> {
+        // Check for await in condition (not yet supported)
+        if count_awaits_in_expr(condition) > 0 {
+            return Err(TransformError::unsupported(
+                "Await in while condition not yet supported"
+            ));
+        }
+
+        // Save current state for the Goto to loop head
+        let pre_loop_state_idx = self.current_state_idx;
+
+        // Create loop head state
+        let loop_head_idx = self.ir.next_state_idx();
+        let loop_head = State::intermediate(loop_head_idx);
+        self.ir.add_state(loop_head);
+
+        // Create body start state
+        let body_state_idx = self.ir.next_state_idx();
+        let body_state = State::intermediate(body_state_idx);
+        self.ir.add_state(body_state);
+
+        // Create exit state (after the loop)
+        let exit_state_idx = self.ir.next_state_idx();
+        let exit_state = State::intermediate(exit_state_idx);
+        self.ir.add_state(exit_state);
+
+        // Set pre-loop state to Goto loop head
+        {
+            let state = self.ir.get_state_mut(pre_loop_state_idx).unwrap();
+            state.exit = StateExit::Goto { target: loop_head_idx };
+        }
+
+        // Set loop head's exit to LoopHead
+        {
+            let state = self.ir.get_state_mut(loop_head_idx).unwrap();
+            state.exit = StateExit::LoopHead {
+                condition: Some(condition.clone()),
+                body_state: body_state_idx,
+                exit_state: exit_state_idx,
+            };
+        }
+
+        // Push loop context for break/continue handling
+        self.loop_stack.push(LoopContext {
+            head_state: loop_head_idx,
+            exit_state: exit_state_idx,
+            label: label.map(|l| l.name.clone()),
+        });
+
+        // Transform the loop body
+        self.current_state_idx = body_state_idx;
+        let saved_live_locals = self.live_locals.clone();
+
+        self.transform_loop_body(body, loop_head_idx)?;
+
+        // Pop loop context
+        self.loop_stack.pop();
+
+        // Restore live locals and continue after the loop
+        self.live_locals = saved_live_locals;
+        self.current_state_idx = exit_state_idx;
+
+        Ok(())
+    }
+
+    /// Transform an infinite loop (loop { ... }) with await points.
+    fn transform_loop_expr(
+        &mut self,
+        label: Option<&crate::ast::Ident>,
+        body: &Block,
+    ) -> TransformResult<()> {
+        // Save current state for the Goto to loop head
+        let pre_loop_state_idx = self.current_state_idx;
+
+        // Create loop head state
+        let loop_head_idx = self.ir.next_state_idx();
+        let loop_head = State::intermediate(loop_head_idx);
+        self.ir.add_state(loop_head);
+
+        // Create body start state
+        let body_state_idx = self.ir.next_state_idx();
+        let body_state = State::intermediate(body_state_idx);
+        self.ir.add_state(body_state);
+
+        // Create exit state (after the loop - reachable via break)
+        let exit_state_idx = self.ir.next_state_idx();
+        let exit_state = State::intermediate(exit_state_idx);
+        self.ir.add_state(exit_state);
+
+        // Set pre-loop state to Goto loop head
+        {
+            let state = self.ir.get_state_mut(pre_loop_state_idx).unwrap();
+            state.exit = StateExit::Goto { target: loop_head_idx };
+        }
+
+        // Set loop head's exit to LoopHead with no condition (infinite loop)
+        {
+            let state = self.ir.get_state_mut(loop_head_idx).unwrap();
+            state.exit = StateExit::LoopHead {
+                condition: None,
+                body_state: body_state_idx,
+                exit_state: exit_state_idx,
+            };
+        }
+
+        // Push loop context for break/continue handling
+        self.loop_stack.push(LoopContext {
+            head_state: loop_head_idx,
+            exit_state: exit_state_idx,
+            label: label.map(|l| l.name.clone()),
+        });
+
+        // Transform the loop body
+        self.current_state_idx = body_state_idx;
+        let saved_live_locals = self.live_locals.clone();
+
+        self.transform_loop_body(body, loop_head_idx)?;
+
+        // Pop loop context
+        self.loop_stack.pop();
+
+        // Restore live locals and continue after the loop
+        self.live_locals = saved_live_locals;
+        self.current_state_idx = exit_state_idx;
+
+        Ok(())
+    }
+
+    /// Transform the body of a loop, ensuring it returns to the loop head.
+    fn transform_loop_body(&mut self, body: &Block, loop_head_idx: u32) -> TransformResult<()> {
+        // Transform statements in the body
+        for stmt in &body.stmts {
+            self.transform_stmt(stmt)?;
+        }
+
+        // Handle trailing expression
+        if let Some(expr) = &body.expr {
+            // Check for break expression
+            if let Expr::Break { label, value } = expr.as_ref() {
+                return self.handle_break(label.as_ref(), value.as_deref());
+            }
+
+            // Check for continue expression
+            if let Expr::Continue { label } = expr.as_ref() {
+                return self.handle_continue(label.as_ref());
+            }
+
+            // Other trailing expression - evaluate and loop back
+            if count_awaits_in_expr(expr) > 0 {
+                if let Some(await_expr) = extract_direct_await(expr) {
+                    self.emit_await(await_expr, None)?;
+                } else {
+                    return Err(TransformError::unsupported(
+                        "Await nested in loop trailing expression not yet supported"
+                    ));
+                }
+            }
+        }
+
+        // End of loop body - go back to loop head
+        let state = self.ir.get_state_mut(self.current_state_idx).unwrap();
+        if matches!(state.exit, StateExit::Unreachable) {
+            state.exit = StateExit::Goto { target: loop_head_idx };
+        }
+
+        Ok(())
+    }
+
+    /// Handle a break expression.
+    fn handle_break(&mut self, label: Option<&crate::ast::Ident>, value: Option<&Expr>) -> TransformResult<()> {
+        // Find the target loop
+        let loop_ctx = if let Some(label) = label {
+            self.loop_stack.iter().rev()
+                .find(|ctx| ctx.label.as_ref() == Some(&label.name))
+                .ok_or_else(|| TransformError::unsupported(
+                    format!("No loop found with label '{}'", label.name)
+                ))?
+        } else {
+            self.loop_stack.last()
+                .ok_or_else(|| TransformError::unsupported("break outside of loop"))?
+        };
+
+        let exit_state = loop_ctx.exit_state;
+
+        // Break with value requires binding the value to be returned from the loop.
+        // This is complex: the loop needs to know where to store the break value,
+        // and all break points must agree on the binding. Deferred to Phase 4.
+        if value.is_some() {
+            return Err(TransformError::unsupported(
+                "break with value not yet supported (requires loop-as-expression binding)"
+            ));
+        }
+
+        // Set current state to Goto exit
+        let state = self.ir.get_state_mut(self.current_state_idx).unwrap();
+        state.exit = StateExit::Goto { target: exit_state };
+
+        Ok(())
+    }
+
+    /// Handle a continue expression.
+    fn handle_continue(&mut self, label: Option<&crate::ast::Ident>) -> TransformResult<()> {
+        // Find the target loop
+        let loop_ctx = if let Some(label) = label {
+            self.loop_stack.iter().rev()
+                .find(|ctx| ctx.label.as_ref() == Some(&label.name))
+                .ok_or_else(|| TransformError::unsupported(
+                    format!("No loop found with label '{}'", label.name)
+                ))?
+        } else {
+            self.loop_stack.last()
+                .ok_or_else(|| TransformError::unsupported("continue outside of loop"))?
+        };
+
+        let head_state = loop_ctx.head_state;
+
+        // Set current state to Goto loop head
+        let state = self.ir.get_state_mut(self.current_state_idx).unwrap();
+        state.exit = StateExit::Goto { target: head_state };
 
         Ok(())
     }

@@ -317,6 +317,27 @@ Offset 16:   local_1 (i64)   - Second local
 
 All locals are stored as i64 for simplicity. Type information guides interpretation.
 
+### 4.4 Runtime Imports
+
+The compiled WASM module expects these imports from the runtime:
+
+```
+// Allocate memory for the suspension frame
+alloc(size: i32) -> i32
+
+// Register a continuation with the runtime
+// - frame_ptr: Pointer to the suspension frame
+// - state: Next state to resume at
+// - promise: The promise/future value being awaited (passed to runtime scheduler)
+// Returns: Continuation pointer to encode in return value
+async_create_continuation(frame_ptr: i32, state: i32, promise: i64) -> i32
+```
+
+The runtime is responsible for:
+1. Tracking the continuation and associated promise
+2. Polling/waiting on the promise
+3. Calling the function again with (frame_ptr, resolved_value) when the promise resolves
+
 ---
 
 ## 5. Backend Compilation
@@ -429,18 +450,21 @@ fn boundary_max_states_handled()
 - [x] Branch handling in transformation
 - [x] Join point detection
 - [x] Nested if support
-- [x] Test: if/else with awaits in both branches (7 tests passing)
+- [x] Test: if/else with awaits in both branches (9 tests passing)
 
-### Phase 3: Loops
-- [ ] While/loop handling
-- [ ] Break/continue
-- [ ] Test: while with await in body
+### Phase 3: Loops ✓
+- [x] While/loop handling with LoopHead exit
+- [x] Break/continue targeting loop head/exit states
+- [x] Loop stack for nested loop support
+- [x] Explicit errors for unsupported cases (break with value, for loops)
+- [x] Test: 11 specification tests passing
 
 ### Phase 4: Complex Cases
 - [ ] Match expressions
-- [ ] Labeled break/continue
+- [ ] Labeled break/continue (basic support implemented in Phase 3)
 - [ ] Nested control flow
 - [ ] Early return
+- [ ] Break with value (loop returning value)
 
 ---
 
@@ -457,18 +481,32 @@ fn boundary_max_states_handled()
 | 2026-02-18 | Non-await branch value lost in LetBinding context | For `let x = if { 1 } else { await }`, the value `1` was discarded when patching Return to Goto | For non-await branches, now generate synthetic `let` statement in body to assign value before Goto. |
 | 2026-02-18 | Local declaration timing inconsistent | Await branches declared in join state, but should declare where value is first assigned | Locals now declared in resume state (for await) or branch state (for non-await). Added `declare_local_if_new` helper to prevent duplicates. |
 | 2026-02-18 | No validation for orphaned states | States unreachable from entry could exist due to transformation bugs | Added reachability check to validation using BFS from entry state. |
+| 2026-02-18 | Loop in trailing position not handled | `loop { await; break }` as function's final expression wasn't transformed | Added loop handling in `transform_trailing_expr` alongside existing if handling. |
+| 2026-02-18 | Loop context needed for break/continue | Break/continue must know which loop they target | Added `LoopContext` struct and `loop_stack` field to track enclosing loops with head/exit state indices and optional labels. |
+| 2026-02-18 | Break value silently ignored | `break x` would lose the value `x` | Return explicit error: "break with value not yet supported". Deferred to Phase 4. |
+| 2026-02-18 | For loops with await not handled | `for` loops would hit generic unsupported error | Added explicit check and clear error: "For loops with await not yet supported". |
+| 2026-02-18 | LoopContext defined after use | Type defined after struct that references it | Moved `LoopContext` definition before `AsyncTransformer` struct. |
 
 ---
 
 ## 9. Open Questions
 
-1. **For expressions with await:** How to handle `≔ x = foo() + bar()|await`? The `foo()` call happens before suspension, its result must be saved.
+1. **~~For expressions with await:~~** ✓ RESOLVED - See AWAIT-EXPRESSION-FLATTENING-SPEC.md
+   - `≔ x = foo() + bar()⌛` is handled by expression flattening pre-pass
+   - Values computed before await are hoisted to temporaries
 
-2. **Multiple awaits in expression:** What about `f(a|await, b|await)`? Evaluation order? Currently Sigil is left-to-right.
+2. **~~Multiple awaits in expression:~~** ✓ RESOLVED - See AWAIT-EXPRESSION-FLATTENING-SPEC.md
+   - `f(a⌛, b⌛)` flattens to sequential `≔ __await_N = ...` bindings
+   - Left-to-right evaluation order preserved
 
-3. **Await in match scrutinee:** `match fetch()|await { ... }` - the continuation must know which arm to take.
+3. **~~Await in match scrutinee:~~** ✓ RESOLVED - See AWAIT-EXPRESSION-FLATTENING-SPEC.md
+   - `match fetch()⌛ { ... }` flattens to `≔ __await_0 = fetch()⌛; match __await_0 { ... }`
+   - Await happens before match, state machine handles match normally
 
 4. **Error handling:** If an awaited promise rejects, how does the state machine propagate the error?
+   - DECISION: Errors are values (Result types). State machine doesn't special-case errors.
+   - Runtime contract may pass tagged union (success/error) as resume_value.
+   - Error propagation via `?` operator is a separate desugaring concern.
 
 ---
 
@@ -477,3 +515,8 @@ fn boundary_max_states_handled()
 | Version | Date | Changes |
 |---------|------|---------|
 | 0.1.0 | 2026-02-18 | Initial draft. Designed IR structure and transformation algorithm outline. |
+| 0.2.0 | 2026-02-18 | Phase 1 complete: straight-line code, validation, 26 tests. |
+| 0.3.0 | 2026-02-18 | Phase 2 complete: conditionals with if/else, join states, 9 tests. |
+| 0.4.0 | 2026-02-18 | Phase 3 complete: while/loop, break/continue, nested loops, 8 tests. Total: 43 tests passing. |
+| 0.4.1 | 2026-02-18 | Phase 3 review fixes: explicit errors for break-with-value and for-loops, continue test, code cleanup. Total: 46 tests passing. |
+| 0.5.0 | 2026-02-18 | Resolved open questions 1-3 via AWAIT-EXPRESSION-FLATTENING-SPEC.md. Documented error handling decision. |

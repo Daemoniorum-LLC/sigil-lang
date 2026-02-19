@@ -29,6 +29,7 @@
 //! ```
 
 pub mod async_sm;
+pub mod async_sm_ir;
 pub mod closures;
 pub mod constants;
 pub mod control_flow;
