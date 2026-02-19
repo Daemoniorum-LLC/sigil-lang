@@ -1455,11 +1455,11 @@ mod transform_phase3_spec {
     }
 
     #[test]
-    fn spec_break_with_value_returns_error() {
+    fn spec_break_with_value_creates_synthetic_local() {
         // async rite break_value() -> i64 {
         //     loop {
         //         let x = fetch()|await;
-        //         break x;  // break with value not yet supported
+        //         break x;  // break with value creates synthetic local
         //     }
         // }
         let func = make_async_fn(
@@ -1474,14 +1474,15 @@ mod transform_phase3_spec {
         );
 
         let result = transform_async_function(&func);
-        assert!(result.is_err(), "break with value should return error");
+        assert!(result.is_ok(), "break with value should succeed");
 
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("break with value"),
-            "Error should mention 'break with value', got: {}",
-            err.message
-        );
+        let ir = result.unwrap();
+
+        // Check that a synthetic local was created for the break value
+        let has_synthetic = ir.locals.iter().any(|local| local.name.starts_with("__break_value_"));
+        assert!(has_synthetic, "Should create synthetic local for break value");
+
+        assert!(ir.validate().is_ok());
     }
 
     #[test]

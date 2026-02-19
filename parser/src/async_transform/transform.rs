@@ -85,6 +85,25 @@ pub fn needs_state_machine(func: &Function) -> bool {
     count_awaits_in_block(body) > 1
 }
 
+/// Transform an async function with flattening pre-pass.
+///
+/// This runs the expression flattening pass before state machine transformation,
+/// which simplifies complex await expressions into simple let-bindings.
+pub fn transform_with_flatten(func: &Function) -> TransformResult<StateMachineIR> {
+    use super::flatten::flatten_function;
+
+    // Clone the function so we can mutate it
+    let mut flattened = func.clone();
+
+    // Flatten complex await expressions (modifies in place)
+    flatten_function(&mut flattened).map_err(|e| {
+        TransformError::internal(format!("Flattening failed: {}", e.message))
+    })?;
+
+    // Then transform to state machine
+    transform_async_function(&flattened)
+}
+
 /// Count await points in a block.
 fn count_awaits_in_block(block: &Block) -> usize {
     let mut count = 0;
@@ -178,6 +197,9 @@ struct LoopContext {
     exit_state: u32,
     /// Optional label for labeled break/continue
     label: Option<String>,
+    /// Optional binding name for break values (for loops-as-expressions)
+    #[allow(dead_code)]
+    break_value_binding: Option<String>,
 }
 
 /// The async function transformer.
@@ -189,6 +211,8 @@ struct AsyncTransformer<'a> {
     live_locals: Vec<String>,
     /// Stack of enclosing loops for break/continue handling
     loop_stack: Vec<LoopContext>,
+    /// Counter for generating unique synthetic local names
+    synthetic_counter: u32,
 }
 
 impl<'a> AsyncTransformer<'a> {
@@ -211,6 +235,7 @@ impl<'a> AsyncTransformer<'a> {
             current_state_idx: 0,
             live_locals: Vec::new(),
             loop_stack: Vec::new(),
+            synthetic_counter: 0,
         })
     }
 
@@ -855,6 +880,7 @@ impl<'a> AsyncTransformer<'a> {
             head_state: loop_head_idx,
             exit_state: exit_state_idx,
             label: label.map(|l| l.name.clone()),
+            break_value_binding: None,
         });
 
         // Transform the loop body
@@ -918,6 +944,7 @@ impl<'a> AsyncTransformer<'a> {
             head_state: loop_head_idx,
             exit_state: exit_state_idx,
             label: label.map(|l| l.name.clone()),
+            break_value_binding: None,
         });
 
         // Transform the loop body
@@ -992,13 +1019,35 @@ impl<'a> AsyncTransformer<'a> {
 
         let exit_state = loop_ctx.exit_state;
 
-        // Break with value requires binding the value to be returned from the loop.
-        // This is complex: the loop needs to know where to store the break value,
-        // and all break points must agree on the binding. Deferred to Phase 4.
-        if value.is_some() {
-            return Err(TransformError::unsupported(
-                "break with value not yet supported (requires loop-as-expression binding)"
-            ));
+        // Handle break with value by creating a synthetic local
+        if let Some(value_expr) = value {
+            // Generate a unique synthetic local name for the break value
+            let synthetic_name = format!("__break_value_{}", self.synthetic_counter);
+            self.synthetic_counter += 1;
+
+            // Declare the synthetic local
+            self.ir.declare_local(synthetic_name.clone(), None, self.current_state_idx);
+            self.live_locals.push(synthetic_name.clone());
+
+            // Create a let statement to assign the value
+            let let_stmt = Stmt::Let {
+                pattern: Pattern::Ident {
+                    mutable: false,
+                    name: crate::ast::Ident {
+                        name: synthetic_name.clone(),
+                        evidentiality: None,
+                        affect: None,
+                        span: crate::span::Span::default(),
+                    },
+                    evidentiality: None,
+                },
+                ty: None,
+                init: Some(value_expr.clone()),
+            };
+
+            // Add the let statement to the current state
+            let state = self.ir.get_state_mut(self.current_state_idx).unwrap();
+            state.body.push(let_stmt);
         }
 
         // Set current state to Goto exit
