@@ -39980,6 +39980,62 @@ fn register_sys(interp: &mut Interpreter) {
         Ok(Value::Bool(false))
     });
 
+    // Sys·poll_fds(fds_array, timeout_ms) -> [bool]
+    // Batch poll: check multiple fds in one syscall (real fds) or loop (fake).
+    // Returns an array of bools parallel to fds_array.
+    define(interp, "Sys·poll_fds", Some(2), |_, args| {
+        let fds: Vec<i64> = match &args[0] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::Int(n) => *n,
+                _ => -1,
+            }).collect(),
+            _ => return Err(RuntimeError::new("Sys·poll_fds requires array of ints")),
+        };
+        let timeout_ms: i32 = match &args[1] {
+            Value::Int(n) => *n as i32,
+            _ => 0,
+        };
+
+        let mut results: Vec<bool> = vec![false; fds.len()];
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut pollfds: Vec<libc::pollfd> = Vec::new();
+            let mut idx_map: Vec<usize> = Vec::new();
+
+            for (i, &fd) in fds.iter().enumerate() {
+                if fd >= 0 && fd < 4000 {
+                    pollfds.push(libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 });
+                    idx_map.push(i);
+                } else {
+                    results[i] = check_fake_fd_ready(fd);
+                }
+            }
+
+            if !pollfds.is_empty() {
+                unsafe {
+                    libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, timeout_ms);
+                }
+                for (j, &i) in idx_map.iter().enumerate() {
+                    results[i] = (pollfds[j].revents & libc::POLLIN) != 0;
+                }
+            }
+
+            let out: Vec<Value> = results.into_iter().map(Value::Bool).collect();
+            return Ok(Value::Array(Rc::new(RefCell::new(out))));
+        }
+
+        // Non-native: check each fake fd individually (no blocking)
+        #[allow(unreachable_code)]
+        {
+            for (i, &fd) in fds.iter().enumerate() {
+                results[i] = check_fake_fd_ready(fd);
+            }
+            let out: Vec<Value> = results.into_iter().map(Value::Bool).collect();
+            Ok(Value::Array(Rc::new(RefCell::new(out))))
+        }
+    });
+
     // Sys·spawn_bg(cmd, args) -> {pid, stdin_fd, stdout_fd, stderr_fd}
     // Spawn a child process without waiting. Returns immediately with
     // process handles. In interpreter mode, creates fake pipe fds for I/O.
@@ -40273,25 +40329,29 @@ fn register_sys(interp: &mut Interpreter) {
         });
 
         if let Some(proc) = proc_info {
-            // Try real waitpid for real PIDs
+            // In native mode, try real libc::waitpid first for all tracked pids.
+            // result > 0: exited; result == 0: still running (WNOHANG); result < 0: ECHILD (fake pid)
             #[cfg(all(unix, feature = "native"))]
             {
+                let flags = match _flags { 1 => libc::WNOHANG, _ => 0 };
                 let mut status: i32 = 0;
                 let result = unsafe {
-                    libc::waitpid(pid as i32, &mut status, libc::WNOHANG)
+                    libc::waitpid(pid as i32, &mut status, flags)
                 };
-                if result > 0 {
+                if result >= 0 {
+                    let ret_pid = if result > 0 { result as i64 } else { 0 };
                     let mut fields = HashMap::new();
-                    fields.insert("pid".to_string(), Value::Int(result as i64));
-                    fields.insert("status".to_string(), Value::Int(status as i64));
+                    fields.insert("pid".to_string(), Value::Int(ret_pid));
+                    fields.insert("status".to_string(), Value::Int(if result > 0 { status as i64 } else { 0 }));
                     return Ok(Value::Struct {
                         name: "WaitResult".to_string(),
                         fields: Rc::new(RefCell::new(fields)),
                     });
                 }
+                // result < 0 (ECHILD or error): fall through to fake state below
             }
 
-            // Return from tracked state
+            // Fake state (non-native, or native pid not a real OS child)
             let mut fields = HashMap::new();
             fields.insert("pid".to_string(), Value::Int(proc.pid));
             fields.insert("status".to_string(), Value::Int(proc.exit_status));
@@ -40345,6 +40405,52 @@ static NATIVE_SIGNAL_FLAGS: [std::sync::atomic::AtomicBool; 32] = {
     const INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     [INIT; 32]
 };
+
+/// Check whether a fake fd (pipe or PTY) has data ready to read.
+/// Returns true if data is available, false if not or unknown.
+fn check_fake_fd_ready(fd: i64) -> bool {
+    // Check fake pipes
+    let pipe_ready = FAKE_PIPE_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pipe) = m.get(&fd) {
+            let peer = pipe.peer_fd;
+            drop(m);
+            FAKE_PIPE_STATE.with(|map2| {
+                let m2 = map2.borrow();
+                m2.get(&peer).map(|pp| !pp.buffer.is_empty()).unwrap_or(false)
+            })
+        } else {
+            // sentinel: fd not in pipe map
+            return false; // handled below
+        }
+    });
+    // If pipe map had the fd, return result
+    let in_pipe = FAKE_PIPE_STATE.with(|map| map.borrow().contains_key(&fd));
+    if in_pipe {
+        return pipe_ready;
+    }
+
+    // Check fake PTYs
+    let pty_ready = FAKE_PTY_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pty) = m.get(&fd) {
+            let peer = pty.peer_fd;
+            drop(m);
+            FAKE_PTY_BUFFER.with(|bufs| {
+                let b = bufs.borrow();
+                b.get(&peer).map(|buf| !buf.is_empty()).unwrap_or(false)
+            })
+        } else {
+            return false;
+        }
+    });
+    let in_pty = FAKE_PTY_STATE.with(|map| map.borrow().contains_key(&fd));
+    if in_pty {
+        return pty_ready;
+    }
+
+    false
+}
 
 #[cfg(all(unix, feature = "native"))]
 extern "C" fn native_signal_handler(signum: libc::c_int) {
