@@ -39536,13 +39536,11 @@ fn register_sys(interp: &mut Interpreter) {
                     let flags = libc::fcntl(amaster, libc::F_GETFL);
                     libc::fcntl(amaster, libc::F_SETFL, flags | libc::O_NONBLOCK);
                 }
-                // Set slave to raw mode so data passes through without line discipline buffering
-                unsafe {
-                    let mut tios: libc::termios = std::mem::zeroed();
-                    libc::tcgetattr(aslave, &mut tios);
-                    libc::cfmakeraw(&mut tios);
-                    libc::tcsetattr(aslave, libc::TCSANOW, &tios);
-                }
+                // Leave slave with default PTY settings (ECHO + ICANON on).
+                // Bash/readline will call tcsetattr to set its own preferred mode.
+                // Previously cfmakeraw was used here but it prevented proper echo
+                // because bash's readline output was not being flushed through the
+                // PTY line discipline to the master.
                 // Store in FAKE_PTY_STATE for consistency (peer tracking, Sys·close, etc.)
                 FAKE_PTY_STATE.with(|map| {
                     map.borrow_mut().insert(amaster as i64, FakePty {
@@ -39761,15 +39759,33 @@ fn register_sys(interp: &mut Interpreter) {
 
         match fd {
             0 => {
-                // stdin — read up to max_len bytes
-                use std::io::{self, Read};
-                let mut buffer = vec![0u8; max_len];
-                match io::stdin().read(&mut buffer) {
-                    Ok(n) => {
-                        buffer.truncate(n);
-                        Ok(Value::String(Rc::new(String::from_utf8_lossy(&buffer).to_string())))
+                // stdin — use libc::read in native mode (bypasses Rust's buffered stdin)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    let mut buffer = vec![0u8; max_len];
+                    let n = unsafe {
+                        libc::read(0, buffer.as_mut_ptr() as *mut libc::c_void, max_len)
+                    };
+                    if n > 0 {
+                        buffer.truncate(n as usize);
+                        return Ok(Value::String(Rc::new(
+                            String::from_utf8_lossy(&buffer).to_string(),
+                        )));
                     }
-                    Err(_) => Ok(Value::String(Rc::new(String::new()))),
+                    return Ok(Value::String(Rc::new(String::new())));
+                }
+                // Fallback: Rust's io::stdin (non-native builds)
+                #[cfg(not(all(unix, feature = "native")))]
+                {
+                    use std::io::{self, Read};
+                    let mut buffer = vec![0u8; max_len];
+                    match io::stdin().read(&mut buffer) {
+                        Ok(n) => {
+                            buffer.truncate(n);
+                            Ok(Value::String(Rc::new(String::from_utf8_lossy(&buffer).to_string())))
+                        }
+                        Err(_) => Ok(Value::String(Rc::new(String::new()))),
+                    }
                 }
             }
             _ => {
@@ -39900,7 +39916,7 @@ fn register_sys(interp: &mut Interpreter) {
         // Native: use libc::poll() for real fds (< 4000; fake counters start at 4000+)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd > 0 && fd < 4000 {
+            if fd >= 0 && fd < 4000 {
                 let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
                 let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
                 return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
