@@ -1,0 +1,59 @@
+// sigil-web — S1 Client-side Router Tests
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// TDD Red Phase: these tests define the expected API for Route and Router.
+// Router tests run in a browser environment (history API).
+
+invoke sigil_web·router·{Route, Router};
+
+rite test_route_matches_static() {
+    ≔ route! = Route·new("/about");
+    assert!(route·matches("/about"));
+    assert!(¬route·matches("/contact"));
+    assert!(¬route·matches("/"));
+}
+
+rite test_route_matches_param() {
+    ≔ route! = Route·new("/users/:id");
+    assert!(route·matches("/users/123"));
+    assert!(route·matches("/users/abc"));
+    assert!(¬route·matches("/users"));
+    assert!(¬route·matches("/users/123/extra"));
+}
+
+rite test_route_extract_param() {
+    ≔ route! = Route·new("/users/:id");
+    ≔ params! = route·params("/users/42");
+    assert_eq!(params·get("id"), "42");
+}
+
+rite test_route_no_params_for_static() {
+    ≔ route! = Route·new("/about");
+    ≔ params! = route·params("/about");
+    assert_eq!(params·len(), 0);
+}
+
+rite test_router_navigate() {
+    ≔ router! = Router·new();
+    router·navigate("/about");
+    assert_eq!(router·current_path(), "/about");
+}
+
+rite test_router_back() {
+    ≔ router! = Router·new();
+    router·navigate("/about");
+    router·navigate("/contact");
+    router·back();
+    assert_eq!(router·current_path(), "/about");
+}
+
+rite main() {
+    test_route_matches_static();
+    test_route_matches_param();
+    test_route_extract_param();
+    test_route_no_params_for_static();
+    test_router_navigate();
+    test_router_back();
+    print("All router tests passed!");
+}

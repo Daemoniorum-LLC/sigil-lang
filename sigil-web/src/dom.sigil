@@ -1,0 +1,134 @@
+// sigil-web — dom.sigil
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Element: thin Sigil wrapper around the JS `dom.*` runtime imports.
+// The WASM backend auto-resolves `dom·create_element(...)` to the
+// `dom_create_element` import registered in ImportRegistry.
+//
+// String arguments are passed as the Sigil string representation;
+// the WASM import registry handles I32/I64 type conversion at call sites.
+
+// ─── Element ─────────────────────────────────────────────────────────────────
+
+/// A handle to a live DOM element, identified by its runtime element ID.
+☉ Σ Element {
+    /// Opaque element ID assigned by the JS runtime.
+    handle: i32!,
+    /// Tag name stored for introspection (lower-case, e.g. "div").
+    tag: String!,
+}
+
+⊢ Element {
+    /// Create a new DOM element with the given tag name.
+    ///
+    /// Calls `dom::create_element(tagPtr, tagLen) -> elementId` in the JS runtime.
+    ☉ rite new(tag: &str!) -> Self! {
+        ≔ handle! = dom·create_element(tag, tag·len() as i32);
+        Element {
+            handle: handle as i32,
+            tag:    tag·to_string(),
+        }
+    }
+
+    /// Return the lower-case tag name (e.g. "div", "span").
+    rite tag_name(self: &Self!) -> &str! {
+        &self.tag
+    }
+
+    // ── Attributes ───────────────────────────────────────────────────────────
+
+    /// Set an HTML attribute on this element.
+    rite set_attr(self: &Self!, name: &str!, value: &str!) {
+        dom·set_attribute(
+            self.handle,
+            name,  name·len()  as i32,
+            value, value·len() as i32,
+        );
+    }
+
+    /// Get an HTML attribute value.
+    /// Returns an empty string if the attribute is not set.
+    rite get_attr(self: &Self!, name: &str!) -> String! {
+        ≔ ptr! = dom·get_attribute(self.handle, name, name·len() as i32);
+        ⎇ ptr == 0 {
+            "".to_string()
+        } ⎉ {
+            dom·read_string(ptr)
+        }
+    }
+
+    /// Remove an HTML attribute from this element.
+    rite remove_attr(self: &Self!, name: &str!) {
+        dom·remove_attribute(self.handle, name, name·len() as i32);
+    }
+
+    // ── Classes ──────────────────────────────────────────────────────────────
+
+    /// Add a CSS class to the element.
+    rite add_class(self: &Self!, class: &str!) {
+        dom·class_list_add(self.handle, class, class·len() as i32);
+    }
+
+    /// Remove a CSS class from the element.
+    rite remove_class(self: &Self!, class: &str!) {
+        dom·class_list_remove(self.handle, class, class·len() as i32);
+    }
+
+    /// Returns `true` if the element has the given CSS class.
+    rite has_class(self: &Self!, class: &str!) -> bool! {
+        dom·class_list_contains(self.handle, class, class·len() as i32) != 0
+    }
+
+    // ── Text & Children ──────────────────────────────────────────────────────
+
+    /// Set the text content of this element.
+    rite set_text(self: &Self!, text: &str!) {
+        dom·set_text_content(self.handle, text, text·len() as i32);
+    }
+
+    /// Get the text content of this element.
+    rite text(self: &Self!) -> String! {
+        ≔ ptr! = dom·get_text_content(self.handle);
+        ⎇ ptr == 0 {
+            "".to_string()
+        } ⎉ {
+            dom·read_string(ptr)
+        }
+    }
+
+    /// Append a child element.
+    rite append(self: &Self!, child: Element!) {
+        dom·append_child(self.handle, child.handle);
+    }
+
+    /// Remove a child element.
+    rite remove_child(self: &Self!, child: Element!) {
+        dom·remove_child(self.handle, child.handle);
+    }
+
+    /// Return the number of child nodes.
+    rite child_count(self: &Self!) -> i32! {
+        dom·child_count(self.handle)
+    }
+
+    // ── Style ────────────────────────────────────────────────────────────────
+
+    /// Set an inline style property.
+    rite set_style(self: &Self!, property: &str!, value: &str!) {
+        dom·set_style(
+            self.handle,
+            property, property·len() as i32,
+            value,    value·len()    as i32,
+        );
+    }
+
+    // ── Query ────────────────────────────────────────────────────────────────
+
+    /// Query for a descendant matching the CSS selector.
+    /// Returns `∅` if no match is found.
+    rite query(self: &Self!, selector: &str!) -> Option<Element>? {
+        ≔ h! = dom·query_selector_scoped(self.handle, selector, selector·len() as i32);
+        ⎇ h == 0 { ∅ } ⎉ { Some(Element { handle: h, tag: "".to_string() }) }
+    }
+}

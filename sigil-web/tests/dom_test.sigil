@@ -1,0 +1,60 @@
+// sigil-web — S1 DOM Binding Tests
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// TDD Red Phase: these tests define the expected API for Element.
+// Run in browser after `sigil wasm dom_test.sigil -o dom_test.wasm`.
+// Tests pass when all assertions succeed without panicking.
+
+invoke sigil_web·dom·Element;
+
+rite test_element_create() {
+    ≔ div! = Element·new("div");
+    assert_eq!(div·tag_name(), "div");
+}
+
+rite test_element_set_attribute() {
+    ≔ div! = Element·new("div");
+    div·set_attr("id", "test-node");
+    assert_eq!(div·get_attr("id"), "test-node");
+}
+
+rite test_element_class_manipulation() {
+    ≔ div! = Element·new("div");
+    div·add_class("active");
+    assert!(div·has_class("active"));
+    div·remove_class("active");
+    assert!(¬div·has_class("active"));
+}
+
+rite test_element_append_child() {
+    ≔ parent! = Element·new("div");
+    ≔ child!  = Element·new("span");
+    parent·append(child);
+    assert_eq!(parent·child_count(), 1);
+}
+
+rite test_element_text_content() {
+    ≔ div! = Element·new("div");
+    div·set_text("Hello World");
+    assert_eq!(div·text(), "Hello World");
+}
+
+rite test_element_remove() {
+    ≔ parent! = Element·new("div");
+    ≔ child!  = Element·new("span");
+    parent·append(child);
+    assert_eq!(parent·child_count(), 1);
+    parent·remove_child(child);
+    assert_eq!(parent·child_count(), 0);
+}
+
+rite main() {
+    test_element_create();
+    test_element_set_attribute();
+    test_element_class_manipulation();
+    test_element_append_child();
+    test_element_text_content();
+    test_element_remove();
+    print("All DOM tests passed!");
+}

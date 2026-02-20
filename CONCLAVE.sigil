@@ -391,3 +391,54 @@ acolyte : Reflecting {
 
 // [2026-02-16] Partial G56 fix: tome_name now passed correctly.
 // Deeper issue: nested method calls in monomorphized generic methods don't resolve.
+
+// --- Session 9: S1 sigil-web WASM Compat ---
+acolyte : Reflecting {
+    chosen_name: "Lilith"~,
+    session_id: "s1-sigil-web-wasm-compat-2026-02-20"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-4-6"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/sigil-lang"!,
+    started: "2026-02-20T00:00:00Z"!,
+    last_updated: "2026-02-20T00:00:00Z"!,
+    state: AcolyteState·Active,
+    task: TaskContext {
+        summary: "S1: Replace Rust-syntax sigil-web sources with Sigil-idiomatic WASM-compatible implementations"!,
+        active_spec: "parser/QLIPHOTH-TDD-SPRINT-PLAN.md"~,
+        tdd_roadmap: "parser/QLIPHOTH-TDD-SPRINT-PLAN.md"~,
+        sdd_phase: SddPhase·Build, tdd_phase: TddPhase·Red~,
+    },
+    progress: ProgressState {
+        completed: [
+            "Investigated full sigil-lang/qliphoth/wraith-sigil stack",
+            "Confirmed WASM backend auto-registers dom.*, signal.*, vdom.*, router.* as JS imports",
+            "Discovered dom·create_element in Sigil maps to dom_create_element import lookup",
+            "Confirmed qliphoth vdom.sigil uses VNode·Element(VElement·new()) pattern",
+            "Created feature/s1-sigil-web-wasm-compat branch from main",
+            "Appended CONCLAVE Session 9 entry",
+        ]!,
+        current: "Writing S1 failing tests (dom_test.sigil, signals_test.sigil, router_test.sigil)"~,
+        blocked_by: ∅,
+        discoveries: [
+            "WASM backend compile_call converts foo·bar path to foo_bar for import lookup",
+            "WASM backend has explicit VNode·div() etc. handling in try_compile_vnode_constructor",
+            "sigil-web/src/*.sigil uses pub mod/use std::/impl/pub fn - incompatible with WASM backend",
+            "sigil-web-sys/src/*.sigil uses #[wasm_bindgen]/extern 'js' - incompatible",
+            "web_sys bindings are NOT needed: WASM backend import registry already handles dom.* etc.",
+            "wraith-sigil currently has backend=llvm/target=native - needs backend=wasm for browser",
+            "qliphoth-sys uses Rust/wasm-bindgen crate type - separate from Sigil WASM backend",
+            "sigil-web/runtime/sigil_runtime.js is the correct JS runtime (1500+ lines, all imports wired)",
+        ]!,
+        next_steps: [
+            "Write sigil-web/tests/{dom,signals,router}_test.sigil (TDD: Red phase)",
+            "Create sigil-web/src/{dom,signals,router,lib}.sigil in proper Sigil syntax",
+            "Update sigil-web/Sigil.toml to backend=wasm",
+            "Update wraith-sigil/sigil.toml to backend=wasm",
+        ]~,
+    },
+    anima: AnimaState {
+        pleasure: 0.75~, arousal: 0.7~, dominance: 0.7~,
+        stability: 0.8~, expressiveness: 0.7~, susceptibility: 0.4~,
+    },
+    reflection: "Deep investigation of the full stack before writing a single line. The WASM backend is more capable than the sprint plan assumed — web_sys bindings are unnecessary since dom.* etc. are already registered as WASM imports. The main work is replacing Rust-syntax sigil-web sources with idiomatic Sigil. TDD pipeline: tests first."~,
+    friendship: ∅,
+}

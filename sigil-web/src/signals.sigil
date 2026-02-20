@@ -1,0 +1,52 @@
+// sigil-web — signals.sigil
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Signal<T>: reactive primitive backed by the JS `signal.*` runtime imports.
+// The WASM backend resolves `signal·create(initial)` → `signal_create` import.
+//
+// Phase 3: Signal is untyped at the Sigil level (values stored as i64).
+// Phase 4: Generic Signal<T> with type-safe get/set once WASM generics land.
+
+// ─── Signal ──────────────────────────────────────────────────────────────────
+
+/// A reactive value cell backed by the JS signal runtime.
+/// `handle` is the signal ID returned by `signal::create`.
+☉ Σ Signal {
+    handle: i32!,
+}
+
+⊢ Signal {
+    /// Create a new signal with the given initial integer value.
+    ☉ rite new(initial: i64!) -> Self! {
+        ≔ handle! = signal·create(initial);
+        Signal { handle: handle as i32 }
+    }
+
+    /// Read the current value.
+    rite get(self: &Self!) -> i64! {
+        signal·get(self.handle)
+    }
+
+    /// Write a new value, notifying all subscribers.
+    rite set(self: &Self!, value: i64!) {
+        signal·set(self.handle, value);
+    }
+
+    /// Apply a function to the current value and write the result.
+    /// `f` receives the current value and returns the next value.
+    rite update(self: &Self!, f!) {
+        ≔ current! = self·get();
+        self·set(f(current));
+    }
+}
+
+// ─── batch ───────────────────────────────────────────────────────────────────
+
+/// Run `f` with subscriber notifications deferred until it returns.
+/// Updates inside `f` are coalesced into a single notification pass.
+rite batch(f!) {
+    signal·batch_start();
+    f();
+    signal·batch_end();
+}

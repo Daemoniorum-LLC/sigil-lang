@@ -1,0 +1,66 @@
+// sigil-web — S1 Reactive Signal Tests
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// TDD Red Phase: these tests define the expected API for Signal<T>.
+// Signal tests run against the sigil_runtime.js signal imports.
+
+invoke sigil_web·signals·{Signal, batch};
+
+rite test_signal_create_get() {
+    ≔ count! = Signal·new(0);
+    assert_eq!(count·get(), 0);
+}
+
+rite test_signal_set() {
+    ≔ count! = Signal·new(0);
+    count·set(5);
+    assert_eq!(count·get(), 5);
+}
+
+rite test_signal_update() {
+    ≔ count! = Signal·new(0);
+    count·update(|n| n + 1);
+    assert_eq!(count·get(), 1);
+}
+
+rite test_signal_update_repeated() {
+    ≔ count! = Signal·new(10);
+    count·update(|n| n * 2);
+    assert_eq!(count·get(), 20);
+    count·update(|n| n - 5);
+    assert_eq!(count·get(), 15);
+}
+
+rite test_batch_groups_updates() {
+    ≔ a! = Signal·new(0);
+    ≔ b! = Signal·new(0);
+
+    batch(|| {
+        a·set(1);
+        b·set(2);
+    });
+
+    assert_eq!(a·get(), 1);
+    assert_eq!(b·get(), 2);
+}
+
+rite test_signal_independence() {
+    ≔ x! = Signal·new(100);
+    ≔ y! = Signal·new(200);
+
+    x·set(42);
+
+    assert_eq!(x·get(), 42);
+    assert_eq!(y·get(), 200);
+}
+
+rite main() {
+    test_signal_create_get();
+    test_signal_set();
+    test_signal_update();
+    test_signal_update_repeated();
+    test_batch_groups_updates();
+    test_signal_independence();
+    print("All signal tests passed!");
+}

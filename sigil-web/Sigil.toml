@@ -11,20 +11,20 @@ license = "MIT OR Apache-2.0"
 sigil-version = "0.2.0"
 authors = ["Daemoniorum, LLC"]
 
+# S1: removed sigil-web-sys dependency — dom.*/signal.*/router.* JS imports
+# are resolved by the WASM backend's ImportRegistry (no separate bindings crate needed).
 [dependencies]
-sigil-web-sys = { path = "../sigil-web-sys", version = "0.2.0" }
 
 [features]
-default = ["hydration"]
-ssr = []                    # Server-side rendering
-hydration = []              # Client-side hydration
-router = ["sigil-web-router"]
-full = ["ssr", "hydration", "router"]
+default = []
+ssr = []         # Server-side rendering (Phase 4+)
+hydration = []   # Client-side hydration (Phase 4+)
 
+# S1: use the Sigil WASM backend for direct WASM bytecode generation.
+# The JS runtime (sigil-web/runtime/sigil_runtime.js) provides all imports.
 [compile]
-backend = "llvm"
-target = "wasm32-unknown-unknown"
+backend = "wasm"
+target = "wasm32"
 
 [compile.wasm]
 opt-level = "z"
-features = ["+simd128"]

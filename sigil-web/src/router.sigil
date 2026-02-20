@@ -1,0 +1,150 @@
+// sigil-web — router.sigil
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+//
+// Route + Router: URL pattern matching + History API navigation.
+// Backed by the JS `router.*` runtime imports (push_state, get_pathname, back).
+//
+// Supported patterns:
+//   Static:  "/about", "/users/list"
+//   Params:  "/users/:id", "/posts/:slug/comments"
+//
+// Phase 3: flat single-level router, no nested routing or contexts.
+
+// ─── RouteParam ──────────────────────────────────────────────────────────────
+
+/// A single extracted URL parameter (key + value pair).
+☉ Σ RouteParam {
+    key:   String!,
+    value: String!,
+}
+
+// ─── RouteParams ─────────────────────────────────────────────────────────────
+
+/// A collection of extracted URL parameters.
+☉ Σ RouteParams {
+    items: Vec<RouteParam>!,
+}
+
+⊢ RouteParams {
+    ☉ rite empty() -> Self! {
+        RouteParams { items: vec![] }
+    }
+
+    rite len(self: &Self!) -> i64! {
+        self.items·len() as i64
+    }
+
+    /// Look up a parameter by name. Returns `""` if not found.
+    rite get(self: &Self!, key: &str!) -> &str! {
+        ∀ item ∈ &self.items {
+            ⎇ item.key == key { ↩ &item.value; }
+        }
+        ""
+    }
+}
+
+// ─── Route ───────────────────────────────────────────────────────────────────
+
+/// A single URL pattern with optional named parameters (`:name` segments).
+☉ Σ Route {
+    pattern: String!,
+}
+
+⊢ Route {
+    /// Create a new route from a pattern string.
+    ///
+    /// Examples: `Route·new("/")`, `Route·new("/users/:id")`
+    ☉ rite new(pattern: &str!) -> Self! {
+        Route { pattern: pattern·to_string() }
+    }
+
+    /// Returns `true` if `path` matches this route's pattern.
+    rite matches(self: &Self!, path: &str!) -> bool! {
+        ≔ pat_segs! = split_path(&self.pattern);
+        ≔ url_segs! = split_path(path);
+
+        ⎇ pat_segs·len() != url_segs·len() { ↩ false; }
+
+        ∀ i ∈ 0..pat_segs·len() {
+            ≔ p = &pat_segs[i];
+            ≔ u = &url_segs[i];
+            ⎇ ¬p·starts_with(':') ∧ p != u { ↩ false; }
+        }
+
+        true
+    }
+
+    /// Extract named parameter values from a matching path.
+    rite params(self: &Self!, path: &str!) -> RouteParams! {
+        ≔ pat_segs! = split_path(&self.pattern);
+        ≔ url_segs! = split_path(path);
+        ≔ result!   = RouteParams·empty();
+
+        ∀ i ∈ 0..pat_segs·len() {
+            ≔ p = &pat_segs[i];
+            ⎇ p·starts_with(':') ∧ i < url_segs·len() {
+                ≔ key! = p[1..]·to_string();
+                ≔ val! = url_segs[i]·clone();
+                result.items·push(RouteParam { key: key, value: val });
+            }
+        }
+
+        result
+    }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Split a URL path into non-empty segments. `/users/:id` → `["users", ":id"]`.
+rite split_path(path: &str!) -> Vec<String>! {
+    ≔ segs! : Vec<String> = vec![];
+    ≔ parts! = path·split('/');
+    ∀ part ∈ parts {
+        ⎇ ¬part·is_empty() {
+            segs·push(part·to_string());
+        }
+    }
+    segs
+}
+
+// ─── Router ──────────────────────────────────────────────────────────────────
+
+/// App-level router wrapping the browser History API.
+/// `navigate` pushes state; `back` pops the local stack and calls `router::back`.
+☉ Σ Router {
+    /// Current pathname (kept locally for test-side assertions).
+    path:    String!,
+    /// History stack for back() support (entries before current path).
+    history: Vec<String>!,
+}
+
+⊢ Router {
+    /// Create a new router, reading the initial path from the browser.
+    ☉ rite new() -> Self! {
+        ≔ ptr!  = router·get_pathname(0);
+        ≔ path! = ⎇ ptr != 0 { router·read_string(ptr) } ⎉ { "/".to_string() };
+        Router { path: path, history: vec![] }
+    }
+
+    /// Navigate to `path`, pushing an entry onto the History stack.
+    rite navigate(self: &mut Self!, path: &str!) {
+        self.history·push(self.path·clone());
+        self.path = path·to_string();
+        router·push_state(path, path·len() as i32);
+    }
+
+    /// Go back one entry in the history stack.
+    rite back(self: &mut Self!) {
+        ⎇ ¬self.history·is_empty() {
+            ≔ prev! = self.history·pop()·unwrap_or("".to_string());
+            self.path = prev;
+            router·back();
+        }
+    }
+
+    /// Return the current pathname.
+    rite current_path(self: &Self!) -> &str! {
+        &self.path
+    }
+}
