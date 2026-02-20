@@ -7787,7 +7787,6 @@ pub mod llvm {
                         "clone" => {
                             // G64: Vec clone must use deep copy via sigil_vec_clone
                             // Identity clone is wrong because it shares the underlying data
-                            eprintln!("[DEBUG-CLONE] clone builtin handler reached, calling sigil_vec_clone");
 
                             let clone_fn = self
                                 .module
@@ -9706,8 +9705,25 @@ pub mod llvm {
         /// E.g., lookup_associated_constant(Shape2<4, 4>, "RANK") -> Some(2)
         /// E.g., lookup_associated_constant(f32, "SIZE") -> Some(4)
         fn lookup_associated_constant(&self, rich_type: &RichType, const_name: &str) -> Option<i64> {
+            // G-FIX: Handle primitive Float/Int variants in addition to Named.
+            // When a type param D is bound to Float(F32) rather than Named{f32},
+            // we still need to resolve D::SIZE, D::MIN, etc.
             let type_name = match rich_type {
                 RichType::Named { name, .. } => name.as_str(),
+                RichType::Float(crate::typeck::FloatSize::F32) => "f32",
+                RichType::Float(crate::typeck::FloatSize::F64) => "f64",
+                RichType::Int(crate::typeck::IntSize::I8) => "i8",
+                RichType::Int(crate::typeck::IntSize::I16) => "i16",
+                RichType::Int(crate::typeck::IntSize::I32) => "i32",
+                RichType::Int(crate::typeck::IntSize::I64) => "i64",
+                RichType::Int(crate::typeck::IntSize::I128) => "i128",
+                RichType::Int(crate::typeck::IntSize::U8) => "u8",
+                RichType::Int(crate::typeck::IntSize::U16) => "u16",
+                RichType::Int(crate::typeck::IntSize::U32) => "u32",
+                RichType::Int(crate::typeck::IntSize::U64) => "u64",
+                RichType::Int(crate::typeck::IntSize::U128) => "u128",
+                RichType::Int(crate::typeck::IntSize::ISize) => "isize",
+                RichType::Int(crate::typeck::IntSize::USize) => "usize",
                 _ => return None,
             };
 
@@ -15033,6 +15049,10 @@ pub mod llvm {
                                     RichType::Char => "_char".to_string(),
                                     RichType::Str => "_str".to_string(),
                                     RichType::Unit => "_unit".to_string(),
+                                    // G-FIX: Handle ConstGeneric so SwiGLU::<16, 43> and
+                                    // SwiGLU::<512, 1365> get distinct mangled names instead of
+                                    // both collapsing to "_unknown_unknown".
+                                    RichType::ConstGeneric(val) => format!("_{}", val),
                                     _ => "_unknown".to_string(),
                                 })
                                 .collect();

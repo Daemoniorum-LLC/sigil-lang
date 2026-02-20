@@ -3786,6 +3786,16 @@ impl TypeChecker {
                 a.iter().zip(b.iter()).all(|(x, y)| self.unify(x, y))
             }
 
+            // Raw pointers: *const T == *const T, *mut T == *mut T
+            // Also allow *mut T → *const T (weakening mutability, safe coercion)
+            (Type::Ptr { mutable: ma, inner: a }, Type::Ptr { mutable: mb, inner: b }) => {
+                let mut_ok = ma == mb || (!mb); // *mut → *const is ok, not the reverse
+                mut_ok && self.unify(a, b)
+            }
+            // Allow *const T / *mut T to coerce with &T (auto-deref context)
+            (Type::Ptr { inner: a, .. }, Type::Ref { inner: b, .. }) => self.unify(a, b),
+            (Type::Ref { inner: a, .. }, Type::Ptr { inner: b, .. }) => self.unify(a, b),
+
             // References
             (Type::Ref { mutable: ma, inner: a, .. }, Type::Ref { mutable: mb, inner: b, .. }) => {
                 // Allow &[T; N] to coerce to &[T] (array to slice)

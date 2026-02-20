@@ -1298,6 +1298,38 @@ void* sigil_vec_from_argv(int argc, char** argv) {
     return vec;
 }
 
+/* ============================================================================
+ * Random Number Generation
+ * sigil_random_f64: uniform double in [0, 1)
+ * sigil_random_normal: standard normal double (Box-Muller)
+ * ============================================================================ */
+
+double sigil_random_f64(void) {
+    return (double)rand() / ((double)RAND_MAX + 1.0);
+}
+
+double sigil_random_normal(void) {
+    /* Box-Muller transform */
+    double u1 = sigil_random_f64();
+    double u2 = sigil_random_f64();
+    if (u1 < 1e-10) u1 = 1e-10;
+    return sqrt(-2.0 * log(u1)) * cos(2.0 * M_PI * u2);
+}
+
+/* ============================================================================
+ * CUDA stubs — not available on CPU-only builds
+ * ============================================================================ */
+
+int64_t sigil_cuda_get_total_memory(int64_t device_id) {
+    (void)device_id;
+    return 0;
+}
+
+int64_t sigil_cuda_get_compute_capability(int64_t device_id) {
+    (void)device_id;
+    return 0;
+}
+
 #ifndef SIGIL_RUNTIME_LIB_ONLY
 
 /* Entry point - calls the Sigil main function with command line args */
