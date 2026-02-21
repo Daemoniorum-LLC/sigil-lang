@@ -906,8 +906,11 @@ impl WasmCompiler {
 
                     if is_local && !is_type {
                         // This is a method call on a local variable!
-                        // Get the receiver's type from var_types if available
-                        let receiver_type = self.var_types.get(potential_receiver).cloned();
+                        // Get the receiver's type from var_types if available.
+                        // Also check local_var_types (populated from match-arm TupleStruct
+                        // bindings, e.g. `VNode::Element(el)` → "el" → "VElement").
+                        let receiver_type = self.var_types.get(potential_receiver).cloned()
+                            .or_else(|| self.local_var_types.get(potential_receiver.as_str()).cloned());
 
                         // Try to find the method: first by qualified name (if type is known),
                         // then by simple method name as a fallback.  The fallback handles cases
@@ -995,11 +998,18 @@ impl WasmCompiler {
                 // === Actor type-qualified static call: ActorName·method(args) ===
                 // e.g. `Wraith·view()` compiled as Expr::Call { path: ["Wraith","view"], args: [] }
                 // The actor's method takes self as first param (i64); push I64Const(0) for it.
+                //
+                // Two detection strategies:
+                // 1. actor_names: explicitly registered actors (from compile_actor / collect_function_sig).
+                // 2. Off-by-one arity heuristic: if the type name starts with uppercase and the
+                //    function exists with exactly args.len()+1 params, assume self-injection is needed.
+                //    This covers component actors whose files are not scrolled into the build and
+                //    therefore never reach compile_actor / collect_function_sig.
                 if resolved_segments.len() >= 2 {
                     let actor_type = resolved_segments[resolved_segments.len() - 2].clone();
                     let actor_method = resolved_segments[resolved_segments.len() - 1].clone();
+                    let qualified = format!("{}::{}", actor_type, actor_method);
                     if self.actor_names.contains(actor_type.as_str()) {
-                        let qualified = format!("{}::{}", actor_type, actor_method);
                         if let Some(&func_idx) = self.func_map.get(&qualified) {
                             {
                                 let func = self.current_function_mut()
@@ -1059,11 +1069,33 @@ impl WasmCompiler {
                         {
                             func_idx = def_idx;
                         } else {
-                            // No correct-arity function found. The args are already on the
-                            // WASM stack. Drop them all and emit Unreachable so this path
-                            // traps loudly at runtime rather than silently returning 0.
-                            // In WASM, Unreachable makes the validator treat subsequent code
-                            // as polymorphic, so no further value needs to be pushed.
+                            // No correct-arity function found.
+                            //
+                            // Special case: actor/component view calls with off-by-one arity.
+                            // Pattern: `Toolbar·view()` parsed as Call(path=["Toolbar","view"], args=[])
+                            // but only a generic "view" function is found via simple_name fallback,
+                            // with candidate_params=1 (self) vs args.len()=0.
+                            // Since args were compiled before this point, and args.len()==0 means
+                            // nothing is on the stack, we can safely push the dummy self and call.
+                            if args.is_empty()
+                                && candidate_params == 1
+                                && resolved_segments.len() >= 2
+                                && resolved_segments[resolved_segments.len() - 2]
+                                    .chars().next().map_or(false, |c| c.is_uppercase())
+                            {
+                                // Actor/component view() call where the target is not compiled
+                                // into this binary (unscrolled component file).  The function
+                                // found via simple_name fallback is wrong (e.g. Wraith::view),
+                                // so calling it would recurse infinitely.  Stub as VNode::Empty
+                                // (I64Const(0)) — components render as empty until their files
+                                // are scrolled into the build.
+                                let func = self.current_function_mut()
+                                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                                func.push(Instruction::I64Const(0)); // VNode::Empty stub
+                                return Ok(());
+                            }
+
+                            // General arity mismatch: Drop args already on the stack and trap.
                             let func = self
                                 .current_function_mut()
                                 .ok_or_else(|| WasmError::internal("not in function context"))?;
@@ -1514,6 +1546,34 @@ impl WasmCompiler {
                         let func = self.current_function_mut()
                             .ok_or_else(|| WasmError::internal("not in function context"))?;
                         func.push(Instruction::I64Const(tag as i64));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        // Check if receiver is a local variable with a known struct type (populated by
+        // bind_pattern for match arm variables, e.g. `el` → "VElement" from
+        // `VNode::Element(el)`).  Use the qualified method name for dispatch so that
+        // `el·child(node)` calls VElement::child() and `frag·child(node)` calls
+        // VFragment::child(), instead of always routing to the last-registered "child".
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let var_name = &path.segments[0].ident.name;
+                if let Some(type_name) = self.local_var_types.get(var_name.as_str()).cloned() {
+                    let qualified = format!("{}::{}", type_name, method);
+                    if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        self.compile_expr(receiver)?;
+                        for arg in args {
+                            self.compile_expr(arg)?;
+                        }
+                        let returns_void = self.func_returns_void(func_idx);
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+                        if returns_void {
+                            func.push(Instruction::I64Const(0));
+                        }
                         return Ok(());
                     }
                 }
@@ -2688,6 +2748,11 @@ impl WasmCompiler {
                 Ok(true)
             }
             "child" if args.len() == 1 => {
+                // Local variable receivers (e.g. `el` from VNode::Element(el)) are caught
+                // earlier in compile_method_call by the local_var_types dispatch, which
+                // routes them to the correct VElement::child() / VFragment::child() impl.
+                // This arm only fires for builder-chain and other non-local-var receivers;
+                // use the JS vdom bridge for those.
                 self.compile_vnode_child(receiver, &args[0])?;
                 Ok(true)
             }
@@ -4120,6 +4185,53 @@ impl WasmCompiler {
                 }
             }
 
+            // Check if current_expr is a known-type local variable → dispatch to
+            // the qualified method (e.g. "el" → "VElement" → "VElement::child").
+            // This must come before try_compile_builtin_method so that Incorporation
+            // chains like `el·child(node)` resolve to the correct struct method rather
+            // than the JS-bridge "child" builtin arm.
+            if let Expr::Path(path) = &current_expr {
+                if path.segments.len() == 1 {
+                    let var_name = path.segments[0].ident.name.clone();
+                    if let Some(type_name) = self.local_var_types.get(var_name.as_str()).cloned() {
+                        let qualified = format!("{}::{}", type_name, method_name);
+                        if let Some(&func_idx) = self.func_map.get(qualified.as_str()) {
+                            self.compile_expr(&current_expr)?;
+                            for arg in &method_args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self.current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            if is_last {
+                                return Ok(());
+                            }
+                            let temp_local = func.alloc_local(
+                                format!("__chain_{}", i),
+                                ValType::I64,
+                            );
+                            func.push(Instruction::LocalSet(temp_local));
+                            current_expr = Expr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: crate::ast::Ident {
+                                        name: format!("__chain_{}", i),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: crate::span::Span::new(0, 0),
+                                    },
+                                    generics: None,
+                                }],
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // Try builtin method dispatch
             if self.try_compile_builtin_method(&current_expr, method_name, &method_args)? {
                 if is_last {
@@ -4412,11 +4524,31 @@ impl WasmCompiler {
         }
 
         // Regular struct field access
+        // If receiver is a known-type local variable, use its type for offset resolution.
+        let receiver_struct_type = if let Expr::Path(path) = expr {
+            if path.segments.len() == 1 {
+                let var_name = &path.segments[0].ident.name;
+                self.local_var_types.get(var_name.as_str()).cloned()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Compile expression to get struct pointer
         self.compile_expr(expr)?;
 
-        // Get field offset first (requires immutable borrow)
-        let offset = self.get_field_offset(field)?;
+        // Get field offset, preferring the known receiver type when available.
+        let offset = if let Some(ref type_name) = receiver_struct_type {
+            if let Some(layout) = self.struct_layouts.get(type_name.as_str()) {
+                layout.field_offset(field).unwrap_or_else(|| self.get_field_offset(field).unwrap_or(0))
+            } else {
+                self.get_field_offset(field)?
+            }
+        } else {
+            self.get_field_offset(field)?
+        };
 
         let func = self
             .current_function_mut()

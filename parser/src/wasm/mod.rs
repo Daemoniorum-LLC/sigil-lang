@@ -192,6 +192,20 @@ pub struct WasmCompiler {
     /// Current actor being compiled (for self.field resolution)
     pub(crate) current_actor: Option<String>,
 
+    /// Current impl type being compiled (for self.field offset resolution).
+    /// Set to the struct/impl type name when entering `⊢ Type { }` blocks.
+    /// Used by get_field_offset to prefer the correct struct layout when multiple
+    /// structs have fields with the same name (e.g. VElement and VFragment both
+    /// have `children`).
+    pub(crate) current_impl_type: Option<String>,
+
+    /// Local variable type map: variable name → struct type name.
+    /// Populated when match arms bind enum variant payloads, e.g.
+    ///   `VNode::Element(el)` → registers "el" → "VElement"
+    ///   `VNode::Fragment(frag)` → registers "frag" → "VFragment"
+    /// Used to dispatch method calls and resolve field offsets for non-self variables.
+    pub(crate) local_var_types: HashMap<String, String>,
+
     /// Depth of impl/actor blocks currently being compiled.
     /// Incremented when entering `⊢ Type { }` or `actor { }` and decremented on exit.
     /// Used by register_function_sig to distinguish impl-block methods (which must NOT
@@ -243,6 +257,8 @@ impl WasmCompiler {
             start_function_idx: None,
             actor_names: std::collections::HashSet::new(),
             current_actor: None,
+            current_impl_type: None,
+            local_var_types: HashMap::new(),
             impl_depth: 0,
         };
 

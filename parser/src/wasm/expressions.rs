@@ -637,6 +637,18 @@ impl WasmCompiler {
         }
 
         // Regular struct field assignment
+        // If target is a known-type local variable, use its type for offset resolution.
+        let receiver_struct_type = if let Expr::Path(path) = target {
+            if path.segments.len() == 1 {
+                let var_name = &path.segments[0].ident.name;
+                self.local_var_types.get(var_name.as_str()).cloned()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Get struct pointer (i64), then wrap to i32 for memory addressing
         self.compile_expr(target)?;
         {
@@ -646,8 +658,16 @@ impl WasmCompiler {
             func.push(Instruction::I32WrapI64);
         }
 
-        // Get field offset
-        let offset = self.get_field_offset(field)?;
+        // Get field offset, preferring the known receiver type when available.
+        let offset = if let Some(ref type_name) = receiver_struct_type {
+            if let Some(layout) = self.struct_layouts.get(type_name.as_str()) {
+                layout.field_offset(field).unwrap_or_else(|| self.get_field_offset(field).unwrap_or(0))
+            } else {
+                self.get_field_offset(field)?
+            }
+        } else {
+            self.get_field_offset(field)?
+        };
 
         // Compile value
         self.compile_expr(value)?;
@@ -705,8 +725,22 @@ impl WasmCompiler {
     }
 
     /// Get field offset from struct layout.
+    ///
+    /// Prefers the layout of the struct currently being compiled (`current_impl_type`)
+    /// so that identically-named fields in different structs (e.g. `children` exists
+    /// in both VElement at offset 32 and VFragment at offset 0) resolve to the correct
+    /// offset rather than a random one chosen by HashMap iteration order.
     pub fn get_field_offset(&self, field: &str) -> WasmResult<u32> {
-        // Check all struct layouts for this field
+        // 1. Prefer the current impl type's layout (deterministic, context-aware).
+        if let Some(impl_type) = &self.current_impl_type {
+            if let Some(layout) = self.struct_layouts.get(impl_type.as_str()) {
+                if let Some(offset) = layout.field_offset(field) {
+                    return Ok(offset);
+                }
+            }
+        }
+
+        // 2. Fall back to searching all layouts (for non-self field accesses).
         for layout in self.struct_layouts.values() {
             if let Some(offset) = layout.field_offset(field) {
                 return Ok(offset);

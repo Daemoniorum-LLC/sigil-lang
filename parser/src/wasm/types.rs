@@ -225,6 +225,18 @@ impl EnumLayout {
             .find(|(n, _, _)| n == name)
             .map(|(_, tag, _)| *tag)
     }
+
+    /// Get the inner type name for a tuple-struct variant's payload.
+    /// Returns the StructLayout name stored for the variant's payload,
+    /// which after the register_enum fix equals the inner type's simple name
+    /// (e.g. "VElement" for the Element variant of VNode).
+    pub fn variant_inner_type(&self, variant_name: &str) -> Option<&str> {
+        self.variants
+            .iter()
+            .find(|(n, _, _)| n == variant_name)
+            .and_then(|(_, _, payload)| payload.as_ref())
+            .map(|layout| layout.name.as_str())
+    }
 }
 
 /// Compilation scope for tracking variables.

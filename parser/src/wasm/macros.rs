@@ -389,12 +389,14 @@ impl WasmCompiler {
         while let Some(c) = chars.next() {
             if in_placeholder {
                 if c == '}' {
-                    // End of placeholder
+                    // End of placeholder — record the spec and return to literal
+                    // accumulation mode.  Do NOT push `current` here; the text
+                    // between this `}` and the next `{` belongs to the NEXT
+                    // inter-placeholder literal and will be saved when that `{`
+                    // is reached (or at end-of-string below).
                     in_placeholder = false;
                     format_specs.push(placeholder_content.clone());
                     placeholder_content.clear();
-                    literals.push(current.clone());
-                    current.clear();
                 } else {
                     placeholder_content.push(c);
                 }
@@ -404,11 +406,15 @@ impl WasmCompiler {
                     chars.next();
                     current.push('{');
                 } else {
-                    // Start of placeholder - save current literal first
-                    if literals.is_empty() {
-                        literals.push(current.clone());
-                        current.clear();
-                    }
+                    // Start of placeholder — always save the current literal
+                    // (even when empty) so that literals[i] is the text that
+                    // precedes format_specs[i] for every i.  The old guard
+                    // `if literals.is_empty()` caused the pre-placeholder text
+                    // to be skipped for the 2nd and later placeholders, and the
+                    // stale `current` was pushed by the previous `}` instead,
+                    // producing an off-by-one shift in the literals vector.
+                    literals.push(current.clone());
+                    current.clear();
                     in_placeholder = true;
                 }
             } else if c == '}' {
@@ -428,10 +434,11 @@ impl WasmCompiler {
             return Err(WasmError::parse("unclosed { in format string"));
         }
 
-        // Push any remaining literal
-        if !current.is_empty() || literals.is_empty() {
-            literals.push(current);
-        }
+        // Always push the trailing literal (text after the last placeholder,
+        // or the entire string when there are no placeholders).  This keeps
+        // the invariant literals.len() == format_specs.len() + 1, which
+        // compile_format_macro relies on.
+        literals.push(current);
 
         let placeholders = format_specs.len();
         Ok(FormatParts {

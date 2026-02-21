@@ -819,7 +819,8 @@ impl WasmCompiler {
                 // Get just the types for type registration
                 let just_types: Vec<ValType> = param_types.iter().map(|(_, t)| *t).collect();
                 let type_idx = self.get_or_create_type(just_types, result_types.clone());
-                let func_idx = self.imports.import_count() + self.functions.len() as u32;
+                // Use sentinel to avoid stale import_count (fixed in post-processing)
+                let func_idx = crate::wasm::DEFINED_FUNC_SENTINEL + self.functions.len() as u32;
 
                 let new_func = super::types::CompiledFunction::new(
                     fn_name.clone(),

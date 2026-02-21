@@ -11,9 +11,21 @@ use super::types::{CompiledFunction, EnumLayout, StructLayout};
 use super::WasmCompiler;
 use crate::ast::{
     ConstDef, EnumDef, Function, ImplItem, Item, MacroInvocation, Module, Param, SourceFile,
-    StaticDef, StructDef, StructFields, UseDecl, UseTree, Visibility,
+    StaticDef, StructDef, StructFields, TypeExpr, UseDecl, UseTree, Visibility,
 };
 use crate::parser::Parser;
+
+/// Extract the simple type name from a TypeExpr (e.g. "VElement" from `VElement!`).
+/// Unwraps Evidential, Reference, and Pointer wrappers to get the leaf Path name.
+fn extract_type_simple_name(ty: &TypeExpr) -> Option<String> {
+    match ty {
+        TypeExpr::Path(path) => path.segments.last().map(|s| s.ident.name.clone()),
+        TypeExpr::Evidential { inner, .. } => extract_type_simple_name(inner),
+        TypeExpr::Reference { inner, .. } => extract_type_simple_name(inner),
+        TypeExpr::Pointer { inner, .. } => extract_type_simple_name(inner),
+        _ => None,
+    }
+}
 
 impl WasmCompiler {
     /// Compile a source file.
@@ -748,14 +760,16 @@ impl WasmCompiler {
             Item::Impl(impl_block) => {
                 // Push type name onto module path to match how we registered the functions
                 let type_name = self.type_path_to_string(&impl_block.self_ty);
-                self.module_path.push(type_name);
+                self.module_path.push(type_name.clone());
                 self.impl_depth += 1;
+                let prev_impl_type = self.current_impl_type.replace(type_name);
                 for item in &impl_block.items {
                     if let ImplItem::Function(func) = item {
                         self.compile_function(func)?;
                     }
                 }
                 self.impl_depth -= 1;
+                self.current_impl_type = prev_impl_type;
                 self.module_path.pop();
                 Ok(())
             }
@@ -811,21 +825,31 @@ impl WasmCompiler {
             if is_unit {
                 layout.add_unit_variant(&variant.name.name);
             } else {
-                let mut payload = StructLayout::new(&variant.name.name);
                 match &variant.fields {
                     StructFields::Named(fields) => {
+                        let mut payload = StructLayout::new(&variant.name.name);
                         for field in fields {
                             payload.add_field(&field.name.name);
                         }
+                        layout.add_variant_with_payload(&variant.name.name, payload);
                     }
                     StructFields::Tuple(types) => {
+                        // Use the inner type's simple name as the payload layout name so
+                        // bind_pattern can recover the struct type for method dispatch.
+                        // e.g. VNode::Element(VElement!) → payload.name = "VElement"
+                        let inner_name = types.first()
+                            .and_then(|ty| extract_type_simple_name(ty))
+                            .unwrap_or_else(|| variant.name.name.clone());
+                        let mut payload = StructLayout::new(&inner_name);
                         for (i, _) in types.iter().enumerate() {
                             payload.add_field(&format!("_{}", i));
                         }
+                        layout.add_variant_with_payload(&variant.name.name, payload);
                     }
-                    StructFields::Unit => {}
+                    StructFields::Unit => {
+                        layout.add_unit_variant(&variant.name.name);
+                    }
                 }
-                layout.add_variant_with_payload(&variant.name.name, payload);
             }
         }
 
@@ -1434,6 +1458,7 @@ impl WasmCompiler {
         // Track the current actor context for self resolution
         let prev_actor = self.current_actor.take();
         self.current_actor = Some(actor_name.clone());
+        let prev_impl_type = self.current_impl_type.replace(actor_name.clone());
 
         // 3. Compile message handlers
         for handler in &actor.handlers {
@@ -1446,8 +1471,9 @@ impl WasmCompiler {
             self.compile_actor_method(&actor_name, method)?;
         }
 
-        // Restore previous actor context
+        // Restore previous actor/impl-type context
         self.current_actor = prev_actor;
+        self.current_impl_type = prev_impl_type;
 
         self.impl_depth -= 1;
         // Pop actor name from path

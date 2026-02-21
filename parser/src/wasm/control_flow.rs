@@ -718,8 +718,9 @@ impl WasmCompiler {
                 for pat in &patterns[1..] {
                     {
                         let func = self.current_function_mut().unwrap();
+                        // pattern_check returns i64; I64Eqz: i64→i32 (1 if zero=not matched)
                         func.push(Instruction::I64Eqz);
-                        func.push(Instruction::I32WrapI64);
+                        // I64Eqz already returns i32 — If takes i32 condition directly
                         func.push(Instruction::If(BlockType::Result(ValType::I64)));
                     }
 
@@ -1033,7 +1034,7 @@ impl WasmCompiler {
                 func.push(Instruction::Drop);
             }
 
-            Pattern::TupleStruct { fields, .. } => {
+            Pattern::TupleStruct { path, fields } => {
                 // Store pointer
                 let func = self
                     .current_function_mut()
@@ -1041,7 +1042,17 @@ impl WasmCompiler {
                 let ptr_idx = func.alloc_local("__tuplestruct_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(ptr_idx));
 
-        
+                // Determine the inner struct type for local_var_types.
+                // For e.g. VNode::Element(el): enum="VNode", variant="Element" → inner="VElement"
+                let inner_type = if path.segments.len() >= 2 {
+                    let enum_name = &path.segments[path.segments.len() - 2].ident.name;
+                    let variant_name = &path.segments[path.segments.len() - 1].ident.name;
+                    self.enum_layouts.get(enum_name.as_str())
+                        .and_then(|layout| layout.variant_inner_type(variant_name))
+                        .map(str::to_string)
+                } else {
+                    None
+                };
 
                 // Bind each field (skip tag at offset 0)
                 for (i, pat) in fields.iter().enumerate() {
@@ -1053,7 +1064,16 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
+
+                    // If binding a simple ident and we know the inner struct type,
+                    // register it for method dispatch and field offset resolution.
+                    if let (crate::ast::Pattern::Ident { name, .. }, Some(ref type_name)) =
+                        (pat, &inner_type)
+                    {
+                        if self.struct_layouts.contains_key(type_name.as_str()) {
+                            self.local_var_types.insert(name.name.clone(), type_name.clone());
+                        }
+                    }
 
                     self.bind_pattern(pat)?;
                 }
