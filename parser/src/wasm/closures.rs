@@ -2721,14 +2721,57 @@ impl WasmCompiler {
                 Ok(true)
             }
 
-            // Generic VNode event handler methods: ·on_X(callback) -> VNode
-            // Any method starting with "on_" is an event handler attachment.
-            // The callback is NOT compiled — we don't need its value because we can't
-            // register arbitrary callbacks in the current WASM/vdom bridge.
-            // Just return the vnode handle unchanged for chaining.
+            // Generic VNode event handler methods: ·on_X(msg) -> VNode
+            // Stores the WraithMsg discriminant as a numeric vnode prop so the JS
+            // runtime can wire up DOM event listeners that call window.wraithDispatch(tag).
+            // Prop key: method name as-is (e.g. "on_commandpalette").
+            // Prop value: i64 enum discriminant resolved from the arg's variant name.
             m if m.starts_with("on_") => {
-                self.compile_expr(receiver)?; // vnode handle (stays on stack)
-                // Callbacks intentionally skipped — vdom bridge stubs don't register them.
+                use wasm_encoder::ValType;
+
+                // Resolve the message discriminant from the first arg.
+                // The arg is expected to be a unit enum variant path (e.g. OpenCommandPalette).
+                // Look up its tag in enum_layouts by variant name.
+                let msg_tag_i64: i64 = if args.len() == 1 {
+                    let mut found: Option<i64> = None;
+                    if let Expr::Path(path) = &args[0] {
+                        let variant_name = path.segments.last()
+                            .map(|s| s.ident.name.as_str()).unwrap_or("");
+                        'outer: for layout in self.enum_layouts.values() {
+                            if let Some(tag) = layout.variant_tag(variant_name) {
+                                found = Some(tag as i64);
+                                break 'outer;
+                            }
+                        }
+                    }
+                    found.unwrap_or(0)
+                } else {
+                    0
+                };
+
+                // vdom_set_vnode_prop stores an i64 value (vs str_prop which stores a string).
+                let set_prop_idx = self.imports.get_func("vdom_set_vnode_prop")
+                    .ok_or_else(|| WasmError::internal("vdom_set_vnode_prop import not found"))?;
+
+                // Intern the prop key string (the method name, e.g. "on_commandpalette").
+                let key_offset = self.add_string(m) as i64;
+
+                // Compile receiver, store in local for chaining.
+                self.compile_expr(receiver)?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let vnode_local = func.alloc_local("__on_vnode".to_string(), ValType::I64);
+                func.push(Instruction::LocalSet(vnode_local));
+
+                // vdom_set_vnode_prop(vnode_i32, key_i64, tag_i64) — returns void.
+                func.push(Instruction::LocalGet(vnode_local));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::I64Const(key_offset));
+                func.push(Instruction::I64Const(msg_tag_i64));
+                func.push(Instruction::Call(set_prop_idx));
+
+                // Return vnode for chaining.
+                func.push(Instruction::LocalGet(vnode_local));
                 Ok(true)
             }
 
