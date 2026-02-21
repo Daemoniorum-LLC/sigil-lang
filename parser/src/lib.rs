@@ -98,7 +98,7 @@ pub mod websocket;
 #[cfg(feature = "playground")]
 pub mod playground_api;
 
-#[cfg(feature = "react-migrate")]
+#[cfg(any(feature = "react-migrate", feature = "egui-migrate"))]
 pub mod migrate;
 
 pub use ast::*;

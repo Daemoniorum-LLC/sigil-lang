@@ -485,6 +485,31 @@ fn main() -> ExitCode {
                 };
             }
 
+            // egui migration (feature-gated)
+            #[cfg(feature = "egui-migrate")]
+            if args.iter().any(|a| a == "--from-egui") {
+                use sigil_parser::migrate::egui::{parse_egui_migrate_args, run_egui_migration};
+                return match parse_egui_migrate_args(&args[2..]) {
+                    Err(e) => {
+                        eprintln!("egui migration argument error: {}", e);
+                        ExitCode::from(1)
+                    }
+                    Ok(config) => match run_egui_migration(&config) {
+                        Ok(summary) => {
+                            eprintln!(
+                                "[egui-migrate] Done: {} file(s), {} actor(s), {} spec(s) written",
+                                summary.files_processed, summary.actors_found, summary.specs_written
+                            );
+                            ExitCode::SUCCESS
+                        }
+                        Err(e) => {
+                            eprintln!("egui migration error: {}", e);
+                            ExitCode::from(1)
+                        }
+                    },
+                };
+            }
+
             if workspace {
                 // Migrate entire workspace from Sigil.toml
                 migrate_workspace(dry_run, backup, evidentiality)
@@ -494,6 +519,8 @@ fn main() -> ExitCode {
                 eprintln!("       sigil migrate --workspace [options]");
                 #[cfg(feature = "react-migrate")]
                 eprintln!("       sigil migrate --from-react <dir> [options]");
+                #[cfg(feature = "egui-migrate")]
+                eprintln!("       sigil migrate --from-egui <file|dir> [options]");
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  -o, --output     Output directory (writes .sg files, preserves structure)");
@@ -503,6 +530,8 @@ fn main() -> ExitCode {
                 eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
                 #[cfg(feature = "react-migrate")]
                 eprintln!("  --from-react     Migrate React/TSX to Qliphoth actors");
+                #[cfg(feature = "egui-migrate")]
+                eprintln!("  --from-egui      Migrate egui Rust sources to Qliphoth actors");
                 eprintln!();
                 eprintln!("When -o is specified, .rs files are converted to .sg files in output dir.");
                 eprintln!("Without -o, files are modified in-place (must be .sg or .sigil).");
