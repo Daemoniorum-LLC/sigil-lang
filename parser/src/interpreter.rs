@@ -3976,7 +3976,13 @@ impl Interpreter {
                                     // `invoke tome·analyze;` case: prefix=["tome"], simple_name="analyze"
                                     simple_name.clone()
                                 };
-                                let module_file = format!("{}/{}.sigil", source_dir, module_name);
+                                let module_file_sigil = format!("{}/{}.sigil", source_dir, module_name);
+                                let module_file_sg = format!("{}/{}.sg", source_dir, module_name);
+                                let module_file = if std::path::Path::new(&module_file_sigil).exists() {
+                                    module_file_sigil
+                                } else {
+                                    module_file_sg
+                                };
                                 crate::sigil_debug!(
                                     "DEBUG process_use_tree: loading tome module '{}' from {}",
                                     module_name,
