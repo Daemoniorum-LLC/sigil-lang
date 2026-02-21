@@ -436,7 +436,7 @@ invoke std·time·{Duration, Timestamp};
 // ============================================================================
 
 /// Epistemic status of information
-#[derive(Clone, Copy, PartialEq)]
+//@ rune: derive(Clone, Copy, PartialEq)
 ☉ ᛈ Epistemic {
     /// Known to be true (axiomatic)
     Axiomatic,
@@ -1124,7 +1124,7 @@ invoke std·time·{Duration, Timestamp};
     }
 }
 
-⊢ std·ops·Add ∀ Vector {
+⊢ Add ∀ Vector {
     type Output = Self;
 
     rite add(self, other: Self) -> Self {
@@ -1136,7 +1136,7 @@ invoke std·time·{Duration, Timestamp};
     }
 }
 
-⊢ std·ops·Sub ∀ Vector {
+⊢ Sub ∀ Vector {
     type Output = Self;
 
     rite sub(self, other: Self) -> Self {
@@ -1148,7 +1148,7 @@ invoke std·time·{Duration, Timestamp};
     }
 }
 
-⊢ std·ops·Mul<f32> ∀ Vector {
+⊢ Mul ∀ Vector {
     type Output = Self;
 
     rite mul(self, scalar: f32) -> Self {
@@ -1193,7 +1193,7 @@ invoke std·time·{Duration, Timestamp};
     ☉ rite to_bytes(&self) -> [u8; 8] { [0u8; 8] }
 }
 
-⊢ std·ops·Add<Duration> ∀ Timestamp {
+⊢ Add ∀ Timestamp {
     type Output = Self;
     rite add(self, _duration: Duration) -> Self { self }
 }

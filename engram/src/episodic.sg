@@ -1,7 +1,6 @@
 // Episodic Memory Module
 // Experience memory - what happened over time
 
-module engram·episodic
 
 invoke engram·types·*
 invoke engram·config·EpisodicConfig

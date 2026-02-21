@@ -1,7 +1,6 @@
 // Engram Configuration
 // Configuration types ∀ all memory subsystems
 
-module engram·config
 
 invoke engram·types·*
 
@@ -283,7 +282,7 @@ invoke engram·types·*
     Merge,
 
     /// Custom resolution function
-    Custom { resolver: rite(old: &Node, new: &Node) -> Node },
+    Custom,
 }
 
 // ============================================================================

@@ -1,10 +1,8 @@
 // Graph Index
 // Adjacency-based index ∀ knowledge graph traversal
 
-module engram·index·graph
 
-invoke engram·types·*
-invoke std·collections·{HashMap, HashSet, VecDeque}
+// types provided by engram·types (stripped for runtime)
 
 // ============================================================================
 // Graph Index
@@ -34,7 +32,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
     edge_count: usize,
 }
 
-#[derive(Clone)]
+//@ rune: derive(Clone)
 Σ EdgeEntry {
     node: NodeId,
     edge: EdgeId,
@@ -134,9 +132,10 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
 
     /// Remove a node and all its edges
     ☉ rite remove_node(id: &NodeId) -> bool {
-        ⎇ !self.nodes.remove(id) {
+        ⎇ !self.nodes.contains(id) {
             ⤺ false;
         }
+        self.nodes.remove(id);
 
         // Collect edges to remove
         ≔ outgoing_edges: Vec<_> = self.outgoing.remove(id)
@@ -235,7 +234,8 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
 
             ⎇ depth < max_depth {
                 ∀ (neighbor, _, _) ∈ self.neighbors_out(&node) {
-                    ⎇ visited.insert(neighbor.clone()) {
+                    ⎇ !visited.contains(&neighbor) {
+                        visited.insert(neighbor.clone());
                         queue.push_back((neighbor, depth + 1));
                     }
                 }
@@ -262,9 +262,10 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
         visited: &Δ HashSet<NodeId>,
         result: &Δ Vec<(NodeId, usize)>,
     ) {
-        ⎇ !visited.insert(node.clone()) {
+        ⎇ visited.contains(node) {
             ⤺;
         }
+        visited.insert(node.clone());
 
         result.push((node.clone(), depth));
 
@@ -387,7 +388,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque}
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
@@ -395,7 +396,7 @@ scroll tests {
         NodeId·from_bytes([n; 16])
     }
 
-    #[test]
+    //@ rune: test
     rite test_add_and_traverse() {
         ≔ Δ index = GraphIndex·new();
 
@@ -416,7 +417,7 @@ scroll tests {
         assert_eq!(reachable.len(), 3);
     }
 
-    #[test]
+    //@ rune: test
     rite test_paths() {
         ≔ Δ index = GraphIndex·new();
 

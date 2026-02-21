@@ -832,7 +832,7 @@ invoke std·time·{Duration, Timestamp};
     rite check_consensus(&Δ self, proposal_id: &ProposalId) {
         ≔ state = ⌥ self.proposals.get_mut(proposal_id) {
             Some(s) => s,
-            None => return,
+            None => ⤺,
         };
 
         ⎇ !matches!(state.status, ProposalStatus·Open) {

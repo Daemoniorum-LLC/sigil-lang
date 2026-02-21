@@ -1,11 +1,8 @@
 // HNSW Vector Index
 // Hierarchical Navigable Small World graph ∀ approximate nearest neighbor search
 
-module engram·index·hnsw
 
-invoke engram·types·*
-invoke std·collections·{HashMap, HashSet, BinaryHeap}
-invoke std·cmp·Ordering
+// types provided by engram·types (stripped for runtime)
 
 // ============================================================================
 // HNSW Index
@@ -90,7 +87,7 @@ invoke std·cmp·Ordering
     }
 }
 
-#[derive(Clone, Copy)]
+//@ rune: derive(Clone, Copy)
 ☉ ᛈ DistanceMetric {
     Cosine,
     Euclidean,
@@ -130,7 +127,7 @@ invoke std·cmp·Ordering
         );
 
         // Normalize ⎇ using cosine distance
-        ≔ vector = ⎇ matches!(self.config.metric, DistanceMetric·Cosine) {
+        ≔ vector = ⎇ self.config.metric == DistanceMetric·Cosine {
             vector.normalize()
         } ⎉ {
             vector
@@ -148,7 +145,7 @@ invoke std·cmp·Ordering
         };
 
         // Handle first insertion
-        ⎇ self.entry_point.is_none() {
+        ⎇ self.entry_point == null {
             self.entry_point = Some(id.clone());
             self.max_level = level;
             self.nodes.insert(id, node);
@@ -193,7 +190,7 @@ invoke std·cmp·Ordering
             }
 
             // Update current ∀ next level
-            ⎇ !selected.is_empty() {
+            ⎇ len(selected) > 0 {
                 current = selected[0].clone();
             }
         }
@@ -210,12 +207,12 @@ invoke std·cmp·Ordering
 
     /// Search ∀ k nearest neighbors
     ☉ rite search(query: &Vector<f32>, k: usize) -> Vec<(NodeId, f64)> {
-        ⎇ self.nodes.is_empty() {
+        ⎇ len(self.nodes) == 0 {
             ⤺ vec![];
         }
 
         // Normalize query ⎇ using cosine
-        ≔ query = ⎇ matches!(self.config.metric, DistanceMetric·Cosine) {
+        ≔ query = ⎇ self.config.metric == DistanceMetric·Cosine {
             query.normalize()
         } ⎉ {
             query.clone()
@@ -314,7 +311,8 @@ invoke std·cmp·Ordering
 
         // Initialize with entry points
         ∀ ep ∈ entry_points {
-            ⎇ visited.insert(ep.clone()) {
+            ⎇ !visited.contains(&ep) {
+                visited.insert(ep.clone());
                 ≔ dist = self.distance(query, &self.nodes.get(&ep).unwrap().vector);
                 candidates.push(DistanceNode { id: ep.clone(), distance: dist, is_min: true });
                 results.push(DistanceNode { id: ep, distance: dist, is_min: false });
@@ -341,7 +339,8 @@ invoke std·cmp·Ordering
                 };
 
                 ∀ neighbor_id ∈ neighbors {
-                    ⎇ visited.insert(neighbor_id.clone()) {
+                    ⎇ !visited.contains(neighbor_id) {
+                        visited.insert(neighbor_id.clone());
                         ⎇ ≔ Some(neighbor) = self.nodes.get(neighbor_id) {
                             ≔ dist = self.distance(query, &neighbor.vector);
 
@@ -568,11 +567,9 @@ invoke std·cmp·Ordering
 ⊢ RandomState {
     rite new() -> Self {
         // Use system time as seed
+        ≔ ts = Sys·clock_gettime();
         Self {
-            state: std·time·SystemTime·now()
-                .duration_since(std·time·UNIX_EPOCH)
-                .unwrap()
-                .as_nanos() as u64
+            state: ts
         }
     }
 
@@ -581,7 +578,7 @@ invoke std·cmp·Ordering
         self.state ^= self.state << 13;
         self.state ^= self.state >> 7;
         self.state ^= self.state << 17;
-        (self.state as f64) / (u64·MAX as f64)
+        (self.state as f64) / 18446744073709551615.0
     }
 }
 
@@ -589,11 +586,11 @@ invoke std·cmp·Ordering
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_insert_and_search() {
         ≔ Δ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
 
@@ -623,7 +620,7 @@ scroll tests {
         assert!(results[0].1 > 0.9);
     }
 
-    #[test]
+    //@ rune: test
     rite test_remove() {
         ≔ Δ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
 
@@ -635,7 +632,7 @@ scroll tests {
         assert!(!index.contains(&id));
     }
 
-    #[test]
+    //@ rune: test
     rite test_empty_search() {
         ≔ index = HNSWIndex·new(HNSWConfig·default().with_dimensions(3));
         ≔ results = index.search(&Vector·new(vec![1.0, 0.0, 0.0]), 5);
