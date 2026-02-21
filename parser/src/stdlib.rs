@@ -38777,6 +38777,18 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
+        // Native path: use libc::open directly so we get a real OS fd (<4000)
+        // that Sys·read_string / Sys·poll_fds can handle natively.
+        // This is required for FIFOs (O_NONBLOCK) and Unix socket paths.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if let Ok(c_path) = CString::new(path.as_str()) {
+                let fd = unsafe { libc::open(c_path.as_ptr(), flags as i32, 0o600i32) };
+                return Ok(Value::Int(fd as i64));
+            }
+        }
+
         use std::fs::{File, OpenOptions};
 
         let result = if flags & 1 != 0 || flags & 2 != 0 {
@@ -38940,6 +38952,7 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "O_CREAT", Some(0), |_, _| Ok(Value::Int(64)));
     define(interp, "O_TRUNC", Some(0), |_, _| Ok(Value::Int(512)));
     define(interp, "O_APPEND", Some(0), |_, _| Ok(Value::Int(1024)));
+    define(interp, "O_NONBLOCK", Some(0), |_, _| Ok(Value::Int(2048)));
 
     // Memory protection flags for mmap
     define(interp, "PROT_NONE", Some(0), |_, _| Ok(Value::Int(0)));
@@ -38956,6 +38969,29 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "STDIN_FILENO", Some(0), |_, _| Ok(Value::Int(0)));
     define(interp, "STDOUT_FILENO", Some(0), |_, _| Ok(Value::Int(1)));
     define(interp, "STDERR_FILENO", Some(0), |_, _| Ok(Value::Int(2)));
+
+    // mkfifo(path: str, mode: i64) -> i64
+    // Create a FIFO (named pipe). Returns 0 on success, -1 on error.
+    define(interp, "mkfifo", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("mkfifo requires string path")),
+        };
+        let mode = match &args[1] {
+            Value::Int(n) => *n as u32,
+            _ => 0o600,
+        };
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if let Ok(c_path) = CString::new(path.as_str()) {
+                let ret = unsafe { libc::mkfifo(c_path.as_ptr(), mode as libc::mode_t) };
+                return Ok(Value::Int(ret as i64));
+            }
+        }
+        let _ = (path, mode);
+        Ok(Value::Int(0))  // fake: always succeeds
+    });
 
     // ========================================================================
     // Networking Syscalls (Phase 9)
@@ -38996,7 +39032,18 @@ fn register_sys(interp: &mut Interpreter) {
             });
             Ok(Value::Int(fd))
         } else {
-            Ok(Value::Int(-93)) // EPROTONOSUPPORT
+            // For AF_UNIX and other socket types, use native libc in native builds
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let protocol = match &args[2] {
+                    Value::Int(n) => *n as i32,
+                    _ => 0,
+                };
+                let fd = unsafe { libc::socket(domain, sock_type, protocol) };
+                return Ok(Value::Int(fd as i64));
+            }
+            #[allow(unreachable_code)]
+            Ok(Value::Int(-93)) // EPROTONOSUPPORT (non-native fallback)
         }
     });
 
@@ -39053,6 +39100,20 @@ fn register_sys(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Sys·listen requires int fd")),
         };
+        let backlog = match &args[1] {
+            Value::Int(n) => *n as i32,
+            _ => 8,
+        };
+
+        // Native path for real OS sockets (fd < 4000)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < 4000 {
+                let ret = unsafe { libc::listen(fd as i32, backlog) };
+                return Ok(Value::Int(ret as i64));
+            }
+        }
+        let _ = backlog;
 
         let exists = FAKE_SOCKET_STATE.with(|map| {
             map.borrow().contains_key(&fd)
@@ -39076,6 +39137,17 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·accept requires int fd")),
         };
 
+        // Native path for real OS sockets (fd < 4000)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < 4000 {
+                let client = unsafe {
+                    libc::accept(fd as i32, std::ptr::null_mut(), std::ptr::null_mut())
+                };
+                return Ok(Value::Int(client as i64));
+            }
+        }
+
         let is_listening = FAKE_SOCKET_STATE.with(|map| {
             matches!(map.borrow().get(&fd), Some(FakeSocket::Listening))
         });
@@ -39090,6 +39162,86 @@ fn register_sys(interp: &mut Interpreter) {
         } else {
             Ok(Value::Int(-9)) // EBADF
         }
+    });
+
+    // Sys·bind_unix(fd: i64, path: str) -> i64
+    // Bind a Unix domain socket to a filesystem path. Returns 0 or negative errno.
+    define(interp, "Sys·bind_unix", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·bind_unix requires int fd")),
+        };
+        let path = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Sys·bind_unix requires string path")),
+        };
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if fd >= 0 && fd < 4000 {
+                if let Ok(c_path) = CString::new(path.as_str()) {
+                    let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+                    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+                    let path_bytes = c_path.as_bytes_with_nul();
+                    let sun_path_len = addr.sun_path.len();
+                    let copy_len = path_bytes.len().min(sun_path_len - 1);
+                    for (i, &b) in path_bytes[..copy_len].iter().enumerate() {
+                        addr.sun_path[i] = b as i8;
+                    }
+                    let ret = unsafe {
+                        libc::bind(
+                            fd as i32,
+                            &addr as *const libc::sockaddr_un as *const libc::sockaddr,
+                            std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
+                        )
+                    };
+                    return Ok(Value::Int(ret as i64));
+                }
+            }
+        }
+        let _ = (fd, path);
+        Ok(Value::Int(0))  // fake: always succeeds
+    });
+
+    // Sys·connect_unix(fd: i64, path: str) -> i64
+    // Connect a Unix domain socket to a filesystem path. Returns 0 or negative errno.
+    define(interp, "Sys·connect_unix", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·connect_unix requires int fd")),
+        };
+        let path = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Sys·connect_unix requires string path")),
+        };
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if fd >= 0 && fd < 4000 {
+                if let Ok(c_path) = CString::new(path.as_str()) {
+                    let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+                    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+                    let path_bytes = c_path.as_bytes_with_nul();
+                    let sun_path_len = addr.sun_path.len();
+                    let copy_len = path_bytes.len().min(sun_path_len - 1);
+                    for (i, &b) in path_bytes[..copy_len].iter().enumerate() {
+                        addr.sun_path[i] = b as i8;
+                    }
+                    let ret = unsafe {
+                        libc::connect(
+                            fd as i32,
+                            &addr as *const libc::sockaddr_un as *const libc::sockaddr,
+                            std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
+                        )
+                    };
+                    return Ok(Value::Int(ret as i64));
+                }
+            }
+        }
+        let _ = (fd, path);
+        Ok(Value::Int(-9)) // EBADF in non-native
     });
 
     // Sys·send(fd: i64, buf: ptr, len: i64, flags: i64) -> i64
@@ -40033,6 +40185,19 @@ fn register_sys(interp: &mut Interpreter) {
             }
             let out: Vec<Value> = results.into_iter().map(Value::Bool).collect();
             Ok(Value::Array(Rc::new(RefCell::new(out))))
+        }
+    });
+
+    // Sys·getenv(name: str) -> str
+    // Get the value of an environment variable. Returns "" if not set.
+    define(interp, "Sys·getenv", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Sys·getenv requires string name")),
+        };
+        match std::env::var(&name) {
+            Ok(v) => Ok(Value::String(Rc::new(v))),
+            Err(_) => Ok(Value::String(Rc::new(String::new()))),
         }
     });
 
