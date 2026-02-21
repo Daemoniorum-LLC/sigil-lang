@@ -1,0 +1,58 @@
+//! JSON public API.
+//!
+//! Flow: `from_str::<T>(s)` → `JsonLexer` → `JsonParser` → `Value~` → `T::decode(value)` → `CodecResult<T>~`
+//!
+//! All public functions are `☉` (exported).
+
+invoke super·super::error·{CodecError, CodecResult};
+invoke super·super::traits·{Encode, Decode};
+invoke super·super::value·Value;
+invoke super·lexer·JsonLexer;
+invoke super·parser·JsonParser;
+invoke super·writer·{write_compact, write_pretty};
+
+scroll lexer;
+scroll parser;
+scroll writer;
+
+// ============================================================================
+// Public API
+// ============================================================================
+
+/// Deserialize a JSON string directly into type `T`.
+///
+/// ```sigil
+/// ≔ manifest~ = codec·json·from_str::<PackageManifest>(raw_json)?;
+/// ```
+☉ rite from_str<T: Decode>(s: &str) -> CodecResult<T>~ {
+    ≔ value~ = value_from_str(s)?;
+    T·decode(&value)
+}
+
+/// Deserialize a byte slice of JSON into type `T`.
+☉ rite from_slice<T: Decode>(bytes: &[u8]) -> CodecResult<T>~ {
+    ⌥ std·str·from_utf8(bytes) {
+        Ok(s)  => from_str::<T>(s),
+        Err(e) => Err(CodecError·json_msg(
+            format!("invalid UTF-8 in JSON input: {}", e)
+        )),
+    }
+}
+
+/// Serialize `T` to a compact JSON string.
+☉ rite to_string<T: Encode>(value: &T) -> String! {
+    write_compact(&value.encode())
+}
+
+/// Serialize `T` to a pretty-printed JSON string (2-space indent).
+☉ rite to_string_pretty<T: Encode>(value: &T) -> String! {
+    write_pretty(&value.encode(), 2)
+}
+
+/// Low-level: parse a JSON string to a raw `Value` tree.
+///
+/// Use when you need to inspect the intermediate representation.
+☉ rite value_from_str(s: &str) -> CodecResult<Value>~ {
+    vary parser = JsonParser·new(s);
+    parser.parse()
+}

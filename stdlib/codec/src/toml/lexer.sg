@@ -1,0 +1,480 @@
+//! TOML lexer — tokenizes a TOML document into `TomlToken` values.
+//!
+//! Covers:
+//! - `[table]` and `[[array-of-tables]]` headers
+//! - Bare keys `[A-Za-z0-9_-]+` and dotted keys `a.b.c`
+//! - Quoted keys (`"key"` and `'key'`)
+//! - Inline strings (`"..."`, `'...'`), multi-line (`"""..."""`, `'''...'''`)
+//! - Integers: decimal, `0x`, `0o`, `0b`, `_` separators
+//! - Floats: `inf`, `-inf`, `nan`
+//! - Datetimes: ISO-8601 pattern detection
+//! - `#` comments (to end of line)
+//! - Significant newlines (terminate key-value pairs)
+
+invoke super·super::error·{CodecError, CodecResult};
+
+// ============================================================================
+// TomlToken
+// ============================================================================
+
+☉ ᛈ TomlToken {
+    /// `[`
+    LBracket!,
+    /// `]`
+    RBracket!,
+    /// `[[`
+    DoubleLBracket!,
+    /// `]]`
+    DoubleRBracket!,
+    /// `=`
+    Equals!,
+    /// `.`
+    Dot!,
+    /// `,`
+    Comma!,
+    /// `{`
+    LBrace!,
+    /// `}`
+    RBrace!,
+    /// Newline (significant in TOML)
+    Newline!,
+    /// Bare or quoted key segment
+    Key(String)!,
+    /// String value
+    StringVal(String)!,
+    /// Integer value
+    IntVal(i64)!,
+    /// Float value
+    FloatVal(f64)!,
+    /// Boolean
+    BoolVal(bool)!,
+    /// Datetime (ISO-8601 raw string)
+    DatetimeVal(String)!,
+    Eof!,
+}
+
+☉ ⊢ Debug ∀ TomlToken {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            TomlToken·LBracket          => write!(f, "["),
+            TomlToken·RBracket          => write!(f, "]"),
+            TomlToken·DoubleLBracket    => write!(f, "[["),
+            TomlToken·DoubleRBracket    => write!(f, "]]"),
+            TomlToken·Equals            => write!(f, "="),
+            TomlToken·Dot               => write!(f, "."),
+            TomlToken·Comma             => write!(f, ","),
+            TomlToken·LBrace            => write!(f, "{{"),
+            TomlToken·RBrace            => write!(f, "}}"),
+            TomlToken·Newline           => write!(f, "<NL>"),
+            TomlToken·Key(k)            => write!(f, "Key({})", k),
+            TomlToken·StringVal(s)      => write!(f, "Str({:?})", s),
+            TomlToken·IntVal(n)         => write!(f, "Int({})", n),
+            TomlToken·FloatVal(v)       => write!(f, "Float({})", v),
+            TomlToken·BoolVal(b)        => write!(f, "Bool({})", b),
+            TomlToken·DatetimeVal(dt)   => write!(f, "Datetime({})", dt),
+            TomlToken·Eof               => write!(f, "<eof>"),
+        }
+    }
+}
+
+// ============================================================================
+// TomlLexer
+// ============================================================================
+
+☉ Σ TomlLexer {
+    src:  Vec<char>!,
+    pos:  usize!,
+    line: u32!,
+    col:  u32!,
+}
+
+☉ ⊢ TomlLexer {
+    ☉ rite new(s: &str) -> TomlLexer! {
+        TomlLexer {
+            src:  s.chars().collect(),
+            pos:  0,
+            line: 1,
+            col:  1,
+        }
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    rite peek(&self) -> Option<char>? {
+        ⎇ self.pos < self.src.len() {
+            Some(self.src[self.pos])
+        } ⎉ {
+            None
+        }
+    }
+
+    rite peek_at(&self, offset: usize) -> Option<char>? {
+        ≔ idx! = self.pos + offset;
+        ⎇ idx < self.src.len() {
+            Some(self.src[idx])
+        } ⎉ {
+            None
+        }
+    }
+
+    rite advance(&vary self) -> Option<char>? {
+        ⎇ self.pos < self.src.len() {
+            ≔ ch! = self.src[self.pos];
+            self.pos += 1;
+            ⎇ ch == '\n' {
+                self.line += 1;
+                self.col  = 1;
+            } ⎉ {
+                self.col += 1;
+            }
+            Some(ch)
+        } ⎉ {
+            None
+        }
+    }
+
+    rite err(&self, msg: &str) -> CodecError! {
+        CodecError·toml(self.line, self.col, msg.to_string())
+    }
+
+    rite skip_inline_whitespace(&vary self) {
+        ⟳ true {
+            ⌥ self.peek() {
+                Some(' ') | Some('\t') => { self.advance(); }
+                _                      => { ⊗; }
+            }
+        }
+    }
+
+    rite skip_comment(&vary self) {
+        ⟳ true {
+            ⌥ self.peek() {
+                None | Some('\n') => { ⊗; }
+                _                 => { self.advance(); }
+            }
+        }
+    }
+
+    // ── Basic string parsing ─────────────────────────────────────────────────
+
+    rite lex_basic_string(&vary self) -> CodecResult<String>~ {
+        // Opening `"` already consumed
+        vary buf = String·new();
+        ⟳ true {
+            ⌥ self.advance() {
+                None => { ret Err(self.err("unterminated basic string")); }
+                Some('"') => { ⊗; }
+                Some('\\') => {
+                    ⌥ self.advance() {
+                        Some('"')  => buf.push('"'),
+                        Some('\\') => buf.push('\\'),
+                        Some('/')  => buf.push('/'),
+                        Some('b')  => buf.push('\x08'),
+                        Some('f')  => buf.push('\x0C'),
+                        Some('n')  => buf.push('\n'),
+                        Some('r')  => buf.push('\r'),
+                        Some('t')  => buf.push('\t'),
+                        Some('u')  => {
+                            vary hex = String·with_capacity(4);
+                            ∀ _i ∈ 0..4 {
+                                ⌥ self.advance() {
+                                    Some(c) => hex.push(c),
+                                    None => { ret Err(self.err("truncated \\u escape")); }
+                                }
+                            }
+                            ⌥ u32·from_str_radix(&hex, 16).ok().and_then(char·from_u32) {
+                                Some(c) => buf.push(c),
+                                None => { ret Err(self.err(&format!("invalid \\u escape: {}", hex))); }
+                            }
+                        }
+                        Some('U') => {
+                            vary hex = String·with_capacity(8);
+                            ∀ _i ∈ 0..8 {
+                                ⌥ self.advance() {
+                                    Some(c) => hex.push(c),
+                                    None => { ret Err(self.err("truncated \\U escape")); }
+                                }
+                            }
+                            ⌥ u32·from_str_radix(&hex, 16).ok().and_then(char·from_u32) {
+                                Some(c) => buf.push(c),
+                                None => { ret Err(self.err(&format!("invalid \\U escape: {}", hex))); }
+                            }
+                        }
+                        Some('\n') => {
+                            // Line-ending backslash — skip whitespace on next line
+                            self.skip_inline_whitespace();
+                        }
+                        Some(c) => {
+                            ret Err(self.err(&format!("unknown escape: \\{}", c)));
+                        }
+                        None => { ret Err(self.err("unterminated escape")); }
+                    }
+                }
+                Some(c) => { buf.push(c); }
+            }
+        }
+        Ok(buf)
+    }
+
+    rite lex_literal_string(&vary self) -> CodecResult<String>~ {
+        // Opening `'` already consumed; no escapes
+        vary buf = String·new();
+        ⟳ true {
+            ⌥ self.advance() {
+                None => { ret Err(self.err("unterminated literal string")); }
+                Some('\'') => { ⊗; }
+                Some(c)    => { buf.push(c); }
+            }
+        }
+        Ok(buf)
+    }
+
+    rite lex_multiline_basic(&vary self) -> CodecResult<String>~ {
+        // Opening `"""` already consumed
+        // Skip immediate newline after opening
+        ⎇ self.peek() == Some('\n') { self.advance(); }
+        vary buf = String·new();
+        ⟳ true {
+            ⎇ self.peek_at(0) == Some('"') && self.peek_at(1) == Some('"') && self.peek_at(2) == Some('"') {
+                self.advance(); self.advance(); self.advance();
+                ⊗;
+            }
+            ⌥ self.advance() {
+                None => { ret Err(self.err("unterminated multi-line string")); }
+                Some('\\') => {
+                    ⌥ self.peek() {
+                        Some('\n') => {
+                            self.advance();
+                            self.skip_inline_whitespace();
+                        }
+                        _ => {
+                            // Treat as regular escape — re-enter basic escape handling
+                            ⌥ self.advance() {
+                                Some('n') => buf.push('\n'),
+                                Some('t') => buf.push('\t'),
+                                Some('r') => buf.push('\r'),
+                                Some('"') => buf.push('"'),
+                                Some('\\') => buf.push('\\'),
+                                Some(c) => buf.push(c),
+                                None => {}
+                            }
+                        }
+                    }
+                }
+                Some(c) => { buf.push(c); }
+            }
+        }
+        Ok(buf)
+    }
+
+    rite lex_multiline_literal(&vary self) -> CodecResult<String>~ {
+        // Opening `'''` already consumed
+        ⎇ self.peek() == Some('\n') { self.advance(); }
+        vary buf = String·new();
+        ⟳ true {
+            ⎇ self.peek_at(0) == Some('\'') && self.peek_at(1) == Some('\'') && self.peek_at(2) == Some('\'') {
+                self.advance(); self.advance(); self.advance();
+                ⊗;
+            }
+            ⌥ self.advance() {
+                None    => { ret Err(self.err("unterminated multi-line literal string")); }
+                Some(c) => { buf.push(c); }
+            }
+        }
+        Ok(buf)
+    }
+
+    // ── Number / datetime parsing ────────────────────────────────────────────
+
+    rite lex_number_or_datetime(&vary self, first: char) -> CodecResult<TomlToken>~ {
+        vary raw = String·new();
+        raw.push(first);
+
+        // Collect the full token (digits, letters, -, +, :, T, Z, ., _)
+        ⟳ true {
+            ⌥ self.peek() {
+                Some(c) if c.is_alphanumeric()
+                        || c == '-' || c == '+'
+                        || c == ':' || c == '.'
+                        || c == '_' || c == 'T'
+                        || c == 'Z' => {
+                    raw.push(c);
+                    self.advance();
+                }
+                _ => { ⊗; }
+            }
+        }
+
+        // Remove underscore separators for parsing
+        ≔ no_underscores! = raw.replace('_', "");
+
+        // Datetime detection: contains '-' and ':' or 'T'
+        ⎇ (no_underscores.contains('-') && no_underscores.contains(':'))
+            || no_underscores.contains('T')
+        {
+            ret Ok(TomlToken·DatetimeVal(raw));
+        }
+
+        // Hex
+        ⎇ no_underscores.starts_with("0x") || no_underscores.starts_with("0X") {
+            ⌥ i64·from_str_radix(&no_underscores[2..], 16) {
+                Ok(n)  => ret Ok(TomlToken·IntVal(n)),
+                Err(_) => ret Err(self.err(&format!("invalid hex integer: {}", raw))),
+            }
+        }
+
+        // Octal
+        ⎇ no_underscores.starts_with("0o") || no_underscores.starts_with("0O") {
+            ⌥ i64·from_str_radix(&no_underscores[2..], 8) {
+                Ok(n)  => ret Ok(TomlToken·IntVal(n)),
+                Err(_) => ret Err(self.err(&format!("invalid octal integer: {}", raw))),
+            }
+        }
+
+        // Binary
+        ⎇ no_underscores.starts_with("0b") || no_underscores.starts_with("0B") {
+            ⌥ i64·from_str_radix(&no_underscores[2..], 2) {
+                Ok(n)  => ret Ok(TomlToken·IntVal(n)),
+                Err(_) => ret Err(self.err(&format!("invalid binary integer: {}", raw))),
+            }
+        }
+
+        // Float?
+        ⎇ no_underscores.contains('.') || no_underscores.contains('e') || no_underscores.contains('E') {
+            ⌥ no_underscores.parse::<f64>() {
+                Ok(f)  => ret Ok(TomlToken·FloatVal(f)),
+                Err(_) => ret Err(self.err(&format!("invalid float: {}", raw))),
+            }
+        }
+
+        // Integer
+        ⌥ no_underscores.parse::<i64>() {
+            Ok(n)  => Ok(TomlToken·IntVal(n)),
+            Err(_) => Err(self.err(&format!("invalid integer: {}", raw))),
+        }
+    }
+
+    rite lex_bare_key_or_keyword(&vary self, first: char) -> CodecResult<TomlToken>~ {
+        vary s = String·new();
+        s.push(first);
+        ⟳ true {
+            ⌥ self.peek() {
+                Some(c) if c.is_alphanumeric() || c == '_' || c == '-' => {
+                    s.push(c);
+                    self.advance();
+                }
+                _ => { ⊗; }
+            }
+        }
+
+        ⌥ s.as_str() {
+            "true"  => Ok(TomlToken·BoolVal(true)),
+            "false" => Ok(TomlToken·BoolVal(false)),
+            "inf"   => Ok(TomlToken·FloatVal(f64·INFINITY)),
+            "-inf"  => Ok(TomlToken·FloatVal(f64·NEG_INFINITY)),
+            "nan"   => Ok(TomlToken·FloatVal(f64·NAN)),
+            _       => Ok(TomlToken·Key(s)),
+        }
+    }
+
+    // ── Public tokenizer ─────────────────────────────────────────────────────
+
+    /// Return the next token.
+    ☉ rite next_token(&vary self) -> CodecResult<TomlToken>~ {
+        self.skip_inline_whitespace();
+
+        ⌥ self.peek() {
+            None => { ret Ok(TomlToken·Eof); }
+            Some('#') => {
+                self.skip_comment();
+                ret self.next_token();
+            }
+            Some('\r') => {
+                self.advance();
+                ret self.next_token();
+            }
+            Some('\n') => {
+                self.advance();
+                ret Ok(TomlToken·Newline);
+            }
+            _ => {}
+        }
+
+        ⌥ self.advance() {
+            None => Ok(TomlToken·Eof),
+
+            Some('[') => {
+                ⎇ self.peek() == Some('[') {
+                    self.advance();
+                    Ok(TomlToken·DoubleLBracket)
+                } ⎉ {
+                    Ok(TomlToken·LBracket)
+                }
+            }
+
+            Some(']') => {
+                ⎇ self.peek() == Some(']') {
+                    self.advance();
+                    Ok(TomlToken·DoubleRBracket)
+                } ⎉ {
+                    Ok(TomlToken·RBracket)
+                }
+            }
+
+            Some('=') => Ok(TomlToken·Equals),
+            Some('.') => Ok(TomlToken·Dot),
+            Some(',') => Ok(TomlToken·Comma),
+            Some('{') => Ok(TomlToken·LBrace),
+            Some('}') => Ok(TomlToken·RBrace),
+
+            Some('"') => {
+                // Check for multi-line `"""`
+                ⎇ self.peek_at(0) == Some('"') && self.peek_at(1) == Some('"') {
+                    self.advance(); self.advance();
+                    ≔ s~ = self.lex_multiline_basic()?;
+                    Ok(TomlToken·StringVal(s))
+                } ⎉ {
+                    ≔ s~ = self.lex_basic_string()?;
+                    // Could be a quoted key or a string value — return Key for flexibility;
+                    // parser decides based on context
+                    Ok(TomlToken·Key(s))
+                }
+            }
+
+            Some('\'') => {
+                ⎇ self.peek_at(0) == Some('\'') && self.peek_at(1) == Some('\'') {
+                    self.advance(); self.advance();
+                    ≔ s~ = self.lex_multiline_literal()?;
+                    Ok(TomlToken·StringVal(s))
+                } ⎉ {
+                    ≔ s~ = self.lex_literal_string()?;
+                    Ok(TomlToken·Key(s))
+                }
+            }
+
+            Some(c) if c == '-' || c == '+' || c.is_ascii_digit() => {
+                self.lex_number_or_datetime(c)
+            }
+
+            Some(c) if c.is_alphanumeric() || c == '_' => {
+                self.lex_bare_key_or_keyword(c)
+            }
+
+            Some(c) => {
+                Err(self.err(&format!("unexpected character: '{}'", c)))
+            }
+        }
+    }
+
+    /// Peek at next token without consuming.
+    ☉ rite peek_token(&vary self) -> CodecResult<TomlToken>~ {
+        ≔ sp  = self.pos;
+        ≔ sl  = self.line;
+        ≔ sc  = self.col;
+        ≔ tok~ = self.next_token()?;
+        self.pos  = sp;
+        self.line = sl;
+        self.col  = sc;
+        Ok(tok)
+    }
+}

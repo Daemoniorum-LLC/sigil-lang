@@ -1,0 +1,171 @@
+//! CodecError — structured parse and type error for JSON and TOML.
+//!
+//! Errors carry format, optional location (line/col), a dotted field path,
+//! and a human-readable message.  Use `at_path` to push path segments as
+//! callers unwind the decode stack.
+//!
+//! Spec: sigil-codec/plan
+
+// ============================================================================
+// Format discriminant
+// ============================================================================
+
+/// Which format produced the error.
+☉ ᛈ CodecFormat {
+    Json!,
+    Toml!,
+}
+
+☉ ⊢ Display ∀ CodecFormat {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            CodecFormat·Json => write!(f, "json"),
+            CodecFormat·Toml => write!(f, "toml"),
+        }
+    }
+}
+
+// ============================================================================
+// CodecError
+// ============================================================================
+
+/// A structured parse or type-coercion error.
+///
+/// ```
+/// [json] error at line 14:5 (package.targets.sha256): expected string, found integer
+/// ```
+☉ Σ CodecError {
+    ☉ format:  CodecFormat!,
+    ☉ line:    Option<u32>?,
+    ☉ col:     Option<u32>?,
+    /// Dotted key path — e.g. `["package", "targets", "linux-x86_64"]`.
+    ☉ path:    Vec<String>!,
+    ☉ message: String!,
+}
+
+☉ ⊢ CodecError {
+    // ── Constructors ────────────────────────────────────────────────────────
+
+    /// JSON error with line/column location.
+    ☉ rite json(line: u32, col: u32, message: String) -> CodecError! {
+        CodecError {
+            format:  CodecFormat·Json,
+            line:    Some(line),
+            col:     Some(col),
+            path:    Vec·new(),
+            message,
+        }
+    }
+
+    /// JSON error without location (e.g. EOF, type mismatch after parse).
+    ☉ rite json_msg(message: String) -> CodecError! {
+        CodecError {
+            format:  CodecFormat·Json,
+            line:    None,
+            col:     None,
+            path:    Vec·new(),
+            message,
+        }
+    }
+
+    /// TOML error with line/column location.
+    ☉ rite toml(line: u32, col: u32, message: String) -> CodecError! {
+        CodecError {
+            format:  CodecFormat·Toml,
+            line:    Some(line),
+            col:     Some(col),
+            path:    Vec·new(),
+            message,
+        }
+    }
+
+    /// TOML error without location.
+    ☉ rite toml_msg(message: String) -> CodecError! {
+        CodecError {
+            format:  CodecFormat·Toml,
+            line:    None,
+            col:     None,
+            path:    Vec·new(),
+            message,
+        }
+    }
+
+    // ── Semantic constructors ────────────────────────────────────────────────
+
+    /// Required field absent from the input table.
+    ☉ rite missing_field(format: CodecFormat, key: &str) -> CodecError! {
+        CodecError {
+            format,
+            line:    None,
+            col:     None,
+            path:    Vec·new(),
+            message: format!("missing required field `{}`", key),
+        }
+    }
+
+    /// Value had a different type than expected by the Decode impl.
+    ☉ rite type_mismatch(format: CodecFormat, expected: &str, actual: &str) -> CodecError! {
+        CodecError {
+            format,
+            line:    None,
+            col:     None,
+            path:    Vec·new(),
+            message: format!("expected {}, found {}", expected, actual),
+        }
+    }
+
+    /// Custom error with explicit format.
+    ☉ rite custom(format: CodecFormat, message: String) -> CodecError! {
+        CodecError {
+            format,
+            line:    None,
+            col:     None,
+            path:    Vec·new(),
+            message,
+        }
+    }
+
+    // ── Path building ────────────────────────────────────────────────────────
+
+    /// Push one field segment onto the front of the path.
+    ///
+    /// Call this as callers unwind after a failed `decode()` to produce
+    /// stack-trace-style error paths.
+    ///
+    /// ```sigil
+    /// T·decode(v)·map_err({e => e·at_path("targets")})
+    /// ```
+    ☉ rite at_path(vary self, field: &str) -> CodecError! {
+        self.path.insert(0, field.to_string());
+        self
+    }
+}
+
+☉ ⊢ Display ∀ CodecError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        write!(f, "[{}] error", self.format)?;
+
+        ⎇ ≔ (Some(line), Some(col)) = (self.line, self.col) {
+            write!(f, " at line {}:{}", line, col)?;
+        }
+
+        ⎇ !self.path.is_empty() {
+            write!(f, " ({})", self.path.join("."))?;
+        }
+
+        write!(f, ": {}", self.message)
+    }
+}
+
+☉ ⊢ Debug ∀ CodecError {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        write!(f, "CodecError({})", self)
+    }
+}
+
+// ============================================================================
+// CodecResult
+// ============================================================================
+
+/// Convenience alias — all codec operations return this.
+☉ ᛆ CodecResult<T> = Result<T, CodecError>;

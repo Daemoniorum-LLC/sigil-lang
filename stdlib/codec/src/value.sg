@@ -1,0 +1,178 @@
+//! `Value` — the central intermediate representation used by both JSON and TOML.
+//!
+//! Both format parsers produce a `Value` tree. `Decode` impls then extract
+//! typed fields from the tree.  `Encode` impls produce a `Value` tree that
+//! writers then serialize.
+//!
+//! Evidentiality: `Value` trees derived from external input are `~` (reported).
+//! Locally constructed trees (for serialization) are `!` (known).
+
+invoke super·error·{CodecError, CodecFormat, CodecResult};
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Value
+// ============================================================================
+
+/// Universal value type — represents any JSON or TOML value.
+☉ ᛈ Value {
+    /// JSON `null` / absent optional.
+    Null!,
+    Bool(bool)!,
+    Int(i64)!,
+    Float(f64)!,
+    Str(String)!,
+    Array(Vec<Value>)!,
+    Table(HashMap<String, Value>)!,
+    /// TOML datetime stored as raw ISO-8601 string (e.g. `"2026-02-21T00:00:00Z"`).
+    Datetime(String)!,
+}
+
+☉ ⊢ Value {
+    // ── Type name for error messages ─────────────────────────────────────────
+
+    rite type_name(&self) -> &'static str! {
+        ⌥ self {
+            Value·Null        => "null",
+            Value·Bool(_)     => "bool",
+            Value·Int(_)      => "integer",
+            Value·Float(_)    => "float",
+            Value·Str(_)      => "string",
+            Value·Array(_)    => "array",
+            Value·Table(_)    => "table",
+            Value·Datetime(_) => "datetime",
+        }
+    }
+
+    // ── Predicate ────────────────────────────────────────────────────────────
+
+    ☉ rite is_null(&self) -> bool! {
+        ⌥ self {
+            Value·Null => true,
+            _          => false,
+        }
+    }
+
+    // ── Optional lookup ──────────────────────────────────────────────────────
+
+    /// Get a child value by key from a Table.  Returns `None` if not a Table
+    /// or if the key is absent.  Non-failing — use `get_required` for mandatory
+    /// fields.
+    ☉ rite get(&self, key: &str) -> Option<&Value>? {
+        ⌥ self {
+            Value·Table(map) => map.get(key),
+            _                => None,
+        }
+    }
+
+    /// Get a required child value; returns `missing_field` error if absent.
+    ☉ rite get_required(&self, format: CodecFormat, key: &str) -> CodecResult<&Value>~ {
+        ⌥ self.get(key) {
+            Some(v) => Ok(v),
+            None    => Err(CodecError·missing_field(format, key)),
+        }
+    }
+
+    // ── Typed accessors (all infallible on wrong type → CodecResult) ─────────
+
+    ☉ rite as_bool(&self, format: CodecFormat) -> CodecResult<bool>~ {
+        ⌥ self {
+            Value·Bool(b) => Ok(*b),
+            other         => Err(CodecError·type_mismatch(format, "bool", other.type_name())),
+        }
+    }
+
+    ☉ rite as_i64(&self, format: CodecFormat) -> CodecResult<i64>~ {
+        ⌥ self {
+            Value·Int(n) => Ok(*n),
+            other        => Err(CodecError·type_mismatch(format, "integer", other.type_name())),
+        }
+    }
+
+    ☉ rite as_u64(&self, format: CodecFormat) -> CodecResult<u64>~ {
+        ⌥ self {
+            Value·Int(n) if *n >= 0 => Ok(*n as u64),
+            Value·Int(_)            => Err(CodecError·type_mismatch(format, "unsigned integer", "negative integer")),
+            other                   => Err(CodecError·type_mismatch(format, "integer", other.type_name())),
+        }
+    }
+
+    ☉ rite as_f64(&self, format: CodecFormat) -> CodecResult<f64>~ {
+        ⌥ self {
+            Value·Float(f) => Ok(*f),
+            Value·Int(n)   => Ok(*n as f64),    // coerce integer → float
+            other          => Err(CodecError·type_mismatch(format, "float", other.type_name())),
+        }
+    }
+
+    ☉ rite as_str(&self, format: CodecFormat) -> CodecResult<&str>~ {
+        ⌥ self {
+            Value·Str(s) => Ok(s.as_str()),
+            other        => Err(CodecError·type_mismatch(format, "string", other.type_name())),
+        }
+    }
+
+    ☉ rite as_string(&self, format: CodecFormat) -> CodecResult<String>~ {
+        self.as_str(format).map(|s| s.to_string())
+    }
+
+    ☉ rite as_array(&self, format: CodecFormat) -> CodecResult<&Vec<Value>>~ {
+        ⌥ self {
+            Value·Array(a) => Ok(a),
+            other          => Err(CodecError·type_mismatch(format, "array", other.type_name())),
+        }
+    }
+
+    ☉ rite as_table(&self, format: CodecFormat) -> CodecResult<&HashMap<String, Value>>~ {
+        ⌥ self {
+            Value·Table(t) => Ok(t),
+            other          => Err(CodecError·type_mismatch(format, "table", other.type_name())),
+        }
+    }
+}
+
+☉ ⊢ Clone ∀ Value {
+    ☉ rite clone(&self) -> Value! {
+        ⌥ self {
+            Value·Null           => Value·Null,
+            Value·Bool(b)        => Value·Bool(*b),
+            Value·Int(n)         => Value·Int(*n),
+            Value·Float(f)       => Value·Float(*f),
+            Value·Str(s)         => Value·Str(s.clone()),
+            Value·Array(a)       => Value·Array(a.clone()),
+            Value·Table(t)       => Value·Table(t.clone()),
+            Value·Datetime(dt)   => Value·Datetime(dt.clone()),
+        }
+    }
+}
+
+☉ ⊢ Debug ∀ Value {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            Value·Null           => write!(f, "Null"),
+            Value·Bool(b)        => write!(f, "Bool({})", b),
+            Value·Int(n)         => write!(f, "Int({})", n),
+            Value·Float(v)       => write!(f, "Float({})", v),
+            Value·Str(s)         => write!(f, "Str({:?})", s),
+            Value·Array(a)       => write!(f, "Array({:?})", a),
+            Value·Table(t)       => write!(f, "Table({:?})", t),
+            Value·Datetime(dt)   => write!(f, "Datetime({:?})", dt),
+        }
+    }
+}
+
+☉ ⊢ PartialEq ∀ Value {
+    ☉ rite eq(&self, other: &Value) -> bool! {
+        ⌥ (self, other) {
+            (Value·Null, Value·Null)             => true,
+            (Value·Bool(a), Value·Bool(b))       => a == b,
+            (Value·Int(a), Value·Int(b))         => a == b,
+            (Value·Float(a), Value·Float(b))     => a == b,
+            (Value·Str(a), Value·Str(b))         => a == b,
+            (Value·Array(a), Value·Array(b))     => a == b,
+            (Value·Table(a), Value·Table(b))     => a == b,
+            (Value·Datetime(a), Value·Datetime(b)) => a == b,
+            _                                    => false,
+        }
+    }
+}

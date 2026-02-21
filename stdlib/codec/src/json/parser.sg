@@ -1,0 +1,163 @@
+//! JSON recursive-descent parser.
+//!
+//! Converts a token stream (from `JsonLexer`) into a `Value` tree.
+//! Checks for trailing garbage after the root value.
+
+invoke super·super·error·{CodecError, CodecResult};
+invoke super·super·value·Value;
+invoke super·lexer·{JsonLexer, JsonToken};
+invoke std·collections·HashMap;
+
+// ============================================================================
+// JsonParser
+// ============================================================================
+
+☉ Σ JsonParser {
+    lexer: JsonLexer!,
+}
+
+☉ ⊢ JsonParser {
+    ☉ rite new(s: &str) -> JsonParser! {
+        JsonParser { lexer: JsonLexer·new(s) }
+    }
+
+    /// Parse the full document.  Errors on trailing garbage after root value.
+    ☉ rite parse(&vary self) -> CodecResult<Value>~ {
+        ≔ value~ = self.parse_value()?;
+        // Verify nothing remains except whitespace / EOF
+        ⌥ self.lexer.next_token()? {
+            JsonToken·Eof => {}
+            other         => {
+                ret Err(CodecError·json_msg(
+                    format!("trailing garbage after JSON value: {:?}", other)
+                ));
+            }
+        }
+        Ok(value)
+    }
+
+    // ── Value dispatch ───────────────────────────────────────────────────────
+
+    rite parse_value(&vary self) -> CodecResult<Value>~ {
+        ⌥ self.lexer.next_token()? {
+            JsonToken·Null            => Ok(Value·Null),
+            JsonToken·True            => Ok(Value·Bool(true)),
+            JsonToken·False           => Ok(Value·Bool(false)),
+            JsonToken·IntLit(n)       => Ok(Value·Int(n)),
+            JsonToken·FloatLit(f)     => Ok(Value·Float(f)),
+            JsonToken·StringLit(s)    => Ok(Value·Str(s)),
+            JsonToken·LBrace          => self.parse_object(),
+            JsonToken·LBracket        => self.parse_array(),
+            JsonToken·Eof             => Err(CodecError·json_msg("unexpected EOF".to_string())),
+            other                     => Err(CodecError·json_msg(
+                format!("unexpected token in value position: {:?}", other)
+            )),
+        }
+    }
+
+    // ── Object parsing ───────────────────────────────────────────────────────
+
+    /// Parse `{ "key": value, ... }`.  Opening `{` already consumed.
+    rite parse_object(&vary self) -> CodecResult<Value>~ {
+        vary map: HashMap<String, Value> = HashMap·new();
+
+        // Empty object?
+        ⌥ self.lexer.peek_token()? {
+            JsonToken·RBrace => {
+                self.lexer.next_token()?;
+                ret Ok(Value·Table(map));
+            }
+            _ => {}
+        }
+
+        ⟳ true {
+            // Key
+            ≔ key~ = ⌥ self.lexer.next_token()? {
+                JsonToken·StringLit(s) => s,
+                other                  => {
+                    ret Err(CodecError·json_msg(
+                        format!("expected string key in object, found {:?}", other)
+                    ));
+                }
+            };
+
+            // Colon
+            ⌥ self.lexer.next_token()? {
+                JsonToken·Colon => {}
+                other           => {
+                    ret Err(CodecError·json_msg(
+                        format!("expected ':', found {:?}", other)
+                    ));
+                }
+            }
+
+            // Value
+            ≔ val~ = self.parse_value()?;
+            map.insert(key, val);
+
+            // Comma or closing brace
+            ⌥ self.lexer.next_token()? {
+                JsonToken·Comma  => {
+                    // Allow trailing comma (lenient)
+                    ⌥ self.lexer.peek_token()? {
+                        JsonToken·RBrace => {
+                            self.lexer.next_token()?;
+                            ⊗;
+                        }
+                        _ => {}
+                    }
+                }
+                JsonToken·RBrace => { ⊗; }
+                other            => {
+                    ret Err(CodecError·json_msg(
+                        format!("expected ',' or '}}' in object, found {:?}", other)
+                    ));
+                }
+            }
+        }
+
+        Ok(Value·Table(map))
+    }
+
+    // ── Array parsing ────────────────────────────────────────────────────────
+
+    /// Parse `[ value, ... ]`.  Opening `[` already consumed.
+    rite parse_array(&vary self) -> CodecResult<Value>~ {
+        vary items: Vec<Value> = Vec·new();
+
+        // Empty array?
+        ⌥ self.lexer.peek_token()? {
+            JsonToken·RBracket => {
+                self.lexer.next_token()?;
+                ret Ok(Value·Array(items));
+            }
+            _ => {}
+        }
+
+        ⟳ true {
+            ≔ val~ = self.parse_value()?;
+            items.push(val);
+
+            ⌥ self.lexer.next_token()? {
+                JsonToken·Comma     => {
+                    // Allow trailing comma
+                    ⌥ self.lexer.peek_token()? {
+                        JsonToken·RBracket => {
+                            self.lexer.next_token()?;
+                            ⊗;
+                        }
+                        _ => {}
+                    }
+                }
+                JsonToken·RBracket  => { ⊗; }
+                other               => {
+                    ret Err(CodecError·json_msg(
+                        format!("expected ',' or ']' in array, found {:?}", other)
+                    ));
+                }
+            }
+        }
+
+        Ok(Value·Array(items))
+    }
+}

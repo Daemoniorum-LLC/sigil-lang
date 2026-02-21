@@ -1,0 +1,10 @@
+[package]
+name = "sigil-codec"
+version = "0.1.0"
+edition = "2025"
+description = "Pure Sigil JSON + TOML serialization/deserialization library"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "codec"
+path = "src/lib.sg"

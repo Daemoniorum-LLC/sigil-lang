@@ -1,0 +1,40 @@
+//! `Encode` and `Decode` traits.
+//!
+//! **`Encode`** is infallible: well-typed Sigil data always produces a valid
+//! `Value` tree.  NaN/Inf floats encode as `Value::Null` rather than panicking.
+//!
+//! **`Decode`** is fallible and carries `~` evidentiality — decoded data is of
+//! reported provenance until the caller locally verifies it.
+//!
+//! Opt a struct into future compiler-generated impls with:
+//! ```sigil
+//! //@ rune: codec
+//! ☉ Σ MyStruct { ... }
+//! ```
+//! For now, implementations are written manually.
+
+invoke super·error·CodecResult;
+invoke super·value·Value;
+
+// ============================================================================
+// Encode
+// ============================================================================
+
+/// Convert a typed value to a `Value` tree ready for serialization.
+///
+/// Implementing this scroll is sufficient to support both JSON and TOML output.
+☉ scroll Encode {
+    rite encode(&self) -> Value!;
+}
+
+// ============================================================================
+// Decode
+// ============================================================================
+
+/// Convert a `Value` tree (parsed from JSON or TOML) into a typed value.
+///
+/// The `~` on the return type reflects that the data originated externally.
+/// Once the caller validates the decoded value, they may locally assert `!`.
+☉ scroll Decode: Sized {
+    rite decode(value: &Value) -> CodecResult<Self>~;
+}

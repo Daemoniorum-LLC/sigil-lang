@@ -1,0 +1,81 @@
+//! sigil-codec — pure Sigil JSON + TOML serialization/deserialization.
+//!
+//! # Overview
+//!
+//! `sigil-codec` is the canonical serialization library for the Daemoniorum
+//! ecosystem.  It provides:
+//!
+//! - A universal `Value` intermediate representation
+//! - `Encode` + `Decode` traits implemented for all primitive types
+//! - Full JSON (RFC 8259) read/write
+//! - Full TOML (v1.0) read/write
+//! - A `from_file` convenience that dispatches on file extension
+//!
+//! # Quick Start
+//!
+//! ```sigil
+//! invoke codec·{Encode, Decode, CodecResult};
+//! invoke codec·toml;
+//!
+//! //@ rune: codec
+//! ☉ Σ Config { name: String, port: u16 }
+//!
+//! ≔ config~ = toml·from_str::<Config>("[config]\nname=\"foo\"\nport=8080")?;
+//! ≔ back!  = toml·to_string_pretty(&config);
+//! ```
+//!
+//! # Module Layout
+//!
+//! | Module | Contents |
+//! |--------|----------|
+//! | `error` | `CodecError`, `CodecFormat`, `CodecResult` |
+//! | `value` | `Value` enum |
+//! | `traits` | `Encode`, `Decode` scrolls |
+//! | `primitives` | Impls for built-in types |
+//! | `json` | JSON public API + lexer/parser/writer |
+//! | `toml` | TOML public API + lexer/parser/writer |
+
+// Module declarations
+scroll error;
+scroll value;
+scroll traits;
+scroll primitives;
+scroll json;
+scroll toml;
+
+// Re-exports for convenience
+invoke self·error·{CodecError, CodecFormat, CodecResult};
+invoke self·value·Value;
+invoke self·traits·{Encode, Decode};
+
+// ============================================================================
+// from_file convenience
+// ============================================================================
+
+/// Read a file and deserialize based on its extension.
+///
+/// - `.json` → JSON parser
+/// - `.toml` → TOML parser
+/// - anything else → error
+///
+/// ```sigil
+/// ≔ manifest~ = codec·from_file::<PackageManifest>("scrolls/vulcan.ritualis.toml")?;
+/// ```
+☉ rite from_file<T: Decode>(path: &str) -> CodecResult<T>~ {
+    ≔ content~ = std·fs·read_to_string(path)
+        .map_err({e => CodecError·custom(
+            CodecFormat·Json,
+            format!("failed to read file `{}`: {}", path, e)
+        )})?;
+
+    ⎇ path.ends_with(".json") {
+        json·from_str::<T>(&content)
+    } ⎇ path.ends_with(".toml") {
+        toml·from_str::<T>(&content)
+    } ⎉ {
+        Err(CodecError·custom(
+            CodecFormat·Json,
+            format!("unrecognized file extension for `{}`; expected .json or .toml", path)
+        ))
+    }
+}

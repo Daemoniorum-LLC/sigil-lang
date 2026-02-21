@@ -1,0 +1,391 @@
+//! TOML two-phase parser.
+//!
+//! **Phase 1 — flat collection:** walk the document, recording:
+//! - `TableHeader { key_path }` for `[a.b.c]`
+//! - `ArrayHeader { key_path }` for `[[a.b.c]]`
+//! - `KeyValue { full_path, value }` for `key = value`
+//!
+//! **Phase 2 — assembly:** iterate entries in order, navigate-or-create nested
+//! `HashMap<String, Value>` from root.  Array-of-tables entries append a fresh
+//! `Value::Table` to the array at that path.  Error on duplicate keys.
+//!
+//! Inline tables and inline arrays are parsed inline during phase 1 via
+//! `parse_inline_value`.
+
+invoke super·super·error·{CodecError, CodecResult};
+invoke super·super·value·Value;
+invoke super·lexer·{TomlLexer, TomlToken};
+invoke std·collections·HashMap;
+
+// ============================================================================
+// Phase 1 entry types
+// ============================================================================
+
+ᛈ Entry {
+    TableHeader  { key_path: Vec<String> }!,
+    ArrayHeader  { key_path: Vec<String> }!,
+    KeyValue     { full_path: Vec<String>, value: Value }!,
+}
+
+// ============================================================================
+// TomlParser
+// ============================================================================
+
+☉ Σ TomlParser {
+    lexer: TomlLexer!,
+}
+
+☉ ⊢ TomlParser {
+    ☉ rite new(s: &str) -> TomlParser! {
+        TomlParser { lexer: TomlLexer·new(s) }
+    }
+
+    // ── Public entry point ───────────────────────────────────────────────────
+
+    ☉ rite parse(&vary self) -> CodecResult<Value>~ {
+        ≔ entries~ = self.collect_entries()?;
+        self.assemble(entries)
+    }
+
+    // ── Phase 1: collect ─────────────────────────────────────────────────────
+
+    rite collect_entries(&vary self) -> CodecResult<Vec<Entry>>~ {
+        vary entries: Vec<Entry> = Vec·new();
+        vary current_table: Vec<String> = Vec·new();
+        vary in_array_table = false;
+
+        ⟳ true {
+            // Skip blank lines
+            ⟳ true {
+                ⌥ self.lexer.peek_token()? {
+                    TomlToken·Newline => { self.lexer.next_token()?; }
+                    _                 => { ⊗; }
+                }
+            }
+
+            ⌥ self.lexer.peek_token()? {
+                TomlToken·Eof => { ⊗; }
+
+                TomlToken·DoubleLBracket => {
+                    self.lexer.next_token()?;
+                    ≔ path~ = self.parse_key_path()?;
+                    self.expect(TomlToken·DoubleRBracket)?;
+                    self.skip_to_newline();
+                    current_table  = path.clone();
+                    in_array_table = true;
+                    entries.push(Entry·ArrayHeader { key_path: path });
+                }
+
+                TomlToken·LBracket => {
+                    self.lexer.next_token()?;
+                    ≔ path~ = self.parse_key_path()?;
+                    self.expect(TomlToken·RBracket)?;
+                    self.skip_to_newline();
+                    current_table  = path.clone();
+                    in_array_table = false;
+                    entries.push(Entry·TableHeader { key_path: path });
+                }
+
+                _ => {
+                    // key = value
+                    ≔ local_path~ = self.parse_key_path()?;
+                    self.expect(TomlToken·Equals)?;
+                    ≔ val~ = self.parse_inline_value()?;
+                    self.skip_to_newline();
+
+                    // Full path = current_table + local_path
+                    vary full: Vec<String> = current_table.clone();
+                    full.extend(local_path);
+                    entries.push(Entry·KeyValue { full_path: full, value: val });
+                }
+            }
+        }
+
+        Ok(entries)
+    }
+
+    // ── Key path parsing ─────────────────────────────────────────────────────
+
+    rite parse_key_path(&vary self) -> CodecResult<Vec<String>>~ {
+        vary path: Vec<String> = Vec·new();
+
+        ⌥ self.lexer.next_token()? {
+            TomlToken·Key(k) => { path.push(k); }
+            other            => {
+                ret Err(CodecError·toml_msg(
+                    format!("expected key, found {:?}", other)
+                ));
+            }
+        }
+
+        // Collect dotted segments
+        ⟳ true {
+            ⌥ self.lexer.peek_token()? {
+                TomlToken·Dot => {
+                    self.lexer.next_token()?;
+                    ⌥ self.lexer.next_token()? {
+                        TomlToken·Key(k) => { path.push(k); }
+                        other            => {
+                            ret Err(CodecError·toml_msg(
+                                format!("expected key after '.', found {:?}", other)
+                            ));
+                        }
+                    }
+                }
+                _ => { ⊗; }
+            }
+        }
+
+        Ok(path)
+    }
+
+    // ── Inline value parsing ─────────────────────────────────────────────────
+
+    rite parse_inline_value(&vary self) -> CodecResult<Value>~ {
+        ⌥ self.lexer.next_token()? {
+            TomlToken·BoolVal(b)     => Ok(Value·Bool(b)),
+            TomlToken·IntVal(n)      => Ok(Value·Int(n)),
+            TomlToken·FloatVal(f)    => Ok(Value·Float(f)),
+            TomlToken·DatetimeVal(s) => Ok(Value·Datetime(s)),
+            TomlToken·StringVal(s)   => Ok(Value·Str(s)),
+            TomlToken·Key(s)         => Ok(Value·Str(s)),  // quoted key used as value
+            TomlToken·LBracket       => self.parse_inline_array(),
+            TomlToken·LBrace         => self.parse_inline_table(),
+            other                    => Err(CodecError·toml_msg(
+                format!("expected value, found {:?}", other)
+            )),
+        }
+    }
+
+    rite parse_inline_array(&vary self) -> CodecResult<Value>~ {
+        vary items: Vec<Value> = Vec·new();
+
+        ⟳ true {
+            // Skip newlines inside arrays
+            ⟳ true {
+                ⌥ self.lexer.peek_token()? {
+                    TomlToken·Newline => { self.lexer.next_token()?; }
+                    _                 => { ⊗; }
+                }
+            }
+
+            ⌥ self.lexer.peek_token()? {
+                TomlToken·RBracket => {
+                    self.lexer.next_token()?;
+                    ⊗;
+                }
+                _ => {
+                    ≔ val~ = self.parse_inline_value()?;
+                    items.push(val);
+
+                    // Skip newlines
+                    ⟳ true {
+                        ⌥ self.lexer.peek_token()? {
+                            TomlToken·Newline => { self.lexer.next_token()?; }
+                            _                 => { ⊗; }
+                        }
+                    }
+
+                    ⌥ self.lexer.peek_token()? {
+                        TomlToken·Comma => {
+                            self.lexer.next_token()?;
+                        }
+                        TomlToken·RBracket => {}
+                        other              => {
+                            ret Err(CodecError·toml_msg(
+                                format!("expected ',' or ']' in array, found {:?}", other)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Value·Array(items))
+    }
+
+    rite parse_inline_table(&vary self) -> CodecResult<Value>~ {
+        vary map: HashMap<String, Value> = HashMap·new();
+
+        ⌥ self.lexer.peek_token()? {
+            TomlToken·RBrace => {
+                self.lexer.next_token()?;
+                ret Ok(Value·Table(map));
+            }
+            _ => {}
+        }
+
+        ⟳ true {
+            ≔ local_path~ = self.parse_key_path()?;
+            self.expect(TomlToken·Equals)?;
+            ≔ val~ = self.parse_inline_value()?;
+
+            // Navigate/create nested tables for dotted keys
+            nest_insert(&vary map, &local_path, val)?;
+
+            ⌥ self.lexer.next_token()? {
+                TomlToken·Comma  => {}
+                TomlToken·RBrace => { ⊗; }
+                other            => {
+                    ret Err(CodecError·toml_msg(
+                        format!("expected ',' or '}}' in inline table, found {:?}", other)
+                    ));
+                }
+            }
+        }
+
+        Ok(Value·Table(map))
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    rite expect(&vary self, expected: TomlToken) -> CodecResult<()>~ {
+        ≔ tok~ = self.lexer.next_token()?;
+        ⌥ (&tok, &expected) {
+            (TomlToken·RBracket, TomlToken·RBracket)             => Ok(()),
+            (TomlToken·DoubleRBracket, TomlToken·DoubleRBracket) => Ok(()),
+            (TomlToken·Equals, TomlToken·Equals)                 => Ok(()),
+            (TomlToken·Comma, TomlToken·Comma)                   => Ok(()),
+            (TomlToken·RBrace, TomlToken·RBrace)                 => Ok(()),
+            _ => Err(CodecError·toml_msg(
+                format!("expected {:?}, found {:?}", expected, tok)
+            )),
+        }
+    }
+
+    rite skip_to_newline(&vary self) {
+        ⟳ true {
+            ⌥ self.lexer.peek_token().unwrap_or(TomlToken·Eof) {
+                TomlToken·Newline | TomlToken·Eof => { ⊗; }
+                _ => { self.lexer.next_token().ok(); }
+            }
+        }
+        // Consume the newline itself
+        ⌥ self.lexer.peek_token().unwrap_or(TomlToken·Eof) {
+            TomlToken·Newline => { self.lexer.next_token().ok(); }
+            _                 => {}
+        }
+    }
+
+    // ── Phase 2: assemble ────────────────────────────────────────────────────
+
+    rite assemble(&self, entries: Vec<Entry>) -> CodecResult<Value>~ {
+        vary root: HashMap<String, Value> = HashMap·new();
+
+        ∀ entry ∈ entries {
+            ⌥ entry {
+                Entry·TableHeader { key_path } => {
+                    navigate_or_create(&vary root, &key_path)?;
+                }
+
+                Entry·ArrayHeader { key_path } => {
+                    append_array_table(&vary root, &key_path)?;
+                }
+
+                Entry·KeyValue { full_path, value } => {
+                    nest_insert(&vary root, &full_path, value)?;
+                }
+            }
+        }
+
+        Ok(Value·Table(root))
+    }
+}
+
+// ============================================================================
+// Assembly helpers
+// ============================================================================
+
+/// Navigate or create nested tables along `path`.
+/// The final segment must be absent or an existing Table.
+rite navigate_or_create(map: &vary HashMap<String, Value>, path: &[String]) -> CodecResult<()>~ {
+    ⎇ path.is_empty() {
+        ret Ok(());
+    }
+
+    ≔ head = &path[0];
+    ≔ tail = &path[1..];
+
+    ⎇ !map.contains_key(head) {
+        map.insert(head.clone(), Value·Table(HashMap·new()));
+    }
+
+    ⌥ map.get_mut(head).unwrap() {
+        Value·Table(inner) => navigate_or_create(inner, tail),
+        Value·Array(arr)   => {
+            // Navigate into the last element of an array-of-tables
+            ⎇ ≔ Some(Value·Table(inner)) = arr.last_mut() {
+                navigate_or_create(inner, tail)
+            } ⎉ {
+                Err(CodecError·toml_msg(format!("cannot navigate into non-table in array")))
+            }
+        }
+        _ => Err(CodecError·toml_msg(format!("key `{}` is not a table", head))),
+    }
+}
+
+/// Append a new empty Table to the array-of-tables at `path`.
+rite append_array_table(map: &vary HashMap<String, Value>, path: &[String]) -> CodecResult<()>~ {
+    ⎇ path.len() == 1 {
+        ≔ key = &path[0];
+        ⎇ !map.contains_key(key) {
+            map.insert(key.clone(), Value·Array(Vec·new()));
+        }
+        ⌥ map.get_mut(key).unwrap() {
+            Value·Array(arr) => {
+                arr.push(Value·Table(HashMap·new()));
+                Ok(())
+            }
+            _ => Err(CodecError·toml_msg(format!("key `{}` is not an array", key))),
+        }
+    } ⎉ {
+        ≔ head = &path[0];
+        ≔ tail = &path[1..];
+        ⎇ !map.contains_key(head) {
+            map.insert(head.clone(), Value·Table(HashMap·new()));
+        }
+        ⌥ map.get_mut(head).unwrap() {
+            Value·Table(inner) => append_array_table(inner, tail),
+            Value·Array(arr)   => {
+                ⎇ ≔ Some(Value·Table(inner)) = arr.last_mut() {
+                    append_array_table(inner, tail)
+                } ⎉ {
+                    Err(CodecError·toml_msg(format!("cannot navigate into non-table array element")))
+                }
+            }
+            _ => Err(CodecError·toml_msg(format!("key `{}` is not a table", head))),
+        }
+    }
+}
+
+/// Insert `value` at the nested key path, creating intermediate tables.
+/// Errors on duplicate leaf keys.
+rite nest_insert(map: &vary HashMap<String, Value>, path: &[String], value: Value) -> CodecResult<()>~ {
+    ⎇ path.len() == 1 {
+        ≔ key = &path[0];
+        ⎇ map.contains_key(key) {
+            ret Err(CodecError·toml_msg(format!("duplicate key: `{}`", key)));
+        }
+        map.insert(key.clone(), value);
+        Ok(())
+    } ⎉ {
+        ≔ head = &path[0];
+        ≔ tail = &path[1..];
+        ⎇ !map.contains_key(head) {
+            map.insert(head.clone(), Value·Table(HashMap·new()));
+        }
+        ⌥ map.get_mut(head).unwrap() {
+            Value·Table(inner) => nest_insert(inner, tail, value),
+            Value·Array(arr)   => {
+                ⎇ ≔ Some(Value·Table(inner)) = arr.last_mut() {
+                    nest_insert(inner, tail, value)
+                } ⎉ {
+                    Err(CodecError·toml_msg(format!("cannot insert into non-table array element")))
+                }
+            }
+            _ => Err(CodecError·toml_msg(
+                format!("key `{}` is not a table (cannot nest under it)", head)
+            )),
+        }
+    }
+}

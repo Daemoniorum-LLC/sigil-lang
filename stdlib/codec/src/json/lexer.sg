@@ -1,0 +1,277 @@
+//! JSON lexer — tokenizes a UTF-8 string into `JsonToken` values.
+//!
+//! Covers the full RFC 8259 token set including all escape sequences and
+//! `\uXXXX` Unicode escapes.  Numbers with `.`, `e`, or `E` become
+//! `FloatLit`; otherwise `IntLit`.
+
+invoke super·super·error·{CodecError, CodecResult};
+
+// ============================================================================
+// JsonToken
+// ============================================================================
+
+☉ ᛈ JsonToken {
+    LBrace!,
+    RBrace!,
+    LBracket!,
+    RBracket!,
+    Comma!,
+    Colon!,
+    Null!,
+    True!,
+    False!,
+    StringLit(String)!,
+    IntLit(i64)!,
+    FloatLit(f64)!,
+    Eof!,
+}
+
+☉ ⊢ Debug ∀ JsonToken {
+    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+        ⌥ self {
+            JsonToken·LBrace           => write!(f, "{{"),
+            JsonToken·RBrace           => write!(f, "}}"),
+            JsonToken·LBracket         => write!(f, "["),
+            JsonToken·RBracket         => write!(f, "]"),
+            JsonToken·Comma            => write!(f, ","),
+            JsonToken·Colon            => write!(f, ":"),
+            JsonToken·Null             => write!(f, "null"),
+            JsonToken·True             => write!(f, "true"),
+            JsonToken·False            => write!(f, "false"),
+            JsonToken·StringLit(s)     => write!(f, "{:?}", s),
+            JsonToken·IntLit(n)        => write!(f, "{}", n),
+            JsonToken·FloatLit(v)      => write!(f, "{}", v),
+            JsonToken·Eof              => write!(f, "<eof>"),
+        }
+    }
+}
+
+// ============================================================================
+// JsonLexer
+// ============================================================================
+
+☉ Σ JsonLexer {
+    src:  Vec<char>!,
+    pos:  usize!,
+    line: u32!,
+    col:  u32!,
+}
+
+☉ ⊢ JsonLexer {
+    ☉ rite new(s: &str) -> JsonLexer! {
+        JsonLexer {
+            src:  s.chars().collect(),
+            pos:  0,
+            line: 1,
+            col:  1,
+        }
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    rite peek(&self) -> Option<char>? {
+        ⎇ self.pos < self.src.len() {
+            Some(self.src[self.pos])
+        } ⎉ {
+            None
+        }
+    }
+
+    rite peek2(&self) -> Option<char>? {
+        ⎇ self.pos + 1 < self.src.len() {
+            Some(self.src[self.pos + 1])
+        } ⎉ {
+            None
+        }
+    }
+
+    rite advance(&vary self) -> Option<char>? {
+        ⎇ self.pos < self.src.len() {
+            ≔ ch! = self.src[self.pos];
+            self.pos += 1;
+            ⎇ ch == '\n' {
+                self.line += 1;
+                self.col  = 1;
+            } ⎉ {
+                self.col += 1;
+            }
+            Some(ch)
+        } ⎉ {
+            None
+        }
+    }
+
+    rite skip_whitespace(&vary self) {
+        ⟳ true {
+            ⌥ self.peek() {
+                Some(' ') | Some('\t') | Some('\r') | Some('\n') => { self.advance(); }
+                _                                                 => { ⊗; }
+            }
+        }
+    }
+
+    rite err(&self, msg: &str) -> CodecError! {
+        CodecError·json(self.line, self.col, msg.to_string())
+    }
+
+    // ── String parsing ───────────────────────────────────────────────────────
+
+    rite lex_string(&vary self) -> CodecResult<String>~ {
+        // Opening `"` already consumed by caller
+        vary buf = String·new();
+        ⟳ true {
+            ⌥ self.advance() {
+                None => {
+                    ret Err(self.err("unterminated string literal"));
+                }
+                Some('"') => {
+                    ⊗;
+                }
+                Some('\\') => {
+                    ⌥ self.advance() {
+                        Some('"')  => buf.push('"'),
+                        Some('\\') => buf.push('\\'),
+                        Some('/')  => buf.push('/'),
+                        Some('b')  => buf.push('\x08'),
+                        Some('f')  => buf.push('\x0C'),
+                        Some('n')  => buf.push('\n'),
+                        Some('r')  => buf.push('\r'),
+                        Some('t')  => buf.push('\t'),
+                        Some('u')  => {
+                            // \uXXXX
+                            vary hex = String·with_capacity(4);
+                            ∀ _i ∈ 0..4 {
+                                ⌥ self.advance() {
+                                    Some(c) => hex.push(c),
+                                    None    => {
+                                        ret Err(self.err("truncated \\u escape"));
+                                    }
+                                }
+                            }
+                            ⌥ u32·from_str_radix(&hex, 16).ok().and_then(char·from_u32) {
+                                Some(c) => buf.push(c),
+                                None    => {
+                                    ret Err(self.err(&format!("invalid \\u escape: {}", hex)));
+                                }
+                            }
+                        }
+                        Some(c) => {
+                            ret Err(self.err(&format!("unknown escape: \\{}", c)));
+                        }
+                        None => {
+                            ret Err(self.err("unterminated escape sequence"));
+                        }
+                    }
+                }
+                Some(c) => {
+                    buf.push(c);
+                }
+            }
+        }
+        Ok(buf)
+    }
+
+    // ── Number parsing ───────────────────────────────────────────────────────
+
+    rite lex_number(&vary self, first: char) -> CodecResult<JsonToken>~ {
+        vary raw = String·new();
+        raw.push(first);
+
+        vary is_float = false;
+
+        ⟳ true {
+            ⌥ self.peek() {
+                Some(c) if c.is_ascii_digit() || c == '-' || c == '+' => {
+                    raw.push(c);
+                    self.advance();
+                }
+                Some('.') | Some('e') | Some('E') => {
+                    is_float = true;
+                    raw.push(self.peek().unwrap());
+                    self.advance();
+                }
+                _ => { ⊗; }
+            }
+        }
+
+        ⎇ is_float {
+            ⌥ raw.parse::<f64>() {
+                Ok(f)  => Ok(JsonToken·FloatLit(f)),
+                Err(_) => Err(self.err(&format!("invalid float: {}", raw))),
+            }
+        } ⎉ {
+            ⌥ raw.parse::<i64>() {
+                Ok(n)  => Ok(JsonToken·IntLit(n)),
+                Err(_) => Err(self.err(&format!("invalid integer: {}", raw))),
+            }
+        }
+    }
+
+    // ── Keyword helper ───────────────────────────────────────────────────────
+
+    rite expect_keyword(&vary self, rest: &str) -> CodecResult<()>~ {
+        ∀ ch ∈ rest.chars() {
+            ⌥ self.advance() {
+                Some(c) if c == ch => {}
+                Some(c) => {
+                    ret Err(self.err(&format!("expected '{}', found '{}'", ch, c)));
+                }
+                None => {
+                    ret Err(self.err("unexpected EOF in keyword"));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // ── Public tokenizer ─────────────────────────────────────────────────────
+
+    /// Consume and return the next token.
+    ☉ rite next_token(&vary self) -> CodecResult<JsonToken>~ {
+        self.skip_whitespace();
+
+        ⌥ self.advance() {
+            None      => Ok(JsonToken·Eof),
+            Some('{') => Ok(JsonToken·LBrace),
+            Some('}') => Ok(JsonToken·RBrace),
+            Some('[') => Ok(JsonToken·LBracket),
+            Some(']') => Ok(JsonToken·RBracket),
+            Some(',') => Ok(JsonToken·Comma),
+            Some(':') => Ok(JsonToken·Colon),
+            Some('"') => {
+                ≔ s~ = self.lex_string()?;
+                Ok(JsonToken·StringLit(s))
+            }
+            Some('n') => {
+                self.expect_keyword("ull")?;
+                Ok(JsonToken·Null)
+            }
+            Some('t') => {
+                self.expect_keyword("rue")?;
+                Ok(JsonToken·True)
+            }
+            Some('f') => {
+                self.expect_keyword("alse")?;
+                Ok(JsonToken·False)
+            }
+            Some(c) if c == '-' || c.is_ascii_digit() => {
+                self.lex_number(c)
+            }
+            Some(c) => {
+                Err(self.err(&format!("unexpected character: '{}'", c)))
+            }
+        }
+    }
+
+    /// Peek at the next token without consuming it.
+    ☉ rite peek_token(&vary self) -> CodecResult<JsonToken>~ {
+        ≔ saved_pos  = self.pos;
+        ≔ saved_line = self.line;
+        ≔ saved_col  = self.col;
+        ≔ tok~ = self.next_token()?;
+        self.pos  = saved_pos;
+        self.line = saved_line;
+        self.col  = saved_col;
+        Ok(tok)
+    }
+}

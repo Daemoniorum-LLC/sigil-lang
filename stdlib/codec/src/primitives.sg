@@ -1,0 +1,206 @@
+//! `Encode` + `Decode` implementations for all primitive Sigil types.
+//!
+//! Covered:
+//! - `bool`, `i64`, `u64`, `u32`, `u16`, `usize`, `f64`, `f32`
+//! - `String`, `&str` (encode only)
+//! - `Option<T>` where `T: Encode + Decode`
+//! - `Vec<T>` where `T: Encode + Decode`
+//! - `HashMap<String, V>` where `V: Encode + Decode`
+
+invoke super·error·{CodecError, CodecFormat, CodecResult};
+invoke super·traits·{Encode, Decode};
+invoke super·value·Value;
+invoke std·collections·HashMap;
+
+// ============================================================================
+// bool
+// ============================================================================
+
+☉ ⊢ Encode ∀ bool {
+    ☉ rite encode(&self) -> Value! {
+        Value·Bool(*self)
+    }
+}
+
+☉ ⊢ Decode ∀ bool {
+    ☉ rite decode(value: &Value) -> CodecResult<bool>~ {
+        value.as_bool(CodecFormat·Json)
+    }
+}
+
+// ============================================================================
+// Integer types
+// ============================================================================
+
+☉ ⊢ Encode ∀ i64 {
+    ☉ rite encode(&self) -> Value! { Value·Int(*self) }
+}
+
+☉ ⊢ Decode ∀ i64 {
+    ☉ rite decode(value: &Value) -> CodecResult<i64>~ {
+        value.as_i64(CodecFormat·Json)
+    }
+}
+
+☉ ⊢ Encode ∀ u64 {
+    ☉ rite encode(&self) -> Value! { Value·Int(*self as i64) }
+}
+
+☉ ⊢ Decode ∀ u64 {
+    ☉ rite decode(value: &Value) -> CodecResult<u64>~ {
+        value.as_u64(CodecFormat·Json)
+    }
+}
+
+☉ ⊢ Encode ∀ u32 {
+    ☉ rite encode(&self) -> Value! { Value·Int(*self as i64) }
+}
+
+☉ ⊢ Decode ∀ u32 {
+    ☉ rite decode(value: &Value) -> CodecResult<u32>~ {
+        value.as_u64(CodecFormat·Json).map(|n| n as u32)
+    }
+}
+
+☉ ⊢ Encode ∀ u16 {
+    ☉ rite encode(&self) -> Value! { Value·Int(*self as i64) }
+}
+
+☉ ⊢ Decode ∀ u16 {
+    ☉ rite decode(value: &Value) -> CodecResult<u16>~ {
+        value.as_u64(CodecFormat·Json).map(|n| n as u16)
+    }
+}
+
+☉ ⊢ Encode ∀ usize {
+    ☉ rite encode(&self) -> Value! { Value·Int(*self as i64) }
+}
+
+☉ ⊢ Decode ∀ usize {
+    ☉ rite decode(value: &Value) -> CodecResult<usize>~ {
+        value.as_u64(CodecFormat·Json).map(|n| n as usize)
+    }
+}
+
+// ============================================================================
+// Float types
+// ============================================================================
+
+☉ ⊢ Encode ∀ f64 {
+    ☉ rite encode(&self) -> Value! {
+        // NaN and Inf are not representable in JSON or TOML — encode as Null
+        ⎇ self.is_nan() || self.is_infinite() {
+            Value·Null
+        } ⎉ {
+            Value·Float(*self)
+        }
+    }
+}
+
+☉ ⊢ Decode ∀ f64 {
+    ☉ rite decode(value: &Value) -> CodecResult<f64>~ {
+        value.as_f64(CodecFormat·Json)
+    }
+}
+
+☉ ⊢ Encode ∀ f32 {
+    ☉ rite encode(&self) -> Value! {
+        ⎇ self.is_nan() || self.is_infinite() {
+            Value·Null
+        } ⎉ {
+            Value·Float(*self as f64)
+        }
+    }
+}
+
+☉ ⊢ Decode ∀ f32 {
+    ☉ rite decode(value: &Value) -> CodecResult<f32>~ {
+        value.as_f64(CodecFormat·Json).map(|f| f as f32)
+    }
+}
+
+// ============================================================================
+// String
+// ============================================================================
+
+☉ ⊢ Encode ∀ String {
+    ☉ rite encode(&self) -> Value! { Value·Str(self.clone()) }
+}
+
+☉ ⊢ Decode ∀ String {
+    ☉ rite decode(value: &Value) -> CodecResult<String>~ {
+        value.as_string(CodecFormat·Json)
+    }
+}
+
+// ============================================================================
+// Option<T>
+// ============================================================================
+
+☉ ⊢ Encode ∀ Option<T> where T: Encode {
+    ☉ rite encode(&self) -> Value! {
+        ⌥ self {
+            Some(v) => v.encode(),
+            None    => Value·Null,
+        }
+    }
+}
+
+☉ ⊢ Decode ∀ Option<T> where T: Decode {
+    ☉ rite decode(value: &Value) -> CodecResult<Option<T>>~ {
+        ⎇ value.is_null() {
+            Ok(None)
+        } ⎉ {
+            T·decode(value).map(Some)
+        }
+    }
+}
+
+// ============================================================================
+// Vec<T>
+// ============================================================================
+
+☉ ⊢ Encode ∀ Vec<T> where T: Encode {
+    ☉ rite encode(&self) -> Value! {
+        ≔ items! = self.iter().map({v => v.encode()}).collect();
+        Value·Array(items)
+    }
+}
+
+☉ ⊢ Decode ∀ Vec<T> where T: Decode {
+    ☉ rite decode(value: &Value) -> CodecResult<Vec<T>>~ {
+        ≔ arr~ = value.as_array(CodecFormat·Json)?;
+        vary out: Vec<T> = Vec·with_capacity(arr.len());
+        ∀ item ∈ arr {
+            out.push(T·decode(item)?);
+        }
+        Ok(out)
+    }
+}
+
+// ============================================================================
+// HashMap<String, V>
+// ============================================================================
+
+☉ ⊢ Encode ∀ HashMap<String, V> where V: Encode {
+    ☉ rite encode(&self) -> Value! {
+        vary map = HashMap·new();
+        ∀ (k, v) ∈ self {
+            map.insert(k.clone(), v.encode());
+        }
+        Value·Table(map)
+    }
+}
+
+☉ ⊢ Decode ∀ HashMap<String, V> where V: Decode {
+    ☉ rite decode(value: &Value) -> CodecResult<HashMap<String, V>>~ {
+        ≔ tbl~ = value.as_table(CodecFormat·Json)?;
+        vary out: HashMap<String, V> = HashMap·with_capacity(tbl.len());
+        ∀ (k, v) ∈ tbl {
+            ≔ decoded~ = V·decode(v)
+                .map_err({e => e.at_path(k)})?;
+            out.insert(k.clone(), decoded);
+        }
+        Ok(out)
+    }
+}
