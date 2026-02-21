@@ -1,0 +1,350 @@
+//! Tests for stdlib/sgdoc — executable specification per Agent-TDD.
+//!
+//! Each test is a precise behavioral claim. Tests run before implementation
+//! exists (RED phase) to confirm the spec is testable.
+
+invoke sgdoc·{
+    Claim, ClaimKind, AnyClaim,
+    DocMeta, SemVer, DocStatus,
+    SpecRef, CodeRef, TestRef,
+    Section, Doc, Example, ExpectedOutput,
+    VerificationReport,
+};
+
+// ============================================================================
+// Claim constructors
+// ============================================================================
+
+//@ rune: test
+rite test_claim_v_produces_verified_kind() {
+    ≔ c! = Claim·v("The function returns a Result");
+    assert_eq!(c.kind, ClaimKind·Verified);
+    assert_eq!(c.content, "The function returns a Result");
+    assert!(c.test_ref.is_none());
+    assert!(c.spec_ref.is_none());
+}
+
+//@ rune: test
+rite test_claim_r_produces_reported_kind() {
+    ≔ c! = Claim·r("Supports async execution");
+    assert_eq!(c.kind, ClaimKind·Reported);
+    assert_eq!(c.content, "Supports async execution");
+}
+
+//@ rune: test
+rite test_claim_u_produces_uncertain_kind() {
+    ≔ c! = Claim·u("Thread-safe under concurrent access");
+    assert_eq!(c.kind, ClaimKind·Uncertain);
+}
+
+//@ rune: test
+rite test_claim_p_produces_predicted_kind() {
+    ≔ c! = Claim·p("Will support WASM in v0.5.0");
+    assert_eq!(c.kind, ClaimKind·Predicted);
+}
+
+//@ rune: test
+rite test_claim_verified_with_test_ref() {
+    ≔ c! = Claim·verified("Returns correct sum", "tests/math_test.sg");
+    assert_eq!(c.kind, ClaimKind·Verified);
+    assert!(c.test_ref.is_some());
+    ≔ tref! = c.test_ref.unwrap();
+    assert_eq!(tref.file, "tests/math_test.sg");
+}
+
+//@ rune: test
+rite test_claim_reported_with_spec_ref() {
+    ≔ c! = Claim·reported("Memory-safe", "02-MEMORY§3.1");
+    assert_eq!(c.kind, ClaimKind·Reported);
+    assert!(c.spec_ref.is_some());
+    ≔ sref! = c.spec_ref.unwrap();
+    assert_eq!(sref.spec, "02-MEMORY");
+    assert_eq!(sref.section, "§3.1");
+}
+
+// ============================================================================
+// AnyClaim wrapping
+// ============================================================================
+
+//@ rune: test
+rite test_any_claim_verified_variant() {
+    ≔ c! = Claim·v("Works correctly");
+    ≔ any! = AnyClaim·Verified(c);
+    ⌥ any {
+        AnyClaim·Verified(inner) => assert_eq!(inner.content, "Works correctly"),
+        _ => panic!("wrong variant"),
+    }
+}
+
+//@ rune: test
+rite test_any_claim_is_verified_predicate() {
+    ≔ c! = Claim·v("Works");
+    ≔ any! = AnyClaim·Verified(c);
+    assert!(any.is_verified());
+    assert!(!any.is_reported());
+    assert!(!any.is_uncertain());
+    assert!(!any.is_predicted());
+}
+
+//@ rune: test
+rite test_any_claim_inner_returns_claim() {
+    ≔ c! = Claim·r("Spec says so");
+    ≔ any! = AnyClaim·Reported(c);
+    assert_eq!(any.inner().content, "Spec says so");
+}
+
+// ============================================================================
+// DocMeta construction
+// ============================================================================
+
+//@ rune: test
+rite test_docmeta_new() {
+    ≔ meta! = DocMeta·new("Interpreter Reference", 0, 4, 0);
+    assert_eq!(meta.title, "Interpreter Reference");
+    assert_eq!(meta.version.major, 0);
+    assert_eq!(meta.version.minor, 4);
+    assert_eq!(meta.version.patch, 0);
+    assert_eq!(meta.status, DocStatus·Draft);
+    assert!(meta.authors.is_empty());
+    assert!(meta.spec_refs.is_empty());
+    assert!(meta.code_refs.is_empty());
+}
+
+//@ rune: test
+rite test_docmeta_stable_sets_status() {
+    ≔ meta! = DocMeta·new("My Doc", 1, 0, 0).stable();
+    assert_eq!(meta.status, DocStatus·Stable);
+}
+
+//@ rune: test
+rite test_docmeta_with_author() {
+    ≔ meta! = DocMeta·new("My Doc", 1, 0, 0)
+        .with_author("Claude")
+        .with_author("Human");
+    assert_eq!(meta.authors.len(), 2);
+    assert_eq!(meta.authors[0], "Claude");
+}
+
+// ============================================================================
+// Section construction
+// ============================================================================
+
+//@ rune: test
+rite test_section_new() {
+    ≔ s! = Section·new("1", "Overview");
+    assert_eq!(s.id, "1");
+    assert_eq!(s.title, "Overview");
+    assert!(s.claims.is_empty());
+    assert!(s.subsections.is_empty());
+}
+
+//@ rune: test
+rite test_section_add_claim() {
+    ≔ s! = Section·new("1", "Overview")
+        .add_claim(AnyClaim·Verified(Claim·v("Claim one")))
+        .add_claim(AnyClaim·Reported(Claim·r("Claim two")));
+    assert_eq!(s.claims.len(), 2);
+}
+
+// ============================================================================
+// Doc construction
+// ============================================================================
+
+//@ rune: test
+rite test_doc_new() {
+    ≔ meta! = DocMeta·new("Test Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, "A test document.");
+    assert_eq!(doc.summary, "A test document.");
+    assert!(doc.sections.is_empty());
+    assert!(doc.examples.is_empty());
+}
+
+//@ rune: test
+rite test_doc_add_section() {
+    ≔ meta! = DocMeta·new("Test Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, "Summary.")
+        .add_section(Section·new("1", "Overview"))
+        .add_section(Section·new("2", "Details"));
+    assert_eq!(doc.sections.len(), 2);
+}
+
+// ============================================================================
+// Doc·claims and Doc·unverified_claims
+// ============================================================================
+
+//@ rune: test
+rite test_doc_claims_collects_all_claims() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Verified(Claim·v("A")))
+                .add_claim(AnyClaim·Reported(Claim·r("B")))
+                .add_claim(AnyClaim·Uncertain(Claim·u("C")))
+        );
+    ≔ all! = doc.claims();
+    assert_eq!(all.len(), 3);
+}
+
+//@ rune: test
+rite test_doc_unverified_claims_excludes_verified() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Verified(Claim·v("Proven")))
+                .add_claim(AnyClaim·Reported(Claim·r("Unproven")))
+                .add_claim(AnyClaim·Predicted(Claim·p("Future")))
+        );
+    ≔ unverified! = doc.unverified_claims();
+    assert_eq!(unverified.len(), 2);
+    ∀ c ∈ &unverified {
+        assert!(!c.is_verified());
+    }
+}
+
+// ============================================================================
+// Verification report
+// ============================================================================
+
+//@ rune: test
+rite test_verify_counts_by_kind() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0).stable();
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Verified(Claim·v("V1")))
+                .add_claim(AnyClaim·Verified(Claim·v("V2")))
+                .add_claim(AnyClaim·Reported(Claim·r("R1")))
+                .add_claim(AnyClaim·Uncertain(Claim·u("U1")))
+                .add_claim(AnyClaim·Predicted(Claim·p("P1")))
+        );
+    ≔ report! = doc.verify();
+    assert_eq!(report.claims_verified, 2);
+    assert_eq!(report.claims_reported, 1);
+    assert_eq!(report.claims_uncertain, 1);
+    assert_eq!(report.claims_predicted, 1);
+    assert!(report.failures.is_empty());
+}
+
+// ============================================================================
+// Markdown rendering
+// ============================================================================
+
+//@ rune: test
+rite test_to_markdown_contains_title() {
+    ≔ meta! = DocMeta·new("Interpreter Reference", 1, 0, 0).stable();
+    ≔ doc! = Doc·new(meta, "The interpreter executes AST nodes.");
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("# Interpreter Reference"));
+    assert!(md.contains("The interpreter executes AST nodes."));
+}
+
+//@ rune: test
+rite test_to_markdown_contains_section_heading() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(Section·new("1", "Overview"));
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("## 1. Overview"));
+}
+
+//@ rune: test
+rite test_to_markdown_verified_claim_has_checkmark() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Verified(Claim·v("It works")))
+        );
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("✓"));
+    assert!(md.contains("It works"));
+}
+
+//@ rune: test
+rite test_to_markdown_reported_claim_has_circle() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Reported(Claim·r("Spec says")))
+        );
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("○"));
+    assert!(md.contains("Spec says"));
+}
+
+//@ rune: test
+rite test_to_markdown_uncertain_claim_has_question() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Uncertain(Claim·u("Unknown")))
+        );
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("?"));
+    assert!(md.contains("Unknown"));
+}
+
+//@ rune: test
+rite test_to_markdown_predicted_claim_has_diamond() {
+    ≔ meta! = DocMeta·new("Doc", 1, 0, 0);
+    ≔ doc! = Doc·new(meta, ".")
+        .add_section(
+            Section·new("1", "Sec")
+                .add_claim(AnyClaim·Predicted(Claim·p("Coming soon")))
+        );
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("◊"));
+    assert!(md.contains("Coming soon"));
+}
+
+//@ rune: test
+rite test_to_markdown_version_in_header() {
+    ≔ meta! = DocMeta·new("Doc", 2, 1, 3);
+    ≔ doc! = Doc·new(meta, ".");
+    ≔ md! = doc.to_markdown();
+    assert!(md.contains("2.1.3"));
+}
+
+// ============================================================================
+// Example construction
+// ============================================================================
+
+//@ rune: test
+rite test_example_new() {
+    ≔ ex! = Example·new(
+        "Basic addition",
+        "println(1 + 2);",
+        ExpectedOutput·Exact("3\n".to_string()),
+    );
+    assert_eq!(ex.title, "Basic addition");
+    assert!(!ex.verified);
+}
+
+//@ rune: test
+rite test_example_verify_marks_verified() {
+    ≔ ex! = Example·new("A", "b", ExpectedOutput·Compiles).verify();
+    assert!(ex.verified);
+}
+
+// ============================================================================
+// SpecRef and CodeRef construction
+// ============================================================================
+
+//@ rune: test
+rite test_specref_new() {
+    ≔ s! = SpecRef·new("24-SGDOC", "§3.1");
+    assert_eq!(s.spec, "24-SGDOC");
+    assert_eq!(s.section, "§3.1");
+    assert!(!s.verified);
+}
+
+//@ rune: test
+rite test_coderef_new() {
+    ≔ c! = CodeRef·new("parser/src/interpreter.rs", Some("Interpreter".to_string()));
+    assert_eq!(c.path, "parser/src/interpreter.rs");
+    assert_eq!(c.symbol, Some("Interpreter".to_string()));
+}

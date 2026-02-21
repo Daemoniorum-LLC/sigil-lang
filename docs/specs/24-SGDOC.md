@@ -1,6 +1,6 @@
 # 24-SGDOC: Sigil Documentation Format
 
-**Version:** 0.4.0
+**Version:** 0.5.0
 **Status:** ! Stable
 **Authors:** Claude (Opus 4.5) + Human
 **Date:** 2026-01-25
@@ -719,3 +719,86 @@ SGDOC brings Sigil's core philosophy to documentation:
 | Programmatic access | Query docs like any other data |
 
 **The key insight:** Documentation claims are assertions about code. Assertions should have evidence. Sigil's evidentiality system makes this explicit.
+
+---
+
+## 12. Edition 2025 Corrections
+
+**Status:** ⚠️ GAP IDENTIFIED — Spec was authored before Sigil Edition 2025 syntax was finalised.
+
+This section documents deviations between the pseudocode in earlier sections and
+actual Edition 2025 syntax. The implementation follows the corrected forms below.
+Earlier sections are preserved as-is for historical record; treat this section as
+authoritative.
+
+### 12.1 Collection Types
+
+| Spec pseudocode | Edition 2025 |
+|-----------------|--------------|
+| `Vec<String>` | `[String]` |
+| `Vec<SpecRef>` | `[SpecRef]` |
+| `Option<String>` | `Option[String]` |
+| `Option<T>` | `Option[T]` |
+
+### 12.2 Function Syntax
+
+| Spec pseudocode | Edition 2025 |
+|-----------------|--------------|
+| `λ main() { }` | `rite main() { }` |
+| `pub λ main() { }` | `☉ rite main() { }` |
+
+### 12.3 Module Declarations
+
+`tome module_name;` is not valid Edition 2025. File-level modules do not need
+a declaration — the filename is the module name. Remove all `tome` declarations.
+
+### 12.4 Generic Phantom Types
+
+The spec defined:
+
+```sigil
+Σ Claim<E> { ... }
+type Claim! = Claim<Verified>;
+type Claim~ = Claim<Reported>;
+```
+
+Evidentiality markers cannot appear in type names (`Claim!` is not a valid type
+identifier). The phantom-type approach is replaced with a `ClaimKind` enum:
+
+```sigil
+☉ ᛈ ClaimKind { Verified, Reported, Uncertain, Predicted }
+
+☉ Σ Claim {
+    ☉ kind: ClaimKind!,
+    ☉ content: String!,
+    ☉ test_ref: Option[TestRef]?,
+    ☉ spec_ref: Option[SpecRef]?,
+}
+```
+
+Constructor shorthands remain unchanged: `Claim·v`, `Claim·r`, `Claim·u`, `Claim·p`.
+
+`AnyClaim` is retained as an enum wrapping `Claim` by kind variant for
+pattern-matching ergonomics.
+
+### 12.5 Date Representation
+
+`datetime!("...")` macro does not exist. Dates are plain `String` in ISO-8601
+format (`"2026-02-21"`).
+
+### 12.6 Public Type Visibility
+
+All exported types and functions require `☉` (pub):
+
+```sigil
+☉ Σ DocMeta { ... }
+☉ ᛈ DocStatus { ... }
+☉ ⊢ DocMeta { ☉ rite new(...) -> Self! { ... } }
+```
+
+### 12.7 Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 0.4.0 | 2026-01-25 | Initial spec (Claude Opus 4.5 + Human) |
+| 0.5.0 | 2026-02-21 | Gap §12: Edition 2025 syntax corrections (Claude Sonnet 4.6) |

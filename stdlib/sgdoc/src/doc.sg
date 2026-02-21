@@ -1,0 +1,415 @@
+//! Doc, Section, Example, ExpectedOutput — the document structure types.
+
+invoke super·types·DocMeta;
+invoke super·claim·{Claim, AnyClaim, ClaimKind};
+
+// ============================================================================
+// Example
+// ============================================================================
+
+/// Expected output from running a code example.
+//@ rune: derive(Debug, Clone)
+☉ ᛈ ExpectedOutput {
+    /// Output must match exactly (including whitespace and newlines).
+    Exact(String),
+    /// Output must contain the given substring.
+    Contains(String),
+    /// Output must match the regex pattern.
+    Regex(String),
+    /// Example must compile without errors (output not checked).
+    Compiles,
+    /// Example must fail with an error containing the given string.
+    Fails(String),
+}
+
+/// A runnable code example with expected output.
+//@ rune: derive(Debug, Clone)
+☉ Σ Example {
+    ☉ title: String!,
+    ☉ code: String!,
+    ☉ output: ExpectedOutput!,
+    ☉ verified: bool!,
+}
+
+☉ ⊢ Example {
+    ☉ rite new(
+        title: ⊢ Into<String>,
+        code: ⊢ Into<String>,
+        output: ExpectedOutput,
+    ) -> Self! {
+        Example {
+            title: title.into(),
+            code: code.into(),
+            output,
+            verified: false,
+        }
+    }
+
+    /// Mark example as verified (has been run and output confirmed).
+    ☉ rite verify(Δ self) -> Self! {
+        self.verified = true;
+        self
+    }
+}
+
+// ============================================================================
+// Section
+// ============================================================================
+
+/// A section within a document — may contain claims and subsections.
+//@ rune: derive(Debug, Clone)
+☉ Σ Section {
+    /// Section identifier, e.g. `"2.1"`.
+    ☉ id: String!,
+    /// Section heading.
+    ☉ title: String!,
+    /// Documentation claims in this section.
+    ☉ claims: [AnyClaim]!,
+    /// Nested subsections.
+    ☉ subsections: [Section]!,
+}
+
+☉ ⊢ Section {
+    ☉ rite new(id: ⊢ Into<String>, title: ⊢ Into<String>) -> Self! {
+        Section {
+            id: id.into(),
+            title: title.into(),
+            claims: vec![],
+            subsections: vec![],
+        }
+    }
+
+    ☉ rite add_claim(Δ self, claim: AnyClaim) -> Self! {
+        self.claims.push(claim);
+        self
+    }
+
+    ☉ rite add_subsection(Δ self, sub: Section) -> Self! {
+        self.subsections.push(sub);
+        self
+    }
+}
+
+// ============================================================================
+// VerificationReport
+// ============================================================================
+
+/// Result of verifying all claims in a document.
+//@ rune: derive(Debug)]
+☉ Σ VerificationReport {
+    ☉ claims_verified: u32!,
+    ☉ claims_reported: u32!,
+    ☉ claims_uncertain: u32!,
+    ☉ claims_predicted: u32!,
+    ☉ failures: [String]!,
+}
+
+// ============================================================================
+// Doc
+// ============================================================================
+
+/// A complete SGDOC document.
+//@ rune: derive(Debug, Clone)
+☉ Σ Doc {
+    ☉ meta: DocMeta!,
+    ☉ summary: String!,
+    ☉ sections: [Section]!,
+    ☉ examples: [Example]!,
+}
+
+☉ ⊢ Doc {
+    ☉ rite new(meta: DocMeta, summary: ⊢ Into<String>) -> Self! {
+        Doc {
+            meta,
+            summary: summary.into(),
+            sections: vec![],
+            examples: vec![],
+        }
+    }
+
+    ☉ rite add_section(Δ self, section: Section) -> Self! {
+        self.sections.push(section);
+        self
+    }
+
+    ☉ rite add_example(Δ self, example: Example) -> Self! {
+        self.examples.push(example);
+        self
+    }
+
+    // ── Claim accessors ───────────────────────────────────────────────────
+
+    /// Collect all claims from all sections (depth-first).
+    ☉ rite claims(&self) -> [AnyClaim]! {
+        ≔ Δ out!: Vec<AnyClaim> = vec![];
+        ∀ sec ∈ &self.sections {
+            collect_claims(sec, &Δ out);
+        }
+        out
+    }
+
+    /// Collect all non-Verified claims (Reported, Uncertain, Predicted).
+    ☉ rite unverified_claims(&self) -> [AnyClaim]! {
+        ≔ Δ out!: [AnyClaim] = [];
+        ∀ c ∈ self.claims() {
+            ⎇ !c.is_verified() {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    // ── Verification ──────────────────────────────────────────────────────
+
+    /// Count claims by kind and return a `VerificationReport`.
+    ☉ rite verify(&self) -> VerificationReport! {
+        ≔ Δ verified! = 0u32;
+        ≔ Δ reported! = 0u32;
+        ≔ Δ uncertain! = 0u32;
+        ≔ Δ predicted! = 0u32;
+
+        ∀ claim ∈ &self.claims() {
+            ⌥ claim {
+                AnyClaim·Verified(_)  => verified  += 1,
+                AnyClaim·Reported(_)  => reported  += 1,
+                AnyClaim·Uncertain(_) => uncertain += 1,
+                AnyClaim·Predicted(_) => predicted += 1,
+            }
+        }
+
+        VerificationReport {
+            claims_verified:  verified,
+            claims_reported:  reported,
+            claims_uncertain: uncertain,
+            claims_predicted: predicted,
+            failures: vec![],
+        }
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────────────
+
+    /// Render this document as Markdown.
+    ///
+    /// Evidentiality badges per claim:
+    /// - `✓` Verified
+    /// - `○` Reported
+    /// - `?` Uncertain
+    /// - `◊` Predicted
+    ☉ rite to_markdown(&self) -> String! {
+        ≔ Δ out!: Vec<String> = vec![];
+
+        // Title and version
+        out.push(format!("# {}", self.meta.title));
+        out.push(format!("**Version:** {}", self.meta.version.to_string()));
+        ⎇ self.meta.status == DocStatus·Stable {
+            out.push("**Status:** Stable".to_string());
+        }
+        out.push("".to_string());
+
+        // Summary
+        out.push(self.summary.clone());
+        out.push("".to_string());
+
+        // Sections
+        ∀ sec ∈ &self.sections {
+            render_section_md(sec, 2, &Δ out);
+        }
+
+        // Examples
+        ⎇ !self.examples.is_empty() {
+            out.push("## Examples".to_string());
+            out.push("".to_string());
+            ∀ ex ∈ &self.examples {
+                out.push(format!("### {}", ex.title));
+                out.push("".to_string());
+                out.push(format!("```sigil\n{}\n```", ex.code.trim()));
+                out.push("".to_string());
+            }
+        }
+
+        out.join("\n")
+    }
+}
+
+// ============================================================================
+// Private helpers
+// ============================================================================
+
+rite collect_claims(sec: &Section, out: &Δ Vec<AnyClaim>) {
+    ∀ c ∈ &sec.claims {
+        out.push(c.clone());
+    }
+    ∀ sub ∈ &sec.subsections {
+        collect_claims(sub, out);
+    }
+}
+
+rite render_section_md(sec: &Section, level: usize, out: &Δ Vec<String>) {
+    ≔ heading! = "#".repeat(level);
+    out.push(format!("{} {}. {}", heading, sec.id, sec.title));
+    out.push("".to_string());
+
+    ∀ claim ∈ &sec.claims {
+        ≔ inner! = claim.inner();
+        out.push(format!("- {} {}", inner.badge(), inner.content));
+    }
+
+    ⎇ !sec.claims.is_empty() {
+        out.push("".to_string());
+    }
+
+    ∀ sub ∈ &sec.subsections {
+        render_section_md(sub, level + 1, out);
+    }
+}
+
+// ── DocStatus needs to be accessible in doc.sg for the stable() check
+invoke super·types·DocStatus;
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+    invoke super·super·types·{DocMeta, DocStatus};
+    invoke super·super·claim·{Claim, AnyClaim};
+
+    #[test]
+    rite test_section_new_is_empty() {
+        ≔ s! = Section·new("1", "Overview");
+        assert_eq!(s.id, "1");
+        assert_eq!(s.title, "Overview");
+        assert_eq!(s.claims.len(), 0);
+    }
+
+    #[test]
+    rite test_section_add_claim_appends() {
+        ≔ s! = Section·new("1", "Overview")
+            .add_claim(AnyClaim·Verified(Claim·v("Claim one")))
+            .add_claim(AnyClaim·Reported(Claim·r("Claim two")));
+        assert_eq!(s.claims.len(), 2);
+    }
+
+    #[test]
+    rite test_doc_new_is_empty() {
+        ≔ doc! = Doc·new(DocMeta·new("Test", 1, 0, 0), "Summary.");
+        assert_eq!(doc.summary, "Summary.");
+        assert_eq!(doc.sections.len(), 0);
+    }
+
+    #[test]
+    rite test_doc_add_section() {
+        ≔ doc! = Doc·new(DocMeta·new("Test", 1, 0, 0), ".")
+            .add_section(Section·new("1", "Overview"))
+            .add_section(Section·new("2", "Details"));
+        assert_eq!(doc.sections.len(), 2);
+    }
+
+    #[test]
+    rite test_doc_claims_collects_all() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(
+                Section·new("1", "Sec")
+                    .add_claim(AnyClaim·Verified(Claim·v("A")))
+                    .add_claim(AnyClaim·Reported(Claim·r("B")))
+                    .add_claim(AnyClaim·Uncertain(Claim·u("C")))
+            );
+        assert_eq!(doc.claims().len(), 3);
+    }
+
+    #[test]
+    rite test_doc_unverified_claims_excludes_verified() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(
+                Section·new("1", "Sec")
+                    .add_claim(AnyClaim·Verified(Claim·v("Proven")))
+                    .add_claim(AnyClaim·Reported(Claim·r("Unproven")))
+                    .add_claim(AnyClaim·Predicted(Claim·p("Future")))
+            );
+        ≔ unverified! = doc.unverified_claims();
+        assert_eq!(unverified.len(), 2);
+    }
+
+    #[test]
+    rite test_verify_counts_by_kind() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0).stable(), ".")
+            .add_section(
+                Section·new("1", "Sec")
+                    .add_claim(AnyClaim·Verified(Claim·v("V1")))
+                    .add_claim(AnyClaim·Verified(Claim·v("V2")))
+                    .add_claim(AnyClaim·Reported(Claim·r("R1")))
+                    .add_claim(AnyClaim·Uncertain(Claim·u("U1")))
+                    .add_claim(AnyClaim·Predicted(Claim·p("P1")))
+            );
+        ≔ report! = doc.verify();
+        assert_eq!(report.claims_verified, 2);
+        assert_eq!(report.claims_reported, 1);
+        assert_eq!(report.claims_uncertain, 1);
+        assert_eq!(report.claims_predicted, 1);
+        assert_eq!(report.failures.len(), 0);
+    }
+
+    #[test]
+    rite test_to_markdown_contains_title() {
+        ≔ doc! = Doc·new(DocMeta·new("Interpreter Reference", 1, 0, 0).stable(), "The interpreter executes AST nodes.");
+        ≔ md! = doc.to_markdown();
+        assert!(md.contains("# Interpreter Reference"));
+        assert!(md.contains("The interpreter executes AST nodes."));
+    }
+
+    #[test]
+    rite test_to_markdown_section_heading() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(Section·new("1", "Overview"));
+        assert!(doc.to_markdown().contains("## 1. Overview"));
+    }
+
+    #[test]
+    rite test_to_markdown_verified_has_checkmark() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(Section·new("1", "Sec").add_claim(AnyClaim·Verified(Claim·v("It works"))));
+        ≔ md! = doc.to_markdown();
+        assert!(md.contains("✓"));
+        assert!(md.contains("It works"));
+    }
+
+    #[test]
+    rite test_to_markdown_reported_has_circle() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(Section·new("1", "Sec").add_claim(AnyClaim·Reported(Claim·r("Spec says"))));
+        assert!(doc.to_markdown().contains("○"));
+    }
+
+    #[test]
+    rite test_to_markdown_uncertain_has_question() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(Section·new("1", "Sec").add_claim(AnyClaim·Uncertain(Claim·u("Unknown"))));
+        assert!(doc.to_markdown().contains("?"));
+    }
+
+    #[test]
+    rite test_to_markdown_predicted_has_diamond() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 1, 0, 0), ".")
+            .add_section(Section·new("1", "Sec").add_claim(AnyClaim·Predicted(Claim·p("Coming soon"))));
+        assert!(doc.to_markdown().contains("◊"));
+    }
+
+    #[test]
+    rite test_to_markdown_version() {
+        ≔ doc! = Doc·new(DocMeta·new("Doc", 2, 1, 3), ".");
+        assert!(doc.to_markdown().contains("2.1.3"));
+    }
+
+    #[test]
+    rite test_example_new_unverified() {
+        ≔ ex! = Example·new("Basic addition", "println(1 + 2);", ExpectedOutput·Exact("3\n".to_string()));
+        assert_eq!(ex.title, "Basic addition");
+        assert!(!ex.verified);
+    }
+
+    #[test]
+    rite test_example_verify() {
+        ≔ ex! = Example·new("A", "b", ExpectedOutput·Compiles).verify();
+        assert!(ex.verified);
+    }
+}

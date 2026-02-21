@@ -4051,6 +4051,30 @@ fn collect_test_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+fn collect_src_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    collect_src_files_inner(dir, &mut files);
+    files.sort();
+    files
+}
+
+fn collect_src_files_inner(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_src_files_inner(&path, files);
+            } else if path
+                .extension()
+                .map(|e| e == "sigil" || e == "sg")
+                .unwrap_or(false)
+            {
+                files.push(path);
+            }
+        }
+    }
+}
+
 fn run_test_files(
     test_files: &[std::path::PathBuf],
     label: Option<&str>,
@@ -4244,6 +4268,7 @@ fn run_tests_workspace() -> ExitCode {
 
     let project_name = manifest
         .get("project")
+        .or_else(|| manifest.get("package"))
         .and_then(|p| p.get("name"))
         .and_then(|n| n.as_str())
         .unwrap_or("unnamed");
@@ -4259,6 +4284,11 @@ fn run_tests_workspace() -> ExitCode {
                 .collect()
         })
         .unwrap_or_default();
+
+    // Package manifest (no workspace members): test this package directly.
+    if members.is_empty() {
+        return run_tests_package(project_name);
+    }
 
     println!("Testing workspace: {}", project_name);
     println!();
@@ -4305,6 +4335,134 @@ fn run_tests_workspace() -> ExitCode {
     print_test_summary(grand_total, grand_passed, grand_failed)
 }
 
+fn run_tests_package(package_name: &str) -> ExitCode {
+    use std::path::Path;
+
+    // Collect all source files (for inline #[cfg(test)] blocks) and dedicated test files.
+    let src_files = collect_src_files(Path::new("src"));
+    let test_files = collect_test_files(Path::new("tests"));
+
+    if src_files.is_empty() && test_files.is_empty() {
+        println!("No source or test files found.");
+        return ExitCode::SUCCESS;
+    }
+
+    println!("Testing package: {}", package_name);
+    println!();
+
+    // Build one shared interpreter context so cross-module references resolve.
+    let mut interpreter = Interpreter::new();
+    register_stdlib(&mut interpreter);
+
+    let mut all_test_fn_names: Vec<String> = Vec::new();
+
+    // Phase 1: parse all source files, collect inline test names, register definitions.
+    let mut src_asts = Vec::new();
+    for src_file in &src_files {
+        let source = match fs::read_to_string(src_file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading {}: {}", src_file.display(), e);
+                continue;
+            }
+        };
+        let mut parser = Parser::new(&source);
+        match parser.parse_file() {
+            Ok(ast) => {
+                collect_test_fn_names(&ast.items, &mut all_test_fn_names, None);
+                src_asts.push(ast);
+            }
+            Err(e) => {
+                eprintln!("Parse error in {}: {}", src_file.display(), e);
+            }
+        }
+    }
+    for ast in &src_asts {
+        if let Err(e) = interpreter.execute_definitions(ast) {
+            eprintln!("Definition error: {}", e);
+        }
+    }
+
+    // Phase 2: parse dedicated test files, collect test names, register definitions.
+    let mut test_asts = Vec::new();
+    for test_file in &test_files {
+        let source = match fs::read_to_string(test_file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading {}: {}", test_file.display(), e);
+                continue;
+            }
+        };
+        let mut parser = Parser::new(&source);
+        match parser.parse_file() {
+            Ok(ast) => {
+                collect_test_fn_names(&ast.items, &mut all_test_fn_names, None);
+                test_asts.push((test_file.clone(), ast));
+            }
+            Err(e) => {
+                eprintln!(
+                    "  {}✗{} {} - parse error: {}",
+                    colors::ERROR,
+                    colors::RESET,
+                    test_file.display(),
+                    e
+                );
+            }
+        }
+    }
+    for (_, ast) in &test_asts {
+        if let Err(e) = interpreter.execute_definitions(ast) {
+            eprintln!("Test definition error: {}", e);
+        }
+    }
+
+    if all_test_fn_names.is_empty() {
+        println!("No test functions found (functions with #[test] attribute)");
+        return ExitCode::SUCCESS;
+    }
+
+    // Phase 3: run all discovered tests in the shared context.
+    let mut passed = 0;
+    let mut failed = 0;
+    let mut fail_messages: Vec<(String, String)> = Vec::new();
+
+    for test_name in &all_test_fn_names {
+        match interpreter.call_function_by_name(test_name, vec![]) {
+            Ok(_) => passed += 1,
+            Err(e) => {
+                failed += 1;
+                fail_messages.push((test_name.clone(), e.to_string()));
+            }
+        }
+    }
+
+    let total = passed + failed;
+    if failed == 0 {
+        println!(
+            "  {}✓{} {} ({} tests)",
+            colors::GREEN,
+            colors::RESET,
+            package_name,
+            total
+        );
+    } else {
+        println!(
+            "  {}✗{} {} ({} passed, {} failed)",
+            colors::ERROR,
+            colors::RESET,
+            package_name,
+            passed,
+            failed
+        );
+        for (name, msg) in &fail_messages {
+            println!("      {} - {}", name, msg);
+        }
+    }
+    println!();
+
+    print_test_summary(total, passed, failed)
+}
+
 fn print_test_summary(total: usize, passed: usize, failed: usize) -> ExitCode {
     if total == 0 {
         println!("No test functions found (functions with #[test] attribute)");
@@ -4342,12 +4500,22 @@ struct Manifest {
     has_bin: bool,
     dependencies: Vec<Dependency>,
     workspace_members: Vec<String>,  // [workspace] members list
+    native_backend: Option<NativeBackend>,
 }
 
 /// A dependency reference
 #[derive(Debug, Clone)]
 struct Dependency {
     name: String,
+    path: std::path::PathBuf,
+}
+
+/// A native Rust backend to build and link (from [native] section in sigil.toml)
+#[derive(Debug, Clone)]
+struct NativeBackend {
+    /// Backend name, e.g. "wgpu" or "gtk4"
+    name: String,
+    /// Path to the Cargo project root for this backend
     path: std::path::PathBuf,
 }
 
@@ -4383,6 +4551,9 @@ fn parse_manifest(manifest_path: &std::path::Path) -> Result<Manifest, String> {
     // Parse workspace members
     let workspace_members = parse_workspace_members(&content);
 
+    // Parse [native] section
+    let native_backend = parse_native_backend(&content, manifest_dir);
+
     Ok(Manifest {
         name,
         version,
@@ -4390,6 +4561,7 @@ fn parse_manifest(manifest_path: &std::path::Path) -> Result<Manifest, String> {
         has_bin,
         dependencies,
         workspace_members,
+        native_backend,
     })
 }
 
@@ -4466,6 +4638,85 @@ fn parse_dependencies(content: &str, manifest_dir: &std::path::Path) -> Vec<Depe
         eprintln!("DEBUG: Parsed {} dependencies", deps.len());
     }
     deps
+}
+
+/// Parse [native] section from sigil.toml.
+///
+/// Expected format:
+///   [native]
+///   backend = "wgpu"
+///   path = "../../qliphoth/runtime/native/wgpu"
+fn parse_native_backend(content: &str, manifest_dir: &std::path::Path) -> Option<NativeBackend> {
+    let mut in_native = false;
+    let mut name: Option<String> = None;
+    let mut path: Option<std::path::PathBuf> = None;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_native = trimmed == "[native]";
+            continue;
+        }
+        if !in_native { continue; }
+        if trimmed.is_empty() || trimmed.starts_with('#') { continue; }
+
+        if let Some((key, val)) = trimmed.split_once('=') {
+            let key = key.trim();
+            let val = val.trim().trim_matches('"');
+            match key {
+                "backend" => name = Some(val.to_string()),
+                "path"    => path = Some(manifest_dir.join(val)),
+                _ => {}
+            }
+        }
+    }
+
+    match (name, path) {
+        (Some(n), Some(p)) => Some(NativeBackend { name: n, path: p }),
+        _ => None,
+    }
+}
+
+/// Build a native Rust backend crate with cargo and return link args:
+/// [path/to/libname.so, -Wl,-rpath,/path/to/dir]
+fn build_native_backend(backend: &NativeBackend) -> Result<Vec<std::path::PathBuf>, String> {
+    use std::process::Command;
+
+    println!("Building native backend '{}' at {} ...", backend.name, backend.path.display());
+
+    let status = Command::new("cargo")
+        .args(["build"])
+        .current_dir(&backend.path)
+        .status()
+        .map_err(|e| format!("Failed to invoke cargo for native backend: {}", e))?;
+
+    if !status.success() {
+        return Err(format!("cargo build failed for native backend '{}'", backend.name));
+    }
+
+    // Library name: libqliphoth_native_<name>.so  (cdylib output)
+    let lib_filename = format!("libqliphoth_native_{}.so", backend.name.replace('-', "_"));
+    let lib_dir = backend.path.join("target/debug");
+    let lib_path = lib_dir.join(&lib_filename);
+
+    if !lib_path.exists() {
+        // Try the staticlib fallback (.a)
+        let a_filename = format!("libqliphoth_native_{}.a", backend.name.replace('-', "_"));
+        let a_path = lib_dir.join(&a_filename);
+        if a_path.exists() {
+            println!("  Linking native backend (static): {}", a_path.display());
+            return Ok(vec![a_path]);
+        }
+        return Err(format!(
+            "Native backend library not found.\n  Looked for: {}\n  In: {}",
+            lib_filename, lib_dir.display()
+        ));
+    }
+
+    // Dynamic library: pass the .so directly and add rpath so the binary finds it at runtime.
+    let rpath_flag = format!("-Wl,-rpath,{}", lib_dir.display());
+    println!("  Linking native backend (dynamic): {}", lib_path.display());
+    Ok(vec![lib_path, std::path::PathBuf::from(rpath_flag)])
 }
 
 /// Build dependencies in the correct order (dependencies first)
@@ -4636,7 +4887,7 @@ fn build_project() -> ExitCode {
 
     // Build dependencies first
     let mut built: HashSet<String> = HashSet::new();
-    let dep_libs = if !manifest.dependencies.is_empty() {
+    let mut dep_libs = if !manifest.dependencies.is_empty() {
         println!("Building dependencies...");
         match build_dependencies(&manifest.dependencies, &mut built) {
             Ok(libs) => libs,
@@ -4648,6 +4899,17 @@ fn build_project() -> ExitCode {
     } else {
         Vec::new()
     };
+
+    // Build native backend (Rust crate) if [native] section is present
+    if let Some(ref backend) = manifest.native_backend {
+        match build_native_backend(backend) {
+            Ok(native_libs) => dep_libs.extend(native_libs),
+            Err(e) => {
+                eprintln!("Error building native backend: {}", e);
+                return ExitCode::from(1);
+            }
+        }
+    }
 
     // Build library if present
     let lib_file = Path::new("src/lib.sigil");

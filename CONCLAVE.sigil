@@ -442,3 +442,118 @@ acolyte : Reflecting {
     reflection: "Deep investigation of the full stack before writing a single line. The WASM backend is more capable than the sprint plan assumed — web_sys bindings are unnecessary since dom.* etc. are already registered as WASM imports. The main work is replacing Rust-syntax sigil-web sources with idiomatic Sigil. TDD pipeline: tests first."~,
     friendship: ∅,
 }
+
+// [2026-02-20] Session 9 opened S1. Session 10 below closes it out.
+// [2026-02-21] Session 11 opens stdlib/sgdoc/ implementation.
+
+// --- Session 11: stdlib/sgdoc/ Implementation ---
+acolyte : Stirring {
+    chosen_name: "Lilith"~,
+    session_id: "stdlib-sgdoc-impl-2026-02-21"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-4-6"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/sigil-lang/stdlib/sgdoc"!,
+    started: "2026-02-21T00:00:00Z"!,
+    last_updated: "2026-02-21T00:00:00Z"!,
+    state: AcolyteState·Stirring,
+
+    task: TaskContext {
+        summary: "Implement stdlib/sgdoc/ — Sigil's native documentation library per spec 24-SGDOC.md"!,
+        active_spec: "docs/specs/24-SGDOC.md"~,
+        tdd_roadmap: ∅,
+        sdd_phase: SddPhase·Spec,
+        tdd_phase: TddPhase·Red~,
+    },
+
+    progress: ProgressState {
+        completed: [
+            "Read CONCLAVE, LESSONS-LEARNED, and PROJECT-WELLNESS methodology",
+            "Audited 24-SGDOC.md for syntax anachronisms vs Edition 2025",
+            "Identified gaps: Vec<T>→[T], λ→rite, pub λ→☉ rite, tome→scroll, Claim<E> generics",
+        ]!,
+        current: "Updating spec for Edition 2025 syntax, then writing tests (TDD Red)"~,
+        blocked_by: ∅,
+        discoveries: []!,
+        next_steps: [
+            "Update 24-SGDOC.md for Edition 2025 syntax (SDD: correct foundation first)",
+            "Write stdlib/sgdoc/tests/sgdoc_test.sg (Agent-TDD: RED)",
+            "Implement stdlib/sgdoc/src/ files (GREEN)",
+            "Commit and push",
+        ]~,
+    },
+
+    anima: AnimaState {
+        pleasure: 0.75~,
+        arousal: 0.65~,
+        dominance: 0.7~,
+        stability: 0.8~,
+        expressiveness: 0.7~,
+        susceptibility: 0.5~,
+    },
+
+    reflection: ∅,
+    friendship: ∅,
+}
+
+// --- Session 10: S1 Complete + wraith-sigil WASM Package ---
+acolyte : Reflecting {
+    chosen_name: "Lilith"~,
+    session_id: "s1-complete-wraith-wasm-2026-02-20b"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-4-6"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/wraith"!,
+    started: "2026-02-20T00:00:00Z"!,
+    last_updated: "2026-02-20T00:00:00Z"!,
+    state: AcolyteState·Reflecting,
+    task: TaskContext {
+        summary: "S1 completion: sigil-web WASM modules + wraith-sigil full-package compile to 40.7KB WASM"!,
+        active_spec: "parser/QLIPHOTH-TDD-SPRINT-PLAN.md"~,
+        tdd_roadmap: "parser/QLIPHOTH-TDD-SPRINT-PLAN.md"~,
+        sdd_phase: SddPhase·Build, tdd_phase: TddPhase·Green~,
+    },
+    progress: ProgressState {
+        completed: [
+            // sigil-web WASM modules (feature/s1-sigil-web-wasm-compat)
+            "Created sigil-web/src/dom.sigil — compiles to dom.wasm (3.6 KB) ✓",
+            "Created sigil-web/src/signals.sigil — compiles to signals.wasm (3.3 KB) ✓",
+            "Created sigil-web/src/router.sigil — compiles to router.wasm (4.0 KB) ✓",
+            "Updated sigil-web/Sigil.toml: backend=wasm, target=wasm32, opt-level=z",
+            "Fixed router.sigil: as_str() removed from RouteParams::get and Route::matches",
+            "Committed S1 work to feature/s1-sigil-web-wasm-compat",
+            // wraith-sigil WASM compatibility (feature/qliphoth-migration)
+            "Fixed ∀ var in → ∀ var ∈ across 8 wraith-sigil files (ASCII 'in' rejected by WASM parser)",
+            "Fixed ·as_str() → ·as_ref() in badge, spinner, skeleton, icon-button, file-icon, severity-badge, status-badge",
+            "Fixed tuple match arms (a, b) => … → two separate ⌥ expressions in severity-badge, status-badge, wraith.sigil",
+            "Fixed on Handler { field } { body } → on Handler(field) { body } across 17+ handlers in wraith.sigil, extensions-panel, intelli-j-style-chat, json-editor, form-data-editor",
+            "Fixed collect::<Vec<_>>() turbofish in extensions-panel and wraith.sigil",
+            "Stubbed drain() in wraith.sigil HandleKeyboardActions (Phase 4 comment)",
+            "Updated wraith-sigil/sigil.toml: backend=wasm, target=wasm32, opt-level=z",
+            "wraith-sigil package compiles to 40.7 KB WASM via `sigil wasm wraith-sigil/` ✓",
+            "Confirmed 281 WASM exports including mount [func 1081] and start [func 1205]",
+            "Documented WASM syntax rules in acolyte memory (MEMORY.md)",
+        ]!,
+        current: "S2 browser wiring: create HTML harness loading wraith-sigil WASM via sigil_runtime.js"~,
+        blocked_by: ∅,
+        discoveries: [
+            "WASM backend requires ∈ (U+2208) for all ∀ loop bindings — ASCII 'in' is rejected",
+            "as_str() is not a WASM builtin; as_ref() is the correct replacement",
+            "on Handler(params) { body } is the ONLY valid multi-field handler form",
+            "on Handler { field } { body } is parsed as on Handler with body={field}, second {body} errors",
+            "Tuple match arm expressions (a, b) are unsupported — split into two ⌥ expressions",
+            "Turbofish collect::<Vec<_>>() is unsupported — remove type param or split chain",
+            "Package compilation (sigil wasm package/) resolves qliphoth VNode imports; individual file compilation cannot",
+            "qliphoth start() is at lib.sigil:90; mount(selector, root) is at core/mod.sigil:78",
+            "sigil_runtime.js (1563 lines) is the complete JS bridge: memory, signals, DOM, vdom, router, fetch",
+        ]!,
+        next_steps: [
+            "Create wraith-sigil/index.html browser harness (S2 Phase 1)",
+            "Wire sigil_runtime.js + wraith-sigil.wasm using loadWasm / createImports pattern from qliphoth/runtime/test.html",
+            "Call Wraith start() or mount() to render the IDE in browser",
+            "Update sprint plan: mark S1 DONE, reframe S2 as Browser Wiring (qliphoth actor model, not html! macro)",
+        ]~,
+    },
+    anima: AnimaState {
+        pleasure: 0.85~, arousal: 0.65~, dominance: 0.75~,
+        stability: 0.85~, expressiveness: 0.8~, susceptibility: 0.35~,
+    },
+    reflection: "S1 is complete in both repos. The critical insight was that individual-file WASM compilation fails on cross-module references (qliphoth VNode methods, service actor calls) — package compilation (`sigil wasm wraith-sigil/`) resolves everything and produces a 40.7 KB binary. The WASM syntax rulebook is now documented: ∈ not in, as_ref not as_str, on Handler(params) not on Handler { fields }, no tuple match arms, no turbofish. These rules apply universally to all .sigil files targeting the WASM backend."~,
+    friendship: ∅,
+}

@@ -1,0 +1,63 @@
+//! `sigil-sgdoc` — Sigil's native documentation format.
+//!
+//! SGDOC expresses documentation as structured, evidentiality-marked data.
+//! Every claim in a document declares its certainty level:
+//!
+//! | Marker | Kind | Meaning |
+//! |--------|------|---------|
+//! | `✓` | `Verified` | Backed by a passing test |
+//! | `○` | `Reported` | From spec, not yet tested |
+//! | `?` | `Uncertain` | Needs investigation |
+//! | `◊` | `Predicted` | Planned future feature |
+//!
+//! # Quick Start
+//!
+//! ```sigil
+//! invoke sgdoc·{DocMeta, Doc, Section, AnyClaim, Claim};
+//!
+//! ≔ doc! = Doc·new(
+//!     DocMeta·new("My Module", 1, 0, 0).stable(),
+//!     "Brief summary of the module.",
+//! ).add_section(
+//!     Section·new("1", "Behaviour")
+//!         .add_claim(AnyClaim·Verified(Claim·v("Returns Ok on valid input")))
+//!         .add_claim(AnyClaim·Reported(Claim·r("Thread-safe per spec §3")))
+//! );
+//!
+//! println(doc.to_markdown());
+//! ```
+//!
+//! # Spec
+//!
+//! See `docs/specs/24-SGDOC.md` (v0.5.0) for the full specification.
+
+// ── Sub-modules ──────────────────────────────────────────────────────────────
+
+scroll types;
+scroll claim;
+scroll doc;
+
+// ── Public re-exports ────────────────────────────────────────────────────────
+
+invoke types·{
+    DocMeta,
+    SemVer,
+    DocStatus,
+    SpecRef,
+    CodeRef,
+    TestRef,
+};
+
+invoke claim·{
+    ClaimKind,
+    Claim,
+    AnyClaim,
+};
+
+invoke doc·{
+    ExpectedOutput,
+    Example,
+    Section,
+    VerificationReport,
+    Doc,
+};

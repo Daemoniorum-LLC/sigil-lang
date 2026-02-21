@@ -1,0 +1,10 @@
+[package]
+name = "sigil-sgdoc"
+version = "0.1.0"
+edition = "2025"
+description = "SGDOC — Sigil's native documentation format with evidentiality-marked claims"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "sgdoc"
+path = "src/lib.sg"

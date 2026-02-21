@@ -7966,6 +7966,10 @@ impl Interpreter {
         // Save current_self_type (fixes type leakage between nested method calls)
         let prev_self_type = self.current_self_type.clone();
 
+        // Save and reset var_types so Vec<T> type annotations don't leak across function calls
+        let prev_var_types = self.var_types.borrow().clone();
+        self.var_types.borrow_mut().clear();
+
         // Save and reset linear state for this function scope
         // Linear type tracking should be per-function, not global
         let prev_linear_consumed = std::mem::take(&mut *self.linear_state.consumed.borrow_mut());
@@ -8049,6 +8053,9 @@ impl Interpreter {
 
         // Restore previous current_self_type (fixes type leakage between nested method calls)
         self.current_self_type = prev_self_type;
+
+        // Restore var_types (Vec<T> type annotations scoped to the calling function)
+        *self.var_types.borrow_mut() = prev_var_types;
 
         self.environment = prev_env;
         result

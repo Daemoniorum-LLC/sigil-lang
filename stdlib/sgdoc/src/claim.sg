@@ -1,0 +1,299 @@
+//! Claim types — the atomic unit of SGDOC documentation.
+//!
+//! A `Claim` is a single statement about code with an evidentiality kind:
+//!
+//! | Kind | Meaning | Constructor |
+//! |------|---------|-------------|
+//! | `Verified` | Backed by a passing test | `Claim·v(text)` |
+//! | `Reported` | From spec, not yet tested | `Claim·r(text)` |
+//! | `Uncertain` | Needs investigation | `Claim·u(text)` |
+//! | `Predicted` | Planned future feature | `Claim·p(text)` |
+
+invoke super·types·{SpecRef, TestRef};
+
+// ============================================================================
+// ClaimKind
+// ============================================================================
+
+/// Evidentiality level of a documentation claim.
+//@ rune: derive(Debug, Clone, PartialEq)
+☉ ᛈ ClaimKind {
+    /// Claim is backed by a passing test — highest confidence.
+    Verified,
+    /// Claim comes from a spec or design document — not yet tested.
+    Reported,
+    /// Claim is uncertain — needs investigation.
+    Uncertain,
+    /// Claim is a planned future feature.
+    Predicted,
+}
+
+// ============================================================================
+// Claim
+// ============================================================================
+
+/// A single documentation claim with evidentiality.
+//@ rune: derive(Debug, Clone)
+☉ Σ Claim {
+    /// Evidentiality kind.
+    ☉ kind: ClaimKind!,
+    /// The claim text.
+    ☉ content: String!,
+    /// Test that verifies this claim (for Verified claims).
+    ☉ test_ref: Option[TestRef]?,
+    /// Spec section that defines this claim.
+    ☉ spec_ref: Option[SpecRef]?,
+}
+
+☉ ⊢ Claim {
+    // ── Shorthand constructors ────────────────────────────────────────────
+
+    /// Verified claim — backed by a passing test.
+    ☉ rite v(content: ⊢ Into<String>) -> Self! {
+        Claim {
+            kind: ClaimKind·Verified,
+            content: content.into(),
+            test_ref: None,
+            spec_ref: None,
+        }
+    }
+
+    /// Reported claim — from a spec, not yet verified by test.
+    ☉ rite r(content: ⊢ Into<String>) -> Self! {
+        Claim {
+            kind: ClaimKind·Reported,
+            content: content.into(),
+            test_ref: None,
+            spec_ref: None,
+        }
+    }
+
+    /// Uncertain claim — needs investigation.
+    ☉ rite u(content: ⊢ Into<String>) -> Self! {
+        Claim {
+            kind: ClaimKind·Uncertain,
+            content: content.into(),
+            test_ref: None,
+            spec_ref: None,
+        }
+    }
+
+    /// Predicted claim — planned future feature.
+    ☉ rite p(content: ⊢ Into<String>) -> Self! {
+        Claim {
+            kind: ClaimKind·Predicted,
+            content: content.into(),
+            test_ref: None,
+            spec_ref: None,
+        }
+    }
+
+    // ── Full constructors with references ────────────────────────────────
+
+    /// Verified claim with a test reference.
+    ///
+    /// `test_ref` is `"file#test_name"` or just `"file"`.
+    ☉ rite verified(content: ⊢ Into<String>, test_ref: ⊢ Into<String>) -> Self! {
+        ≔ raw! = test_ref.into();
+        ≔ tref! = ⎇ raw.contains('#') {
+            ≔ parts!: Vec<&str> = raw.splitn(2, '#').collect();
+            TestRef·new(parts[0], parts[1])
+        } ⎉ {
+            TestRef·new(&raw, "")
+        };
+        Claim {
+            kind: ClaimKind·Verified,
+            content: content.into(),
+            test_ref: Some(tref),
+            spec_ref: None,
+        }
+    }
+
+    /// Reported claim with a spec reference.
+    ///
+    /// `spec_ref` is `"SPEC-ID§section"`, e.g. `"02-MEMORY§3.1"`.
+    ☉ rite reported(content: ⊢ Into<String>, spec_ref: ⊢ Into<String>) -> Self! {
+        ≔ raw! = spec_ref.into();
+        ≔ sref! = ⎇ raw.contains('§') {
+            ≔ parts!: Vec<&str> = raw.splitn(2, '§').collect();
+            SpecRef·new(parts[0], format!("§{}", parts[1]))
+        } ⎉ {
+            SpecRef·new(&raw, "")
+        };
+        Claim {
+            kind: ClaimKind·Reported,
+            content: content.into(),
+            test_ref: None,
+            spec_ref: Some(sref),
+        }
+    }
+
+    // ── Evidentiality promotion / demotion ────────────────────────────────
+
+    /// Promote to Verified by attaching a test reference.
+    ☉ rite promote(Δ self, test_ref: TestRef) -> Self! {
+        self.kind = ClaimKind·Verified;
+        self.test_ref = Some(test_ref);
+        self
+    }
+
+    /// Demote to Uncertain (test now failing or removed).
+    ☉ rite demote(Δ self) -> Self! {
+        self.kind = ClaimKind·Uncertain;
+        self
+    }
+
+    // ── Predicates ────────────────────────────────────────────────────────
+
+    ☉ rite is_verified(&self) -> bool! {
+        self.kind == ClaimKind·Verified
+    }
+
+    ☉ rite is_reported(&self) -> bool! {
+        self.kind == ClaimKind·Reported
+    }
+
+    ☉ rite is_uncertain(&self) -> bool! {
+        self.kind == ClaimKind·Uncertain
+    }
+
+    ☉ rite is_predicted(&self) -> bool! {
+        self.kind == ClaimKind·Predicted
+    }
+
+    /// Single-character badge for rendering.
+    ☉ rite badge(&self) -> &'static str! {
+        ⌥ self.kind {
+            ClaimKind·Verified  => "✓",
+            ClaimKind·Reported  => "○",
+            ClaimKind·Uncertain => "?",
+            ClaimKind·Predicted => "◊",
+        }
+    }
+}
+
+// ============================================================================
+// AnyClaim
+// ============================================================================
+
+/// Wraps a `Claim` with its evidentiality kind as a variant name.
+///
+/// Used in `Section·claims` to allow pattern matching on kind without
+/// inspecting the inner `ClaimKind` field.
+//@ rune: derive(Debug, Clone)
+☉ ᛈ AnyClaim {
+    Verified(Claim),
+    Reported(Claim),
+    Uncertain(Claim),
+    Predicted(Claim),
+}
+
+☉ ⊢ AnyClaim {
+    /// Return the inner `Claim` regardless of variant.
+    ☉ rite inner(&self) -> &Claim! {
+        ⌥ self {
+            AnyClaim·Verified(c)  => c,
+            AnyClaim·Reported(c)  => c,
+            AnyClaim·Uncertain(c) => c,
+            AnyClaim·Predicted(c) => c,
+        }
+    }
+
+    ☉ rite is_verified(&self) -> bool! {
+        ⌥ self { AnyClaim·Verified(_) => true, _ => false }
+    }
+
+    ☉ rite is_reported(&self) -> bool! {
+        ⌥ self { AnyClaim·Reported(_) => true, _ => false }
+    }
+
+    ☉ rite is_uncertain(&self) -> bool! {
+        ⌥ self { AnyClaim·Uncertain(_) => true, _ => false }
+    }
+
+    ☉ rite is_predicted(&self) -> bool! {
+        ⌥ self { AnyClaim·Predicted(_) => true, _ => false }
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+
+    #[test]
+    rite test_claim_v_produces_verified_kind() {
+        ≔ c! = Claim·v("The function returns a Result");
+        assert!(matches!(c.kind, ClaimKind·Verified));
+        assert_eq!(c.content, "The function returns a Result");
+        assert!(c.test_ref.is_none());
+    }
+
+    #[test]
+    rite test_claim_r_produces_reported_kind() {
+        ≔ c! = Claim·r("Supports async execution");
+        assert!(matches!(c.kind, ClaimKind·Reported));
+    }
+
+    #[test]
+    rite test_claim_u_produces_uncertain_kind() {
+        ≔ c! = Claim·u("Thread-safe under concurrent access");
+        assert!(matches!(c.kind, ClaimKind·Uncertain));
+    }
+
+    #[test]
+    rite test_claim_p_produces_predicted_kind() {
+        ≔ c! = Claim·p("Will support WASM in v0.5.0");
+        assert!(matches!(c.kind, ClaimKind·Predicted));
+    }
+
+    #[test]
+    rite test_claim_verified_with_test_ref() {
+        ≔ c! = Claim·verified("Returns correct sum", "tests/math_test.sg");
+        assert!(matches!(c.kind, ClaimKind·Verified));
+        assert!(c.test_ref.is_some());
+    }
+
+    #[test]
+    rite test_claim_reported_with_spec_ref() {
+        ≔ c! = Claim·reported("Memory-safe", "02-MEMORY§3.1");
+        assert!(matches!(c.kind, ClaimKind·Reported));
+        assert!(c.spec_ref.is_some());
+    }
+
+    #[test]
+    rite test_claim_badge_verified() {
+        assert_eq!(Claim·v("x").badge(), "✓");
+    }
+
+    #[test]
+    rite test_claim_badge_reported() {
+        assert_eq!(Claim·r("x").badge(), "○");
+    }
+
+    #[test]
+    rite test_claim_badge_uncertain() {
+        assert_eq!(Claim·u("x").badge(), "?");
+    }
+
+    #[test]
+    rite test_claim_badge_predicted() {
+        assert_eq!(Claim·p("x").badge(), "◊");
+    }
+
+    #[test]
+    rite test_any_claim_is_verified_predicate() {
+        ≔ any! = AnyClaim·Verified(Claim·v("Works"));
+        assert!(any.is_verified());
+        assert!(!any.is_reported());
+        assert!(!any.is_uncertain());
+        assert!(!any.is_predicted());
+    }
+
+    #[test]
+    rite test_any_claim_inner_returns_claim() {
+        ≔ any! = AnyClaim·Reported(Claim·r("Spec says so"));
+        assert_eq!(any.inner().content, "Spec says so");
+    }
+}

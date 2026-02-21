@@ -1,0 +1,247 @@
+//! Core SGDOC types: DocMeta, SemVer, DocStatus, SpecRef, CodeRef, TestRef.
+
+// ============================================================================
+// SemVer
+// ============================================================================
+
+/// Semantic version triple.
+☉ Σ SemVer {
+    ☉ major: u32!,
+    ☉ minor: u32!,
+    ☉ patch: u32!,
+}
+
+☉ ⊢ SemVer {
+    ☉ rite new(major: u32, minor: u32, patch: u32) -> Self! {
+        SemVer { major, minor, patch }
+    }
+
+    /// Format as `"major.minor.patch"`.
+    ☉ rite to_string(&self) -> String! {
+        format!("{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+// ============================================================================
+// DocStatus
+// ============================================================================
+
+/// Publication status of a document.
+//@ rune: derive(Debug, Clone, PartialEq)
+☉ ᛈ DocStatus {
+    /// Work in progress — not ready for consumption.
+    Draft,
+    /// Ready for review — content complete, pending sign-off.
+    Review,
+    /// Verified and complete — authoritative.
+    Stable,
+    /// Superseded — include reason string.
+    Deprecated(String),
+}
+
+// ============================================================================
+// References
+// ============================================================================
+
+/// Reference to a specification section.
+//@ rune: derive(Debug, Clone)
+☉ Σ SpecRef {
+    /// Spec identifier, e.g. `"24-SGDOC"`.
+    ☉ spec: String!,
+    /// Section reference, e.g. `"§3.1"`.
+    ☉ section: String!,
+    /// Whether this reference has been manually verified.
+    ☉ verified: bool!,
+}
+
+☉ ⊢ SpecRef {
+    ☉ rite new(spec: ⊢ Into<String>, section: ⊢ Into<String>) -> Self! {
+        SpecRef {
+            spec: spec.into(),
+            section: section.into(),
+            verified: false,
+        }
+    }
+
+    ☉ rite verified(Δ self) -> Self! {
+        self.verified = true;
+        self
+    }
+}
+
+/// Reference to a source code location.
+//@ rune: derive(Debug, Clone)
+☉ Σ CodeRef {
+    /// File path relative to repository root.
+    ☉ path: String!,
+    /// Optional line number.
+    ☉ line: Option[u32]?,
+    /// Optional symbol name (function, type, etc.).
+    ☉ symbol: Option[String]?,
+}
+
+☉ ⊢ CodeRef {
+    ☉ rite new(path: ⊢ Into<String>, symbol: Option[String]) -> Self! {
+        CodeRef {
+            path: path.into(),
+            line: None,
+            symbol,
+        }
+    }
+
+    ☉ rite at_line(Δ self, line: u32) -> Self! {
+        self.line = Some(line);
+        self
+    }
+}
+
+/// Reference to a test that verifies a claim.
+//@ rune: derive(Debug, Clone)
+☉ Σ TestRef {
+    /// Test file path.
+    ☉ file: String!,
+    /// Test function name.
+    ☉ test_name: String!,
+    /// Whether the test passed on last run (None = not yet run).
+    ☉ passed: Option[bool]?,
+}
+
+☉ ⊢ TestRef {
+    ☉ rite new(file: ⊢ Into<String>, test_name: ⊢ Into<String>) -> Self! {
+        TestRef {
+            file: file.into(),
+            test_name: test_name.into(),
+            passed: None,
+        }
+    }
+
+    ☉ rite passed(Δ self) -> Self! {
+        self.passed = Some(true);
+        self
+    }
+}
+
+// ============================================================================
+// DocMeta
+// ============================================================================
+
+/// Document header block — identity and provenance metadata.
+//@ rune: derive(Debug, Clone)
+☉ Σ DocMeta {
+    /// Document title.
+    ☉ title: String!,
+    /// Version triple.
+    ☉ version: SemVer!,
+    /// Publication status.
+    ☉ status: DocStatus!,
+    /// Creation date (ISO-8601 string, e.g. `"2026-02-21"`).
+    ☉ created: String!,
+    /// Last-updated date.
+    ☉ updated: String!,
+    /// Contributor names.
+    ☉ authors: [String]!,
+    /// Bound specification sections.
+    ☉ spec_refs: [SpecRef]!,
+    /// Bound source code locations.
+    ☉ code_refs: [CodeRef]!,
+}
+
+☉ ⊢ DocMeta {
+    /// Create a new `DocMeta` with Draft status and no authors or references.
+    ☉ rite new(title: ⊢ Into<String>, major: u32, minor: u32, patch: u32) -> Self! {
+        DocMeta {
+            title: title.into(),
+            version: SemVer·new(major, minor, patch),
+            status: DocStatus·Draft,
+            created: "".to_string(),
+            updated: "".to_string(),
+            authors: vec![],
+            spec_refs: vec![],
+            code_refs: vec![],
+        }
+    }
+
+    /// Set status to `Stable`.
+    ☉ rite stable(Δ self) -> Self! {
+        self.status = DocStatus·Stable;
+        self
+    }
+
+    /// Set creation and update dates (ISO-8601).
+    ☉ rite dated(Δ self, date: ⊢ Into<String>) -> Self! {
+        ≔ d! = date.into();
+        self.created = d.clone();
+        self.updated = d;
+        self
+    }
+
+    /// Append an author name.
+    ☉ rite with_author(Δ self, name: ⊢ Into<String>) -> Self! {
+        self.authors.push(name.into());
+        self
+    }
+
+    /// Append a spec reference.
+    ☉ rite with_spec_ref(Δ self, sref: SpecRef) -> Self! {
+        self.spec_refs.push(sref);
+        self
+    }
+
+    /// Append a code reference.
+    ☉ rite with_code_ref(Δ self, cref: CodeRef) -> Self! {
+        self.code_refs.push(cref);
+        self
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+scroll tests {
+    invoke super·*;
+
+    #[test]
+    rite test_docmeta_new_defaults() {
+        ≔ meta! = DocMeta·new("Interpreter Reference", 0, 4, 0);
+        assert_eq!(meta.title, "Interpreter Reference");
+        assert_eq!(meta.version.major, 0);
+        assert_eq!(meta.version.minor, 4);
+        assert_eq!(meta.version.patch, 0);
+        assert!(matches!(meta.status, DocStatus·Draft));
+    }
+
+    #[test]
+    rite test_docmeta_stable_sets_status() {
+        ≔ meta! = DocMeta·new("My Doc", 1, 0, 0).stable();
+        assert!(matches!(meta.status, DocStatus·Stable));
+    }
+
+    #[test]
+    rite test_docmeta_with_author() {
+        ≔ meta! = DocMeta·new("My Doc", 1, 0, 0)
+            .with_author("Claude")
+            .with_author("Human");
+        assert_eq!(meta.authors.len(), 2);
+    }
+
+    #[test]
+    rite test_semver_to_string() {
+        ≔ v! = SemVer·new(2, 1, 3);
+        assert_eq!(v.to_string(), "2.1.3");
+    }
+
+    #[test]
+    rite test_specref_new() {
+        ≔ s! = SpecRef·new("24-SGDOC", "§3.1");
+        assert_eq!(s.spec, "24-SGDOC");
+        assert_eq!(s.section, "§3.1");
+        assert!(!s.verified);
+    }
+
+    #[test]
+    rite test_coderef_new() {
+        ≔ c! = CodeRef·new("parser/src/interpreter.rs", Some("Interpreter".to_string()));
+        assert_eq!(c.path, "parser/src/interpreter.rs");
+        assert!(c.symbol.is_some());
+    }
+}
