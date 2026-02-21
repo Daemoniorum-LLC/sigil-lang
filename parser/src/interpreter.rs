@@ -7625,30 +7625,34 @@ impl Interpreter {
             self.current_self_type = Some(type_name);
         }
 
-        // Extract turbofish type arguments from the call expression's path segments
-        // e.g., dtype_info·<F16>() → type_args = ["F16"]
-        let turbofish_type_args: Vec<String> = if let Expr::Path(path) = func_expr {
-            path.segments
+        // Extract turbofish type arguments from the call expression.
+        // Handles two forms:
+        //   Expr::Path with inline generics — e.g., dtype_info segments with <F16> attached
+        //   Expr::Turbofish { types } — e.g., get_size·<F16>() parsed as Turbofish node
+        let extract_type_names = |types: &[crate::ast::TypeExpr]| -> Vec<String> {
+            types.iter().filter_map(|ty| {
+                if let crate::ast::TypeExpr::Path(tp) = ty {
+                    Some(
+                        tp.segments
+                            .iter()
+                            .map(|s| s.ident.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("·"),
+                    )
+                } else {
+                    None
+                }
+            }).collect()
+        };
+        let turbofish_type_args: Vec<String> = match func_expr {
+            Expr::Path(path) => path
+                .segments
                 .iter()
                 .filter_map(|seg| seg.generics.as_ref())
-                .flat_map(|generics| {
-                    generics.iter().filter_map(|ty| {
-                        if let crate::ast::TypeExpr::Path(tp) = ty {
-                            Some(
-                                tp.segments
-                                    .iter()
-                                    .map(|s| s.ident.name.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join("·"),
-                            )
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect()
-        } else {
-            Vec::new()
+                .flat_map(|generics| extract_type_names(generics))
+                .collect(),
+            Expr::Turbofish { types, .. } => extract_type_names(types),
+            _ => Vec::new(),
         };
 
         // Extract turbofish CONST generic values from the call expression's path segments
