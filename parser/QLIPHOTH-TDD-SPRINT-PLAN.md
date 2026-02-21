@@ -6,19 +6,22 @@ This is the actionable sprint plan for completing Qliphoth. Each sprint follows 
 
 ---
 
-## Current Status (2026-01-16)
+## Current Status (2026-02-20)
 
 **Completed:**
 - [x] All 11 qliphoth-ui files compile to WASM
 - [x] String interpolation works with `f"..."` syntax
 - [x] sigil-web runtime designed (signals, VDOM, hooks)
+- [x] **S1 DONE:** sigil-web/{dom,signals,router}.sigil compile to WASM (3.3–4.0 KB each)
+- [x] **S1 DONE:** wraith-sigil package compiles to 40.7 KB WASM (281 exports)
+- [x] WASM syntax rules established: `∈` not `in`, `as_ref` not `as_str`, `on Msg(params)` not `on Msg { fields }`, no tuple match arms, no turbofish
+- [x] Identified qliphoth boot API: `start(name: &str)` and `mount(selector: &str, root: VNode)`
 
 **In Progress:**
-- [ ] Make sigil-web WASM-compatible
+- [ ] S2: Browser Wiring — load wraith-sigil.wasm in browser via sigil_runtime.js
 
 **Blockers:**
-- sigil-web uses syntax not yet supported by WASM backend
-- web_sys bindings don't exist
+- None
 
 ---
 
@@ -27,8 +30,8 @@ This is the actionable sprint plan for completing Qliphoth. Each sprint follows 
 | Sprint | Focus | Duration | Blockers |
 |--------|-------|----------|----------|
 | **S0** | String Interpolation | ~~2-3 days~~ | **DONE** |
-| **S1** | sigil-web WASM Compat | 3-5 days | None |
-| **S2** | Component Rendering | 1 week | S1 |
+| **S1** | sigil-web WASM Compat | ~~3-5 days~~ | **DONE** |
+| **S2** | Browser Wiring | 1-2 days | S1 ✓ |
 | **S3** | Interactive Components | 1 week | S2 |
 | **S4** | qliphoth-app MVP | 1 week | S3 |
 | **S5** | qliphoth-docs Portal | 1 week | S3 |
@@ -394,184 +397,61 @@ fn main() {
 
 ---
 
-## Sprint S2: Component Rendering
+## Sprint S2: Browser Wiring
 
-**Goal:** Render qliphoth-ui components in browser.
+**Goal:** Load `wraith-sigil.wasm` (40.7 KB, 281 exports) in a real browser tab and render the
+Wraith IDE using the qliphoth actor model boot sequence.
 
-### S2.1 html! Macro Validation
+> **Architecture note:** S2 was previously scoped around an `html!` macro and `Component` trait.
+> That approach is obsolete — qliphoth uses a VNode-builder actor model (`☉ actor Foo { rite view … }`).
+> The actual S2 goal is **browser wiring**: connecting the compiled WASM to `sigil_runtime.js` and
+> calling `start` / `mount` to get pixels in a browser.
 
-**Tests First:** `sigil-web/tests/html_test.sigil`
+### S2.1 Boot Sequence
 
-```sigil
-//! html! macro rendering tests
+The qliphoth boot API (confirmed from source):
 
-fn test_html_div() {
-    let node! = html! {
-        <div class="container">Hello</div>
-    };
-    assert_eq!(node·tag(), "div");
-    assert!(node·has_class("container"));
-}
-
-fn test_html_nested() {
-    let node! = html! {
-        <div>
-            <span>Child 1</span>
-            <span>Child 2</span>
-        </div>
-    };
-    assert_eq!(node·children()·len(), 2);
-}
-
-fn test_html_dynamic_content() {
-    let name! = "World";
-    let node! = html! {
-        <div>Hello, {name}!</div>
-    };
-    assert!(node·text()·contains("World"));
-}
-
-fn test_html_event_handler() {
-    let clicked! = Signal::new(false);
-    let node! = html! {
-        <button onclick={|τ{_ => clicked·set(true)}|}>Click</button>
-    };
-
-    // Simulate click
-    node·dispatch_event("click");
-    assert!(clicked·get());
-}
-
-fn test_html_conditional() {
-    let show! = true;
-    let node! = html! {
-        <div>
-            {if show { html!{<span>Visible</span>} } else { html!{<span></span>} }}
-        </div>
-    };
-    assert!(node·inner_html()·contains("Visible"));
-}
-
-fn main() {
-    test_html_div();
-    test_html_nested();
-    test_html_dynamic_content();
-    test_html_event_handler();
-    test_html_conditional();
-    print("All html! tests passed!");
-}
+```
+qliphoth/src/lib.sigil:90     ☉ rite start(name: &str) -> Self!
+qliphoth/src/core/mod.sigil:78  ☉ rite mount(selector: &str, root: VNode) -> Self!
 ```
 
-### S2.2 Component Trait
+The JS runtime bridge: `qliphoth/runtime/sigil_runtime.js` (1563 lines).
+Reference harness: `qliphoth/runtime/test.html` — uses `loadWasm` + `createImports`.
 
-**Tests First:** `qliphoth-ui/tests/component_test.sigil`
+### S2.2 HTML Test Harness
 
-```sigil
-//! Component trait tests
+**File:** `wraith-sigil/index.html`
 
-fn test_button_renders() {
-    let btn! = Button::new()
-        ·variant(ButtonVariant::Primary)
-        ·label("Click Me");
-
-    let node! = btn·render();
-    assert_eq!(node·tag(), "button");
-    assert!(node·has_class("btn-primary"));
-}
-
-fn test_button_onclick() {
-    let clicked! = Signal::new(false);
-    let btn! = Button::new()
-        ·label("Test")
-        ·onclick(|τ{_ => clicked·set(true)}|);
-
-    let node! = btn·render();
-    node·dispatch_event("click");
-    assert!(clicked·get());
-}
-
-fn test_input_value() {
-    let value! = Signal::new("initial");
-    let input! = Input::new()
-        ·value(value·get())
-        ·on_change(|τ{v => value·set(v)}|);
-
-    let node! = input·render();
-    // Simulate input
-    node·set_value("updated");
-    node·dispatch_event("input");
-    assert_eq!(value·get(), "updated");
-}
-
-fn test_card_composition() {
-    let card! = Card::new()
-        ·header(html!{<h3>Title</h3>})
-        ·body(html!{<p>Content</p>})
-        ·footer(html!{<button>Action</button>});
-
-    let node! = card·render();
-    assert!(node·query(".card-header")·is_some());
-    assert!(node·query(".card-body")·is_some());
-    assert!(node·query(".card-footer")·is_some());
-}
-
-fn main() {
-    test_button_renders();
-    test_button_onclick();
-    test_input_value();
-    test_card_composition();
-    print("All component tests passed!");
-}
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wraith IDE</title>
+  <script src="../../qliphoth/runtime/sigil_runtime.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    const { loadWasm, createImports } = SigilRuntime;
+    const imports = createImports();
+    const wasm = await loadWasm('./wraith-sigil.wasm', imports);
+    // Boot the Wraith actor tree
+    wasm.exports.start('Wraith');
+  </script>
+</body>
+</html>
 ```
 
-### S2.3 Design Token Integration
+### S2.3 Success Criteria
 
-**Tests First:** `qliphoth-ui/tests/tokens_test.sigil`
-
-```sigil
-//! Design token tests
-
-fn test_colors_exist() {
-    assert_eq!(colors::VOID, "#0a0a0a");
-    assert_eq!(colors::PHTHALO, "#123524");
-    assert_eq!(colors::CRIMSON, "#8b0000");
-}
-
-fn test_typography_tokens() {
-    assert_eq!(typography::FONT_SANS·contains("Inter"), true);
-    assert_eq!(typography::SIZE_BASE, "1rem");
-}
-
-fn test_spacing_tokens() {
-    assert_eq!(spacing::SM, "0.5rem");
-    assert_eq!(spacing::MD, "1rem");
-    assert_eq!(spacing::LG, "1.5rem");
-}
-
-fn test_token_application() {
-    let div! = Element::new("div");
-    div·set_style("background-color", colors::VOID);
-    div·set_style("font-family", typography::FONT_SANS);
-
-    assert_eq!(div·get_style("background-color"), colors::VOID);
-}
-
-fn main() {
-    test_colors_exist();
-    test_typography_tokens();
-    test_spacing_tokens();
-    test_token_application();
-    print("All token tests passed!");
-}
-```
-
-### S2.4 Success Criteria
-
-- [ ] html! macro compiles and renders correctly
-- [ ] Button, Input, Card components render
-- [ ] Design tokens apply correctly
-- [ ] Event handlers fire
-- [ ] Integration: Counter component increments on click
+- [ ] `wraith-sigil/index.html` loads without JS errors
+- [ ] Wraith IDE shell renders in browser (sidebar, tabs, editor area visible)
+- [ ] No WASM trap or import-not-found errors in console
+- [ ] Hot-reload: recompile WASM, refresh page, updated UI appears
+- [ ] Integration: clicking sidebar panels switches active panel
 
 ---
 
@@ -1084,6 +964,78 @@ S0 (String Interpolation)
            │    └─> S5 (qliphoth-docs)
            └─> S7 (Polish) [after S4, S5, S6]
 ```
+
+---
+
+## Backlog: WASM Compiler Hardening — Method Dispatch Type Inference
+
+**Priority:** High (prevents silent mis-dispatch regressions)
+**Discovered:** 2026-02-21 during wraith-sigil WASM regression fix (31/36 → 36/36 tests)
+
+### Background
+
+While fixing a WASM codegen regression in wraith-sigil, a systemic compiler pattern was uncovered:
+method dispatch silently falls back to the last-registered simple name when the receiver's type is
+unknown at the call site. The fix was a one-line change, but it revealed that the underlying type
+tracking infrastructure is incomplete and inconsistently applied across three dispatch points.
+
+### Root Cause Pattern
+
+`el·child(node)` in a `VNode::child()` match arm is parsed as:
+
+```
+Expr::Call { path: Path(["el", "child"]), args: [node] }
+```
+
+The "method call on local variable" block in `compile_call` looked up the receiver type in
+`var_types`, but `local_var_types` was the map actually populated for match-arm TupleStruct
+bindings. This caused the receiver type to be unknown, triggering silent fallback to a wrong
+function registration.
+
+### Three Dispatch Points — All Partially Hardened
+
+All three call-site dispatch functions now check `local_var_types`, but only for match-arm
+TupleStruct bindings. A full type inference pass would cover all binding sites:
+
+| Function | File | Approx. Line | Status |
+|---|---|---|---|
+| `compile_call` — "method call on local variable" | `parser/src/wasm/closures.rs` | ~896 | Fixed: checks `local_var_types` |
+| `compile_method_call` — receiver type lookup | `parser/src/wasm/closures.rs` | ~1557 | Fixed: checks `local_var_types` |
+| `compile_incorporation` — actor message dispatch | `parser/src/wasm/closures.rs` | ~4193 | Fixed: checks `local_var_types` |
+
+### Type Tracking Infrastructure (Current State)
+
+- `local_var_types: HashMap<String, String>` — on `WasmCompiler` in `parser/src/wasm/mod.rs`
+  - Populated **only** from `Pattern::TupleStruct` arms in `bind_pattern` (`control_flow.rs`)
+  - Cleared/scoped per match arm
+- `var_types: HashMap<String, String>` — on `WasmCompiler` in `parser/src/wasm/mod.rs`
+  - Populated elsewhere (let-bindings, some function parameters) but **inconsistently**
+  - Does not cover match-arm destructured bindings
+
+### TODO: Proper Type Inference Pass
+
+A proper type inference pass should track variable types through:
+
+- [ ] `let x: T = ...` explicit type annotations → populate `var_types`
+- [ ] `let x = SomeStruct { ... }` struct literal → infer type from struct name
+- [ ] `let x = expr·method()` → infer from method return type in symbol table
+- [ ] Function parameter types from call signatures
+- [ ] Field access chains: `self·field` → look up field type in struct layout
+- [ ] Match arm bindings for all `Pattern` variants (not just `TupleStruct`)
+- [ ] Unify `local_var_types` and `var_types` into a single scoped type environment
+
+### Key Files
+
+- `parser/src/wasm/closures.rs` — `compile_call` (~896), `compile_method_call` (~1557), `compile_incorporation` (~4193)
+- `parser/src/wasm/mod.rs` — `local_var_types` and `var_types` field declarations on `WasmCompiler`
+- `parser/src/wasm/control_flow.rs` — `bind_pattern`, the only current population site for `local_var_types`
+
+### Current Workaround
+
+`local_var_types` is populated from `Pattern::TupleStruct` in `bind_pattern`. All three dispatch
+points check both `local_var_types` and `var_types`. This covers the known regression but will not
+catch future mis-dispatch for variables bound through let, function parameters, or non-TupleStruct
+match patterns.
 
 ---
 

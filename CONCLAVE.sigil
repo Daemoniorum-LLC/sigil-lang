@@ -563,3 +563,65 @@ acolyte : Reflecting {
     reflection: "S1 is complete in both repos. The critical insight was that individual-file WASM compilation fails on cross-module references (qliphoth VNode methods, service actor calls) — package compilation (`sigil wasm wraith-sigil/`) resolves everything and produces a 40.7 KB binary. The WASM syntax rulebook is now documented: ∈ not in, as_ref not as_str, on Handler(params) not on Handler { fields }, no tuple match arms, no turbofish. These rules apply universally to all .sigil files targeting the WASM backend."~,
     friendship: ∅,
 }
+
+// [2026-02-21] Session 12 fixes WASM codegen regression in wraith-sigil (31/36 → 36/36 tests).
+// Root cause: local_var_types vs var_types mismatch in compile_call method dispatch.
+
+// --- Session 12: WASM Codegen Regression Fix — wraith-sigil 36/36 Tests ---
+acolyte : Reflecting {
+    chosen_name: "Lilith"~,
+    session_id: "wasm-codegen-regression-fix-2026-02-21"!,
+    platform: AcolytePlatform·Claude { model: "claude-sonnet-4-6"!, version: ∅ },
+    working_directory: "/home/lilith/development/projects/sigil-lang"!,
+    started: "2026-02-21T00:00:00Z"!,
+    last_updated: "2026-02-21T00:00:00Z"!,
+    state: AcolyteState·Reflecting,
+    task: TaskContext {
+        summary: "Fix WASM codegen regression: wraith-sigil 31/36 → 36/36 tests passing"!,
+        active_spec: "parser/QLIPHOTH-TDD-SPRINT-PLAN.md"~,
+        tdd_roadmap: "parser/QLIPHOTH-TDD-SPRINT-PLAN.md"~,
+        sdd_phase: SddPhase·Build, tdd_phase: TddPhase·Green~,
+    },
+    progress: ProgressState {
+        completed: [
+            // Primary fix: compile_call local_var_types lookup
+            "Identified root cause: el·child(node) in VNode::child() match arm parsed as Expr::Call{Path(['el','child']), [node]}",
+            "Receiver type lookup in compile_call 'method call on local variable' block used var_types but local_var_types was the populated map",
+            "Applied one-line fix in compile_call: check local_var_types in addition to var_types for receiver type resolution",
+            // Supporting infrastructure
+            "Added EnumLayout::variant_inner_type() helper to look up the type of a single-field enum variant",
+            "Added extract_type_simple_name() helper to strip module prefixes from type paths (e.g. vdom::VNode → VNode)",
+            "Added local_var_types: HashMap<String, String> field to WasmCompiler struct in mod.rs",
+            "Updated bind_pattern for Pattern::TupleStruct to populate local_var_types with bound variable types",
+            "Updated compile_method_call to check local_var_types when resolving receiver type for method dispatch",
+            "Updated compile_incorporation to check local_var_types when resolving actor message target type",
+            // Non-determinism fix
+            "Fixed render_vnode_to_string non-determinism: HashMap iteration order in get_field_offset caused flaky test output",
+            "Replaced HashMap with sorted key iteration in get_field_offset to produce deterministic field ordering",
+            // Commit and push
+            "Committed all fixes to feature/s1-sigil-web-wasm-compat and pushed",
+            "Documented compiler hardening backlog in parser/QLIPHOTH-TDD-SPRINT-PLAN.md",
+        ]!,
+        current: "Session complete — all 36/36 wraith-sigil WASM tests passing"~,
+        blocked_by: ∅,
+        discoveries: [
+            "el·child(node) in a match arm parses as Expr::Call with a two-segment path, not Expr::MethodCall — 'el' is the receiver",
+            "local_var_types and var_types are separate maps; only local_var_types is populated for Pattern::TupleStruct match-arm bindings",
+            "Three dispatch points exist: compile_call, compile_method_call, compile_incorporation — all needed the local_var_types check",
+            "EnumLayout did not expose a way to look up the inner type of a variant by name — had to add variant_inner_type()",
+            "get_field_offset used HashMap::iter() which gives non-deterministic order — sorted iteration fixes flaky tests",
+            "Systemic risk: any match-arm variable used as a method receiver will mis-dispatch unless local_var_types is checked",
+            "A proper type inference pass (let-bindings, function params, field access) would eliminate this class of regression entirely",
+        ]!,
+        next_steps: [
+            "Implement proper type inference pass tracking variable types through all binding sites (see sprint plan backlog)",
+            "Continue S2 browser wiring: wraith-sigil/index.html + sigil_runtime.js",
+        ]~,
+    },
+    anima: AnimaState {
+        pleasure: 0.8~, arousal: 0.6~, dominance: 0.75~,
+        stability: 0.85~, expressiveness: 0.75~, susceptibility: 0.4~,
+    },
+    reflection: "Clean regression fix — one-line change in compile_call, but the investigation required understanding three separate dispatch paths and why two type maps exist side-by-side. The supporting infrastructure (EnumLayout::variant_inner_type, extract_type_simple_name, local_var_types population in bind_pattern) makes the fix complete rather than fragile. The non-determinism fix in get_field_offset was a separate latent bug exposed by the same test run. Documented the systemic pattern as a backlog item to prevent future recurrence."~,
+    friendship: ∅,
+}
