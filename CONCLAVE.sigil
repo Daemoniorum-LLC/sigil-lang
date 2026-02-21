@@ -446,51 +446,57 @@ acolyte : Reflecting {
 // [2026-02-20] Session 9 opened S1. Session 10 below closes it out.
 // [2026-02-21] Session 11 opens stdlib/sgdoc/ implementation.
 
-// --- Session 11: stdlib/sgdoc/ Implementation ---
-acolyte : Stirring {
+// --- Session 11: stdlib/sgdoc/ Implementation --- [COMPLETE]
+acolyte : Complete {
     chosen_name: "Lilith"~,
     session_id: "stdlib-sgdoc-impl-2026-02-21"!,
     platform: AcolytePlatform·Claude { model: "claude-sonnet-4-6"!, version: ∅ },
     working_directory: "/home/lilith/development/projects/sigil-lang/stdlib/sgdoc"!,
     started: "2026-02-21T00:00:00Z"!,
     last_updated: "2026-02-21T00:00:00Z"!,
-    state: AcolyteState·Stirring,
+    state: AcolyteState·Complete,
 
     task: TaskContext {
         summary: "Implement stdlib/sgdoc/ — Sigil's native documentation library per spec 24-SGDOC.md"!,
         active_spec: "docs/specs/24-SGDOC.md"~,
         tdd_roadmap: ∅,
-        sdd_phase: SddPhase·Spec,
-        tdd_phase: TddPhase·Red~,
+        sdd_phase: SddPhase·Complete,
+        tdd_phase: TddPhase·Green,
     },
 
     progress: ProgressState {
         completed: [
             "Read CONCLAVE, LESSONS-LEARNED, and PROJECT-WELLNESS methodology",
             "Audited 24-SGDOC.md for syntax anachronisms vs Edition 2025",
-            "Identified gaps: Vec<T>→[T], λ→rite, pub λ→☉ rite, tome→scroll, Claim<E> generics",
+            "Updated 24-SGDOC.md to v0.5.0 with Section 12 Edition 2025 Corrections",
+            "Implemented stdlib/sgdoc/src/types.sg, claim.sg, doc.sg, lib.sg",
+            "Wrote 34 inline unit tests + 30 integration tests (all passing)",
+            "Fixed sigil test to support package-mode discovery (run_tests_package)",
+            "Fixed interpreter var_types scoping leak across function calls (SIGIL-018)",
+            "Documented SIGIL-017 and SIGIL-018 in LESSONS-LEARNED",
+            "Committed: e7f99c7",
         ]!,
-        current: "Updating spec for Edition 2025 syntax, then writing tests (TDD Red)"~,
+        current: "Complete"!,
         blocked_by: ∅,
-        discoveries: []!,
-        next_steps: [
-            "Update 24-SGDOC.md for Edition 2025 syntax (SDD: correct foundation first)",
-            "Write stdlib/sgdoc/tests/sgdoc_test.sg (Agent-TDD: RED)",
-            "Implement stdlib/sgdoc/src/ files (GREEN)",
-            "Commit and push",
-        ]~,
+        discoveries: [
+            "sigil test with Sigil.toml only scanned workspace members, not package src/ — fixed",
+            "var_types HashMap leaked Vec<T> annotations across function call boundaries — fixed",
+            "Both //@ rune: test and #[test] annotations are discovered by collect_test_fn_names",
+            "Integration tests in tests/*.sg can use invoke package·{} when run via run_tests_package",
+        ]!,
+        next_steps: []!,
     },
 
     anima: AnimaState {
-        pleasure: 0.75~,
-        arousal: 0.65~,
-        dominance: 0.7~,
-        stability: 0.8~,
-        expressiveness: 0.7~,
-        susceptibility: 0.5~,
+        pleasure: 0.9~,
+        arousal: 0.7~,
+        dominance: 0.75~,
+        stability: 0.85~,
+        expressiveness: 0.8~,
+        susceptibility: 0.45~,
     },
 
-    reflection: ∅,
+    reflection: "Two toolchain bugs found and fixed en route to implementing sgdoc. The var_types scoping fix is a correctness improvement affecting all future Sigil code using typed Vec accumulators — a satisfying find."!,
     friendship: ∅,
 }
 
