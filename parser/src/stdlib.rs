@@ -12640,6 +12640,133 @@ fn register_itertools(interp: &mut Interpreter) {
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
     });
+
+    // flat_map - map then flatten one level (spec: 09A-ARRAY-COMBINATORS.md §3.1)
+    define(interp, "flat_map", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("flat_map: first argument must be an array")),
+        };
+        let func = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("flat_map: second argument must be a function")),
+        };
+
+        let mut result = Vec::new();
+        for item in arr {
+            let mapped = interp.call_function(&func, vec![item])?;
+            match mapped {
+                Value::Array(inner) => {
+                    result.extend(inner.borrow().clone());
+                }
+                other => {
+                    result.push(other);
+                }
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // find_index - index of first element matching predicate, or null (spec: 09A §3.2)
+    define(interp, "find_index", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("find_index: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("find_index: second argument must be a function")),
+        };
+
+        for (i, item) in arr.into_iter().enumerate() {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                return Ok(Value::Int(i as i64));
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // any_where - true if any element satisfies predicate (spec: 09A §3.3)
+    define(interp, "any_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("any_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("any_where: second argument must be a function")),
+        };
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                return Ok(Value::Bool(true));
+            }
+        }
+        Ok(Value::Bool(false))
+    });
+
+    // all_where - true if every element satisfies predicate (spec: 09A §3.3)
+    define(interp, "all_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("all_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("all_where: second argument must be a function")),
+        };
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if !is_truthy(&result) {
+                return Ok(Value::Bool(false));
+            }
+        }
+        Ok(Value::Bool(true))
+    });
+
+    // none_where - true if no element satisfies predicate (spec: 09A §3.3)
+    define(interp, "none_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("none_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("none_where: second argument must be a function")),
+        };
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                return Ok(Value::Bool(false));
+            }
+        }
+        Ok(Value::Bool(true))
+    });
+
+    // count_where - count elements satisfying predicate (spec: 09A §3.4)
+    define(interp, "count_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("count_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("count_where: second argument must be a function")),
+        };
+
+        let mut count = 0i64;
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                count += 1;
+            }
+        }
+        Ok(Value::Int(count))
+    });
 }
 
 /// Advanced range utilities

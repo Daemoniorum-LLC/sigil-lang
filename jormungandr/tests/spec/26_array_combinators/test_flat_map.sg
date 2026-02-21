@@ -1,0 +1,25 @@
+// Test: flat_map — map then flatten in one pass
+// Spec: 09A-ARRAY-COMBINATORS.md § 3.1
+// Priority: P1
+
+rite main() {
+    // Basic: each element maps to a two-element array
+    ≔ result = flat_map([1, 2, 3], |x| [x, x * 10]);
+    println(len(result));          // 6
+    println(result[0]);            // 1
+    println(result[1]);            // 10
+    println(result[2]);            // 2
+    println(result[5]);            // 30
+
+    // Empty input → empty output
+    ≔ empty = flat_map([], |x| [x, x]);
+    println(len(empty));           // 0
+
+    // Nested arrays: identity fn just flattens one level
+    ≔ nested = flat_map([[1, 2], [3, 4], [5, 6]], |x| x);
+    println(len(nested));          // 6
+    println(nested[0]);            // 1
+    println(nested[5]);            // 6
+
+    println("PASS");
+}

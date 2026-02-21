@@ -1,0 +1,29 @@
+// Test: any_where — true if any element satisfies predicate
+// Spec: 09A-ARRAY-COMBINATORS.md § 3.3
+// Priority: P1
+
+rite main() {
+    // Basic true case
+    println(any_where([1, 2, 3], |x| x > 2));    // true
+
+    // Basic false case
+    println(any_where([1, 2, 3], |x| x > 10));   // false
+
+    // First element matches
+    println(any_where([5, 1, 2], |x| x == 5));   // true
+
+    // Last element matches
+    println(any_where([1, 2, 5], |x| x == 5));   // true
+
+    // Empty array → false (vacuous: no element satisfies)
+    println(any_where([], |x| true));             // false
+
+    // All elements match
+    println(any_where([2, 4, 6], |x| x % 2 == 0)); // true
+
+    // Strings
+    println(any_where(["a", "bb", "c"], |s| len(s) > 1)); // true
+    println(any_where(["a", "b", "c"], |s| len(s) > 1));  // false
+
+    println("PASS");
+}
