@@ -170,7 +170,7 @@ invoke std·collections·HashMap;
 ☉ ⊢ Decode ∀ Vec<T> where T: Decode {
     ☉ rite decode(value: &Value) -> CodecResult<Vec<T>>~ {
         ≔ arr~ = value.as_array(CodecFormat·Json)?;
-        vary out: Vec<T> = Vec·with_capacity(arr.len());
+        ≔ Δ out!: Vec<T> = Vec·with_capacity(arr.len());
         ∀ item ∈ arr {
             out.push(T·decode(item)?);
         }
@@ -184,7 +184,7 @@ invoke std·collections·HashMap;
 
 ☉ ⊢ Encode ∀ HashMap<String, V> where V: Encode {
     ☉ rite encode(&self) -> Value! {
-        vary map = HashMap·new();
+        ≔ Δ map! = HashMap·new();
         ∀ (k, v) ∈ self {
             map.insert(k.clone(), v.encode());
         }
@@ -195,7 +195,7 @@ invoke std·collections·HashMap;
 ☉ ⊢ Decode ∀ HashMap<String, V> where V: Decode {
     ☉ rite decode(value: &Value) -> CodecResult<HashMap<String, V>>~ {
         ≔ tbl~ = value.as_table(CodecFormat·Json)?;
-        vary out: HashMap<String, V> = HashMap·with_capacity(tbl.len());
+        ≔ Δ out!: HashMap<String, V> = HashMap·with_capacity(tbl.len());
         ∀ (k, v) ∈ tbl {
             ≔ decoded~ = V·decode(v)
                 .map_err({e => e.at_path(k)})?;

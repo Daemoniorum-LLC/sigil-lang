@@ -11,23 +11,23 @@ invoke super·super·error·{CodecError, CodecResult};
 // ============================================================================
 
 ☉ ᛈ JsonToken {
-    LBrace!,
-    RBrace!,
-    LBracket!,
-    RBracket!,
-    Comma!,
-    Colon!,
-    Null!,
-    True!,
-    False!,
-    StringLit(String)!,
-    IntLit(i64)!,
-    FloatLit(f64)!,
-    Eof!,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    Comma,
+    Colon,
+    Null,
+    True,
+    False,
+    StringLit(String),
+    IntLit(i64),
+    FloatLit(f64),
+    Eof,
 }
 
 ☉ ⊢ Debug ∀ JsonToken {
-    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+    ☉ rite fmt(&self, f: &Δ Formatter) -> Result<(), FmtError>! {
         ⌥ self {
             JsonToken·LBrace           => write!(f, "{{"),
             JsonToken·RBrace           => write!(f, "}}"),
@@ -85,7 +85,7 @@ invoke super·super·error·{CodecError, CodecResult};
         }
     }
 
-    rite advance(&vary self) -> Option<char>? {
+    rite advance(&Δ self) -> Option<char>? {
         ⎇ self.pos < self.src.len() {
             ≔ ch! = self.src[self.pos];
             self.pos += 1;
@@ -101,7 +101,7 @@ invoke super·super·error·{CodecError, CodecResult};
         }
     }
 
-    rite skip_whitespace(&vary self) {
+    rite skip_whitespace(&Δ self) {
         ⟳ true {
             ⌥ self.peek() {
                 Some(' ') | Some('\t') | Some('\r') | Some('\n') => { self.advance(); }
@@ -116,9 +116,9 @@ invoke super·super·error·{CodecError, CodecResult};
 
     // ── String parsing ───────────────────────────────────────────────────────
 
-    rite lex_string(&vary self) -> CodecResult<String>~ {
+    rite lex_string(&Δ self) -> CodecResult<String>~ {
         // Opening `"` already consumed by caller
-        vary buf = String·new();
+        ≔ Δ buf! = String·new();
         ⟳ true {
             ⌥ self.advance() {
                 None => {
@@ -139,7 +139,7 @@ invoke super·super·error·{CodecError, CodecResult};
                         Some('t')  => buf.push('\t'),
                         Some('u')  => {
                             // \uXXXX
-                            vary hex = String·with_capacity(4);
+                            ≔ Δ hex! = String·with_capacity(4);
                             ∀ _i ∈ 0..4 {
                                 ⌥ self.advance() {
                                     Some(c) => hex.push(c),
@@ -173,34 +173,37 @@ invoke super·super·error·{CodecError, CodecResult};
 
     // ── Number parsing ───────────────────────────────────────────────────────
 
-    rite lex_number(&vary self, first: char) -> CodecResult<JsonToken>~ {
-        vary raw = String·new();
+    rite lex_number(&Δ self, first: char) -> CodecResult<JsonToken>~ {
+        ≔ Δ raw! = String·new();
         raw.push(first);
 
-        vary is_float = false;
+        ≔ Δ is_float! = false;
 
         ⟳ true {
             ⌥ self.peek() {
-                Some(c) if c.is_ascii_digit() || c == '-' || c == '+' => {
+                Some(c) => ⎇ c.is_ascii_digit() || c == '-' || c == '+' {
                     raw.push(c);
                     self.advance();
-                }
-                Some('.') | Some('e') | Some('E') => {
+                } ⎉ ⎇ c == '.' || c == 'e' || c == 'E' {
                     is_float = true;
-                    raw.push(self.peek().unwrap());
+                    raw.push(c);
                     self.advance();
-                }
-                _ => { ⊗; }
+                } ⎉ {
+                    ⊗;
+                },
+                None => { ⊗; }
             }
         }
 
         ⎇ is_float {
-            ⌥ raw.parse::<f64>() {
+            ≔ parsed~: Result<f64, _> = raw.parse();
+            ⌥ parsed {
                 Ok(f)  => Ok(JsonToken·FloatLit(f)),
                 Err(_) => Err(self.err(&format!("invalid float: {}", raw))),
             }
         } ⎉ {
-            ⌥ raw.parse::<i64>() {
+            ≔ parsed~: Result<i64, _> = raw.parse();
+            ⌥ parsed {
                 Ok(n)  => Ok(JsonToken·IntLit(n)),
                 Err(_) => Err(self.err(&format!("invalid integer: {}", raw))),
             }
@@ -209,13 +212,13 @@ invoke super·super·error·{CodecError, CodecResult};
 
     // ── Keyword helper ───────────────────────────────────────────────────────
 
-    rite expect_keyword(&vary self, rest: &str) -> CodecResult<()>~ {
+    rite expect_keyword(&Δ self, rest: &str) -> CodecResult<()>~ {
         ∀ ch ∈ rest.chars() {
             ⌥ self.advance() {
-                Some(c) if c == ch => {}
-                Some(c) => {
+                Some(c) => ⎇ c == ch {
+                } ⎉ {
                     ret Err(self.err(&format!("expected '{}', found '{}'", ch, c)));
-                }
+                },
                 None => {
                     ret Err(self.err("unexpected EOF in keyword"));
                 }
@@ -227,7 +230,7 @@ invoke super·super·error·{CodecError, CodecResult};
     // ── Public tokenizer ─────────────────────────────────────────────────────
 
     /// Consume and return the next token.
-    ☉ rite next_token(&vary self) -> CodecResult<JsonToken>~ {
+    ☉ rite next_token(&Δ self) -> CodecResult<JsonToken>~ {
         self.skip_whitespace();
 
         ⌥ self.advance() {
@@ -254,17 +257,16 @@ invoke super·super·error·{CodecError, CodecResult};
                 self.expect_keyword("alse")?;
                 Ok(JsonToken·False)
             }
-            Some(c) if c == '-' || c.is_ascii_digit() => {
+            Some(c) => ⎇ c == '-' || c.is_ascii_digit() {
                 self.lex_number(c)
-            }
-            Some(c) => {
+            } ⎉ {
                 Err(self.err(&format!("unexpected character: '{}'", c)))
-            }
+            },
         }
     }
 
     /// Peek at the next token without consuming it.
-    ☉ rite peek_token(&vary self) -> CodecResult<JsonToken>~ {
+    ☉ rite peek_token(&Δ self) -> CodecResult<JsonToken>~ {
         ≔ saved_pos  = self.pos;
         ≔ saved_line = self.line;
         ≔ saved_col  = self.col;

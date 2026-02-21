@@ -17,15 +17,15 @@ invoke std·collections·HashMap;
 /// Universal value type — represents any JSON or TOML value.
 ☉ ᛈ Value {
     /// JSON `null` / absent optional.
-    Null!,
-    Bool(bool)!,
-    Int(i64)!,
-    Float(f64)!,
-    Str(String)!,
-    Array(Vec<Value>)!,
-    Table(HashMap<String, Value>)!,
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    Array(Vec<Value>),
+    Table(HashMap<String, Value>),
     /// TOML datetime stored as raw ISO-8601 string (e.g. `"2026-02-21T00:00:00Z"`).
-    Datetime(String)!,
+    Datetime(String),
 }
 
 ☉ ⊢ Value {
@@ -91,9 +91,8 @@ invoke std·collections·HashMap;
 
     ☉ rite as_u64(&self, format: CodecFormat) -> CodecResult<u64>~ {
         ⌥ self {
-            Value·Int(n) if *n >= 0 => Ok(*n as u64),
-            Value·Int(_)            => Err(CodecError·type_mismatch(format, "unsigned integer", "negative integer")),
-            other                   => Err(CodecError·type_mismatch(format, "integer", other.type_name())),
+            Value·Int(n) => ⎇ *n >= 0 { Ok(*n as u64) } ⎉ { Err(CodecError·type_mismatch(format, "unsigned integer", "negative integer")) },
+            other        => Err(CodecError·type_mismatch(format, "integer", other.type_name())),
         }
     }
 
@@ -147,7 +146,7 @@ invoke std·collections·HashMap;
 }
 
 ☉ ⊢ Debug ∀ Value {
-    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+    ☉ rite fmt(&self, f: &Δ Formatter) -> Result<(), FmtError>! {
         ⌥ self {
             Value·Null           => write!(f, "Null"),
             Value·Bool(b)        => write!(f, "Bool({})", b),

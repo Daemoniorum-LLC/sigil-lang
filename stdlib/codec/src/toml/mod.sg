@@ -2,9 +2,9 @@
 //!
 //! Flow: `from_str::<T>(s)` → flat collect → assemble → `Value~` → `T::decode(root)` → `CodecResult<T>~`
 
-invoke super·super::error·{CodecError, CodecResult};
-invoke super·super::traits·{Encode, Decode};
-invoke super·super::value·Value;
+invoke super·super·error·{CodecError, CodecResult};
+invoke super·super·traits·{Encode, Decode};
+invoke super·super·value·Value;
 invoke super·parser·TomlParser;
 invoke super·writer·{to_string as writer_to_string, to_string_pretty as writer_to_string_pretty};
 
@@ -38,6 +38,6 @@ scroll writer;
 
 /// Low-level: parse a TOML string to a raw `Value` tree.
 ☉ rite value_from_str(s: &str) -> CodecResult<Value>~ {
-    vary parser = TomlParser·new(s);
+    ≔ Δ parser! = TomlParser·new(s);
     parser.parse()
 }

@@ -69,9 +69,11 @@ invoke self·traits·{Encode, Decode};
         )})?;
 
     ⎇ path.ends_with(".json") {
-        json·from_str::<T>(&content)
+        ≔ result~: T = json·from_str(&content)?;
+        Ok(result)
     } ⎇ path.ends_with(".toml") {
-        toml·from_str::<T>(&content)
+        ≔ result~: T = toml·from_str(&content)?;
+        Ok(result)
     } ⎉ {
         Err(CodecError·custom(
             CodecFormat·Json,

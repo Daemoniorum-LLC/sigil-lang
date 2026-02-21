@@ -22,9 +22,9 @@ invoke std·collections·HashMap;
 // ============================================================================
 
 ᛈ Entry {
-    TableHeader  { key_path: Vec<String> }!,
-    ArrayHeader  { key_path: Vec<String> }!,
-    KeyValue     { full_path: Vec<String>, value: Value }!,
+    TableHeader  { key_path: Vec<String> },
+    ArrayHeader  { key_path: Vec<String> },
+    KeyValue     { full_path: Vec<String>, value: Value },
 }
 
 // ============================================================================
@@ -42,17 +42,17 @@ invoke std·collections·HashMap;
 
     // ── Public entry point ───────────────────────────────────────────────────
 
-    ☉ rite parse(&vary self) -> CodecResult<Value>~ {
+    ☉ rite parse(&Δ self) -> CodecResult<Value>~ {
         ≔ entries~ = self.collect_entries()?;
         self.assemble(entries)
     }
 
     // ── Phase 1: collect ─────────────────────────────────────────────────────
 
-    rite collect_entries(&vary self) -> CodecResult<Vec<Entry>>~ {
-        vary entries: Vec<Entry> = Vec·new();
-        vary current_table: Vec<String> = Vec·new();
-        vary in_array_table = false;
+    rite collect_entries(&Δ self) -> CodecResult<Vec<Entry>>~ {
+        ≔ Δ entries!: Vec<Entry> = Vec·new();
+        ≔ Δ current_table!: Vec<String> = Vec·new();
+        ≔ Δ in_array_table! = false;
 
         ⟳ true {
             // Skip blank lines
@@ -94,7 +94,7 @@ invoke std·collections·HashMap;
                     self.skip_to_newline();
 
                     // Full path = current_table + local_path
-                    vary full: Vec<String> = current_table.clone();
+                    ≔ Δ full!: Vec<String> = current_table.clone();
                     full.extend(local_path);
                     entries.push(Entry·KeyValue { full_path: full, value: val });
                 }
@@ -106,8 +106,8 @@ invoke std·collections·HashMap;
 
     // ── Key path parsing ─────────────────────────────────────────────────────
 
-    rite parse_key_path(&vary self) -> CodecResult<Vec<String>>~ {
-        vary path: Vec<String> = Vec·new();
+    rite parse_key_path(&Δ self) -> CodecResult<Vec<String>>~ {
+        ≔ Δ path!: Vec<String> = Vec·new();
 
         ⌥ self.lexer.next_token()? {
             TomlToken·Key(k) => { path.push(k); }
@@ -141,7 +141,7 @@ invoke std·collections·HashMap;
 
     // ── Inline value parsing ─────────────────────────────────────────────────
 
-    rite parse_inline_value(&vary self) -> CodecResult<Value>~ {
+    rite parse_inline_value(&Δ self) -> CodecResult<Value>~ {
         ⌥ self.lexer.next_token()? {
             TomlToken·BoolVal(b)     => Ok(Value·Bool(b)),
             TomlToken·IntVal(n)      => Ok(Value·Int(n)),
@@ -157,8 +157,8 @@ invoke std·collections·HashMap;
         }
     }
 
-    rite parse_inline_array(&vary self) -> CodecResult<Value>~ {
-        vary items: Vec<Value> = Vec·new();
+    rite parse_inline_array(&Δ self) -> CodecResult<Value>~ {
+        ≔ Δ items!: Vec<Value> = Vec·new();
 
         ⟳ true {
             // Skip newlines inside arrays
@@ -204,8 +204,8 @@ invoke std·collections·HashMap;
         Ok(Value·Array(items))
     }
 
-    rite parse_inline_table(&vary self) -> CodecResult<Value>~ {
-        vary map: HashMap<String, Value> = HashMap·new();
+    rite parse_inline_table(&Δ self) -> CodecResult<Value>~ {
+        ≔ Δ map!: HashMap<String, Value> = HashMap·new();
 
         ⌥ self.lexer.peek_token()? {
             TomlToken·RBrace => {
@@ -221,7 +221,7 @@ invoke std·collections·HashMap;
             ≔ val~ = self.parse_inline_value()?;
 
             // Navigate/create nested tables for dotted keys
-            nest_insert(&vary map, &local_path, val)?;
+            nest_insert(&Δ map, &local_path, val)?;
 
             ⌥ self.lexer.next_token()? {
                 TomlToken·Comma  => {}
@@ -239,7 +239,7 @@ invoke std·collections·HashMap;
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    rite expect(&vary self, expected: TomlToken) -> CodecResult<()>~ {
+    rite expect(&Δ self, expected: TomlToken) -> CodecResult<()>~ {
         ≔ tok~ = self.lexer.next_token()?;
         ⌥ (&tok, &expected) {
             (TomlToken·RBracket, TomlToken·RBracket)             => Ok(()),
@@ -253,7 +253,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    rite skip_to_newline(&vary self) {
+    rite skip_to_newline(&Δ self) {
         ⟳ true {
             ⌥ self.lexer.peek_token().unwrap_or(TomlToken·Eof) {
                 TomlToken·Newline | TomlToken·Eof => { ⊗; }
@@ -270,20 +270,20 @@ invoke std·collections·HashMap;
     // ── Phase 2: assemble ────────────────────────────────────────────────────
 
     rite assemble(&self, entries: Vec<Entry>) -> CodecResult<Value>~ {
-        vary root: HashMap<String, Value> = HashMap·new();
+        ≔ Δ root!: HashMap<String, Value> = HashMap·new();
 
         ∀ entry ∈ entries {
             ⌥ entry {
                 Entry·TableHeader { key_path } => {
-                    navigate_or_create(&vary root, &key_path)?;
+                    navigate_or_create(&Δ root, &key_path)?;
                 }
 
                 Entry·ArrayHeader { key_path } => {
-                    append_array_table(&vary root, &key_path)?;
+                    append_array_table(&Δ root, &key_path)?;
                 }
 
                 Entry·KeyValue { full_path, value } => {
-                    nest_insert(&vary root, &full_path, value)?;
+                    nest_insert(&Δ root, &full_path, value)?;
                 }
             }
         }
@@ -298,7 +298,7 @@ invoke std·collections·HashMap;
 
 /// Navigate or create nested tables along `path`.
 /// The final segment must be absent or an existing Table.
-rite navigate_or_create(map: &vary HashMap<String, Value>, path: &[String]) -> CodecResult<()>~ {
+rite navigate_or_create(map: &Δ HashMap<String, Value>, path: &[String]) -> CodecResult<()>~ {
     ⎇ path.is_empty() {
         ret Ok(());
     }
@@ -325,7 +325,7 @@ rite navigate_or_create(map: &vary HashMap<String, Value>, path: &[String]) -> C
 }
 
 /// Append a new empty Table to the array-of-tables at `path`.
-rite append_array_table(map: &vary HashMap<String, Value>, path: &[String]) -> CodecResult<()>~ {
+rite append_array_table(map: &Δ HashMap<String, Value>, path: &[String]) -> CodecResult<()>~ {
     ⎇ path.len() == 1 {
         ≔ key = &path[0];
         ⎇ !map.contains_key(key) {
@@ -360,7 +360,7 @@ rite append_array_table(map: &vary HashMap<String, Value>, path: &[String]) -> C
 
 /// Insert `value` at the nested key path, creating intermediate tables.
 /// Errors on duplicate leaf keys.
-rite nest_insert(map: &vary HashMap<String, Value>, path: &[String], value: Value) -> CodecResult<()>~ {
+rite nest_insert(map: &Δ HashMap<String, Value>, path: &[String], value: Value) -> CodecResult<()>~ {
     ⎇ path.len() == 1 {
         ≔ key = &path[0];
         ⎇ map.contains_key(key) {

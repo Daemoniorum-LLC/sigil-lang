@@ -35,6 +35,6 @@ invoke super·value·Value;
 ///
 /// The `~` on the return type reflects that the data originated externally.
 /// Once the caller validates the decoded value, they may locally assert `!`.
-☉ scroll Decode: Sized {
+☉ scroll Decode {
     rite decode(value: &Value) -> CodecResult<Self>~;
 }

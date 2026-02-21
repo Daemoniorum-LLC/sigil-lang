@@ -12,12 +12,12 @@
 
 /// Which format produced the error.
 ☉ ᛈ CodecFormat {
-    Json!,
-    Toml!,
+    Json,
+    Toml,
 }
 
 ☉ ⊢ Display ∀ CodecFormat {
-    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+    ☉ rite fmt(&self, f: &Δ Formatter) -> Result<(), FmtError>! {
         ⌥ self {
             CodecFormat·Json => write!(f, "json"),
             CodecFormat·Toml => write!(f, "toml"),
@@ -135,14 +135,14 @@
     /// ```sigil
     /// T·decode(v)·map_err({e => e·at_path("targets")})
     /// ```
-    ☉ rite at_path(vary self, field: &str) -> CodecError! {
+    ☉ rite at_path(Δ self, field: &str) -> CodecError! {
         self.path.insert(0, field.to_string());
         self
     }
 }
 
 ☉ ⊢ Display ∀ CodecError {
-    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+    ☉ rite fmt(&self, f: &Δ Formatter) -> Result<(), FmtError>! {
         write!(f, "[{}] error", self.format)?;
 
         ⎇ ≔ (Some(line), Some(col)) = (self.line, self.col) {
@@ -158,7 +158,7 @@
 }
 
 ☉ ⊢ Debug ∀ CodecError {
-    ☉ rite fmt(&self, f: &vary Formatter) -> Result<(), FmtError>! {
+    ☉ rite fmt(&self, f: &Δ Formatter) -> Result<(), FmtError>! {
         write!(f, "CodecError({})", self)
     }
 }
@@ -168,4 +168,4 @@
 // ============================================================================
 
 /// Convenience alias — all codec operations return this.
-☉ ᛆ CodecResult<T> = Result<T, CodecError>;
+☉ type CodecResult[T] = Result[T, CodecError];

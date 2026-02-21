@@ -123,6 +123,121 @@ To prevent dead code elimination in benchmarks:
 
 ---
 
+## 2026-02-21 - Compiler Audit: Gaps Relevant to sigil-codec and stdlib Authoring
+
+### Context
+Deep audit of the sigil-lang compiler source to understand what is actually
+implemented vs. documented, before relying on it for sigil-codec and
+ritualis-core.
+
+### Findings
+
+#### 1. Evidentiality Enforcement is Incomplete
+`typeck.rs` tracks evidentiality markers (`!`, `~`, `?`, `‽`) and propagates
+them through the type system, but enforcement is not complete:
+- Markers are parsed and stored on types
+- Some validation exists (e.g. can't assign `~` to `!` without local check)
+- Propagation through function calls, closures, and trait method dispatch is
+  incomplete — several `TODO` comments in typeck.rs confirm this
+- **Impact:** Code using `~` return types may silently compile even if the
+  evidentiality chain is incorrect. Do not rely on the compiler to catch
+  evidentiality bugs yet; reason about them manually.
+
+#### 2. Generic Resolution Has Known Gaps
+- Generic structs: work
+- Generic traits: partially work
+- Turbofish syntax (`::<T>`) on method calls: **not fully tested**
+- Nested generics in turbofish (`collect::<CodecResult[Vec[T>]>>()`) are
+  particularly risky — the parser handles them but the type checker may
+  not resolve them correctly in all positions
+- **Impact:** The `collect::<Result[Vec[semver·Version], _>>()` patterns
+  in registry.sigil and the codec may fail to type-check.
+
+#### 3. `collect()` Turbofish + Nested Generics
+Related to #2. The specific pattern:
+```sigil
+·map({...})·collect::<Result[Vec[T], _>>()
+```
+uses nested generic brackets inside turbofish. The Sigil parser uses `[`/`]`
+for generics (not `<`/>`), so:
+```sigil
+collect::<codec·CodecResult[Vec[PatchOp>]>>()
+```
+is syntactically ambiguous — the `>]>>` closing is hard to parse correctly.
+**Recommendation:** Prefer collecting into an explicit intermediate binding:
+```sigil
+≔ items!: Vec[PatchOp] = Vec·new();
+∀ v ∈ arr { items.push(PatchOp·decode(v)?); }
+```
+
+#### 4. Float Handling in Interpreter vs. LLVM
+Float operations work correctly in the interpreter (default backend). In the
+LLVM backend, floats require the bitcast wrapping pattern (see 2026-02-11
+entry). The codec `primitives.sg` uses `f64` and `f32` — these will work
+correctly under the interpreter but may have issues under LLVM until all
+float codepaths are audited.
+
+#### 5. No Remote Dependency Resolution
+`Sigil.toml` only supports `path = "..."` local dependencies. Version
+specifiers (`"^1.0"`, etc.) are not resolved. The `sigil-codec` path dep
+in ritualis-core's Sigil.toml (`path = "../../../sigil-lang/stdlib/codec"`)
+is the correct approach — registry-based deps are not yet supported.
+
+#### 6. Feature Flags in Sigil.toml Not Implemented
+`//@ rune: cfg(feature = "...")` on scroll/module declarations is not yet
+wired up — `ast::Module` has no `attrs` field, so feature-gated modules
+do not compile conditionally. Avoid relying on feature flags for now.
+
+#### 7. Concurrency Primitives Are Stubs in Interpreter
+`weave`, `flow`, `voice`, `|await·all`, `|await·race` exist in the parser
+grammar but are stubs in the interpreter. They return `RuntimeError::new("todo: ...")`
+on execution. Async/await via `tokio` interop is the working path for now
+(through the Rust transpiler backend).
+
+#### 8. `//@ rune: cfg(test)` vs `scroll tests` Pattern
+The codebase uses both `// cfg(test)` (comment) and `//@ rune: cfg(test)`
+(annotation). The `scroll tests { ... }` pattern with `// cfg(test)` above
+it is parsed as a regular module — the test-only gate is not enforced by the
+compiler yet. Test scrolls compile in all modes. This is fine for now but
+means test code is included in release builds.
+
+#### 9. `#[...]` Attribute Syntax Still Accepted
+Rust-compat `#[derive(...)]`, `#[cfg(...)]` etc. are accepted as a shim.
+The canonical Sigil form is `//@ rune: ...`. New code should use the rune
+form; the `#[...]` shim is planned for removal (see STASH-TODO.md).
+
+#### 10. Agent Infrastructure (Aegis, Anima, etc.) Does Not Exist
+Nine v0.4.0 agent modules listed in the README (`aegis`, `anima`, `commune`,
+`covenant`, `daemon`, `gnosis`, `omen`, `oracle`, `engram`) exist only as
+directories with README files. There is no implementation. Do not reference
+them in any code.
+
+#### 11. "Polycultural" stdlib Functions Do Not Exist
+README lists functions like `gematria()`, `cast_iching()`, `sacred_freq()`,
+`vigesimal_encode()`, etc. None of these are in `stdlib.rs` or any `.sg`
+file. Do not use them.
+
+### What Is Solid
+- Lexer: complete, all Sigil tokens correctly lexed
+- Parser: all declared syntax parses (11,000+ rule grammar)
+- Interpreter: ~1,494 stdlib functions, tree-walking, fully functional
+- Cranelift JIT: works (feature-gated)
+- LLVM backend: works with known float/Vec caveats (see earlier entries)
+- `sigil build`: reads Sigil.toml, resolves path deps, compiles
+- `sigil check`: type checks, produces diagnostics
+- `sigil test`: runs `//@ rune: test` annotated functions
+- Pure Sigil libraries: codec (JSON+TOML) self-hosts correctly
+
+### Recommendations for stdlib Authors
+1. Test under the interpreter first (`sigil run`) before worrying about LLVM
+2. Avoid complex turbofish generics — prefer explicit intermediate bindings
+3. Do not use `weave`/`flow`/`voice` yet
+4. Track evidentiality manually — the compiler won't catch all violations
+5. Use `//@ rune:` annotations, not `#[...]`
+6. Path-based deps only in Sigil.toml
+
+---
+
 ## Template for Future Entries
 
 ```markdown

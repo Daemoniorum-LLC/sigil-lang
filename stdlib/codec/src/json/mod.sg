@@ -4,9 +4,9 @@
 //!
 //! All public functions are `☉` (exported).
 
-invoke super·super::error·{CodecError, CodecResult};
-invoke super·super::traits·{Encode, Decode};
-invoke super·super::value·Value;
+invoke super·super·error·{CodecError, CodecResult};
+invoke super·super·traits·{Encode, Decode};
+invoke super·super·value·Value;
 invoke super·lexer·JsonLexer;
 invoke super·parser·JsonParser;
 invoke super·writer·{write_compact, write_pretty};
@@ -32,7 +32,7 @@ scroll writer;
 /// Deserialize a byte slice of JSON into type `T`.
 ☉ rite from_slice<T: Decode>(bytes: &[u8]) -> CodecResult<T>~ {
     ⌥ std·str·from_utf8(bytes) {
-        Ok(s)  => from_str::<T>(s),
+        Ok(s)  => { ≔ result~: T = from_str(s)?; Ok(result) },
         Err(e) => Err(CodecError·json_msg(
             format!("invalid UTF-8 in JSON input: {}", e)
         )),
@@ -53,6 +53,6 @@ scroll writer;
 ///
 /// Use when you need to inspect the intermediate representation.
 ☉ rite value_from_str(s: &str) -> CodecResult<Value>~ {
-    vary parser = JsonParser·new(s);
+    ≔ Δ parser! = JsonParser·new(s);
     parser.parse()
 }

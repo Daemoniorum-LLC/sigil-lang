@@ -17,15 +17,15 @@ invoke std·collections·HashMap;
 
 /// Serialize a `Value` to a TOML string (compact, no extra blank lines).
 ☉ rite to_string(value: &Value) -> String! {
-    vary buf = String·new();
-    write_table_fields(value, &vary buf, &[]);
+    ≔ Δ buf! = String·new();
+    write_table_fields(value, &Δ buf, &[]);
     buf
 }
 
 /// Serialize a `Value` to a pretty TOML string (blank lines between sections).
 ☉ rite to_string_pretty(value: &Value) -> String! {
-    vary buf = String·new();
-    write_table_fields_pretty(value, &vary buf, &[]);
+    ≔ Δ buf! = String·new();
+    write_table_fields_pretty(value, &Δ buf, &[]);
     buf
 }
 
@@ -33,11 +33,11 @@ invoke std·collections·HashMap;
 // Internal writers
 // ============================================================================
 
-rite write_table_fields(value: &Value, buf: &vary String, path: &[String]) {
+rite write_table_fields(value: &Value, buf: &Δ String, path: &[String]) {
     ⌥ value {
         Value·Table(map) => {
             // 1. Scalars first
-            vary keys: Vec<&String> = map.keys().collect();
+            ≔ Δ keys!: Vec<&String> = map.keys().collect();
             keys|σ;
 
             ∀ key ∈ &keys {
@@ -57,7 +57,7 @@ rite write_table_fields(value: &Value, buf: &vary String, path: &[String]) {
             ∀ key ∈ &keys {
                 ⌥ &map[*key] {
                     Value·Table(_) => {
-                        vary sub_path = path.to_vec();
+                        ≔ Δ sub_path! = path.to_vec();
                         sub_path.push((*key).clone());
                         buf.push('[');
                         write_dotted_path(&sub_path, buf);
@@ -71,8 +71,8 @@ rite write_table_fields(value: &Value, buf: &vary String, path: &[String]) {
             // 3. Array-of-tables
             ∀ key ∈ &keys {
                 ⌥ &map[*key] {
-                    Value·Array(arr) if arr.iter().all({v => ⌥ v { Value·Table(_) => true, _ => false }}) => {
-                        vary sub_path = path.to_vec();
+                    Value·Array(arr) => ⎇ arr.iter().all({v => ⌥ v { Value·Table(_) => true, _ => false }}) {
+                        ≔ Δ sub_path! = path.to_vec();
                         sub_path.push((*key).clone());
                         ∀ item ∈ arr {
                             buf.push_str("[[");
@@ -80,7 +80,7 @@ rite write_table_fields(value: &Value, buf: &vary String, path: &[String]) {
                             buf.push_str("]]\n");
                             write_table_fields(item, buf, &sub_path);
                         }
-                    }
+                    } ⎉ {},
                     _ => {}
                 }
             }
@@ -89,10 +89,10 @@ rite write_table_fields(value: &Value, buf: &vary String, path: &[String]) {
     }
 }
 
-rite write_table_fields_pretty(value: &Value, buf: &vary String, path: &[String]) {
+rite write_table_fields_pretty(value: &Value, buf: &Δ String, path: &[String]) {
     ⌥ value {
         Value·Table(map) => {
-            vary keys: Vec<&String> = map.keys().collect();
+            ≔ Δ keys!: Vec<&String> = map.keys().collect();
             keys|σ;
 
             ∀ key ∈ &keys {
@@ -111,7 +111,7 @@ rite write_table_fields_pretty(value: &Value, buf: &vary String, path: &[String]
             ∀ key ∈ &keys {
                 ⌥ &map[*key] {
                     Value·Table(_) => {
-                        vary sub_path = path.to_vec();
+                        ≔ Δ sub_path! = path.to_vec();
                         sub_path.push((*key).clone());
                         buf.push('\n');
                         buf.push('[');
@@ -125,8 +125,8 @@ rite write_table_fields_pretty(value: &Value, buf: &vary String, path: &[String]
 
             ∀ key ∈ &keys {
                 ⌥ &map[*key] {
-                    Value·Array(arr) if arr.iter().all({v => ⌥ v { Value·Table(_) => true, _ => false }}) => {
-                        vary sub_path = path.to_vec();
+                    Value·Array(arr) => ⎇ arr.iter().all({v => ⌥ v { Value·Table(_) => true, _ => false }}) {
+                        ≔ Δ sub_path! = path.to_vec();
                         sub_path.push((*key).clone());
                         ∀ item ∈ arr {
                             buf.push('\n');
@@ -135,7 +135,7 @@ rite write_table_fields_pretty(value: &Value, buf: &vary String, path: &[String]
                             buf.push_str("]]\n");
                             write_table_fields_pretty(item, buf, &sub_path);
                         }
-                    }
+                    } ⎉ {},
                     _ => {}
                 }
             }
@@ -146,7 +146,7 @@ rite write_table_fields_pretty(value: &Value, buf: &vary String, path: &[String]
 
 // ── Key emission ─────────────────────────────────────────────────────────────
 
-rite write_key(key: &str, buf: &vary String) {
+rite write_key(key: &str, buf: &Δ String) {
     ⎇ needs_quoting(key) {
         buf.push('"');
         buf.push_str(&key.replace('\\', "\\\\").replace('"', "\\\""));
@@ -156,7 +156,7 @@ rite write_key(key: &str, buf: &vary String) {
     }
 }
 
-rite write_dotted_path(path: &[String], buf: &vary String) {
+rite write_dotted_path(path: &[String], buf: &Δ String) {
     ∀ (i, seg) ∈ path.iter().enumerate() {
         ⎇ i > 0 { buf.push('.'); }
         write_key(seg, buf);
@@ -172,7 +172,7 @@ rite needs_quoting(key: &str) -> bool! {
 
 // ── Scalar emission ──────────────────────────────────────────────────────────
 
-rite write_scalar(value: &Value, buf: &vary String) {
+rite write_scalar(value: &Value, buf: &Δ String) {
     ⌥ value {
         Value·Null        => {}  // caller should not emit Null
         Value·Bool(b)     => buf.push_str(⎇ *b { "true" } ⎉ { "false" }),
@@ -185,7 +185,7 @@ rite write_scalar(value: &Value, buf: &vary String) {
     }
 }
 
-rite write_toml_float(f: f64, buf: &vary String) {
+rite write_toml_float(f: f64, buf: &Δ String) {
     ⎇ f.is_nan() {
         buf.push_str("nan");
     } ⎇ f == f64·INFINITY {
@@ -203,7 +203,7 @@ rite write_toml_float(f: f64, buf: &vary String) {
     }
 }
 
-rite write_toml_string(s: &str, buf: &vary String) {
+rite write_toml_string(s: &str, buf: &Δ String) {
     // Use basic string unless the value contains newlines → multi-line
     ⎇ s.contains('\n') {
         buf.push_str("\"\"\"\n");
@@ -217,17 +217,18 @@ rite write_toml_string(s: &str, buf: &vary String) {
                 '\\' => buf.push_str("\\\\"),
                 '\t' => buf.push_str("\\t"),
                 '\r' => buf.push_str("\\r"),
-                c if (c as u32) < 0x20 => {
+                c => ⎇ (c as u32) < 0x20 {
                     buf.push_str(&format!("\\u{:04x}", c as u32));
-                }
-                c => buf.push(c),
+                } ⎉ {
+                    buf.push(c);
+                },
             }
         }
         buf.push('"');
     }
 }
 
-rite write_inline_array(arr: &Vec<Value>, buf: &vary String) {
+rite write_inline_array(arr: &Vec<Value>, buf: &Δ String) {
     buf.push('[');
     ∀ (i, item) ∈ arr.iter().enumerate() {
         ⎇ i > 0 { buf.push_str(", "); }
@@ -236,9 +237,9 @@ rite write_inline_array(arr: &Vec<Value>, buf: &vary String) {
     buf.push(']');
 }
 
-rite write_inline_table(map: &HashMap<String, Value>, buf: &vary String) {
+rite write_inline_table(map: &HashMap<String, Value>, buf: &Δ String) {
     buf.push('{');
-    vary keys: Vec<&String> = map.keys().collect();
+    ≔ Δ keys!: Vec<&String> = map.keys().collect();
     keys|σ;
     ∀ (i, key) ∈ keys.iter().enumerate() {
         ⎇ i > 0 { buf.push_str(", "); }

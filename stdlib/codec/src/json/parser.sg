@@ -22,7 +22,7 @@ invoke std·collections·HashMap;
     }
 
     /// Parse the full document.  Errors on trailing garbage after root value.
-    ☉ rite parse(&vary self) -> CodecResult<Value>~ {
+    ☉ rite parse(&Δ self) -> CodecResult<Value>~ {
         ≔ value~ = self.parse_value()?;
         // Verify nothing remains except whitespace / EOF
         ⌥ self.lexer.next_token()? {
@@ -38,7 +38,7 @@ invoke std·collections·HashMap;
 
     // ── Value dispatch ───────────────────────────────────────────────────────
 
-    rite parse_value(&vary self) -> CodecResult<Value>~ {
+    rite parse_value(&Δ self) -> CodecResult<Value>~ {
         ⌥ self.lexer.next_token()? {
             JsonToken·Null            => Ok(Value·Null),
             JsonToken·True            => Ok(Value·Bool(true)),
@@ -58,8 +58,8 @@ invoke std·collections·HashMap;
     // ── Object parsing ───────────────────────────────────────────────────────
 
     /// Parse `{ "key": value, ... }`.  Opening `{` already consumed.
-    rite parse_object(&vary self) -> CodecResult<Value>~ {
-        vary map: HashMap<String, Value> = HashMap·new();
+    rite parse_object(&Δ self) -> CodecResult<Value>~ {
+        ≔ Δ map!: HashMap<String, Value> = HashMap·new();
 
         // Empty object?
         ⌥ self.lexer.peek_token()? {
@@ -122,8 +122,8 @@ invoke std·collections·HashMap;
     // ── Array parsing ────────────────────────────────────────────────────────
 
     /// Parse `[ value, ... ]`.  Opening `[` already consumed.
-    rite parse_array(&vary self) -> CodecResult<Value>~ {
-        vary items: Vec<Value> = Vec·new();
+    rite parse_array(&Δ self) -> CodecResult<Value>~ {
+        ≔ Δ items!: Vec<Value> = Vec·new();
 
         // Empty array?
         ⌥ self.lexer.peek_token()? {

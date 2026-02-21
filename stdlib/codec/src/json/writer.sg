@@ -4,7 +4,7 @@
 //! - `write_compact(value)` — no whitespace
 //! - `write_pretty(value, indent)` — indented with `indent` spaces per level
 
-invoke super·super::value·Value;
+invoke super·super·value·Value;
 
 // ============================================================================
 // Compact writer
@@ -12,15 +12,15 @@ invoke super·super::value·Value;
 
 /// Serialize `value` to a compact JSON string (no whitespace).
 ☉ rite write_compact(value: &Value) -> String! {
-    vary buf = String·new();
-    write_value(value, &vary buf, 0, 0);
+    ≔ Δ buf! = String·new();
+    write_value(value, &Δ buf, 0, 0);
     buf
 }
 
 /// Serialize `value` to a pretty-printed JSON string with `indent` spaces.
 ☉ rite write_pretty(value: &Value, indent: usize) -> String! {
-    vary buf = String·new();
-    write_value(value, &vary buf, indent, 0);
+    ≔ Δ buf! = String·new();
+    write_value(value, &Δ buf, indent, 0);
     buf
 }
 
@@ -28,7 +28,7 @@ invoke super·super::value·Value;
 // Internal recursive writer
 // ============================================================================
 
-rite write_value(value: &Value, buf: &vary String, indent: usize, depth: usize) {
+rite write_value(value: &Value, buf: &Δ String, indent: usize, depth: usize) {
     ⌥ value {
         Value·Null        => buf.push_str("null"),
         Value·Bool(b)     => buf.push_str(⎇ *b { "true" } ⎉ { "false" }),
@@ -41,7 +41,7 @@ rite write_value(value: &Value, buf: &vary String, indent: usize, depth: usize) 
     }
 }
 
-rite write_float(f: f64, buf: &vary String) {
+rite write_float(f: f64, buf: &Δ String) {
     ⎇ f.is_nan() || f.is_infinite() {
         buf.push_str("null");
     } ⎉ {
@@ -56,7 +56,7 @@ rite write_float(f: f64, buf: &vary String) {
     }
 }
 
-rite write_json_string(s: &str, buf: &vary String) {
+rite write_json_string(s: &str, buf: &Δ String) {
     buf.push('"');
     ∀ ch ∈ s.chars() {
         ⌥ ch {
@@ -67,16 +67,17 @@ rite write_json_string(s: &str, buf: &vary String) {
             '\t' => buf.push_str("\\t"),
             '\x08' => buf.push_str("\\b"),
             '\x0C' => buf.push_str("\\f"),
-            c if (c as u32) < 0x20 => {
+            c => ⎇ (c as u32) < 0x20 {
                 buf.push_str(&format!("\\u{:04x}", c as u32));
-            }
-            c => buf.push(c),
+            } ⎉ {
+                buf.push(c);
+            },
         }
     }
     buf.push('"');
 }
 
-rite write_array(arr: &Vec<Value>, buf: &vary String, indent: usize, depth: usize) {
+rite write_array(arr: &Vec<Value>, buf: &Δ String, indent: usize, depth: usize) {
     ⎇ arr.is_empty() {
         buf.push_str("[]");
         ret;
@@ -109,14 +110,14 @@ rite write_array(arr: &Vec<Value>, buf: &vary String, indent: usize, depth: usiz
     buf.push(']');
 }
 
-rite write_object(map: &std·collections·HashMap<String, Value>, buf: &vary String, indent: usize, depth: usize) {
+rite write_object(map: &std·collections·HashMap<String, Value>, buf: &Δ String, indent: usize, depth: usize) {
     ⎇ map.is_empty() {
         buf.push_str("{}");
         ret;
     }
 
     // Sort keys for deterministic output
-    vary keys: Vec<&String> = map.keys().collect();
+    ≔ Δ keys!: Vec<&String> = map.keys().collect();
     keys|σ;
 
     buf.push('{');
@@ -150,7 +151,7 @@ rite write_object(map: &std·collections·HashMap<String, Value>, buf: &vary Str
     buf.push('}');
 }
 
-rite push_indent(buf: &vary String, indent: usize, depth: usize) {
+rite push_indent(buf: &Δ String, indent: usize, depth: usize) {
     ∀ _i ∈ 0..(indent * depth) {
         buf.push(' ');
     }
