@@ -332,6 +332,11 @@ impl<'ast> Visit<'ast> for BodyVisitor {
 }
 
 /// Returns true if the expression chain involves a known egui receiver (`ui`, `ctx`, `painter`).
+///
+/// Deliberately does NOT match `self.field` — `self.anything.method()` calls are
+/// Rust struct-field method calls (Vec::clear, String::is_empty, etc.) and should
+/// not be treated as egui UI calls.  Only `ui`, `ctx`, and `painter` local variables
+/// (or chains off them) are egui receivers.
 fn is_egui_receiver(expr: &Expr) -> bool {
     match expr {
         Expr::Path(p) => {
@@ -340,14 +345,6 @@ fn is_egui_receiver(expr: &Expr) -> bool {
         }
         Expr::MethodCall(mc) => is_egui_receiver(&mc.receiver),
         Expr::Reference(r) => is_egui_receiver(&r.expr),
-        Expr::Field(f) => {
-            // `self.some_widget`
-            if let Expr::Path(p) = f.base.as_ref() {
-                let s = p.path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
-                return s == "self";
-            }
-            false
-        }
         _ => false,
     }
 }
