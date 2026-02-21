@@ -55,6 +55,18 @@ pub use types::*;
 use std::collections::HashMap;
 use wasm_encoder::ValType;
 
+/// Sentinel base for defined-function indices stored during compilation.
+///
+/// `register_function_sig` cannot know the final import count (more imports
+/// may be added by later crates), so we store `DEFINED_FUNC_SENTINEL + array_index`
+/// instead of `import_count + array_index`.  The post-processing pass
+/// `fix_stale_func_indices` rewrites these to `final_import_count + array_index`
+/// once all crates have been compiled.
+///
+/// The sentinel is large enough that it never collides with any real WASM
+/// function index (real imports are at most in the tens of thousands).
+pub(crate) const DEFINED_FUNC_SENTINEL: u32 = 0x1000_0000;
+
 use crate::optimize::OptLevel;
 use crate::parser::Parser;
 
@@ -171,8 +183,24 @@ pub struct WasmCompiler {
     /// Start function index (for __wasm_start if we have deferred inits)
     pub(crate) start_function_idx: Option<u32>,
 
+    /// Actor type names registered during compilation.
+    /// Used to detect `ActorType·method()` static calls (e.g. `Wraith·view()`)
+    /// and emit `I64Const(0)` as the dummy self argument instead of trying to
+    /// evaluate the type name as an expression (which would fail).
+    pub(crate) actor_names: std::collections::HashSet<String>,
+
     /// Current actor being compiled (for self.field resolution)
     pub(crate) current_actor: Option<String>,
+
+    /// Depth of impl/actor blocks currently being compiled.
+    /// Incremented when entering `⊢ Type { }` or `actor { }` and decremented on exit.
+    /// Used by register_function_sig to distinguish impl-block methods (which must NOT
+    /// overwrite import func_map entries with the same simple name) from free functions
+    /// in module files (which SHOULD overwrite).
+    /// NOTE: module_path.len() > 1 cannot be used for this because module file paths
+    /// also push onto module_path, making free functions inside module files look like
+    /// impl methods when they are not.
+    pub(crate) impl_depth: usize,
 }
 
 impl WasmCompiler {
@@ -213,7 +241,9 @@ impl WasmCompiler {
             module_cache: std::collections::HashMap::new(),
             deferred_static_inits: Vec::new(),
             start_function_idx: None,
+            actor_names: std::collections::HashSet::new(),
             current_actor: None,
+            impl_depth: 0,
         };
 
         // Add heap pointer global
@@ -266,6 +296,11 @@ impl WasmCompiler {
         if !self.deferred_static_inits.is_empty() {
             self.generate_start_function()?;
         }
+
+        // Resolve sentinel function indices to final module indices.
+        // (Same pass as compile_project; needed here because single-file compilation
+        // also uses DEFINED_FUNC_SENTINEL during registration.)
+        self.fix_stale_func_indices();
 
         // Fix invalid call wrappers (functions with 0 params that call imports expecting params)
         self.fix_invalid_call_wrappers();
@@ -325,6 +360,11 @@ impl WasmCompiler {
         for manifest in graph.iter_in_order() {
             compiler.compile_crate(&manifest)?;
         }
+
+        // Fix stale function indices: register_function_sig uses import_count at registration
+        // time, which is less than the final count. This re-maps all Call instructions that
+        // target defined functions to their correct (final) module indices.
+        compiler.fix_stale_func_indices();
 
         // Fix invalid call wrappers (functions with 0 params that call imports expecting params)
         compiler.fix_invalid_call_wrappers();
@@ -406,6 +446,19 @@ impl WasmCompiler {
         self.imports.get_func(name)
     }
 
+    /// Summarize an expression for debug output.
+    pub fn expr_summary(expr: &crate::ast::Expr) -> String {
+        match expr {
+            crate::ast::Expr::Path(p) => format!("Path({})", p.segments.iter().map(|s| s.ident.name.as_str()).collect::<Vec<_>>().join("·")),
+            crate::ast::Expr::MethodCall { method, .. } => format!("MethodCall({})", method.name),
+            crate::ast::Expr::Call { func, .. } => format!("Call({:?})", Self::expr_summary(func)),
+            crate::ast::Expr::Field { field, .. } => format!("Field({})", field.name),
+            crate::ast::Expr::Await { .. } => "Await".to_string(),
+            crate::ast::Expr::Closure { .. } => "Closure".to_string(),
+            _ => format!("Other"),
+        }
+    }
+
     /// Add a function to the indirect call table and return its table index.
     pub fn add_to_table(&mut self, func_idx: u32) -> u32 {
         // Check if function is already in table
@@ -458,12 +511,23 @@ impl WasmCompiler {
 
     /// Check if a user-defined function returns void (no results).
     pub fn func_returns_void(&self, func_idx: u32) -> bool {
+        // During body compilation, defined-function call sites may still hold sentinel
+        // indices (DEFINED_FUNC_SENTINEL + array_index) because fix_stale_func_indices
+        // hasn't run yet.  Resolve sentinels directly via the functions array.
+        if func_idx >= DEFINED_FUNC_SENTINEL {
+            let local_idx = (func_idx - DEFINED_FUNC_SENTINEL) as usize;
+            return self.functions
+                .get(local_idx)
+                .map(|f| f.results.is_empty())
+                .unwrap_or(false);
+        }
+
         let import_count = self.imports.import_count();
         if func_idx < import_count {
             // Import function - check via imports
             self.imports.get_return_type(func_idx).is_none()
         } else {
-            // User-defined function
+            // User-defined function (post-fix_stale_func_indices path)
             let local_idx = (func_idx - import_count) as usize;
             self.functions
                 .get(local_idx)
@@ -685,6 +749,61 @@ impl WasmCompiler {
     /// This handles two cases:
     /// 1. Functions with 0 params that call imports expecting params (replace with constant)
     /// 2. Functions with params that immediately call imports without pushing params first
+    /// Resolve sentinel function indices to final module indices.
+    ///
+    /// During compilation `register_function_sig` stores `DEFINED_FUNC_SENTINEL + M`
+    /// (where M is the functions-array index) instead of `import_count + M`.  This
+    /// avoids the stale-index bug where import_count at registration time is smaller
+    /// than the final count (because later crates add more imports).
+    ///
+    /// Once all crates are compiled this pass replaces every sentinel with the
+    /// correct index `final_import_count + M`.  Sentinel values are unmistakable
+    /// (they are far above any realistic function index) so there is zero risk of
+    /// accidentally remapping a legitimate call.
+    fn fix_stale_func_indices(&mut self) {
+        use wasm_encoder::Instruction;
+
+        let final_import_count = self.imports.import_count();
+
+        // Fix Call instructions in every function body.
+        for func in self.functions.iter_mut() {
+            for instr in func.instructions.iter_mut() {
+                if let Instruction::Call(idx) = instr {
+                    if *idx >= DEFINED_FUNC_SENTINEL {
+                        *idx = final_import_count + (*idx - DEFINED_FUNC_SENTINEL);
+                    }
+                }
+            }
+            // Fix the func_idx stored on the CompiledFunction itself
+            // (used by generate_module for exports and the start section).
+            if func.func_idx >= DEFINED_FUNC_SENTINEL {
+                func.func_idx = final_import_count + (func.func_idx - DEFINED_FUNC_SENTINEL);
+            }
+        }
+
+        // Fix func_map so that lookups resolve to the correct final index.
+        for val in self.func_map.values_mut() {
+            if *val >= DEFINED_FUNC_SENTINEL {
+                *val = final_import_count + (*val - DEFINED_FUNC_SENTINEL);
+            }
+        }
+
+        // Fix indirect-call table elements.
+        for elem in self.table_elements.iter_mut() {
+            if *elem >= DEFINED_FUNC_SENTINEL {
+                *elem = final_import_count + (*elem - DEFINED_FUNC_SENTINEL);
+            }
+        }
+
+        // Fix the start function index if present.
+        if let Some(start_idx) = self.start_function_idx {
+            if start_idx >= DEFINED_FUNC_SENTINEL {
+                self.start_function_idx =
+                    Some(final_import_count + (start_idx - DEFINED_FUNC_SENTINEL));
+            }
+        }
+    }
+
     fn fix_invalid_call_wrappers(&mut self) {
         use wasm_encoder::Instruction;
 
@@ -875,7 +994,9 @@ impl WasmCompiler {
 
         // Create __wasm_start function: () -> ()
         let type_idx = self.get_or_create_type(vec![], vec![]);
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        // Use sentinel so fix_stale_func_indices can resolve this to the correct index
+        // after all crate imports have been registered.
+        let func_idx = DEFINED_FUNC_SENTINEL + self.functions.len() as u32;
 
         let mut start_func = CompiledFunction::new(
             "__wasm_start".to_string(),

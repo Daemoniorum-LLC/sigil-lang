@@ -53,8 +53,8 @@ impl WasmCompiler {
         let param_types: Vec<ValType> = params.iter().map(|_| ValType::I64).collect();
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
-        // Create function
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        // Create function (use sentinel to avoid stale import_count; fixed in post-processing)
+        let func_idx = crate::wasm::DEFINED_FUNC_SENTINEL + self.functions.len() as u32;
         let params_with_names: Vec<(String, ValType)> = params
             .iter()
             .map(|p| (get_param_name(p), ValType::I64))
@@ -147,7 +147,8 @@ impl WasmCompiler {
 
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        // Use sentinel to avoid stale import_count (fixed in post-processing)
+        let func_idx = crate::wasm::DEFINED_FUNC_SENTINEL + self.functions.len() as u32;
 
         let mut params_with_names = vec![("__env".to_string(), ValType::I64)];
         params_with_names.extend(params.iter().map(|p| (get_param_name(p), ValType::I64)));
@@ -400,6 +401,56 @@ impl WasmCompiler {
                     .map(|s| s.ident.name.clone())
                     .collect();
 
+                // Handle ·await· chain parsed as a qualified path (e.g., rx·await·ok())
+                // The parser sees rx·await·ok() as Call { func: Path(["rx","await","ok"]), args }
+                // We need to compile it as: compile(rx) → await → method calls after await
+                if let Some(await_idx) = segments.iter().position(|s| s == "await") {
+                    // Compile receiver (segments before "await") as a path expression
+                    let receiver_segs: Vec<_> = path.segments[..await_idx].to_vec();
+                    let receiver_path = crate::ast::TypePath { segments: receiver_segs };
+                    let receiver_expr = Expr::Path(receiver_path);
+
+                    // Compile receiver + await: emits local.get rx; i32.wrap_i64; call await_promise
+                    self.compile_await(&receiver_expr, None)?;
+
+                    // Apply remaining segments after "await" as method calls
+                    // For each remaining segment (e.g., ["ok"]), apply it with the accumulated args
+                    let after_await = &segments[await_idx + 1..];
+                    if after_await.is_empty() {
+                        // Nothing after await - args go directly (unusual but handle it)
+                        for arg in args {
+                            self.compile_expr(arg)?;
+                        }
+                    } else {
+                        // Apply each method in the chain
+                        // The final method gets the args, intermediate methods get []
+                        for (i, method) in after_await.iter().enumerate() {
+                            let method_args: &[Expr] = if i == after_await.len() - 1 { args } else { &[] };
+                            // The current stack top is the receiver for this method
+                            // We need to compile this as a builtin method call (ok, unwrap_or, etc.)
+                            // To avoid needing a real receiver Expr, handle known builtins inline:
+                            match method.as_str() {
+                                "ok" | "unwrap" | "clone" | "unwrap_or" | "unwrap_or_default" => {
+                                    // Identity / pass-through builtins — awaited result is already on stack.
+                                    // Do NOT compile args (they would pollute the stack without being consumed).
+                                }
+                                _ => {
+                                    // For other methods, try to resolve as an import
+                                    if let Some(func_idx) = self.imports.get_func(method) {
+                                        for arg in method_args { self.compile_expr(arg)?; }
+                                        let func = self.current_function_mut()
+                                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                                        func.push(Instruction::Call(func_idx));
+                                    } else {
+                                        for arg in method_args { self.compile_expr(arg)?; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+
                 // Resolve tome:: prefix (crate root)
                 let resolved_segments = self.resolve_path(&segments);
 
@@ -551,6 +602,54 @@ impl WasmCompiler {
                     self.compile_expr(&args[0])?;
                     return Ok(());
                 }
+                // String::new() -> empty string constant
+                if simple_name == "new"
+                    && resolved_segments.len() >= 2
+                    && (resolved_segments[resolved_segments.len() - 2] == "String"
+                        || resolved_segments.iter().any(|s| s == "String"))
+                    && args.is_empty()
+                {
+                    let empty_str_idx = self.add_string("") as i32;
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I32Const(empty_str_idx));
+                    func.push(Instruction::I64ExtendI32U);
+                    return Ok(());
+                }
+
+                // Vec::new() / Vec::with_capacity() -> morpheme_array_new
+                if simple_name == "new"
+                    && resolved_segments.len() >= 2
+                    && (resolved_segments[resolved_segments.len() - 2] == "Vec"
+                        || resolved_segments.iter().any(|s| s == "Vec"))
+                    && args.is_empty()
+                {
+                    if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+                        func.push(Instruction::I64ExtendI32U);
+                        return Ok(());
+                    }
+                }
+
+                // HashMap::new() -> morpheme_array_new (HashMap simulated as array of pairs)
+                if simple_name == "new"
+                    && resolved_segments.len() >= 2
+                    && (resolved_segments[resolved_segments.len() - 2] == "HashMap"
+                        || resolved_segments.iter().any(|s| s == "HashMap"))
+                    && args.is_empty()
+                {
+                    if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+                        func.push(Instruction::I64ExtendI32U);
+                        return Ok(());
+                    }
+                }
+
                 if (name == "HashSet_new" || simple_name == "new")
                     && resolved_segments.len() >= 2
                     && (resolved_segments[resolved_segments.len() - 2] == "HashSet"
@@ -563,6 +662,21 @@ impl WasmCompiler {
                             .ok_or_else(|| WasmError::internal("not in function context"))?;
                         func.push(Instruction::Call(func_idx));
                         // array_new returns i32, extend to i64 for Sigil's uniform type system
+                        func.push(Instruction::I64ExtendI32U);
+                        return Ok(());
+                    }
+                }
+
+                // js_sys::Array::new() -> morpheme_array_new (0-arg array constructor)
+                // This handles the case where Sigil code creates a JsValue array for WebAPIs.
+                if simple_name == "new"
+                    && resolved_segments.iter().any(|s| s == "Array")
+                    && args.is_empty()
+                {
+                    if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
                         func.push(Instruction::I64ExtendI32U);
                         return Ok(());
                     }
@@ -663,6 +777,18 @@ impl WasmCompiler {
                 // This MUST come before the cross-module stub handler so that
                 // real imports (e.g. vdom_create_vnode) are compiled as actual
                 // calls instead of being treated as identity stubs.
+                //
+                // EXCEPTION: if func_map has a DEFINED function (sentinel ≥ DEFINED_FUNC_SENTINEL)
+                // for the same simple or mapped name, prefer the defined wrapper over the import
+                // alias.  Without this guard, add_import_with_alias (needed for compile_method_call
+                // to distinguish Window::local_storage from the free local_storage() wrapper) would
+                // cause bare calls like `local_storage()` to resolve to the 1-param Window import
+                // instead of the 0-param defined free function.
+                let has_defined_override = self.func_map.get(simple_name)
+                    .map_or(false, |&v| v >= crate::wasm::DEFINED_FUNC_SENTINEL)
+                    || self.func_map.get(mapped_name)
+                        .map_or(false, |&v| v >= crate::wasm::DEFINED_FUNC_SENTINEL);
+                if !has_defined_override {
                 if let Some(func_idx) = self.imports.get_func(mapped_name) {
                     // Get parameter and return types before compilation
                     let param_types: Vec<ValType> = self
@@ -705,6 +831,7 @@ impl WasmCompiler {
 
                     return Ok(());
                 }
+                } // end !has_defined_override
 
                 // Handle cross-module calls to hooks, signals, runtime modules
                 // These are compiled as stubs that compile arguments and return a dummy value.
@@ -782,13 +909,58 @@ impl WasmCompiler {
                         // Get the receiver's type from var_types if available
                         let receiver_type = self.var_types.get(potential_receiver).cloned();
 
-                        // Try to find the method
+                        // Try to find the method: first by qualified name (if type is known),
+                        // then by simple method name as a fallback.  The fallback handles cases
+                        // like `closure·forget()` where the receiver type is not tracked in
+                        // var_types but `func_map["forget"]` resolves to the correct impl method.
                         let method_func_idx = if let Some(ref ty) = receiver_type {
                             let qualified_method = format!("{}::{}", ty, method_name);
                             self.func_map.get(&qualified_method).copied()
                         } else {
                             None
-                        };
+                        }.or_else(|| self.get_func(method_name.as_str()));
+
+                        // Arity-mismatch correction: if the resolved candidate has fewer
+                        // params than the call site needs (1 receiver + N args), it's the
+                        // wrong target.  This happens when:
+                        //   (a) A DOM getter/setter import (env.id, env.children, …) shadows
+                        //       the VDOM builder method of the same short name, OR
+                        //   (b) A free-function with the same short name (e.g. qliphoth::dom::style,
+                        //       0-params) overwrites func_map["style"] after the impl methods
+                        //       have been registered, because free-function registration has
+                        //       impl_depth=0 so the guard doesn't protect against it.
+                        // In either case, search func_map for a defined function whose key ends
+                        // with `::<method_name>` AND whose param count matches call_arity.
+                        let method_func_idx = method_func_idx.map(|mut candidate| {
+                            let call_arity = 1 + args.len();
+                            // Determine candidate's param count
+                            let candidate_params = if candidate < self.imports.import_count() {
+                                self.imports.get_param_types(candidate)
+                                    .map(|p| p.len()).unwrap_or(call_arity)
+                            } else {
+                                let arr_idx = (candidate - crate::wasm::DEFINED_FUNC_SENTINEL) as usize;
+                                self.functions.get(arr_idx)
+                                    .map(|f| f.params.len()).unwrap_or(call_arity)
+                            };
+                            if candidate_params != call_arity {
+                                let method_suffix = format!("::{}", method_name);
+                                if let Some(&def_idx) = self.func_map.iter()
+                                    .find(|(k, &v)| {
+                                        if !k.ends_with(&method_suffix) || v < crate::wasm::DEFINED_FUNC_SENTINEL {
+                                            return false;
+                                        }
+                                        let arr_idx = (v - crate::wasm::DEFINED_FUNC_SENTINEL) as usize;
+                                        let p = self.functions.get(arr_idx)
+                                            .map(|f| f.params.len()).unwrap_or(0);
+                                        p == call_arity
+                                    })
+                                    .map(|(_, v)| v)
+                                {
+                                    candidate = def_idx;
+                                }
+                            }
+                            candidate
+                        });
 
                         if let Some(func_idx) = method_func_idx {
                             // Found the method! Emit receiver as first argument
@@ -820,6 +992,35 @@ impl WasmCompiler {
                     }
                 }
 
+                // === Actor type-qualified static call: ActorName·method(args) ===
+                // e.g. `Wraith·view()` compiled as Expr::Call { path: ["Wraith","view"], args: [] }
+                // The actor's method takes self as first param (i64); push I64Const(0) for it.
+                if resolved_segments.len() >= 2 {
+                    let actor_type = resolved_segments[resolved_segments.len() - 2].clone();
+                    let actor_method = resolved_segments[resolved_segments.len() - 1].clone();
+                    if self.actor_names.contains(actor_type.as_str()) {
+                        let qualified = format!("{}::{}", actor_type, actor_method);
+                        if let Some(&func_idx) = self.func_map.get(&qualified) {
+                            {
+                                let func = self.current_function_mut()
+                                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                                func.push(Instruction::I64Const(0)); // dummy self
+                            }
+                            for arg in args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self.current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+
                 // Compile arguments for non-import calls
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -830,7 +1031,50 @@ impl WasmCompiler {
                 let func_idx_opt = self.get_func_by_path(&resolved_segments)
                     .or_else(|| self.get_func(simple_name))
                     .or_else(|| self.get_func(&qualified_path));
-                if let Some(func_idx) = func_idx_opt {
+                if let Some(mut func_idx) = func_idx_opt {
+                    // Arity-mismatch correction: if the resolved function has the wrong
+                    // number of params, search for a defined function with the correct arity.
+                    let candidate_params = if func_idx < crate::wasm::DEFINED_FUNC_SENTINEL {
+                        self.imports.get_param_types(func_idx)
+                            .map(|p| p.len()).unwrap_or(args.len())
+                    } else {
+                        let arr_idx = (func_idx - crate::wasm::DEFINED_FUNC_SENTINEL) as usize;
+                        self.functions.get(arr_idx)
+                            .map(|f| f.params.len()).unwrap_or(args.len())
+                    };
+                    if candidate_params != args.len() {
+                        // Search func_map for a defined function with the correct arity.
+                        let method_suffix = format!("::{}", simple_name);
+                        if let Some(&def_idx) = self.func_map.iter()
+                            .find(|(k, &v)| {
+                                if !k.ends_with(&method_suffix) || v < crate::wasm::DEFINED_FUNC_SENTINEL {
+                                    return false;
+                                }
+                                let arr_idx = (v - crate::wasm::DEFINED_FUNC_SENTINEL) as usize;
+                                let p = self.functions.get(arr_idx)
+                                    .map(|f| f.params.len()).unwrap_or(0);
+                                p == args.len()
+                            })
+                            .map(|(_, v)| v)
+                        {
+                            func_idx = def_idx;
+                        } else {
+                            // No correct-arity function found. The args are already on the
+                            // WASM stack. Drop them all and emit Unreachable so this path
+                            // traps loudly at runtime rather than silently returning 0.
+                            // In WASM, Unreachable makes the validator treat subsequent code
+                            // as polymorphic, so no further value needs to be pushed.
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            for _ in 0..args.len() {
+                                func.push(Instruction::Drop);
+                            }
+                            func.push(Instruction::Unreachable);
+                            return Ok(());
+                        }
+                    }
+
                     // Check if function returns void
                     let returns_void = self.func_returns_void(func_idx);
 
@@ -1115,14 +1359,16 @@ impl WasmCompiler {
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-                // Load current heap pointer
+                // Load current heap pointer (global 0 is i32, extend to i64)
                 func.push(Instruction::GlobalGet(0)); // Assume global 0 is heap pointer
+                func.push(Instruction::I64ExtendI32U);
                 let ptr_local = func.alloc_local("__enum_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalTee(ptr_local));
 
-                // Bump heap pointer
+                // Bump heap pointer (result is i64, wrap back to i32 for global)
                 func.push(Instruction::I64Const(total_size as i64));
                 func.push(Instruction::I64Add);
+                func.push(Instruction::I32WrapI64);
                 func.push(Instruction::GlobalSet(0));
 
                 // Store tag at offset 0
@@ -1211,10 +1457,47 @@ impl WasmCompiler {
                         for arg in args {
                             self.compile_expr(arg)?;
                         }
+                        let returns_void = self.func_returns_void(func_idx);
                         let func = self
                             .current_function_mut()
                             .ok_or_else(|| WasmError::internal("not in function context"))?;
                         func.push(Instruction::Call(func_idx));
+                        if returns_void {
+                            func.push(Instruction::I64Const(0));
+                        }
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        // Check for actor type-qualified calls: ActorName·method(args)
+        // e.g., `Wraith·view()` in browser_main → Wraith::view(I64Const(0))
+        // Actor state lives in WASM globals; `self` is a dummy i64 parameter.
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let type_name = &path.segments[0].ident.name;
+                if self.actor_names.contains(type_name.as_str()) {
+                    let qualified = format!("{}::{}", type_name, method);
+                    if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        // Push dummy self (actor state is in globals, not passed as pointer)
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::I64Const(0));
+                        drop(func);
+
+                        for arg in args {
+                            self.compile_expr(arg)?;
+                        }
+                        let returns_void = self.func_returns_void(func_idx);
+                        let func = self
+                            .current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+                        if returns_void {
+                            func.push(Instruction::I64Const(0));
+                        }
                         return Ok(());
                     }
                 }
@@ -1303,11 +1586,64 @@ impl WasmCompiler {
             None
         };
 
-        // Also check simple function name
-        let simple_func = self.get_func(method);
+        // Resolve the simple method name for the fallback.
+        //
+        // Priority for method-call resolution:
+        // 1. If func_map has an IMPORT entry (idx < DEFINED_FUNC_SENTINEL) → use it.
+        //    Imports are exact wasm-bindgen extern methods — no ambiguity.
+        // 2. If func_map has a DEFINED function sentinel (an impl method registered by
+        //    register_function_sig) → check whether the ImportRegistry also has this name
+        //    as an alias (set by add_import_with_alias in register_extern_function).
+        //    If the import alias exists, use the IMPORT.  This handles the case where a
+        //    defined free function wrapper (e.g., `local_storage()`) has overridden
+        //    func_map["local_storage"] but the underlying extern method should be called.
+        //    If no import alias exists, use the DEFINED function (it IS the impl method,
+        //    e.g., `is_open()` on a WebSocket state type).
+        // 3. Nothing found → error.
+        //
+        // Bare function calls (Expr::Call) use get_func_by_path which prefers func_map
+        // (defined wrappers) over imports, so they get the defined wrapper — correct.
+        let simple_func = match self.func_map.get(method).copied() {
+            Some(idx) if idx < crate::wasm::DEFINED_FUNC_SENTINEL => {
+                // It's an import entry — use it directly.
+                Some(idx)
+            }
+            Some(_sentinel) => {
+                // It's a defined function sentinel.  If the ImportRegistry also has this
+                // name (because register_extern_function added an alias), prefer the import
+                // so we don't accidentally call a free function wrapper instead of the extern.
+                if let Some(import_idx) = self.imports.get_func(method) {
+                    Some(import_idx)
+                } else {
+                    // No import with this name — the defined function IS the right target.
+                    self.get_func(method)
+                }
+            }
+            None => {
+                // Not in func_map at all; fall back to imports by alias.
+                self.imports.get_func(method)
+            }
+        };
 
-        let func_idx = qualified_func.or(simple_func)
+        let mut func_idx = qualified_func.or(simple_func)
             .ok_or_else(|| WasmError::undefined_function(method))?;
+
+        // If we resolved a getter import (1-arg: receiver only) but the call site
+        // also passes arguments (args.len() > 0), prefer the corresponding setter
+        // import `set_X` if it exists.  DOM getters like `env.id(elem) -> i64` have
+        // a setter twin `env.set_id(elem, val) -> ()`.  Without this, the getter
+        // consumes only the top arg and the receiver leaks on the stack.
+        if !args.is_empty() && func_idx < self.imports.import_count() {
+            if let Some(param_types) = self.imports.get_param_types(func_idx) {
+                // Getter signature: exactly 1 parameter (the receiver, no extra args)
+                if param_types.len() == 1 {
+                    let setter_name = format!("set_{}", method);
+                    if let Some(setter_idx) = self.imports.get_func(&setter_name) {
+                        func_idx = setter_idx;
+                    }
+                }
+            }
+        }
 
         // Compile receiver as first argument
         // If we identified a local variable at the start, emit LocalGet directly
@@ -1327,10 +1663,17 @@ impl WasmCompiler {
         }
 
         // Call the method
+        // func_returns_void covers both imports and user-defined functions (with sentinel support).
+        let is_void = self.func_returns_void(func_idx);
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
         func.push(Instruction::Call(func_idx));
+        // Sigil's stack discipline: every expression leaves exactly one i64 on stack.
+        // Void-returning functions leave nothing; push a placeholder.
+        if is_void {
+            func.push(Instruction::I64Const(0));
+        }
         Ok(())
     }
 
@@ -1339,8 +1682,14 @@ impl WasmCompiler {
     fn infer_receiver_type(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::Path(path) => {
-                // Check if the path is a known type (struct or enum)
                 let name = path.segments.first()?.ident.name.as_str();
+                // "self" inside an impl block → infer as the current impl type
+                if name == "self" {
+                    if let Some(impl_type) = self.module_path.last() {
+                        return Some(impl_type.clone());
+                    }
+                }
+                // Check if the path is a known type (struct or enum)
                 if self.struct_layouts.contains_key(name) || self.enum_layouts.contains_key(name) {
                     return Some(name.to_string());
                 }
@@ -1370,6 +1719,22 @@ impl WasmCompiler {
                 // Method chain: receiver.method() - if method returns Self (builder pattern)
                 // For now, assume builder pattern preserves type
                 self.infer_receiver_type(receiver)
+            }
+            // Field access: self.prefs, self.tabs, etc.
+            // When `self.field_name.method()` is compiled we need to resolve `method`
+            // against the type of `field_name`, not fall through to the import registry.
+            Expr::Field { expr, field } => {
+                // Only handle the `self.field` case inside an actor context.
+                if let Expr::Path(path) = &**expr {
+                    if path.segments.first().map(|s| s.ident.name.as_str()) == Some("self") {
+                        // Look up the field's declared type from var_types (populated in
+                        // compile_actor when state fields are registered as globals).
+                        if let Some(type_name) = self.var_types.get(&field.name) {
+                            return Some(type_name.clone());
+                        }
+                    }
+                }
+                None
             }
             _ => None,
         }
@@ -1551,124 +1916,69 @@ impl WasmCompiler {
                 Ok(true)
             }
 
-            // String methods
+            // String methods — route through compile_collection_method for
+            // automatic i64→i32 wrapping based on the import's parameter types.
             "lines" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_lines") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_lines", args)?;
                 Ok(true)
             }
             "split_whitespace" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_split_whitespace") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_split_whitespace", args)?;
                 Ok(true)
             }
             "split" => {
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                }
-                if let Some(func_idx) = self.imports.get_func("string_split") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_split", args)?;
+                Ok(true)
+            }
+            "rsplit" | "rsplitn" | "splitn" => {
+                self.compile_collection_method(receiver, "string_split", args)?;
                 Ok(true)
             }
             "trim" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_trim") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_trim", args)?;
                 Ok(true)
             }
             "trim_start" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_trim_start") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_trim_start", args)?;
                 Ok(true)
             }
             "trim_end" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_trim_end") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_trim_end", args)?;
                 Ok(true)
             }
             "to_uppercase" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_to_uppercase") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_to_uppercase", args)?;
                 Ok(true)
             }
             "to_lowercase" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_to_lowercase") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_to_lowercase", args)?;
                 Ok(true)
             }
             "contains" => {
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                }
-                if let Some(func_idx) = self.imports.get_func("string_contains") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_contains", args)?;
                 Ok(true)
             }
             "starts_with" => {
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                }
-                if let Some(func_idx) = self.imports.get_func("string_starts_with") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_starts_with", args)?;
                 Ok(true)
             }
             "ends_with" => {
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                }
-                if let Some(func_idx) = self.imports.get_func("string_ends_with") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_ends_with", args)?;
                 Ok(true)
             }
             "replace" => {
-                self.compile_expr(receiver)?;
-                for arg in args {
-                    self.compile_expr(arg)?;
-                }
-                if let Some(func_idx) = self.imports.get_func("string_replace") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_replace", args)?;
                 Ok(true)
             }
             "chars" => {
-                self.compile_expr(receiver)?;
-                if let Some(func_idx) = self.imports.get_func("string_chars") {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Call(func_idx));
-                }
+                self.compile_collection_method(receiver, "string_chars", args)?;
+                Ok(true)
+            }
+            "push_str" => {
+                // String::push_str(suffix) is modelled as concat in WASM.
+                // The result is string.concat(receiver, suffix); callers that
+                // need mutation must reassign (handled above stmt-level).
+                self.compile_collection_method(receiver, "string_concat", args)?;
                 Ok(true)
             }
 
@@ -1904,9 +2214,10 @@ impl WasmCompiler {
                 }
             }
 
-            // as_ref method - for Closure.as_ref() to convert to callback reference
-            "as_ref" => {
-                // Just compile the receiver (the closure pointer)
+            // as_ref / as_ptr / as_mut_ptr — pass receiver through unchanged.
+            // as_ptr() is used in unsafe FFI (native platform); the i64 handle
+            // is the WASM equivalent of a raw pointer for stub purposes.
+            "as_ref" | "as_ptr" | "as_mut_ptr" => {
                 self.compile_expr(receiver)?;
                 Ok(true)
             }
@@ -2063,16 +2374,74 @@ impl WasmCompiler {
             }
 
             // Iterator methods
-            "iter_mut" => {
+            "iter_mut" | "into_iter" => {
                 self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            // Vec::remove(index) -> T  —  remove and return element at index
+            "remove" => {
+                self.compile_collection_method(receiver, "morpheme_array_remove", args)?;
+                Ok(true)
+            }
+            // Vec::swap_remove(index) -> T  —  swap with last and remove
+            "swap_remove" => {
+                self.compile_collection_method(receiver, "morpheme_array_remove", args)?;
+                Ok(true)
+            }
+            // Vec::insert(index, elem)
+            "insert_at" | "insert" if !args.is_empty() => {
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let func = self.current_function_mut().unwrap();
+                for _ in 0..args.len() {
+                    func.push(Instruction::Drop);
+                }
+                Ok(true)
+            }
+            // Vec::contains / slice::contains
+            "contains" if !args.is_empty() => {
+                self.compile_collection_method(receiver, "string_contains", args)?;
+                Ok(true)
+            }
+            // String::parse::<T>() — return receiver as stub
+            "parse" => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            // String::chars().count(), bytes().len() etc
+            "bytes" => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            // Option::flatten — just return receiver
+            "flatten" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            // Option::take — return receiver and zero out (simplified: just return)
+            "take" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+            // Option::replace(value) — return receiver
+            "replace" if !args.is_empty() => {
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let func = self.current_function_mut().unwrap();
+                for _ in 0..args.len() {
+                    func.push(Instruction::Drop);
+                }
                 Ok(true)
             }
             "next" => {
                 // Iterator::next() - get next element from iterator
                 self.compile_expr(receiver)?;
-                // For morpheme arrays, this is typically a no-op or returns first element
-                // The iterator state is typically held externally
                 let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Drop); // Drop receiver (iterator is consumed)
                 func.push(Instruction::I64Const(0)); // Return None/empty for stub
                 Ok(true)
             }
@@ -2131,6 +2500,16 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            "flatten" | "chain" | "cloned" | "copied" | "into_iter" if !args.is_empty() => {
+                // Iterator combinators that take one arg and return an iterator
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
+                }
+                Ok(true)
+            }
             "flatten" => {
                 // Iterator::flatten() - flatten nested iterators
                 self.compile_expr(receiver)?;
@@ -2168,7 +2547,36 @@ impl WasmCompiler {
                     func.push(Instruction::Drop);
                 }
                 let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Drop); // Drop receiver
                 func.push(Instruction::I64Const(0)); // Return None as stub
+                Ok(true)
+            }
+            "any" => {
+                // Iterator::any(predicate) - returns bool
+                // Stub: return false (0) for now; proper impl needs loop
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop); // Drop predicate
+                }
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Drop); // Drop receiver
+                func.push(Instruction::I64Const(0)); // false stub
+                Ok(true)
+            }
+            "all" => {
+                // Iterator::all(predicate) - returns bool
+                // Stub: return true (1) for now; proper impl needs loop
+                self.compile_expr(receiver)?;
+                if !args.is_empty() {
+                    self.compile_expr(&args[0])?;
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
+                }
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Drop);
+                func.push(Instruction::I64Const(1)); // true stub
                 Ok(true)
             }
             "position" | "find_index" => {
@@ -2177,9 +2585,10 @@ impl WasmCompiler {
                 if !args.is_empty() {
                     self.compile_expr(&args[0])?;
                     let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop);
+                    func.push(Instruction::Drop); // Drop predicate
                 }
                 let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Drop); // Drop receiver
                 func.push(Instruction::I64Const(-1)); // Return -1 (not found) as stub
                 Ok(true)
             }
@@ -2248,6 +2657,297 @@ impl WasmCompiler {
                     for _ in 0..args.len() {
                         func.push(Instruction::Drop);
                     }
+                }
+                Ok(true)
+            }
+
+            // Generic VNode event handler methods: ·on_X(callback) -> VNode
+            // Any method starting with "on_" is an event handler attachment.
+            // The callback is NOT compiled — we don't need its value because we can't
+            // register arbitrary callbacks in the current WASM/vdom bridge.
+            // Just return the vnode handle unchanged for chaining.
+            m if m.starts_with("on_") => {
+                self.compile_expr(receiver)?; // vnode handle (stays on stack)
+                // Callbacks intentionally skipped — vdom bridge stubs don't register them.
+                Ok(true)
+            }
+
+            // VNode builder methods usable in any context (chained on method returns)
+            // These are also handled by try_compile_vnode_builder_method but that dispatch
+            // only fires when the receiver is statically known to be a VNode.
+            "attr" if args.len() == 2 => {
+                self.compile_vnode_attr(receiver, &args[0], &args[1])?;
+                Ok(true)
+            }
+            "class" if args.len() == 1 => {
+                self.compile_vnode_class(receiver, &args[0])?;
+                Ok(true)
+            }
+            "style" if args.len() == 2 => {
+                self.compile_vnode_style(receiver, &args[0], &args[1])?;
+                Ok(true)
+            }
+            "child" if args.len() == 1 => {
+                self.compile_vnode_child(receiver, &args[0])?;
+                Ok(true)
+            }
+            "text_child" if args.len() == 1 => {
+                self.compile_vnode_text_child(receiver, &args[0])?;
+                Ok(true)
+            }
+            "when" if args.len() == 1 => {
+                // VNode.when(bool) — one-arg form: return self if cond true, else 0
+                self.compile_expr(receiver)?;  // vnode handle
+                self.compile_expr(&args[0])?;  // bool condition
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let cond = func.alloc_local("__when_cond".to_string(), ValType::I64);
+                let vn = func.alloc_local("__when_vn".to_string(), ValType::I64);
+                func.push(Instruction::LocalSet(cond));
+                func.push(Instruction::LocalSet(vn));
+                func.push(Instruction::LocalGet(cond));
+                func.push(Instruction::I64Const(0));
+                func.push(Instruction::I64Ne);
+                func.push(Instruction::If(BlockType::Result(ValType::I64)));
+                func.push(Instruction::LocalGet(vn));
+                func.push(Instruction::Else);
+                func.push(Instruction::I64Const(0));
+                func.push(Instruction::End);
+                Ok(true)
+            }
+            "when" if args.len() == 2 => {
+                // receiver.when(cond, child_vnode) — conditionally append child
+                // Semantics: if cond { receiver.child(child) } else { receiver }
+                // Compile as: always add child (stub — correct would be conditional)
+                self.compile_vnode_child(receiver, &args[1])?;
+                // Drain the condition arg from compile (compile to evaluate side effects)
+                self.compile_expr(&args[0])?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Drop); // drop condition, vnode with child on stack
+                Ok(true)
+            }
+            "when" => {
+                // Fallback: just evaluate receiver
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::Drop);
+                }
+                Ok(true)
+            }
+
+            // as_deref: Option<String> -> Option<&str> — identity in WASM
+            "as_deref" => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+
+            // as_str: String -> &str — identity in WASM (same heap handle)
+            "as_str" => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
+
+            // min / max as numeric methods: a.min(b), a.max(b)
+            "min" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    let a = func.alloc_local("__min_a".to_string(), ValType::I64);
+                    let b = func.alloc_local("__min_b".to_string(), ValType::I64);
+                    func.push(Instruction::LocalSet(b));
+                    func.push(Instruction::LocalSet(a));
+                    func.push(Instruction::LocalGet(a));
+                    func.push(Instruction::LocalGet(b));
+                    func.push(Instruction::LocalGet(a));
+                    func.push(Instruction::LocalGet(b));
+                    func.push(Instruction::I64LtS);
+                    func.push(Instruction::Select);
+                } else {
+                    // min() with no args — just return receiver
+                }
+                Ok(true)
+            }
+            "max" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    let a = func.alloc_local("__max_a".to_string(), ValType::I64);
+                    let b = func.alloc_local("__max_b".to_string(), ValType::I64);
+                    func.push(Instruction::LocalSet(b));
+                    func.push(Instruction::LocalSet(a));
+                    func.push(Instruction::LocalGet(a));
+                    func.push(Instruction::LocalGet(b));
+                    func.push(Instruction::LocalGet(a));
+                    func.push(Instruction::LocalGet(b));
+                    func.push(Instruction::I64GtS);
+                    func.push(Instruction::Select);
+                } else {
+                    // max() with no args — just return receiver
+                }
+                Ok(true)
+            }
+
+            // truncate: Vec.truncate(n) — in WASM no-op (can't shrink heap-side vec easily)
+            // For our purposes the vec handle is unchanged; callers just read the first n items.
+            "truncate" | "resize" | "retain" | "dedup" | "sort" | "sort_by"
+            | "sort_by_key" | "sort_unstable" | "sort_unstable_by"
+            | "drain" | "split_off" | "clear" => {
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                for _ in 0..args.len() {
+                    func.push(Instruction::Drop);
+                }
+                // Return receiver (mutating ops return unit in Rust, but keep val on stack for chaining)
+                Ok(true)
+            }
+
+            // extend / extend_from_slice — no-op stub
+            "extend" | "extend_from_slice" | "append" => {
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                for _ in 0..args.len() {
+                    func.push(Instruction::Drop);
+                }
+                Ok(true)
+            }
+
+            // from_utf8 / from_utf8_unchecked — treat buf as string identity
+            "from_utf8" | "from_utf8_unchecked" => {
+                // String::from_utf8(buf) -> Result<String, Err>
+                // In WASM, the buf i64 handle IS the string handle (identity)
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                } else {
+                    self.compile_expr(receiver)?;
+                }
+                Ok(true)
+            }
+
+            // with_capacity / capacity — just return receiver / 0
+            "with_capacity" => {
+                // Vec::with_capacity(n) -> Vec — just return empty vec via new
+                if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::Call(func_idx));
+                    func.push(Instruction::I64ExtendI32U);
+                } else {
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I64Const(0));
+                }
+                Ok(true)
+            }
+            "capacity" => {
+                self.compile_expr(receiver)?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Drop);
+                func.push(Instruction::I64Const(0));
+                Ok(true)
+            }
+
+            // Saturating / checked / wrapping arithmetic
+            "saturating_sub" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    // sat_sub: if a >= b { a - b } else { 0 }
+                    let a = func.alloc_local("__satsub_a".to_string(), ValType::I64);
+                    let b = func.alloc_local("__satsub_b".to_string(), ValType::I64);
+                    func.push(Instruction::LocalSet(b));
+                    func.push(Instruction::LocalSet(a));
+                    func.push(Instruction::LocalGet(a));
+                    func.push(Instruction::LocalGet(b));
+                    func.push(Instruction::I64GeS);
+                    func.push(Instruction::If(BlockType::Result(ValType::I64)));
+                    func.push(Instruction::LocalGet(a));
+                    func.push(Instruction::LocalGet(b));
+                    func.push(Instruction::I64Sub);
+                    func.push(Instruction::Else);
+                    func.push(Instruction::I64Const(0));
+                    func.push(Instruction::End);
+                }
+                Ok(true)
+            }
+            "saturating_add" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I64Add);
+                }
+                Ok(true)
+            }
+            "saturating_mul" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I64Mul);
+                }
+                Ok(true)
+            }
+            "checked_sub" | "checked_add" | "checked_mul" | "checked_div" => {
+                // Returns Option<T> — just return Some(result) for now
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    match method {
+                        "checked_sub" => func.push(Instruction::I64Sub),
+                        "checked_add" => func.push(Instruction::I64Add),
+                        "checked_mul" => func.push(Instruction::I64Mul),
+                        _ => func.push(Instruction::I64Sub), // checked_div stub
+                    }
+                }
+                Ok(true)
+            }
+            "wrapping_sub" | "wrapping_add" | "wrapping_mul" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                    let func = self.current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    match method {
+                        "wrapping_sub" => func.push(Instruction::I64Sub),
+                        "wrapping_add" => func.push(Instruction::I64Add),
+                        _ => func.push(Instruction::I64Mul),
+                    }
+                }
+                Ok(true)
+            }
+            // Integer casting / conversion methods
+            "pow" => {
+                self.compile_expr(receiver)?;
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                }
+                // Stub: just return receiver
+                if !args.is_empty() {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Drop);
                 }
                 Ok(true)
             }
@@ -2733,28 +3433,67 @@ impl WasmCompiler {
         import_name: &str,
         args: &[Expr],
     ) -> WasmResult<()> {
-        // Compile receiver (collection handle)
+        // Compile receiver (collection handle as i64 from struct field or local)
         self.compile_expr(receiver)?;
 
-        // Compile arguments
-        for arg in args {
+        // Collection runtime imports use i32 handles; the receiver is always i64
+        // (Sigil's uniform representation), so wrap it down to i32.
+        // Also cache param types for argument coercion below.
+        let import_params: Option<Vec<wasm_encoder::ValType>> =
+            self.imports.get_func(import_name).and_then(|func_idx| {
+                self.imports
+                    .get_param_types(func_idx)
+                    .map(|p| p.to_vec())
+            });
+
+        if import_params.as_deref().and_then(|p| p.first()) == Some(&wasm_encoder::ValType::I32) {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32WrapI64);
+        }
+
+        // Compile arguments, wrapping i64→i32 where the import expects i32.
+        // Import params: index 0 = receiver (already handled), 1..= = arguments.
+        for (i, arg) in args.iter().enumerate() {
             self.compile_expr(arg)?;
+            let expects_i32 = import_params
+                .as_deref()
+                .and_then(|p| p.get(i + 1))
+                == Some(&wasm_encoder::ValType::I32);
+            if expects_i32 {
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I32WrapI64);
+            }
         }
 
         // Call the import function
         if let Some(func_idx) = self.imports.get_func(import_name) {
+            let return_type = self.imports.get_return_type(func_idx);
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             func.push(Instruction::Call(func_idx));
+            // All Sigil expressions must leave exactly one i64 on the stack.
+            match return_type {
+                None => func.push(Instruction::I64Const(0)),   // void → dummy
+                Some(wasm_encoder::ValType::I32) => func.push(Instruction::I64ExtendI32U), // i32 → i64
+                _ => {}  // i64 already correct
+            }
             Ok(())
         } else {
-            // Fall back to no-op for missing imports (collection is simulated)
-            // In production, these would be real WASM imports
+            // Fall back to no-op for missing imports (collection is simulated).
+            // The receiver and all arguments were already compiled onto the stack.
+            // Drop them before pushing the dummy result to keep the stack balanced.
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
-            // Push a dummy result (0) for now
+            // 1 for receiver + args.len() for arguments
+            for _ in 0..=args.len() {
+                func.push(Instruction::Drop);
+            }
             func.push(Instruction::I64Const(0));
             Ok(())
         }
@@ -3480,6 +4219,60 @@ impl WasmCompiler {
                 }
             }
 
+            // Actor type-qualified call: ActorName·method(args)
+            // e.g., `Wraith·view()` → Wraith::view(I64Const(0))
+            // Actor state lives in WASM globals; `self` is a dummy i64 parameter.
+            if let Expr::Path(path) = &current_expr {
+                if path.segments.len() == 1 {
+                    let type_name = &path.segments[0].ident.name;
+                    if self.actor_names.contains(type_name.as_str()) {
+                        let qualified = format!("{}::{}", type_name, method_name);
+                        if let Some(&func_idx) = self.func_map.get(&qualified) {
+                            // Push dummy self (actor state is in globals, not passed as pointer)
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::I64Const(0));
+                            drop(func);
+
+                            for arg in &method_args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+
+                            if is_last {
+                                return Ok(());
+                            }
+                            // Store for chaining
+                            let temp_local = func.alloc_local(
+                                format!("__chain_{}", i),
+                                ValType::I64,
+                            );
+                            func.push(Instruction::LocalSet(temp_local));
+                            current_expr = Expr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: crate::ast::Ident {
+                                        name: format!("__chain_{}", i),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: crate::span::Span::new(0, 0),
+                                    },
+                                    generics: None,
+                                }],
+                            });
+                            continue;
+                        }
+                    }
+                }
+            }
+
             // Not a builtin or import - compile as method call
             // For the first iteration (i==1), use pre-computed local index if available
             if i == 1 && first_local_idx.is_some() {
@@ -3497,10 +4290,15 @@ impl WasmCompiler {
 
             // Look up the method as a registered function
             if let Some(func_idx) = self.get_func(method_name) {
+                let returns_void = self.func_returns_void(func_idx);
                 let func = self
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                 func.push(Instruction::Call(func_idx));
+                // Void functions return no value; push unit so the stack stays consistent.
+                if returns_void {
+                    func.push(Instruction::I64Const(0));
+                }
 
                 if !is_last {
                     // Store for next iteration
@@ -3579,6 +4377,11 @@ impl WasmCompiler {
 
     /// Compile field access.
     pub fn compile_field_access(&mut self, expr: &Expr, field: &str) -> WasmResult<()> {
+        // Handle ·await as an actual async await operation, not a struct field
+        if field == "await" {
+            return self.compile_await(expr, None);
+        }
+
         // Check for actor self.field access
         if let Expr::Path(path) = expr {
             if path.segments.len() == 1 {

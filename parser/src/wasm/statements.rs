@@ -200,6 +200,15 @@ impl WasmCompiler {
             return Some(self.source_dir.clone());
         }
 
+        // Try hyphen variant: foo_bar -> foo-bar.sigil
+        let hyphen_name = module_name.replace('_', "-");
+        if hyphen_name != module_name {
+            let hyphen_path = self.source_dir.join(format!("{}.sigil", hyphen_name));
+            if hyphen_path.exists() {
+                return Some(self.source_dir.clone());
+            }
+        }
+
         // Then try foo/mod.sigil
         let dir_path = self.source_dir.join(module_name).join("mod.sigil");
         if dir_path.exists() {
@@ -227,11 +236,17 @@ impl WasmCompiler {
         // Try foo.sigil first
         let file_path = self.source_dir.join(format!("{}.sigil", module_name));
 
+        // Try hyphen variant: foo_bar -> foo-bar.sigil
+        let hyphen_name = module_name.replace('_', "-");
+        let hyphen_path = self.source_dir.join(format!("{}.sigil", hyphen_name));
+
         // Then try foo/mod.sigil
         let dir_path = self.source_dir.join(module_name).join("mod.sigil");
 
         let path = if file_path.exists() {
             file_path
+        } else if hyphen_name != module_name && hyphen_path.exists() {
+            hyphen_path
         } else if dir_path.exists() {
             dir_path
         } else {
@@ -556,11 +571,13 @@ impl WasmCompiler {
                 // Register impl methods with qualified names like Type::method
                 let type_name = self.type_path_to_string(&impl_block.self_ty);
                 self.module_path.push(type_name);
+                self.impl_depth += 1;
                 for impl_item in &impl_block.items {
                     if let crate::ast::ImplItem::Function(func) = impl_item {
                         self.register_function_sig(func)?;
                     }
                 }
+                self.impl_depth -= 1;
                 self.module_path.pop();
             }
             Item::ExternBlock(extern_block) => {
@@ -571,6 +588,7 @@ impl WasmCompiler {
                 // Register actor handlers and methods with qualified names
                 let actor_name = actor.name.name.clone();
                 self.module_path.push(actor_name.clone());
+                self.impl_depth += 1;
 
                 // Register message handlers as ActorName::on_MessageName
                 for handler in &actor.handlers {
@@ -583,6 +601,7 @@ impl WasmCompiler {
                     self.register_function_sig(method)?;
                 }
 
+                self.impl_depth -= 1;
                 self.module_path.pop();
             }
             _ => {}
@@ -651,8 +670,12 @@ impl WasmCompiler {
             }
         });
 
-        // Register the import
-        let import_idx = self.imports.add_import(module_name, func_name, params, results);
+        // Register the import.
+        // Also add the simple function name as an alias in the ImportRegistry so that
+        // compile_method_call can look up `imports.get_func("local_storage")` and find
+        // the import even when a defined free function of the same name has overridden
+        // func_map["local_storage"] with a sentinel.
+        let import_idx = self.imports.add_import_with_alias(module_name, func_name, func_name, params, results);
 
         // Also register with qualified name for method resolution
         // e.g., "Storage::get_item" for extern method
@@ -726,11 +749,13 @@ impl WasmCompiler {
                 // Push type name onto module path to match how we registered the functions
                 let type_name = self.type_path_to_string(&impl_block.self_ty);
                 self.module_path.push(type_name);
+                self.impl_depth += 1;
                 for item in &impl_block.items {
                     if let ImplItem::Function(func) = item {
                         self.compile_function(func)?;
                     }
                 }
+                self.impl_depth -= 1;
                 self.module_path.pop();
                 Ok(())
             }
@@ -827,7 +852,8 @@ impl WasmCompiler {
         let param_types: Vec<ValType> = func.params.iter().map(|_| ValType::I64).collect();
 
         // Result type
-        let result_types = if func.return_type.is_some() {
+        // Async functions always return i64 (promise pointer), regardless of declared return type.
+        let result_types = if func.is_async || func.return_type.is_some() {
             vec![ValType::I64]
         } else {
             vec![] // Unit return
@@ -835,20 +861,51 @@ impl WasmCompiler {
 
         let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
 
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        // Use sentinel instead of import_count + functions.len() to avoid the stale-index
+        // bug: more imports may be added by later crates, making import_count stale at
+        // registration time.  fix_stale_func_indices() resolves sentinels to correct
+        // final indices after all crates have been compiled.
+        let func_idx = crate::wasm::DEFINED_FUNC_SENTINEL + self.functions.len() as u32;
 
-        // Record function index with both qualified and simple names
+        // Record function index with both qualified and simple names.
+        // Qualified name always wins (overwrite anything).
         self.func_map.insert(qualified_name.clone(), func_idx);
-        // Also register simple name for backwards compatibility
-        if !self.module_path.is_empty() {
-            self.func_map.insert(func.name.name.clone(), func_idx);
 
-            // For impl methods, also register with short Type::method format
-            // This allows method resolution when the type is known without full path
-            // e.g., VNode::attr in addition to qliphoth::core::vdom::VNode::attr
+        // Simple names: register the short name, but with a guard for impl-block methods.
+        //
+        // When compiling inside an impl block the type name is pushed onto module_path
+        // (depth ≥ 2).  Impl-block methods often share a short name with an extern
+        // import of the same name on the wrapped type (e.g. LocalStorage::clear vs the
+        // extern Storage::clear).  If the defined method overwrites func_map["clear"],
+        // callers that need to invoke the extern import (with `this` as first arg) end up
+        // calling the 0-param defined wrapper instead, causing stack arity errors.
+        //
+        // Free functions at crate level (module_path depth == 1) ARE the intended
+        // implementation and should overwrite the import entry so that bare call-site
+        // lookups like `local_storage()` resolve to the defined wrapper, not the raw
+        // import that takes an extra window-pointer argument.
+        if !self.module_path.is_empty() {
+            let simple_name = func.name.name.clone();
+            // Use impl_depth to detect impl/actor blocks.  module_path.len() > 1 cannot
+            // be used because module file paths also push onto module_path, making free
+            // functions inside module files look like impl methods.
+            let in_impl_block = self.impl_depth > 0;
+            let already_import = in_impl_block
+                && self.func_map.get(&simple_name)
+                    .map_or(false, |&v| v < crate::wasm::DEFINED_FUNC_SENTINEL);
+            if !already_import {
+                self.func_map.insert(simple_name, func_idx);
+            }
+
+            // Short Type::method form — same impl-block-only guard.
             if let Some(type_name) = self.module_path.last() {
                 let short_qualified = format!("{}::{}", type_name, func.name.name);
-                self.func_map.insert(short_qualified, func_idx);
+                let sq_already_import = in_impl_block
+                    && self.func_map.get(&short_qualified)
+                        .map_or(false, |&v| v < crate::wasm::DEFINED_FUNC_SENTINEL);
+                if !sq_already_import {
+                    self.func_map.insert(short_qualified, func_idx);
+                }
             }
         }
 
@@ -897,11 +954,18 @@ impl WasmCompiler {
         };
 
         let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        // Use sentinel for the same reason as register_function_sig (see above).
+        let func_idx = crate::wasm::DEFINED_FUNC_SENTINEL + self.functions.len() as u32;
 
-        // Record function index with both qualified and simple names
+        // Record function index with both qualified and simple names.
+        // Same import-guard logic as register_function_sig: don't let the simple handler
+        // name shadow an import entry of the same name.
         self.func_map.insert(qualified_name.clone(), func_idx);
-        self.func_map.insert(handler_name.to_string(), func_idx);
+        let already_import = self.func_map.get(handler_name)
+            .map_or(false, |&v| v < crate::wasm::DEFINED_FUNC_SENTINEL);
+        if !already_import {
+            self.func_map.insert(handler_name.to_string(), func_idx);
+        }
 
         // Also register short qualified name (ActorName::on_Message)
         if let Some(actor_name) = self.module_path.last() {
@@ -954,6 +1018,13 @@ impl WasmCompiler {
                 "function not found in list: func_idx={}, qualified='{}'",
                 func_idx, qualified_name
             )))?;
+
+        // If the function already has instructions (compiled by a previous impl block
+        // for the same qualified name, e.g. a trait impl that shadows a struct impl),
+        // skip recompilation to avoid appending duplicate/trailing code.
+        if !self.functions[fn_list_idx].instructions.is_empty() {
+            return Ok(());
+        }
 
         // Set as current function
         self.current_fn_idx = Some(fn_list_idx);
@@ -1304,6 +1375,11 @@ impl WasmCompiler {
     fn compile_actor(&mut self, actor: &crate::ast::ActorDef) -> WasmResult<()> {
         let actor_name = actor.name.name.clone();
 
+        // 0. Register the actor type name so that external static calls like
+        //    `Wraith·view()` can be detected and dispatched without evaluating
+        //    the type name as a runtime expression.
+        self.actor_names.insert(actor_name.clone());
+
         // 1. Register state fields as globals
         for field in &actor.state {
             let global_name = format!("{}_{}", actor_name, field.name.name);
@@ -1324,10 +1400,36 @@ impl WasmCompiler {
             if qualified_global != global_name {
                 self.global_map.insert(qualified_global, idx);
             }
+
+            // Record the field's declared type so that `self.field_name.method()` calls
+            // can resolve the method against the field's type rather than falling through
+            // to the import registry.  The type is the innermost named type in the
+            // TypeExpr tree (stripping evidentiality, references, etc.).
+            fn extract_base_type_name(ty: &crate::ast::TypeExpr) -> Option<String> {
+                match ty {
+                    crate::ast::TypeExpr::Path(p) => {
+                        p.segments.last().map(|s| s.ident.name.clone())
+                    }
+                    crate::ast::TypeExpr::Evidential { inner, .. } => {
+                        extract_base_type_name(inner)
+                    }
+                    crate::ast::TypeExpr::Reference { inner, .. } => {
+                        extract_base_type_name(inner)
+                    }
+                    crate::ast::TypeExpr::Pointer { inner, .. } => {
+                        extract_base_type_name(inner)
+                    }
+                    _ => None,
+                }
+            }
+            if let Some(type_name) = extract_base_type_name(&field.ty) {
+                self.var_types.insert(field.name.name.clone(), type_name);
+            }
         }
 
         // 2. Push actor name onto module path for qualified method names
         self.module_path.push(actor_name.clone());
+        self.impl_depth += 1;
 
         // Track the current actor context for self resolution
         let prev_actor = self.current_actor.take();
@@ -1347,6 +1449,7 @@ impl WasmCompiler {
         // Restore previous actor context
         self.current_actor = prev_actor;
 
+        self.impl_depth -= 1;
         // Pop actor name from path
         self.module_path.pop();
 
@@ -1372,9 +1475,20 @@ impl WasmCompiler {
                 handler_name, qualified_name
             )))?;
 
-        // Get the function list index
-        let import_count = self.imports.import_count();
-        let fn_list_idx = (func_idx - import_count) as usize;
+        // Find the function in our list by matching func_idx.
+        // NOTE: We cannot use (func_idx - import_count) because func_idx was stored
+        // as DEFINED_FUNC_SENTINEL + array_index at registration time, and import_count
+        // may have grown since then (e.g., due to scrolled-file compilation adding more
+        // imports). Subtracting the current import_count would yield a wildly wrong index,
+        // causing current_function_mut() to return None and triggering "not in function
+        // context". This is the exact bug that broke actors in scrolled (non-root) files.
+        let fn_list_idx = self.functions
+            .iter()
+            .position(|f| f.func_idx == func_idx)
+            .ok_or_else(|| WasmError::internal(format!(
+                "handler not found in function list: func_idx={}, qualified='{}'",
+                func_idx, qualified_name
+            )))?;
 
         // Set current function context
         self.current_fn_idx = Some(fn_list_idx);
@@ -1391,13 +1505,12 @@ impl WasmCompiler {
 
         // Handle return value based on return type and trailing expression
         if handler.return_type.is_none() {
-            // No return type - drop any trailing expression result
-            if handler.body.expr.is_some() {
-                let func = self.current_function_mut()
-                    .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Drop);
-            }
-            // No trailing expression = nothing to drop
+            // Void handler: compile_block always leaves one i64 on the stack
+            // (either the trailing expr value or the I64Const(0) unit push).
+            // Drop it unconditionally so the stack is empty for the End.
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::Drop);
         } else if handler.body.expr.is_none() {
             // Handler has return type but no trailing expression - push 0
             let func = self.current_function_mut()

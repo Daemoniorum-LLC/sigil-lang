@@ -189,7 +189,8 @@ impl WasmCompiler {
 
             // Incorporation chains: expr·method(args)·method2(args2)
             Expr::Incorporation { segments } => self.compile_incorporation(segments),
-            Expr::Unsafe(_) => Err(WasmError::unsupported("unsafe blocks")),
+            // Unsafe blocks are transparent in WASM — just compile the inner block.
+            Expr::Unsafe(block) => self.compile_block(block),
             Expr::Deref(_) => Err(WasmError::unsupported("raw pointer dereference")),
             Expr::AddrOf { .. } => Err(WasmError::unsupported("address-of expressions")),
             Expr::InlineAsm(_) => Err(WasmError::unsupported("inline assembly")),
@@ -636,25 +637,28 @@ impl WasmCompiler {
         }
 
         // Regular struct field assignment
-        // Get struct pointer
+        // Get struct pointer (i64), then wrap to i32 for memory addressing
         self.compile_expr(target)?;
+        {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32WrapI64);
+        }
 
-        // Get field offset (need type info)
-        // For now, use a simple offset calculation
-        let _offset = self.get_field_offset(field)?;
+        // Get field offset
+        let offset = self.get_field_offset(field)?;
 
         // Compile value
         self.compile_expr(value)?;
 
-        // Store to memory
+        // Store to memory: stack is [i32_addr, i64_value]
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-        // Stack: [ptr, value] -> need to store value at ptr+offset
-        // This is simplified - real implementation needs type info
         func.push(Instruction::I64Store(wasm_encoder::MemArg {
-            offset: 0,
+            offset: offset as u64,
             align: 3, // 8-byte alignment
             memory_index: 0,
         }));
@@ -804,7 +808,7 @@ impl WasmCompiler {
     ///
     /// Await expressions suspend the current execution until the promise resolves.
     /// The JS runtime handles the actual suspension/resumption via the await_promise import.
-    fn compile_await(
+    pub fn compile_await(
         &mut self,
         expr: &Expr,
         evidentiality: Option<crate::ast::Evidentiality>,
@@ -822,7 +826,6 @@ impl WasmCompiler {
         let await_fn = self
             .get_func("async_await_promise")
             .ok_or_else(|| WasmError::internal("async_await_promise not found"))?;
-
         let func = self.current_function_mut().unwrap();
         func.push(Instruction::Call(await_fn));
 
@@ -954,11 +957,16 @@ impl WasmCompiler {
 
                         // Store discriminant for later
                         let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(disc));
+                        func.push(Instruction::LocalSet(disc));
 
                         // If pattern has bindings, extract the value
                         if let Some(first_field) = fields.first() {
-                            if let Pattern::Ident { name, .. } = first_field {
+                            let binding_name = match first_field {
+                                Pattern::Ident { name, .. } => Some(name.name.clone()),
+                                Pattern::RefBinding { name, .. } => Some(name.name.clone()),
+                                _ => None,
+                            };
+                            if let Some(bname) = binding_name {
                                 // Load payload from Option (offset 8)
                                 func.push(Instruction::LocalGet(opt_ptr));
                                 func.push(Instruction::I32WrapI64);
@@ -969,7 +977,7 @@ impl WasmCompiler {
                                 }));
 
                                 // Bind to local variable
-                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                let binding = func.alloc_local(bname, ValType::I64);
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
@@ -995,10 +1003,15 @@ impl WasmCompiler {
                         }));
 
                         let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(disc));
+                        func.push(Instruction::LocalSet(disc));
 
                         if let Some(first_field) = fields.first() {
-                            if let Pattern::Ident { name, .. } = first_field {
+                            let binding_name = match first_field {
+                                Pattern::Ident { name, .. } => Some(name.name.clone()),
+                                Pattern::RefBinding { name, .. } => Some(name.name.clone()),
+                                _ => None,
+                            };
+                            if let Some(bname) = binding_name {
                                 func.push(Instruction::LocalGet(result_ptr));
                                 func.push(Instruction::I32WrapI64);
                                 func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1006,7 +1019,7 @@ impl WasmCompiler {
                                     align: 3,
                                     memory_index: 0,
                                 }));
-                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                let binding = func.alloc_local(bname, ValType::I64);
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
@@ -1031,10 +1044,15 @@ impl WasmCompiler {
                         }));
 
                         let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(disc));
+                        func.push(Instruction::LocalSet(disc));
 
                         if let Some(first_field) = fields.first() {
-                            if let Pattern::Ident { name, .. } = first_field {
+                            let binding_name = match first_field {
+                                Pattern::Ident { name, .. } => Some(name.name.clone()),
+                                Pattern::RefBinding { name, .. } => Some(name.name.clone()),
+                                _ => None,
+                            };
+                            if let Some(bname) = binding_name {
                                 func.push(Instruction::LocalGet(result_ptr));
                                 func.push(Instruction::I32WrapI64);
                                 func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1042,7 +1060,7 @@ impl WasmCompiler {
                                     align: 3,
                                     memory_index: 0,
                                 }));
-                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                let binding = func.alloc_local(bname, ValType::I64);
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
