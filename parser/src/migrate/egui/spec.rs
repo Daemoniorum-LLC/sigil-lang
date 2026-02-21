@@ -208,8 +208,11 @@ pub fn build_spec(
         TargetPattern::Function
     };
 
+    // Use {stem}--{actor_snake}.sigil to match the JSON spec naming convention
+    // and avoid overwriting when multiple actors come from the same source file.
+    let actor_snake = to_snake_case(name);
     let target = EguiTarget {
-        suggested_path: format!("sigil/src/{}.sigil", stem),
+        suggested_path: format!("sigil/src/{}--{}.sigil", stem, actor_snake),
         pattern,
     };
 
@@ -423,6 +426,17 @@ fn to_pascal_case(s: &str) -> String {
             }
         })
         .collect()
+}
+
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() && i > 0 {
+            result.push('_');
+        }
+        result.push(ch.to_lowercase().next().unwrap());
+    }
+    result
 }
 
 fn strip_self_prefix(s: &str) -> String {

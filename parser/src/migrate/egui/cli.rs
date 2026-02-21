@@ -32,6 +32,10 @@ pub struct MigrateEguiConfig {
     pub show_status: bool,
     /// Also write `.sigil` skeleton files (not just JSON specs).
     pub generate_code: bool,
+    /// Only generate `.sigil` files for actors with automation_score >= this threshold.
+    /// JSON specs are always written for all actors regardless of score.
+    /// Default: 0.0 (generate for all actors when `--generate` is set).
+    pub min_score: f32,
     /// Patterns to exclude (default: `test`, `tests`, `benches`, `build.rs`).
     pub exclude_patterns: Vec<String>,
 }
@@ -45,6 +49,7 @@ impl Default for MigrateEguiConfig {
             dry_run: false,
             show_status: false,
             generate_code: false,
+            min_score: 0.0,
             exclude_patterns: vec![
                 "tests".to_string(),
                 "test".to_string(),
@@ -94,6 +99,14 @@ pub fn parse_egui_migrate_args(args: &[String]) -> Result<MigrateEguiConfig, Str
             }
             "--generate" | "-g" => {
                 config.generate_code = true;
+            }
+            "--min-score" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--min-score requires a float argument (e.g. --min-score 1.0)".to_string());
+                }
+                config.min_score = args[i].parse::<f32>()
+                    .map_err(|_| format!("--min-score: invalid float {:?}", args[i]))?;
             }
             "--exclude" => {
                 i += 1;
@@ -227,13 +240,15 @@ pub fn run_egui_migration(config: &MigrateEguiConfig) -> Result<MigrationSummary
         }
     }
 
-    // Write per-file JSON specs
+    // Write per-file JSON specs (always) and optional .sigil skeletons (score-filtered)
+    let mut sigil_written_count = 0usize;
     if !config.dry_run {
         for spec in &all_specs {
             write_spec_json(spec, &source_root, &config.output_dir, config.force)?;
 
-            if config.generate_code {
+            if config.generate_code && spec.automation_score >= config.min_score {
                 write_sigil_file(spec, &config.output_dir, config.force)?;
+                sigil_written_count += 1;
             }
         }
     }
@@ -255,7 +270,7 @@ pub fn run_egui_migration(config: &MigrateEguiConfig) -> Result<MigrationSummary
         files_errored: file_errors.len(),
         actors_found: all_specs.len(),
         specs_written: if config.dry_run { 0 } else { all_specs.len() },
-        sigil_written: if config.dry_run || !config.generate_code { 0 } else { all_specs.len() },
+        sigil_written: if config.dry_run { 0 } else { sigil_written_count },
     })
 }
 
