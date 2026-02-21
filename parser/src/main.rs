@@ -1680,18 +1680,26 @@ fn find_runtime(use_lto: bool, use_tls: bool, use_cuda: bool) -> Option<(String,
         }
     }
 
-    // Try relative to executable
+    // Try relative to executable — check multiple ancestor levels.
+    // The binary may live in target/release/ (2 levels below the runtime dir).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            // Try static library
-            let lib_path = dir.join("runtime/libsigil_runtime.a");
-            if lib_path.exists() {
-                return Some((lib_path.to_string_lossy().into_owned(), false));
-            }
-            // Fall back to source
-            let src_path = dir.join("runtime/sigil_runtime.c");
-            if src_path.exists() {
-                return Some((src_path.to_string_lossy().into_owned(), use_lto));
+            // Candidates relative to the executable directory
+            let search_dirs = [
+                dir.to_path_buf(),                     // <exe_dir>/
+                dir.join(".."),                        // <exe_dir>/../
+                dir.join("../.."),                     // <exe_dir>/../../  (covers target/release -> parser)
+                dir.join("../../.."),                  // deeper fallback
+            ];
+            for base in &search_dirs {
+                let lib_path = base.join("runtime/libsigil_runtime.a");
+                if lib_path.exists() {
+                    return Some((lib_path.to_string_lossy().into_owned(), false));
+                }
+                let src_path = base.join("runtime/sigil_runtime.c");
+                if src_path.exists() {
+                    return Some((src_path.to_string_lossy().into_owned(), use_lto));
+                }
             }
         }
     }

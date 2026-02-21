@@ -2158,6 +2158,13 @@ pub mod llvm {
             // sigil_vec_set(vec: ptr, index: i64, value: i64) -> void
             let vec_set_type =
                 void_type.fn_type(&[ptr_type.into(), i64_type.into(), i64_type.into()], false);
+            // sigil_vec_set_f32_from_i64(vec: ptr, index: i64, f64_bits: i64) -> void
+            // G-F32-ASSIGN: same signature as vec_set but interprets value as f64 bits → stores f32 bits
+            if is_aot {
+                self.module.add_function("sigil_vec_set_f32_from_i64", vec_set_type, None);
+            } else {
+                // JIT mode: no mapping needed (resolved at runtime via libsigil_runtime.a)
+            }
             if is_aot {
                 self.module.add_function("sigil_vec_set", vec_set_type, None);
             } else {
@@ -2495,6 +2502,57 @@ pub mod llvm {
             self.module
                 .add_function("sigil_file_write_all", file_write_all_type, None);
 
+            // sigil_file_open(path: ptr, mode: ptr) -> i64 (FILE* handle, 0 on failure)
+            let file_open_type = i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+            self.module
+                .add_function("sigil_file_open", file_open_type, None);
+
+            // sigil_file_close(handle: i64) -> void
+            let file_close_type = void_type.fn_type(&[i64_type.into()], false);
+            self.module
+                .add_function("sigil_file_close", file_close_type, None);
+
+            // Checkpoint I/O helpers
+            // sigil_ckpt_write_i64(handle: i64, val: i64) -> void
+            let ckpt_write_i64_type = void_type.fn_type(&[i64_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_ckpt_write_i64", ckpt_write_i64_type, None);
+
+            // sigil_ckpt_read_i64(handle: i64) -> i64
+            let ckpt_read_i64_type = i64_type.fn_type(&[i64_type.into()], false);
+            self.module
+                .add_function("sigil_ckpt_read_i64", ckpt_read_i64_type, None);
+
+            // sigil_ckpt_vec_write(handle: i64, vec_ptr: i64, n: i64) -> i64
+            let ckpt_vec_write_type = i64_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_ckpt_vec_write", ckpt_vec_write_type, None);
+
+            // sigil_ckpt_vec_load(handle: i64, n: i64) -> i64  (returns SigilVec* as i64)
+            let ckpt_vec_load_type = i64_type.fn_type(&[i64_type.into(), i64_type.into()], false);
+            self.module
+                .add_function("sigil_ckpt_vec_load", ckpt_vec_load_type, None);
+
+            // GPU SGEMM — sigil_sgemm_nt_sv / sigil_sgemm_nn_sv
+            // (a_ptr, b_ptr, out_ptr, M, N, K: i64) -> i64 (1 on success, 0 on failure)
+            // Vec<f32> args passed as SigilVec* (i64).  Unpacks i64-stored floats, runs
+            // NVRTC tiled SGEMM on RTX 4500 Ada, packs result back into out_ptr.
+            let sgemm_sv_type = i64_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+                i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_sgemm_nt_sv", sgemm_sv_type, None);
+            self.module.add_function("sigil_sgemm_nn_sv", sgemm_sv_type, None);
+
+            // sigil_sgd_inplace_free_grad(w_ptr, g_ptr, n, lr_bits, clip_bits: i64) -> void
+            // Clips gradient, updates weight in-place, frees gradient Vec.
+            let sgd_inplace_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+                i64_type.into(), i64_type.into(),
+            ], false);
+            self.module
+                .add_function("sigil_sgd_inplace_free_grad", sgd_inplace_type, None);
+
             // sigil_exit(code: i64) -> void
             let exit_type = void_type.fn_type(&[i64_type.into()], false);
             self.module.add_function("sigil_exit", exit_type, None);
@@ -2608,6 +2666,15 @@ pub mod llvm {
             let simd_dot_type = f32_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
             self.module
                 .add_function("sigil_simd_dot_f32x16", simd_dot_type, None);
+
+            // sigil_expf32_clamped(x_bits: i64) -> i64
+            // Sigil ABI: f32 arithmetic values are passed as f64 bits in i64 (fp_extend f32→f64,
+            // bitcast f64→i64). Returns clamped exp result as f64 bits in i64.
+            // Returns 0.0 for x < -20 (handles -1e9 causal mask), expf otherwise.
+            // Used in softmax_vec to avoid 10-term Taylor overflow → NaN.
+            // External C call not inlined by LLVM O2, preserving inlining decisions elsewhere.
+            let expf32_clamped_type = i64_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_expf32_clamped", expf32_clamped_type, None);
 
             // CUDA Functions - G73-FIX: Use inttoptr wrappers for JIT mode
             // sigil_cuda_init() -> i64
@@ -4304,6 +4371,17 @@ pub mod llvm {
                 let param_name = match &param.pattern {
                     ast::Pattern::Ident { name: ident, .. } => Some(ident.name.clone()),
                     ast::Pattern::RefBinding { name: ident, .. } => Some(ident.name.clone()),
+                    // TupleStruct patterns like `State(state)`, `Path(name)`, `Query(q)`:
+                    // extract the first inner field binding as the parameter name.
+                    ast::Pattern::TupleStruct { fields, .. } => {
+                        fields.first().and_then(|f| {
+                            if let ast::Pattern::Ident { name: ident, .. } = f {
+                                Some(ident.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    }
                     _ => {
                         eprintln!("WARNING: Unhandled parameter pattern type in function '{}' param {}: {:?}",
                             name, i, param.pattern);
@@ -5055,6 +5133,21 @@ pub mod llvm {
                         // Track float variables
                         if is_float {
                             scope.float_vars.insert(ident.name.clone());
+
+                            // G-F32-VARS: If init is an Index into a float Vec (e.g., `≔ max_v = logits[i]`),
+                            // the alloca holds f32 bits (from sigil_vec_get), not f64 bits.
+                            // Mark the variable so compile_native_float_expr Path knows to convert correctly.
+                            if let Some(ref init_expr) = init {
+                                if let Expr::Index { expr: container, .. } = init_expr {
+                                    if let Expr::Path(path) = container.as_ref() {
+                                        if let Some(seg) = path.segments.last() {
+                                            if scope.float_vars.contains(&seg.ident.name) {
+                                                scope.f32_vars.insert(ident.name.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
 
                         // G27: Track string variables for print handling
@@ -5321,10 +5414,20 @@ pub mod llvm {
                                     .map(|v| v.into_int_value())
                             }
                             _ => {
-                                // For comparisons and other ops, use the traditional path
-                                let lhs = self.compile_expr(fn_value, scope, left)?;
-                                let rhs = self.compile_expr(fn_value, scope, right)?;
-                                self.compile_float_binary_op(*op, lhs, rhs)
+                                // For comparisons and other float ops, use compile_native_float_expr
+                                // to get proper f64 values. compile_expr returns f32 bits zero-extended
+                                // for f32_vars/Vec<f32> elements, which compile_float_binary_op would
+                                // wrongly bitcast as f64, causing incorrect comparison ordering.
+                                let lhs_f64 = self.compile_native_float_expr(fn_value, scope, left)?;
+                                let rhs_f64 = self.compile_native_float_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let lhs_bits = self.builder.build_bit_cast(lhs_f64, i64_type, "lhs_bits")
+                                    .map_err(|e| e.to_string())?
+                                    .into_int_value();
+                                let rhs_bits = self.builder.build_bit_cast(rhs_f64, i64_type, "rhs_bits")
+                                    .map_err(|e| e.to_string())?
+                                    .into_int_value();
+                                self.compile_float_binary_op(*op, lhs_bits, rhs_bits)
                             }
                         }
                     } else {
@@ -5706,6 +5809,16 @@ pub mod llvm {
                             let idx = self.compile_expr(fn_value, scope, index)?;
                             let mut vec_ptr = self.compile_expr(fn_value, scope, expr)?;
 
+                            // G-F32-ASSIGN: Check if target is a float Vec.
+                            // Float arithmetic produces f64 bits in i64.
+                            // Vec<f32> elements must store f32 bits (not f64).
+                            // Convert value before storing if needed.
+                            let is_float_vec_target = if let Expr::Path(path) = expr.as_ref() {
+                                if let Some(seg) = path.segments.last() {
+                                    scope.float_vars.contains(&seg.ident.name)
+                                } else { false }
+                            } else { false };
+
                             // G26: If expr is a reference variable, dereference it
                             if let Expr::Path(path) = expr.as_ref() {
                                 if let Some(seg) = path.segments.last() {
@@ -5732,13 +5845,43 @@ pub mod llvm {
                                 .get_function("sigil_vec_set")
                                 .ok_or("sigil_vec_set not declared")?;
 
-                            self.builder
-                                .build_call(
-                                    vec_set_fn,
-                                    &[vec_ptr.into(), idx.into(), val.into()],
-                                    "",
-                                )
-                                .map_err(|e| e.to_string())?;
+                            // G-F32-ASSIGN: If target is float Vec and value is a scalar float
+                            // arithmetic result (f64 bits in i64), use sigil_vec_set_f32_from_i64
+                            // which correctly converts f64→f32 before storing f32 bits.
+                            // Skip if value is a direct Vec<f32> element read (already f32 bits).
+                            let value_from_float_vec = if let Expr::Index { expr: container, .. } = value.as_ref() {
+                                if let Expr::Path(path) = container.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        scope.float_vars.contains(&seg.ident.name)
+                                    } else { false }
+                                } else { false }
+                            } else { false };
+
+                            let use_f32_set = is_float_vec_target
+                                && self.is_float_expr_with_scope(value, scope)
+                                && !value_from_float_vec;
+
+                            if use_f32_set {
+                                let set_f32_fn = self
+                                    .module
+                                    .get_function("sigil_vec_set_f32_from_i64")
+                                    .ok_or("sigil_vec_set_f32_from_i64 not declared")?;
+                                self.builder
+                                    .build_call(
+                                        set_f32_fn,
+                                        &[vec_ptr.into(), idx.into(), val.into()],
+                                        "",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                            } else {
+                                self.builder
+                                    .build_call(
+                                        vec_set_fn,
+                                        &[vec_ptr.into(), idx.into(), val.into()],
+                                        "",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                            }
 
                             Ok(val)
                         }
@@ -7643,7 +7786,43 @@ pub mod llvm {
                                 }
                             }
 
-                            let value = self.compile_expr(fn_value, scope, &args[0])?;
+                            let mut value = self.compile_expr(fn_value, scope, &args[0])?;
+                            // G-F32-PUSH: Float arithmetic in Sigil always produces f64 bits in i64.
+                            // Vec<f32> stores f32 bits zero-extended to i64 (C reads via memcpy sizeof(float)).
+                            // When pushing a float expression, truncate f64→f32 so the low 4 bytes are correct.
+                            //
+                            // G-F32-PUSH-GUARD: Direct Vec<f32>[idx] reads (via sigil_vec_get) already return
+                            // f32 bits zero-extended in i64 — NOT f64 bits. Applying the f64 bitcast to f32-bit
+                            // values produces near-zero subnormals that truncate to 0.0f32, silently zeroing the
+                            // pushed value (e.g. embed_lookup_raw_vec copies zero into every output element).
+                            // Similarly, variables in f32_vars (initialized from Vec<f32> index reads) hold f32
+                            // bits in their alloca — skip the f64→f32 conversion for those too.
+                            // Only guard direct Vec<f32>[idx] reads (Expr::Index where container is a float Vec).
+                            // f32_vars (variables initialized from Vec[idx]) are excluded — they may be used
+                            // in f64 arithmetic contexts and their alloca format is ambiguous after reassignment.
+                            let value_from_float_vec = if let Expr::Index { expr: container, .. } = &args[0] {
+                                if let Expr::Path(path) = container.as_ref() {
+                                    if let Some(seg) = path.segments.last() {
+                                        scope.float_vars.contains(&seg.ident.name)
+                                    } else { false }
+                                } else { false }
+                            } else { false };
+                            if arg_is_float && !value_from_float_vec {
+                                let f64_val = self.builder
+                                    .build_bit_cast(value, self.context.f64_type(), "push_bits_to_f64")
+                                    .map_err(|e| e.to_string())?
+                                    .into_float_value();
+                                let f32_val = self.builder
+                                    .build_float_trunc(f64_val, self.context.f32_type(), "push_f64_to_f32")
+                                    .map_err(|e| e.to_string())?;
+                                let i32_bits = self.builder
+                                    .build_bit_cast(f32_val, self.context.i32_type(), "push_f32_bits")
+                                    .map_err(|e| e.to_string())?
+                                    .into_int_value();
+                                value = self.builder
+                                    .build_int_z_extend(i32_bits, self.context.i64_type(), "push_f32_zext")
+                                    .map_err(|e| e.to_string())?;
+                            }
                             let push_fn = self
                                 .module
                                 .get_function("sigil_vec_push")
@@ -9114,6 +9293,12 @@ pub mod llvm {
                 // G49: Named argument - just compile the value, name is metadata
                 Expr::NamedArg { value, .. } => self.compile_expr(fn_value, scope, value),
 
+                // Incorporation: chained path/method expressions
+                // e.g. var·method()·collect() or (pipe_expr)·map_err({e => ...})
+                Expr::Incorporation { segments } => {
+                    self.compile_incorporation(fn_value, scope, segments)
+                }
+
                 _ => {
                     // Unsupported expression - return error instead of silent 0
                     eprintln!("[G87-DEBUG] Unsupported expression: {:?}", expr);
@@ -10229,6 +10414,208 @@ pub mod llvm {
             }
 
             Ok(current)
+        }
+
+        /// Compile an Incorporation expression: a chained path/method expression.
+        ///
+        /// Two primary patterns appear in practice:
+        ///
+        /// 1. `__expr__` first segment — an expression (often a Pipe) followed by method calls:
+        ///    `(versions|φ{...}|σ|ω).cloned().collect()` or `reqwest::get(url)|await.map_err(|e|...)`
+        ///
+        /// 2. Named first segment — variable or static path:
+        ///    `var·method1()·method2()` or `Foo·Bar·baz(args)`
+        ///
+        /// In the LLVM scalar model most trailing methods (collect, cloned, ok, map_err, etc.)
+        /// are identity operations or simple value transformations applied to the current i64.
+        fn compile_incorporation(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            segments: &[ast::IncorporationSegment],
+        ) -> Result<IntValue<'ctx>, String> {
+            let i64_type = self.context.i64_type();
+
+            if segments.is_empty() {
+                return Ok(i64_type.const_int(0, false));
+            }
+
+            let first_name = segments[0].name.name.as_str();
+
+            // ── Pattern 1: __expr__ ─────────────────────────────────────────────────────
+            // The parser emits __expr__ as the first segment name when the base is an
+            // arbitrary expression rather than an identifier (e.g. a Pipe result or async
+            // call). The expression itself is passed as the first argument to this segment.
+            if first_name == "__expr__" {
+                let base = if let Some(args) = &segments[0].args {
+                    if let Some(inner) = args.first() {
+                        self.compile_expr(fn_value, scope, inner)?
+                    } else {
+                        i64_type.const_int(0, false)
+                    }
+                } else {
+                    i64_type.const_int(0, false)
+                };
+
+                let mut current = base;
+                for seg in &segments[1..] {
+                    current = self.compile_incorporation_segment(fn_value, scope, current, seg)?;
+                }
+                return Ok(current);
+            }
+
+            // ── Pattern 2: known variable ───────────────────────────────────────────────
+            if let Some(&var_ptr) = scope.vars.get(first_name) {
+                let current = self
+                    .builder
+                    .build_load(i64_type, var_ptr, first_name)
+                    .map_err(|e| e.to_string())?
+                    .into_int_value();
+
+                let mut acc = current;
+                for seg in &segments[1..] {
+                    acc = self.compile_incorporation_segment(fn_value, scope, acc, seg)?;
+                }
+                return Ok(acc);
+            }
+
+            // ── Pattern 3: static/module path call ─────────────────────────────────────
+            // Walk segments in reverse to find the last one that has arguments (the call
+            // site), build a `::` separated path, and try to resolve it in the module.
+            if let Some((call_idx, call_seg)) = segments
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, s)| s.args.is_some())
+            {
+                let func_path = segments[..=call_idx]
+                    .iter()
+                    .map(|s| s.name.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+
+                if let Some(func) = self.module.get_function(&func_path) {
+                    let args = call_seg.args.as_ref().unwrap();
+                    let mut compiled: Vec<inkwell::values::BasicMetadataValueEnum> = Vec::new();
+                    for arg in args {
+                        if let Ok(v) = self.compile_expr(fn_value, scope, arg) {
+                            compiled.push(v.into());
+                        }
+                    }
+                    let call = self
+                        .builder
+                        .build_call(func, &compiled, "incorp_call")
+                        .map_err(|e| e.to_string())?;
+                    if let Some(rv) = call.try_as_basic_value().left() {
+                        return Ok(rv.into_int_value());
+                    }
+                    return Ok(i64_type.const_int(0, false));
+                }
+
+                // Function not in module — compile args as side effects and return 0
+                let args = call_seg.args.as_ref().unwrap();
+                for arg in args {
+                    let _ = self.compile_expr(fn_value, scope, arg);
+                }
+            }
+
+            Ok(i64_type.const_int(0, false))
+        }
+
+        /// Apply one Incorporation segment (a method call or field access) to an
+        /// accumulated value in the scalar LLVM model.
+        ///
+        /// Iterator/collection terminal methods (`collect`, `cloned`, `ok`, `flatten`, …)
+        /// are identity operations at this level. Transformation methods (`map_err`, `map`,
+        /// `and_then`) bind the current value to the closure parameter and evaluate the body.
+        fn compile_incorporation_segment(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            scope: &mut CompileScope<'ctx>,
+            current: IntValue<'ctx>,
+            seg: &ast::IncorporationSegment,
+        ) -> Result<IntValue<'ctx>, String> {
+            let method = seg.name.name.as_str();
+
+            match method {
+                // ── Terminal collection/option/result methods ── passthrough ─────────────
+                "collect" | "cloned" | "clone" | "ok" | "err" | "flatten" | "into_iter"
+                | "iter" | "iter_mut" | "into" | "as_deref" | "as_ref" | "as_mut"
+                | "unwrap_or_default" | "desc" | "asc" | "rev" | "peekable" | "fuse"
+                | "enumerate" | "copied" | "deref" | "to_owned" | "as_slice" => Ok(current),
+
+                // ── Transformation methods that apply a closure ──────────────────────────
+                "map" | "map_err" | "map_ok" | "and_then" | "or_else" | "unwrap_or_else"
+                | "filter" | "find" | "for_each" | "inspect" => {
+                    if let Some(args) = &seg.args {
+                        if let Some(closure_expr) = args.first() {
+                            if let Expr::Closure { params, body, .. } = closure_expr {
+                                // Extract the first parameter name
+                                let param_name = params
+                                    .first()
+                                    .and_then(|p| {
+                                        if let ast::Pattern::Ident { name: ident, .. } = &p.pattern
+                                        {
+                                            Some(ident.name.clone())
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .unwrap_or_else(|| "_".to_string());
+
+                                // Bind current value to the closure param
+                                let i64_type = self.context.i64_type();
+                                let param_ptr = self
+                                    .builder
+                                    .build_alloca(i64_type, &param_name)
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(param_ptr, current)
+                                    .map_err(|e| e.to_string())?;
+                                let old = scope.vars.insert(param_name.clone(), param_ptr);
+
+                                let result = self.compile_expr(fn_value, scope, body)?;
+
+                                // Restore scope
+                                match old {
+                                    Some(prev) => {
+                                        scope.vars.insert(param_name, prev);
+                                    }
+                                    None => {
+                                        scope.vars.remove(&param_name);
+                                    }
+                                }
+
+                                return Ok(result);
+                            }
+                        }
+                    }
+                    Ok(current)
+                }
+
+                // ── No-arg methods on iterators/results ──────────────────────────────────
+                "next" | "last" | "count" | "sum" | "product" | "min" | "max" | "any"
+                | "all" | "is_empty" | "len" | "unwrap" | "expect" | "transpose"
+                | "take_while" | "skip_while" | "take" | "skip" | "zip" | "chain" => {
+                    // Compile any args as side effects, pass current through
+                    if let Some(args) = &seg.args {
+                        for arg in args {
+                            let _ = self.compile_expr(fn_value, scope, arg);
+                        }
+                    }
+                    Ok(current)
+                }
+
+                // ── Unknown method: compile args as side effects, pass through ────────────
+                _ => {
+                    if let Some(args) = &seg.args {
+                        for arg in args {
+                            let _ = self.compile_expr(fn_value, scope, arg);
+                        }
+                    }
+                    Ok(current)
+                }
+            }
         }
 
         /// Compile sum of array elements: [a, b, c] |ρ+ generates a loop
@@ -13433,10 +13820,26 @@ pub mod llvm {
                             .build_load(self.context.i64_type(), ptr, name)
                             .map_err(|e| e.to_string())?
                             .into_int_value();
-                        let f_val = self.builder
-                            .build_bit_cast(val, f64_type, "load_f64")
-                            .map_err(|e| e.to_string())?
-                            .into_float_value();
+                        // G-F32-VARS: Variables in f32_vars hold f32 bits (from Vec<f32> element reads).
+                        // Truncate i64→i32 to get f32 bits, bitcast→f32, then fpext→f64.
+                        // Other float vars hold f64 bits from float arithmetic → bitcast directly.
+                        let f_val = if scope.f32_vars.contains(name) {
+                            let i32_val = self.builder
+                                .build_int_truncate(val, self.context.i32_type(), "f32var_i32")
+                                .map_err(|e| e.to_string())?;
+                            let f32_val = self.builder
+                                .build_bit_cast(i32_val, self.context.f32_type(), "f32var_f32")
+                                .map_err(|e| e.to_string())?
+                                .into_float_value();
+                            self.builder
+                                .build_float_ext(f32_val, f64_type, "f32var_f64")
+                                .map_err(|e| e.to_string())?
+                        } else {
+                            self.builder
+                                .build_bit_cast(val, f64_type, "load_f64")
+                                .map_err(|e| e.to_string())?
+                                .into_float_value()
+                        };
                         Ok(f_val)
                     } else if let Some(global) = self.global_vars.get(name) {
                         // Load from global/static variable
@@ -13768,13 +14171,36 @@ pub mod llvm {
                         }
                     }
                 }
-                Expr::Index { expr: container, index } => {
-                    // Load from Vec and convert to float
+                Expr::Index { expr: container, index: _index } => {
+                    // G-F32-INDEX: Vec<f32> elements are f32 bits zero-extended in i64.
+                    // Only apply f32-bit decoding for float Vecs (container in float_vars).
+                    // Integer Vecs (Vec<usize>, Vec<i64>) need sitofp, not f32 bit reinterpretation.
+                    let is_float_vec = if let Expr::Path(path) = container.as_ref() {
+                        if let Some(seg) = path.segments.last() {
+                            scope.float_vars.contains(&seg.ident.name)
+                        } else { false }
+                    } else { false };
+
                     let int_result = self.compile_expr(fn_value, scope, expr)?;
-                    self.builder
-                        .build_bit_cast(int_result, f64_type, "idx_f64")
-                        .map_err(|e| e.to_string())
-                        .map(|v| v.into_float_value())
+
+                    if is_float_vec {
+                        // f32 bits in i64 → truncate to i32, bitcast to f32, fpext to f64
+                        let i32_val = self.builder
+                            .build_int_truncate(int_result, self.context.i32_type(), "idx_i32")
+                            .map_err(|e| e.to_string())?;
+                        let f32_val = self.builder
+                            .build_bit_cast(i32_val, self.context.f32_type(), "idx_f32")
+                            .map_err(|e| e.to_string())?
+                            .into_float_value();
+                        self.builder
+                            .build_float_ext(f32_val, f64_type, "idx_fpext")
+                            .map_err(|e| e.to_string())
+                    } else {
+                        // Integer index result → convert to f64 via sitofp
+                        self.builder
+                            .build_signed_int_to_float(int_result, f64_type, "idx_sitofp")
+                            .map_err(|e| e.to_string())
+                    }
                 }
                 Expr::Cast { expr: inner, ty } => {
                     // Handle int to float cast
@@ -16625,8 +17051,12 @@ pub mod llvm {
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
                 "is_some" => {
+                    // Called as method (no args) or as free function (opt as first arg).
+                    // When called as a method on a path like `s·category·is_some()`,
+                    // the path collapses to a Call with no args — treat as "truthy" (1)
+                    // since we cannot inspect Option layout at this level.
                     if args.is_empty() {
-                        return Err("is_some requires an option argument".to_string());
+                        return Ok(self.context.i64_type().const_int(1, false));
                     }
                     let opt = self.compile_expr(fn_value, scope, &args[0])?;
                     let is_some_fn = self
@@ -16645,7 +17075,8 @@ pub mod llvm {
                 }
                 "is_none" => {
                     if args.is_empty() {
-                        return Err("is_none requires an option argument".to_string());
+                        // Method-style call with no args — treat as "not none" (0) by default
+                        return Ok(self.context.i64_type().const_int(0, false));
                     }
                     let opt = self.compile_expr(fn_value, scope, &args[0])?;
                     let is_none_fn = self
@@ -16761,6 +17192,228 @@ pub mod llvm {
                         .left()
                         .map(|v| v.into_int_value())
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "file_open" => {
+                    if args.len() < 2 {
+                        return Err("file_open requires path and mode arguments".to_string());
+                    }
+                    let path = self.compile_expr(fn_value, scope, &args[0])?;
+                    let mode = self.compile_expr(fn_value, scope, &args[1])?;
+                    let file_open_fn = self
+                        .module
+                        .get_function("sigil_file_open")
+                        .ok_or("sigil_file_open not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(file_open_fn, &[path.into(), mode.into()], "file_open")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "file_close" => {
+                    if args.is_empty() {
+                        return Err("file_close requires a handle argument".to_string());
+                    }
+                    let handle = self.compile_expr(fn_value, scope, &args[0])?;
+                    let file_close_fn = self
+                        .module
+                        .get_function("sigil_file_close")
+                        .ok_or("sigil_file_close not declared")?;
+                    self.builder
+                        .build_call(file_close_fn, &[handle.into()], "file_close")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "ckpt_write_step" | "sigil_ckpt_write_i64" => {
+                    if args.len() < 2 {
+                        return Err("ckpt_write_step requires handle and step arguments".to_string());
+                    }
+                    let handle = self.compile_expr(fn_value, scope, &args[0])?;
+                    let val = self.compile_expr(fn_value, scope, &args[1])?;
+                    let fn_ = self
+                        .module
+                        .get_function("sigil_ckpt_write_i64")
+                        .ok_or("sigil_ckpt_write_i64 not declared")?;
+                    self.builder
+                        .build_call(fn_, &[handle.into(), val.into()], "ckpt_write_i64")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "ckpt_read_step" | "sigil_ckpt_read_i64" => {
+                    if args.is_empty() {
+                        return Err("ckpt_read_step requires a handle argument".to_string());
+                    }
+                    let handle = self.compile_expr(fn_value, scope, &args[0])?;
+                    let fn_ = self
+                        .module
+                        .get_function("sigil_ckpt_read_i64")
+                        .ok_or("sigil_ckpt_read_i64 not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(fn_, &[handle.into()], "ckpt_read_i64")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "ckpt_write_vec" | "sigil_ckpt_vec_write" => {
+                    // ckpt_write_vec(handle: i64, vec: Vec<f32>, n: usize) -> i64
+                    if args.len() < 3 {
+                        return Err("ckpt_write_vec requires handle, vec, and n arguments".to_string());
+                    }
+                    let handle = self.compile_expr(fn_value, scope, &args[0])?;
+                    let vec_ptr = self.compile_expr(fn_value, scope, &args[1])?;
+                    let n = self.compile_expr(fn_value, scope, &args[2])?;
+                    let fn_ = self
+                        .module
+                        .get_function("sigil_ckpt_vec_write")
+                        .ok_or("sigil_ckpt_vec_write not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(fn_, &[handle.into(), vec_ptr.into(), n.into()], "ckpt_vec_write")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "ckpt_load_vec" | "sigil_ckpt_vec_load" => {
+                    // ckpt_load_vec(handle: i64, n: usize) -> Vec<f32>  (returns SigilVec* as i64)
+                    if args.len() < 2 {
+                        return Err("ckpt_load_vec requires handle and n arguments".to_string());
+                    }
+                    let handle = self.compile_expr(fn_value, scope, &args[0])?;
+                    let n = self.compile_expr(fn_value, scope, &args[1])?;
+                    let fn_ = self
+                        .module
+                        .get_function("sigil_ckpt_vec_load")
+                        .ok_or("sigil_ckpt_vec_load not declared")?;
+                    let call = self
+                        .builder
+                        .build_call(fn_, &[handle.into(), n.into()], "ckpt_vec_load")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(call
+                        .try_as_basic_value()
+                        .left()
+                        .map(|v| v.into_int_value())
+                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                }
+                "sigil_expf32_clamped" => {
+                    // Clamped exp for softmax: handles -1e9 causal mask without NaN.
+                    // Sigil ABI: argument is i64 containing f64 bits (fp_extend f32→f64, bitcast f64→i64).
+                    // Return: i64 containing f64 bits (Sigil's float representation).
+                    // Generated entirely as inline LLVM IR to avoid external C call ABI issues.
+                    //
+                    // Algorithm:
+                    //   x_f64 = bitcast i64 → f64
+                    //   cmp = x_f64 < -20.0
+                    //   x_f32 = fptrunc f64 → f32
+                    //   exp_f32 = call llvm.exp.f32(x_f32)
+                    //   exp_f64 = fpext f32 → f64
+                    //   result_f64 = select cmp, 0.0f64, exp_f64
+                    //   return bitcast f64 → i64
+                    if args.is_empty() {
+                        return Err("sigil_expf32_clamped requires one argument".to_string());
+                    }
+                    let x_i64 = self.compile_expr(fn_value, scope, &args[0])?;
+                    let f64_type = self.context.f64_type();
+                    let f32_type = self.context.f32_type();
+                    let i64_type = self.context.i64_type();
+
+                    // bitcast i64 → f64
+                    let x_f64 = self.builder
+                        .build_bit_cast(x_i64, f64_type, "expclamp_x_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    // compare: x_f64 < -20.0
+                    let neg20 = f64_type.const_float(-20.0);
+                    let cmp_lt = self.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OLT,
+                            x_f64,
+                            neg20,
+                            "expclamp_lt",
+                        )
+                        .map_err(|e| e.to_string())?;
+
+                    // fptrunc f64 → f32
+                    let x_f32 = self.builder
+                        .build_float_trunc(x_f64, f32_type, "expclamp_x_f32")
+                        .map_err(|e| e.to_string())?;
+
+                    // call llvm.exp.f32(x_f32) — hardware exp intrinsic
+                    let exp_intrinsic_name = "llvm.exp.f32";
+                    let exp_fn = self.module.get_function(exp_intrinsic_name)
+                        .unwrap_or_else(|| {
+                            let fn_type = f32_type.fn_type(&[f32_type.into()], false);
+                            self.module.add_function(exp_intrinsic_name, fn_type, None)
+                        });
+                    let exp_f32 = self.builder
+                        .build_call(exp_fn, &[x_f32.into()], "expclamp_expf32")
+                        .map_err(|e| e.to_string())?
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or("llvm.exp.f32 returned void")?
+                        .into_float_value();
+
+                    // fpext f32 → f64
+                    let exp_f64 = self.builder
+                        .build_float_ext(exp_f32, f64_type, "expclamp_exp_f64")
+                        .map_err(|e| e.to_string())?;
+
+                    // select: if cmp then 0.0f64 else exp_f64
+                    let zero_f64 = f64_type.const_float(0.0);
+                    let result_f64 = self.builder
+                        .build_select(cmp_lt, zero_f64, exp_f64, "expclamp_result_f64")
+                        .map_err(|e| e.to_string())?
+                        .into_float_value();
+
+                    // bitcast f64 → i64 (Sigil's float representation)
+                    let result_i64 = self.builder
+                        .build_bit_cast(result_f64, i64_type, "expclamp_result_i64")
+                        .map_err(|e| e.to_string())?
+                        .into_int_value();
+
+                    return Ok(result_i64);
+                }
+                "sgd_inplace_free_grad" | "sigil_sgd_inplace_free_grad" => {
+                    // In-place SGD + free gradient. Called directly from training loop (not via Sigil wrapper)
+                    // to avoid Vec<f32> param f64-alloca ABI bug (vcvttsd2si corrupts pointer).
+                    // 3-arg form: (w, g, n) — lr=0.0005_f32, clip=0.2_f32 hardcoded as i64 bit patterns.
+                    // 5-arg form: (w, g, n, lr_bits, clip_bits) — for explicit overrides.
+                    if args.len() < 3 {
+                        return Err("sgd_inplace_free_grad requires 3 args: w, g, n".to_string());
+                    }
+                    let w = self.compile_expr(fn_value, scope, &args[0])?;
+                    let g = self.compile_expr(fn_value, scope, &args[1])?;
+                    let n = self.compile_expr(fn_value, scope, &args[2])?;
+                    // lr=0.0005_f32=0x3A03126F, clip=0.2_f32=0x3E4CCCCD as i64 LLVM constants
+                    let (lr_bits, clip_bits) = if args.len() >= 5 {
+                        (
+                            self.compile_expr(fn_value, scope, &args[3])?,
+                            self.compile_expr(fn_value, scope, &args[4])?,
+                        )
+                    } else {
+                        (
+                            self.context.i64_type().const_int(0x3A03126F, false).into(),
+                            self.context.i64_type().const_int(0x3E4CCCCD, false).into(),
+                        )
+                    };
+                    let fn_ = self
+                        .module
+                        .get_function("sigil_sgd_inplace_free_grad")
+                        .ok_or("sigil_sgd_inplace_free_grad not declared")?;
+                    self.builder
+                        .build_call(fn_, &[w.into(), g.into(), n.into(), lr_bits.into(), clip_bits.into()], "sgd_inplace")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
                 }
                 // Result enum constructors - G43 fix: also handle bare Ok/Err
                 "Result::Ok" | "Result·Ok" | "Ok" => {
@@ -19375,6 +20028,11 @@ pub mod llvm {
         /// G122: Track which variables hold array literals (as opposed to Vec)
         /// Arrays are raw i64 pointers, not Vec structures, and need direct GEP indexing
         array_vars: std::collections::HashSet<String>,
+        /// G-F32-VARS: Track variables whose alloca holds f32 bits (not f64 bits).
+        /// Float scalar vars normally hold f64 bits (from float arithmetic / float literals).
+        /// But vars initialized from Vec<f32> element reads hold f32 bits from sigil_vec_get.
+        /// These need truncate+bitcast+fpext (not bitcast) in compile_native_float_expr Path.
+        f32_vars: std::collections::HashSet<String>,
     }
 
     impl<'ctx> CompileScope<'ctx> {
@@ -19392,6 +20050,7 @@ pub mod llvm {
                 const_generics: HashMap::new(),
                 ptr_element_sizes: HashMap::new(),
                 array_vars: std::collections::HashSet::new(),
+                f32_vars: std::collections::HashSet::new(),
             }
         }
 
