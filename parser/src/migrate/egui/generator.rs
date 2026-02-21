@@ -2,8 +2,9 @@
 //!
 //! Produces a `.sigil` file for each spec, with:
 //! - `invoke qliphoth·prelude·*;` header
+//! - `☉ ᛈ ActorMsg { }` message enum (outside actor, if messages exist)
 //! - Actor state fields with evidentiality sigils
-//! - `enum Msg` with inferred variants
+//! - `on Variant { }` message handler stubs
 //! - `rite new()` constructor stub
 //! - `rite view()` skeleton with `??MARKER??` annotations where needed
 //!
@@ -84,6 +85,12 @@ pub fn generate_sigil(spec: &EguiMigrationSpec) -> GeneratedSigil {
 fn generate_actor(spec: &EguiMigrationSpec) -> String {
     let mut s = String::new();
 
+    // Message enum goes OUTSIDE the actor block (☉ ᛈ ActorMsg)
+    if !spec.recommendations.messages.is_empty() {
+        s.push_str(&generate_msg_enum(spec));
+        s.push('\n');
+    }
+
     s.push_str(&format!("actor {} {{\n", spec.name));
 
     // State fields
@@ -100,9 +107,20 @@ fn generate_actor(spec: &EguiMigrationSpec) -> String {
         s.push('\n');
     }
 
-    // Msg enum
-    s.push_str(&generate_msg_enum(&spec.recommendations));
-    s.push('\n');
+    // on handlers (one stub per message variant)
+    if !spec.recommendations.messages.is_empty() {
+        for msg in &spec.recommendations.messages {
+            let variant_with_payload = match &msg.payload {
+                Some(p) => format!("{}(_payload: {})", msg.name, p),
+                None    => msg.name.clone(),
+            };
+            s.push_str(&format!(
+                "    on {} {{\n        // ??TODO?? — {}\n    }}\n\n",
+                variant_with_payload,
+                msg.description,
+            ));
+        }
+    }
 
     // new() constructor
     s.push_str(&generate_new(spec));
@@ -115,22 +133,17 @@ fn generate_actor(spec: &EguiMigrationSpec) -> String {
     s
 }
 
-fn generate_msg_enum(recs: &EguiRecommendations) -> String {
-    let mut s = String::from("    enum Msg {\n");
-
-    if recs.messages.is_empty() {
-        s.push_str("        // No messages inferred — add variants here\n");
-        s.push_str("        // Example: SetVisible(bool),\n");
-    } else {
-        for msg in &recs.messages {
-            match &msg.payload {
-                Some(p) => s.push_str(&format!("        {}({}),\n", msg.name, p)),
-                None    => s.push_str(&format!("        {},\n", msg.name)),
-            }
+/// Generate a `☉ ᛈ ActorMsg { }` enum to be placed before the actor block.
+fn generate_msg_enum(spec: &EguiMigrationSpec) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("☉ ᛈ {}Msg {{\n", spec.name));
+    for msg in &spec.recommendations.messages {
+        match &msg.payload {
+            Some(p) => s.push_str(&format!("    {}({}),\n", msg.name, p)),
+            None    => s.push_str(&format!("    {},\n", msg.name)),
         }
     }
-
-    s.push_str("    }\n");
+    s.push_str("}\n");
     s
 }
 
@@ -210,13 +223,13 @@ fn default_value_for(type_str: &str) -> &'static str {
     match type_str {
         t if t.starts_with("Vec<")    => "vec![]",
         t if t.starts_with("Option<") => "None",
-        t if t.starts_with("HashMap<")=> "HashMap::new()",
-        t if t.starts_with("String")  => "String::new()",
+        t if t.starts_with("HashMap<")=> "HashMap·new()",
+        t if t.starts_with("String")  => "String·new()",
         "bool"                         => "false",
         "usize" | "u8" | "u16" | "u32" | "u64" => "0",
         "isize" | "i8" | "i16" | "i32" | "i64" => "0",
         "f32" | "f64"                  => "0.0",
-        _                              => "Default::default()",
+        _                              => "Default·default()",
     }
 }
 
@@ -308,7 +321,26 @@ mod tests {
     fn test_generate_msg_enum() {
         let spec = make_simple_spec("Baz");
         let gen = generate_sigil(&spec);
-        assert!(gen.code.contains("enum Msg {"));
-        assert!(gen.code.contains("Increment,"));
+        // Enum is now a top-level ☉ ᛈ BazMsg { } outside the actor block
+        assert!(gen.code.contains("☉ ᛈ BazMsg {"), "missing ☉ ᛈ BazMsg in:\n{}", gen.code);
+        assert!(gen.code.contains("Increment,"), "missing Increment variant");
+        // Must NOT have enum Msg inside actor
+        assert!(!gen.code.contains("enum Msg {"), "enum Msg {{}} inside actor is invalid Sigil");
+    }
+
+    #[test]
+    fn test_msg_enum_before_actor() {
+        let spec = make_simple_spec("Counter");
+        let gen = generate_sigil(&spec);
+        let enum_pos = gen.code.find("☉ ᛈ CounterMsg").expect("missing enum");
+        let actor_pos = gen.code.find("actor Counter {").expect("missing actor");
+        assert!(enum_pos < actor_pos, "☉ ᛈ CounterMsg must appear before actor Counter block");
+    }
+
+    #[test]
+    fn test_on_handler_stubs_in_actor() {
+        let spec = make_simple_spec("Counter");
+        let gen = generate_sigil(&spec);
+        assert!(gen.code.contains("on Increment {"), "missing on handler in:\n{}", gen.code);
     }
 }

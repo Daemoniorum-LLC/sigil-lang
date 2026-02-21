@@ -235,7 +235,16 @@ fn generator_produces_actor_block() {
 fn generator_produces_msg_enum() {
     let spec = fixture_spec();
     let gen = generate_sigil(&spec);
-    assert!(gen.code.contains("enum Msg {"), "missing enum Msg");
+    // Enum is now ☉ ᛈ NotificationsMsg { } placed before the actor block
+    assert!(
+        gen.code.contains("☉ ᛈ NotificationsMsg {"),
+        "missing ☉ ᛈ NotificationsMsg in:\n{}", gen.code
+    );
+    assert!(!gen.code.contains("enum Msg {"), "enum Msg inside actor is invalid Sigil");
+    // Enum must appear before actor block
+    let enum_pos  = gen.code.find("☉ ᛈ NotificationsMsg").unwrap();
+    let actor_pos = gen.code.find("actor Notifications {").unwrap();
+    assert!(enum_pos < actor_pos, "message enum must precede actor block");
 }
 
 #[test]
