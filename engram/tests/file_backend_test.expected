@@ -1,0 +1,10 @@
+Engram v0.2 FileBackend tests
+PASS: new_creates_dir
+PASS: save_load_roundtrip
+PASS: load_missing_returns_null
+PASS: exists_lifecycle
+PASS: delete_removes
+PASS: list_prefix
+PASS: multiple_keys_isolated
+PASS: overwrite
+Done
