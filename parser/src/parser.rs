@@ -5543,6 +5543,16 @@ impl<'a> Parser<'a> {
                         };
                         continue;
                     }
+                    // Handle `.await` keyword as await syntax (same as `.⌛`)
+                    if self.check(&Token::Await) {
+                        self.advance();
+                        let evidentiality = self.parse_evidentiality_opt();
+                        expr = Expr::Await {
+                            expr: Box::new(expr),
+                            evidentiality,
+                        };
+                        continue;
+                    }
                     // Handle both named fields (`.field`) and tuple indices (`.0`, `.1`)
                     let field = if let Some(Token::IntLit(idx)) = self.current_token() {
                         let idx = idx.clone();
@@ -7335,12 +7345,17 @@ impl<'a> Parser<'a> {
                     Ok(PipeOp::SortBy(Box::new(body)))
                 } else {
                     self.advance();
-                    let field = if self.consume_if(&Token::Dot) {
+                    let field = if self.consume_if(&Token::Dot) || self.consume_if(&Token::MiddleDot) {
                         Some(self.parse_ident()?)
                     } else {
                         None
                     };
-                    Ok(PipeOp::Sort(field))
+                    // |σ·desc -> SortDesc, |σ·asc -> SortAsc, |σ·field -> Sort(field)
+                    match field.as_ref().map(|f| f.name.as_str()) {
+                        Some("desc") => Ok(PipeOp::SortDesc),
+                        Some("asc") => Ok(PipeOp::SortAsc),
+                        _ => Ok(PipeOp::Sort(field)),
+                    }
                 }
             }
             Some(Token::Rho) => {
