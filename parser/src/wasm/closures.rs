@@ -2729,49 +2729,122 @@ impl WasmCompiler {
             m if m.starts_with("on_") => {
                 use wasm_encoder::ValType;
 
-                // Resolve the message discriminant from the first arg.
-                // The arg is expected to be a unit enum variant path (e.g. OpenCommandPalette).
-                // Look up its tag in enum_layouts by variant name.
-                let msg_tag_i64: i64 = if args.len() == 1 {
-                    let mut found: Option<i64> = None;
-                    if let Expr::Path(path) = &args[0] {
-                        let variant_name = path.segments.last()
-                            .map(|s| s.ident.name.as_str()).unwrap_or("");
-                        'outer: for layout in self.enum_layouts.values() {
-                            if let Some(tag) = layout.variant_tag(variant_name) {
-                                found = Some(tag as i64);
-                                break 'outer;
+                // Detect argument shape:
+                //   Expr::Path  → unit variant    e.g. ·on_click(Msg·Dismiss)
+                //   Expr::Call  → parameterized variant  e.g. ·on_click(Msg·PanelClicked(id_expr))
+                // (spec §2.3, R1–R2)
+                enum OnArgShape<'a> {
+                    Unit  { tag: i64 },
+                    Param { tag: i64, str_arg: &'a Expr },
+                }
+
+                let shape: OnArgShape = if args.len() == 1 {
+                    match &args[0] {
+                        // Unit variant: a bare path like Msg·Dismiss
+                        Expr::Path(path) => {
+                            let variant_name = path.segments.last()
+                                .map(|s| s.ident.name.as_str()).unwrap_or("");
+                            let mut tag = 0i64;
+                            'unit: for layout in self.enum_layouts.values() {
+                                if let Some(t) = layout.variant_tag(variant_name) {
+                                    tag = t as i64;
+                                    break 'unit;
+                                }
+                            }
+                            OnArgShape::Unit { tag }
+                        }
+                        // Parameterized variant: call-expr like Msg·PanelClicked(string_expr)
+                        // Callee must be an enum variant path; exactly one string argument.
+                        Expr::Call { func: callee, args: call_args } if call_args.len() == 1 => {
+                            let callee_name = if let Expr::Path(cp) = &**callee {
+                                cp.segments.last().map(|s| s.ident.name.as_str()).unwrap_or("")
+                            } else {
+                                ""
+                            };
+                            let mut tag = 0i64;
+                            if !callee_name.is_empty() {
+                                'param: for layout in self.enum_layouts.values() {
+                                    if let Some(t) = layout.variant_tag(callee_name) {
+                                        tag = t as i64;
+                                        break 'param;
+                                    }
+                                }
+                            }
+                            // Fall back to unit (tag=0, no payload) if callee unresolved (R4).
+                            if tag == 0 {
+                                OnArgShape::Unit { tag: 0 }
+                            } else {
+                                OnArgShape::Param { tag, str_arg: &call_args[0] }
                             }
                         }
+                        // Any other form: fallback (R4)
+                        _ => OnArgShape::Unit { tag: 0 },
                     }
-                    found.unwrap_or(0)
                 } else {
-                    0
+                    OnArgShape::Unit { tag: 0 }
                 };
 
-                // vdom_set_vnode_prop stores an i64 value (vs str_prop which stores a string).
                 let set_prop_idx = self.imports.get_func("vdom_set_vnode_prop")
                     .ok_or_else(|| WasmError::internal("vdom_set_vnode_prop import not found"))?;
 
-                // Intern the prop key string (the method name, e.g. "on_commandpalette").
+                // Intern the event prop key (e.g. "on_click").
                 let key_offset = self.add_string(m) as i64;
 
-                // Compile receiver, store in local for chaining.
+                // Compile receiver, save to local for chaining.
                 self.compile_expr(receiver)?;
                 let func = self.current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                 let vnode_local = func.alloc_local("__on_vnode".to_string(), ValType::I64);
                 func.push(Instruction::LocalSet(vnode_local));
 
-                // vdom_set_vnode_prop(vnode_i32, key_i64, tag_i64) — returns void.
-                func.push(Instruction::LocalGet(vnode_local));
-                func.push(Instruction::I32WrapI64);
-                func.push(Instruction::I64Const(key_offset));
-                func.push(Instruction::I64Const(msg_tag_i64));
-                func.push(Instruction::Call(set_prop_idx));
+                match shape {
+                    OnArgShape::Unit { tag } => {
+                        // R1: emit discriminant prop only.
+                        let func = self.current_function_mut().unwrap();
+                        func.push(Instruction::LocalGet(vnode_local));
+                        func.push(Instruction::I32WrapI64);
+                        func.push(Instruction::I64Const(key_offset));
+                        func.push(Instruction::I64Const(tag));
+                        func.push(Instruction::Call(set_prop_idx));
+                        func.push(Instruction::LocalGet(vnode_local));
+                    }
+                    OnArgShape::Param { tag, str_arg } => {
+                        // R2: emit discriminant prop, then blob-address payload prop.
+                        // Prop key for payload: "on_<event>_payload" (spec §2.1).
+                        let payload_key = format!("{}_payload", m);
+                        let payload_key_offset = self.add_string(&payload_key) as i64;
 
-                // Return vnode for chaining.
-                func.push(Instruction::LocalGet(vnode_local));
+                        // Emit discriminant prop.
+                        {
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::LocalGet(vnode_local));
+                            func.push(Instruction::I32WrapI64);
+                            func.push(Instruction::I64Const(key_offset));
+                            func.push(Instruction::I64Const(tag));
+                            func.push(Instruction::Call(set_prop_idx));
+                        }
+
+                        // Compile string arg → i64 blob address on stack.
+                        // Stack before: []
+                        // Stack after compile_expr: [blob_addr_i64]
+                        // Then: vnode_i32, payload_key_i64, blob_addr_i64 → Call(set_prop_idx) → []
+                        {
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::LocalGet(vnode_local));
+                            func.push(Instruction::I32WrapI64);
+                            func.push(Instruction::I64Const(payload_key_offset));
+                        }
+                        // compile_expr pushes the string blob_addr i64 on top.
+                        self.compile_expr(str_arg)?;
+                        {
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::Call(set_prop_idx));
+                            // Return vnode for chaining.
+                            func.push(Instruction::LocalGet(vnode_local));
+                        }
+                    }
+                }
+
                 Ok(true)
             }
 
