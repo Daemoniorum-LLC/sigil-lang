@@ -1,10 +1,6 @@
 // Episodic Memory Module
 // Experience memory - what happened over time
 
-
-invoke engram·types·*
-invoke engram·config·EpisodicConfig
-
 // ============================================================================
 // Episodic Memory
 // ============================================================================
@@ -16,13 +12,13 @@ invoke engram·config·EpisodicConfig
 /// can consolidate into semantic facts or procedural skills.
 ☉ Σ EpisodicMemory {
     /// Episodes indexed by time
-    episodes: Vec<Episode>,
+    episodes: Array,
 
     /// Configuration
     config: EpisodicConfig,
 
     /// Last decay application
-    last_decay: Instant,
+    last_decay: Int,
 }
 
 ⊢ EpisodicMemory {
@@ -30,12 +26,12 @@ invoke engram·config·EpisodicConfig
     // Construction
     // ========================================================================
 
-    ☉ rite new(config: EpisodicConfig) -> EngramResult<Self>! {
-        Ok(Self {
-            episodes: vec![],
-            config,
-            last_decay: Instant·now(),
-        })
+    ☉ rite new(config) {
+        EpisodicMemory {
+            episodes: [],
+            config: config,
+            last_decay: Sys·clock_gettime(),
+        }
     }
 
     // ========================================================================
@@ -43,264 +39,32 @@ invoke engram·config·EpisodicConfig
     // ========================================================================
 
     /// Record a new episode
-    ☉ rite record(episode: Episode) -> EngramResult<EpisodeId>! {
-        ≔ id = episode.id.clone()
-
-        // Compute embedding ∀ similarity search
-        ≔ enriched = self.enrich_episode(episode)
-
-        self.episodes.push(enriched)
-
-        // Sort by time
-        self.episodes.sort_by(|a, b| b.started_at.cmp(&a.started_at))
-
-        Ok(id)
+    ☉ rite record(self, episode) {
+        push(self.episodes, episode);
+        ↩ episode.id;
     }
 
-    /// Recall episodes similar to the given context
-    ☉ rite recall_similar(context: &Context, limit: usize) -> Vec<Episode> {
-        // Simple keyword-based similarity ∀ now
-        // In production, invoke embedding similarity
-        ≔ context_text = context.to_string().to_lowercase()
-
-        ≔ Δ scored: Vec<_> = self.episodes.iter()
-            .filter(|e| e.strength > 0.1)
-            .map(|e| {
-                ≔ score = self.compute_similarity(&context_text, e)
-                (e, score)
-            })
-            .filter(|(_, score)| *score > 0.1)
-            .collect()
-
-        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap())
-
-        scored.into_iter()
-            .take(limit)
-            .map(|(e, _)| {
-                // Update access tracking
-                // Note: In real implementation, need mutable access
-                e.clone()
-            })
-            .collect()
+    /// Recall all episodes
+    ☉ rite recall(self) {
+        ↩ self.episodes;
     }
 
-    /// Recall episodes at a specific time
-    ☉ rite recall_at(time: Instant, window: Duration) -> Vec<Episode> {
-        ≔ start = time - window
-        ≔ end = time + window
-
-        self.episodes.iter()
-            .filter(|e| e.started_at >= start && e.started_at <= end)
-            .filter(|e| e.strength > 0.1)
-            .cloned()
-            .collect()
-    }
-
-    /// Recall episodes before a time point
-    ☉ rite recall_before(time: Instant, limit: usize) -> Vec<Episode> {
-        self.episodes.iter()
-            .filter(|e| e.started_at < time)
-            .filter(|e| e.strength > 0.1)
-            .take(limit)
-            .cloned()
-            .collect()
-    }
-
-    /// Get a specific episode
-    ☉ rite get(id: EpisodeId) -> Option<&Episode> {
-        self.episodes.iter().find(|e| e.id == id)
-    }
-
-    // ========================================================================
-    // Decay and Consolidation
-    // ========================================================================
-
-    /// Apply decay to all episodes
-    ☉ rite decay() {
-        ≔ now = Instant·now()
-        ≔ hours_since_decay = (now - self.last_decay).as_secs_f64() / 3600.0
-
-        ∀ episode ∈ &Δ self.episodes {
-            ≔ hours_since_access = (now - episode.last_accessed).as_secs_f64() / 3600.0
-
-            // Apply decay function
-            episode.strength = self.config.decay_function.apply(
-                episode.strength,
-                hours_since_access
-            )
-
-            // Significant episodes decay slower
-            ⎇ episode.significance > 0.7 {
-                episode.strength = episode.strength.max(0.3)
+    /// Recall episodes above a strength threshold
+    ☉ rite recall_strong(self, threshold) {
+        ≔ mut result = [];
+        ≔ mut i = 0;
+        ⟳ i < len(self.episodes) {
+            ⎇ self.episodes[i].strength > threshold {
+                push(result, self.episodes[i]);
             }
+            i = i + 1;
         }
-
-        self.last_decay = now
+        ↩ result;
     }
 
-    /// Consolidate eligible episodes
-    ☉ rite consolidate() -> EpisodicConsolidationReport {
-        ≔ Δ report = EpisodicConsolidationReport {
-            consolidated_count: 0,
-            skills_learned: vec![],
-            facts_extracted: vec![],
-        }
-
-        // Find consolidation candidates
-        ≔ candidates: Vec<_> = self.episodes.iter()
-            .filter(|e| !e.consolidated)
-            .filter(|e| e.strength < self.config.consolidation_threshold)
-            .filter(|e| e.significance > 0.3)
-            .cloned()
-            .collect()
-
-        // Group by similarity
-        ≔ clusters = self.cluster_similar(&candidates, threshold: 0.7)
-
-        ∀ cluster ∈ clusters {
-            ⎇ cluster.len() >= 3 {
-                // Extract patterns ∀ skills and facts
-                // This would integrate with procedural and semantic memory
-                report.consolidated_count += cluster.len()
-            }
-        }
-
-        // Mark as consolidated
-        ∀ episode ∈ &Δ self.episodes {
-            ⎇ candidates.iter().any(|c| c.id == episode.id) {
-                episode.consolidated = true
-            }
-        }
-
-        report
-    }
-
-    /// Archive episodes below threshold
-    ☉ rite archive(predicate: rite(&Memory) -> bool) -> usize {
-        // In real implementation, move to cold storage
-        ≔ initial_count = self.episodes.len()
-
-        self.episodes.retain(|e| {
-            ≔ memory = Memory {
-                id: e.id.clone().into(),
-                content: e.summarize().into(),
-                relevance: e.significance,
-                confidence: e.outcome.confidence(),
-                epistemic: Epistemic·Observed {
-                    observer: "self".to_string(),
-                    timestamp: e.started_at,
-                },
-                source: MemorySource·Episodic,
-                timestamp: e.started_at,
-                access_path: None,
-            }
-            !predicate(&memory)
-        })
-
-        initial_count - self.episodes.len()
-    }
-
-    // ========================================================================
-    // Usage Information
-    // ========================================================================
-
-    ☉ rite usage() -> MemorySystemUsage {
-        MemorySystemUsage {
-            item_count: self.episodes.len(),
-            bytes_used: self.episodes.iter()
-                .map(|e| std·mem·size_of·<Episode>() + e.events.len() * 100)
-                .sum(),
-            capacity: Some(self.config.max_active_episodes),
-        }
-    }
-
-    // ========================================================================
-    // Internal Helpers
-    // ========================================================================
-
-    rite enrich_episode(episode: Episode) -> Episode {
-        ≔ Δ enriched = episode
-
-        // Compute significance ⎇ not set
-        ⎇ enriched.significance == 0.0 {
-            enriched.significance = self.compute_significance(&enriched)
-        }
-
-        // Initialize strength
-        enriched.strength = 1.0
-        enriched.access_count = 0
-        enriched.last_accessed = Instant·now()
-        enriched.consolidated = false
-
-        enriched
-    }
-
-    rite compute_similarity(context: &str, episode: &Episode) -> f64 {
-        ≔ episode_text = episode.summarize().to_lowercase()
-
-        // Simple word overlap score
-        ≔ context_words: HashSet<_> = context.split_whitespace().collect()
-        ≔ episode_words: HashSet<_> = episode_text.split_whitespace().collect()
-
-        ≔ intersection = context_words.intersection(&episode_words).count()
-        ≔ union = context_words.union(&episode_words).count()
-
-        ⎇ union == 0 { 0.0 } ⎉ { intersection as f64 / union as f64 }
-    }
-
-    rite compute_significance(episode: &Episode) -> f64 {
-        ≔ Δ score = 0.0
-
-        // Outcome contributes to significance
-        ⌥ &episode.outcome {
-            Outcome·Success { goal_alignment, .. } => {
-                score += 0.3 + goal_alignment * 0.2
-            },
-            Outcome·Failure { .. } => {
-                score += 0.4  // Failures are significant to learn from
-            },
-            Outcome·Partial { .. } => {
-                score += 0.2
-            },
-            _ => {}
-        }
-
-        // More events = more significant
-        score += (episode.events.len() as f64 / 20.0).min(0.3)
-
-        // Valence extremes are significant
-        score += episode.valence.abs() * 0.2
-
-        score.min(1.0)
-    }
-
-    rite cluster_similar(episodes: &[Episode], threshold: f64) -> Vec<Vec<Episode>> {
-        // Simple single-linkage clustering
-        ≔ Δ clusters: Vec<Vec<Episode>> = vec![]
-
-        ∀ episode ∈ episodes {
-            ≔ Δ found_cluster = false
-
-            ∀ cluster ∈ &Δ clusters {
-                ≔ representative = &cluster[0]
-                ≔ similarity = self.compute_similarity(
-                    &representative.summarize(),
-                    episode
-                )
-
-                ⎇ similarity >= threshold {
-                    cluster.push(episode.clone())
-                    found_cluster = true
-                    break
-                }
-            }
-
-            ⎇ !found_cluster {
-                clusters.push(vec![episode.clone()])
-            }
-        }
-
-        clusters
+    /// Get episode count
+    ☉ rite count(self) {
+        ↩ len(self.episodes);
     }
 }
 
@@ -308,212 +72,102 @@ invoke engram·config·EpisodicConfig
 // Episode Structure
 // ============================================================================
 
-/// An episode - a bounded experience ∈ time
+/// An episode - a bounded experience in time
 ☉ Σ Episode {
-    ☉ id: EpisodeId,
+    id: String,
 
     // Temporal bounds
-    ☉ started_at: Instant,
-    ☉ ended_at: Option<Instant>,
+    started_at: Int,
+    ended_at: Int,
 
     // Context
-    ☉ context: Context,
+    context: String,
 
-    // Participants
-    ☉ participants: Vec<Participant>,
-
-    // Events
-    ☉ events: Vec<Event>,
-
-    // Outcome
-    ☉ outcome: Outcome,
+    // Outcome summary
+    outcome: String,
 
     // Evaluation
-    ☉ valence: f64,
-    ☉ significance: f64,
-    ☉ surprise: f64,
-
-    // Lifecycle
-    ☉ strength: f64,
-    ☉ access_count: u32,
-    ☉ last_accessed: Instant,
-    ☉ consolidated: bool,
-
-    // Links
-    ☉ caused_by: Vec<EpisodeId>,
-    ☉ leads_to: Vec<EpisodeId>,
+    valence: Float,
+    significance: Float,
+    strength: Float,
+    access_count: Int,
+    last_accessed: Int,
+    consolidated: Bool,
 }
 
 ⊢ Episode {
-    ☉ rite new(context: Context) -> Self {
-        Self {
-            id: EpisodeId·new().unwrap(),
-            started_at: Instant·now(),
-            ended_at: None,
-            context,
-            participants: vec![],
-            events: vec![],
-            outcome: Outcome·Ongoing,
+    ☉ rite new(context) {
+        Episode {
+            id: uuid_v4(),
+            started_at: Sys·clock_gettime(),
+            ended_at: 0,
+            context: context,
+            outcome: "ongoing",
             valence: 0.0,
             significance: 0.0,
-            surprise: 0.0,
             strength: 1.0,
             access_count: 0,
-            last_accessed: Instant·now(),
+            last_accessed: Sys·clock_gettime(),
             consolidated: false,
-            caused_by: vec![],
-            leads_to: vec![],
         }
     }
 
-    ☉ rite duration() -> Option<Duration> {
-        self.ended_at.map(|end| end - self.started_at)
+    ☉ rite end(self, outcome) {
+        self.ended_at = Sys·clock_gettime();
+        self.outcome = outcome;
     }
 
-    ☉ rite is_ongoing() -> bool {
-        self.ended_at.is_none()
-    }
-
-    ☉ rite summarize() -> String {
-        ≔ outcome_str = self.outcome.summarize()
-        ≔ event_count = self.events.len()
-
-        format!(
-            "Episode at {}: {} events, {}",
-            self.started_at,
-            event_count,
-            outcome_str
-        )
+    ☉ rite is_ongoing(self) {
+        ↩ self.ended_at == 0;
     }
 }
 
-/// An event within an episode
-☉ Σ Event {
-    ☉ timestamp: Instant,
-    ☉ sequence: u32,
-    ☉ event_type: EventType,
-    ☉ content: Value,
-    ☉ actor: Option<String>,
-    ☉ duration: Option<Duration>,
-    ☉ success: Option<bool>,
+// ============================================================================
+// Episode Configuration
+// ============================================================================
+
+/// Configuration for episodic memory
+☉ Σ EpisodicConfig {
+    /// Decay rate per hour (0.0 - 1.0)
+    decay_rate: Float,
+
+    /// Strength threshold for consolidation eligibility
+    consolidation_threshold: Float,
+
+    /// Maximum number of active episodes
+    max_active_episodes: Int,
+
+    /// Minimum significance to prevent automatic archival
+    min_significance_to_keep: Float,
 }
 
-⊢ Event {
-    ☉ rite user_message(content: &str) -> Self {
-        Self {
-            timestamp: Instant·now(),
-            sequence: 0,
-            event_type: EventType·UserMessage,
-            content: Value·String(content.to_string()),
-            actor: Some("user".to_string()),
-            duration: None,
-            success: None,
+⊢ EpisodicConfig {
+    ☉ rite default() {
+        EpisodicConfig {
+            decay_rate: 0.1,
+            consolidation_threshold: 0.3,
+            max_active_episodes: 10000,
+            min_significance_to_keep: 0.1,
         }
     }
 
-    ☉ rite agent_response(content: &str) -> Self {
-        Self {
-            timestamp: Instant·now(),
-            sequence: 0,
-            event_type: EventType·AgentResponse,
-            content: Value·String(content.to_string()),
-            actor: Some("agent".to_string()),
-            duration: None,
-            success: None,
-        }
-    }
-
-    ☉ rite tool_call(tool: &str, args: Value) -> Self {
-        Self {
-            timestamp: Instant·now(),
-            sequence: 0,
-            event_type: EventType·ToolCall,
-            content: json!({ "tool": tool, "args": args }),
-            actor: Some("agent".to_string()),
-            duration: None,
-            success: None,
-        }
-    }
-
-    ☉ rite error(error: &str, recoverable: bool) -> Self {
-        Self {
-            timestamp: Instant·now(),
-            sequence: 0,
-            event_type: EventType·Error,
-            content: json!({ "error": error, "recoverable": recoverable }),
-            actor: None,
-            duration: None,
-            success: Some(false),
+    ☉ rite new(path) {
+        EpisodicConfig {
+            decay_rate: 0.1,
+            consolidation_threshold: 0.3,
+            max_active_episodes: 10000,
+            min_significance_to_keep: 0.1,
         }
     }
 }
 
-☉ ᛈ EventType {
-    UserMessage,
-    AgentResponse,
-    SystemMessage,
-    ToolCall,
-    ToolResult,
-    StateChange,
-    Decision,
-    Error,
-    Custom(String),
-}
+// ============================================================================
+// Consolidation Report
+// ============================================================================
 
-/// A participant ∈ an episode
-☉ Σ Participant {
-    ☉ id: String,
-    ☉ role: ParticipantRole,
-    ☉ name: Option<String>,
-}
-
-☉ ᛈ ParticipantRole {
-    Self_,
-    User,
-    OtherAgent,
-    System,
-    Tool,
-}
-
-/// Context snapshot ∀ an episode
-☉ Σ Context {
-    ☉ goal: Option<String>,
-    ☉ task: Option<String>,
-    ☉ environment: HashMap<String, Value>,
-}
-
-⊢ Context {
-    ☉ rite new() -> Self {
-        Self {
-            goal: None,
-            task: None,
-            environment: HashMap·new(),
-        }
-    }
-
-    ☉ rite with_goal(goal: &str) -> Self {
-        Self {
-            goal: Some(goal.to_string()),
-            task: None,
-            environment: HashMap·new(),
-        }
-    }
-
-    ☉ rite to_string() -> String {
-        ≔ Δ parts = vec![]
-        ⎇ ≔ Some(goal) = &self.goal {
-            parts.push(format!("Goal: {}", goal))
-        }
-        ⎇ ≔ Some(task) = &self.task {
-            parts.push(format!("Task: {}", task))
-        }
-        parts.join(", ")
-    }
-}
-
-/// Consolidation report ∀ episodic memory
+/// Consolidation report for episodic memory
 ☉ Σ EpisodicConsolidationReport {
-    ☉ consolidated_count: usize,
-    ☉ skills_learned: Vec<SkillId>,
-    ☉ facts_extracted: Vec<EngramId>,
+    consolidated_count: Int,
+    skills_learned: Array,
+    facts_extracted: Array,
 }

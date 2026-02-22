@@ -154,134 +154,80 @@ invoke engram·{Engram, EngramConfig};
 // ============================================================================
 
 /// Unique goal identifier
-☉ Σ GoalId {
-    bytes: [u8; 16],
-}
+Σ GoalId { id: String }
 
 ⊢ GoalId {
-    rite new() -> Self {
-        Self { bytes: uuid_v7() }
+    rite new() {
+        GoalId { id: uuid_v4() }
+    }
+    rite to_string(self) {
+        ↩ self.id;
     }
 }
 
 /// A goal the daemon is pursuing
-☉ Σ Goal {
-    /// Unique identifier
-    ☉ id: GoalId,
-
-    /// Description of what we want
-    ☉ description: String,
-
-    /// Priority (0.0 - 1.0)
-    ☉ priority: f32,
-
-    /// Success criteria
-    ☉ success: Predicate,
-
-    /// Deadline ⎇ any
-    ☉ deadline: Option<Timestamp>,
-
-    /// Current status
-    ☉ status: GoalStatus,
-
-    /// Parent goal (⎇ sub-goal)
-    ☉ parent: Option<GoalId>,
-
-    /// Constraints on achievement
-    ☉ constraints: Vec<Constraint>,
-
-    /// Tracking
-    ☉ created_at: Timestamp,
-    ☉ attempts: Vec<Attempt>,
+Σ Goal {
+    id: GoalId,
+    description: String,
+    priority: Float,
+    success: Any,
+    deadline: Any,
+    status: GoalStatus,
+    parent: Any,
+    constraints: Array,
+    created_at: Int,
+    attempts: Array,
 }
 
 ⊢ Goal {
-    rite new(description: &str) -> Self {
-        Self {
+    rite new(description) {
+        Goal {
             id: GoalId·new(),
-            description: description.to_string(),
+            description: description,
             priority: 0.5,
-            success: Predicate·always_false(),  // Must be set
-            deadline: None,
+            success: null,
+            deadline: null,
             status: GoalStatus·Pending,
-            parent: None,
-            constraints: vec![],
-            created_at: Timestamp·now(),
-            attempts: vec![],
+            parent: null,
+            constraints: [],
+            created_at: Sys·clock_gettime(),
+            attempts: [],
         }
     }
 
-    rite with_priority(Δ self, priority: f32) -> Self {
-        self.priority = priority.clamp(0.0, 1.0);
-        self
+    rite with_priority(self, priority) {
+        self.priority = priority;
+        ↩ self;
     }
 
-    rite with_deadline(Δ self, deadline: Duration) -> Self {
-        self.deadline = Some(Timestamp·now() + deadline);
-        self
+    rite is_pending(self) {
+        ↩ self.status == GoalStatus·Pending;
     }
 
-    rite with_success(Δ self, predicate: Predicate) -> Self {
-        self.success = predicate;
-        self
+    rite is_active(self) {
+        ↩ self.status == GoalStatus·Active;
     }
 
-    rite with_constraint(Δ self, constraint: Constraint) -> Self {
-        self.constraints.push(constraint);
-        self
-    }
-
-    rite is_active(&self) -> bool {
-        matches!(self.status, GoalStatus·Active)
-    }
-
-    rite is_complete(&self) -> bool {
-        matches!(self.status, GoalStatus·Completed { .. } | GoalStatus·Abandoned { .. })
+    rite is_done(self) {
+        ↩ self.status == GoalStatus·Completed ∨ self.status == GoalStatus·Abandoned;
     }
 }
 
 /// Current status of a goal
-☉ ᛈ GoalStatus {
-    /// Not yet started
+ᛈ GoalStatus {
     Pending,
-
-    /// Currently being pursued
     Active,
-
-    /// Waiting on something
-    Blocked {
-        reason: String,
-        since: Timestamp,
-    },
-
-    /// Temporarily paused
-    Suspended {
-        reason: String,
-    },
-
-    /// Successfully achieved
-    Completed {
-        at: Timestamp,
-        outcome: Outcome,
-    },
-
-    /// Could not be achieved
-    Failed {
-        at: Timestamp,
-        reason: String,
-    },
-
-    /// Intentionally given up
-    Abandoned {
-        at: Timestamp,
-        reason: String,
-    },
+    Blocked { reason: String, since: Int },
+    Suspended { reason: String },
+    Completed { at: Int, outcome: String },
+    Failed { at: Int, reason: String },
+    Abandoned { at: Int, reason: String },
 }
 
 ☉ ᛈ Outcome {
-    Success(Value),
-    PartialSuccess { degree: f32, result: Value },
-    Failure(String),
+    Success,
+    PartialSuccess { degree: Float, result: String },
+    Failure,
 }
 
 ☉ Σ Attempt {

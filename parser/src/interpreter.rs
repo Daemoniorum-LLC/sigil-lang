@@ -1566,6 +1566,24 @@ impl Interpreter {
             }
         }
 
+        // Parse [dependencies] with path = "..." entries as workspace members.
+        // This lets `invoke tome·daemon·{Goal}` resolve path-based deps declared in Sigil.toml.
+        if let Some(deps) = toml_value.get("dependencies").and_then(|d| d.as_table()) {
+            for (dep_name, dep_value) in deps {
+                if let Some(dep_path) = dep_value.get("path").and_then(|p| p.as_str()) {
+                    let crate_name = dep_name.replace("-", "_");
+                    crate::sigil_debug!(
+                        "DEBUG parse_sigil_toml: registered dep member: {} -> {}",
+                        &crate_name,
+                        dep_path
+                    );
+                    self.workspace_members
+                        .entry(crate_name)
+                        .or_insert_with(|| PathBuf::from(dep_path));
+                }
+            }
+        }
+
         crate::sigil_debug!(
             "DEBUG parse_sigil_toml: loaded {} workspace members from {:?}",
             self.workspace_members.len(),
@@ -1610,13 +1628,16 @@ impl Interpreter {
             }
         };
 
-        // Build path to lib.sigil
-        let lib_path = project_root.join(&crate_path).join("src").join("lib.sigil");
-
-        if !lib_path.exists() {
-            crate::sigil_debug!("DEBUG load_crate: lib.sigil not found at {:?}", lib_path);
+        // Build path to lib entry point — probe lib.sg first, then lib.sigil
+        let base = project_root.join(&crate_path).join("src");
+        let lib_path = if base.join("lib.sg").exists() {
+            base.join("lib.sg")
+        } else if base.join("lib.sigil").exists() {
+            base.join("lib.sigil")
+        } else {
+            crate::sigil_debug!("DEBUG load_crate: lib.sg/lib.sigil not found under {:?}", base);
             return Ok(false);
-        }
+        };
 
         // Mark as loading (for circular dependency detection)
         self.loading_crates.insert(crate_name.to_string());
@@ -3680,10 +3701,17 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    // External module: mod foo; - try to load foo.sigil from same directory
+                    // External module: mod foo; - try to load foo.sigil or foo.sg from same directory
                     if let Some(ref source_dir) = self.current_source_dir {
-                        let module_path =
+                        let module_path_sigil =
                             std::path::Path::new(source_dir).join(format!("{}.sigil", module_name));
+                        let module_path_sg =
+                            std::path::Path::new(source_dir).join(format!("{}.sg", module_name));
+                        let module_path = if module_path_sigil.exists() {
+                            module_path_sigil
+                        } else {
+                            module_path_sg
+                        };
 
                         if module_path.exists() {
                             crate::sigil_debug!(
