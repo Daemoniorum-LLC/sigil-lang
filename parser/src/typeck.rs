@@ -3786,6 +3786,11 @@ impl TypeChecker {
                 a.iter().zip(b.iter()).all(|(x, y)| self.unify(x, y))
             }
 
+            // Raw pointers (needed for StoragePtr/Arc indirect field access in Nihil runtime)
+            (Type::Ptr { mutable: ma, inner: a }, Type::Ptr { mutable: mb, inner: b }) => {
+                (ma == mb || !*ma) && self.unify(a, b)
+            }
+
             // References
             (Type::Ref { mutable: ma, inner: a, .. }, Type::Ref { mutable: mb, inner: b, .. }) => {
                 // Allow &[T; N] to coerce to &[T] (array to slice)

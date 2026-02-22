@@ -58,6 +58,11 @@ pub mod llvm {
     pub struct EnumInfo {
         /// Variant name to discriminant value mapping
         pub variants: HashMap<String, u64>,
+        /// G136: Maps variant name → list of payload type names (for tuple variants).
+        /// e.g., for `enum VNode { Element(VElement), Text(String) }`:
+        ///   "Element" → ["VElement"],  "Text" → ["String"]
+        /// Used to infer the type of match-arm bindings so method dispatch works.
+        pub variant_payloads: HashMap<String, Vec<String>>,
     }
 
     /// Information about a generic struct (before monomorphization)
@@ -129,6 +134,9 @@ pub mod llvm {
         slice_return_methods: std::collections::HashSet<String>,
         /// G81: Generic function definitions (awaiting monomorphization when called)
         generic_functions: HashMap<String, ast::Function>,
+        /// Functions declared via extern "C" blocks — must NOT receive stub bodies
+        /// (they are resolved from runtime libraries at link time, not Sigil definitions)
+        extern_c_decls: std::collections::HashSet<String>,
     }
 
     // ============================================
@@ -408,6 +416,17 @@ pub mod llvm {
     // String runtime functions
     extern "C" fn sigil_string_new() -> *mut String {
         Box::into_raw(Box::new(String::new()))
+    }
+
+    // G138: Deep-clone a Rust String (JIT path). AOT path uses sigil_runtime.c sigil_string_clone.
+    extern "C" fn sigil_string_clone(str_ptr: *mut String) -> *mut String {
+        if str_ptr.is_null() {
+            return Box::into_raw(Box::new(String::new()));
+        }
+        unsafe {
+            let s = &*str_ptr;
+            Box::into_raw(Box::new(s.clone()))
+        }
     }
 
     extern "C" fn sigil_string_from(ptr: *const i8) -> *mut String {
@@ -1274,6 +1293,7 @@ pub mod llvm {
                 const_evaluator: ConstEvaluator::new(),
                 slice_return_methods: std::collections::HashSet::new(),
                 generic_functions: HashMap::new(),
+                extern_c_decls: std::collections::HashSet::new(),
             })
         }
 
@@ -1310,7 +1330,7 @@ pub mod llvm {
                 }
             }
 
-            // Second pass: process modules, statics, and declare all functions
+            // Second pass: process modules, statics, extern blocks, and declare all functions
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
                     Item::Function(func) => {
@@ -1327,6 +1347,9 @@ pub mod llvm {
                     }
                     Item::Const(const_decl) => {
                         self.process_const(const_decl)?;
+                    }
+                    Item::ExternBlock(extern_block) => {
+                        self.declare_extern_block(extern_block)?;
                     }
                     _ => {}
                 }
@@ -1382,10 +1405,13 @@ pub mod llvm {
             // Set current source directory
             self.current_source_dir = path.parent().map(|p| p.to_path_buf());
 
-            // Walk up directories to find Sigil.toml
+            // Walk up directories to find sigil.toml (or Sigil.toml for legacy projects)
             let mut search_dir = path.parent();
             while let Some(dir) = search_dir {
-                let sigil_toml = dir.join("Sigil.toml");
+                let sigil_toml = {
+                    let lower = dir.join("sigil.toml");
+                    if lower.exists() { lower } else { dir.join("Sigil.toml") }
+                };
                 if sigil_toml.exists() {
                     self.project_root = Some(dir.to_path_buf());
                     self.load_workspace_config(&sigil_toml)?;
@@ -1458,6 +1484,20 @@ pub mod llvm {
                     "Circular dependency detected: crate '{}' is already being loaded",
                     crate_name
                 ));
+            }
+
+            // Handle 'super' as the current project's lib.sigil.
+            // `invoke super·module·Item` is how main.sigil references the project library.
+            if crate_name == "super" {
+                if let Some(project_root) = self.project_root.clone() {
+                    let lib_path = project_root.join("src").join("lib.sigil");
+                    if lib_path.exists() {
+                        eprintln!("[LLVM] load_crate('super') - project lib at {:?}", lib_path);
+                        return self.load_crate_from_path("super", &lib_path);
+                    }
+                }
+                eprintln!("[LLVM] load_crate('super') - no project_root, skipping");
+                return Ok(false);
             }
 
             // Find crate path in workspace members
@@ -1542,7 +1582,15 @@ pub mod llvm {
                     // that loads from name.sigil in the same directory
                     if module.items.is_none() {
                         let module_name = &module.name.name;
-                        let module_path = crate_dir.join(format!("{}.sigil", module_name));
+                        // Try {name}.sigil first, then {name}/mod.sigil (directory modules)
+                        let module_path = {
+                            let flat = crate_dir.join(format!("{}.sigil", module_name));
+                            if flat.exists() {
+                                flat
+                            } else {
+                                crate_dir.join(module_name).join("mod.sigil")
+                            }
+                        };
                         if module_path.exists() {
                             // Recursively load the sub-module
                             let sub_module_name = format!("{}::{}", crate_name, module_name);
@@ -1567,6 +1615,20 @@ pub mod llvm {
                             eprintln!("Warning: error registering enum in '{}': {}", crate_name, e);
                         }
                     }
+                    Item::Actor(actor) => {
+                        // Treat actor state fields as a struct for type registration
+                        let synth_struct = ast::StructDef {
+                            doc_comments: vec![],
+                            visibility: actor.visibility.clone(),
+                            attrs: ast::StructAttrs::default(),
+                            name: actor.name.clone(),
+                            generics: actor.generics.clone(),
+                            fields: ast::StructFields::Named(actor.state.clone()),
+                        };
+                        if let Err(e) = self.register_struct(&synth_struct) {
+                            eprintln!("Warning: error registering actor struct '{}': {}", actor.name.name, e);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1581,6 +1643,7 @@ pub mod llvm {
                     Item::Struct(_) => "Struct",
                     Item::Enum(_) => "Enum",
                     Item::Use(_) => "Use",
+                    Item::Actor(_) => "Actor",
                     _ => "Other",
                 };
                 eprintln!("[DEBUG] Crate '{}': item {} = {}", crate_name, idx, item_type);
@@ -1590,10 +1653,31 @@ pub mod llvm {
                         eprintln!("Warning: error declaring impl in '{}': {}", crate_name, e);
                     }
                 }
+                if let Item::Actor(actor) = &spanned_item.node {
+                    // Treat actor methods as an impl block for declaration
+                    let self_ty = ast::TypeExpr::Path(ast::TypePath {
+                        segments: vec![ast::PathSegment {
+                            ident: actor.name.clone(),
+                            generics: None,
+                        }],
+                    });
+                    let synth_impl = ast::ImplBlock {
+                        doc_comments: vec![],
+                        is_unsafe: false,
+                        generics: actor.generics.clone(),
+                        trait_: None,
+                        self_ty,
+                        where_clause: None,
+                        items: actor.methods.iter().map(|m| ast::ImplItem::Function(m.clone())).collect(),
+                    };
+                    if let Err(e) = self.declare_impl_methods(crate_name, &synth_impl) {
+                        eprintln!("Warning: error declaring actor impl '{}': {}", actor.name.name, e);
+                    }
+                }
             }
             eprintln!("[DEBUG] Crate '{}': pass 2 complete", crate_name);
 
-            // Third pass: declare functions and process use declarations
+            // Third pass: declare functions, extern blocks, and process use declarations
             eprintln!("[DEBUG] Crate '{}': pass 3 - declaring functions and use...", crate_name);
             for spanned_item in &parsed_file.items {
                 match &spanned_item.node {
@@ -1605,6 +1689,11 @@ pub mod llvm {
                     Item::Use(use_decl) => {
                         if let Err(e) = self.process_use(use_decl) {
                             eprintln!("Warning: error processing use in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::ExternBlock(extern_block) => {
+                        if let Err(e) = self.declare_extern_block(extern_block) {
+                            eprintln!("Warning: error declaring extern block in '{}': {}", crate_name, e);
                         }
                     }
                     _ => {}
@@ -1632,6 +1721,28 @@ pub mod llvm {
                     if let Err(e) = self.compile_impl_methods(impl_block) {
                         eprintln!("Warning: error compiling impl in '{}': {}", crate_name, e);
                         // Recover: ensure current block has a terminator
+                        self.recover_from_compile_error();
+                    }
+                }
+                if let Item::Actor(actor) = &spanned_item.node {
+                    // Compile actor methods via a synthetic ImplBlock
+                    let self_ty = ast::TypeExpr::Path(ast::TypePath {
+                        segments: vec![ast::PathSegment {
+                            ident: actor.name.clone(),
+                            generics: None,
+                        }],
+                    });
+                    let synth_impl = ast::ImplBlock {
+                        doc_comments: vec![],
+                        is_unsafe: false,
+                        generics: actor.generics.clone(),
+                        trait_: None,
+                        self_ty,
+                        where_clause: None,
+                        items: actor.methods.iter().map(|m| ast::ImplItem::Function(m.clone())).collect(),
+                    };
+                    if let Err(e) = self.compile_impl_methods(&synth_impl) {
+                        eprintln!("Warning: error compiling actor methods '{}': {}", actor.name.name, e);
                         self.recover_from_compile_error();
                     }
                 }
@@ -1675,7 +1786,8 @@ pub mod llvm {
                 if fn_value.count_basic_blocks() == 0 {
                     // Skip external runtime functions (sigil_*, llvm.*, print functions)
                     // These are mapped via add_global_mapping at JIT time or resolved from libc
-                    if fn_name.starts_with("sigil_")
+                    if self.extern_c_decls.contains(fn_name)
+                        || fn_name.starts_with("sigil_")
                         || fn_name.starts_with("llvm.")
                         || fn_name.starts_with("__intrinsic_") // Sigil intrinsics
                         || fn_name == "print"
@@ -2231,6 +2343,26 @@ pub mod llvm {
                 let _ = self.builder.build_return(Some(&result));
             }
 
+            // G138: sigil_string_clone(str: ptr) -> ptr — deep-clone a Sigil String
+            let string_clone_type = ptr_type.fn_type(&[ptr_type.into()], false);
+            if is_aot {
+                self.module.add_function("sigil_string_clone", string_clone_type, None);
+            } else {
+                let wrapper = self.module.add_function("sigil_string_clone", string_clone_type, None);
+                let entry = self.context.append_basic_block(wrapper, "entry");
+                self.builder.position_at_end(entry);
+                let addr_const = self.context.i64_type().const_int(sigil_string_clone as usize as u64, false);
+                let fn_ptr = self.builder.build_int_to_ptr(
+                    addr_const,
+                    string_clone_type.ptr_type(inkwell::AddressSpace::default()),
+                    "string_clone_fn_ptr"
+                ).unwrap();
+                let arg = wrapper.get_first_param().unwrap();
+                let call = self.builder.build_indirect_call(string_clone_type, fn_ptr, &[arg.into()], "string_clone_result").unwrap();
+                let result = call.try_as_basic_value().left().unwrap();
+                let _ = self.builder.build_return(Some(&result));
+            }
+
             // sigil_string_from(const char* src) -> ptr
             // For now, pass i64 as pointer to string literal (global constant)
             // G71-FIX: Use inttoptr wrapper to bypass MCJIT add_global_mapping issues (JIT only)
@@ -2533,6 +2665,15 @@ pub mod llvm {
             self.module
                 .add_function("sigil_ckpt_vec_load", ckpt_vec_load_type, None);
 
+            // Raw memory helpers — bypass Sigil LLVM nested struct access bugs
+            // sigil_read_i64_at_offset(ptr: i64, byte_offset: i64) -> i64
+            // Reads *(int64_t*)(ptr + byte_offset). Used by tensor_raw_ptr to get
+            // StoragePtr.data_ptr (offset 8) without going through broken nested field access.
+            let read_i64_at_offset_type = i64_type.fn_type(&[
+                i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_read_i64_at_offset", read_i64_at_offset_type, None);
+
             // GPU SGEMM — sigil_sgemm_nt_sv / sigil_sgemm_nn_sv
             // (a_ptr, b_ptr, out_ptr, M, N, K: i64) -> i64 (1 on success, 0 on failure)
             // Vec<f32> args passed as SigilVec* (i64).  Unpacks i64-stored floats, runs
@@ -2541,8 +2682,29 @@ pub mod llvm {
                 i64_type.into(), i64_type.into(), i64_type.into(),
                 i64_type.into(), i64_type.into(), i64_type.into(),
             ], false);
-            self.module.add_function("sigil_sgemm_nt_sv", sgemm_sv_type, None);
-            self.module.add_function("sigil_sgemm_nn_sv", sgemm_sv_type, None);
+            if self.module.get_function("sigil_sgemm_nt_sv").is_none() {
+                self.module.add_function("sigil_sgemm_nt_sv", sgemm_sv_type, None);
+            }
+            if self.module.get_function("sigil_sgemm_nn_sv").is_none() {
+                self.module.add_function("sigil_sgemm_nn_sv", sgemm_sv_type, None);
+            }
+            if self.module.get_function("sigil_sgemm_tn_sv").is_none() {
+                self.module.add_function("sigil_sgemm_tn_sv", sgemm_sv_type, None);
+            }
+
+            // Gradient norm accumulation: reset(), add_sv(vec_ptr: i64), finish_print(step: i64)
+            let gnorm_reset_type = void_type.fn_type(&[], false);
+            if self.module.get_function("sigil_gnorm_reset").is_none() {
+                self.module.add_function("sigil_gnorm_reset", gnorm_reset_type, None);
+            }
+            let gnorm_add_type = void_type.fn_type(&[i64_type.into()], false);
+            if self.module.get_function("sigil_gnorm_add_sv").is_none() {
+                self.module.add_function("sigil_gnorm_add_sv", gnorm_add_type, None);
+            }
+            let gnorm_print_type = void_type.fn_type(&[i64_type.into()], false);
+            if self.module.get_function("sigil_gnorm_finish_print").is_none() {
+                self.module.add_function("sigil_gnorm_finish_print", gnorm_print_type, None);
+            }
 
             // sigil_sgd_inplace_free_grad(w_ptr, g_ptr, n, lr_bits, clip_bits: i64) -> void
             // Clips gradient, updates weight in-place, frees gradient Vec.
@@ -2552,6 +2714,63 @@ pub mod llvm {
             ], false);
             self.module
                 .add_function("sigil_sgd_inplace_free_grad", sgd_inplace_type, None);
+
+            // sigil_adamw_step(w, g, m, v, n, lr_bits, wd_bits, t: i64) -> void
+            // AdamW in-place update. g freed after. β1=0.9, β2=0.999, ε=1e-8 hardcoded.
+            let adamw_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(),
+                i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_adamw_step", adamw_type, None);
+
+            // sigil_vec_acc_scaled_free(dst, src, n, scale_bits: i64) -> void
+            // Gradient accumulation: dst[i] += scale * src[i]; then frees src.
+            // scale is passed as f32 bits in i64 (Sigil ABI for f32 args).
+            let acc_scaled_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_vec_acc_scaled_free", acc_scaled_type, None);
+
+            // sigil_vec_free_raw(ptr: i64) -> void
+            // Explicit destructor for Vec<f32>: frees data array then the struct.
+            // Used by vec_drop() to release forward/backward intermediates Sigil cannot auto-Drop.
+            let vec_free_type = void_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_vec_free_raw", vec_free_type, None);
+
+            // Raw tensor fill helpers — bypass &StoragePtr fat-pointer ABI bug.
+            // All params i64. ptr = raw float* as i64, len = element count.
+
+            // sigil_kaiming_init_raw(ptr, len, fan_in: i64) -> void
+            // Kaiming uniform init [-sqrt(6/fan_in), sqrt(6/fan_in)].
+            let kaiming_raw_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_kaiming_init_raw", kaiming_raw_type, None);
+
+            // sigil_xavier_init_raw(ptr, len, fan_in, fan_out: i64) -> void
+            let xavier_raw_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_xavier_init_raw", xavier_raw_type, None);
+
+            // sigil_fill_randn_f32_raw(ptr, len: i64) -> void — N(0,1) Box-Muller
+            let fill_randn_raw_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_fill_randn_f32_raw", fill_randn_raw_type, None);
+
+            // sigil_fill_uniform_01_raw(ptr, len: i64) -> void — uniform [0,1)
+            let fill_uniform_01_raw_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_fill_uniform_01_raw", fill_uniform_01_raw_type, None);
+
+            // sigil_fill_uniform_f32_raw(ptr, len, low_bits, high_bits: i64) -> void
+            // low_bits/high_bits are f64 IEEE 754 bits packed in i64 (adamw pattern).
+            let fill_uniform_raw_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_fill_uniform_f32_raw", fill_uniform_raw_type, None);
 
             // sigil_exit(code: i64) -> void
             let exit_type = void_type.fn_type(&[i64_type.into()], false);
@@ -2675,6 +2894,43 @@ pub mod llvm {
             // External C call not inlined by LLVM O2, preserving inlining decisions elsewhere.
             let expf32_clamped_type = i64_type.fn_type(&[i64_type.into()], false);
             self.module.add_function("sigil_expf32_clamped", expf32_clamped_type, None);
+
+            // sigil_softmax_inplace(v_ptr: i64, n: i64) -> void
+            // Full softmax in one C call: find max, exp(x-max), normalize.
+            // Hardware expf — avoids 2N Sigil→C calls from softmax_vec loop.
+            let softmax_inplace_type = void_type.fn_type(&[i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_softmax_inplace", softmax_inplace_type, None);
+
+            // sigil_mul_silu_into(a, b, out: i64, n: i64) -> void
+            // out[i] = a[i] * silu(b[i]). Vectorized SwiGLU forward/d_gate.
+            let mul_silu_type = void_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_mul_silu_into", mul_silu_type, None);
+
+            // sigil_d_up_into(d_mid, gate, up, out: i64, n: i64) -> void
+            // out[i] = d_mid[i] * gate[i] * dsilu(up[i]). Vectorized SwiGLU d_up backward.
+            let d_up_type = void_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_d_up_into", d_up_type, None);
+
+            // GQA Attention C kernels — eliminate per-element Sigil loop overhead
+            // All take (q/k/v/out ptrs as i64, seq, hidden_dim, num_heads, num_kv_heads as i64)
+            // sigil_gqa_attn_fwd_c: full forward (scores+softmax+V-agg), out pre-allocated
+            let gqa4 = void_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_gqa_attn_fwd_c", gqa4, None);
+            // sigil_gqa_weights_c: aw[H×S×S] = softmax(Q×K^T/sqrt(d)), aw pre-allocated
+            let gqa3 = void_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_gqa_weights_c", gqa3, None);
+            // sigil_gqa_ctx_c: ctx = aw × V, ctx pre-allocated
+            self.module.add_function("sigil_gqa_ctx_c", gqa4.clone(), None);
+            // sigil_gqa_d_aw_c: d_aw = d_ctx dot V
+            self.module.add_function("sigil_gqa_d_aw_c", gqa4.clone(), None);
+            // sigil_gqa_d_v_c: d_v += aw^T × d_ctx (accumulates)
+            self.module.add_function("sigil_gqa_d_v_c", gqa4.clone(), None);
+            // sigil_gqa_d_scores_c: softmax backward, takes (d_aw, aw, d_scores, seq, num_heads)
+            let gqa_ds = void_type.fn_type(&[i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into(), i64_type.into()], false);
+            self.module.add_function("sigil_gqa_d_scores_c", gqa_ds, None);
+            // sigil_gqa_d_q_c / sigil_gqa_d_k_c: d_q += inv_scale * d_scores × K etc.
+            self.module.add_function("sigil_gqa_d_q_c", gqa4.clone(), None);
+            self.module.add_function("sigil_gqa_d_k_c", gqa4.clone(), None);
 
             // CUDA Functions - G73-FIX: Use inttoptr wrappers for JIT mode
             // sigil_cuda_init() -> i64
@@ -3240,8 +3496,12 @@ pub mod llvm {
                         // Skip primitive types (but keep generic types like Vec<T>)
                         match name.as_str() {
                             "i8" | "u8" | "i16" | "u16" | "i32" | "u32" | "i64" | "u64"
-                            | "isize" | "usize" | "f32" | "f64" | "bool" | "str" | "String"
+                            | "isize" | "usize" | "f32" | "f64" | "bool" | "str"
                             | "Option" | "Result" => None,
+                            // G138: String fields are tracked in field_type_names so that
+                            // String field accesses (e.g., el.tag) can be detected as String
+                            // type, enabling correct dispatch to sigil_string_clone.
+                            "String" => Some("String".to_string()),
                             // G15 fix: Include Vec<T> with element type for method dispatch
                             "Vec" => {
                                 if let Some(ref generics) = segment.generics {
@@ -3281,6 +3541,10 @@ pub mod llvm {
                 }
                 ast::TypeExpr::Reference { inner, .. } | ast::TypeExpr::Pointer { inner, .. } => {
                     // For references/pointers, get the inner type name
+                    self.get_field_struct_type(inner)
+                }
+                // G130: Evidential wrapper (StatusBar!, VNode?, etc.) — recurse into inner type
+                ast::TypeExpr::Evidential { inner, .. } => {
                     self.get_field_struct_type(inner)
                 }
                 _ => None,
@@ -3354,6 +3618,26 @@ pub mod llvm {
                     format!("tup_{}", names.join("_"))
                 }
                 ast::TypeExpr::Evidential { inner, .. } => self.type_expr_to_name(inner),
+                // G-FIX Branch4: Handle const-generic shape expressions like [M,N] or [512,128]
+                // These are parsed as TypeExpr::ConstExpr(Expr::Array([...])) and need a
+                // meaningful mangled name for struct type registration and method dispatch.
+                ast::TypeExpr::ConstExpr(expr) => {
+                    fn expr_to_name_str(e: &ast::Expr) -> String {
+                        match e {
+                            ast::Expr::Literal(ast::Literal::Int { value, .. }) => value.clone(),
+                            ast::Expr::Path(p) => p.segments.iter()
+                                .map(|s| s.ident.name.clone())
+                                .collect::<Vec<_>>()
+                                .join("_"),
+                            ast::Expr::Array(elems) => {
+                                let parts: Vec<String> = elems.iter().map(expr_to_name_str).collect();
+                                format!("shape_{}", parts.join("x"))
+                            }
+                            _ => "constexpr".to_string(),
+                        }
+                    }
+                    expr_to_name_str(expr)
+                }
                 _ => "unknown".to_string(),
             }
         }
@@ -3494,14 +3778,37 @@ pub mod llvm {
         fn register_enum(&mut self, enum_def: &ast::EnumDef) -> Result<(), String> {
             let name = &enum_def.name.name;
             let mut variants: HashMap<String, u64> = HashMap::new();
+            let mut variant_payloads: HashMap<String, Vec<String>> = HashMap::new();
 
             for (idx, variant) in enum_def.variants.iter().enumerate() {
                 let discriminant = idx as u64;
                 variants.insert(variant.name.name.clone(), discriminant);
+
+                // G136: Extract payload types for tuple variants so match-arm bindings
+                // get a type registered in scope (enabling method dispatch on them).
+                if let ast::StructFields::Tuple(type_exprs) = &variant.fields {
+                    let payload_types: Vec<String> = type_exprs.iter()
+                        .filter_map(|ty| Self::simple_type_name_from_type_expr(ty))
+                        .collect();
+                    if !payload_types.is_empty() {
+                        variant_payloads.insert(variant.name.name.clone(), payload_types);
+                    }
+                }
             }
 
-            self.enum_types.insert(name.clone(), EnumInfo { variants });
+            self.enum_types.insert(name.clone(), EnumInfo { variants, variant_payloads });
             Ok(())
+        }
+
+        /// Extract a simple type name string from a TypeExpr without consulting the struct registry.
+        /// Used at enum-registration time (before all types are registered) to record variant payloads.
+        fn simple_type_name_from_type_expr(ty: &ast::TypeExpr) -> Option<String> {
+            match ty {
+                ast::TypeExpr::Path(path) => path.segments.last().map(|s| s.ident.name.clone()),
+                ast::TypeExpr::Reference { inner, .. } => Self::simple_type_name_from_type_expr(inner),
+                ast::TypeExpr::Evidential { inner, .. } => Self::simple_type_name_from_type_expr(inner),
+                _ => None,
+            }
         }
 
         /// Process a static declaration
@@ -3607,6 +3914,7 @@ pub mod llvm {
                 "Option".to_string(),
                 EnumInfo {
                     variants: option_variants,
+                    variant_payloads: HashMap::new(),
                 },
             );
 
@@ -3618,6 +3926,7 @@ pub mod llvm {
                 "Result".to_string(),
                 EnumInfo {
                     variants: result_variants,
+                    variant_payloads: HashMap::new(),
                 },
             );
 
@@ -3630,6 +3939,7 @@ pub mod llvm {
                 "Ordering".to_string(),
                 EnumInfo {
                     variants: ordering_variants,
+                    variant_payloads: HashMap::new(),
                 },
             );
         }
@@ -4234,6 +4544,14 @@ pub mod llvm {
             if let Some(existing) = self.functions.get(name) {
                 return Ok(*existing);
             }
+            // Also check the LLVM module — runtime functions declared in declare_runtime_functions
+            // are in the module but not in self.functions. Without this, add_function creates
+            // a versioned duplicate (e.g. sigil_sgemm_nt_sv.391) and call sites reference the
+            // versioned name, which has no symbol in the library → linker failure.
+            if let Some(existing) = self.module.get_function(name) {
+                self.functions.insert(name.clone(), existing);
+                return Ok(existing);
+            }
 
             let i64_type = self.context.i64_type();
             let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
@@ -4280,6 +4598,8 @@ pub mod llvm {
 
             // Store in functions map for call resolution
             self.functions.insert(name.clone(), fn_value);
+            // Track as extern "C" so add_stub_bodies won't generate a conflicting definition
+            self.extern_c_decls.insert(name.clone());
 
             eprintln!("[FFI] Declared extern function: {} ({} params)", name, func.params.len());
 
@@ -4489,6 +4809,54 @@ pub mod llvm {
             Ok(())
         }
 
+        /// Build an alloca hoisted to the function entry block.
+        ///
+        /// Sigil declares mutable variables with `≔ vary` anywhere in the code, including
+        /// inside loop bodies.  Placing an `alloca` inside a loop causes the stack to grow
+        /// without bound at runtime (one allocation per iteration).  LLVM convention — and
+        /// the requirement for mem2reg / register promotion — is that all allocas live in
+        /// the function entry block.
+        ///
+        /// This helper temporarily repositions the builder to just before the entry block's
+        /// terminator, emits the `alloca`, then restores the builder to the original insert
+        /// point.  The *store* of the initial value is left to the caller at the original
+        /// position (correct: the initialiser expression is re-evaluated every iteration).
+        fn build_hoisted_alloca(
+            &mut self,
+            fn_value: FunctionValue<'ctx>,
+            name: &str,
+        ) -> Result<inkwell::values::PointerValue<'ctx>, String> {
+            let entry_bb = fn_value
+                .get_first_basic_block()
+                .ok_or("build_hoisted_alloca: function has no entry block")?;
+            let current_bb = self
+                .builder
+                .get_insert_block()
+                .ok_or("build_hoisted_alloca: builder has no insert block")?;
+
+            if entry_bb != current_bb {
+                // Reposition to entry block: insert before the terminator so all existing
+                // entry-block instructions (parameter allocas, etc.) stay in place.
+                if let Some(terminator) = entry_bb.get_terminator() {
+                    self.builder.position_before(&terminator);
+                } else {
+                    self.builder.position_at_end(entry_bb);
+                }
+            }
+
+            let alloca = self
+                .builder
+                .build_alloca(self.context.i64_type(), name)
+                .map_err(|e| e.to_string())?;
+
+            // Restore original insert position.
+            if entry_bb != current_bb {
+                self.builder.position_at_end(current_bb);
+            }
+
+            Ok(alloca)
+        }
+
         /// Compile a block
         fn compile_block(
             &mut self,
@@ -4621,11 +4989,8 @@ pub mod llvm {
                                     .map_err(|e| e.to_string())?
                                     .into_int_value();
 
-                                // Allocate and store
-                                let alloca = self
-                                    .builder
-                                    .build_alloca(self.context.i64_type(), &ident.name)
-                                    .map_err(|e| e.to_string())?;
+                                // Allocate (hoisted to entry) and store
+                                let alloca = self.build_hoisted_alloca(fn_value, &ident.name)?;
                                 self.builder
                                     .build_store(alloca, elem_val)
                                     .map_err(|e| e.to_string())?;
@@ -4946,11 +5311,8 @@ pub mod llvm {
                             self.context.i64_type().const_int(0, false)
                         };
 
-                        // Allocate on stack
-                        let alloca = self
-                            .builder
-                            .build_alloca(self.context.i64_type(), &ident.name)
-                            .map_err(|e| e.to_string())?;
+                        // Allocate (hoisted to entry block to avoid per-iteration stack growth)
+                        let alloca = self.build_hoisted_alloca(fn_value, &ident.name)?;
                         self.builder
                             .build_store(alloca, init_val)
                             .map_err(|e| e.to_string())?;
@@ -5206,10 +5568,7 @@ pub mod llvm {
                     } = pattern
                     {
                         let init_val = self.compile_expr(fn_value, scope, init)?;
-                        let alloca = self
-                            .builder
-                            .build_alloca(self.context.i64_type(), &ident.name)
-                            .map_err(|e| e.to_string())?;
+                        let alloca = self.build_hoisted_alloca(fn_value, &ident.name)?;
                         self.builder
                             .build_store(alloca, init_val)
                             .map_err(|e| e.to_string())?;
@@ -5295,6 +5654,19 @@ pub mod llvm {
                         .last()
                         .map(|s| s.ident.name.as_str())
                         .ok_or("Empty path")?;
+
+                    // G134: `Self` and `This` as expressions in method bodies refer to the `self`
+                    // receiver variable. They are type-level aliases for `self` at value level.
+                    // Without this, `Self` would fall through to return 0 (null VNode/struct ptr).
+                    if (name == "Self" || name == "This") && path.segments.len() == 1 {
+                        let self_name = "self";
+                        if let Some(&ptr) = scope.vars.get(self_name) {
+                            let val = self.builder
+                                .build_load(self.context.i64_type(), ptr, "Self_val")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(val.into_int_value());
+                        }
+                    }
 
                     // Build full path for qualified lookups
                     let full_path: String = path
@@ -7022,14 +7394,43 @@ pub mod llvm {
 
                         // Extract pattern bindings and add to scope
                         // For patterns like `Enum::Variant { field1, field2 }` or `Enum::Variant(x)`
+                        eprintln!("[G136-PATTERN] arm.pattern: {:?}", arm.pattern);
                         match &arm.pattern {
                             ast::Pattern::TupleStruct {
-                                path: _, fields, ..
+                                path, fields, ..
                             } => {
                                 // Bind each field pattern as a variable
                                 // G44 fix: Use scrutinee_raw (the pointer) not scrutinee (the discriminant)
                                 // G82 fix: Use scrutinee_ptr_for_fields if available (from Deref case)
                                 let base_ptr_val = scrutinee_ptr_for_fields.unwrap_or(scrutinee_raw);
+
+                                // G136: Look up variant payload types from the pattern path so we can
+                                // register each binding's type in scope, enabling method dispatch on
+                                // match-arm variables (e.g., `el·class(v)` when el binds a VElement).
+                                // Path is e.g. ["VNode", "Element"] (2 segs) or just ["Element"] (1 seg).
+                                let variant_payload_types: Option<Vec<String>> = {
+                                    let segs = &path.segments;
+                                    eprintln!("[G136-DEBUG] TupleStruct pattern: segs={:?}", segs.iter().map(|s| &s.ident.name).collect::<Vec<_>>());
+                                    if segs.len() >= 2 {
+                                        let enum_name = &segs[segs.len() - 2].ident.name;
+                                        let variant_name = &segs[segs.len() - 1].ident.name;
+                                        let result = self.enum_types.get(enum_name)
+                                            .and_then(|ei| ei.variant_payloads.get(variant_name))
+                                            .cloned();
+                                        eprintln!("[G136-DEBUG] enum={}, variant={}, payloads={:?}, has_variant_payloads={}", enum_name, variant_name, result, self.enum_types.get(enum_name).map(|ei| !ei.variant_payloads.is_empty()).unwrap_or(false));
+                                        result
+                                    } else if segs.len() == 1 {
+                                        let variant_name = &segs[0].ident.name;
+                                        let result = self.enum_types.values()
+                                            .find_map(|ei| ei.variant_payloads.get(variant_name))
+                                            .cloned();
+                                        eprintln!("[G136-DEBUG] single-seg variant={}, payloads={:?}", variant_name, result);
+                                        result
+                                    } else {
+                                        None
+                                    }
+                                };
+
                                 for (i, field_pattern) in fields.iter().enumerate() {
                                     if let ast::Pattern::Ident { name, .. } = field_pattern {
                                         // Create a variable for this binding
@@ -7085,6 +7486,17 @@ pub mod llvm {
                                             .build_store(alloca, field_val)
                                             .map_err(|e| e.to_string())?;
                                         scope.vars.insert(name.name.clone(), alloca);
+
+                                        // G136: Register the binding's struct type in scope so that
+                                        // method calls on this variable dispatch correctly via impl_methods.
+                                        if let Some(ref payload_types) = variant_payload_types {
+                                            if let Some(payload_type) = payload_types.get(i) {
+                                                scope.register_struct_type(
+                                                    name.name.clone(),
+                                                    payload_type.clone(),
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -7964,24 +8376,32 @@ pub mod llvm {
                             return Ok(receiver_val);
                         }
                         "clone" => {
-                            // G64: Vec clone must use deep copy via sigil_vec_clone
-                            // Identity clone is wrong because it shares the underlying data
-                            eprintln!("[DEBUG-CLONE] clone builtin handler reached, calling sigil_vec_clone");
+                            // G138: String fields use inline layout — must use sigil_string_clone.
+                            // G64: Vec/other types use sigil_vec_clone for deep copy.
+                            let receiver_type = self.get_struct_type_from_expr(receiver.as_ref(), scope);
+                            let (fn_name, call_label) = if receiver_type.as_deref() == Some("String") {
+                                ("sigil_string_clone", "cloned_string")
+                            } else {
+                                ("sigil_vec_clone", "cloned_vec")
+                            };
 
-                            let clone_fn = self
-                                .module
-                                .get_function("sigil_vec_clone")
-                                .ok_or("sigil_vec_clone not declared")?;
+                            let clone_fn = if let Some(f) = self.module.get_function(fn_name) {
+                                f
+                            } else {
+                                let fn_type = self.context.i64_type().fn_type(
+                                    &[self.context.i64_type().into()], false);
+                                self.module.add_function(fn_name, fn_type, None)
+                            };
 
                             let result = self
                                 .builder
-                                .build_call(clone_fn, &[receiver_val.into()], "cloned_vec")
+                                .build_call(clone_fn, &[receiver_val.into()], call_label)
                                 .map_err(|e| e.to_string())?;
 
                             let cloned = result
                                 .try_as_basic_value()
                                 .left()
-                                .ok_or("sigil_vec_clone should return a value")?
+                                .ok_or("clone fn should return a value")?
                                 .into_int_value();
 
                             return Ok(cloned);
@@ -10030,9 +10450,9 @@ pub mod llvm {
                             "u8" | "u16" | "u32" | "u64" | "u128" |
                             "f32" | "f64" | "bool" | "char" | "str" | "String"
                         ) && !name.starts_with("Vec<") {
-                            // Check if this is a known struct
-                            eprintln!("[EXTRACT-TYPE] checking '{}' in struct_types: {}", name, self.struct_types.contains_key(name));
-                            if self.struct_types.contains_key(name) {
+                            // Check if this is a known struct or enum type
+                            // G131: Also check enum_types (e.g. VNode is an enum)
+                            if self.struct_types.contains_key(name) || self.enum_types.contains_key(name) {
                                 return Some(name.clone());
                             }
                         }
@@ -10041,6 +10461,8 @@ pub mod llvm {
                 }
                 ast::TypeExpr::Reference { inner, .. } => self.extract_struct_type_from_type_expr(inner),
                 ast::TypeExpr::Pointer { inner, .. } => self.extract_struct_type_from_type_expr(inner),
+                // G130: Evidential wrapper (VNode!, VNode?, Self!, etc.) — recurse into inner type
+                ast::TypeExpr::Evidential { inner, .. } => self.extract_struct_type_from_type_expr(inner),
                 _ => None,
             }
         }
@@ -13552,6 +13974,20 @@ pub mod llvm {
                                     return Some(type_name);
                                 }
                             }
+                            // G132: Bare call might be a static method imported from a type
+                            // (e.g., VNode·div() imported as div() via qliphoth·prelude·*).
+                            // ret_types only has the mangled name (VNode_div), not the bare name.
+                            // Prefer VNode explicitly (element constructors live there), then
+                            // fall back to scanning all impl_methods for a matching method name.
+                            let vnode_key = ("VNode".to_string(), func_name.clone());
+                            if self.impl_methods.contains_key(&vnode_key) {
+                                return Some("VNode".to_string());
+                            }
+                            for ((type_name, method_name), _) in &self.impl_methods {
+                                if method_name == func_name.as_str() {
+                                    return Some(type_name.clone());
+                                }
+                            }
                         }
                     }
                     None
@@ -13559,9 +13995,12 @@ pub mod llvm {
                 // G49: Method call: receiver.method() - look up method return type
                 Expr::MethodCall { receiver, method, .. } => {
                     // Get the receiver's struct type
-                    if let Some(recv_type) = self.get_struct_type_from_expr(receiver, scope) {
+                    let recv_type_debug = self.get_struct_type_from_expr(receiver, scope);
+                    eprintln!("[G129-DEBUG] get_struct_type MethodCall: method={}, recv_type={:?}", method.name, recv_type_debug);
+                    if let Some(recv_type) = recv_type_debug {
                         // Look up the mangled method name
                         let key = (recv_type.clone(), method.name.clone());
+                        eprintln!("[G129-DEBUG] looking up key=({:?}, {:?}), impl_methods_size={}, found={}", recv_type, method.name, self.impl_methods.len(), self.impl_methods.contains_key(&key));
                         if let Some(mangled_name) = self.impl_methods.get(&key) {
                             // Look up the return type
                             if let Some(ret_ty) = self.ret_types.get(mangled_name) {
@@ -13569,6 +14008,10 @@ pub mod llvm {
                                     return Some(type_name);
                                 }
                             }
+                            // G129: Return type extraction failed (e.g., Self! return type).
+                            // For builder-pattern methods (style, child, attr, class, etc.) that
+                            // return Self, fall back to the receiver type so method chains don't break.
+                            return Some(recv_type);
                         }
                     }
                     None
@@ -15250,6 +15693,43 @@ pub mod llvm {
                         let has_impl_generics = !impl_generics.is_empty();
                         let has_method_generics = !method_def.generics.is_empty();
 
+                        // G128-EARLY: For non-generic concrete methods called via variable reference
+                        // (e.g., `platform·mount(root)` where `platform: NativePlatform`), generate
+                        // a direct call to {type_name}_{method_name}. The receiver is passed first
+                        // for instance methods (!is_static).
+                        eprintln!("[G128-CHECK-EARLY] {}::{}: has_impl_generics={}, has_method_generics={}, method_def.generics.len()={}",
+                            type_name, method_name, has_impl_generics, has_method_generics, method_def.generics.len());
+                        if !has_impl_generics && !has_method_generics {
+                            let direct_name = format!("{}_{}", type_name, method_name);
+                            eprintln!("[G128-EARLY] Non-generic method: {}::{}, is_static={}, direct_name='{}'",
+                                type_name, method_name, method_def.is_static, direct_name);
+                            if let Some(callee) = self.module.get_function(&direct_name) {
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                // For instance methods, load the receiver variable and pass as first arg
+                                if !method_def.is_static {
+                                    if let Some(recv_alloca) = scope.vars.get(raw_type_name) {
+                                        let recv_val = self.builder
+                                            .build_load(self.context.i64_type(), *recv_alloca, "recv_val")
+                                            .map_err(|e| e.to_string())?
+                                            .into_int_value();
+                                        compiled_args.push(recv_val.into());
+                                    }
+                                }
+                                for arg in args {
+                                    let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                    compiled_args.push(arg_val.into());
+                                }
+                                eprintln!("[G128-EARLY] Calling '{}' with {} args", direct_name, compiled_args.len());
+                                let call = self.builder
+                                    .build_call(callee, &compiled_args, "direct_method_call")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call.try_as_basic_value()
+                                    .left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+                        }
+
                         if has_impl_generics || has_method_generics {
                             eprintln!("[G66/G67-EARLY] Found static method {}::{} with impl_generics: {:?}, method_generics: {:?}",
                                 type_name, method_name, impl_generics, method_def.generics);
@@ -15592,6 +16072,72 @@ pub mod llvm {
                                 .build_ptr_to_int(struct_ptr, self.context.i64_type(), "enum_ptr_int")
                                 .map_err(|e| e.to_string())?;
                             return Ok(ptr_int);
+                        }
+                    }
+
+                    // G137 fix: Handle `var·method(args)` parsed as Call { func: Path([var, method]) }
+                    //
+                    // When the Sigil parser sees `el·class(value)` in a match arm body, it parses it
+                    // as a 2-segment Call path (like a namespaced function call), not as MethodCall.
+                    // This is an AST ambiguity: `Namespace·Function(x)` vs `receiver·method(x)`.
+                    // If the first segment is a scope variable with a known struct type (not an enum),
+                    // treat it as a method call and dispatch via impl_methods.
+                    if path.segments.len() == 2 {
+                        let var_name = path.segments[0].ident.name.clone();
+                        let method_name_g137 = path.segments[1].ident.name.clone();
+                        // Only apply when the var is in scope with a known struct type
+                        if let Some(struct_type) = scope.get_struct_type(&var_name).cloned() {
+                            let key = (struct_type.clone(), method_name_g137.clone());
+                            eprintln!("[G137] var={}, method={}, struct_type={}, key_found={}",
+                                var_name, method_name_g137, struct_type, self.impl_methods.contains_key(&key));
+                            if let Some(mangled_name) = self.impl_methods.get(&key).cloned() {
+                                eprintln!("[G137] dispatching to {}", mangled_name);
+                                // G137: Get or declare the callee. We allow calling forward
+                                // declarations (count_basic_blocks() == 0) because LLVM resolves
+                                // them within the same module — the body gets compiled later in
+                                // the same pass. Previously gating on count_basic_blocks() > 0
+                                // caused silent 0 returns when VNode_class was compiled before
+                                // VElement_class had its body filled in.
+                                let callee_opt = if let Some(f) = self.module.get_function(&mangled_name) {
+                                    Some(f)
+                                } else {
+                                    // Declare the function so we can call it (forward ref)
+                                    let fn_type = self.context.i64_type().fn_type(
+                                        &std::iter::repeat(self.context.i64_type().into())
+                                            .take(1 + args.len())
+                                            .collect::<Vec<_>>(),
+                                        false,
+                                    );
+                                    Some(self.module.add_function(&mangled_name, fn_type, None))
+                                };
+                                if let Some(callee) = callee_opt {
+                                    // Load the receiver from scope
+                                    let alloca = scope.vars.get(&var_name).copied()
+                                        .ok_or_else(|| format!("[G137] '{}' not in scope.vars", var_name))?;
+                                    let var_val = self.builder
+                                        .build_load(self.context.i64_type(), alloca, &var_name)
+                                        .map_err(|e| e.to_string())?
+                                        .into_int_value();
+                                    // Compile arguments
+                                    let mut call_args: Vec<BasicMetadataValueEnum> = vec![var_val.into()];
+                                    for arg in args.iter() {
+                                        let av = self.compile_expr(fn_value, scope, arg)?;
+                                        call_args.push(av.into());
+                                    }
+                                    // Call the method
+                                    let call = self.builder
+                                        .build_call(callee, &call_args, "g137_call")
+                                        .map_err(|e| e.to_string())?;
+                                    let result = call.try_as_basic_value().left()
+                                        .map(|v| if v.is_int_value() {
+                                            v.into_int_value()
+                                        } else {
+                                            self.context.i64_type().const_int(0, false)
+                                        })
+                                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false));
+                                    return Ok(result);
+                                }
+                            }
                         }
                     }
                 }
@@ -17415,6 +17961,130 @@ pub mod llvm {
                         .map_err(|e| e.to_string())?;
                     return Ok(self.context.i64_type().const_int(0, false));
                 }
+                "adamw_step" | "sigil_adamw_step" => {
+                    // AdamW in-place update. Calling conventions:
+                    //   5 args: (w, g, m, v, n)           — lr=1e-5, wd=0.01, t=1
+                    //   6 args: (w, g, m, v, n, t)        — lr=1e-5, wd=0.01, explicit step
+                    //   8 args: (w, g, m, v, n, lr, wd, t)— all explicit (lr/wd as i64 f32-bits)
+                    // g freed after. m, v updated in-place. β1=0.9, β2=0.999, ε=1e-8 hardcoded.
+                    if args.len() < 5 {
+                        return Err("adamw_step requires 5 args: w, g, m, v, n".to_string());
+                    }
+                    let w = self.compile_expr(fn_value, scope, &args[0])?;
+                    let g = self.compile_expr(fn_value, scope, &args[1])?;
+                    let m = self.compile_expr(fn_value, scope, &args[2])?;
+                    let v = self.compile_expr(fn_value, scope, &args[3])?;
+                    let n = self.compile_expr(fn_value, scope, &args[4])?;
+                    // lr=2.5e-6_f32=0x3627C5AC, wd=0.01_f32=0x3C23D70A.
+                    // T_max=2000 in sigil_runtime.c (cosine decay for seq_len=256, 2000 steps).
+                    // LR halved from 5e-6 (seq_len=128) to 2.5e-6 (seq_len=256) per gradient
+                    // covariance scaling: stable LR ∝ 1/seq_len for correlated token windows.
+                    let (lr_bits, wd_bits, t_val) = if args.len() >= 8 {
+                        // 8-arg: explicit lr_bits, wd_bits, t
+                        (
+                            self.compile_expr(fn_value, scope, &args[5])?,
+                            self.compile_expr(fn_value, scope, &args[6])?,
+                            self.compile_expr(fn_value, scope, &args[7])?,
+                        )
+                    } else if args.len() == 6 {
+                        // 6-arg: explicit t only, default lr/wd
+                        (
+                            self.context.i64_type().const_int(0x3627C5AC, false).into(),
+                            self.context.i64_type().const_int(0x3C23D70A, false).into(),
+                            self.compile_expr(fn_value, scope, &args[5])?,
+                        )
+                    } else {
+                        // 5-arg: all defaults
+                        (
+                            self.context.i64_type().const_int(0x3627C5AC, false).into(),
+                            self.context.i64_type().const_int(0x3C23D70A, false).into(),
+                            self.context.i64_type().const_int(1, false).into(),
+                        )
+                    };
+                    let fn_ = self
+                        .module
+                        .get_function("sigil_adamw_step")
+                        .ok_or("sigil_adamw_step not declared")?;
+                    self.builder
+                        .build_call(fn_, &[w.into(), g.into(), m.into(), v.into(), n.into(),
+                                           lr_bits.into(), wd_bits.into(), t_val.into()], "adamw")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                // G-FIX raw fill helpers — bypass &StoragePtr fat-pointer ABI bug.
+                // ALL args are i64. low_bits/high_bits are f64 IEEE 754 bits packed in i64.
+                // (Same proven pattern as sigil_adamw_step lr_bits/wd_bits.)
+                // data_ptr / data_len extracted from StoragePtr BY VALUE before calling.
+                "sigil_fill_uniform_f32_raw" | "fill_uniform_f32_raw" => {
+                    if args.len() < 4 {
+                        return Err("fill_uniform_f32_raw: need (ptr, len, low_bits, high_bits)".to_string());
+                    }
+                    let ptr       = self.compile_expr(fn_value, scope, &args[0])?;
+                    let len       = self.compile_expr(fn_value, scope, &args[1])?;
+                    let low_bits  = self.compile_expr(fn_value, scope, &args[2])?;
+                    let high_bits = self.compile_expr(fn_value, scope, &args[3])?;
+                    let fn_  = self.module.get_function("sigil_fill_uniform_f32_raw")
+                        .ok_or("sigil_fill_uniform_f32_raw not declared")?;
+                    self.builder
+                        .build_call(fn_, &[ptr.into(), len.into(), low_bits.into(), high_bits.into()], "fill_uniform_raw")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "sigil_fill_randn_f32_raw" | "fill_randn_f32_raw" => {
+                    if args.len() < 2 {
+                        return Err("fill_randn_f32_raw: need (ptr, len)".to_string());
+                    }
+                    let ptr = self.compile_expr(fn_value, scope, &args[0])?;
+                    let len = self.compile_expr(fn_value, scope, &args[1])?;
+                    let fn_ = self.module.get_function("sigil_fill_randn_f32_raw")
+                        .ok_or("sigil_fill_randn_f32_raw not declared")?;
+                    self.builder
+                        .build_call(fn_, &[ptr.into(), len.into()], "fill_randn_raw")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "sigil_kaiming_init_raw" | "kaiming_init_raw" => {
+                    if args.len() < 3 {
+                        return Err("kaiming_init_raw: need (ptr, len, fan_in)".to_string());
+                    }
+                    let ptr    = self.compile_expr(fn_value, scope, &args[0])?;
+                    let len    = self.compile_expr(fn_value, scope, &args[1])?;
+                    let fan_in = self.compile_expr(fn_value, scope, &args[2])?;
+                    let fn_ = self.module.get_function("sigil_kaiming_init_raw")
+                        .ok_or("sigil_kaiming_init_raw not declared")?;
+                    self.builder
+                        .build_call(fn_, &[ptr.into(), len.into(), fan_in.into()], "kaiming_raw")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "sigil_xavier_init_raw" | "xavier_init_raw" => {
+                    if args.len() < 4 {
+                        return Err("xavier_init_raw: need (ptr, len, fan_in, fan_out)".to_string());
+                    }
+                    let ptr     = self.compile_expr(fn_value, scope, &args[0])?;
+                    let len     = self.compile_expr(fn_value, scope, &args[1])?;
+                    let fan_in  = self.compile_expr(fn_value, scope, &args[2])?;
+                    let fan_out = self.compile_expr(fn_value, scope, &args[3])?;
+                    let fn_ = self.module.get_function("sigil_xavier_init_raw")
+                        .ok_or("sigil_xavier_init_raw not declared")?;
+                    self.builder
+                        .build_call(fn_, &[ptr.into(), len.into(), fan_in.into(), fan_out.into()], "xavier_raw")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "sigil_fill_uniform_01_raw" | "fill_uniform_01_raw" => {
+                    if args.len() < 2 {
+                        return Err("fill_uniform_01_raw: need (ptr, len)".to_string());
+                    }
+                    let ptr = self.compile_expr(fn_value, scope, &args[0])?;
+                    let len = self.compile_expr(fn_value, scope, &args[1])?;
+                    let fn_ = self.module.get_function("sigil_fill_uniform_01_raw")
+                        .ok_or("sigil_fill_uniform_01_raw not declared")?;
+                    self.builder
+                        .build_call(fn_, &[ptr.into(), len.into()], "fill_01_raw")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
                 // Result enum constructors - G43 fix: also handle bare Ok/Err
                 "Result::Ok" | "Result·Ok" | "Ok" => {
                     // Result::Ok(value) - for now, just return the value
@@ -17557,6 +18227,42 @@ pub mod llvm {
                         if let Some((method_def, impl_generics)) = self.impl_registry.resolve_static_method(type_name, method_name) {
                             eprintln!("[G66] Found static method {}::{}, is_static={}, method_generics={:?}, impl_generics={:?}",
                                 type_name, method_name, method_def.is_static, method_def.generics, impl_generics);
+
+                            // G128: For non-generic concrete methods (e.g., platform·mount, platform·run),
+                            // compile a direct call to the mangled name {type_name}_{method_name}.
+                            // The receiver variable (raw_type_name from scope) is passed as first arg
+                            // for instance methods (!is_static).
+                            if method_def.generics.is_empty() && impl_generics.is_empty() {
+                                let direct_name = format!("{}_{}", type_name, method_name);
+                                eprintln!("[G128] Non-generic method: {}, is_static={}, looking up '{}'",
+                                    method_name, method_def.is_static, direct_name);
+                                if let Some(callee) = self.module.get_function(&direct_name) {
+                                    let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                    // For instance methods, pass the receiver as first arg
+                                    if !method_def.is_static {
+                                        // Look up the receiver variable in scope
+                                        if let Some(recv_alloca) = scope.vars.get(raw_type_name) {
+                                            let recv_val = self.builder
+                                                .build_load(self.context.i64_type(), *recv_alloca, "recv_val")
+                                                .map_err(|e| e.to_string())?
+                                                .into_int_value();
+                                            compiled_args.push(recv_val.into());
+                                        }
+                                    }
+                                    for arg in args {
+                                        let arg_val = self.compile_expr(fn_value, scope, arg)?;
+                                        compiled_args.push(arg_val.into());
+                                    }
+                                    eprintln!("[G128] Calling '{}' with {} args", direct_name, compiled_args.len());
+                                    let call = self.builder
+                                        .build_call(callee, &compiled_args, "direct_method_call")
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(call.try_as_basic_value()
+                                        .left()
+                                        .map(|v| v.into_int_value())
+                                        .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                                }
+                            }
 
                             // Check if method has method-level or impl-level generics
                             if !method_def.generics.is_empty() || !impl_generics.is_empty() {
@@ -18004,6 +18710,35 @@ pub mod llvm {
                             .map_err(|e| e.to_string())?;
 
                         return Ok(result_ptr_int);
+                    }
+                }
+
+                // G133: Bare single-segment function call might be a VNode element constructor
+                // imported via star-import (e.g., VNode·div() imported as div()).
+                // Only check VNode specifically — a broad impl_methods scan is dangerous
+                // because it matches constructors like EventRegistry_new (0 params) when
+                // processing any bare 0-arg call (e.g., HashMap·new()), causing infinite
+                // recursion. All VNode element constructors (div, p, h1, span, etc.) are
+                // registered under ("VNode", method_name) so this targeted check suffices.
+                {
+                    let vnode_key = ("VNode".to_string(), fn_name.to_string());
+                    if let Some(mangled) = self.impl_methods.get(&vnode_key).cloned() {
+                        if let Some(callee) = self.module.get_function(&mangled) {
+                            let expected_params = callee.count_params() as usize;
+                            if args.len() == expected_params {
+                                let mut compiled_args: Vec<BasicMetadataValueEnum> = Vec::new();
+                                for arg in args {
+                                    let v = self.compile_expr(fn_value, scope, arg)?;
+                                    compiled_args.push(v.into());
+                                }
+                                let call = self.builder
+                                    .build_call(callee, &compiled_args, "vnode_static_call")
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(call.try_as_basic_value().left()
+                                    .map(|v| v.into_int_value())
+                                    .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
+                            }
+                        }
                     }
                 }
 

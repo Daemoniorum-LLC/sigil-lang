@@ -221,13 +221,13 @@ impl ImplRegistry {
         eprintln!("[IMPL-DEBUG] resolve_static_method('{}', '{}') - {} concrete, {} generic impls",
             type_name, method_name, self.concrete_impls.len(), self.generic_impls.len());
         // First check concrete impls for exact match (no impl-level generics)
+        // G128: Also return instance methods (is_static=false) for variable-receiver dispatch.
+        // Callers that need only static methods should filter by method.is_static themselves.
         for impl_def in &self.concrete_impls {
             if let Type::Named { name, .. } = &impl_def.self_type {
                 if name == type_name {
                     if let Some(method) = impl_def.methods.get(method_name) {
-                        if method.is_static {
-                            return Some((method.clone(), vec![]));
-                        }
+                        return Some((method.clone(), vec![]));
                     }
                 }
             }
@@ -242,9 +242,7 @@ impl ImplRegistry {
                     eprintln!("[IMPL-DEBUG] Found type match, methods: {:?}", impl_def.methods.keys().collect::<Vec<_>>());
                     if let Some(method) = impl_def.methods.get(method_name) {
                         eprintln!("[IMPL-DEBUG] Found method '{}', is_static={}", method_name, method.is_static);
-                        if method.is_static {
-                            return Some((method.clone(), impl_def.generics.clone()));
-                        }
+                        return Some((method.clone(), impl_def.generics.clone()));
                     }
                 }
             }
@@ -252,9 +250,7 @@ impl ImplRegistry {
             if let TypePattern::Concrete(Type::Named { name, .. }) = &impl_def.self_type {
                 if name == type_name {
                     if let Some(method) = impl_def.methods.get(method_name) {
-                        if method.is_static {
-                            return Some((method.clone(), impl_def.generics.clone()));
-                        }
+                        return Some((method.clone(), impl_def.generics.clone()));
                     }
                 }
             }
