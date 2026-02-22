@@ -137,6 +137,10 @@ pub mod llvm {
         /// Functions declared via extern "C" blocks — must NOT receive stub bodies
         /// (they are resolved from runtime libraries at link time, not Sigil definitions)
         extern_c_decls: std::collections::HashSet<String>,
+        /// R1: Return-type hint from the enclosing ≔ binding for annotation-directed dispatch.
+        /// Set to the annotation TypeExpr before compiling the RHS of a let binding.
+        /// Consumed by G128-EARLY to select the correct monomorphized impl variant.
+        current_let_return_type: Option<ast::TypeExpr>,
     }
 
     // ============================================
@@ -1294,6 +1298,7 @@ pub mod llvm {
                 slice_return_methods: std::collections::HashSet::new(),
                 generic_functions: HashMap::new(),
                 extern_c_decls: std::collections::HashSet::new(),
+                current_let_return_type: None,
             })
         }
 
@@ -3945,6 +3950,31 @@ pub mod llvm {
         }
 
         /// Extract type name from impl block's self_ty
+        /// Extract a mangled type-args suffix from the concrete generic parameters of an impl's
+        /// self type, per the spec's mangling table (LLVM-GENERIC-DISPATCH-SPEC.md § 3).
+        /// For Buffer<Cpu>   → "_Cpu"
+        /// For Buffer<Gpu>   → "_Gpu"
+        /// For Tensor<[512,256], f32, Cuda> → "_shape_512x256_f32_Cuda"
+        /// For Buffer (no type args) → ""
+        fn extract_impl_type_args_suffix(&self, self_ty: &ast::TypeExpr) -> String {
+            match self_ty {
+                ast::TypeExpr::Path(path) => {
+                    if let Some(seg) = path.segments.last() {
+                        if let Some(ref generics) = seg.generics {
+                            if generics.is_empty() {
+                                return String::new();
+                            }
+                            let parts: Vec<String> =
+                                generics.iter().map(|g| self.type_expr_to_name(g)).collect();
+                            return format!("_{}", parts.join("_"));
+                        }
+                    }
+                    String::new()
+                }
+                _ => String::new(),
+            }
+        }
+
         fn extract_impl_type_name(&self, self_ty: &ast::TypeExpr) -> Result<String, String> {
             match self_ty {
                 ast::TypeExpr::Path(path) => path
@@ -4022,10 +4052,17 @@ pub mod llvm {
                 String::new()
             };
 
+            // R1/R2: Extract type args suffix for concrete impl types.
+            // For ⊢ Buffer<Cpu> this produces "_Cpu"; for ⊢ Buffer<Gpu> "_Gpu".
+            // This ensures distinct LLVM functions per concrete impl variant.
+            let type_args_suffix = self.extract_impl_type_args_suffix(&impl_block.self_ty);
+
             for item in &impl_block.items {
                 if let ast::ImplItem::Function(func) = item {
                     let method_name = &func.name.name;
-                    let mangled_name = format!("{}{}_{}",type_name, trait_suffix, method_name);
+                    // R1: Include concrete type args in mangled name so each impl variant
+                    // produces a unique LLVM function: Buffer_Cpu_new, Buffer_Gpu_new.
+                    let mangled_name = format!("{}{}{}_{}",type_name, type_args_suffix, trait_suffix, method_name);
 
                     // Declare the function with self as first parameter
                     let i64_type = self.context.i64_type();
@@ -4113,8 +4150,16 @@ pub mod llvm {
                     let _ = is_instance_method; // Silence unused warning
 
                     self.functions.insert(mangled_name.clone(), fn_value);
+                    // R1: Register under the concrete type key (e.g., ("Buffer_Cpu", "new") -> "Buffer_Cpu_new")
+                    // so annotation-directed dispatch can look up the correct variant.
+                    let full_type_key = format!("{}{}", type_name, type_args_suffix);
                     self.impl_methods
-                        .insert((type_name.clone(), method_name.clone()), mangled_name.clone());
+                        .insert((full_type_key, method_name.clone()), mangled_name.clone());
+                    // Also register under the base type key for backward-compat / unambiguous dispatch.
+                    // Use entry API so the first-registered impl wins when there is only one.
+                    self.impl_methods
+                        .entry((type_name.clone(), method_name.clone()))
+                        .or_insert(mangled_name.clone());
 
                     // G49: Store method return types for struct type inference in MethodCall
                     // This enables `≔ t = obj.method()` to know t's struct type
@@ -4156,10 +4201,14 @@ pub mod llvm {
             // Set the current Self type for resolving Self:: calls
             self.current_self_type = Some(type_name.clone());
 
+            // R1: Extract type args suffix (same as in declare_impl_methods) so the
+            // method body is compiled into the correctly-named LLVM function.
+            let type_args_suffix = self.extract_impl_type_args_suffix(&impl_block.self_ty);
+
             for item in &impl_block.items {
                 if let ast::ImplItem::Function(func) = item {
                     let method_name = &func.name.name;
-                    let mangled_name = format!("{}{}_{}",type_name, trait_suffix, method_name);
+                    let mangled_name = format!("{}{}{}_{}",type_name, type_args_suffix, trait_suffix, method_name);
 
                     // G59 fix: Skip generic methods - they are compiled via monomorphization
                     // when called with concrete type arguments
@@ -5304,12 +5353,17 @@ pub mod llvm {
                             false
                         };
 
+                        // R1: Set the return-type hint from the let binding's annotation so
+                        // G128-EARLY can select the correct monomorphized impl variant.
+                        let prev_return_hint = self.current_let_return_type.take();
+                        self.current_let_return_type = ty.clone();
                         let init_val = if let Some(ref expr) = init {
                             // // // // eprintln!("[G46-LET] init expr for {} = {:?}", ident.name, expr);
                             self.compile_expr(fn_value, scope, expr)?
                         } else {
                             self.context.i64_type().const_int(0, false)
                         };
+                        self.current_let_return_type = prev_return_hint;
 
                         // Allocate (hoisted to entry block to avoid per-iteration stack growth)
                         let alloca = self.build_hoisted_alloca(fn_value, &ident.name)?;
@@ -15700,7 +15754,24 @@ pub mod llvm {
                         eprintln!("[G128-CHECK-EARLY] {}::{}: has_impl_generics={}, has_method_generics={}, method_def.generics.len()={}",
                             type_name, method_name, has_impl_generics, has_method_generics, method_def.generics.len());
                         if !has_impl_generics && !has_method_generics {
-                            let direct_name = format!("{}_{}", type_name, method_name);
+                            // R1: Try annotation-directed lookup first.
+                            // If the enclosing ≔ binding has a type annotation (e.g., Buffer<Cpu>),
+                            // use its type args suffix to build the specific mangled name first.
+                            // This selects Buffer_Cpu_new over Buffer_Gpu_new when annotation says Buffer<Cpu>.
+                            let annotated_name: Option<String> = self.current_let_return_type.as_ref().and_then(|hint_ty| {
+                                let suffix = self.extract_impl_type_args_suffix(hint_ty);
+                                if suffix.is_empty() {
+                                    None
+                                } else {
+                                    let hint_type_name = self.extract_impl_type_name(hint_ty).ok()?;
+                                    if hint_type_name == type_name {
+                                        Some(format!("{}{}_{}", type_name, suffix, method_name))
+                                    } else {
+                                        None
+                                    }
+                                }
+                            });
+                            let direct_name = annotated_name.unwrap_or_else(|| format!("{}_{}", type_name, method_name));
                             eprintln!("[G128-EARLY] Non-generic method: {}::{}, is_static={}, direct_name='{}'",
                                 type_name, method_name, method_def.is_static, direct_name);
                             if let Some(callee) = self.module.get_function(&direct_name) {

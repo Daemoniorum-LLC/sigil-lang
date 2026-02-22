@@ -4,9 +4,9 @@
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 745/749 tests passing (99%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+**Test Results**: 783/788 tests passing (99%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
 
-> **Note**: 4 failing tests are infrastructure-dependent (Kafka/AMQP brokers). All core language features pass. 18/37 uncounted top-level tests also pass.
+> **Note**: 4 failing tests are infrastructure-dependent (Kafka/AMQP brokers). All core language features pass.
 
 ```bash
 cd parser

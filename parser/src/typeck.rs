@@ -510,6 +510,10 @@ pub struct TypeChecker {
     current_generics: HashMap<String, Type>,
     /// Expected return type for the current function (for checking return statements)
     expected_return_type: Option<Type>,
+    /// R1: Return-type hint from enclosing ≔ binding for annotation-directed dispatch
+    /// Set before compiling the RHS of a let binding that has an explicit type annotation.
+    /// Consumed by static method call resolution to select the correct impl variant.
+    dispatch_hint: Option<Type>,
     /// Type variable counter
     next_var: u32,
     /// Inferred type variable substitutions
@@ -531,6 +535,7 @@ impl TypeChecker {
             current_self_type: None,
             current_generics: HashMap::new(),
             expected_return_type: None,
+            dispatch_hint: None,
             next_var: 0,
             substitutions: HashMap::new(),
             errors: Vec::new(),
@@ -1358,11 +1363,22 @@ impl TypeChecker {
                             is_async: f.is_async,
                         };
 
-                        // Register in impl_methods
+                        // Register in impl_methods under base type name (for unambiguous dispatch)
                         self.impl_methods
                             .entry(type_name.clone())
                             .or_insert_with(HashMap::new)
-                            .insert(f.name.name.clone(), fn_type);
+                            .insert(f.name.name.clone(), fn_type.clone());
+
+                        // R1: Also register under the full concrete type key (including generic args)
+                        // so annotation-directed dispatch can select the correct impl variant.
+                        // ⊢ Buffer<Cpu> registers under "Buffer<Cpu>"; ⊢ Buffer<Gpu> under "Buffer<Gpu>".
+                        let full_type_key = self.type_path_to_full_key(&impl_block.self_ty);
+                        if full_type_key != type_name {
+                            self.impl_methods
+                                .entry(full_type_key)
+                                .or_insert_with(HashMap::new)
+                                .insert(f.name.name.clone(), fn_type);
+                        }
                     }
                 }
 
@@ -1385,6 +1401,51 @@ impl TypeChecker {
                     .join("::")
             }
             _ => "Unknown".to_string(),
+        }
+    }
+
+    /// Convert a TypePath to a full key string including concrete generic args.
+    /// For Buffer<Cpu> returns "Buffer<Cpu>"; for plain Buffer returns "Buffer".
+    /// Used for R1 annotation-directed dispatch: register and look up impls by
+    /// their full concrete type (including type parameters).
+    fn type_path_to_full_key(&self, ty: &crate::ast::TypeExpr) -> String {
+        match ty {
+            crate::ast::TypeExpr::Path(path) => {
+                let mut parts = Vec::new();
+                for seg in &path.segments {
+                    let name = &seg.ident.name;
+                    if let Some(ref generics) = seg.generics {
+                        if generics.is_empty() {
+                            parts.push(name.clone());
+                        } else {
+                            let gs: Vec<String> = generics
+                                .iter()
+                                .map(|g| self.type_path_to_full_key(g))
+                                .collect();
+                            parts.push(format!("{}<{}>", name, gs.join(", ")));
+                        }
+                    } else {
+                        parts.push(name.clone());
+                    }
+                }
+                parts.join("::")
+            }
+            _ => self.type_path_to_name(ty),
+        }
+    }
+
+    /// Convert a Type to a full key string including concrete generic args.
+    /// For Named { name: "Buffer", generics: [Named { name: "Cpu" }] } returns "Buffer<Cpu>".
+    /// Used to derive the lookup key from a dispatch hint.
+    fn type_to_full_key(&self, ty: &Type) -> String {
+        match ty {
+            Type::Named { name, generics } if !generics.is_empty() => {
+                let gs: Vec<String> = generics.iter().map(|g| self.type_to_full_key(g)).collect();
+                format!("{}<{}>", name, gs.join(", "))
+            }
+            Type::Named { name, .. } => name.clone(),
+            Type::Evidential { inner, .. } => self.type_to_full_key(inner),
+            _ => format!("{:?}", ty),
         }
     }
 
@@ -1618,7 +1679,12 @@ impl TypeChecker {
         match stmt {
             Stmt::Let { pattern, ty, init } => {
                 let declared_ty = ty.as_ref().map(|t| self.convert_type(t));
+                // R1: Set dispatch_hint so static method call resolution can use the annotation
+                // to select the correct impl variant (e.g., Buffer<Cpu> vs Buffer<Gpu>).
+                let prev_hint = self.dispatch_hint.take();
+                self.dispatch_hint = declared_ty.clone();
                 let init_ty = init.as_ref().map(|e| self.infer_expr(e));
+                self.dispatch_hint = prev_hint;
 
                 let final_ty = match (&declared_ty, &init_ty) {
                     (Some(d), Some(i)) => {
@@ -1849,9 +1915,31 @@ impl TypeChecker {
                     let type_name = &path.segments[0].ident.name;
                     let method_name = &path.segments[1].ident.name;
 
+                    // R1: Try annotation-directed dispatch first.
+                    // If the enclosing ≔ binding has a declared type annotation (e.g., Buffer<Cpu>),
+                    // look up impl_methods["Buffer<Cpu>"]["new"] before the plain "Buffer" key.
+                    // This selects the correct concrete impl when multiple ⊢ blocks exist for
+                    // the same base type differentiated only by their concrete type parameters.
+                    if let Some(hint) = self.dispatch_hint.clone() {
+                        let full_key = self.type_to_full_key(&hint);
+                        // Only use the hint if the base type name matches the call site's type name
+                        let hint_base = match &hint {
+                            Type::Named { name, .. } => name.as_str(),
+                            _ => "",
+                        };
+                        if hint_base == type_name.as_str() {
+                            if let Some(methods) = self.impl_methods.get(&full_key) {
+                                if let Some(ty) = methods.get(method_name.as_str()) {
+                                    let ty_cloned = ty.clone();
+                                    return self.freshen(&ty_cloned);
+                                }
+                            }
+                        }
+                    }
+
                     // Check impl_methods for associated functions
-                    if let Some(methods) = self.impl_methods.get(type_name) {
-                        if let Some(ty) = methods.get(method_name) {
+                    if let Some(methods) = self.impl_methods.get(type_name.as_str()) {
+                        if let Some(ty) = methods.get(method_name.as_str()) {
                             let ty_cloned = ty.clone();
                             return self.freshen(&ty_cloned);
                         }

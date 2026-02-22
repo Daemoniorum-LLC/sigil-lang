@@ -1,0 +1,73 @@
+// Test: Generic method dispatch via declared return type annotation
+// Spec: LLVM-GENERIC-DISPATCH-SPEC.md § 2.1 (R1), § 2.2 (R2)
+// Priority: P0 - Blocks Nihil CUDA framework dogfooding
+//
+// Purpose:
+// When multiple ⊢ impl blocks exist for the same method name, differentiated
+// by a type parameter, the compiler MUST use the declared return type annotation
+// of the binding site to select the correct impl.
+//
+// This is the minimal reproduction of the Nihil bug where:
+//   ≔ t: Tensor<[M,N], f32, Cuda> = Tensor·from_storage(s, shape)
+// incorrectly dispatched to the Cpu/DynShape impl instead of the Cuda impl.
+//
+// Regression test for: LLVM-GENERIC-DISPATCH-SPEC.md § 4 (Gap)
+//
+// Expected behavior:
+// cpu_buf.tag() == 0  (dispatched to ⊢ Buffer<Cpu>)
+// gpu_buf.tag() == 1  (dispatched to ⊢ Buffer<Gpu>)
+// Both assertions pass, program exits with 0.
+
+// ── Marker types ──────────────────────────────────────────────────────────────
+// No runtime dependencies. These are pure type discriminants.
+
+☉ Σ Cpu {}
+☉ Σ Gpu {}
+
+// ── Generic struct parameterised by device ────────────────────────────────────
+
+☉ Σ Buffer<Dev> {
+    tag: i64,
+}
+
+// ── Impl for Cpu ──────────────────────────────────────────────────────────────
+
+⊢ Buffer<Cpu> {
+    ☉ rite new() → Buffer<Cpu> {
+        Buffer { tag: 0 }
+    }
+
+    ☉ rite tag(&self) → i64 {
+        self.tag
+    }
+}
+
+// ── Impl for Gpu ──────────────────────────────────────────────────────────────
+
+⊢ Buffer<Gpu> {
+    ☉ rite new() → Buffer<Gpu> {
+        Buffer { tag: 1 }
+    }
+
+    ☉ rite tag(&self) → i64 {
+        self.tag
+    }
+}
+
+// ── Test ──────────────────────────────────────────────────────────────────────
+
+☉ rite main() → !i32 {
+    // R1: The declared annotation Buffer<Cpu> must select ⊢ Buffer<Cpu>::new.
+    ≔ cpu_buf: Buffer<Cpu> = Buffer·new();
+    assert_eq(cpu_buf.tag(), 0i64);
+
+    // R1: The declared annotation Buffer<Gpu> must select ⊢ Buffer<Gpu>::new.
+    ≔ gpu_buf: Buffer<Gpu> = Buffer·new();
+    assert_eq(gpu_buf.tag(), 1i64);
+
+    // R2: Confirm the values are distinct — not both defaulting to the same impl.
+    assert(cpu_buf.tag() != gpu_buf.tag());
+
+    println!("PASS: generic return type dispatch correct");
+    ⤺ 0;
+}

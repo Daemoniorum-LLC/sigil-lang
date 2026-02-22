@@ -1268,6 +1268,10 @@ pub struct TypeConstructionContext {
     pub tensor_shape: RefCell<Option<Vec<i64>>>,
     /// Expected struct type with const generics (e.g., Linear<784, 256>)
     pub struct_generics: RefCell<Option<(String, Vec<i64>)>>,
+    /// R1: Full type key from the enclosing ≔ binding annotation for dispatch.
+    /// For `≔ x: Buffer<Cpu> = Buffer·new()`, this holds "Buffer<Cpu>".
+    /// Used to select the correct impl variant when multiple ⊢ blocks exist.
+    pub dispatch_hint: RefCell<Option<String>>,
 }
 
 /// The Sigil interpreter
@@ -3819,12 +3823,46 @@ impl Interpreter {
                     }
                 });
 
+                // R1: Also compute full type key including concrete type args for
+                // annotation-directed dispatch: ⊢ Buffer<Cpu> → "Buffer<Cpu>".
+                let full_type_key: Option<String> = match &impl_block.self_ty {
+                    TypeExpr::Path(path) => {
+                        path.segments.last().and_then(|seg| {
+                            seg.generics.as_ref().and_then(|gs| {
+                                if gs.is_empty() { return None; }
+                                // Build "Buffer<Cpu, Gpu>" style key
+                                fn type_expr_to_key(te: &crate::ast::TypeExpr) -> String {
+                                    match te {
+                                        crate::ast::TypeExpr::Path(p) => p.segments
+                                            .iter().map(|s| s.ident.name.as_str())
+                                            .collect::<Vec<_>>().join("·"),
+                                        _ => "Unknown".to_string(),
+                                    }
+                                }
+                                let args: Vec<String> = gs.iter().map(type_expr_to_key).collect();
+                                Some(format!("{}<{}>", seg.ident.name, args.join(", ")))
+                            })
+                        })
+                    }
+                    _ => None,
+                };
+
                 // Register each method/const with qualified name TypeName·method
                 for impl_item in &impl_block.items {
                     match impl_item {
                         ImplItem::Function(func) => {
                             let fn_value = self.create_function(func)?;
                             let qualified_name = format!("{}·{}", type_name, func.name.name);
+                            // R1: Also register under the full type key so annotation-directed
+                            // dispatch can find the correct variant.
+                            if let Some(ref full_key) = full_type_key {
+                                let full_qualified = format!("{}·{}", full_key, func.name.name);
+                                self.globals.borrow_mut().define(full_qualified.clone(), fn_value.clone());
+                                if let Some(ref module) = self.current_module {
+                                    let fully_qualified = format!("{}·{}", module, full_qualified);
+                                    self.globals.borrow_mut().define(fully_qualified, fn_value.clone());
+                                }
+                            }
                             // Debug: track Lexer method registration
                             if type_name == "Lexer" && func.name.name.contains("keyword") {
                                 crate::sigil_debug!("DEBUG registering: {}", qualified_name);
@@ -6009,6 +6047,26 @@ impl Interpreter {
                 })
                 .collect::<Vec<_>>()
                 .join("·");
+
+            // R1: Return-type-directed dispatch — MUST happen before environment/globals lookup.
+            // When a ≔ binding has a declared type annotation (e.g., ≔ x: Buffer<Cpu> = Buffer·new()),
+            // dispatch_hint is set to "Buffer<Cpu>". We look up "Buffer<Cpu>·new" in globals first,
+            // which selects the correct monomorphic impl variant. This must run BEFORE the plain
+            // environment/globals lookup, because the environment contains the unqualified "Buffer·new"
+            // (last-registered impl, which may be wrong when multiple ⊢ blocks exist for the same name).
+            if path.segments.len() == 2 {
+                let method_name = &path.segments[1].ident.name;
+                if let Some(ref hint) = self.type_context.dispatch_hint.borrow().clone() {
+                    let hint_base = hint.split('<').next().unwrap_or(hint.as_str());
+                    let call_base = &path.segments[0].ident.name;
+                    if hint_base == call_base.as_str() {
+                        let hint_qualified = format!("{}·{}", hint, method_name);
+                        if let Some(val) = self.globals.borrow().get(&hint_qualified) {
+                            return Ok(val);
+                        }
+                    }
+                }
+            }
 
             if let Some(val) = self.environment.borrow().get(&full_name) {
                 return Ok(val);
@@ -9962,17 +10020,37 @@ impl Interpreter {
                                 Some((name, generics));
                         }
                     }
-                    // Debug: trace ALL let bindings involving keywords
-                    if let Pattern::Ident { name: ref pn, .. } = pattern {
-                        {
-                            let init_type = match init {
-                                Some(crate::ast::Expr::Try(_)) => "Try",
-                                Some(crate::ast::Expr::Pipe { .. }) => "Pipe",
-                                Some(crate::ast::Expr::Incorporation { .. }) => "Incorporation",
-                                Some(_) => "Other",
-                                None => "None",
-                            };
-                            eprintln!("DEBUG Stmt::Let EARLY name={} init_type={}", pn.name, init_type);
+                    // R1: Set dispatch_hint from annotation for annotation-directed dispatch.
+                    // For `≔ x: Buffer<Cpu> = Buffer·new()`, this lets eval_path try
+                    // "Buffer<Cpu>·new" before "Buffer·new" to select the correct impl variant.
+                    let prev_dispatch_hint = self.type_context.dispatch_hint.borrow().clone();
+                    if let Some(type_expr) = ty {
+                        fn type_expr_to_full_key(te: &crate::ast::TypeExpr) -> String {
+                            match te {
+                                crate::ast::TypeExpr::Path(p) => {
+                                    let mut parts = Vec::new();
+                                    for seg in &p.segments {
+                                        if let Some(ref gs) = seg.generics {
+                                            if !gs.is_empty() {
+                                                let args: Vec<String> = gs.iter()
+                                                    .map(|g| type_expr_to_full_key(g))
+                                                    .collect();
+                                                parts.push(format!("{}<{}>", seg.ident.name, args.join(", ")));
+                                            } else {
+                                                parts.push(seg.ident.name.clone());
+                                            }
+                                        } else {
+                                            parts.push(seg.ident.name.clone());
+                                        }
+                                    }
+                                    parts.join("·")
+                                }
+                                _ => String::new(),
+                            }
+                        }
+                        let full_key = type_expr_to_full_key(type_expr);
+                        if !full_key.is_empty() {
+                            *self.type_context.dispatch_hint.borrow_mut() = Some(full_key);
                         }
                     }
                     // Set current_self_type for into() conversions
@@ -9990,6 +10068,8 @@ impl Interpreter {
                         None => Value::Null,
                     };
                     self.current_self_type = prev_self_type;
+                    // R1: Restore dispatch hint after evaluating init expression
+                    *self.type_context.dispatch_hint.borrow_mut() = prev_dispatch_hint;
                     // Clear expected tensor shape and struct generics after evaluation
                     *self.type_context.tensor_shape.borrow_mut() = None;
                     *self.type_context.struct_generics.borrow_mut() = None;
