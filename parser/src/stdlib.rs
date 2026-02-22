@@ -10607,6 +10607,383 @@ fn register_fs(interp: &mut Interpreter) {
         })
     });
 
+    // ── HTTPS streaming download with SHA256 verification ─────────────────────
+    //
+    // download·to_file(url, dest_path, Option[expected_sha256]) → Result[()]
+    //
+    // Performs an HTTP/HTTPS GET, streams the response body to dest_path,
+    // and optionally verifies the SHA-256 checksum.  Follows up to 10 redirects.
+    // Handles both plain (chunked) and identity transfer encodings.
+    //
+    // This is a native binding because the interpreter cannot drive TcpStream or
+    // TlsStream step-by-step from Sigil.
+    //
+    // TODO(sigil): Once stdlib exposes TcpStream and TlsStream as first-class
+    // streaming primitives, the per-chunk progress callback and retry logic in
+    // download.sigil can stay pure Sigil; only this inner layer needs to be native.
+    define(interp, "download·to_file", Some(3), |_, args| {
+        // ── arg 0: url (type error = RuntimeError) ────────────────────────────
+        let url = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("download·to_file: arg 0 must be a URL string")),
+            },
+            _ => return Err(RuntimeError::new("download·to_file: arg 0 must be a URL string")),
+        };
+
+        // ── arg 1: dest path ──────────────────────────────────────────────────
+        let dest = extract_path(&args[1])?;
+
+        // ── arg 2: Option[expected_sha256] ────────────────────────────────────
+        let expected_sha256: Option<String> = {
+            let v = match &args[2] {
+                Value::Ref(r) => r.borrow().clone(),
+                other => other.clone(),
+            };
+            match &v {
+                Value::Variant { variant_name, .. } if variant_name == "None" => None,
+                Value::Variant { variant_name, fields, .. } if variant_name == "Some" => {
+                    fields.as_ref().and_then(|f| f.first()).and_then(|inner| {
+                        match inner {
+                            Value::String(s) => Some(s.as_ref().clone()),
+                            _ => None,
+                        }
+                    })
+                }
+                Value::String(s) => Some(s.as_ref().clone()),
+                _ => None,
+            }
+        };
+
+        // ── Inner impl: returns Result<(), String> so network errors are ──────
+        // ── recoverable by the Sigil retry loop in download_with_retry().  ────
+        fn parse_url(url: &str) -> Result<(bool, String, u16, String), String> {
+            let (scheme, rest) = url.split_once("://")
+                .ok_or_else(|| format!("invalid URL '{}'", url))?;
+            let use_tls = match scheme {
+                "https" => true,
+                "http"  => false,
+                _ => return Err(format!("unsupported scheme '{}' (only http/https)", scheme)),
+            };
+            let (host_port, path) = if let Some(p) = rest.find('/') {
+                (rest[..p].to_string(), rest[p..].to_string())
+            } else {
+                (rest.to_string(), "/".to_string())
+            };
+            let (host, port) = if let Some(colon) = host_port.rfind(':') {
+                let port_str = &host_port[colon + 1..];
+                if let Ok(p) = port_str.parse::<u16>() {
+                    (host_port[..colon].to_string(), p)
+                } else {
+                    (host_port, if use_tls { 443 } else { 80 })
+                }
+            } else {
+                (host_port, if use_tls { 443 } else { 80 })
+            };
+            Ok((use_tls, host, port, path))
+        }
+
+        fn do_download(
+            url: &str,
+            dest: &str,
+            expected_sha256: Option<&str>,
+        ) -> Result<(), String> {
+            use sha2::Digest;
+            use std::io::{BufRead, Read, Write as IoWrite};
+
+            let mut current_url = url.to_string();
+            for _ in 0..10_usize {
+                let (use_tls, host, port, path) = parse_url(&current_url)?;
+                let addr = format!("{}:{}", host, port);
+
+                let request = format!(
+                    "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Ritualis/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+                    path, host
+                );
+
+                let tcp = std::net::TcpStream::connect(&addr)
+                    .map_err(|e| format!("connect {}: {}", addr, e))?;
+                tcp.set_read_timeout(Some(std::time::Duration::from_secs(300))).ok();
+
+                // Build a Box<dyn Read> after sending the request so TLS and
+                // plain streams share the header/body streaming logic below.
+                let reader_box: Box<dyn Read> = if use_tls {
+                    #[cfg(feature = "websocket")]
+                    {
+                        use native_tls::TlsConnector;
+                        let connector = TlsConnector::new()
+                            .map_err(|e| format!("TLS init: {}", e))?;
+                        let mut tls = connector.connect(&host, tcp)
+                            .map_err(|e| format!("TLS handshake with '{}': {}", host, e))?;
+                        tls.write_all(request.as_bytes())
+                            .map_err(|e| format!("send request: {}", e))?;
+                        Box::new(tls) as Box<dyn Read>
+                    }
+                    #[cfg(not(feature = "websocket"))]
+                    {
+                        return Err(
+                            "HTTPS requires the 'websocket' build feature (native-tls)".to_string()
+                        );
+                    }
+                } else {
+                    let mut plain = tcp;
+                    plain.write_all(request.as_bytes())
+                        .map_err(|e| format!("send request: {}", e))?;
+                    Box::new(plain) as Box<dyn Read>
+                };
+
+                let mut reader = std::io::BufReader::with_capacity(65536, reader_box);
+
+                // ── Read headers ─────────────────────────────────────────────
+                let mut headers = String::new();
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line)
+                        .map_err(|e| format!("read headers: {}", e))?;
+                    if line == "\r\n" || line == "\n" || line.is_empty() { break; }
+                    headers.push_str(&line);
+                    if headers.len() > 131_072 {
+                        return Err("response headers too large".to_string());
+                    }
+                }
+
+                let status: i64 = headers.lines().next().unwrap_or("")
+                    .split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+                // ── Follow redirects ──────────────────────────────────────────
+                if (300..400).contains(&status) {
+                    if let Some(loc_line) = headers.lines()
+                        .find(|l| l.to_lowercase().starts_with("location:"))
+                    {
+                        let loc = loc_line[9..].trim().to_string();
+                        current_url = if loc.starts_with("http://") || loc.starts_with("https://") {
+                            loc
+                        } else if loc.starts_with('/') {
+                            let scheme = if use_tls { "https" } else { "http" };
+                            format!("{}://{}:{}{}", scheme, host, port, loc)
+                        } else {
+                            format!("https://{}", loc)
+                        };
+                        continue;
+                    }
+                }
+
+                if !(200..300).contains(&status) {
+                    return Err(format!("HTTP {} for '{}'", status, current_url));
+                }
+
+                let is_chunked = headers.lines().any(|l| {
+                    let ll = l.to_lowercase();
+                    ll.starts_with("transfer-encoding:") && ll.contains("chunked")
+                });
+
+                // ── Open dest for writing ─────────────────────────────────────
+                if let Some(parent) = std::path::Path::new(dest).parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format!("mkdir for '{}': {}", dest, e))?;
+                }
+                let mut file = std::fs::File::create(dest)
+                    .map_err(|e| format!("create '{}': {}", dest, e))?;
+
+                let mut hasher = sha2::Sha256::new();
+
+                // ── Stream body → disk while hashing ─────────────────────────
+                if is_chunked {
+                    let mut chunk_line = String::new();
+                    loop {
+                        chunk_line.clear();
+                        reader.read_line(&mut chunk_line)
+                            .map_err(|e| format!("read chunk size: {}", e))?;
+                        let size_str = chunk_line.trim().split(';').next().unwrap_or("0").trim();
+                        let chunk_size = usize::from_str_radix(size_str, 16).unwrap_or(0);
+                        if chunk_size == 0 { break; }
+
+                        let mut remaining = chunk_size;
+                        let mut buf = vec![0u8; 65536];
+                        while remaining > 0 {
+                            let to_read = remaining.min(buf.len());
+                            let n = reader.read(&mut buf[..to_read])
+                                .map_err(|e| format!("read chunk data: {}", e))?;
+                            if n == 0 { break; }
+                            hasher.update(&buf[..n]);
+                            file.write_all(&buf[..n])
+                                .map_err(|e| format!("write: {}", e))?;
+                            remaining -= n;
+                        }
+                        let mut crlf = String::new();
+                        reader.read_line(&mut crlf).ok();
+                    }
+                } else {
+                    let mut buf = [0u8; 65536];
+                    loop {
+                        let n = reader.read(&mut buf)
+                            .map_err(|e| format!("read body: {}", e))?;
+                        if n == 0 { break; }
+                        hasher.update(&buf[..n]);
+                        file.write_all(&buf[..n])
+                            .map_err(|e| format!("write: {}", e))?;
+                    }
+                }
+
+                file.flush().ok();
+                drop(file);
+
+                // ── Verify checksum ───────────────────────────────────────────
+                if let Some(expected) = expected_sha256 {
+                    let expected = expected.strip_prefix("sha256:").unwrap_or(expected);
+                    let actual = format!("{:x}", hasher.finalize());
+                    if actual != expected {
+                        std::fs::remove_file(dest).ok();
+                        return Err(format!(
+                            "checksum mismatch for '{}': expected sha256:{}, got sha256:{}",
+                            dest, expected, actual
+                        ));
+                    }
+                }
+
+                return Ok(());
+            }
+
+            Err(format!("too many redirects for '{}'", url))
+        }
+
+        // Convert the inner Result<(), String> to a Sigil Result[()]
+        match do_download(&url, &dest, expected_sha256.as_deref()) {
+            Ok(()) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::Null])),
+            }),
+            Err(msg) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(
+                    format!("download·to_file: {}", msg)
+                ))])),
+            }),
+        }
+    });
+
+    // ── Platform target string ────────────────────────────────────────────────
+    //
+    // manifest·current_target() → String
+    //
+    // Returns the canonical target triple used in package manifests, matching the
+    // keys in the [targets] section of a .ritualis.toml scroll (e.g.
+    // "linux-x86_64", "darwin-aarch64", "windows-x86_64").
+    //
+    // This must be a native binding because std::env::consts is a Rust intrinsic;
+    // Sigil has no way to query it directly yet.
+    define(interp, "manifest·current_target", Some(0), |_, _| {
+        let os   = std::env::consts::OS;
+        let arch = std::env::consts::ARCH;
+        let target = match (os, arch) {
+            ("linux",   "x86_64")  => "linux-x86_64",
+            ("linux",   "aarch64") => "linux-aarch64",
+            ("macos",   "x86_64")  => "darwin-x86_64",
+            ("macos",   "aarch64") => "darwin-aarch64",
+            ("windows", "x86_64")  => "windows-x86_64",
+            ("windows", "aarch64") => "windows-aarch64",
+            _ => return Err(RuntimeError::new(format!(
+                "manifest·current_target: unsupported platform: {}-{}", os, arch
+            ))),
+        };
+        Ok(Value::String(Rc::new(target.to_string())))
+    });
+
+    // std·env·consts·OS / ARCH — constants used by the pure-Sigil current_target()
+    // in manifest.sigil.  Registered as zero-arg functions so the interpreter can
+    // evaluate `≔ os! = std·env·consts·OS` via a call-site dispatch.
+    define(interp, "std·env·consts·OS", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(std::env::consts::OS.to_string())))
+    });
+    define(interp, "std·env·consts·ARCH", Some(0), |_, _| {
+        Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
+    });
+
+    // ── sha256·hash_file(path) → Result[String] ───────────────────────────────
+    //
+    // Reads a file in 64 KB chunks and returns the lowercase hex SHA-256 digest.
+    // Needed by Downloader::compute_sha256 in download.sigil.
+    //
+    // TODO(sigil): Once stdlib exposes fs·read_bytes and the sha256·Hasher
+    // update/finalize cycle, this can be reimplemented in pure Sigil.
+    define(interp, "sha256_hash_file", Some(1), |_, args| {
+        use sha2::Digest;
+        use std::io::Read;
+        let path = extract_path(&args[0])?;
+        let file = std::fs::File::open(&path)
+            .map_err(|e| RuntimeError::new(format!("sha256·hash_file: open '{}': {}", path, e)))?;
+        let mut reader = std::io::BufReader::with_capacity(65536, file);
+        let mut hasher = sha2::Sha256::new();
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = reader.read(&mut buf)
+                .map_err(|e| RuntimeError::new(format!("sha256·hash_file: read '{}': {}", path, e)))?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+        }
+        let hex = format!("{:x}", hasher.finalize());
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::String(Rc::new(hex))])),
+        })
+    });
+
+    // ── fs·cleanup_by_age(dir, max_age_secs) → Result[u64] ───────────────────
+    //
+    // Removes files in `dir` whose mtime is older than `max_age_secs` seconds
+    // ago.  Returns the total number of bytes freed.
+    // Used by Downloader::cleanup_cache in download.sigil.
+    define(interp, "fs·cleanup_by_age", Some(2), |_, args| {
+        let dir = extract_path(&args[0])?;
+        let max_age_secs = match &args[1] {
+            Value::Int(n) => *n as u64,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => *n as u64,
+                _ => return Err(RuntimeError::new("fs·cleanup_by_age: arg 1 must be u64")),
+            },
+            _ => return Err(RuntimeError::new("fs·cleanup_by_age: arg 1 must be u64")),
+        };
+        let cutoff = std::time::SystemTime::now()
+            .checked_sub(std::time::Duration::from_secs(max_age_secs))
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+        let mut removed_bytes: u64 = 0;
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(e) => return Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(format!(
+                    "fs·cleanup_by_age: read_dir '{}': {}", dir, e
+                )))])),
+            }),
+        };
+        for entry in read_dir.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    let old = meta.modified()
+                        .map(|mtime| mtime <= cutoff)
+                        .unwrap_or(false);
+                    if old {
+                        if std::fs::remove_file(entry.path()).is_ok() {
+                            removed_bytes += meta.len();
+                        }
+                    }
+                }
+            }
+        }
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Int(removed_bytes as i64)])),
+        })
+    });
+
     // fs·symlink - create a symlink (original -> link)
     define(interp, "fs·symlink", Some(2), |_, args| {
         let original = extract_path(&args[0])?;
