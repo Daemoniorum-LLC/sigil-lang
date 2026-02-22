@@ -1153,7 +1153,7 @@ impl WasmCompiler {
     pub fn compile_stmt(&mut self, stmt: &Stmt) -> WasmResult<()> {
         match stmt {
             Stmt::Let {
-                pattern, init, ..
+                pattern, ty, init, ..
             } => {
                 // Extract type information from init expression
                 // This is used to resolve method calls like app·view()
@@ -1167,7 +1167,38 @@ impl WasmCompiler {
                     }
                 });
 
-                // Record variable type if we have pattern name and type
+                // Record variable type from explicit annotation (e.g. `≔ s: String = ...`)
+                // This is needed for methods like `s·length()` to resolve to string_length
+                // rather than morpheme_array_len when the receiver type is known.
+                if let Some(ref type_annotation) = ty {
+                    if let crate::ast::Pattern::Ident { name, .. } = pattern {
+                        let type_name = match type_annotation {
+                            crate::ast::TypeExpr::Path(path) => {
+                                path.segments.last().map(|s| s.ident.name.clone())
+                            }
+                            crate::ast::TypeExpr::Evidential { inner, .. } => {
+                                if let crate::ast::TypeExpr::Path(path) = inner.as_ref() {
+                                    path.segments.last().map(|s| s.ident.name.clone())
+                                } else {
+                                    None
+                                }
+                            }
+                            crate::ast::TypeExpr::Reference { inner, .. } => {
+                                if let crate::ast::TypeExpr::Path(path) = inner.as_ref() {
+                                    path.segments.last().map(|s| s.ident.name.clone())
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
+                        if let Some(tname) = type_name {
+                            self.var_types.entry(name.name.clone()).or_insert(tname);
+                        }
+                    }
+                }
+
+                // Record variable type if we have pattern name and type (from init expr)
                 if let Some(ref type_name) = init_type {
                     if let crate::ast::Pattern::Ident { name, .. } = pattern {
                         self.var_types.insert(name.name.clone(), type_name.clone());

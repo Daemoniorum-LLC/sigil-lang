@@ -946,10 +946,22 @@ impl WasmCompiler {
                         // var_types but `func_map["forget"]` resolves to the correct impl method.
                         let method_func_idx = if let Some(ref ty) = receiver_type {
                             let qualified_method = format!("{}::{}", ty, method_name);
-                            self.func_map.get(&qualified_method).copied()
+                            let qf = self.func_map.get(&qualified_method).copied();
+                            // For primitive value types (String, numerics, bool), skip the
+                            // unqualified get_func() fallback.  DOM/env imports like env::slice
+                            // and env::length shadow the intended string builtins — the builtins
+                            // are handled by try_compile_builtin_method below.
+                            let is_primitive = matches!(ty.as_str(),
+                                "String" | "str" | "i64" | "i32" | "u32" | "u64" |
+                                "f64" | "f32" | "bool" | "usize" | "isize");
+                            if is_primitive {
+                                qf // only qualified; let builtins handle the rest
+                            } else {
+                                qf.or_else(|| self.get_func(method_name.as_str()))
+                            }
                         } else {
-                            None
-                        }.or_else(|| self.get_func(method_name.as_str()));
+                            self.get_func(method_name.as_str())
+                        };
 
                         // Arity-mismatch correction: if the resolved candidate has fewer
                         // params than the call site needs (1 receiver + N args), it's the
@@ -1087,6 +1099,58 @@ impl WasmCompiler {
                             }
                             return Ok(());
                         }
+                    }
+                }
+
+                // === Module-qualified external import: module·func(args) ===
+                // Handles static calls on primitive/JS modules, e.g.:
+                //   string·from_raw_ptr(ptr, len)  → import {module:"string", name:"from_raw_ptr"}
+                //   string·parse_int(&s)           → import {module:"string", name:"parse_int"}
+                // These are 2-segment paths where the first segment is a lowercase module name
+                // (not a local variable, struct, enum, or actor).
+                if resolved_segments.len() == 2 {
+                    let module_seg = resolved_segments[0].clone();
+                    let func_seg   = resolved_segments[1].clone();
+                    let first_is_lowercase = module_seg.chars().next()
+                        .map_or(false, |c| c.is_ascii_lowercase());
+                    let is_local_var = self.current_function()
+                        .and_then(|f| f.get_local(&module_seg))
+                        .is_some();
+                    let is_known_type = self.struct_layouts.contains_key(module_seg.as_str())
+                        || self.enum_layouts.contains_key(module_seg.as_str());
+                    // Only treat as a JS module if it already has at least one registered
+                    // import (e.g. "string" has string_concat, string_length, …).  This
+                    // prevents Rust-library paths like `serde_json·to_string` from being
+                    // emitted as WASM imports that the JS runtime cannot provide.
+                    let is_known_js_module = self.imports.imports().iter()
+                        .any(|imp| imp.module == module_seg.as_str());
+                    if first_is_lowercase && !is_local_var && !is_known_type && is_known_js_module {
+                        // Get or register the import; honour existing (I32) param types.
+                        let func_idx = self.get_or_add_external_import(&module_seg, &func_seg, args.len());
+                        let param_types: Option<Vec<wasm_encoder::ValType>> = self.imports
+                            .get_param_types(func_idx)
+                            .map(|p| p.to_vec());
+                        for (i, arg) in args.iter().enumerate() {
+                            self.compile_expr(arg)?;
+                            let expects_i32 = param_types.as_deref()
+                                .and_then(|p| p.get(i))
+                                == Some(&wasm_encoder::ValType::I32);
+                            if expects_i32 {
+                                let func = self.current_function_mut()
+                                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                                func.push(Instruction::I32WrapI64);
+                            }
+                        }
+                        let return_type = self.imports.get_return_type(func_idx);
+                        let func = self.current_function_mut()
+                            .ok_or_else(|| WasmError::internal("not in function context"))?;
+                        func.push(Instruction::Call(func_idx));
+                        match return_type {
+                            Some(wasm_encoder::ValType::I32) => func.push(Instruction::I64ExtendI32U),
+                            None => func.push(Instruction::I64Const(0)),
+                            _ => {}
+                        }
+                        return Ok(());
                     }
                 }
 
@@ -2071,6 +2135,10 @@ impl WasmCompiler {
             }
             "to_lowercase" => {
                 self.compile_collection_method(receiver, "string_to_lowercase", args)?;
+                Ok(true)
+            }
+            "slice" => {
+                self.compile_collection_method(receiver, "string_slice", args)?;
                 Ok(true)
             }
             "contains" => {
