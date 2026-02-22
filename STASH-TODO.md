@@ -45,6 +45,43 @@ Changes:
 - Website changes are cosmetic but improve above-fold
 - bootstrap.c is generated - may need regeneration
 
+## Eliminate Rust-compat `#[...]` Attribute Syntax
+
+**Context:** Sigil's native annotation syntax is `//@ rune: name`. The `#[...]`
+bracket form is accepted as a Rust compat shim but erodes Sigil's identity.
+
+**What needs to happen:**
+
+1. **Define the rune vocabulary** — establish canonical `//@ rune:` forms for
+   every `#[...]` attribute in use across the codebase:
+   - `#[repr(C)]` → `//@ rune: repr(C)`
+   - `#[cfg(...)]` → `//@ rune: cfg(...)`
+   - `#[derive(...)]` → `//@ rune: derive(...)` (or a Sigil-native equivalent)
+   - `#[allow(...)]`, `#[inline]`, etc.
+
+2. **Wire `//@ rune: cfg(feature = "...")` on scroll/module declarations** —
+   currently `Module` in the AST has no `attrs` field. Gating a `scroll` on a
+   feature requires:
+   - Add `attrs: Vec<Attribute>` to `ast::Module`
+   - Parse rune annotations before `☉ scroll name;` in the parser
+   - Check attrs in all five compilation passes (collect_uses, collect_types,
+     prescan, collect_sigs, compile_bodies) in `statements.rs`
+   - Pass active features from `sigil.toml` into the compiler context
+
+3. **Sweep the codebase** — replace all `#[...]` with `//@ rune:` equivalents
+   in one pass once the vocabulary is settled.
+
+**Known occurrences today:**
+- `qliphoth/src/platform/native.sigil:63` — `#[repr(C)]` on `NativeEventData`
+
+**Driving motivation:** `platform/mod.sigil` has a pending `scroll native;` that
+needs feature-gating (`native = ["gtk"]` already declared in `sigil.toml`) — the
+correct form once implemented:
+```
+//@ rune: cfg(feature = "native")
+☉ scroll native;
+```
+
 ## LLVM Backend Optimization (DCT Benchmark)
 
 **Current Status:** Sigil LLVM is ~1.2x slower than Rust on float-heavy workloads (DCT benchmark: 36ms vs 30ms)

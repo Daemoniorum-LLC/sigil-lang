@@ -4083,7 +4083,7 @@ dependencies = [
 
 [[package]]
 name = "sigil-parser"
-version = "0.4.0-rc.3"
+version = "0.4.0-rc.4"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -4148,6 +4148,7 @@ dependencies = [
  "swc_common",
  "swc_ecma_ast",
  "swc_ecma_parser",
+ "syn 2.0.111",
  "thiserror 1.0.69",
  "tiktoken-rs",
  "tokio",
