@@ -1637,13 +1637,44 @@ impl WasmCompiler {
             }
 
             Expr::Path(path) => {
-                // Look up const
-                let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
-                if let Some(&idx) = self.global_map.get(name) {
-                    Ok(self.globals[idx as usize].2)
-                } else {
-                    Err(WasmError::not_const())
+                // Single-segment: look up named constant / global
+                if path.segments.len() == 1 {
+                    let name = path.segments[0].ident.name.as_str();
+                    if let Some(&idx) = self.global_map.get(name) {
+                        return Ok(self.globals[idx as usize].2);
+                    }
                 }
+                // Multi-segment: treat as enum variant constant (EnumType·Variant)
+                // e.g. `state panel: PanelType! = PanelType·Search` → tag for Search
+                if path.segments.len() >= 2 {
+                    let enum_name  = path.segments[path.segments.len() - 2].ident.name.as_str();
+                    let variant    = path.segments[path.segments.len() - 1].ident.name.as_str();
+                    if let Some(layout) = self.enum_layouts.get(enum_name) {
+                        if let Some(tag) = layout.variant_tag(variant) {
+                            return Ok(tag as i64);
+                        }
+                    }
+                    // Also try qualified names (module·EnumType·Variant)
+                    let enum_name  = path.segments[path.segments.len() - 2].ident.name.as_str();
+                    let _ = enum_name; // already tried above
+                }
+                Err(WasmError::not_const())
+            }
+
+            // Zero-arg call written with parens: `PanelType·Search()` — same as path lookup
+            Expr::Call { func, args } if args.is_empty() => {
+                if let Expr::Path(path) = func.as_ref() {
+                    if path.segments.len() >= 2 {
+                        let enum_name = path.segments[path.segments.len() - 2].ident.name.as_str();
+                        let variant   = path.segments[path.segments.len() - 1].ident.name.as_str();
+                        if let Some(layout) = self.enum_layouts.get(enum_name) {
+                            if let Some(tag) = layout.variant_tag(variant) {
+                                return Ok(tag as i64);
+                            }
+                        }
+                    }
+                }
+                Err(WasmError::not_const())
             }
 
             _ => Err(WasmError::not_const()),
