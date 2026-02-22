@@ -4087,7 +4087,16 @@ impl Interpreter {
                         self.types.insert(simple_name.clone(), type_def.clone());
                     }
                     // Also register with the qualified name for consistency
-                    self.types.insert(qualified.clone(), type_def);
+                    self.types.insert(qualified.clone(), type_def.clone());
+
+                    // When re-exporting inside a crate load (☉ invoke goals·{Goal} in lib.sg),
+                    // also register as crate·Goal so callers can `invoke tome·crate·{Goal}`.
+                    if let Some(ref crate_mod) = self.current_module.clone() {
+                        let crate_qualified = format!("{}·{}", crate_mod, simple_name);
+                        if crate_qualified != qualified && crate_qualified != simple_name {
+                            self.types.insert(crate_qualified.clone(), type_def.clone());
+                        }
+                    }
 
                     // Also copy const_generic_params for the imported type
                     // This is critical for const generic inference in field types
@@ -4115,7 +4124,14 @@ impl Interpreter {
                         .borrow_mut()
                         .define(simple_name.clone(), val.clone());
                     if lookup_name != qualified {
-                        self.globals.borrow_mut().define(qualified.clone(), val);
+                        self.globals.borrow_mut().define(qualified.clone(), val.clone());
+                    }
+                    // Also register under current crate module prefix for cross-crate re-exports
+                    if let Some(ref crate_mod) = self.current_module.clone() {
+                        let crate_qualified = format!("{}·{}", crate_mod, simple_name);
+                        if crate_qualified != qualified && crate_qualified != simple_name {
+                            self.globals.borrow_mut().define(crate_qualified, val);
+                        }
                     }
                 }
 
@@ -4123,6 +4139,7 @@ impl Interpreter {
                 // e.g., when importing samael_analysis::AnalysisConfig,
                 // also import samael_analysis·AnalysisConfig·default as AnalysisConfig·default
                 let method_prefix = format!("{}·", qualified);
+                let crate_mod_for_methods = self.current_module.clone();
                 let matching_methods: Vec<(String, Value)> = {
                     let globals = self.globals.borrow();
                     globals
@@ -4137,8 +4154,16 @@ impl Interpreter {
                         })
                         .collect()
                 };
-                for (name, val) in matching_methods {
-                    self.globals.borrow_mut().define(name, val);
+                for (name, val) in &matching_methods {
+                    self.globals.borrow_mut().define(name.clone(), val.clone());
+                    // Also register under current crate prefix: daemon·Goal·method
+                    if let Some(ref crate_mod) = crate_mod_for_methods {
+                        let crate_method = format!("{}·{}", crate_mod, name);
+                        let simple_prefix = format!("{}·", simple_name);
+                        if name.starts_with(&simple_prefix) {
+                            self.globals.borrow_mut().define(crate_method, val.clone());
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -5869,6 +5894,15 @@ impl Interpreter {
                 _ => Err(RuntimeError::new("Invalid char/string operation")),
             },
             // Variant equality
+            // TODO(perf): Replace string comparisons (e1==e2, v1==v2) with integer discriminant
+            // comparisons. Each variant should be assigned a u32 discriminant at enum registration
+            // time (Item::Enum branch in execute_item, ~line 3207). Store discriminant in
+            // Value::Variant and compare discriminants here instead of &str. The EnumVariant AST
+            // node already has a `discriminant: Option<Expr>` field — use that or assign
+            // sequentially (0, 1, 2, ...) during registration. This eliminates two heap string
+            // comparisons per == check on every hot enum comparison (e.g. GoalStatus, LifecycleState).
+            // NOTE: JSON serialization MUST continue to use the string form ("GoalStatus::Active")
+            // for persistence interoperability — only in-memory Variant==Variant uses discriminants.
             (
                 Value::Variant {
                     enum_name: e1,
@@ -9626,6 +9660,8 @@ impl Interpreter {
             }
             (Value::Char(a), Value::Char(b)) => a == b,
             // Compare enum variants
+            // TODO(perf): same as BinOp::Eq path above — replace en1/vn1 string comparisons with
+            // discriminant integer comparisons once Value::Variant carries a discriminant field.
             (Value::Variant { enum_name: en1, variant_name: vn1, fields: f1 },
              Value::Variant { enum_name: en2, variant_name: vn2, fields: f2 }) => {
                 // Same enum type and variant name
