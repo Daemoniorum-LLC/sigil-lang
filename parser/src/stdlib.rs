@@ -197,6 +197,7 @@ fn crc32c_compute(data: &[u8]) -> u32 {
 
 // External crates for extended stdlib
 use base64::{engine::general_purpose, Engine as _};
+use flate2::read::GzDecoder;
 use md5::Md5;
 use regex::Regex;
 use sha2::{Digest, Sha256, Sha512};
@@ -10556,6 +10557,54 @@ fn register_fs(interp: &mut Interpreter) {
                 fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
             }),
         }
+    });
+
+    // ── Archive extraction ────────────────────────────────────────────────────
+    //
+    // These are native Rust bindings so the interpreter can handle real archives
+    // without loading every byte as a Value::Int.
+    //
+    // TODO(sigil): Once the stdlib exposes streaming primitives
+    //   (zstd·stream·Decoder, tar·Archive, flate2·GzDecoder), these can be
+    //   reimplemented in pure Sigil.  The application logic already lives in
+    //   summoner.sigil — only the decompression + tar-walk layer needs to move.
+
+    // zstd·extract_tar(archive_path, dest_path) -> Result[()]
+    // Decompress a .tar.zst archive into dest_path.  Path-traversal checking is
+    // the caller's responsibility (summoner.sigil already does it).
+    define(interp, "zstd·extract_tar", Some(2), |_, args| {
+        let archive_path = extract_path(&args[0])?;
+        let dest_path    = extract_path(&args[1])?;
+        let file = std::fs::File::open(&archive_path)
+            .map_err(|e| RuntimeError::new(format!("zstd·extract_tar: open '{}': {}", archive_path, e)))?;
+        let decoder = zstd::stream::Decoder::new(file)
+            .map_err(|e| RuntimeError::new(format!("zstd·extract_tar: zstd init: {}", e)))?;
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(&dest_path)
+            .map_err(|e| RuntimeError::new(format!("zstd·extract_tar: unpack into '{}': {}", dest_path, e)))?;
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Null])),
+        })
+    });
+
+    // gzip·extract_tar(archive_path, dest_path) -> Result[()]
+    // Decompress a .tar.gz / .tgz archive into dest_path.
+    define(interp, "gzip·extract_tar", Some(2), |_, args| {
+        let archive_path = extract_path(&args[0])?;
+        let dest_path    = extract_path(&args[1])?;
+        let file = std::fs::File::open(&archive_path)
+            .map_err(|e| RuntimeError::new(format!("gzip·extract_tar: open '{}': {}", archive_path, e)))?;
+        let decoder = GzDecoder::new(file);
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(&dest_path)
+            .map_err(|e| RuntimeError::new(format!("gzip·extract_tar: unpack into '{}': {}", dest_path, e)))?;
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Null])),
+        })
     });
 
     // fs·symlink - create a symlink (original -> link)

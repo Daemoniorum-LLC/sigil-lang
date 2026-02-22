@@ -98,6 +98,13 @@ md-5 = "0.10"
 base64 = "0.22"
 hex = "0.4"                          # Hex encoding
 
+# Archive / compression — native bindings for zstd·extract_tar, gzip·extract_tar
+# TODO(sigil): Once the stdlib has streaming decompression primitives, these
+# operations can be reimplemented in pure Sigil (see summoner.sigil extract_zstd_tar).
+zstd = "0.13"
+tar = "0.4"
+flate2 = "1.0"                       # gzip / zlib
+
 # Authenticated encryption
 aes-gcm = "0.10"                     # AES-GCM AEAD
 chacha20poly1305 = "0.10"            # ChaCha20-Poly1305 AEAD
