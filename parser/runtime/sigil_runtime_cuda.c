@@ -149,6 +149,32 @@ void sigil_cuda_sync(void) {
     }
 }
 
+/* Fill device buffer with N(0,1) random values via host staging.
+ * Avoids passing &StoragePtr (fat-pointer ABI bug): takes raw device_ptr + n. */
+void sigil_cuda_fill_randn_f32(int64_t device_ptr, int64_t n) {
+    if (n <= 0 || !device_ptr) return;
+    float* host = (float*)malloc((size_t)n * sizeof(float));
+    if (!host) return;
+    for (int64_t i = 0; i + 1 < n; i += 2) {
+        double u1, u2;
+        do { u1 = (double)rand() / ((double)RAND_MAX + 1.0); } while (u1 < 1e-10);
+        u2 = (double)rand() / ((double)RAND_MAX + 1.0);
+        double r = sqrt(-2.0 * log(u1));
+        double t = 6.28318530718 * u2;
+        host[i]     = (float)(r * cos(t));
+        host[i + 1] = (float)(r * sin(t));
+    }
+    if (n & 1) { host[n-1] = host[0]; }
+    cuMemcpyHtoD((CUdeviceptr)device_ptr, host, (size_t)n * sizeof(float));
+    free(host);
+}
+
+/* Fill device buffer with zeros. */
+void sigil_cuda_zero_f32(int64_t device_ptr, int64_t n) {
+    if (n <= 0 || !device_ptr) return;
+    cuMemsetD8((CUdeviceptr)device_ptr, 0, (size_t)n * sizeof(float));
+}
+
 /* ============================================================================
  * Kernel Compilation and Execution
  * ============================================================================ */
@@ -733,88 +759,669 @@ void sigil_cuda_randn_seed(uint64_t seed) {
 }
 
 /* ============================================================================
- * GEMM Implementation
+ * GEMM Implementation — Real GPU SGEMM via NVRTC
  * ============================================================================ */
 
+/* SigilVec layout for Vec<f32>: len, capacity, float* data (packed 4 bytes/elem) */
+typedef struct { int64_t len; int64_t capacity; float* data; } SigilVecF32;
+
+/* ---- Tiled SGEMM NT kernel: C = A @ B^T
+ *   A: [M x K] row-major
+ *   B: [N x K] row-major (rows of B are treated as columns of B^T)
+ *   C: [M x N] output
+ *
+ * Thread (ty,tx) in block (by,bx) computes C[by*16+ty][bx*16+tx].
+ * Shared memory tiles: sA[ty][tx] = A[row][t*16+tx]
+ *                      sB[ty][tx] = B[col][t*16+ty]  (col = bx*16+tx)
+ * Inner product: sum_k sA[ty][k] * sB[k][tx]
+ *              = sum_k A[row][t*16+k] * B[col][t*16+k]  ✓
+ */
+static const char* SGEMM_NT_SRC =
+"#define TILE 16\n"
+"extern \"C\" __global__ void sgemm_nt(\n"
+"    const float* __restrict__ A,\n"
+"    const float* __restrict__ B,\n"
+"    float* __restrict__ C,\n"
+"    int M, int N, int K) {\n"
+"    __shared__ float sA[TILE][TILE], sB[TILE][TILE];\n"
+"    int ty = threadIdx.y, tx = threadIdx.x;\n"
+"    int row = blockIdx.y * TILE + ty;\n"
+"    int col = blockIdx.x * TILE + tx;\n"
+"    float acc = 0.0f;\n"
+"    for (int t = 0; t * TILE < K; t++) {\n"
+"        int aK = t * TILE + tx;\n"
+"        int bK = t * TILE + ty;\n"
+"        sA[ty][tx] = (row < M && aK < K) ? A[row * K + aK] : 0.0f;\n"
+"        sB[ty][tx] = (col < N && bK < K) ? B[col * K + bK] : 0.0f;\n"
+"        __syncthreads();\n"
+"        for (int k = 0; k < TILE; k++) acc += sA[ty][k] * sB[k][tx];\n"
+"        __syncthreads();\n"
+"    }\n"
+"    if (row < M && col < N) C[row * N + col] = acc;\n"
+"}\n";
+
+/* ---- Tiled SGEMM NN kernel: C = A @ B
+ *   A: [M x K] row-major
+ *   B: [K x N] row-major
+ *   C: [M x N] output
+ */
+static const char* SGEMM_NN_SRC =
+"#define TILE 16\n"
+"extern \"C\" __global__ void sgemm_nn(\n"
+"    const float* __restrict__ A,\n"
+"    const float* __restrict__ B,\n"
+"    float* __restrict__ C,\n"
+"    int M, int N, int K) {\n"
+"    __shared__ float sA[TILE][TILE], sB[TILE][TILE];\n"
+"    int ty = threadIdx.y, tx = threadIdx.x;\n"
+"    int row = blockIdx.y * TILE + ty;\n"
+"    int col = blockIdx.x * TILE + tx;\n"
+"    float acc = 0.0f;\n"
+"    for (int t = 0; t * TILE < K; t++) {\n"
+"        int aK = t * TILE + tx;\n"
+"        int bK = t * TILE + ty;\n"
+"        sA[ty][tx] = (row < M && aK < K) ? A[row * K + aK] : 0.0f;\n"
+"        sB[ty][tx] = (bK < K && col < N) ? B[bK * N + col] : 0.0f;\n"
+"        __syncthreads();\n"
+"        for (int k = 0; k < TILE; k++) acc += sA[ty][k] * sB[k][tx];\n"
+"        __syncthreads();\n"
+"    }\n"
+"    if (row < M && col < N) C[row * N + col] = acc;\n"
+"}\n";
+
+/* ---- Tiled SGEMM TN kernel: C = A^T @ B
+ *   A: [K x M] row-major  (A^T is [M x K])
+ *   B: [K x N] row-major
+ *   C: [M x N] output
+ * sA[ty][tx] = A[aK * M + row]  (transpose access: A^T[row, aK] = A[aK, row])
+ * sB[ty][tx] = B[bK * N + col]  (same as NN)
+ */
+static const char* SGEMM_TN_SRC =
+"#define TILE 16\n"
+"extern \"C\" __global__ void sgemm_tn(\n"
+"    const float* __restrict__ A,\n"
+"    const float* __restrict__ B,\n"
+"    float* __restrict__ C,\n"
+"    int M, int N, int K) {\n"
+"    __shared__ float sA[TILE][TILE], sB[TILE][TILE];\n"
+"    int ty = threadIdx.y, tx = threadIdx.x;\n"
+"    int row = blockIdx.y * TILE + ty;\n"
+"    int col = blockIdx.x * TILE + tx;\n"
+"    float acc = 0.0f;\n"
+"    for (int t = 0; t * TILE < K; t++) {\n"
+"        int aK = t * TILE + tx;\n"
+"        int bK = t * TILE + ty;\n"
+"        sA[ty][tx] = (row < M && aK < K) ? A[aK * M + row] : 0.0f;\n"
+"        sB[ty][tx] = (bK < K && col < N) ? B[bK * N + col] : 0.0f;\n"
+"        __syncthreads();\n"
+"        for (int k = 0; k < TILE; k++) acc += sA[ty][k] * sB[k][tx];\n"
+"        __syncthreads();\n"
+"    }\n"
+"    if (row < M && col < N) C[row * N + col] = acc;\n"
+"}\n";
+
+static CUfunction g_sgemm_nt_fn = NULL;
+static CUfunction g_sgemm_nn_fn = NULL;
+static CUfunction g_sgemm_tn_fn = NULL;
+static int g_sgemm_compiled = 0;
+
+static int compile_sgemm_kernel(const char* src, const char* name, CUfunction* out_fn) {
+    if (!g_cuda_initialized && !sigil_cuda_init()) return 0;
+
+    nvrtcProgram prog;
+    nvrtcResult nr = nvrtcCreateProgram(&prog, src, "sgemm.cu", 0, NULL, NULL);
+    if (nr != NVRTC_SUCCESS) {
+        fprintf(stderr, "nvrtcCreateProgram failed for %s: %s\n", name, nvrtcGetErrorString(nr));
+        return 0;
+    }
+
+    /* Try SM89 (Ada) first, fall back to SM75 (Turing) */
+    const char* opts89[] = {"--gpu-architecture=compute_89"};
+    nr = nvrtcCompileProgram(prog, 1, opts89);
+    if (nr != NVRTC_SUCCESS) {
+        const char* opts75[] = {"--gpu-architecture=compute_75"};
+        nr = nvrtcCompileProgram(prog, 1, opts75);
+    }
+    if (nr != NVRTC_SUCCESS) {
+        size_t logSz;
+        nvrtcGetProgramLogSize(prog, &logSz);
+        char* log = (char*)malloc(logSz);
+        nvrtcGetProgramLog(prog, log);
+        fprintf(stderr, "NVRTC compile failed for %s:\n%s\n", name, log);
+        free(log);
+        nvrtcDestroyProgram(&prog);
+        return 0;
+    }
+
+    size_t ptxSz;
+    nvrtcGetPTXSize(prog, &ptxSz);
+    char* ptx = (char*)malloc(ptxSz);
+    nvrtcGetPTX(prog, ptx);
+    nvrtcDestroyProgram(&prog);
+
+    CUmodule mod;
+    CUresult cr = cuModuleLoadDataEx(&mod, ptx, 0, NULL, NULL);
+    free(ptx);
+    if (cr != CUDA_SUCCESS) {
+        fprintf(stderr, "cuModuleLoadDataEx failed for %s: %d\n", name, cr);
+        return 0;
+    }
+
+    cr = cuModuleGetFunction(out_fn, mod, name);
+    if (cr != CUDA_SUCCESS) {
+        fprintf(stderr, "cuModuleGetFunction failed for %s: %d\n", name, cr);
+        return 0;
+    }
+    return 1;
+}
+
+static int ensure_sgemm_kernels() {
+    if (g_sgemm_compiled) return (g_sgemm_nt_fn != NULL);
+    g_sgemm_compiled = 1;
+    fprintf(stderr, "[CUDA] ensure_sgemm_kernels: g_cuda_initialized=%d\n", g_cuda_initialized);
+    fprintf(stderr, "[CUDA] Compiling SGEMM kernels via NVRTC...\n");
+    int ok_nt = compile_sgemm_kernel(SGEMM_NT_SRC, "sgemm_nt", &g_sgemm_nt_fn);
+    int ok_nn = compile_sgemm_kernel(SGEMM_NN_SRC, "sgemm_nn", &g_sgemm_nn_fn);
+    int ok_tn = compile_sgemm_kernel(SGEMM_TN_SRC, "sgemm_tn", &g_sgemm_tn_fn);
+    if (ok_nt && ok_nn && ok_tn)
+        fprintf(stderr, "[CUDA] SGEMM kernels compiled successfully (SM89/SM75).\n");
+    else
+        fprintf(stderr, "[CUDA] WARNING: SGEMM kernel compilation failed (nt=%d nn=%d tn=%d).\n", ok_nt, ok_nn, ok_tn);
+    return ok_nt;
+}
+
+int64_t sigil_cuda_is_available(void) {
+    int64_t r = sigil_cuda_init();
+    fprintf(stderr, "[CUDA-DEBUG] sigil_cuda_is_available: init=%lld initialized=%d\n",
+            (long long)r, g_cuda_initialized);
+    return r;
+}
+
 /*
- * sigil_cuda_gemm_f32 - Matrix multiplication C = A @ B
- *
- * For now, uses host-side computation as a correctness baseline.
- * TODO: Replace with cuBLAS or custom PTX kernel for performance.
- *
- * Parameters:
- *   a_ptr: Device pointer to A [M x K]
- *   b_ptr: Device pointer to B [K x N]
- *   c_ptr: Device pointer to C [M x N] (output, must be pre-allocated)
- *   m, n, k: Matrix dimensions
- *
- * Returns: 0 on success, -1 on failure
+ * sigil_cuda_gemm_f32 - Matrix multiplication C = A @ B (device pointers)
+ * Now uses actual GPU kernel instead of CPU fallback.
  */
 int64_t sigil_cuda_gemm_f32(
     int64_t a_ptr, int64_t b_ptr, int64_t c_ptr,
     int64_t m, int64_t n, int64_t k
 ) {
-    if (!g_cuda_initialized && !sigil_cuda_init()) {
-        fprintf(stderr, "sigil_cuda_gemm_f32: CUDA not initialized\n");
+    if (!ensure_sgemm_kernels() || !g_sgemm_nn_fn) {
+        fprintf(stderr, "sigil_cuda_gemm_f32: kernel unavailable\n");
         return -1;
     }
-
-    /* Allocate host buffers */
-    float* a_host = (float*)malloc(m * k * sizeof(float));
-    float* b_host = (float*)malloc(k * n * sizeof(float));
-    float* c_host = (float*)malloc(m * n * sizeof(float));
-
-    if (!a_host || !b_host || !c_host) {
-        fprintf(stderr, "sigil_cuda_gemm_f32: malloc failed\n");
-        free(a_host); free(b_host); free(c_host);
+    int M = (int)m, N = (int)n, K = (int)k;
+    void* args[] = { &a_ptr, &b_ptr, &c_ptr, &M, &N, &K };
+    int tile = 16;
+    unsigned gx = ((unsigned)N + tile - 1) / tile;
+    unsigned gy = ((unsigned)M + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nn_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sigil_cuda_gemm_f32 launch failed: %s\n", s);
         return -1;
     }
-
-    /* Copy A and B from device to host */
-    CUresult err;
-    err = cuMemcpyDtoH(a_host, (CUdeviceptr)a_ptr, m * k * sizeof(float));
-    if (err != CUDA_SUCCESS) {
-        const char* errStr;
-        cuGetErrorString(err, &errStr);
-        fprintf(stderr, "sigil_cuda_gemm_f32: cuMemcpyDtoH(A) failed: %s\n", errStr);
-        free(a_host); free(b_host); free(c_host);
-        return -1;
-    }
-
-    err = cuMemcpyDtoH(b_host, (CUdeviceptr)b_ptr, k * n * sizeof(float));
-    if (err != CUDA_SUCCESS) {
-        const char* errStr;
-        cuGetErrorString(err, &errStr);
-        fprintf(stderr, "sigil_cuda_gemm_f32: cuMemcpyDtoH(B) failed: %s\n", errStr);
-        free(a_host); free(b_host); free(c_host);
-        return -1;
-    }
-
-    /* Perform matmul on host: C = A @ B */
-    /* A is [M x K], B is [K x N], C is [M x N] */
-    for (int64_t i = 0; i < m; i++) {
-        for (int64_t j = 0; j < n; j++) {
-            float sum = 0.0f;
-            for (int64_t l = 0; l < k; l++) {
-                sum += a_host[i * k + l] * b_host[l * n + j];
-            }
-            c_host[i * n + j] = sum;
-        }
-    }
-
-    /* Copy C from host to device */
-    err = cuMemcpyHtoD((CUdeviceptr)c_ptr, c_host, m * n * sizeof(float));
-    if (err != CUDA_SUCCESS) {
-        const char* errStr;
-        cuGetErrorString(err, &errStr);
-        fprintf(stderr, "sigil_cuda_gemm_f32: cuMemcpyHtoD(C) failed: %s\n", errStr);
-        free(a_host); free(b_host); free(c_host);
-        return -1;
-    }
-
-    free(a_host);
-    free(b_host);
-    free(c_host);
-
+    cuCtxSynchronize();
     return 0;
+}
+
+/*
+ * sigil_cuda_sgemm_host_nt — Host-to-host SGEMM via GPU: C = A @ B^T
+ *
+ * Takes CPU Vec<f32> pointers for A [M×K] and B [N×K].
+ * Uploads to GPU, runs tiled SGEMM kernel, downloads result.
+ * Returns new Vec<f32> containing C [M×N].
+ *
+ * This is the main acceleration entry point for the training loop.
+ */
+SigilVecF32 sigil_cuda_sgemm_host_nt(SigilVecF32 a, SigilVecF32 b, int64_t M, int64_t N, int64_t K) {
+    SigilVecF32 result = {0, 0, NULL};
+
+    if (!ensure_sgemm_kernels() || !g_sgemm_nt_fn) {
+        fprintf(stderr, "sigil_cuda_sgemm_host_nt: kernel unavailable\n");
+        return result;
+    }
+
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(N * K) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+
+    /* Allocate device memory */
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) { fprintf(stderr, "sgemm_host_nt: alloc A failed\n"); return result; }
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); fprintf(stderr, "sgemm_host_nt: alloc B failed\n"); return result; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); fprintf(stderr, "sgemm_host_nt: alloc C failed\n"); return result; }
+
+    /* Upload A and B */
+    cuMemcpyHtoD(d_a, a.data, a_bytes);
+    cuMemcpyHtoD(d_b, b.data, b_bytes);
+
+    /* Launch tiled SGEMM NT kernel */
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    unsigned gx = ((unsigned)iN + tile - 1) / tile;
+    unsigned gy = ((unsigned)iM + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nt_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_host_nt launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+        return result;
+    }
+    cuCtxSynchronize();
+
+    /* Download C */
+    float* c_host = (float*)malloc(c_bytes);
+    if (!c_host) { cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c); return result; }
+    cuMemcpyDtoH(c_host, d_c, c_bytes);
+
+    cuMemFree(d_a);
+    cuMemFree(d_b);
+    cuMemFree(d_c);
+
+    result.data = c_host;
+    result.len = M * N;
+    result.capacity = M * N;
+    return result;
+}
+
+/*
+ * sigil_cuda_sgemm_host_nn — Host-to-host SGEMM via GPU: C = A @ B
+ *
+ * A: [M×K], B: [K×N], C: [M×N]
+ * Used in backward pass (gradient through weight).
+ */
+SigilVecF32 sigil_cuda_sgemm_host_nn(SigilVecF32 a, SigilVecF32 b, int64_t M, int64_t N, int64_t K) {
+    SigilVecF32 result = {0, 0, NULL};
+
+    if (!ensure_sgemm_kernels() || !g_sgemm_nn_fn) {
+        fprintf(stderr, "sigil_cuda_sgemm_host_nn: kernel unavailable\n");
+        return result;
+    }
+
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(K * N) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) return result;
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); return result; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); return result; }
+
+    cuMemcpyHtoD(d_a, a.data, a_bytes);
+    cuMemcpyHtoD(d_b, b.data, b_bytes);
+
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    unsigned gx = ((unsigned)iN + tile - 1) / tile;
+    unsigned gy = ((unsigned)iM + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nn_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c); return result; }
+    cuCtxSynchronize();
+
+    float* c_host = (float*)malloc(c_bytes);
+    if (!c_host) { cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c); return result; }
+    cuMemcpyDtoH(c_host, d_c, c_bytes);
+
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+
+    result.data = c_host;
+    result.len = M * N;
+    result.capacity = M * N;
+    return result;
+}
+
+/* sigil_cuda_is_available is defined earlier in this file */
+
+/*
+ * sigil_cuda_sgemm_nt_fill — GPU SGEMM NT into pre-allocated output buffer.
+ *
+ * C = A @ B^T,  A:[M×K], B:[N×K], out:[M×N]
+ * Returns M*N on success, 0 on failure.
+ * Uses i64 return (not Vec) so Sigil LLVM codegen emits the call correctly.
+ */
+int64_t sigil_cuda_sgemm_nt_fill(SigilVecF32 a, SigilVecF32 b, SigilVecF32 out, int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_nt_fn) {
+        fprintf(stderr, "sgemm_nt_fill: kernel unavailable\n");
+        return 0;
+    }
+    if (!a.data || !b.data || !out.data || out.len < M * N) {
+        fprintf(stderr, "sgemm_nt_fill: bad input (a=%p b=%p out=%p out.len=%ld need=%ld)\n",
+                (void*)a.data, (void*)b.data, (void*)out.data, (long)out.len, (long)(M*N));
+        return 0;
+    }
+
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(N * K) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) return 0;
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); return 0; }
+
+    cuMemcpyHtoD(d_a, a.data, a_bytes);
+    cuMemcpyHtoD(d_b, b.data, b_bytes);
+
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    unsigned gx = ((unsigned)iN + tile - 1) / tile;
+    unsigned gy = ((unsigned)iM + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nt_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_nt_fill launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+        return 0;
+    }
+    cuCtxSynchronize();
+
+    cuMemcpyDtoH(out.data, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    return M * N;
+}
+
+/* ============================================================================
+ * Sigil Vec<f32> native ABI SGEMM helpers
+ *
+ * SIGIL VEC ABI: Vec<f32> is passed as a SINGLE int64_t (pointer to SigilVec).
+ *   SigilVec: { int64_t len, int64_t capacity, int64_t* data }
+ *   Elements: data[i] = (int64_t)(uint32_t)(f32_bits) — float bits zero-extended.
+ *
+ * sigil_sgemm_nt_sv / sigil_sgemm_nn_sv:
+ *   - All args are int64_t, fitting exactly 6 integer registers (rdi..r9)
+ *   - a, b, out are SigilVec* pointers (Sigil passes Vec<f32> as single i64)
+ *   - Unpacks i64→float[], runs GPU SGEMM, packs float[]→i64 into out
+ * ============================================================================ */
+
+typedef struct { int64_t len; int64_t capacity; int64_t* data; } SigilVecNative;
+
+static float* sigil_unpack_vec(int64_t vec_ptr, int64_t expected_n) {
+    SigilVecNative* v = (SigilVecNative*)(uintptr_t)vec_ptr;
+    if (!v || !v->data || v->len < expected_n) {
+        fprintf(stderr, "sigil_unpack_vec: bad ptr=%p len=%ld need=%ld\n",
+                (void*)v, v ? (long)v->len : -1L, (long)expected_n);
+        return NULL;
+    }
+    float* buf = (float*)malloc((size_t)expected_n * sizeof(float));
+    if (!buf) return NULL;
+    for (int64_t i = 0; i < expected_n; i++) {
+        uint32_t bits = (uint32_t)(v->data[i] & 0xFFFFFFFFULL);
+        memcpy(&buf[i], &bits, sizeof(float));
+    }
+    return buf;
+}
+
+static void sigil_pack_vec(int64_t vec_ptr, const float* src, int64_t n) {
+    SigilVecNative* v = (SigilVecNative*)(uintptr_t)vec_ptr;
+    if (!v || !v->data) return;
+    for (int64_t i = 0; i < n; i++) {
+        uint32_t bits;
+        memcpy(&bits, &src[i], sizeof(float));
+        v->data[i] = (int64_t)(uint64_t)bits;
+    }
+}
+
+int64_t sigil_sgemm_nt_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                           int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_nt_fn) return 0;
+    float* a_f = sigil_unpack_vec(a_ptr, M * K);
+    float* b_f = sigil_unpack_vec(b_ptr, N * K);
+    if (!a_f || !b_f) { free(a_f); free(b_f); return 0; }
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(N * K) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+    float* c_f = (float*)malloc(c_bytes);
+    if (!c_f) { free(a_f); free(b_f); return 0; }
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) { free(a_f); free(b_f); free(c_f); return 0; }
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); free(a_f); free(b_f); free(c_f); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); free(a_f); free(b_f); free(c_f); return 0; }
+    cuMemcpyHtoD(d_a, a_f, a_bytes);
+    cuMemcpyHtoD(d_b, b_f, b_bytes);
+    free(a_f); free(b_f);
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    CUresult cr = cuLaunchKernel(g_sgemm_nt_fn,
+        ((unsigned)iN+tile-1)/tile, ((unsigned)iM+tile-1)/tile, 1,
+        tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_nt_sv launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c); free(c_f); return 0;
+    }
+    cuCtxSynchronize();
+    cuMemcpyDtoH(c_f, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    sigil_pack_vec(out_ptr, c_f, M * N);
+    free(c_f);
+    return M * N;
+}
+
+/* sigil_sgemm_tn_sv: C[M,N] = A^T @ B
+ * A is [K, M] row-major (i.e., A stored as [m, k] where M=k, K=m in caller),
+ * B is [K, N] row-major, C is [M, N].
+ * Caller: matmul_AT_vecs(a[m,k], b[m,n]) → result[k,n]
+ *   → sigil_sgemm_tn_sv(a, b, out, k, n, m)
+ */
+int64_t sigil_sgemm_tn_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                           int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_tn_fn) return 0;
+    float* a_f = sigil_unpack_vec(a_ptr, M * K);
+    float* b_f = sigil_unpack_vec(b_ptr, N * K);
+    if (!a_f || !b_f) { free(a_f); free(b_f); return 0; }
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(N * K) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+    float* c_f = (float*)malloc(c_bytes);
+    if (!c_f) { free(a_f); free(b_f); return 0; }
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) { free(a_f); free(b_f); free(c_f); return 0; }
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); free(a_f); free(b_f); free(c_f); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); free(a_f); free(b_f); free(c_f); return 0; }
+    cuMemcpyHtoD(d_a, a_f, a_bytes);
+    cuMemcpyHtoD(d_b, b_f, b_bytes);
+    free(a_f); free(b_f);
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    CUresult cr = cuLaunchKernel(g_sgemm_tn_fn,
+        ((unsigned)iN+tile-1)/tile, ((unsigned)iM+tile-1)/tile, 1,
+        tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_tn_sv launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c); free(c_f); return 0;
+    }
+    cuCtxSynchronize();
+    cuMemcpyDtoH(c_f, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    sigil_pack_vec(out_ptr, c_f, M * N);
+    free(c_f);
+    return M * N;
+}
+
+int64_t sigil_sgemm_nn_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                           int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_nn_fn) return 0;
+    float* a_f = sigil_unpack_vec(a_ptr, M * K);
+    float* b_f = sigil_unpack_vec(b_ptr, K * N);
+    if (!a_f || !b_f) { free(a_f); free(b_f); return 0; }
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(K * N) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+    float* c_f = (float*)malloc(c_bytes);
+    if (!c_f) { free(a_f); free(b_f); return 0; }
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) { free(a_f); free(b_f); free(c_f); return 0; }
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); free(a_f); free(b_f); free(c_f); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); free(a_f); free(b_f); free(c_f); return 0; }
+    cuMemcpyHtoD(d_a, a_f, a_bytes);
+    cuMemcpyHtoD(d_b, b_f, b_bytes);
+    free(a_f); free(b_f);
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    CUresult cr = cuLaunchKernel(g_sgemm_nn_fn,
+        ((unsigned)iN+tile-1)/tile, ((unsigned)iM+tile-1)/tile, 1,
+        tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_nn_sv launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c); free(c_f); return 0;
+    }
+    cuCtxSynchronize();
+    cuMemcpyDtoH(c_f, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    sigil_pack_vec(out_ptr, c_f, M * N);
+    free(c_f);
+    return M * N;
+}
+
+/*
+ * sigil_vec_data_i64 — Extract raw data pointer from Vec<f32> as i64.
+ *
+ * Takes ONE Vec<f32> arg (fits in 3 integer registers — known to work in Sigil ABI).
+ * Used so Sigil code can get a raw pointer to pass to all-i64-arg SGEMM functions.
+ */
+int64_t sigil_vec_data_i64(SigilVecF32 v) {
+    return (int64_t)(uintptr_t)v.data;
+}
+
+/*
+ * sigil_sgemm_nt_raw — GPU SGEMM NT via raw pointers (all i64 args).
+ *
+ * C = A @ B^T,  A:[M×K], B:[N×K], out:[M×N]
+ * All arguments are i64 — no struct passing, works with Sigil LLVM ABI.
+ * Returns M*N on success, 0 on failure.
+ */
+int64_t sigil_sgemm_nt_raw(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                            int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_nt_fn) return 0;
+    float* a = (float*)(uintptr_t)a_ptr;
+    float* b = (float*)(uintptr_t)b_ptr;
+    float* out = (float*)(uintptr_t)out_ptr;
+    if (!a || !b || !out) return 0;
+
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(N * K) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) return 0;
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); return 0; }
+
+    cuMemcpyHtoD(d_a, a, a_bytes);
+    cuMemcpyHtoD(d_b, b, b_bytes);
+
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    unsigned gx = ((unsigned)iN + tile - 1) / tile;
+    unsigned gy = ((unsigned)iM + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nt_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_nt_raw launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+        return 0;
+    }
+    cuCtxSynchronize();
+    cuMemcpyDtoH(out, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    return M * N;
+}
+
+/*
+ * sigil_sgemm_nn_raw — GPU SGEMM NN via raw pointers (all i64 args).
+ *
+ * C = A @ B,  A:[M×K], B:[K×N], out:[M×N]
+ */
+int64_t sigil_sgemm_nn_raw(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                            int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_nn_fn) return 0;
+    float* a = (float*)(uintptr_t)a_ptr;
+    float* b = (float*)(uintptr_t)b_ptr;
+    float* out = (float*)(uintptr_t)out_ptr;
+    if (!a || !b || !out) return 0;
+
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(K * N) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) return 0;
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); return 0; }
+
+    cuMemcpyHtoD(d_a, a, a_bytes);
+    cuMemcpyHtoD(d_b, b, b_bytes);
+
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    unsigned gx = ((unsigned)iN + tile - 1) / tile;
+    unsigned gy = ((unsigned)iM + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nn_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_nn_raw launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+        return 0;
+    }
+    cuCtxSynchronize();
+    cuMemcpyDtoH(out, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    return M * N;
+}
+
+/*
+ * sigil_cuda_sgemm_nn_fill — GPU SGEMM NN into pre-allocated output buffer.
+ *
+ * C = A @ B,  A:[M×K], B:[K×N], out:[M×N]
+ * Returns M*N on success, 0 on failure.
+ */
+int64_t sigil_cuda_sgemm_nn_fill(SigilVecF32 a, SigilVecF32 b, SigilVecF32 out, int64_t M, int64_t N, int64_t K) {
+    if (!ensure_sgemm_kernels() || !g_sgemm_nn_fn) {
+        fprintf(stderr, "sgemm_nn_fill: kernel unavailable\n");
+        return 0;
+    }
+    if (!a.data || !b.data || !out.data || out.len < M * N) {
+        fprintf(stderr, "sgemm_nn_fill: bad input\n");
+        return 0;
+    }
+
+    size_t a_bytes = (size_t)(M * K) * sizeof(float);
+    size_t b_bytes = (size_t)(K * N) * sizeof(float);
+    size_t c_bytes = (size_t)(M * N) * sizeof(float);
+
+    CUdeviceptr d_a, d_b, d_c;
+    if (cuMemAlloc(&d_a, a_bytes) != CUDA_SUCCESS) return 0;
+    if (cuMemAlloc(&d_b, b_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); return 0; }
+    if (cuMemAlloc(&d_c, c_bytes) != CUDA_SUCCESS) { cuMemFree(d_a); cuMemFree(d_b); return 0; }
+
+    cuMemcpyHtoD(d_a, a.data, a_bytes);
+    cuMemcpyHtoD(d_b, b.data, b_bytes);
+
+    int iM = (int)M, iN = (int)N, iK = (int)K;
+    void* args[] = { &d_a, &d_b, &d_c, &iM, &iN, &iK };
+    unsigned tile = 16;
+    unsigned gx = ((unsigned)iN + tile - 1) / tile;
+    unsigned gy = ((unsigned)iM + tile - 1) / tile;
+    CUresult cr = cuLaunchKernel(g_sgemm_nn_fn, gx, gy, 1, tile, tile, 1, 0, NULL, args, NULL);
+    if (cr != CUDA_SUCCESS) {
+        const char* s; cuGetErrorString(cr, &s);
+        fprintf(stderr, "sgemm_nn_fill launch failed: %s\n", s);
+        cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+        return 0;
+    }
+    cuCtxSynchronize();
+
+    cuMemcpyDtoH(out.data, d_c, c_bytes);
+    cuMemFree(d_a); cuMemFree(d_b); cuMemFree(d_c);
+    return M * N;
 }

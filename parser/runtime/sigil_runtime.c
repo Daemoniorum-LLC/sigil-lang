@@ -145,7 +145,9 @@ int64_t sigil_strlen(const char* str) {
 
 /* Allocate memory */
 void* sigil_alloc(int64_t size) {
-    return malloc((size_t)size);
+    // G139: Use calloc to zero-initialize; prevents garbage len fields in
+    // HashMap/enum/struct allocations from causing spurious sigil_vec_get crashes.
+    return calloc(1, (size_t)size);
 }
 
 /* Reallocate memory */
@@ -228,6 +230,22 @@ void sigil_vec_set(void* vec_ptr, int64_t index, int64_t value) {
     if (index < 0 || index >= vec->len) return;
 
     vec->data[index] = value;
+}
+
+/* Set Vec<f32> element from f64 bits in i64.
+ * Interprets f64_bits as a double, truncates to f32, stores f32 bits zero-extended to i64.
+ * Used when Sigil scalar float arithmetic (f64 bits in i64) needs to be stored into Vec<f32>.
+ * G-F32-ASSIGN: Fixes NaN in backward pass caused by f64 bits stored in f32 Vec slots. */
+void sigil_vec_set_f32_from_i64(void* vec_ptr, int64_t index, int64_t f64_bits) {
+    if (!vec_ptr) return;
+    SigilVec* vec = (SigilVec*)vec_ptr;
+    if (index < 0 || index >= vec->len) return;
+    double f64_val;
+    memcpy(&f64_val, &f64_bits, sizeof(double));
+    float f32_val = (float)f64_val;
+    uint32_t bits;
+    memcpy(&bits, &f32_val, sizeof(float));
+    vec->data[index] = (int64_t)bits;  /* zero-extend f32 bits to i64 */
 }
 
 /* Get Vec length */
@@ -422,6 +440,20 @@ void sigil_string_print(void* str_ptr) {
     if (!str_ptr) { printf("\n"); return; }
     const char* data = (const char*)((int64_t*)str_ptr + 2);
     printf("%s\n", data);
+}
+
+/* Clone a String (inline layout: [len, capacity, data...])
+ * The string layout stores char data inline at offset 16, NOT as a pointer.
+ * sigil_vec_clone cannot be used on Strings. */
+void* sigil_string_clone(void* str_ptr) {
+    if (!str_ptr) return NULL;
+    int64_t* src = (int64_t*)str_ptr;
+    int64_t len = src[0];
+    int64_t capacity = src[1];
+    size_t size = 2 * sizeof(int64_t) + (size_t)capacity + 1;
+    void* dest = malloc(size);
+    if (dest) memcpy(dest, src, size);
+    return dest;
 }
 
 /* Free a String */
@@ -795,6 +827,825 @@ int64_t sigil_file_exists(const char* path) {
 }
 
 /* ============================================================================
+ * Raw memory helpers — bypass Sigil LLVM codegen nested struct access bugs
+ *
+ * Background: Sigil LLVM codegen for `t.storage.data_ptr` generates:
+ *   load(t_ptr + 0)             → reads Arc inner ptr (field 0 of StoragePtr)
+ *   load(Arc_inner_ptr + 8)     → reads StorageInner.len (wrong)
+ * Instead of the correct:
+ *   load(t_ptr + 8)             → reads StoragePtr.data_ptr (field 1)
+ *
+ * These helpers let Sigil pass the struct address as i64 and read the
+ * correct field directly via raw pointer arithmetic.
+ * ============================================================================ */
+
+/* Read i64 at ptr + byte_offset. Used by tensor_raw_ptr to get StoragePtr.data_ptr */
+int64_t sigil_read_i64_at_offset(int64_t ptr, int64_t byte_offset) {
+    if (!ptr) return 0;
+    return *((int64_t*)(ptr + byte_offset));
+}
+
+/* ============================================================================
+ * In-Place SGD Optimizer
+ *
+ * Sigil Vec<f32> ABI: Vec<T> is a POINTER (i64) to a heap-allocated struct:
+ *   typedef struct { int64_t len; int64_t capacity; int64_t* data; } SigilVec;
+ * f32 bits are stored in the low 4 bytes of each int64_t element.
+ *
+ * lr_bits / clip_bits: f32 passed as int64_t (Sigil's universal representation).
+ *
+ * This avoids allocating new Vec<f32> for each weight/gradient per step —
+ * fixing the OOM leak from the previous allocate-and-abandon approach.
+ * ============================================================================ */
+
+/* Clamped f32 exp with Sigil ABI: argument and return are f64 bits packed in int64_t.
+ * Sigil stores f32 arithmetic results as f64 bits in i64 (fp_extend f32→f64, bitcast f64→i64).
+ * Returns 0.0 for x < -20 (handles -1e9 causal mask safely), expf(x) otherwise.
+ * Prevents 10-term Taylor series overflow → NaN without touching manual_exp_f32 inlining. */
+int64_t sigil_expf32_clamped(int64_t x_bits) {
+    /* Sigil passes f32 values as i64 with f32 bits in the LOW 32 bits (zero-extended).
+     * Extract via 32-bit memcpy into float, not 64-bit memcpy into double. */
+    int32_t lo32 = (int32_t)(x_bits & 0xFFFFFFFFLL);
+    float x;
+    memcpy(&x, &lo32, 4);
+    float result;
+    if (x < -20.0f) {
+        result = 0.0f;
+    } else {
+        result = expf(x);
+    }
+    /* Return f32 result as i64 with f32 bits in low 32 (zero-extended). */
+    int32_t result32;
+    memcpy(&result32, &result, 4);
+    return (int64_t)(uint32_t)result32;
+}
+
+/* Softmax in-place on a Vec<f32> passed as SigilVec pointer.
+ * Processes the first n elements: find max, subtract, exp, normalize.
+ * Uses hardware expf (fast) vs Sigil's 10-term Taylor loop (slow).
+ * n <= 0 is a no-op. Clamps x-max < -20 to 0 for causal mask safety.
+ *
+ * ABI note: Vec<f32> stores each f32 in the LOW 4 bytes of an int64_t slot
+ * (8 bytes/element). Must read/write via memcpy(&f, &data[i], 4), NOT float*
+ * indexing (which strides by 4 bytes, reading zeros from the high half). */
+void sigil_softmax_inplace(int64_t v_ptr, int64_t n) {
+    if (n <= 0 || !v_ptr) return;
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SigilVecSM;
+    SigilVecSM* v = (SigilVecSM*)(uintptr_t)v_ptr;
+    int64_t* d = v->data;
+    /* Find max for numerical stability */
+    float max_v;
+    memcpy(&max_v, &d[0], sizeof(float));
+    for (int64_t i = 1; i < n; i++) {
+        float xi;
+        memcpy(&xi, &d[i], sizeof(float));
+        if (xi > max_v) max_v = xi;
+    }
+    /* Compute exp(x - max) in-place, accumulate sum */
+    float sum = 0.0f;
+    for (int64_t i = 0; i < n; i++) {
+        float xi;
+        memcpy(&xi, &d[i], sizeof(float));
+        float e = xi - max_v;
+        float ei = (e < -20.0f) ? 0.0f : expf(e);
+        sum += ei;
+        int64_t slot = 0;
+        memcpy(&slot, &ei, sizeof(float));
+        d[i] = slot;
+    }
+    /* Normalize */
+    if (sum > 0.0f) {
+        float inv_sum = 1.0f / sum;
+        for (int64_t i = 0; i < n; i++) {
+            float xi;
+            memcpy(&xi, &d[i], sizeof(float));
+            xi *= inv_sum;
+            int64_t slot = 0;
+            memcpy(&slot, &xi, sizeof(float));
+            d[i] = slot;
+        }
+    }
+}
+
+/* Vectorized SwiGLU helpers — avoid per-element Sigil→C call overhead.
+ * All Vec<f32> pointers follow the same int64_t-slot ABI as sigil_softmax_inplace.
+ *
+ * sigil_mul_silu_into(a, b, out, n):
+ *   out[i] = a[i] * silu(b[i])   where silu(x) = x / (1 + expf(-x))
+ *   Used for: swiglu forward (gate * silu(up)) and d_gate backward (d_mid * silu(up))
+ *
+ * sigil_d_up_into(d_mid, gate, up, out, n):
+ *   sg = sigmoid(up[i]) = 1/(1+expf(-up[i]))
+ *   dsilu = sg * (1 + up[i]*(1-sg))
+ *   out[i] = d_mid[i] * gate[i] * dsilu
+ *   Used for: swiglu d_up backward
+ */
+static inline void _sv_read(int64_t* data, int64_t i, float* f) {
+    memcpy(f, &data[i], sizeof(float));
+}
+static inline void _sv_write(int64_t* data, int64_t i, float f) {
+    int64_t slot = 0;
+    memcpy(&slot, &f, sizeof(float));
+    data[i] = slot;
+}
+
+void sigil_mul_silu_into(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr, int64_t n) {
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SV;
+    SV* a = (SV*)(uintptr_t)a_ptr;
+    SV* b = (SV*)(uintptr_t)b_ptr;
+    SV* o = (SV*)(uintptr_t)out_ptr;
+    for (int64_t i = 0; i < n; i++) {
+        float ai, bi;
+        _sv_read(a->data, i, &ai);
+        _sv_read(b->data, i, &bi);
+        float silu_bi = bi / (1.0f + expf(-bi));
+        _sv_write(o->data, i, ai * silu_bi);
+    }
+}
+
+void sigil_d_up_into(int64_t dm_ptr, int64_t g_ptr, int64_t up_ptr, int64_t out_ptr, int64_t n) {
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SV;
+    SV* dm = (SV*)(uintptr_t)dm_ptr;
+    SV* gv = (SV*)(uintptr_t)g_ptr;
+    SV* up = (SV*)(uintptr_t)up_ptr;
+    SV* o  = (SV*)(uintptr_t)out_ptr;
+    for (int64_t i = 0; i < n; i++) {
+        float dmi, gi, ui;
+        _sv_read(dm->data, i, &dmi);
+        _sv_read(gv->data, i, &gi);
+        _sv_read(up->data, i, &ui);
+        float sg = 1.0f / (1.0f + expf(-ui));
+        float dsilu = sg * (1.0f + ui * (1.0f - sg));
+        _sv_write(o->data, i, dmi * gi * dsilu);
+    }
+}
+
+/* ============================================================================
+ * GQA Attention C Kernels
+ *
+ * All Vec<f32> args follow the int64_t-slot ABI:
+ *   SV_READ(data, i, f)  — read f32 from slot i (low 4 bytes of int64_t)
+ *   SV_WRITE(data, i, f) — write f32 to slot i (zero-extend into int64_t)
+ *   SV_ACC(data, i, f)   — read-add-write (accumulate)
+ *
+ * inv_scale is computed internally from head_dim to avoid f32 bits-in-i64 ABI.
+ * ============================================================================ */
+
+#define SV_READ(data, i, f)  memcpy(&(f), &(data)[i], sizeof(float))
+#define SV_WRITE(data, i, f) do { int64_t _s=0; memcpy(&_s,&(f),sizeof(float)); (data)[i]=_s; } while(0)
+#define SV_ACC(data, i, f)   do { float _t; SV_READ(data,i,_t); _t+=(f); SV_WRITE(data,i,_t); } while(0)
+typedef struct { int64_t len; int64_t cap; int64_t* data; } SigilGQAVec;
+#define GQA_VEC(ptr) ((SigilGQAVec*)(uintptr_t)(int64_t)(ptr))
+
+/* Softmax in-place on float* row of length seq. */
+static void _gqa_softmax(float* row, int64_t seq) {
+    float max_s = row[0];
+    for (int64_t i = 1; i < seq; i++) if (row[i] > max_s) max_s = row[i];
+    float sum = 0.0f;
+    for (int64_t i = 0; i < seq; i++) {
+        float e = row[i] - max_s;
+        row[i] = (e < -20.0f) ? 0.0f : expf(e);
+        sum += row[i];
+    }
+    if (sum > 0.0f) { float inv = 1.0f / sum; for (int64_t i = 0; i < seq; i++) row[i] *= inv; }
+}
+
+/* Forward: Q×K^T + causal softmax + weighted V sum → out[seq, hidden_dim].
+ * out must be pre-allocated and zeroed. */
+void sigil_gqa_attn_fwd_c(int64_t q_ptr, int64_t k_ptr, int64_t v_ptr, int64_t out_ptr,
+                            int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *q = GQA_VEC(q_ptr), *k = GQA_VEC(k_ptr), *v = GQA_VEC(v_ptr), *o = GQA_VEC(out_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    float inv_scale = 1.0f / sqrtf((float)head_dim);
+    float* scores = (float*)malloc((size_t)seq * sizeof(float));
+    if (!scores) return;
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tq = 0; tq < seq; tq++) {
+            for (int64_t tk = 0; tk < seq; tk++) {
+                if (tk > tq) { scores[tk] = -1e9f; continue; }
+                float dot = 0.0f;
+                for (int64_t d = 0; d < head_dim; d++) {
+                    float qi, ki;
+                    SV_READ(q->data, tq * hidden_dim + q_off + d, qi);
+                    SV_READ(k->data, tk * kv_dim  + kv_off + d, ki);
+                    dot += qi * ki;
+                }
+                scores[tk] = dot * inv_scale;
+            }
+            _gqa_softmax(scores, seq);
+            for (int64_t d = 0; d < head_dim; d++) {
+                float acc = 0.0f;
+                for (int64_t tk = 0; tk < seq; tk++) {
+                    float vi; SV_READ(v->data, tk * kv_dim + kv_off + d, vi);
+                    acc += scores[tk] * vi;
+                }
+                SV_WRITE(o->data, tq * hidden_dim + q_off + d, acc);
+            }
+        }
+    }
+    free(scores);
+}
+
+/* Compute attention weights aw[num_heads × seq × seq] with causal softmax.
+ * aw must be pre-allocated. */
+void sigil_gqa_weights_c(int64_t q_ptr, int64_t k_ptr, int64_t aw_ptr,
+                          int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *q = GQA_VEC(q_ptr), *k = GQA_VEC(k_ptr), *aw = GQA_VEC(aw_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    float inv_scale = 1.0f / sqrtf((float)head_dim);
+    float* scores = (float*)malloc((size_t)seq * sizeof(float));
+    if (!scores) return;
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tq = 0; tq < seq; tq++) {
+            for (int64_t tk = 0; tk < seq; tk++) {
+                if (tk > tq) { scores[tk] = -1e9f; continue; }
+                float dot = 0.0f;
+                for (int64_t d = 0; d < head_dim; d++) {
+                    float qi, ki;
+                    SV_READ(q->data, tq * hidden_dim + q_off + d, qi);
+                    SV_READ(k->data, tk * kv_dim  + kv_off + d, ki);
+                    dot += qi * ki;
+                }
+                scores[tk] = dot * inv_scale;
+            }
+            _gqa_softmax(scores, seq);
+            for (int64_t tk = 0; tk < seq; tk++) {
+                SV_WRITE(aw->data, h * seq * seq + tq * seq + tk, scores[tk]);
+            }
+        }
+    }
+    free(scores);
+}
+
+/* Weighted V sum: ctx[seq, hidden] = aw × V. ctx pre-allocated+zeroed. */
+void sigil_gqa_ctx_c(int64_t aw_ptr, int64_t v_ptr, int64_t ctx_ptr,
+                      int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *aw = GQA_VEC(aw_ptr), *v = GQA_VEC(v_ptr), *ctx = GQA_VEC(ctx_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tq = 0; tq < seq; tq++) {
+            for (int64_t d = 0; d < head_dim; d++) {
+                float acc = 0.0f;
+                for (int64_t tk = 0; tk < seq; tk++) {
+                    float awi, vi;
+                    SV_READ(aw->data, h * seq * seq + tq * seq + tk, awi);
+                    SV_READ(v->data,  tk * kv_dim  + kv_off + d,     vi);
+                    acc += awi * vi;
+                }
+                SV_WRITE(ctx->data, tq * hidden_dim + q_off + d, acc);
+            }
+        }
+    }
+}
+
+/* Backward d_aw[h,tq,tk] = dot(d_ctx[tq, h*hd:], V[tk, kv_h*hd:]) */
+void sigil_gqa_d_aw_c(int64_t dctx_ptr, int64_t v_ptr, int64_t daw_ptr,
+                       int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *dc = GQA_VEC(dctx_ptr), *v = GQA_VEC(v_ptr), *daw = GQA_VEC(daw_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tq = 0; tq < seq; tq++) {
+            for (int64_t tk = 0; tk < seq; tk++) {
+                float dot = 0.0f;
+                for (int64_t d = 0; d < head_dim; d++) {
+                    float dci, vi;
+                    SV_READ(dc->data, tq * hidden_dim + q_off + d, dci);
+                    SV_READ(v->data,  tk * kv_dim  + kv_off + d,   vi);
+                    dot += dci * vi;
+                }
+                SV_WRITE(daw->data, h * seq * seq + tq * seq + tk, dot);
+            }
+        }
+    }
+}
+
+/* Backward d_v: accumulate aw[h,tq,tk] * d_ctx[tq, h*hd:] → d_v[tk, kv_h*hd:] */
+void sigil_gqa_d_v_c(int64_t dctx_ptr, int64_t aw_ptr, int64_t dv_ptr,
+                      int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *dc = GQA_VEC(dctx_ptr), *aw = GQA_VEC(aw_ptr), *dv = GQA_VEC(dv_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tk = 0; tk < seq; tk++) {
+            for (int64_t d = 0; d < head_dim; d++) {
+                float acc = 0.0f;
+                for (int64_t tq = 0; tq < seq; tq++) {
+                    float awi, dci;
+                    SV_READ(aw->data, h * seq * seq + tq * seq + tk, awi);
+                    SV_READ(dc->data, tq * hidden_dim + q_off + d,   dci);
+                    acc += awi * dci;
+                }
+                SV_ACC(dv->data, tk * kv_dim + kv_off + d, acc);
+            }
+        }
+    }
+}
+
+/* Backward softmax: d_scores[h,tq,tk] = aw[h,tq,tk]*(d_aw[h,tq,tk] - dot(d_aw[tq,:],aw[tq,:])) */
+void sigil_gqa_d_scores_c(int64_t daw_ptr, int64_t aw_ptr, int64_t ds_ptr,
+                            int64_t seq, int64_t num_heads) {
+    SigilGQAVec *daw = GQA_VEC(daw_ptr), *aw = GQA_VEC(aw_ptr), *ds = GQA_VEC(ds_ptr);
+    for (int64_t h = 0; h < num_heads; h++) {
+        for (int64_t tq = 0; tq < seq; tq++) {
+            float dot = 0.0f;
+            for (int64_t tk = 0; tk < seq; tk++) {
+                float dawi, awi;
+                int64_t idx = h * seq * seq + tq * seq + tk;
+                SV_READ(daw->data, idx, dawi); SV_READ(aw->data, idx, awi);
+                dot += dawi * awi;
+            }
+            for (int64_t tk = 0; tk < seq; tk++) {
+                int64_t idx = h * seq * seq + tq * seq + tk;
+                float dawi, awi;
+                SV_READ(daw->data, idx, dawi); SV_READ(aw->data, idx, awi);
+                float val = awi * (dawi - dot);
+                SV_WRITE(ds->data, idx, val);
+            }
+        }
+    }
+}
+
+/* Backward d_q[tq,h*hd+d] += inv_scale * sum_tk d_scores[h,tq,tk] * K[tk,kv_h*hd+d] */
+void sigil_gqa_d_q_c(int64_t ds_ptr, int64_t k_ptr, int64_t dq_ptr,
+                      int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *ds = GQA_VEC(ds_ptr), *k = GQA_VEC(k_ptr), *dq = GQA_VEC(dq_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    float inv_scale = 1.0f / sqrtf((float)head_dim);
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tq = 0; tq < seq; tq++) {
+            for (int64_t d = 0; d < head_dim; d++) {
+                float acc = 0.0f;
+                for (int64_t tk = 0; tk < seq; tk++) {
+                    float dsi, ki;
+                    SV_READ(ds->data, h * seq * seq + tq * seq + tk, dsi);
+                    SV_READ(k->data,  tk * kv_dim  + kv_off + d,     ki);
+                    acc += dsi * ki;
+                }
+                SV_ACC(dq->data, tq * hidden_dim + q_off + d, acc * inv_scale);
+            }
+        }
+    }
+}
+
+/* Backward d_k[tk,kv_h*hd+d] += inv_scale * sum_{h,tq} d_scores[h,tq,tk] * Q[tq,h*hd+d] */
+void sigil_gqa_d_k_c(int64_t ds_ptr, int64_t q_ptr, int64_t dk_ptr,
+                      int64_t seq, int64_t hidden_dim, int64_t num_heads, int64_t num_kv_heads) {
+    SigilGQAVec *ds = GQA_VEC(ds_ptr), *q = GQA_VEC(q_ptr), *dk = GQA_VEC(dk_ptr);
+    int64_t head_dim = hidden_dim / num_heads;
+    int64_t kv_dim = num_kv_heads * head_dim;
+    int64_t heads_per_kv = num_heads / num_kv_heads;
+    float inv_scale = 1.0f / sqrtf((float)head_dim);
+    for (int64_t h = 0; h < num_heads; h++) {
+        int64_t kv_h = h / heads_per_kv;
+        int64_t q_off = h * head_dim, kv_off = kv_h * head_dim;
+        for (int64_t tk = 0; tk < seq; tk++) {
+            for (int64_t d = 0; d < head_dim; d++) {
+                float acc = 0.0f;
+                for (int64_t tq = 0; tq < seq; tq++) {
+                    float dsi, qi;
+                    SV_READ(ds->data, h * seq * seq + tq * seq + tk, dsi);
+                    SV_READ(q->data,  tq * hidden_dim + q_off + d,   qi);
+                    acc += dsi * qi;
+                }
+                SV_ACC(dk->data, tk * kv_dim + kv_off + d, acc * inv_scale);
+            }
+        }
+    }
+}
+
+/* In-place SGD: w[i] -= lr * clip(g[i], ±clip_val); then frees the gradient Vec.
+ * All pointers are i64; lr and clip are f32 bits packed as i64. */
+void sigil_sgd_inplace_free_grad(int64_t w_ptr, int64_t g_ptr, int64_t n,
+                                  int64_t lr_bits, int64_t clip_bits) {
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SigilVecSGD;
+    SigilVecSGD* wv = (SigilVecSGD*)(uintptr_t)w_ptr;
+    SigilVecSGD* gv = (SigilVecSGD*)(uintptr_t)g_ptr;
+    float lr, clip_val;
+    memcpy(&lr,       &lr_bits,   sizeof(float));
+    memcpy(&clip_val, &clip_bits, sizeof(float));
+
+    /* G-DIAG: Print first SGD call each step to verify gradients are non-zero and weights update */
+    static int64_t sgd_call_count = 0;
+    static int64_t sgd_step_count = 0;
+    /* 57 weights per step: print on call 0 of each step (W_out gradient, 131072 elements) */
+    if (sgd_call_count % 57 == 0) {
+        float w0 = 0.0f, g0 = 0.0f, g1 = 0.0f, g_max = 0.0f;
+        int64_t nonzero_g = 0;
+        if (wv && wv->data && n > 0) memcpy(&w0, &wv->data[0], sizeof(float));
+        if (gv && gv->data) {
+            if (n > 0) memcpy(&g0, &gv->data[0], sizeof(float));
+            if (n > 1) memcpy(&g1, &gv->data[1], sizeof(float));
+            for (int64_t i = 0; i < n && i < 1024; i++) {
+                float gi; memcpy(&gi, &gv->data[i], sizeof(float));
+                if (gi != 0.0f) nonzero_g++;
+                if (gi > g_max) g_max = gi;
+            }
+        }
+        fprintf(stderr, "[SGD-DIAG step=%lld] w0=%.6f g0=%.6f g1=%.6f g_max=%.6f nonzero=%lld/1024 lr=%.6f\n",
+                (long long)sgd_step_count, w0, g0, g1, g_max, (long long)nonzero_g, lr);
+        fflush(stderr);
+        sgd_step_count++;
+    }
+    sgd_call_count++;
+
+    if (wv && gv && wv->data && gv->data) {
+        for (int64_t i = 0; i < n; i++) {
+            float wi, gi;
+            memcpy(&wi, &wv->data[i], sizeof(float));
+            memcpy(&gi, &gv->data[i], sizeof(float));
+            if (gi > clip_val) gi = clip_val;
+            else if (gi < -clip_val) gi = -clip_val;
+            wi -= lr * gi;
+            int64_t wi64 = 0;
+            memcpy(&wi64, &wi, sizeof(float));
+            wv->data[i] = wi64;
+        }
+    }
+    /* Free the gradient Vec to prevent per-step memory leak */
+    if (gv) {
+        if (gv->data) free(gv->data);
+        free(gv);
+    }
+}
+
+/* ============================================================================
+ * Checkpoint I/O Helpers
+ *
+ * Sigil Vec<f32> ABI: Vec<T> is a POINTER (i64) to a heap-allocated struct:
+ *   typedef struct { int64_t len; int64_t capacity; int64_t* data; } SigilVec;
+ * Elements in Vec<f32> are stored as int64_t (8 bytes), f32 bits in low 4.
+ * ============================================================================ */
+
+typedef struct { int64_t len; int64_t capacity; int64_t* data; } SigilVecCkpt;
+
+/* Write n elements of a Vec<f32> (passed as i64 pointer) to file.
+ * Elements are i64 (8 bytes each — Sigil Vec<f32> stores f32 bits as i64).
+ * Returns number of elements written, or -1 on error. */
+int64_t sigil_ckpt_vec_write(int64_t handle, int64_t vec_ptr, int64_t n) {
+    FILE* f = (FILE*)(uintptr_t)handle;
+    SigilVecCkpt* vec = (SigilVecCkpt*)(uintptr_t)vec_ptr;
+    if (!f || !vec || !vec->data || n <= 0) return -1;
+    return (int64_t)fwrite(vec->data, sizeof(int64_t), (size_t)n, f);
+}
+
+/* Allocate a new SigilVec, read n i64 elements from file into it.
+ * Returns the pointer as i64 (new Vec<f32>), or 0 on error. */
+int64_t sigil_ckpt_vec_load(int64_t handle, int64_t n) {
+    FILE* f = (FILE*)(uintptr_t)handle;
+    if (!f || n <= 0) return 0;
+    SigilVecCkpt* vec = (SigilVecCkpt*)malloc(sizeof(SigilVecCkpt));
+    if (!vec) return 0;
+    int64_t* data = (int64_t*)malloc((size_t)n * sizeof(int64_t));
+    if (!data) { free(vec); return 0; }
+    fread(data, sizeof(int64_t), (size_t)n, f);
+    vec->len = n;
+    vec->capacity = n;
+    vec->data = data;
+    return (int64_t)(uintptr_t)vec;
+}
+
+/* Write a single i64 to file (used for step header) */
+void sigil_ckpt_write_i64(int64_t handle, int64_t val) {
+    FILE* f = (FILE*)(uintptr_t)handle;
+    if (f) fwrite(&val, sizeof(int64_t), 1, f);
+}
+
+/* Read a single i64 from file */
+int64_t sigil_ckpt_read_i64(int64_t handle) {
+    int64_t val = -1;
+    FILE* f = (FILE*)(uintptr_t)handle;
+    if (f) fread(&val, sizeof(int64_t), 1, f);
+    return val;
+}
+
+/* ============================================================================
+ * SGEMM CPU stubs — resolve linker symbols for GPU SGEMM variants.
+ * These return 0 so Sigil code falls through to its CPU triple-loop fallback.
+ * The real GPU implementations live in sigil_runtime_cuda.c.
+ * Excluded from CUDA builds (SIGIL_CUDA_EXTERNAL) to avoid multiple definitions.
+ * ============================================================================ */
+
+#ifndef SIGIL_CUDA_EXTERNAL
+int64_t sigil_sgemm_nt_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                           int64_t M, int64_t N, int64_t K) {
+    (void)a_ptr; (void)b_ptr; (void)out_ptr; (void)M; (void)N; (void)K;
+    return 0; /* no GPU — caller uses CPU fallback */
+}
+
+int64_t sigil_sgemm_nn_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                           int64_t M, int64_t N, int64_t K) {
+    (void)a_ptr; (void)b_ptr; (void)out_ptr; (void)M; (void)N; (void)K;
+    return 0; /* no GPU — caller uses CPU fallback */
+}
+
+int64_t sigil_sgemm_tn_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
+                           int64_t M, int64_t N, int64_t K) {
+    (void)a_ptr; (void)b_ptr; (void)out_ptr; (void)M; (void)N; (void)K;
+    return 0; /* no GPU — caller uses CPU fallback */
+}
+#endif /* SIGIL_CUDA_EXTERNAL */
+
+/* ============================================================================
+ * Gradient norm accumulation + global norm clipping
+ * sigil_gnorm_reset()               — reset accumulator
+ * sigil_gnorm_add_sv(vec_ptr: i64)  — add L2^2 of one SigilVec<f32>
+ * sigil_gnorm_finish_print(step)    — sqrt, compute clip scale, print, reset
+ *
+ * Global norm clipping: after accumulating all grads, finish_print computes
+ *   clip_scale = min(1.0, GNORM_CLIP / norm)
+ * and stores it in g_grad_clip_scale. sigil_adamw_step then multiplies each
+ * gradient element by this scale before updating m/v/w. This preserves gradient
+ * direction (all elements scaled equally) unlike element-wise clipping.
+ *
+ * GNORM_CLIP = 5000.0: normal steps (gnorm ~2000-5000) pass through unclipped;
+ * spike steps (gnorm >5000) are proportionally scaled down.
+ *
+ * SigilVec layout: { int64_t len, int64_t capacity, int64_t* data }
+ * Each data element stores float bits zero-extended into int64_t.
+ * ============================================================================ */
+static double g_gnorm_ss = 0.0;
+static float  g_grad_clip_scale = 1.0f;
+#define GNORM_CLIP 5000.0
+
+void sigil_gnorm_reset() {
+    g_gnorm_ss = 0.0;
+}
+
+void sigil_gnorm_add_sv(int64_t vec_ptr) {
+    if (!vec_ptr) return;
+    int64_t* v = (int64_t*)(uintptr_t)vec_ptr;
+    int64_t n = v[0];
+    if (n <= 0) return;
+    int64_t* raw = (int64_t*)(uintptr_t)v[2];
+    if (!raw) return;
+    for (int64_t i = 0; i < n; i++) {
+        uint32_t bits = (uint32_t)(uint64_t)raw[i];
+        float val;
+        memcpy(&val, &bits, 4);
+        g_gnorm_ss += (double)val * (double)val;
+    }
+}
+
+void sigil_gnorm_finish_print(int64_t step) {
+    double norm = sqrt(g_gnorm_ss);
+    /* Compute global norm clip scale — applied by sigil_adamw_step */
+    double scale = (norm > GNORM_CLIP && norm > 0.0) ? (GNORM_CLIP / norm) : 1.0;
+    g_grad_clip_scale = (float)scale;
+    printf("[GNORM] step=%lld global=%.6f scale=%.4f\n",
+           (long long)step, norm, g_grad_clip_scale);
+    fflush(stdout);
+    g_gnorm_ss = 0.0;
+}
+
+/* ============================================================================
+ * AdamW optimizer (Vec<f32>-based, G-FIX compatible)
+ *
+ * sigil_adamw_step(w, g, m, v, n, lr_bits, wd_bits, t)
+ *   w, g, m, v : i64 pointers to SigilVec structs (same ABI as SGD above)
+ *   n          : element count
+ *   lr_bits    : learning rate as f32 bits packed in i64
+ *   wd_bits    : weight decay coefficient as f32 bits packed in i64
+ *   t          : step count, 1-indexed (for bias correction)
+ *
+ * Updates m and v in-place; applies decoupled weight decay to w; frees g.
+ * β1=0.9, β2=0.999, ε=1e-8 are hardcoded.
+ * ============================================================================ */
+
+void sigil_adamw_step(int64_t w_ptr, int64_t g_ptr, int64_t m_ptr, int64_t v_ptr,
+                      int64_t n, int64_t lr_bits, int64_t wd_bits, int64_t t) {
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SigilVecAW;
+    SigilVecAW* wv = (SigilVecAW*)(uintptr_t)w_ptr;
+    SigilVecAW* gv = (SigilVecAW*)(uintptr_t)g_ptr;
+    SigilVecAW* mv = (SigilVecAW*)(uintptr_t)m_ptr;
+    SigilVecAW* vv = (SigilVecAW*)(uintptr_t)v_ptr;
+
+    float lr, wd;
+    memcpy(&lr, &lr_bits, sizeof(float));
+    memcpy(&wd, &wd_bits, sizeof(float));
+
+    const float beta1 = 0.9f;
+    const float beta2 = 0.999f;
+    const float eps   = 1e-8f;
+
+    if (t < 1) t = 1;
+    /* Cosine LR decay: lr(t) = lr * 0.5 * (1 + cos(pi * t / T_max))
+     * T_max = 500. Mirrors Exp E (seq_len=128, lr=5e-6, T_max=500) which
+     * was stable. With T_max=2000, LR was still 97.5% at step 200 — model
+     * found a good minimum but kept drifting. T_max=500 brakes the LR
+     * at the natural convergence point (~step 200-300 for seq_len=256). */
+    #ifndef M_PI
+    #define M_PI 3.14159265358979323846f
+    #endif
+    const float T_max = 500.0f;
+    float cos_decay = 0.5f * (1.0f + cosf((float)M_PI * (float)t / T_max));
+    if (cos_decay < 0.01f) cos_decay = 0.01f;  /* floor at 1% to avoid zero LR */
+    float lr_t = lr * cos_decay;
+    /* Bias correction: alpha = lr_t * sqrt(1 - beta2^t) / (1 - beta1^t) */
+    float bc1   = 1.0f - powf(beta1, (float)t);
+    float bc2   = 1.0f - powf(beta2, (float)t);
+    float alpha = lr_t * sqrtf(bc2) / bc1;
+
+    if (!wv || !gv || !mv || !vv) return;
+    if (!wv->data || !gv->data || !mv->data || !vv->data) return;
+
+    for (int64_t i = 0; i < n; i++) {
+        float wi, gi, mi, vi;
+        memcpy(&wi, &wv->data[i], sizeof(float));
+        memcpy(&gi, &gv->data[i], sizeof(float));
+        memcpy(&mi, &mv->data[i], sizeof(float));
+        memcpy(&vi, &vv->data[i], sizeof(float));
+
+        /* Global norm clipping: scale computed once per step by sigil_gnorm_finish_print.
+         * Preserves gradient direction (all elements scaled equally).
+         * No-op (scale=1.0) when gnorm <= GNORM_CLIP (5000). */
+        gi *= g_grad_clip_scale;
+
+        /* Update biased first and second moment estimates */
+        mi = beta1 * mi + (1.0f - beta1) * gi;
+        vi = beta2 * vi + (1.0f - beta2) * gi * gi;
+
+        /* Decoupled weight decay + Adam update */
+        wi = wi * (1.0f - lr * wd) - alpha * mi / (sqrtf(vi) + eps);
+
+        int64_t wi64 = 0, mi64 = 0, vi64 = 0;
+        memcpy(&wi64, &wi, sizeof(float));
+        memcpy(&mi64, &mi, sizeof(float));
+        memcpy(&vi64, &vi, sizeof(float));
+        wv->data[i] = wi64;
+        mv->data[i] = mi64;
+        vv->data[i] = vi64;
+    }
+
+    /* Free gradient Vec (prevents per-step memory leak) */
+    if (gv) {
+        if (gv->data) free(gv->data);
+        free(gv);
+    }
+}
+
+/* ============================================================================
+ * Gradient accumulation helper
+ *
+ * sigil_vec_acc_scaled_free(dst, src, n, accum_steps)
+ *   dst         : i64 — accumulated gradient SigilVec (modified in-place, NOT freed)
+ *   src         : i64 — per-micro-batch gradient SigilVec (FREED after accumulation)
+ *   n           : i64 — number of f32 elements
+ *   accum_steps : i64 — number of micro-steps (scale = 1.0 / accum_steps)
+ *
+ * Adds (1/accum_steps) * src[i] into dst[i] for all i, then frees src.
+ * Scale is computed in C from the integer accum_steps to avoid Sigil f32 ABI issues.
+ * Called once per weight per micro-step during gradient accumulation.
+ * After accum_steps calls, dst holds the averaged gradient ready for AdamW.
+ * ============================================================================ */
+
+void sigil_vec_acc_scaled_free(int64_t dst_ptr, int64_t src_ptr, int64_t n, int64_t accum_steps) {
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SigilVecAcc;
+    SigilVecAcc* dst = (SigilVecAcc*)(uintptr_t)dst_ptr;
+    SigilVecAcc* src = (SigilVecAcc*)(uintptr_t)src_ptr;
+    float scale = (accum_steps > 0) ? (1.0f / (float)accum_steps) : 1.0f;
+    if (dst && src && dst->data && src->data) {
+        float* d = (float*)dst->data;
+        float* s = (float*)src->data;
+        for (int64_t i = 0; i < n; i++) {
+            d[i] += scale * s[i];
+        }
+    }
+    if (src) {
+        if (src->data) free(src->data);
+        free(src);
+    }
+}
+
+/* ============================================================================
+ * Vec free helper — explicit destructor for leaked forward/backward intermediates
+ *
+ * sigil_vec_free_raw(ptr): frees the SigilVec struct AND its data array.
+ * Used by the Sigil `vec_drop(v)` wrapper to manually release intermediates
+ * that Sigil's LLVM backend cannot automatically Drop (no RAII in codegen).
+ * ============================================================================ */
+
+void sigil_vec_free_raw(int64_t ptr) {
+    typedef struct { int64_t len; int64_t cap; int64_t* data; } SigilVec;
+    SigilVec* v = (SigilVec*)(uintptr_t)ptr;
+    if (v) {
+        if (v->data) free(v->data);
+        free(v);
+    }
+}
+
+/* ============================================================================
+ * Raw tensor fill helpers — bypass &StoragePtr fat-pointer ABI bug
+ *
+ * Sigil LLVM ABI: `&T` reference params become fat pointers {ptr, metadata}.
+ * Methods called on `&StoragePtr` read fat-pointer fields, not StoragePtr data.
+ * Fix: extract data_ptr (i64) and data_len (usize) while value is unborowed,
+ * then call these C functions with the raw pointer directly.
+ *
+ * sigil_fill_uniform_f32_raw(ptr, len, low, high)
+ *   ptr  : i64 — StoragePtr.data_ptr (raw float* cast to i64)
+ *   len  : i64 — number of f32 elements
+ *   low  : f64 — lower bound (inclusive)
+ *   high : f64 — upper bound (exclusive)
+ *
+ * sigil_fill_randn_f32_raw(ptr, len)
+ *   ptr  : i64 — raw float*
+ *   len  : i64 — number of f32 elements
+ *   Uses Box-Muller transform for standard normal samples.
+ * ============================================================================ */
+
+/* ---- Kaiming / Xavier / randn / rand raw inits ----
+ * All params are i64 — no f64 ABI issues with Sigil LLVM calling convention.
+ * Compute bounds entirely in C; Sigil passes only (ptr, len, fan_in/fan_out) as i64. */
+
+/* Kaiming (He) uniform init: fills [-bound, bound] where bound = sqrt(6/fan_in) */
+void sigil_kaiming_init_raw(int64_t ptr, int64_t len, int64_t fan_in) {
+    float* data = (float*)(uintptr_t)ptr;
+    if (!data || len <= 0 || fan_in <= 0) return;
+    double bound = sqrt(6.0 / (double)fan_in);
+    double two_bound = 2.0 * bound;
+    for (int64_t i = 0; i < len; i++) {
+        double u = ((double)rand()) / ((double)RAND_MAX + 1.0);
+        data[i] = (float)(-bound + u * two_bound);
+    }
+}
+
+/* Xavier (Glorot) uniform init: fills [-bound, bound] where bound = sqrt(6/(fan_in+fan_out)) */
+void sigil_xavier_init_raw(int64_t ptr, int64_t len, int64_t fan_in, int64_t fan_out) {
+    float* data = (float*)(uintptr_t)ptr;
+    if (!data || len <= 0 || (fan_in + fan_out) <= 0) return;
+    double bound = sqrt(6.0 / (double)(fan_in + fan_out));
+    double two_bound = 2.0 * bound;
+    for (int64_t i = 0; i < len; i++) {
+        double u = ((double)rand()) / ((double)RAND_MAX + 1.0);
+        data[i] = (float)(-bound + u * two_bound);
+    }
+}
+
+/* Normal (N(0,1)) init using Box-Muller transform */
+void sigil_fill_randn_f32_raw(int64_t ptr, int64_t len) {
+    float* data = (float*)(uintptr_t)ptr;
+    if (!data || len <= 0) return;
+    for (int64_t i = 0; i < len; i += 2) {
+        double u1, u2;
+        do { u1 = ((double)rand() + 0.5) / ((double)RAND_MAX + 1.0); } while (u1 <= 0.0);
+        u2 = ((double)rand() + 0.5) / ((double)RAND_MAX + 1.0);
+        double r = sqrt(-2.0 * log(u1));
+        double theta = 2.0 * 3.14159265358979323846 * u2;
+        data[i] = (float)(r * cos(theta));
+        if (i + 1 < len) data[i + 1] = (float)(r * sin(theta));
+    }
+}
+
+/* Uniform [0,1) init */
+void sigil_fill_uniform_01_raw(int64_t ptr, int64_t len) {
+    float* data = (float*)(uintptr_t)ptr;
+    if (!data || len <= 0) return;
+    for (int64_t i = 0; i < len; i++) {
+        data[i] = (float)(((double)rand()) / ((double)RAND_MAX + 1.0));
+    }
+}
+
+/* Generic uniform [low, high) — low_bits/high_bits are f64 IEEE 754 bits packed in i64.
+ * Matches Sigil LLVM ABI: all numerics as i64; memcpy recovers doubles.
+ * Same pattern as sigil_adamw_step lr_bits/wd_bits. */
+void sigil_fill_uniform_f32_raw(int64_t ptr, int64_t len,
+                                int64_t low_bits, int64_t high_bits) {
+    float* data = (float*)(uintptr_t)ptr;
+    if (!data || len <= 0) return;
+    double low, high;
+    memcpy(&low, &low_bits, sizeof(double));
+    memcpy(&high, &high_bits, sizeof(double));
+    double range = high - low;
+    for (int64_t i = 0; i < len; i++) {
+        double u = ((double)rand()) / ((double)RAND_MAX + 1.0);
+        data[i] = (float)(low + u * range);
+    }
+}
+
+/* ============================================================================
  * SIMD Functions (AVX-512 F32x16)
  * ============================================================================ */
 
@@ -1054,6 +1905,35 @@ void sigil_cuda_sync(void) {
     cuCtxSynchronize();
 }
 
+/* Fill device buffer with N(0,1) random values via host staging buffer.
+ * Avoids passing &StoragePtr (fat-pointer ABI bug) by taking raw device_ptr + n.
+ * Called as: sigil_cuda_fill_randn_f32(device_ptr, n)
+ * where device_ptr is i64 CUDA device address, n is element count. */
+void sigil_cuda_fill_randn_f32(int64_t device_ptr, int64_t n) {
+    if (n <= 0) return;
+    float* host = (float*)malloc((size_t)n * sizeof(float));
+    if (!host) return;
+    /* Box-Muller transform */
+    for (int64_t i = 0; i + 1 < n; i += 2) {
+        double u1, u2;
+        do { u1 = (double)rand() / ((double)RAND_MAX + 1.0); } while (u1 < 1e-10);
+        u2 = (double)rand() / ((double)RAND_MAX + 1.0);
+        double r = sqrt(-2.0 * log(u1));
+        double t = 6.28318530718 * u2;
+        host[i]     = (float)(r * cos(t));
+        host[i + 1] = (float)(r * sin(t));
+    }
+    if (n & 1) { host[n-1] = host[0]; } /* if odd, duplicate first */
+    cuMemcpyHtoD((CUdeviceptr)device_ptr, host, (size_t)n * sizeof(float));
+    free(host);
+}
+
+/* Fill device buffer with zeros using cuMemsetD8. */
+void sigil_cuda_zero_f32(int64_t device_ptr, int64_t n) {
+    if (n <= 0) return;
+    cuMemsetD8((CUdeviceptr)device_ptr, 0, (size_t)n * sizeof(float));
+}
+
 /* Kernel module storage */
 #define MAX_CUDA_MODULES 64
 static CUmodule g_cuda_modules[MAX_CUDA_MODULES];
@@ -1258,9 +2138,36 @@ int64_t sigil_cuda_compile_kernel(const char* src, const char* name) {
     return -1;
 }
 
+/* Stubs for CUDA device property queries (Nihil framework linkage) */
+int64_t sigil_cuda_get_compute_capability(void) { return 0; }
+int64_t sigil_cuda_get_total_memory(void) { return 0; }
+
 #endif /* SIGIL_CUDA_SUPPORT */
 
 #endif /* SIGIL_CUDA_EXTERNAL */
+
+/* ============================================================================
+ * Random Number Generation (Nihil framework linkage)
+ * sigil_random_f64 / sigil_random_normal are called by Nihil's CPU backend
+ * (Tensor::randn, Cpu::fill_randn). Training uses lcg_f32_vec instead, so
+ * these stubs satisfy the linker but are not called during actual training.
+ * ============================================================================ */
+double sigil_random_f64(void) {
+    static uint64_t state = 0x853c49e6748fea9bULL;
+    state ^= state >> 12;
+    state ^= state << 25;
+    state ^= state >> 27;
+    return (double)(state * 0x2545f4914f6cdd1dULL) / (double)UINT64_MAX;
+}
+
+double sigil_random_normal(void) {
+    /* Box-Muller transform */
+    double u1 = sigil_random_f64();
+    double u2 = sigil_random_f64();
+    if (u1 < 1e-10) u1 = 1e-10;
+    double r = sqrt(-2.0 * log(u1));
+    return r * cos(2.0 * 3.14159265358979323846 * u2);
+}
 
 /* ============================================================================
  * System Functions
