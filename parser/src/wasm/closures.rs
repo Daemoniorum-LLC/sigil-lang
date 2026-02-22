@@ -2899,13 +2899,49 @@ impl WasmCompiler {
             "when" if args.len() == 2 => {
                 // receiver.when(cond, child_vnode) — conditionally append child
                 // Semantics: if cond { receiver.child(child) } else { receiver }
-                // Compile as: always add child (stub — correct would be conditional)
-                self.compile_vnode_child(receiver, &args[1])?;
-                // Drain the condition arg from compile (compile to evaluate side effects)
+                use wasm_encoder::BlockType;
+
+                // Resolve import before mutable borrows
+                let append_idx = self.imports.get_func("vdom_append_vnode_child")
+                    .ok_or_else(|| WasmError::internal("vdom_append_vnode_child import not found"))?;
+
+                // 1. Evaluate receiver → save to local
+                self.compile_expr(receiver)?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let vn = func.alloc_local("__when2_vn".to_string(), ValType::I64);
+                func.push(Instruction::LocalSet(vn));
+                drop(func);
+
+                // 2. Evaluate condition → save to local
                 self.compile_expr(&args[0])?;
                 let func = self.current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Drop); // drop condition, vnode with child on stack
+                let cond = func.alloc_local("__when2_cond".to_string(), ValType::I64);
+                func.push(Instruction::LocalSet(cond));
+                drop(func);
+
+                // 3. Evaluate child → save to local
+                self.compile_expr(&args[1])?;
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let child = func.alloc_local("__when2_child".to_string(), ValType::I64);
+                func.push(Instruction::LocalSet(child));
+
+                // 4. if cond != 0 { append_vnode_child(vn, child) }
+                func.push(Instruction::LocalGet(cond));
+                func.push(Instruction::I64Const(0));
+                func.push(Instruction::I64Ne);              // → i32
+                func.push(Instruction::If(BlockType::Empty)); // void block — no stack result
+                func.push(Instruction::LocalGet(vn));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::LocalGet(child));
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::Call(append_idx));   // void call
+                func.push(Instruction::End);
+
+                // 5. Return parent for chaining (whether or not child was appended)
+                func.push(Instruction::LocalGet(vn));
                 Ok(true)
             }
             "when" => {
