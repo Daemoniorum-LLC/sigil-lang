@@ -1282,7 +1282,7 @@ impl WasmCompiler {
                 // Non-constant initializer - defer to __wasm_start
                 // Initialize to 0 for now, actual init happens at runtime
                 self.globals.push((ValType::I64, true, 0)); // Must be mutable for deferred init
-                self.deferred_static_inits.push((idx, def.value.clone()));
+                self.deferred_static_inits.push((idx, def.value.clone(), self.module_path.clone()));
             }
         }
 
@@ -1409,20 +1409,32 @@ impl WasmCompiler {
             let global_name = format!("{}_{}", actor_name, field.name.name);
             let qualified_global = self.qualify_name(&global_name);
 
-            // Get initial value (default to 0 if not provided)
-            let init_val = if let Some(init_expr) = &field.default {
-                self.eval_const_expr(init_expr).unwrap_or(0)
+            // Get initial value — if the initializer is not a constant expression
+            // (e.g. it is a function call like `Preferences·default()` or `vec![...]`),
+            // defer evaluation to `__wasm_start` just like static definitions do.
+            let (init_val, should_defer) = if let Some(init_expr) = &field.default {
+                match self.eval_const_expr(init_expr) {
+                    Ok(v)  => (v, false),
+                    Err(_) => (0, true), // non-const — defer to __wasm_start
+                }
             } else {
-                0
+                (0, false)
             };
 
             let idx = self.globals.len() as u32;
-            self.globals.push((ValType::I64, true, init_val)); // Actor state is mutable
+            self.globals.push((ValType::I64, true, init_val)); // Actor state is always mutable
 
             // Register with both simple and qualified names
             self.global_map.insert(global_name.clone(), idx);
             if qualified_global != global_name {
                 self.global_map.insert(qualified_global, idx);
+            }
+
+            // Defer non-const initializer to __wasm_start (same pattern as statics)
+            if should_defer {
+                if let Some(init_expr) = &field.default {
+                    self.deferred_static_inits.push((idx, init_expr.clone(), self.module_path.clone()));
+                }
             }
 
             // Record the field's declared type so that `self.field_name.method()` calls

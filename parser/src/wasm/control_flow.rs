@@ -199,6 +199,12 @@ impl WasmCompiler {
         // Push new scope for loop variables
         self.scope_vars.push(std::collections::HashMap::new());
 
+        // Resolve morpheme imports before mutable borrows
+        let array_len_idx = self.imports.get_func("morpheme_array_len")
+            .ok_or_else(|| WasmError::internal("morpheme_array_len import not found"))?;
+        let array_get_idx = self.imports.get_func("morpheme_array_get")
+            .ok_or_else(|| WasmError::internal("morpheme_array_get import not found"))?;
+
         // Compile iterator expression
         self.compile_expr(iter)?;
 
@@ -206,19 +212,15 @@ impl WasmCompiler {
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-        // Store array in a local
+        // Store array handle (i64 JS-table index) in a local
         let arr_idx = func.alloc_local("__for_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-        // Get array length (assuming array format: [len: i32, ...elements])
+        // Get array length via morpheme_array_len(arr_i32) -> i32
         func.push(Instruction::LocalGet(arr_idx));
         func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Load(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-        func.push(Instruction::I64ExtendI32U);
+        func.push(Instruction::Call(array_len_idx)); // -> i32
+        func.push(Instruction::I64ExtendI32U);       // -> i64
 
         let len_idx = func.alloc_local("__for_len".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(len_idx));
@@ -234,8 +236,6 @@ impl WasmCompiler {
         // Inner loop
         func.push(Instruction::Loop(BlockType::Empty));
 
-
-
         // Push loop context
         self.loop_stack.push(LoopContext {
             break_label: 1,
@@ -245,26 +245,18 @@ impl WasmCompiler {
 
         let func = self.current_function_mut().unwrap();
 
-        // Check if i >= len
-        // I64GeU returns i32 directly
+        // Check if i >= len — I64GeU returns i32
         func.push(Instruction::LocalGet(idx_idx));
         func.push(Instruction::LocalGet(len_idx));
         func.push(Instruction::I64GeU);
         func.push(Instruction::BrIf(1)); // Break if done
 
-        // Get current element: arr[i]
+        // Get current element via morpheme_array_get(arr_i32, idx_i32) -> i64
         func.push(Instruction::LocalGet(arr_idx));
         func.push(Instruction::I32WrapI64);
         func.push(Instruction::LocalGet(idx_idx));
-        func.push(Instruction::I64Const(8));
-        func.push(Instruction::I64Mul);
         func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Add);
-        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-            offset: 4, // Skip length field
-            align: 3,
-            memory_index: 0,
-        }));
+        func.push(Instruction::Call(array_get_idx)); // -> i64
 
 
 

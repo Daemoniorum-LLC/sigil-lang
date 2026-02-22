@@ -282,8 +282,9 @@ impl WasmCompiler {
         }
 
         // Check for enum type reference (for method chaining like WebSocketState·Connecting)
-        // Return a placeholder value that will be used by the method chain
-        if self.enum_layouts.contains_key(name) {
+        // Only matches single-segment paths; multi-segment paths like PanelType·Search must fall
+        // through to the variant-discriminant resolution below.
+        if path.segments.len() == 1 && self.enum_layouts.contains_key(name) {
             let func = self.current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             // Return 0 as placeholder - variant construction happens in method chain

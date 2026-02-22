@@ -176,9 +176,11 @@ pub struct WasmCompiler {
     /// Cached parsed module items (keyed by canonical path)
     pub(crate) module_cache: std::collections::HashMap<std::path::PathBuf, Vec<crate::span::Spanned<crate::ast::Item>>>,
 
-    /// Deferred static initializers: (global_index, init_expression)
-    /// These are statics with non-constant initializers that need runtime init
-    pub(crate) deferred_static_inits: Vec<(u32, crate::ast::Expr)>,
+    /// Deferred static initializers: (global_index, init_expression, module_path_snapshot)
+    /// These are statics with non-constant initializers that need runtime init.
+    /// The module_path_snapshot is the compiler's module_path at the time the init was deferred,
+    /// so that name resolution in generate_start_function uses the correct crate/module context.
+    pub(crate) deferred_static_inits: Vec<(u32, crate::ast::Expr, Vec<String>)>,
 
     /// Start function index (for __wasm_start if we have deferred inits)
     pub(crate) start_function_idx: Option<u32>,
@@ -375,6 +377,13 @@ impl WasmCompiler {
         // Compile each dependency in order (dependencies first)
         for manifest in graph.iter_in_order() {
             compiler.compile_crate(&manifest)?;
+        }
+
+        // Generate __wasm_start for any deferred (non-const) static/actor-state initializers.
+        // Must happen before fix_stale_func_indices so the new function's Call instructions
+        // are also remapped.
+        if !compiler.deferred_static_inits.is_empty() {
+            compiler.generate_start_function()?;
         }
 
         // Fix stale function indices: register_function_sig uses import_count at registration
@@ -642,6 +651,16 @@ impl WasmCompiler {
             let simple_name = resolved.last().unwrap();
             if let Some(idx) = self.func_map.get(simple_name) {
                 return Some(*idx);
+            }
+        }
+
+        // Suffix-based fallback: when the exact path is not in func_map (e.g. because the
+        // registered name has a crate prefix), search for any key ending with "::<qualified>".
+        // E.g. call "Preferences::default" should find "wraith_sigil::Preferences::default".
+        if resolved.len() >= 2 {
+            let suffix = format!("::{}", qualified);
+            if let Some((&ref _k, &idx)) = self.func_map.iter().find(|(k, _)| k.ends_with(&suffix)) {
+                return Some(idx);
             }
         }
 
@@ -1034,8 +1053,14 @@ impl WasmCompiler {
         // Push an empty scope for locals
         self.scope_vars.push(std::collections::HashMap::new());
 
-        // For each deferred static init, compile the expression and store in global
-        for (global_idx, init_expr) in deferred_inits {
+        // For each deferred static init, compile the expression and store in global.
+        // Restore the module_path snapshot so that name resolution matches compile-time context
+        // (e.g. "Preferences::default" must resolve as "wraith_sigil::Preferences::default").
+        let saved_module_path = self.module_path.clone();
+        for (global_idx, init_expr, module_path_snapshot) in deferred_inits {
+            // Restore the module path from when the init was deferred
+            self.module_path = module_path_snapshot;
+
             // Compile the initializer expression
             self.compile_expr(&init_expr)?;
 
@@ -1044,6 +1069,7 @@ impl WasmCompiler {
                 .ok_or_else(|| error::WasmError::internal("not in function context"))?;
             func.push(Instruction::GlobalSet(global_idx));
         }
+        self.module_path = saved_module_path;
 
         // End the function
         let func = self.current_function_mut().unwrap();

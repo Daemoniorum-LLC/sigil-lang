@@ -634,11 +634,14 @@ impl WasmCompiler {
                     }
                 }
 
-                // HashMap::new() -> morpheme_array_new (HashMap simulated as array of pairs)
+                // HashMap::new() / Map::new() -> morpheme_array_new
+                // `Map` is the Sigil alias for HashMap; both map to the same runtime array.
                 if simple_name == "new"
                     && resolved_segments.len() >= 2
                     && (resolved_segments[resolved_segments.len() - 2] == "HashMap"
-                        || resolved_segments.iter().any(|s| s == "HashMap"))
+                        || resolved_segments[resolved_segments.len() - 2] == "Map"
+                        || resolved_segments.iter().any(|s| s == "HashMap")
+                        || resolved_segments.iter().any(|s| s == "Map"))
                     && args.is_empty()
                 {
                     if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
@@ -906,11 +909,36 @@ impl WasmCompiler {
 
                     if is_local && !is_type {
                         // This is a method call on a local variable!
+                        //
                         // Get the receiver's type from var_types if available.
                         // Also check local_var_types (populated from match-arm TupleStruct
                         // bindings, e.g. `VNode::Element(el)` → "el" → "VElement").
                         let receiver_type = self.var_types.get(potential_receiver).cloned()
                             .or_else(|| self.local_var_types.get(potential_receiver.as_str()).cloned());
+
+                        // When the receiver type is unknown (not in var_types or local_var_types),
+                        // try builtin dispatch before falling back to func_map.  This ensures that
+                        // `local·child(expr)` on an untyped local always routes to the vdom JS
+                        // bridge (append_vnode_child) rather than a spuriously-matching compiled
+                        // Sigil function.  We only apply this shortcut when receiver_type is None
+                        // so that typed locals (e.g., `el: &VElement!` from match bindings) still
+                        // go through the qualified VElement::child path as before.
+                        if receiver_type.is_none() {
+                            let recv_expr = Expr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: crate::ast::Ident {
+                                        name: potential_receiver.clone(),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: crate::span::Span::new(0, 0),
+                                    },
+                                    generics: None,
+                                }],
+                            });
+                            if self.try_compile_builtin_method(&recv_expr, method_name, args)? {
+                                return Ok(());
+                            }
+                        }
 
                         // Try to find the method: first by qualified name (if type is known),
                         // then by simple method name as a fallback.  The fallback handles cases
@@ -992,6 +1020,26 @@ impl WasmCompiler {
 
                             return Ok(());
                         }
+
+                        // No compiled Sigil method found. Try builtin dispatch
+                        // (vnode builder methods: child, attr, class, text_child, on_*, etc.)
+                        // Handles `local·child(expr)` where local holds a VNode handle.
+                        {
+                            let recv_expr = Expr::Path(crate::ast::TypePath {
+                                segments: vec![crate::ast::PathSegment {
+                                    ident: crate::ast::Ident {
+                                        name: potential_receiver.clone(),
+                                        evidentiality: None,
+                                        affect: None,
+                                        span: crate::span::Span::new(0, 0),
+                                    },
+                                    generics: None,
+                                }],
+                            });
+                            if self.try_compile_builtin_method(&recv_expr, method_name, args)? {
+                                return Ok(());
+                            }
+                        }
                     }
                 }
 
@@ -1011,7 +1059,18 @@ impl WasmCompiler {
                     let qualified = format!("{}::{}", actor_type, actor_method);
                     if self.actor_names.contains(actor_type.as_str()) {
                         if let Some(&func_idx) = self.func_map.get(&qualified) {
-                            {
+                            // Only push a dummy self if the resolved function actually has
+                            // more parameters than the call-site arguments.  Static rites
+                            // (☉ rite new() / ☉ rite default()) have 0 params and no self;
+                            // instance rites (rite view(self)) have params.len() == args.len()+1.
+                            let func_param_count = if func_idx >= crate::wasm::DEFINED_FUNC_SENTINEL {
+                                let arr_idx = (func_idx - crate::wasm::DEFINED_FUNC_SENTINEL) as usize;
+                                self.functions.get(arr_idx).map(|f| f.params.len()).unwrap_or(args.len() + 1)
+                            } else {
+                                self.imports.get_param_types(func_idx).map(|p| p.len()).unwrap_or(args.len() + 1)
+                            };
+                            let needs_dummy_self = func_param_count == args.len() + 1;
+                            if needs_dummy_self {
                                 let func = self.current_function_mut()
                                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                                 func.push(Instruction::I64Const(0)); // dummy self
@@ -3806,30 +3865,84 @@ impl WasmCompiler {
     }
 
     /// Compile len() for strings and arrays.
+    ///
+    /// In the Sigil WASM backend, `.len()` is used exclusively on collection types
+    /// (Vec, Map, etc.) — never on raw strings (which have their own length APIs).
+    /// Array handles (morpheme table indices) and string handles (string table indices)
+    /// are disjoint namespaces, so we must use the right function.
+    ///
+    /// Strategy: check the receiver expression type.
+    /// - `Expr::Field { .. }` (struct field access) → almost always a Vec → array_len
+    /// - Local variable with "Vec"/"Map"/"Array" in its tracked type → array_len
+    /// - Otherwise → array_len as the safe default for Sigil (strings never use `.len()`)
     fn compile_len(&mut self, receiver: &Expr) -> WasmResult<()> {
+        // Determine if receiver is a string type (rare in Sigil) or a collection (common)
+        let is_string_receiver = self.len_receiver_is_string(receiver);
+
         self.compile_expr(receiver)?;
 
-        // Try string length first, then array length
+        if !is_string_receiver {
+            // Collection (.len() on Vec, Map, etc.) → morpheme_array_len
+            if let Some(func_idx) = self.imports.get_func("morpheme_array_len") {
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                // array_len takes i32 — wrap the i64 handle
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::Call(func_idx));
+                // array_len returns i32, extend to i64
+                func.push(Instruction::I64ExtendI32U);
+                return Ok(());
+            }
+        }
+
+        // String length fallback (string.length takes i32 string handle)
         if let Some(func_idx) = self.imports.get_func("string_length") {
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
-            // Convert i64 handle to i32 for string functions
             func.push(Instruction::I32WrapI64);
             func.push(Instruction::Call(func_idx));
-            // Extend result to i64
             func.push(Instruction::I64ExtendI32U);
-            Ok(())
-        } else if let Some(func_idx) = self.imports.get_func("morpheme_array_len") {
+            return Ok(());
+        }
+
+        // Last resort: array_len
+        if let Some(func_idx) = self.imports.get_func("morpheme_array_len") {
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32WrapI64);
             func.push(Instruction::Call(func_idx));
-            // array_len returns i32, extend to i64
             func.push(Instruction::I64ExtendI32U);
-            Ok(())
-        } else {
-            Err(WasmError::internal("no len import found"))
+            return Ok(());
+        }
+
+        Err(WasmError::internal("no len import found"))
+    }
+
+    /// Returns true if the expression is known to produce a string handle (as opposed
+    /// to an array/collection handle).  Used by compile_len to pick the right import.
+    fn len_receiver_is_string(&self, expr: &Expr) -> bool {
+        match expr {
+            // Field access on a struct → almost always a Vec field in Sigil
+            Expr::Field { .. } => false,
+            // Local variable — check tracked types
+            Expr::Path(path) if path.segments.len() == 1 => {
+                let name = path.segments[0].ident.name.as_str();
+                // If the variable has a String/str type annotation, use string_length
+                let ty = self.local_var_types.get(name)
+                    .or_else(|| self.var_types.get(name));
+                match ty {
+                    Some(t) => {
+                        let t = t.as_str();
+                        (t == "String" || t == "str" || t == "&str" || t == "&String")
+                            && !t.contains("Vec") && !t.contains("Map")
+                    }
+                    None => false, // Unknown type → assume array (most common in Sigil)
+                }
+            }
+            _ => false, // Default: assume collection
         }
     }
 
