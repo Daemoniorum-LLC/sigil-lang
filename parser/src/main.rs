@@ -3995,12 +3995,16 @@ fn collect_test_fn_names(
         match &item.node {
             Item::Function(func) => {
                 if func.attrs.test {
-                    let name = match module_prefix {
-                        // Use middledot (·) as separator - matches how interpreter registers module functions
-                        Some(prefix) => format!("{}·{}", prefix, func.name.name),
-                        None => func.name.name.clone(),
-                    };
-                    test_fn_names.push(name);
+                    // Check if function has //@ rune: ignore attribute
+                    let is_ignored = func.attrs.outer_attrs.iter().any(|attr| attr.name.name == "ignore");
+                    if !is_ignored {
+                        let name = match module_prefix {
+                            // Use middledot (·) as separator - matches how interpreter registers module functions
+                            Some(prefix) => format!("{}·{}", prefix, func.name.name),
+                            None => func.name.name.clone(),
+                        };
+                        test_fn_names.push(name);
+                    }
                 }
             }
             Item::Module(m) => {
@@ -4141,6 +4145,32 @@ fn run_test_files(
         if !test_fn_names.is_empty() {
             let mut interpreter = Interpreter::new();
             register_stdlib(&mut interpreter);
+
+            // Set up workspace members so `invoke crate::...` can load source files
+            // Try Sigil.toml in current dir, then parent dirs
+            let sigil_toml_paths = [
+                std::path::PathBuf::from("Sigil.toml"),
+                std::path::PathBuf::from("sigil.toml"),
+                std::path::PathBuf::from("../Sigil.toml"),
+                std::path::PathBuf::from("../sigil.toml"),
+                std::path::PathBuf::from("../../Sigil.toml"),
+                std::path::PathBuf::from("../../sigil.toml"),
+            ];
+            for toml_path in &sigil_toml_paths {
+                if toml_path.exists() {
+                    let _ = interpreter.parse_sigil_toml(toml_path);
+                    break;
+                }
+            }
+
+            // Also set source dir for local `invoke crate::module` resolution
+            if let Some(parent) = test_file.parent() {
+                if let Some(sibling_src) = parent.parent().map(|p| p.join("src")) {
+                    if sibling_src.exists() {
+                        interpreter.current_source_dir = Some(sibling_src.to_string_lossy().to_string());
+                    }
+                }
+            }
 
             // Register all definitions (structs, impls, functions) without calling main
             match interpreter.execute_definitions(&ast) {
