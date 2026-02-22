@@ -1,0 +1,90 @@
+// aegis_core_test.sg — Agent-TDD for aegis v0.1 (kind-based filtering)
+// Written before production code. All 6 tests must pass.
+
+Σ AegisConfig { deny_kinds: Array }
+
+⊢ AegisConfig {
+    rite default() {
+        ↩ AegisConfig { deny_kinds: [] }
+    }
+}
+
+rite aegis_check_kind(config, kind) {
+    ⎇ kind == null { ↩ true; }
+    ≔ mut i = 0;
+    ⟳ i < len(config.deny_kinds) {
+        ⎇ config.deny_kinds[i] == kind { ↩ false; }
+        i = i + 1;
+    }
+    ↩ true
+}
+
+rite main() {
+    println("Aegis v0.1 core tests");
+
+    // T1: AegisConfig·default() has empty deny_kinds
+    ≔ cfg1 = AegisConfig·default();
+    ⎇ len(cfg1.deny_kinds) == 0 {
+        println("PASS: default_empty");
+    } ⎉ {
+        println("FAIL: default_empty — deny_kinds not empty");
+    }
+
+    // T2: All kinds pass when deny_kinds is empty
+    ≔ cfg2 = AegisConfig·default();
+    ≔ ok2a = aegis_check_kind(cfg2, "task_add");
+    ≔ ok2b = aegis_check_kind(cfg2, "notify");
+    ≔ ok2c = aegis_check_kind(cfg2, "anything");
+    ⎇ ok2a == true ∧ ok2b == true ∧ ok2c == true {
+        println("PASS: allow_all_empty");
+    } ⎉ {
+        println("FAIL: allow_all_empty — some kind blocked by empty list");
+    }
+
+    // T3: A listed kind is rejected
+    ≔ cfg3 = AegisConfig·default();
+    push(cfg3.deny_kinds, "shell_exec");
+    ≔ ok3 = aegis_check_kind(cfg3, "shell_exec");
+    ⎇ ok3 == false {
+        println("PASS: deny_listed_kind");
+    } ⎉ {
+        println("FAIL: deny_listed_kind — shell_exec should be denied");
+    }
+
+    // T4: An unlisted kind passes when others are denied
+    ≔ cfg4 = AegisConfig·default();
+    push(cfg4.deny_kinds, "shell_exec");
+    ≔ ok4 = aegis_check_kind(cfg4, "notify");
+    ⎇ ok4 == true {
+        println("PASS: allow_unlisted_kind");
+    } ⎉ {
+        println("FAIL: allow_unlisted_kind — notify blocked when only shell_exec denied");
+    }
+
+    // T5: Multiple denied kinds all rejected
+    ≔ cfg5 = AegisConfig·default();
+    push(cfg5.deny_kinds, "shell_exec");
+    push(cfg5.deny_kinds, "eval");
+    push(cfg5.deny_kinds, "raw_write");
+    ≔ ok5a = aegis_check_kind(cfg5, "shell_exec");
+    ≔ ok5b = aegis_check_kind(cfg5, "eval");
+    ≔ ok5c = aegis_check_kind(cfg5, "raw_write");
+    ≔ ok5d = aegis_check_kind(cfg5, "notify");
+    ⎇ ok5a == false ∧ ok5b == false ∧ ok5c == false ∧ ok5d == true {
+        println("PASS: deny_multiple_kinds");
+    } ⎉ {
+        println("FAIL: deny_multiple_kinds — multi-deny check failed");
+    }
+
+    // T6: null kind returns true (nil-safety)
+    ≔ cfg6 = AegisConfig·default();
+    push(cfg6.deny_kinds, "shell_exec");
+    ≔ ok6 = aegis_check_kind(cfg6, null);
+    ⎇ ok6 == true {
+        println("PASS: null_kind_allowed");
+    } ⎉ {
+        println("FAIL: null_kind_allowed — null kind should be nil-safe");
+    }
+
+    println("Done");
+}
