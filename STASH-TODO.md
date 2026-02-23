@@ -100,3 +100,80 @@ correct form once implemented:
 - `c6bc8fe` - Vec element type tracking
 - `9b792a0` - Mixed int/float operations
 
+## Interpreter Limitations Discovered via Ritualis Integration (2026-02-22)
+
+The following bugs were found when driving the interpreter from real application
+code (`ritualis-core`).  Each is worked around by a dedicated native binding for
+now; they should be fixed in the interpreter so the native-binding workarounds can
+be removed.
+
+### INT-001: Generic `json·from_str<T>` Does Not Dispatch T::decode
+
+**Symptom:**
+```sigil
+≔ manifest~: PackageManifest = json·from_str(&body)?;
+// manifest has no fields — accessing manifest·package errors
+```
+`json·from_str` is a generic Sigil function `from_str<T: Decode>(s) -> CodecResult<T>`.
+The interpreter ignores the type annotation on the binding (`PackageManifest`), so
+`T::decode` is never called and the raw parsed value (a `Value::Map` or empty struct)
+is returned instead of the decoded struct.
+
+**Expected behaviour:** The interpreter should propagate the declared type of the
+binding into the function call as the concrete `T`, then dispatch `T::decode`.
+
+**Workaround:** Dedicated native binding `registry·parse_manifest(s)` in `stdlib.rs`
+that uses `serde_json` and builds the Sigil struct tree directly.
+
+**Affects:** Any call to a generic Sigil function where the return type is constrained
+by a trait (`Decode`, `From`, etc.) and the caller relies on the type annotation to
+select the concrete impl.
+
+---
+
+### INT-002: `Vec[T]` Type Annotation Breaks `push()` When T Contains `·`
+
+**Symptom:**
+```sigil
+≔ Δ versions~: Vec[semver·Version] = Vec·new();
+versions.push(ver);  // ver: semver·Version
+// Runtime error: type mismatch: expected Vec<semver>.push(semver), found semver·Version
+```
+The interpreter parses `Vec[semver·Version]` and strips the `·Version` suffix,
+creating a Vec typed as `Vec<semver>`. When `push(ver)` is called with a full
+`semver·Version` struct, the type check rejects it.
+
+**Expected behaviour:** `Vec[semver·Version]` should create a Vec whose element type
+is the struct `semver·Version`, not the module `semver`.
+
+**Workaround:** Omit the type annotation — `≔ Δ versions~ = Vec·new()` — and let
+the interpreter infer the element type from the first `push`.
+
+**Affects:** Any `Vec[X·Y]` annotation where the element type is a qualified path
+with two or more components.
+
+---
+
+### INT-003: Scroll Sub-module Functions Not Callable via Dot Notation
+
+**Symptom:**
+```sigil
+invoke codec·{json};          // json is a scroll inside codec
+≔ raw~ = json·value_from_str(&body)?;
+// Runtime: call returns the json module struct, not a parsed Value
+// Subsequent field access: "no field 'get_required' in struct 'json'"
+```
+When `json` is imported from a parent module, the interpreter binds it to the
+scroll/module object. Calling `json·value_from_str(...)` resolves `json` as the
+module struct and tries to access `value_from_str` as a field, returning the module
+struct itself rather than calling the function.
+
+**Expected behaviour:** `json·fn_name(args)` where `json` is an imported scroll
+should dispatch to the function `fn_name` defined inside that scroll.
+
+**Workaround:** Add a native binding named `json·value_from_str` in `stdlib.rs` that
+intercepts the call before module dispatch, OR add a type-specific binding (see
+INT-001 workaround).
+
+**Affects:** Any function call of the form `scroll·fn(args)` where `scroll` is an
+imported sub-module and `fn` is a function defined inside it.
