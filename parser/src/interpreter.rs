@@ -1272,6 +1272,10 @@ pub struct TypeConstructionContext {
     /// For `≔ x: Buffer<Cpu> = Buffer·new()`, this holds "Buffer<Cpu>".
     /// Used to select the correct impl variant when multiple ⊢ blocks exist.
     pub dispatch_hint: RefCell<Option<String>>,
+    /// R3: Track base-key methods that are ambiguous (multiple impls registered).
+    /// Key: (base_struct_name, method_name). Used to emit a warning when the
+    /// base-key fallback is used without a type annotation to guide dispatch.
+    pub ambiguous_methods: RefCell<std::collections::HashSet<(String, String)>>,
 }
 
 /// The Sigil interpreter
@@ -3866,6 +3870,14 @@ impl Interpreter {
                             // Debug: track Lexer method registration
                             if type_name == "Lexer" && func.name.name.contains("keyword") {
                                 crate::sigil_debug!("DEBUG registering: {}", qualified_name);
+                            }
+                            // R3: If the base key already has a registration, mark it as ambiguous.
+                            // This happens when two impls (e.g., Buffer<Cpu> and Buffer<Gpu>)
+                            // both register under the same base key "Buffer·method".
+                            if self.globals.borrow().get(&qualified_name).is_some() {
+                                self.type_context.ambiguous_methods.borrow_mut().insert(
+                                    (type_name.clone(), func.name.name.clone())
+                                );
                             }
                             self.globals
                                 .borrow_mut()
@@ -10068,6 +10080,18 @@ impl Interpreter {
                         None => Value::Null,
                     };
                     self.current_self_type = prev_self_type;
+                    // Gap1: Inject __type_key__ into struct values so method calls after
+                    // construction dispatch to the correct impl variant.
+                    // E.g. `≔ x: Buffer<Cpu> = Buffer·new()` stores hint "Buffer<Cpu>" so
+                    // x.device_id() can look up "Buffer<Cpu>·device_id" before "Buffer·device_id".
+                    if let Some(ref hint) = self.type_context.dispatch_hint.borrow().clone() {
+                        if let Value::Struct { ref fields, .. } = value {
+                            fields.borrow_mut().insert(
+                                "__type_key__".to_string(),
+                                Value::String(Rc::new(hint.clone())),
+                            );
+                        }
+                    }
                     // R1: Restore dispatch hint after evaluating init expression
                     *self.type_context.dispatch_hint.borrow_mut() = prev_dispatch_hint;
                     // Clear expected tensor shape and struct generics after evaluation
@@ -13788,6 +13812,31 @@ impl Interpreter {
                     _ => Err(RuntimeError::new("split expects string or char separator")),
                 }
             }
+            (Value::String(s), "rsplit") => {
+                // rsplit(sep) - split from the right; returns parts in right-to-left order.
+                // Mirrors Rust str::rsplit: "a/b/c".rsplit('/') → ["c", "b", "a"]
+                // Supports String and char separators, consistent with split().
+                if arg_values.len() != 1 {
+                    return Err(RuntimeError::new("rsplit expects 1 argument"));
+                }
+                match &arg_values[0] {
+                    Value::String(sep) => {
+                        let parts: Vec<Value> = s
+                            .rsplit(sep.as_str())
+                            .map(|p| Value::String(Rc::new(p.to_string())))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(parts))))
+                    }
+                    Value::Char(sep) => {
+                        let parts: Vec<Value> = s
+                            .rsplit(*sep)
+                            .map(|p| Value::String(Rc::new(p.to_string())))
+                            .collect();
+                        Ok(Value::Array(Rc::new(RefCell::new(parts))))
+                    }
+                    _ => Err(RuntimeError::new("rsplit expects string or char separator")),
+                }
+            }
             (Value::String(s), "splitn") => {
                 // splitn(n, separator) - split into at most n parts
                 if arg_values.len() != 2 {
@@ -17247,8 +17296,30 @@ impl Interpreter {
                 // Check for user-defined method before hardcoded struct handlers
                 // This ensures user impls take priority over stdlib defaults
                 {
+                    // Gap1: Try qualified method via __type_key__ first for correct generic dispatch.
+                    // E.g., cpu_buf.__type_key__ == "Buffer<Cpu>" → try "Buffer<Cpu>·device_id"
+                    // before "Buffer·device_id" which resolves to last-registered impl.
+                    let gap1_qualified_fn: Option<Value> = {
+                        let type_key_opt = fields.borrow().get("__type_key__").cloned();
+                        if let Some(Value::String(ref type_key)) = type_key_opt {
+                            let full_qualified = format!("{}·{}", type_key, method.name);
+                            self.globals.borrow().get(&full_qualified)
+                        } else {
+                            None
+                        }
+                    };
                     let user_method_name = format!("{}·{}", name, method.name);
-                    let user_fn = self.globals.borrow().get(&user_method_name).map(|v| v.clone());
+                    let using_base_key_fallback = gap1_qualified_fn.is_none();
+                    let user_fn = gap1_qualified_fn
+                        .or_else(|| self.globals.borrow().get(&user_method_name).map(|v| v.clone()));
+                    // R3: Warn if base-key fallback is used for an ambiguous method.
+                    if using_base_key_fallback && user_fn.is_some() {
+                        let key = (name.to_string(), method.name.clone());
+                        if self.type_context.ambiguous_methods.borrow().contains(&key) {
+                            eprintln!("[R3-WARNING] Ambiguous method call: {}·{} — add return-type annotation to binding to select the correct impl (e.g., ≔ x: {}<Concrete> = ...)",
+                                name, method.name, name);
+                        }
+                    }
                     if let Some(Value::Function(func)) = user_fn {
                         let func = Self::wrap_with_const_generics(&func, fields);
                         let old_self_type = self.current_self_type.take();
@@ -23197,6 +23268,17 @@ impl Interpreter {
                             }
                         }
                         _ => {}
+                    }
+                }
+                // Gap1: Try qualified name using __type_key__ injected at binding site.
+                // E.g., if __type_key__ == "Buffer<Cpu>", try "Buffer<Cpu>·device_id" first
+                // before "Buffer·device_id" which may resolve to the wrong impl variant.
+                if let Some(Value::String(type_key)) = fields.borrow().get("__type_key__").cloned() {
+                    let full_qualified = format!("{}·{}", type_key, method_name);
+                    if self.globals.borrow().get(&full_qualified).is_some() {
+                        let mut all_args_fq = vec![receiver.clone()];
+                        all_args_fq.extend(args.clone());
+                        return self.call_function_by_name(&full_qualified, all_args_fq);
                     }
                 }
                 // Try as user-defined or stdlib method with receiver as first arg
@@ -30446,5 +30528,104 @@ mod tests {
             Ok(other) => panic!("Expected plain String, got {:?}", other),
             Err(e) => panic!("Error: {:?}", e),
         }
+    }
+
+    // ── rsplit specification tests ──────────────────────────────────────────
+
+    // Helper: run source, extract the array of strings it returns.
+    fn run_rsplit_str(source: &str) -> Vec<String> {
+        match run(source) {
+            Ok(Value::Array(arr)) => arr
+                .borrow()
+                .iter()
+                .map(|v| match v {
+                    Value::String(s) => s.as_ref().clone(),
+                    other => panic!("expected String element, got {:?}", other),
+                })
+                .collect(),
+            Ok(other) => panic!("expected Array, got {:?}", other),
+            Err(e) => panic!("rsplit test error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_rsplit_with_string_sep_returns_parts_right_to_left() {
+        // rsplit splits from the right: rightmost segment comes first.
+        // "a/b/c".rsplit("/") → ["c", "b", "a"]
+        let parts = run_rsplit_str(r#"
+            rite main() {
+                ≔ s = "a/b/c";
+                ⤺ s.rsplit("/");
+            }
+        "#);
+        assert_eq!(parts, vec!["c", "b", "a"]);
+    }
+
+    #[test]
+    fn test_rsplit_with_char_sep_matches_string_sep_order() {
+        // char separator should produce the same result as string separator.
+        // "a/b/c".rsplit('/') → ["c", "b", "a"]
+        let parts = run_rsplit_str(r#"
+            rite main() {
+                ≔ s = "a/b/c";
+                ⤺ s.rsplit('/');
+            }
+        "#);
+        assert_eq!(parts, vec!["c", "b", "a"]);
+    }
+
+    #[test]
+    fn test_rsplit_no_separator_found_returns_whole_string() {
+        // When sep is not present the result is a single-element array
+        // containing the original string (consistent with Rust str::rsplit).
+        let parts = run_rsplit_str(r#"
+            rite main() {
+                ≔ s = "hello";
+                ⤺ s.rsplit('/');
+            }
+        "#);
+        assert_eq!(parts, vec!["hello"]);
+    }
+
+    #[test]
+    fn test_rsplit_first_gives_last_path_component() {
+        // The primary use case: extract filename from a URL/path.
+        // "http://example.com/pkg.tar.zst".rsplit('/').first() → Some("pkg.tar.zst")
+        let result = run(r#"
+            rite main() {
+                ≔ url = "http://example.com/packages/pkg.tar.zst";
+                ≔ parts = url.rsplit('/');
+                ⤺ parts.first();
+            }
+        "#);
+        match result {
+            Ok(Value::Variant { variant_name, fields: Some(fields), .. })
+                if variant_name == "Some" =>
+            {
+                match fields.first() {
+                    Some(Value::String(s)) => assert_eq!(s.as_ref(), "pkg.tar.zst"),
+                    other => panic!("expected Some(String), inner was {:?}", other),
+                }
+            }
+            Ok(other) => panic!("expected Some(String), got {:?}", other),
+            Err(e) => panic!("rsplit first() error: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_rsplit_symmetric_with_split_on_non_overlapping_sep() {
+        // rsplit of a string with a single-occurrence separator is the reverse
+        // of split.  "left:right".split(":") → ["left", "right"];
+        //             "left:right".rsplit(":") → ["right", "left"]
+        let split_parts = run_rsplit_str(r#"
+            rite main() { ≔ s = "left:right"; ⤺ s.split(":"); }
+        "#);
+        let rsplit_parts = run_rsplit_str(r#"
+            rite main() { ≔ s = "left:right"; ⤺ s.rsplit(":"); }
+        "#);
+        let mut reversed = split_parts.clone();
+        reversed.reverse();
+        assert_eq!(rsplit_parts, reversed,
+            "rsplit should be the mirror of split for a single-occurrence separator");
     }
 }
