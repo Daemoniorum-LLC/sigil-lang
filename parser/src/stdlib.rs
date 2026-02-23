@@ -49325,4 +49325,589 @@ fn register_tar(interp: &mut Interpreter) {
             })),
         })
     });
+
+    // ── json·parse_string_array(s) → Result[Vec<String>] ────────────────────
+    //
+    // Parses a JSON array of strings (e.g. `["1.0.0","2.0.0"]`) and returns a
+    // Sigil array of strings.  Used by RegistryClient::list_versions because
+    // json::from_str cannot dispatch Vec[String]::decode in the interpreter.
+    define(interp, "json·parse_string_array", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("json·parse_string_array: arg must be a string")),
+            },
+            _ => return Err(RuntimeError::new("json·parse_string_array: arg must be a string")),
+        };
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&s)
+            .map_err(|e| RuntimeError::new(format!("json·parse_string_array: {}", e)))?;
+        let strings: Vec<Value> = arr.into_iter()
+            .filter_map(|v| v.as_str().map(|s| Value::String(Rc::new(s.to_string()))))
+            .collect();
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Array(Rc::new(RefCell::new(strings)))])),
+        })
+    });
+
+    // ── json·parse_search_results(s) → Result[Vec<SearchResult>] ─────────────
+    //
+    // Parses a JSON array of registry search result objects.  Returns a Sigil
+    // array of SearchResult-shaped structs so RegistryClient::search can iterate
+    // them without going through the generic codec dispatch path.
+    //
+    // Expected JSON shape (per SearchResult codec impl):
+    //   [{ "name": "...", "display_name": "...", "description": "...",
+    //      "version": "1.0.0", "downloads": 1234 }, ...]
+    define(interp, "json·parse_search_results", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("json·parse_search_results: arg must be a string")),
+            },
+            _ => return Err(RuntimeError::new("json·parse_search_results: arg must be a string")),
+        };
+        let arr: Vec<serde_json::Value> = serde_json::from_str(&s)
+            .map_err(|e| RuntimeError::new(format!("json·parse_search_results: {}", e)))?;
+        let mut results: Vec<Value> = Vec::new();
+        for item in &arr {
+            let name = item["name"].as_str().unwrap_or("").to_string();
+            let display_name = item["display_name"].as_str().unwrap_or("").to_string();
+            let description = item["description"].as_str().unwrap_or("").to_string();
+            let version_str = item["version"].as_str().unwrap_or("0.0.0").to_string();
+            let downloads = item["downloads"].as_u64().unwrap_or(0) as i64;
+            // version field: stored as a struct mirroring the semver·Version layout
+            let version_struct = {
+                let parts: Vec<i64> = version_str.split('.')
+                    .map(|p| p.parse::<i64>().unwrap_or(0))
+                    .collect();
+                let major = parts.get(0).copied().unwrap_or(0);
+                let minor = parts.get(1).copied().unwrap_or(0);
+                let patch = parts.get(2).copied().unwrap_or(0);
+                Value::Struct {
+                    name: "Version".to_string(),
+                    fields: Rc::new(RefCell::new({
+                        let mut f = HashMap::new();
+                        f.insert("__version_str__".to_string(), Value::String(Rc::new(version_str.clone())));
+                        f.insert("major".to_string(), Value::Int(major));
+                        f.insert("minor".to_string(), Value::Int(minor));
+                        f.insert("patch".to_string(), Value::Int(patch));
+                        f
+                    })),
+                }
+            };
+            let sr = Value::Struct {
+                name: "SearchResult".to_string(),
+                fields: Rc::new(RefCell::new({
+                    let mut f = HashMap::new();
+                    f.insert("name".to_string(), Value::String(Rc::new(name)));
+                    f.insert("display_name".to_string(), Value::String(Rc::new(display_name)));
+                    f.insert("description".to_string(), Value::String(Rc::new(description)));
+                    f.insert("version".to_string(), version_struct);
+                    f.insert("downloads".to_string(), Value::Int(downloads));
+                    f
+                })),
+            };
+            results.push(sr);
+        }
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![Value::Array(Rc::new(RefCell::new(results)))])),
+        })
+    });
+
+    // ── registry·get_json(url, timeout_secs) → Result[String] ────────────────
+    //
+    // Performs an HTTP/HTTPS GET and returns the full response body as a UTF-8
+    // string.  This is the registry client's HTTP transport primitive, replacing
+    // reqwest::Client which the interpreter cannot drive.
+    //
+    // Special error strings for callers to pattern-match on:
+    //   "NOT_FOUND"   — HTTP 404
+    //   "HTTP NNN: …" — other non-2xx responses
+    //
+    // Follows up to 10 redirects, handles both chunked and identity TE.
+    // TLS support requires the 'websocket' build feature (native-tls).
+    define(interp, "registry·get_json", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("registry·get_json: arg 0 must be a URL string")),
+            },
+            _ => return Err(RuntimeError::new("registry·get_json: arg 0 must be a URL string")),
+        };
+        let timeout_secs: u64 = match &args[1] {
+            Value::Int(n) => (*n).max(1) as u64,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => (*n).max(1) as u64,
+                _ => 30,
+            },
+            _ => 30,
+        };
+
+        fn parse_url_rg(url: &str) -> Result<(bool, String, u16, String), String> {
+            let (scheme, rest) = url.split_once("://")
+                .ok_or_else(|| format!("invalid URL '{}'", url))?;
+            let use_tls = match scheme {
+                "https" => true,
+                "http"  => false,
+                _ => return Err(format!("unsupported scheme '{}' (only http/https)", scheme)),
+            };
+            let (host_port, path) = if let Some(p) = rest.find('/') {
+                (rest[..p].to_string(), rest[p..].to_string())
+            } else {
+                (rest.to_string(), "/".to_string())
+            };
+            let (host, port) = if let Some(colon) = host_port.rfind(':') {
+                let port_str = &host_port[colon + 1..];
+                if let Ok(p) = port_str.parse::<u16>() {
+                    (host_port[..colon].to_string(), p)
+                } else {
+                    (host_port, if use_tls { 443 } else { 80 })
+                }
+            } else {
+                (host_port, if use_tls { 443 } else { 80 })
+            };
+            Ok((use_tls, host, port, path))
+        }
+
+        fn do_get_json(url: &str, timeout_secs: u64) -> Result<String, String> {
+            use std::io::{BufRead, Read, Write as IoWrite};
+
+            let mut current_url = url.to_string();
+            for _ in 0..10_usize {
+                let (use_tls, host, port, path) = parse_url_rg(&current_url)?;
+                let addr = format!("{}:{}", host, port);
+
+                let request = format!(
+                    "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Ritualis/1.0\r\nAccept: application/json\r\nConnection: close\r\n\r\n",
+                    path, host
+                );
+
+                let tcp = std::net::TcpStream::connect(&addr)
+                    .map_err(|e| format!("connect {}: {}", addr, e))?;
+                tcp.set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs))).ok();
+
+                let reader_box: Box<dyn Read> = if use_tls {
+                    #[cfg(feature = "websocket")]
+                    {
+                        use native_tls::TlsConnector;
+                        let connector = TlsConnector::new()
+                            .map_err(|e| format!("TLS init: {}", e))?;
+                        let mut tls = connector.connect(&host, tcp)
+                            .map_err(|e| format!("TLS handshake with '{}': {}", host, e))?;
+                        tls.write_all(request.as_bytes())
+                            .map_err(|e| format!("send request: {}", e))?;
+                        Box::new(tls) as Box<dyn Read>
+                    }
+                    #[cfg(not(feature = "websocket"))]
+                    {
+                        return Err(
+                            "HTTPS requires the 'websocket' build feature (native-tls)".to_string()
+                        );
+                    }
+                } else {
+                    let mut plain = tcp;
+                    plain.write_all(request.as_bytes())
+                        .map_err(|e| format!("send request: {}", e))?;
+                    Box::new(plain) as Box<dyn Read>
+                };
+
+                let mut reader = std::io::BufReader::with_capacity(65536, reader_box);
+
+                // Read headers
+                let mut headers = String::new();
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line)
+                        .map_err(|e| format!("read headers: {}", e))?;
+                    if line == "\r\n" || line == "\n" || line.is_empty() { break; }
+                    headers.push_str(&line);
+                    if headers.len() > 131_072 {
+                        return Err("response headers too large".to_string());
+                    }
+                }
+
+                let status: i64 = headers.lines().next().unwrap_or("")
+                    .split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+                // Follow redirects
+                if (300..400).contains(&status) {
+                    if let Some(loc_line) = headers.lines()
+                        .find(|l| l.to_lowercase().starts_with("location:"))
+                    {
+                        let loc = loc_line[9..].trim().to_string();
+                        current_url = if loc.starts_with("http://") || loc.starts_with("https://") {
+                            loc
+                        } else if loc.starts_with('/') {
+                            let scheme = if use_tls { "https" } else { "http" };
+                            format!("{}://{}:{}{}", scheme, host, port, loc)
+                        } else {
+                            format!("https://{}", loc)
+                        };
+                        continue;
+                    }
+                }
+
+                if status == 404 {
+                    return Err("NOT_FOUND".to_string());
+                }
+
+                if !(200..300).contains(&status) {
+                    return Err(format!("HTTP {}: request failed for '{}'", status, current_url));
+                }
+
+                let is_chunked = headers.lines().any(|l| {
+                    let ll = l.to_lowercase();
+                    ll.starts_with("transfer-encoding:") && ll.contains("chunked")
+                });
+
+                // Collect body into String
+                let mut body_bytes: Vec<u8> = Vec::new();
+                if is_chunked {
+                    let mut chunk_line = String::new();
+                    loop {
+                        chunk_line.clear();
+                        reader.read_line(&mut chunk_line)
+                            .map_err(|e| format!("read chunk size: {}", e))?;
+                        let size_str = chunk_line.trim().split(';').next().unwrap_or("0").trim();
+                        let chunk_size = usize::from_str_radix(size_str, 16).unwrap_or(0);
+                        if chunk_size == 0 { break; }
+                        let mut remaining = chunk_size;
+                        let mut buf = vec![0u8; 65536];
+                        while remaining > 0 {
+                            let to_read = remaining.min(buf.len());
+                            let n = reader.read(&mut buf[..to_read])
+                                .map_err(|e| format!("read chunk: {}", e))?;
+                            if n == 0 { break; }
+                            body_bytes.extend_from_slice(&buf[..n]);
+                            remaining -= n;
+                        }
+                        let mut crlf = String::new();
+                        reader.read_line(&mut crlf).ok();
+                    }
+                } else {
+                    let mut buf = [0u8; 65536];
+                    loop {
+                        let n = reader.read(&mut buf)
+                            .map_err(|e| format!("read body: {}", e))?;
+                        if n == 0 { break; }
+                        body_bytes.extend_from_slice(&buf[..n]);
+                    }
+                }
+
+                let body = String::from_utf8_lossy(&body_bytes).into_owned();
+                return Ok(body);
+            }
+            Err(format!("too many redirects for '{}'", url))
+        }
+
+        match do_get_json(&url, timeout_secs) {
+            Ok(body) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(body))])),
+            }),
+            Err(msg) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
+            }),
+        }
+    });
+
+    // ── registry·parse_manifest(json_str) → Result[PackageManifest] ─────────
+    //
+    // Parses a package manifest JSON string into a PackageManifest-shaped Sigil
+    // struct.  This is necessary because the generic json::from_str<T> cannot
+    // dispatch T::decode in the interpreter.
+    //
+    // Returns Result::Ok(PackageManifest) on success, Result::Err(String) on failure.
+    define(interp, "registry·parse_manifest", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("registry·parse_manifest: arg must be a string")),
+            },
+            _ => return Err(RuntimeError::new("registry·parse_manifest: arg must be a string")),
+        };
+
+        fn make_str(s: &str) -> Value {
+            Value::String(Rc::new(s.to_string()))
+        }
+        fn make_some(v: Value) -> Value {
+            Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "Some".to_string(),
+                fields: Some(Rc::new(vec![v])),
+            }
+        }
+        fn make_none() -> Value {
+            Value::Variant {
+                enum_name: "Option".to_string(),
+                variant_name: "None".to_string(),
+                fields: None,
+            }
+        }
+        fn make_version(version_str: &str) -> Value {
+            let parts: Vec<i64> = version_str.split('.')
+                .map(|p| p.split(|c: char| c == '-' || c == '+').next().unwrap_or("0")
+                    .parse::<i64>().unwrap_or(0))
+                .collect();
+            let major = parts.get(0).copied().unwrap_or(0);
+            let minor = parts.get(1).copied().unwrap_or(0);
+            let patch = parts.get(2).copied().unwrap_or(0);
+            Value::Struct {
+                name: "semver·Version".to_string(),
+                fields: Rc::new(RefCell::new({
+                    let mut f = HashMap::new();
+                    f.insert("__version_str__".to_string(), Value::String(Rc::new(version_str.to_string())));
+                    f.insert("major".to_string(), Value::Int(major));
+                    f.insert("minor".to_string(), Value::Int(minor));
+                    f.insert("patch".to_string(), Value::Int(patch));
+                    f.insert("pre".to_string(), make_str(""));
+                    f.insert("build".to_string(), make_str(""));
+                    f
+                })),
+            }
+        }
+
+        let json: serde_json::Value = serde_json::from_str(&s)
+            .map_err(|e| RuntimeError::new(format!("registry·parse_manifest: {}", e)))?;
+
+        // ── package (PackageInfo) ─────────────────────────────────────────────
+        let pkg = &json["package"];
+        let pkg_name = pkg["name"].as_str().unwrap_or("").to_string();
+        let pkg_display = pkg["display_name"].as_str().unwrap_or(&pkg_name).to_string();
+        let pkg_version = pkg["version"].as_str().unwrap_or("0.0.0");
+        let pkg_desc = pkg["description"].as_str().unwrap_or("").to_string();
+        let pkg_homepage = pkg["homepage"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
+        let pkg_license = pkg["license"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
+        let pkg_category = pkg["category"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
+        let pkg_icon = pkg["icon"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
+
+        let package_info = Value::Struct {
+            name: "PackageInfo".to_string(),
+            fields: Rc::new(RefCell::new({
+                let mut f = HashMap::new();
+                f.insert("name".to_string(), make_str(&pkg_name));
+                f.insert("display_name".to_string(), make_str(&pkg_display));
+                f.insert("version".to_string(), make_version(pkg_version));
+                f.insert("description".to_string(), make_str(&pkg_desc));
+                f.insert("homepage".to_string(), pkg_homepage);
+                f.insert("license".to_string(), pkg_license);
+                f.insert("category".to_string(), pkg_category);
+                f.insert("icon".to_string(), pkg_icon);
+                f
+            })),
+        };
+
+        // ── targets (HashMap<String, TargetInfo>) ─────────────────────────────
+        let mut targets_map = HashMap::new();
+        if let Some(targets) = json["targets"].as_object() {
+            for (k, v) in targets {
+                let target = Value::Struct {
+                    name: "TargetInfo".to_string(),
+                    fields: Rc::new(RefCell::new({
+                        let mut f = HashMap::new();
+                        f.insert("url".to_string(), make_str(v["url"].as_str().unwrap_or("")));
+                        f.insert("sha256".to_string(), make_str(v["sha256"].as_str().unwrap_or("")));
+                        let size_val = match v["size"].as_u64() {
+                            Some(n) => make_some(Value::Int(n as i64)),
+                            None => make_none(),
+                        };
+                        f.insert("size".to_string(), size_val);
+                        f
+                    })),
+                };
+                targets_map.insert(k.clone(), target);
+            }
+        }
+
+        // ── altar (HashMap<String, AltarDep>) ────────────────────────────────
+        let mut altar_map = HashMap::new();
+        if let Some(altar) = json["altar"].as_object() {
+            for (k, v) in altar {
+                let dep = Value::Struct {
+                    name: "AltarDep".to_string(),
+                    fields: Rc::new(RefCell::new({
+                        let mut f = HashMap::new();
+                        f.insert("version".to_string(), make_str(v["version"].as_str().unwrap_or("*")));
+                        f.insert("bundled".to_string(), Value::Bool(v["bundled"].as_bool().unwrap_or(false)));
+                        f.insert("optional".to_string(), Value::Bool(v["optional"].as_bool().unwrap_or(false)));
+                        f
+                    })),
+                };
+                altar_map.insert(k.clone(), dep);
+            }
+        }
+
+        // ── services (HashMap<String, ServiceDef>) ────────────────────────────
+        let mut services_map = HashMap::new();
+        if let Some(services) = json["services"].as_object() {
+            for (k, v) in services {
+                let deps: Vec<Value> = v["depends_on"].as_array()
+                    .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| make_str(s))).collect())
+                    .unwrap_or_default();
+                let mut env_map = HashMap::new();
+                if let Some(env) = v["env"].as_object() {
+                    for (ek, ev) in env {
+                        env_map.insert(ek.clone(), make_str(ev.as_str().unwrap_or("")));
+                    }
+                }
+                let svc = Value::Struct {
+                    name: "ServiceDef".to_string(),
+                    fields: Rc::new(RefCell::new({
+                        let mut f = HashMap::new();
+                        f.insert("command".to_string(), make_str(v["command"].as_str().unwrap_or("")));
+                        let port_val = match v["port"].as_u64() {
+                            Some(n) => make_some(Value::Int(n as i64)),
+                            None => make_none(),
+                        };
+                        f.insert("port".to_string(), port_val);
+                        f.insert("depends_on".to_string(), Value::Array(Rc::new(RefCell::new(deps))));
+                        f.insert("env".to_string(), Value::Map(Rc::new(RefCell::new(env_map))));
+                        f
+                    })),
+                };
+                services_map.insert(k.clone(), svc);
+            }
+        }
+
+        // ── rituals (RitualHooks) ─────────────────────────────────────────────
+        let rituals = &json["rituals"];
+        let rituals_struct = Value::Struct {
+            name: "RitualHooks".to_string(),
+            fields: Rc::new(RefCell::new({
+                let mut f = HashMap::new();
+                f.insert("pre_summon".to_string(), rituals["pre_summon"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
+                f.insert("post_summon".to_string(), rituals["post_summon"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
+                f.insert("migrations".to_string(), rituals["migrations"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
+                f
+            })),
+        };
+
+        // ── invocation (InvocationSettings) ───────────────────────────────────
+        let inv = &json["invocation"];
+        let inv_channel = inv["channel"].as_str().unwrap_or("stable").to_string();
+        let inv_struct = Value::Struct {
+            name: "InvocationSettings".to_string(),
+            fields: Rc::new(RefCell::new({
+                let mut f = HashMap::new();
+                f.insert("channel".to_string(), make_str(&inv_channel));
+                f.insert("auto".to_string(), Value::Bool(inv["auto"].as_bool().unwrap_or(false)));
+                f.insert("delta_patches".to_string(), Value::Bool(
+                    inv["delta_patches"].as_bool()
+                        .or_else(|| inv["delta_updates"].as_bool())
+                        .unwrap_or(true)
+                ));
+                f
+            })),
+        };
+
+        // ── banishment (BanishmentSettings) ───────────────────────────────────
+        let ban = &json["banishment"];
+        let ban_struct = Value::Struct {
+            name: "BanishmentSettings".to_string(),
+            fields: Rc::new(RefCell::new({
+                let mut f = HashMap::new();
+                f.insert("preserve_data".to_string(), Value::Bool(
+                    ban["preserve_data"].as_bool()
+                        .or_else(|| ban["preserve_config"].as_bool())
+                        .unwrap_or(true)
+                ));
+                f.insert("post_banish".to_string(), ban["post_banish"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
+                f
+            })),
+        };
+
+        // ── assemble PackageManifest ──────────────────────────────────────────
+        let manifest = Value::Struct {
+            name: "PackageManifest".to_string(),
+            fields: Rc::new(RefCell::new({
+                let mut f = HashMap::new();
+                f.insert("package".to_string(), package_info);
+                f.insert("targets".to_string(), Value::Map(Rc::new(RefCell::new(targets_map))));
+                f.insert("altar".to_string(), Value::Map(Rc::new(RefCell::new(altar_map))));
+                f.insert("services".to_string(), Value::Map(Rc::new(RefCell::new(services_map))));
+                f.insert("rituals".to_string(), rituals_struct);
+                f.insert("invocation".to_string(), inv_struct);
+                f.insert("banishment".to_string(), ban_struct);
+                f
+            })),
+        };
+
+        Ok(Value::Variant {
+            enum_name: "Result".to_string(),
+            variant_name: "Ok".to_string(),
+            fields: Some(Rc::new(vec![manifest])),
+        })
+    });
+
+    // ── http_test_server·once(status_code, body) → i64 (port) ────────────────
+    //
+    // Starts a minimal HTTP server on 127.0.0.1:0 (OS assigns free port),
+    // spawns a thread that accepts one connection, sends the given status and
+    // body, then exits.  Returns the assigned port number.
+    //
+    // Usage in Sigil tests:
+    //   ≔ port! = http_test_server·once(200, "{...json...}")
+    //   ≔ client! = RegistryClient·for_testing(format!("http://127.0.0.1:{}", port))
+    //   ≔ result~ = client·fetch_manifest("pkg", None)|await?
+    define(interp, "http_test_server·once", Some(2), |_, args| {
+        let status_code: u16 = match &args[0] {
+            Value::Int(n) => (*n).max(100).min(599) as u16,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => (*n).max(100).min(599) as u16,
+                _ => 200,
+            },
+            _ => 200,
+        };
+        let body = match &args[1] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("http_test_server·once: arg 1 must be a string")),
+            },
+            _ => return Err(RuntimeError::new("http_test_server·once: arg 1 must be a string")),
+        };
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| RuntimeError::new(format!("http_test_server·once: bind failed: {}", e)))?;
+        let port = listener.local_addr()
+            .map_err(|e| RuntimeError::new(format!("http_test_server·once: local_addr: {}", e)))?
+            .port();
+
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            if let Ok((mut stream, _)) = listener.accept() {
+                // Drain the request (ignore content)
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let reason = match status_code {
+                    200 => "OK",
+                    404 => "Not Found",
+                    500 => "Internal Server Error",
+                    _ => "OK",
+                };
+                let response = format!(
+                    "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status_code, reason, body.len(), body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+
+        // Brief pause so the server thread starts listening before the test connects
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        Ok(Value::Int(port as i64))
+    });
 }
