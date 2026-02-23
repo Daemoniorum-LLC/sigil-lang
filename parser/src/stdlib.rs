@@ -49910,4 +49910,133 @@ fn register_tar(interp: &mut Interpreter) {
 
         Ok(Value::Int(port as i64))
     });
+
+    // ── http_test_server·fail_n_then_succeed(n, body) → i64 (port) ───────────
+    //
+    // Starts a server that accepts (n + 1) connections:
+    //   - First n connections: respond HTTP 500
+    //   - Final connection:    respond HTTP 200 with `body`
+    //
+    // Used to test retry logic where the first n attempts fail and the
+    // (n+1)-th succeeds.
+    //
+    // Usage:
+    //   ≔ port! = http_test_server·fail_n_then_succeed(2, "ok content")
+    //   // server will fail 2 times then succeed once
+    define(interp, "http_test_server·fail_n_then_succeed", Some(2), |_, args| {
+        let n_failures: usize = match &args[0] {
+            Value::Int(n) => (*n).max(0) as usize,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => (*n).max(0) as usize,
+                _ => return Err(RuntimeError::new("http_test_server·fail_n_then_succeed: arg 0 must be an int")),
+            },
+            _ => return Err(RuntimeError::new("http_test_server·fail_n_then_succeed: arg 0 must be an int")),
+        };
+        let success_body = match &args[1] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("http_test_server·fail_n_then_succeed: arg 1 must be a string")),
+            },
+            _ => return Err(RuntimeError::new("http_test_server·fail_n_then_succeed: arg 1 must be a string")),
+        };
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| RuntimeError::new(format!("http_test_server·fail_n_then_succeed: bind failed: {}", e)))?;
+        let port = listener.local_addr()
+            .map_err(|e| RuntimeError::new(format!("http_test_server·fail_n_then_succeed: local_addr: {}", e)))?
+            .port();
+
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let total = n_failures + 1;
+            for i in 0..total {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    let response = if i < n_failures {
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+                    } else {
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                            success_body.len(), success_body
+                        )
+                    };
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        Ok(Value::Int(port as i64))
+    });
+
+    // ── http_test_server·n_times(n, status, body) → i64 (port) ──────────────
+    //
+    // Starts a server that accepts exactly `n` connections, each responding
+    // with the given status code and body.
+    //
+    // Used to test retry exhaustion: start a server that always returns 500
+    // for exactly as many attempts as the retry limit.
+    //
+    // Usage:
+    //   ≔ port! = http_test_server·n_times(3, 500, "error")
+    //   // server will handle 3 requests, all returning 500
+    define(interp, "http_test_server·n_times", Some(3), |_, args| {
+        let n: usize = match &args[0] {
+            Value::Int(n) => (*n).max(0) as usize,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => (*n).max(0) as usize,
+                _ => return Err(RuntimeError::new("http_test_server·n_times: arg 0 must be an int")),
+            },
+            _ => return Err(RuntimeError::new("http_test_server·n_times: arg 0 must be an int")),
+        };
+        let status_code: u16 = match &args[1] {
+            Value::Int(n) => (*n).max(100).min(599) as u16,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => (*n).max(100).min(599) as u16,
+                _ => 500,
+            },
+            _ => 500,
+        };
+        let body = match &args[2] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("http_test_server·n_times: arg 2 must be a string")),
+            },
+            _ => return Err(RuntimeError::new("http_test_server·n_times: arg 2 must be a string")),
+        };
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| RuntimeError::new(format!("http_test_server·n_times: bind failed: {}", e)))?;
+        let port = listener.local_addr()
+            .map_err(|e| RuntimeError::new(format!("http_test_server·n_times: local_addr: {}", e)))?
+            .port();
+
+        std::thread::spawn(move || {
+            use std::io::{Read, Write};
+            let reason = match status_code {
+                200 => "OK",
+                404 => "Not Found",
+                500 => "Internal Server Error",
+                503 => "Service Unavailable",
+                _ => "Error",
+            };
+            for _ in 0..n {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let mut buf = [0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    let response = format!(
+                        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        status_code, reason, body.len(), body
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
+        });
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        Ok(Value::Int(port as i64))
+    });
 }
