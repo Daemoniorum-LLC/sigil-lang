@@ -152,7 +152,7 @@ invoke std·time·Duration;
 }
 
 /// Key algorithm
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ KeyAlgorithm {
     Ed25519,
     X25519,
@@ -255,7 +255,7 @@ invoke std·time·Duration;
 }
 
 /// Encryption algorithm
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ EncryptionAlgorithm {
     Aes256Gcm,
     ChaCha20Poly1305,
@@ -305,7 +305,7 @@ invoke std·time·Duration;
 }
 
 /// Agent role
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ Role {
     Admin,
     Operator,
@@ -430,7 +430,7 @@ invoke std·time·Duration;
 }
 
 /// Isolation level ∀ sandboxing
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ IsolationLevel {
     /// Run ∈ same process (fast, less secure)
     Process,
@@ -443,7 +443,7 @@ invoke std·time·Duration;
 }
 
 /// Syscall filter mode
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ FilterMode {
     /// Only listed syscalls allowed
     AllowList,
@@ -505,14 +505,14 @@ invoke std·time·Duration;
 }
 
 /// Path pattern ∀ filesystem policy
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ PathPattern {
     ☉ pattern: String,
     ☉ permissions: PathPermissions,
 }
 
 /// Path permissions
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ Σ PathPermissions {
     ☉ read: bool,
     ☉ write: bool,
@@ -605,7 +605,7 @@ invoke std·time·Duration;
 }
 
 /// Memory type ∀ audit
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ MemoryType {
     Episodic,
     Semantic,
@@ -651,7 +651,7 @@ invoke std·time·Duration;
 }
 
 /// Goal ∀ agents
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ Goal {
     ☉ id: GoalId,
     ☉ description: String,
@@ -688,7 +688,7 @@ invoke std·time·Duration;
 }
 
 /// Source of a goal
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ GoalSource {
     /// From agent's constitution
     Constitution,
@@ -716,7 +716,7 @@ invoke std·time·Duration;
 }
 
 /// Action ∀ agents
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ Action {
     ☉ id: ActionId,
     ☉ action_type: ActionType,
@@ -757,7 +757,7 @@ invoke std·time·Duration;
 }
 
 /// Type of action
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ ActionType {
     Tool { name: String, params: Value },
     Communicate { to: AgentId, message: String },
@@ -775,7 +775,7 @@ invoke std·time·Duration;
 }
 
 /// Injection indicator ∀ goal protection
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ InjectionIndicator {
     ☉ pattern: String,
     ☉ location: String,
@@ -784,7 +784,7 @@ invoke std·time·Duration;
 }
 
 /// Severity level
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ Severity {
     Low,
     Medium,
@@ -867,7 +867,7 @@ invoke std·time·Duration;
 }
 
 /// Constitutional directive
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ Directive {
     ☉ name: String,
     ☉ description: String,
@@ -886,7 +886,7 @@ invoke std·time·Duration;
 }
 
 /// Directive constraint type
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ DirectiveConstraint {
     Prohibition { pattern: String },
     Requirement { condition: String },
@@ -994,7 +994,7 @@ invoke std·time·Duration;
 }
 
 /// Audit outcome
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ AuditOutcome {
     Success,
     Failure { error: String },
@@ -1003,7 +1003,7 @@ invoke std·time·Duration;
 }
 
 /// Action outcome
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ Outcome {
     Success { result: Value },
     Failure { error: String },
@@ -1011,7 +1011,7 @@ invoke std·time·Duration;
 }
 
 /// Security alert
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ Alert {
     /// Low compliance score
     LowCompliance { action: Action, score: f32 },
@@ -1092,7 +1092,7 @@ invoke std·time·Duration;
 }
 
 /// Knowledge item
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ Knowledge {
     ☉ id: KnowledgeId,
     ☉ content: Value,
@@ -1186,7 +1186,7 @@ invoke std·time·Duration;
 // ============================================================================
 
 /// Timestamp
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)]
+//@ rune: derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq)
 ☉ Σ Timestamp {
     ☉ nanos: u64,
 }
@@ -1225,7 +1225,7 @@ invoke std·time·Duration;
 }
 
 /// Generic value type
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ Value {
     inner: Vec<u8>,
 }
@@ -1315,7 +1315,7 @@ invoke std·time·Duration;
 // ============================================================================
 
 /// Security level presets
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ SecurityLevel {
     /// Development: minimal security, maximum capability
     Development,
@@ -1415,17 +1415,17 @@ invoke std·time·Duration;
 // External Function Declarations (would be provided by runtime)
 // ============================================================================
 
-extern rite getrandom(buf: &Δ [u8]);
-extern rite system_time_nanos() -> u64;
-extern rite ed25519_keygen(seed: &[u8; 32]) -> ([u8; 32], [u8; 64]);
-extern rite ed25519_sign(private_key: &[u8; 64], data: &[u8]) -> [u8; 64];
-extern rite ed25519_verify(public_key: &[u8; 32], data: &[u8], signature: &[u8; 64]) -> bool;
-extern rite aes_gcm_encrypt(key: &[u8; 32], nonce: &[u8; 12], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
-extern rite aes_gcm_decrypt(key: &[u8; 32], nonce: &[u8; 12], ciphertext: &[u8], aad: &[u8]) -> Result<Vec<u8>, CryptoError>;
-extern rite hkdf_derive(input: &[u8], info: &[u8]) -> [u8; 32];
-extern rite derive_nonce(counter: u64) -> [u8; 12];
-extern rite sha256(data: &[u8]) -> [u8; 32];
-extern rite regex_match(pattern: &str, text: &str) -> bool;
+// extern rite getrandom(buf);
+// extern rite system_time_nanos();
+// extern rite ed25519_keygen(seed);
+// extern rite ed25519_sign(private_key, data);
+// extern rite ed25519_verify(public_key, data, signature);
+// extern rite aes_gcm_encrypt(key, nonce, plaintext, aad);
+// extern rite aes_gcm_decrypt(key, nonce, ciphertext, aad);
+// extern rite hkdf_derive(input, info);
+// extern rite derive_nonce(counter);
+// extern rite sha256(data);
+// extern rite regex_match(pattern, text);
 
 // Use declarations ∀ std traits
 invoke std·hash·{Hash, Hasher};

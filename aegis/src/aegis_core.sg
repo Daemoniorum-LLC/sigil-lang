@@ -1,0 +1,34 @@
+// aegis_core.sg — Security policy engine (aegis v0.1)
+//
+// Plain executable Sigil. Implements the minimum viable security layer for
+// Morgoth Phase D integration: kind-based message filtering at socket accept time.
+//
+// Full aegis (Constitution, Directive, audit trail, memory integrity proofs,
+// sandboxing, peer UID verification) is deferred.
+//
+// SYNC: morgoth/src/aegis.sg is a verbatim copy of this file.
+// Any change here MUST be reflected there in the same commit.
+
+/// Security policy configuration for the Morgoth socket endpoint.
+/// deny_kinds: message kinds rejected from external clients (string equality).
+Σ AegisConfig { deny_kinds: Array }
+
+⊢ AegisConfig {
+    // Constructor — permissive defaults (empty deny list)
+    rite default() {
+        ↩ AegisConfig { deny_kinds: [] }
+    }
+}
+
+/// Check whether `kind` is permitted by `config`.
+/// Returns true if kind is allowed, false if it is in deny_kinds.
+/// null kind returns true (nil-safe: kind validation is the caller's concern).
+rite aegis_check_kind(config, kind) {
+    ⎇ kind == null { ↩ true; }
+    ≔ mut i = 0;
+    ⟳ i < len(config.deny_kinds) {
+        ⎇ config.deny_kinds[i] == kind { ↩ false; }
+        i = i + 1;
+    }
+    ↩ true
+}

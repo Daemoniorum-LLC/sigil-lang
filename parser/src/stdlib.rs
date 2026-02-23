@@ -12640,6 +12640,133 @@ fn register_itertools(interp: &mut Interpreter) {
 
         Ok(Value::Array(Rc::new(RefCell::new(result))))
     });
+
+    // flat_map - map then flatten one level (spec: 09A-ARRAY-COMBINATORS.md §3.1)
+    define(interp, "flat_map", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("flat_map: first argument must be an array")),
+        };
+        let func = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("flat_map: second argument must be a function")),
+        };
+
+        let mut result = Vec::new();
+        for item in arr {
+            let mapped = interp.call_function(&func, vec![item])?;
+            match mapped {
+                Value::Array(inner) => {
+                    result.extend(inner.borrow().clone());
+                }
+                other => {
+                    result.push(other);
+                }
+            }
+        }
+        Ok(Value::Array(Rc::new(RefCell::new(result))))
+    });
+
+    // find_index - index of first element matching predicate, or null (spec: 09A §3.2)
+    define(interp, "find_index", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("find_index: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("find_index: second argument must be a function")),
+        };
+
+        for (i, item) in arr.into_iter().enumerate() {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                return Ok(Value::Int(i as i64));
+            }
+        }
+        Ok(Value::Null)
+    });
+
+    // any_where - true if any element satisfies predicate (spec: 09A §3.3)
+    define(interp, "any_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("any_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("any_where: second argument must be a function")),
+        };
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                return Ok(Value::Bool(true));
+            }
+        }
+        Ok(Value::Bool(false))
+    });
+
+    // all_where - true if every element satisfies predicate (spec: 09A §3.3)
+    define(interp, "all_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("all_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("all_where: second argument must be a function")),
+        };
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if !is_truthy(&result) {
+                return Ok(Value::Bool(false));
+            }
+        }
+        Ok(Value::Bool(true))
+    });
+
+    // none_where - true if no element satisfies predicate (spec: 09A §3.3)
+    define(interp, "none_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("none_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("none_where: second argument must be a function")),
+        };
+
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                return Ok(Value::Bool(false));
+            }
+        }
+        Ok(Value::Bool(true))
+    });
+
+    // count_where - count elements satisfying predicate (spec: 09A §3.4)
+    define(interp, "count_where", Some(2), |interp, args| {
+        let arr = match &args[0] {
+            Value::Array(a) => a.borrow().clone(),
+            _ => return Err(RuntimeError::new("count_where: first argument must be an array")),
+        };
+        let pred = match &args[1] {
+            Value::Function(f) => f.clone(),
+            _ => return Err(RuntimeError::new("count_where: second argument must be a function")),
+        };
+
+        let mut count = 0i64;
+        for item in arr {
+            let result = interp.call_function(&pred, vec![item])?;
+            if is_truthy(&result) {
+                count += 1;
+            }
+        }
+        Ok(Value::Int(count))
+    });
 }
 
 /// Advanced range utilities
@@ -38777,6 +38904,18 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
+        // Native path: use libc::open directly so we get a real OS fd (<4000)
+        // that Sys·read_string / Sys·poll_fds can handle natively.
+        // This is required for FIFOs (O_NONBLOCK) and Unix socket paths.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if let Ok(c_path) = CString::new(path.as_str()) {
+                let fd = unsafe { libc::open(c_path.as_ptr(), flags as i32, 0o600i32) };
+                return Ok(Value::Int(fd as i64));
+            }
+        }
+
         use std::fs::{File, OpenOptions};
 
         let result = if flags & 1 != 0 || flags & 2 != 0 {
@@ -38940,6 +39079,7 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "O_CREAT", Some(0), |_, _| Ok(Value::Int(64)));
     define(interp, "O_TRUNC", Some(0), |_, _| Ok(Value::Int(512)));
     define(interp, "O_APPEND", Some(0), |_, _| Ok(Value::Int(1024)));
+    define(interp, "O_NONBLOCK", Some(0), |_, _| Ok(Value::Int(2048)));
 
     // Memory protection flags for mmap
     define(interp, "PROT_NONE", Some(0), |_, _| Ok(Value::Int(0)));
@@ -38956,6 +39096,29 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "STDIN_FILENO", Some(0), |_, _| Ok(Value::Int(0)));
     define(interp, "STDOUT_FILENO", Some(0), |_, _| Ok(Value::Int(1)));
     define(interp, "STDERR_FILENO", Some(0), |_, _| Ok(Value::Int(2)));
+
+    // mkfifo(path: str, mode: i64) -> i64
+    // Create a FIFO (named pipe). Returns 0 on success, -1 on error.
+    define(interp, "mkfifo", Some(2), |_, args| {
+        let path = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("mkfifo requires string path")),
+        };
+        let mode = match &args[1] {
+            Value::Int(n) => *n as u32,
+            _ => 0o600,
+        };
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if let Ok(c_path) = CString::new(path.as_str()) {
+                let ret = unsafe { libc::mkfifo(c_path.as_ptr(), mode as libc::mode_t) };
+                return Ok(Value::Int(ret as i64));
+            }
+        }
+        let _ = (path, mode);
+        Ok(Value::Int(0))  // fake: always succeeds
+    });
 
     // ========================================================================
     // Networking Syscalls (Phase 9)
@@ -38996,7 +39159,18 @@ fn register_sys(interp: &mut Interpreter) {
             });
             Ok(Value::Int(fd))
         } else {
-            Ok(Value::Int(-93)) // EPROTONOSUPPORT
+            // For AF_UNIX and other socket types, use native libc in native builds
+            #[cfg(all(unix, feature = "native"))]
+            {
+                let protocol = match &args[2] {
+                    Value::Int(n) => *n as i32,
+                    _ => 0,
+                };
+                let fd = unsafe { libc::socket(domain, sock_type, protocol) };
+                return Ok(Value::Int(fd as i64));
+            }
+            #[allow(unreachable_code)]
+            Ok(Value::Int(-93)) // EPROTONOSUPPORT (non-native fallback)
         }
     });
 
@@ -39053,6 +39227,20 @@ fn register_sys(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Sys·listen requires int fd")),
         };
+        let backlog = match &args[1] {
+            Value::Int(n) => *n as i32,
+            _ => 8,
+        };
+
+        // Native path for real OS sockets (fd < 4000)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < 4000 {
+                let ret = unsafe { libc::listen(fd as i32, backlog) };
+                return Ok(Value::Int(ret as i64));
+            }
+        }
+        let _ = backlog;
 
         let exists = FAKE_SOCKET_STATE.with(|map| {
             map.borrow().contains_key(&fd)
@@ -39076,6 +39264,17 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·accept requires int fd")),
         };
 
+        // Native path for real OS sockets (fd < 4000)
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < 4000 {
+                let client = unsafe {
+                    libc::accept(fd as i32, std::ptr::null_mut(), std::ptr::null_mut())
+                };
+                return Ok(Value::Int(client as i64));
+            }
+        }
+
         let is_listening = FAKE_SOCKET_STATE.with(|map| {
             matches!(map.borrow().get(&fd), Some(FakeSocket::Listening))
         });
@@ -39090,6 +39289,86 @@ fn register_sys(interp: &mut Interpreter) {
         } else {
             Ok(Value::Int(-9)) // EBADF
         }
+    });
+
+    // Sys·bind_unix(fd: i64, path: str) -> i64
+    // Bind a Unix domain socket to a filesystem path. Returns 0 or negative errno.
+    define(interp, "Sys·bind_unix", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·bind_unix requires int fd")),
+        };
+        let path = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Sys·bind_unix requires string path")),
+        };
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if fd >= 0 && fd < 4000 {
+                if let Ok(c_path) = CString::new(path.as_str()) {
+                    let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+                    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+                    let path_bytes = c_path.as_bytes_with_nul();
+                    let sun_path_len = addr.sun_path.len();
+                    let copy_len = path_bytes.len().min(sun_path_len - 1);
+                    for (i, &b) in path_bytes[..copy_len].iter().enumerate() {
+                        addr.sun_path[i] = b as i8;
+                    }
+                    let ret = unsafe {
+                        libc::bind(
+                            fd as i32,
+                            &addr as *const libc::sockaddr_un as *const libc::sockaddr,
+                            std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
+                        )
+                    };
+                    return Ok(Value::Int(ret as i64));
+                }
+            }
+        }
+        let _ = (fd, path);
+        Ok(Value::Int(0))  // fake: always succeeds
+    });
+
+    // Sys·connect_unix(fd: i64, path: str) -> i64
+    // Connect a Unix domain socket to a filesystem path. Returns 0 or negative errno.
+    define(interp, "Sys·connect_unix", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·connect_unix requires int fd")),
+        };
+        let path = match &args[1] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Sys·connect_unix requires string path")),
+        };
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            use std::ffi::CString;
+            if fd >= 0 && fd < 4000 {
+                if let Ok(c_path) = CString::new(path.as_str()) {
+                    let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+                    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+                    let path_bytes = c_path.as_bytes_with_nul();
+                    let sun_path_len = addr.sun_path.len();
+                    let copy_len = path_bytes.len().min(sun_path_len - 1);
+                    for (i, &b) in path_bytes[..copy_len].iter().enumerate() {
+                        addr.sun_path[i] = b as i8;
+                    }
+                    let ret = unsafe {
+                        libc::connect(
+                            fd as i32,
+                            &addr as *const libc::sockaddr_un as *const libc::sockaddr,
+                            std::mem::size_of::<libc::sockaddr_un>() as libc::socklen_t,
+                        )
+                    };
+                    return Ok(Value::Int(ret as i64));
+                }
+            }
+        }
+        let _ = (fd, path);
+        Ok(Value::Int(-9)) // EBADF in non-native
     });
 
     // Sys·send(fd: i64, buf: ptr, len: i64, flags: i64) -> i64
@@ -39536,13 +39815,11 @@ fn register_sys(interp: &mut Interpreter) {
                     let flags = libc::fcntl(amaster, libc::F_GETFL);
                     libc::fcntl(amaster, libc::F_SETFL, flags | libc::O_NONBLOCK);
                 }
-                // Set slave to raw mode so data passes through without line discipline buffering
-                unsafe {
-                    let mut tios: libc::termios = std::mem::zeroed();
-                    libc::tcgetattr(aslave, &mut tios);
-                    libc::cfmakeraw(&mut tios);
-                    libc::tcsetattr(aslave, libc::TCSANOW, &tios);
-                }
+                // Leave slave with default PTY settings (ECHO + ICANON on).
+                // Bash/readline will call tcsetattr to set its own preferred mode.
+                // Previously cfmakeraw was used here but it prevented proper echo
+                // because bash's readline output was not being flushed through the
+                // PTY line discipline to the master.
                 // Store in FAKE_PTY_STATE for consistency (peer tracking, Sys·close, etc.)
                 FAKE_PTY_STATE.with(|map| {
                     map.borrow_mut().insert(amaster as i64, FakePty {
@@ -39761,15 +40038,33 @@ fn register_sys(interp: &mut Interpreter) {
 
         match fd {
             0 => {
-                // stdin — read up to max_len bytes
-                use std::io::{self, Read};
-                let mut buffer = vec![0u8; max_len];
-                match io::stdin().read(&mut buffer) {
-                    Ok(n) => {
-                        buffer.truncate(n);
-                        Ok(Value::String(Rc::new(String::from_utf8_lossy(&buffer).to_string())))
+                // stdin — use libc::read in native mode (bypasses Rust's buffered stdin)
+                #[cfg(all(unix, feature = "native"))]
+                {
+                    let mut buffer = vec![0u8; max_len];
+                    let n = unsafe {
+                        libc::read(0, buffer.as_mut_ptr() as *mut libc::c_void, max_len)
+                    };
+                    if n > 0 {
+                        buffer.truncate(n as usize);
+                        return Ok(Value::String(Rc::new(
+                            String::from_utf8_lossy(&buffer).to_string(),
+                        )));
                     }
-                    Err(_) => Ok(Value::String(Rc::new(String::new()))),
+                    return Ok(Value::String(Rc::new(String::new())));
+                }
+                // Fallback: Rust's io::stdin (non-native builds)
+                #[cfg(not(all(unix, feature = "native")))]
+                {
+                    use std::io::{self, Read};
+                    let mut buffer = vec![0u8; max_len];
+                    match io::stdin().read(&mut buffer) {
+                        Ok(n) => {
+                            buffer.truncate(n);
+                            Ok(Value::String(Rc::new(String::from_utf8_lossy(&buffer).to_string())))
+                        }
+                        Err(_) => Ok(Value::String(Rc::new(String::new()))),
+                    }
                 }
             }
             _ => {
@@ -39900,7 +40195,7 @@ fn register_sys(interp: &mut Interpreter) {
         // Native: use libc::poll() for real fds (< 4000; fake counters start at 4000+)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd > 0 && fd < 4000 {
+            if fd >= 0 && fd < 4000 {
                 let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
                 let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
                 return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
@@ -39962,6 +40257,75 @@ fn register_sys(interp: &mut Interpreter) {
         // Unknown fd — not ready
         #[allow(unreachable_code)]
         Ok(Value::Bool(false))
+    });
+
+    // Sys·poll_fds(fds_array, timeout_ms) -> [bool]
+    // Batch poll: check multiple fds in one syscall (real fds) or loop (fake).
+    // Returns an array of bools parallel to fds_array.
+    define(interp, "Sys·poll_fds", Some(2), |_, args| {
+        let fds: Vec<i64> = match &args[0] {
+            Value::Array(arr) => arr.borrow().iter().map(|v| match v {
+                Value::Int(n) => *n,
+                _ => -1,
+            }).collect(),
+            _ => return Err(RuntimeError::new("Sys·poll_fds requires array of ints")),
+        };
+        let timeout_ms: i32 = match &args[1] {
+            Value::Int(n) => *n as i32,
+            _ => 0,
+        };
+
+        let mut results: Vec<bool> = vec![false; fds.len()];
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            let mut pollfds: Vec<libc::pollfd> = Vec::new();
+            let mut idx_map: Vec<usize> = Vec::new();
+
+            for (i, &fd) in fds.iter().enumerate() {
+                if fd >= 0 && fd < 4000 {
+                    pollfds.push(libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 });
+                    idx_map.push(i);
+                } else {
+                    results[i] = check_fake_fd_ready(fd);
+                }
+            }
+
+            if !pollfds.is_empty() {
+                unsafe {
+                    libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, timeout_ms);
+                }
+                for (j, &i) in idx_map.iter().enumerate() {
+                    results[i] = (pollfds[j].revents & libc::POLLIN) != 0;
+                }
+            }
+
+            let out: Vec<Value> = results.into_iter().map(Value::Bool).collect();
+            return Ok(Value::Array(Rc::new(RefCell::new(out))));
+        }
+
+        // Non-native: check each fake fd individually (no blocking)
+        #[allow(unreachable_code)]
+        {
+            for (i, &fd) in fds.iter().enumerate() {
+                results[i] = check_fake_fd_ready(fd);
+            }
+            let out: Vec<Value> = results.into_iter().map(Value::Bool).collect();
+            Ok(Value::Array(Rc::new(RefCell::new(out))))
+        }
+    });
+
+    // Sys·getenv(name: str) -> str
+    // Get the value of an environment variable. Returns "" if not set.
+    define(interp, "Sys·getenv", Some(1), |_, args| {
+        let name = match &args[0] {
+            Value::String(s) => s.to_string(),
+            _ => return Err(RuntimeError::new("Sys·getenv requires string name")),
+        };
+        match std::env::var(&name) {
+            Ok(v) => Ok(Value::String(Rc::new(v))),
+            Err(_) => Ok(Value::String(Rc::new(String::new()))),
+        }
     });
 
     // Sys·spawn_bg(cmd, args) -> {pid, stdin_fd, stdout_fd, stderr_fd}
@@ -40257,25 +40621,29 @@ fn register_sys(interp: &mut Interpreter) {
         });
 
         if let Some(proc) = proc_info {
-            // Try real waitpid for real PIDs
+            // In native mode, try real libc::waitpid first for all tracked pids.
+            // result > 0: exited; result == 0: still running (WNOHANG); result < 0: ECHILD (fake pid)
             #[cfg(all(unix, feature = "native"))]
             {
+                let flags = match _flags { 1 => libc::WNOHANG, _ => 0 };
                 let mut status: i32 = 0;
                 let result = unsafe {
-                    libc::waitpid(pid as i32, &mut status, libc::WNOHANG)
+                    libc::waitpid(pid as i32, &mut status, flags)
                 };
-                if result > 0 {
+                if result >= 0 {
+                    let ret_pid = if result > 0 { result as i64 } else { 0 };
                     let mut fields = HashMap::new();
-                    fields.insert("pid".to_string(), Value::Int(result as i64));
-                    fields.insert("status".to_string(), Value::Int(status as i64));
+                    fields.insert("pid".to_string(), Value::Int(ret_pid));
+                    fields.insert("status".to_string(), Value::Int(if result > 0 { status as i64 } else { 0 }));
                     return Ok(Value::Struct {
                         name: "WaitResult".to_string(),
                         fields: Rc::new(RefCell::new(fields)),
                     });
                 }
+                // result < 0 (ECHILD or error): fall through to fake state below
             }
 
-            // Return from tracked state
+            // Fake state (non-native, or native pid not a real OS child)
             let mut fields = HashMap::new();
             fields.insert("pid".to_string(), Value::Int(proc.pid));
             fields.insert("status".to_string(), Value::Int(proc.exit_status));
@@ -40329,6 +40697,52 @@ static NATIVE_SIGNAL_FLAGS: [std::sync::atomic::AtomicBool; 32] = {
     const INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     [INIT; 32]
 };
+
+/// Check whether a fake fd (pipe or PTY) has data ready to read.
+/// Returns true if data is available, false if not or unknown.
+fn check_fake_fd_ready(fd: i64) -> bool {
+    // Check fake pipes
+    let pipe_ready = FAKE_PIPE_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pipe) = m.get(&fd) {
+            let peer = pipe.peer_fd;
+            drop(m);
+            FAKE_PIPE_STATE.with(|map2| {
+                let m2 = map2.borrow();
+                m2.get(&peer).map(|pp| !pp.buffer.is_empty()).unwrap_or(false)
+            })
+        } else {
+            // sentinel: fd not in pipe map
+            return false; // handled below
+        }
+    });
+    // If pipe map had the fd, return result
+    let in_pipe = FAKE_PIPE_STATE.with(|map| map.borrow().contains_key(&fd));
+    if in_pipe {
+        return pipe_ready;
+    }
+
+    // Check fake PTYs
+    let pty_ready = FAKE_PTY_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pty) = m.get(&fd) {
+            let peer = pty.peer_fd;
+            drop(m);
+            FAKE_PTY_BUFFER.with(|bufs| {
+                let b = bufs.borrow();
+                b.get(&peer).map(|buf| !buf.is_empty()).unwrap_or(false)
+            })
+        } else {
+            return false;
+        }
+    });
+    let in_pty = FAKE_PTY_STATE.with(|map| map.borrow().contains_key(&fd));
+    if in_pty {
+        return pty_ready;
+    }
+
+    false
+}
 
 #[cfg(all(unix, feature = "native"))]
 extern "C" fn native_signal_handler(signum: libc::c_int) {

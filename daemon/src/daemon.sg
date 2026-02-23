@@ -41,7 +41,7 @@ invoke std·time·{Duration, Timestamp};
 
 ⊢ Daemon {
     /// Create a new daemon with configuration
-    ☉ λ new(config: DaemonConfig) -> Self {
+    rite new(config: DaemonConfig) -> Self {
         ≔ identity = Identity·new(&config.name)
             .with_description(&config.description);
 
@@ -65,7 +65,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Restore daemon from snapshot
-    ☉ λ restore(snapshot: Snapshot) -> Result<Self, DaemonError> {
+    rite restore(snapshot: Snapshot) -> Result<Self, DaemonError> {
         // Verify snapshot integrity
         ⎇ !snapshot.verify() {
             ⤺ Err(DaemonError·CorruptSnapshot);
@@ -90,13 +90,13 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Spawn and run the daemon
-    ☉ λ spawn(config: DaemonConfig) -> Self {
+    rite spawn(config: DaemonConfig) -> Self {
         ≔ daemon = Self·new(config);
         daemon
     }
 
     /// Run the daemon's main loop
-    ☉ λ run(&Δ self) {
+    rite run(&Δ self) {
         // Initialize
         self.on_init();
         self.state.lifecycle = LifecycleState·Ready;
@@ -134,29 +134,29 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Called once at initialization
-    λ on_init(&Δ self) {
+    rite on_init(&Δ self) {
         // Subclasses override this
     }
 
     /// Called when daemon becomes ready
-    λ on_ready(&Δ self) {
+    rite on_ready(&Δ self) {
         // Subclasses override this
     }
 
     /// Called after each heartbeat
-    λ on_heartbeat_complete(&Δ self, result: HeartbeatResult) {
+    rite on_heartbeat_complete(&Δ self, result: HeartbeatResult) {
         self.state.metrics.heartbeats += 1;
         // Subclasses can override
     }
 
     /// Called when heartbeat has an error
-    λ on_heartbeat_error(&Δ self, error: HeartbeatError) {
+    rite on_heartbeat_error(&Δ self, error: HeartbeatError) {
         self.state.metrics.errors += 1;
         self.memory.experience(Event·error(error.to_string()));
     }
 
     /// Called before termination
-    λ on_terminate(&Δ self, reason: TerminateReason) {
+    rite on_terminate(&Δ self, reason: TerminateReason) {
         // Save final snapshot
         ⎇ ≔ Ok(snapshot) = self.snapshot() {
             self.save_snapshot(snapshot);
@@ -178,7 +178,7 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Perceive the environment
-    ☉ λ perceive(&Δ self) -> Vec<Observation> {
+    rite perceive(&Δ self) -> Vec<Observation> {
         // Collect observations from various sources
         ≔ Δ observations = Vec·new();
 
@@ -195,7 +195,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Build context ∀ deliberation
-    ☉ λ attend(&self) -> Result<Context, DaemonError> {
+    rite attend(&self) -> Result<Context, DaemonError> {
         ≔ current_goal = self.goals.current().cloned();
 
         // Query memory ∀ relevant information
@@ -253,7 +253,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Decide what action to take
-    ☉ λ deliberate(&self, context: &Context) -> Result<Action, DaemonError> {
+    rite deliberate(&self, context: &Context) -> Result<Action, DaemonError> {
         // Get current goal
         ≔ goal = context.current_goal.as_ref()
             .ok_or(DaemonError·NoActiveGoal)?;
@@ -287,7 +287,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Execute an action
-    ☉ λ execute(&Δ self, action: Action) -> Result<ActionResult, DaemonError> {
+    rite execute(&Δ self, action: Action) -> Result<ActionResult, DaemonError> {
         ≔ action_id = ActionId·new();
         ≔ start = Timestamp·now();
 
@@ -327,7 +327,7 @@ invoke std·time·{Duration, Timestamp};
         result
     }
 
-    λ execute_internal(&Δ self, action: &InternalAction) -> Result<ActionResult, DaemonError> {
+    rite execute_internal(&Δ self, action: &InternalAction) -> Result<ActionResult, DaemonError> {
         ≔ action_id = ActionId·new();
         ≔ start = Timestamp·now();
 
@@ -383,7 +383,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    λ execute_tool(&Δ self, name: &str, params: &Value) -> Result<ActionResult, DaemonError> {
+    rite execute_tool(&Δ self, name: &str, params: &Value) -> Result<ActionResult, DaemonError> {
         ≔ action_id = ActionId·new();
         ≔ start = Timestamp·now();
 
@@ -412,7 +412,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    λ execute_communication(&Δ self, action: &CommunicateAction) -> Result<ActionResult, DaemonError> {
+    rite execute_communication(&Δ self, action: &CommunicateAction) -> Result<ActionResult, DaemonError> {
         ≔ action_id = ActionId·new();
         ≔ start = Timestamp·now();
 
@@ -427,7 +427,7 @@ invoke std·time·{Duration, Timestamp};
         })
     }
 
-    λ execute_goal_action(&Δ self, action: &GoalAction) -> Result<ActionResult, DaemonError> {
+    rite execute_goal_action(&Δ self, action: &GoalAction) -> Result<ActionResult, DaemonError> {
         ≔ action_id = ActionId·new();
         ≔ start = Timestamp·now();
 
@@ -492,7 +492,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Learn from an action's result
-    ☉ λ learn(&Δ self, action: &Action, result: &ActionResult) {
+    rite learn(&Δ self, action: &Action, result: &ActionResult) {
         // Store as procedural memory ⎇ successful
         ⎇ result.success {
             self.memory.learn_from_success(action.name(), result);
@@ -506,7 +506,7 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Create a snapshot of current state
-    ☉ λ snapshot(&self) -> Result<Snapshot, DaemonError> {
+    rite snapshot(&self) -> Result<Snapshot, DaemonError> {
         ≔ memory_snapshot = self.memory.snapshot()?;
 
         ≔ Δ snapshot = Snapshot {
@@ -525,7 +525,7 @@ invoke std·time·{Duration, Timestamp};
         Ok(snapshot)
     }
 
-    λ save_snapshot(&self, snapshot: Snapshot) {
+    rite save_snapshot(&self, snapshot: Snapshot) {
         ⎇ ≔ Some(path) = &self.config.storage_path {
             // Would save to filesystem
         }
@@ -536,7 +536,7 @@ invoke std·time·{Duration, Timestamp};
     // ========================================================================
 
     /// Request termination
-    ☉ λ terminate(&Δ self, reason: TerminateReason) {
+    rite terminate(&Δ self, reason: TerminateReason) {
         self.should_terminate = true;
         self.terminate_reason = Some(reason);
         self.state.lifecycle = LifecycleState·Terminating {
@@ -545,12 +545,12 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Check ⎇ should terminate
-    ☉ λ should_terminate(&self) -> bool {
+    rite should_terminate(&self) -> bool {
         self.should_terminate
     }
 
     /// Suspend the daemon
-    ☉ λ suspend(&Δ self, reason: &str) {
+    rite suspend(&Δ self, reason: &str) {
         self.state.lifecycle = LifecycleState·Suspended {
             reason: reason.to_string(),
             since: Timestamp·now(),
@@ -558,7 +558,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Resume from suspension
-    ☉ λ resume(&Δ self) {
+    rite resume(&Δ self) {
         self.state.lifecycle = LifecycleState·Running;
     }
 }
@@ -583,7 +583,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ GoalStack {
-    ☉ λ new(max_goals: usize) -> Self {
+    rite new(max_goals: usize) -> Self {
         Self {
             goals: HashMap·new(),
             hierarchy: HashMap·new(),
@@ -592,7 +592,7 @@ invoke std·time·{Duration, Timestamp};
         }
     }
 
-    ☉ λ from_goals(goals: Vec<Goal>) -> Self {
+    rite from_goals(goals: Vec<Goal>) -> Self {
         ≔ Δ stack = Self·new(10);
         ∀ goal ∈ goals {
             stack.push(goal);
@@ -601,14 +601,14 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Get current highest-priority active goal
-    ☉ λ current(&self) -> Option<&Goal> {
+    rite current(&self) -> Option<&Goal> {
         self.goals.values()
             .filter(|g| g.is_active())
             .max_by(|a, b| a.priority.partial_cmp(&b.priority).unwrap())
     }
 
     /// Push a new goal
-    ☉ λ push(&Δ self, Δ goal: Goal) {
+    rite push(&Δ self, Δ goal: Goal) {
         // Activate ⎇ under limit
         ≔ active_count = self.goals.values()
             .filter(|g| g.is_active())
@@ -631,7 +631,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Complete a goal
-    ☉ λ complete(&Δ self, id: GoalId, outcome: Outcome) {
+    rite complete(&Δ self, id: GoalId, outcome: Outcome) {
         ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
             goal.status = GoalStatus·Completed {
                 at: Timestamp·now(),
@@ -646,7 +646,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Abandon a goal
-    ☉ λ abandon(&Δ self, id: GoalId, reason: String) {
+    rite abandon(&Δ self, id: GoalId, reason: String) {
         ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
             goal.status = GoalStatus·Abandoned {
                 at: Timestamp·now(),
@@ -656,14 +656,14 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Suspend a goal
-    ☉ λ suspend(&Δ self, id: GoalId, reason: String) {
+    rite suspend(&Δ self, id: GoalId, reason: String) {
         ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
             goal.status = GoalStatus·Suspended { reason };
         }
     }
 
     /// Resume a goal
-    ☉ λ resume(&Δ self, id: GoalId) {
+    rite resume(&Δ self, id: GoalId) {
         ⎇ ≔ Some(goal) = self.goals.get_mut(&id) {
             ⎇ matches!(goal.status, GoalStatus·Suspended { .. }) {
                 goal.status = GoalStatus·Active;
@@ -672,11 +672,11 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Get all goals
-    ☉ λ all(&self) -> ⊢ Iterator<Item = &Goal> {
+    rite all(&self) -> ⊢ Iterator<Item = &Goal> {
         self.goals.values()
     }
 
-    λ check_parent_completion(&Δ self, parent_id: GoalId) {
+    rite check_parent_completion(&Δ self, parent_id: GoalId) {
         ⎇ ≔ Some(children) = self.hierarchy.get(&parent_id) {
             ≔ all_complete = children.iter().all(|child_id| {
                 self.goals.get(child_id)
@@ -714,7 +714,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ HeartbeatEngine {
-    ☉ λ new(interval: Duration) -> Self {
+    rite new(interval: Duration) -> Self {
         Self {
             interval,
             last_beat: Timestamp·now(),
@@ -727,7 +727,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Execute one heartbeat cycle
-    ☉ λ beat(&Δ self, daemon: &Δ Daemon) -> Result<HeartbeatResult, HeartbeatError> {
+    rite beat(&Δ self, daemon: &Δ Daemon) -> Result<HeartbeatResult, HeartbeatError> {
         ≔ start = Timestamp·now();
 
         // Phase 1: Perceive
@@ -768,7 +768,7 @@ invoke std·time·{Duration, Timestamp};
     }
 
     /// Wait until next heartbeat should occur
-    ☉ λ wait_for_next(&self) {
+    rite wait_for_next(&self) {
         ≔ elapsed = self.last_beat.elapsed();
         ⎇ elapsed < self.interval {
             std·thread·sleep(self.interval - elapsed);
@@ -792,7 +792,7 @@ invoke std·time·{Duration, Timestamp};
 }
 
 ⊢ From<DaemonError> ∀ HeartbeatError {
-    λ from(e: DaemonError) -> Self {
+    rite from(e: DaemonError) -> Self {
         ⌥ e {
             DaemonError·NoActiveGoal => HeartbeatError·DeliberationFailed("No active goal".to_string()),
             DaemonError·ToolNotFound(t) => HeartbeatError·ExecutionFailed(format!("Tool not found: {}", t)),
@@ -815,8 +815,8 @@ invoke std·time·{Duration, Timestamp};
     ConfigurationError(String),
 }
 
-⊢ std·fmt·Debug ∀ DaemonError {
-    λ fmt(&self, f: &Δ std·fmt·Formatter<'_>) -> std·fmt·Result {
+⊢ Debug ∀ DaemonError {
+    rite fmt(self, f) {
         ⌥ self {
             DaemonError·CorruptSnapshot => write!(f, "CorruptSnapshot"),
             DaemonError·NoActiveGoal => write!(f, "NoActiveGoal"),

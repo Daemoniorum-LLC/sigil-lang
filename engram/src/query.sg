@@ -1,7 +1,6 @@
 // Query Module
 // Anamnesis query language implementation
 
-module engram·query
 
 invoke engram·types·*
 invoke engram·episodic·Context
@@ -301,7 +300,7 @@ invoke engram·procedural·SkillMatch
             TemporalConstraint·After(point) => (point.to_instant(), Instant·now()),
             TemporalConstraint·At(point) => {
                 ≔ t = point.to_instant()
-                (t - 1s, t + 1s)
+                (t - 1, t + 1)
             },
             TemporalConstraint·Between(start, end) => {
                 (start.to_instant(), end.to_instant())

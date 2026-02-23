@@ -1,0 +1,8 @@
+Aegis v0.1 core tests
+PASS: default_empty
+PASS: allow_all_empty
+PASS: deny_listed_kind
+PASS: allow_unlisted_kind
+PASS: deny_multiple_kinds
+PASS: null_kind_allowed
+Done

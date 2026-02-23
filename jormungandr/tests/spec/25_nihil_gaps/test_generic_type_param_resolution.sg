@@ -1,0 +1,29 @@
+// Test: Generic type parameter resolution in function bodies
+// Bug: turbofish_type_args extraction in eval_call only handles Expr::Path,
+//      not Expr::Turbofish — so get_size·<F16>() never binds T=F16 in
+//      generic_type_bindings, and T·SIZE evaluates to Variant{"T","SIZE"}
+//      instead of the concrete associated constant value.
+
+☉ aspect HasSize {
+    ◆ SIZE: Int;
+}
+
+Σ F16 {}
+Σ F32 {}
+Σ F64 {}
+
+⊢ F16 : HasSize { ◆ SIZE: Int = 2; }
+⊢ F32 : HasSize { ◆ SIZE: Int = 4; }
+⊢ F64 : HasSize { ◆ SIZE: Int = 8; }
+
+// Generic function — T must be substituted at call site
+rite get_size<T>() {
+    ↩ T·SIZE;
+}
+
+rite main() {
+    println(get_size·<F16>());
+    println(get_size·<F32>());
+    println(get_size·<F64>());
+    println("PASS");
+}

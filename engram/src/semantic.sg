@@ -1,7 +1,6 @@
 // Semantic Memory Module
 // Knowledge memory - facts and relationships
 
-module engram·semantic
 
 invoke engram·types·*
 invoke engram·config·SemanticConfig

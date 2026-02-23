@@ -1,0 +1,12 @@
+Commune v0.2 core tests
+PASS: new_empty
+PASS: register_is_registered
+PASS: unregister_clears
+PASS: send_recv_basic
+PASS: recv_clears_queue
+PASS: recv_unknown_agent
+PASS: send_to_unregistered_dropped
+PASS: multiple_agents_isolated
+PASS: message_fields
+PASS: queue_ordering
+Done

@@ -1,7 +1,6 @@
 // Instant Memory Module
 // Working memory ∀ the current context
 
-module engram·instant
 
 invoke engram·types·*
 invoke engram·config·InstantConfig

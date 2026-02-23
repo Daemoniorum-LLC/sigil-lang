@@ -27,7 +27,7 @@ invoke std·hash·Hash;
 
 /// Universal timestamp type ∀ all temporal operations.
 /// Uses nanoseconds since epoch ∀ maximum precision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)
 ☉ Σ Timestamp {
     ☉ nanos: u64,
 }
@@ -83,7 +83,7 @@ invoke std·hash·Hash;
 }
 
 /// Duration type ∀ time intervals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)
 ☉ Σ Duration {
     ☉ nanos: u64,
 }
@@ -162,10 +162,10 @@ invoke std·hash·Hash;
 }
 
 /// Generic ID wrapper that implements EntityId.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, Hash)
 ☉ Σ Id<T> {
     bytes: [u8; 16],
-    _marker: std·marker·PhantomData<T>,
+    _marker: PhantomData,
 }
 
 ⊢<T> Id<T> {
@@ -173,7 +173,7 @@ invoke std·hash·Hash;
     ☉ rite new(bytes: [u8; 16]) -> Self {
         Self {
             bytes,
-            _marker: std·marker·PhantomData,
+            _marker: PhantomData,
         }
     }
 
@@ -246,14 +246,14 @@ invoke std·hash·Hash;
 // ============================================================================
 
 /// Generic value container ∀ heterogeneous data.
-#[derive(Debug, Clone, PartialEq)]
+//@ rune: derive(Debug, Clone, PartialEq)
 ☉ Σ Value {
     inner: Vec<u8>,
     type_hint: ValueType,
 }
 
 /// Type hints ∀ Value contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
 ☉ ᛈ ValueType {
     Binary,
     String,
@@ -360,7 +360,7 @@ invoke std·hash·Hash;
 
 /// Bounded deque that automatically evicts old items when capacity is reached.
 /// Eliminates duplicated history buffer patterns across modules.
-#[derive(Debug, Clone)]
+//@ rune: derive(Debug, Clone)
 ☉ Σ BoundedDeque<T> {
     items: VecDeque<T>,
     max_size: usize,
@@ -474,9 +474,9 @@ invoke std·hash·Hash;
 
 ⊢<T> IntoIterator ∀ BoundedDeque<T> {
     type Item = T;
-    type IntoIter = std·collections·vec_deque·IntoIter<T>;
+    type IntoIter = VecDequeIntoIter;
 
-    rite into_iter(self) -> Self·IntoIter {
+    rite into_iter(self) {
         self.items.into_iter()
     }
 }
@@ -487,7 +487,7 @@ invoke std·hash·Hash;
 
 /// Unified priority/severity levels used across modules.
 /// Consolidates Severity enums from multiple modules.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)
 ☉ ᛈ Priority {
     /// Informational, no action required.
     Info,
@@ -549,7 +549,7 @@ invoke std·hash·Hash;
 // ============================================================================
 
 /// Confidence level (0.0 to 1.0) with semantic helpers.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, PartialOrd)
 ☉ Σ Confidence(f64);
 
 ⊢ Confidence {
@@ -639,7 +639,7 @@ invoke std·hash·Hash;
 // ============================================================================
 
 /// Trust level between entities.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, PartialOrd)
 ☉ Σ TrustLevel(f64);
 
 ⊢ TrustLevel {
@@ -700,7 +700,7 @@ invoke std·hash·Hash;
 // ============================================================================
 
 /// Standard error type ∀ agent infrastructure.
-#[derive(Debug, Clone)]
+//@ rune: derive(Debug, Clone)
 ☉ Σ AgentError {
     ☉ kind: ErrorKind,
     ☉ message: String,
@@ -708,7 +708,7 @@ invoke std·hash·Hash;
 }
 
 /// Categories of agent errors.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
 ☉ ᛈ ErrorKind {
     /// Invalid input or configuration.
     InvalidInput,
@@ -768,12 +768,12 @@ invoke std·hash·Hash;
 // ============================================================================
 
 /// Common metadata attached to agent operations.
-#[derive(Debug, Clone)]
+//@ rune: derive(Debug, Clone)
 ☉ Σ Metadata {
     ☉ created_at: Timestamp,
     ☉ updated_at: Timestamp,
     ☉ tags: Vec<String>,
-    ☉ attributes: std·collections·HashMap<String, Value>,
+    ☉ attributes: HashMap,
 }
 
 ⊢ Metadata {
@@ -823,7 +823,7 @@ invoke std·hash·Hash;
 // ============================================================================
 
 /// Certainty markers ∀ polysynthetic morpheme composition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
 ☉ ᛈ CertaintyMarker {
     /// Certain (!)
     Certain,
@@ -848,7 +848,7 @@ invoke std·hash·Hash;
 }
 
 /// Relational markers ∀ polysynthetic morpheme composition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Debug, Clone, Copy, PartialEq, Eq)
 ☉ ᛈ RelationalMarker {
     /// Relational (∿) - ∈ relationship
     Relational,
@@ -886,11 +886,11 @@ invoke std·hash·Hash;
 // TESTS
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_timestamp_operations() {
         ≔ t1 = Timestamp·from_secs(100);
         ≔ t2 = Timestamp·from_secs(200);
@@ -902,14 +902,14 @@ scroll tests {
         assert_eq!(t3.nanos, Timestamp·from_secs(150).nanos);
     }
 
-    #[test]
+    //@ rune: test
     rite test_duration_conversions() {
         ≔ d = Duration·from_hours(2);
         assert_eq!(d.as_secs(), 7200);
         assert_eq!(d.as_millis(), 7_200_000);
     }
 
-    #[test]
+    //@ rune: test
     rite test_bounded_deque() {
         ≔ Δ deque: BoundedDeque<i32> = BoundedDeque·new(3);
 
@@ -924,7 +924,7 @@ scroll tests {
         assert_eq!(*deque.back().unwrap(), 4);
     }
 
-    #[test]
+    //@ rune: test
     rite test_confidence() {
         ≔ c = Confidence·new(0.75);
         assert!(c.is_high());
@@ -935,7 +935,7 @@ scroll tests {
         assert!(combined.value() < c.value()); // Product is smaller
     }
 
-    #[test]
+    //@ rune: test
     rite test_priority_ordering() {
         assert!(Priority·Critical > Priority·High);
         assert!(Priority·High > Priority·Normal);
@@ -945,7 +945,7 @@ scroll tests {
         assert!(!Priority·Low.is_at_least(Priority·Normal));
     }
 
-    #[test]
+    //@ rune: test
     rite test_value_types() {
         ≔ s = Value·string("hello");
         assert_eq!(s.as_string(), Some("hello".to_string()));
@@ -957,7 +957,7 @@ scroll tests {
         assert_eq!(b.as_boolean(), Some(true));
     }
 
-    #[test]
+    //@ rune: test
     rite test_trust_level() {
         ≔ Δ trust = TrustLevel·initial();
         assert_eq!(trust.value(), 0.5);

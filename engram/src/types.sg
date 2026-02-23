@@ -1,7 +1,6 @@
 // Engram Core Types
 // Fundamental type definitions ∀ the memory system
 
-module engram·types
 
 // ============================================================================
 // Identity Types
@@ -235,13 +234,13 @@ module engram·types
     ☉ rite to_bounds() -> (Instant, Instant) {
         ≔ now = Instant·now()
         ⌥ self {
-            TimeRange·LastHour => (now - 1h, now),
-            TimeRange·LastDay => (now - 24h, now),
-            TimeRange·LastWeek => (now - 7d, now),
-            TimeRange·LastMonth => (now - 30d, now),
+            TimeRange·LastHour => (now - 3600, now),
+            TimeRange·LastDay => (now - 86400, now),
+            TimeRange·LastWeek => (now - 604800, now),
+            TimeRange·LastMonth => (now - 2592000, now),
             TimeRange·Today => (now.start_of_day(), now),
             TimeRange·Yesterday => {
-                ≔ yesterday = now - 24h
+                ≔ yesterday = now - 86400
                 (yesterday.start_of_day(), yesterday.end_of_day())
             },
             TimeRange·ThisWeek => (now.start_of_week(), now),
@@ -605,14 +604,14 @@ module engram·types
     }
 }
 
-⊢ std·ops·Add ∀ TokenCount {
+⊢ Add ∀ TokenCount {
     type Output = Self;
     rite add(self, other: Self) -> Self {
         TokenCount(self.0 + other.0)
     }
 }
 
-⊢ std·ops·Sub ∀ TokenCount {
+⊢ Sub ∀ TokenCount {
     type Output = Self;
     rite sub(self, other: Self) -> Self {
         TokenCount(self.0.saturating_sub(other.0))

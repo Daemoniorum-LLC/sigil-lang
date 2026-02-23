@@ -1,0 +1,244 @@
+// goal_stack.sg — Clean Sigil GoalStack implementation (v0.2)
+// Array-backed; id comparison handles nested GoalId: {id: "uuid"} after JSON roundtrip.
+// All mutating ops use the slot-rebuild pattern via _update() for Sigil propagation semantics.
+
+Σ GoalStack { goals: Array }
+
+⊢ GoalStack {
+    rite new() {
+        GoalStack { goals: [] }
+    }
+
+    // Push a new goal — normalized to JSON map for consistent map_get access
+    rite push(self, goal) {
+        push(self.goals, json_parse(json_stringify(goal)));
+    }
+
+    // Extract UUID string from a goal map (handles nested {id: "uuid"} or flat "uuid")
+    rite goal_id_str(self, goal_map) {
+        ≔ id_field = map_get(goal_map, "id");
+        ⎇ type_of(id_field) == "string" { ↩ id_field; }
+        ↩ map_get(id_field, "id")
+    }
+
+    // Internal: rebuild goals array with one updated slot
+    rite _update(self, id_str, new_goal_map) {
+        ≔ mut new_goals = [];
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ≔ g = self.goals[i];
+            ⎇ self·goal_id_str(g) == id_str {
+                push(new_goals, new_goal_map);
+            } ⎉ {
+                push(new_goals, g);
+            }
+            i = i + 1;
+        }
+        self.goals = new_goals;
+    }
+
+    // Find the highest-priority Pending goal; returns the goal map or null.
+    // Ties in priority resolve to earliest-inserted (strict > preserves first winner).
+    // Goals with a null priority field (pre-v0.2 persisted data) are selected only if
+    // no higher-priority goal exists — null > float evaluates as falsy, so the first
+    // null-priority Pending goal wins via the `best_idx == -1` branch.
+    rite next_pending(self) {
+        ≔ mut best_idx = -1;
+        ≔ mut best_pri = -1.0;
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ≔ s = map_get(self.goals[i], "status");
+            ⎇ s == "GoalStatus::Pending" {
+                ≔ pri = map_get(self.goals[i], "priority");
+                ⎇ best_idx == -1 ∨ pri > best_pri {
+                    best_idx = i;
+                    best_pri = pri;
+                }
+            }
+            i = i + 1;
+        }
+        ⎇ best_idx == -1 { ↩ null; }
+        ↩ self.goals[best_idx]
+    }
+
+    // Find index of goal by id string; returns -1 if not found
+    rite find_idx(self, id_str) {
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ⎇ self·goal_id_str(self.goals[i]) == id_str { ↩ i; }
+            i = i + 1;
+        }
+        ↩ -1
+    }
+
+    // Mark a goal Active, recording pane_id assignment
+    rite activate(self, id_str, pane_id) {
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ≔ g = self.goals[i];
+            ⎇ self·goal_id_str(g) == id_str {
+                self·_update(id_str, json_parse(json_stringify({
+                    id:               map_get(g, "id"),
+                    description:      map_get(g, "description"),
+                    status:           "GoalStatus::Active",
+                    priority:         map_get(g, "priority"),
+                    created_at:       map_get(g, "created_at"),
+                    pane_id:          pane_id,
+                    abandoned_reason: map_get(g, "abandoned_reason"),
+                    outcome:          map_get(g, "outcome"),
+                    completed_at:     map_get(g, "completed_at"),
+                    attempts:         map_get(g, "attempts"),
+                    parent:           map_get(g, "parent"),
+                    constraints:      map_get(g, "constraints"),
+                })));
+                ↩ null;
+            }
+            i = i + 1;
+        }
+    }
+
+    // Mark a goal Completed, recording outcome and timestamp
+    rite complete(self, id_str, outcome) {
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ≔ g = self.goals[i];
+            ⎇ self·goal_id_str(g) == id_str {
+                self·_update(id_str, json_parse(json_stringify({
+                    id:               map_get(g, "id"),
+                    description:      map_get(g, "description"),
+                    status:           "GoalStatus::Completed",
+                    priority:         map_get(g, "priority"),
+                    created_at:       map_get(g, "created_at"),
+                    pane_id:          map_get(g, "pane_id"),
+                    abandoned_reason: map_get(g, "abandoned_reason"),
+                    outcome:          outcome,
+                    completed_at:     Sys·clock_gettime(),
+                    attempts:         map_get(g, "attempts"),
+                    parent:           map_get(g, "parent"),
+                    constraints:      map_get(g, "constraints"),
+                })));
+                ↩ null;
+            }
+            i = i + 1;
+        }
+    }
+
+    // Mark a goal Abandoned, recording reason and clearing pane assignment
+    rite abandon(self, id_str, reason) {
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ≔ g = self.goals[i];
+            ⎇ self·goal_id_str(g) == id_str {
+                self·_update(id_str, json_parse(json_stringify({
+                    id:               map_get(g, "id"),
+                    description:      map_get(g, "description"),
+                    status:           "GoalStatus::Abandoned",
+                    priority:         map_get(g, "priority"),
+                    created_at:       map_get(g, "created_at"),
+                    pane_id:          null,
+                    abandoned_reason: reason,
+                    outcome:          map_get(g, "outcome"),
+                    completed_at:     Sys·clock_gettime(),
+                    attempts:         map_get(g, "attempts"),
+                    parent:           map_get(g, "parent"),
+                    constraints:      map_get(g, "constraints"),
+                })));
+                ↩ null;
+            }
+            i = i + 1;
+        }
+    }
+
+    // Mark a goal Pending (re-queue) — clears pane assignment, preserves history fields
+    rite requeue(self, id_str) {
+        ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ≔ g = self.goals[i];
+            ⎇ self·goal_id_str(g) == id_str {
+                self·_update(id_str, json_parse(json_stringify({
+                    id:               map_get(g, "id"),
+                    description:      map_get(g, "description"),
+                    status:           "GoalStatus::Pending",
+                    priority:         map_get(g, "priority"),
+                    created_at:       map_get(g, "created_at"),
+                    pane_id:          null,
+                    abandoned_reason: map_get(g, "abandoned_reason"),
+                    outcome:          map_get(g, "outcome"),
+                    completed_at:     map_get(g, "completed_at"),
+                    attempts:         map_get(g, "attempts"),
+                    parent:           map_get(g, "parent"),
+                    constraints:      map_get(g, "constraints"),
+                })));
+                ↩ null;
+            }
+            i = i + 1;
+        }
+    }
+
+    // Persist to JSON file
+    rite save(self, path) {
+        fs_write(path, json_stringify(self.goals));
+    }
+
+    // Count goals by status
+    rite count_pending(self) {
+        ≔ mut n = 0; ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ⎇ map_get(self.goals[i], "status") == "GoalStatus::Pending" { n = n + 1; }
+            i = i + 1;
+        }
+        ↩ n
+    }
+
+    rite count_active(self) {
+        ≔ mut n = 0; ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ⎇ map_get(self.goals[i], "status") == "GoalStatus::Active" { n = n + 1; }
+            i = i + 1;
+        }
+        ↩ n
+    }
+
+    rite count_completed(self) {
+        ≔ mut n = 0; ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ⎇ map_get(self.goals[i], "status") == "GoalStatus::Completed" { n = n + 1; }
+            i = i + 1;
+        }
+        ↩ n
+    }
+
+    rite count_abandoned(self) {
+        ≔ mut n = 0; ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ⎇ map_get(self.goals[i], "status") == "GoalStatus::Abandoned" { n = n + 1; }
+            i = i + 1;
+        }
+        ↩ n
+    }
+
+    rite count_failed(self) {
+        ≔ mut n = 0; ≔ mut i = 0;
+        ⟳ i < len(self.goals) {
+            ⎇ map_get(self.goals[i], "status") == "GoalStatus::Failed" { n = n + 1; }
+            i = i + 1;
+        }
+        ↩ n
+    }
+}
+
+// Load a GoalStack from a JSON file (returns GoalStack with populated goals array)
+rite goal_stack_load(path) {
+    ≔ stack = GoalStack·new();
+    ⎇ fs_exists(path) == false { ↩ stack; }
+    ≔ raw = fs_read(path);
+    ⎇ len(raw) == 0 ∨ starts_with(raw, "[") == false { ↩ stack; }
+    ≔ parsed = json_parse(raw);
+    ⎇ type_of(parsed) != "array" ∧ type_of(parsed) != "list" { ↩ stack; }
+    ≔ mut i = 0;
+    ⟳ i < len(parsed) {
+        push(stack.goals, parsed[i]);
+        i = i + 1;
+    }
+    ↩ stack
+}

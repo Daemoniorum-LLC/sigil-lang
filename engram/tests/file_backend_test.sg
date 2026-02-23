@@ -1,0 +1,260 @@
+// file_backend_test.sg — Agent-TDD for FileBackend (engram v0.2)
+// All tests use /tmp for isolation; no ~/.morgoth side effects.
+
+// ============================================================================
+// Inline FileBackend implementation (target shape; matches file_backend.sg)
+// ============================================================================
+
+Σ FileBackend { base_dir: String }
+
+⊢ FileBackend {
+    rite new(dir) {
+        ⎇ fs_exists(dir) == false {
+            fs_mkdir(dir);
+        }
+        ↩ FileBackend { base_dir: dir }
+    }
+
+    rite key_to_path(self, key) {
+        ↩ self.base_dir + "/" + key + ".json"
+    }
+
+    rite save(self, key, json_str) {
+        fs_write(self·key_to_path(key), json_str);
+    }
+
+    rite load(self, key) {
+        ≔ path = self·key_to_path(key);
+        ⎇ fs_exists(path) == false { ↩ null; }
+        ≔ raw = fs_read(path);
+        ⎇ len(raw) == 0 { ↩ null; }
+        ↩ raw
+    }
+
+    rite exists(self, key) {
+        ↩ fs_exists(self·key_to_path(key))
+    }
+
+    rite delete(self, key) {
+        ≔ path = self·key_to_path(key);
+        ⎇ fs_exists(path) == true {
+            fs_remove(path);
+        }
+    }
+
+    rite list(self, prefix) {
+        ≔ mut result = [];
+        ⎇ fs_exists(self.base_dir) == false { ↩ result; }
+        ≔ entries = fs_list(self.base_dir);
+        ≔ suffix_len = 5;
+        ≔ mut i = 0;
+        ⟳ i < len(entries) {
+            ≔ name = entries[i];
+            ⎇ ends_with(name, ".json") == true {
+                ≔ key = substring(name, 0, len(name) - suffix_len);
+                ⎇ len(prefix) == 0 ∨ starts_with(key, prefix) == true {
+                    push(result, key);
+                }
+            }
+            i = i + 1;
+        }
+        ↩ result
+    }
+}
+
+// ============================================================================
+// Test helpers
+// ============================================================================
+
+rite pass(name) {
+    println("PASS: " + name);
+}
+
+rite fail(name, msg) {
+    println("FAIL: " + name + " — " + msg);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+// T1: new() creates directory if it does not exist
+rite test_new_creates_dir() {
+    ≔ dir = "/tmp/engram_test_t1_" + to_string(Sys·clock_gettime());
+    ⎇ fs_exists(dir) == true { fs_remove(dir); }
+    ≔ fb = FileBackend·new(dir);
+    ⎇ fs_exists(dir) == true {
+        pass("new_creates_dir");
+    } ⎉ {
+        fail("new_creates_dir", "directory was not created");
+    }
+    fs_remove(dir);
+}
+
+// T2: save() + load() roundtrip preserves content exactly
+rite test_save_load_roundtrip() {
+    ≔ dir = "/tmp/engram_test_t2_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    ≔ payload = "{\"hello\":\"world\",\"n\":42}";
+    fb·save("mykey", payload);
+    ≔ loaded = fb·load("mykey");
+    ⎇ loaded == payload {
+        pass("save_load_roundtrip");
+    } ⎉ {
+        fail("save_load_roundtrip", "loaded content does not match saved content");
+    }
+    fb·delete("mykey");
+    fs_remove(dir);
+}
+
+// T3: load() returns null when key does not exist
+rite test_load_missing_returns_null() {
+    ≔ dir = "/tmp/engram_test_t3_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    ≔ result = fb·load("no_such_key");
+    ⎇ result == null {
+        pass("load_missing_returns_null");
+    } ⎉ {
+        fail("load_missing_returns_null", "expected null, got: " + to_string(result));
+    }
+    fs_remove(dir);
+}
+
+// T4: exists() returns false before save, true after, false after delete
+rite test_exists_lifecycle() {
+    ≔ dir = "/tmp/engram_test_t4_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    ≔ mut ok = true;
+    ⎇ fb·exists("k") == true {
+        fail("exists_lifecycle", "exists() should be false before save");
+        ok = false;
+    }
+    ⎇ ok == true {
+        fb·save("k", "{}");
+        ⎇ fb·exists("k") == false {
+            fail("exists_lifecycle", "exists() should be true after save");
+            ok = false;
+        }
+    }
+    ⎇ ok == true {
+        fb·delete("k");
+        ⎇ fb·exists("k") == true {
+            fail("exists_lifecycle", "exists() should be false after delete");
+            ok = false;
+        }
+    }
+    ⎇ ok == true {
+        pass("exists_lifecycle");
+    }
+    fb·delete("k");
+    fs_remove(dir);
+}
+
+// T5: delete() removes file; subsequent load() returns null
+rite test_delete_removes() {
+    ≔ dir = "/tmp/engram_test_t5_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    fb·save("k", "data");
+    fb·delete("k");
+    ≔ result = fb·load("k");
+    ⎇ result == null {
+        pass("delete_removes");
+    } ⎉ {
+        fail("delete_removes", "load() should return null after delete");
+    }
+    fs_remove(dir);
+}
+
+// T6: list("") returns all keys; list("pre") filters by prefix
+rite test_list_prefix() {
+    ≔ dir = "/tmp/engram_test_t6_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    fb·save("alpha", "1");
+    fb·save("beta",  "2");
+    fb·save("album", "3");
+    ≔ all = fb·list("");
+    ≔ pre = fb·list("al");
+    ≔ mut ok = true;
+    ⎇ len(all) != 3 {
+        fail("list_prefix", "list(\"\") expected 3 keys, got " + to_string(len(all)));
+        ok = false;
+    }
+    ⎇ ok == true ∧ len(pre) != 2 {
+        fail("list_prefix", "list(\"al\") expected 2 keys (alpha, album), got " + to_string(len(pre)));
+        ok = false;
+    }
+    ⎇ ok == true {
+        ≔ mut found_alpha = false;
+        ≔ mut found_album = false;
+        ≔ mut found_beta = false;
+        ≔ mut j = 0;
+        ⟳ j < len(pre) {
+            ⎇ pre[j] == "alpha" { found_alpha = true; }
+            ⎇ pre[j] == "album" { found_album = true; }
+            ⎇ pre[j] == "beta"  { found_beta  = true; }
+            j = j + 1;
+        }
+        ⎇ found_alpha == false ∨ found_album == false ∨ found_beta == true {
+            fail("list_prefix", "list(\"al\") should contain alpha+album but not beta");
+            ok = false;
+        }
+    }
+    ⎇ ok == true {
+        pass("list_prefix");
+    }
+    fb·delete("alpha");
+    fb·delete("beta");
+    fb·delete("album");
+    fs_remove(dir);
+}
+
+// T7: multiple keys in the same backend do not interfere
+rite test_multiple_keys_isolated() {
+    ≔ dir = "/tmp/engram_test_t7_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    fb·save("a", "value_a");
+    fb·save("b", "value_b");
+    ≔ la = fb·load("a");
+    ≔ lb = fb·load("b");
+    ⎇ la == "value_a" ∧ lb == "value_b" {
+        pass("multiple_keys_isolated");
+    } ⎉ {
+        fail("multiple_keys_isolated", "key isolation broken");
+    }
+    fb·delete("a");
+    fb·delete("b");
+    fs_remove(dir);
+}
+
+// T8: second save() on same key overwrites first
+rite test_overwrite() {
+    ≔ dir = "/tmp/engram_test_t8_" + to_string(Sys·clock_gettime());
+    ≔ fb = FileBackend·new(dir);
+    fb·save("k", "first");
+    fb·save("k", "second");
+    ≔ result = fb·load("k");
+    ⎇ result == "second" {
+        pass("overwrite");
+    } ⎉ {
+        fail("overwrite", "expected \"second\", got: " + to_string(result));
+    }
+    fb·delete("k");
+    fs_remove(dir);
+}
+
+// ============================================================================
+// Runner
+// ============================================================================
+
+rite main() {
+    println("Engram v0.2 FileBackend tests");
+    test_new_creates_dir();
+    test_save_load_roundtrip();
+    test_load_missing_returns_null();
+    test_exists_lifecycle();
+    test_delete_removes();
+    test_list_prefix();
+    test_multiple_keys_isolated();
+    test_overwrite();
+    println("Done");
+}

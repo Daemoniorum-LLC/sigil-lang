@@ -1,0 +1,82 @@
+// file_backend.sg — FileBackend: key-value file store (engram v0.2)
+//
+// Plain executable Sigil. Replaces the aspirational storage/mod.sg for
+// Morgoth integration (Phase C1). The full EpisodicMemory, SemanticMemory,
+// and other engram subsystems are deferred.
+//
+// SYNC: morgoth/src/engram.sg is a verbatim copy of this file (bridge pattern).
+// Any change here MUST be reflected there in the same commit.
+//
+// Each key maps to a .json file in a base directory:
+//   key "session"  → {base_dir}/session.json
+//   key "default"  → {base_dir}/default.json
+//
+// Use one FileBackend per directory. For subdirectories, create a second
+// instance:
+//   FileBackend·new(home + "/.morgoth")           // session data
+//   FileBackend·new(home + "/.morgoth/profiles")  // profile data
+
+Σ FileBackend { base_dir: String }
+
+⊢ FileBackend {
+    // Constructor — creates base_dir if it does not exist.
+    rite new(dir) {
+        ⎇ fs_exists(dir) == false {
+            fs_mkdir(dir);
+        }
+        ↩ FileBackend { base_dir: dir }
+    }
+
+    // Internal: resolve key to filesystem path.
+    rite key_to_path(self, key) {
+        ↩ self.base_dir + "/" + key + ".json"
+    }
+
+    // Persist json_str under key. Overwrites any existing value.
+    rite save(self, key, json_str) {
+        fs_write(self·key_to_path(key), json_str);
+    }
+
+    // Retrieve content for key. Returns null if key does not exist or is empty.
+    rite load(self, key) {
+        ≔ path = self·key_to_path(key);
+        ⎇ fs_exists(path) == false { ↩ null; }
+        ≔ raw = fs_read(path);
+        ⎇ len(raw) == 0 { ↩ null; }
+        ↩ raw
+    }
+
+    // Returns true if key exists in this backend.
+    rite exists(self, key) {
+        ↩ fs_exists(self·key_to_path(key))
+    }
+
+    // Remove the file for key. No-op if key does not exist.
+    rite delete(self, key) {
+        ≔ path = self·key_to_path(key);
+        ⎇ fs_exists(path) == true {
+            fs_remove(path);
+        }
+    }
+
+    // Return all keys in base_dir whose filename starts with prefix.
+    // Pass "" to list all keys. Keys are returned without the .json suffix.
+    rite list(self, prefix) {
+        ≔ mut result = [];
+        ⎇ fs_exists(self.base_dir) == false { ↩ result; }
+        ≔ entries = fs_list(self.base_dir);
+        ≔ suffix_len = 5;
+        ≔ mut i = 0;
+        ⟳ i < len(entries) {
+            ≔ name = entries[i];
+            ⎇ ends_with(name, ".json") == true {
+                ≔ key = substring(name, 0, len(name) - suffix_len);
+                ⎇ len(prefix) == 0 ∨ starts_with(key, prefix) == true {
+                    push(result, key);
+                }
+            }
+            i = i + 1;
+        }
+        ↩ result
+    }
+}

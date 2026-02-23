@@ -4154,10 +4154,10 @@ impl<'a> Parser<'a> {
             .unwrap_or(false);
 
         while !self.pending_gt.is_some() {
-            // Always allow :: as path separator
-            // Only allow · for type paths (uppercase first letter)
-            let is_path_sep = self.consume_if(&Token::MiddleDot)
-                || (first_segment_is_type && self.consume_if(&Token::MiddleDot));
+            // Only allow · as a path separator for type paths (uppercase first letter).
+            // For lowercase identifiers (variables), · is a method-call operator and
+            // must be left for postfix expression parsing (parse_postfix_expr MiddleDot arm).
+            let is_path_sep = first_segment_is_type && self.consume_if(&Token::MiddleDot);
             if !is_path_sep {
                 break;
             }

@@ -1566,6 +1566,24 @@ impl Interpreter {
             }
         }
 
+        // Parse [dependencies] with path = "..." entries as workspace members.
+        // This lets `invoke tome·daemon·{Goal}` resolve path-based deps declared in Sigil.toml.
+        if let Some(deps) = toml_value.get("dependencies").and_then(|d| d.as_table()) {
+            for (dep_name, dep_value) in deps {
+                if let Some(dep_path) = dep_value.get("path").and_then(|p| p.as_str()) {
+                    let crate_name = dep_name.replace("-", "_");
+                    crate::sigil_debug!(
+                        "DEBUG parse_sigil_toml: registered dep member: {} -> {}",
+                        &crate_name,
+                        dep_path
+                    );
+                    self.workspace_members
+                        .entry(crate_name)
+                        .or_insert_with(|| PathBuf::from(dep_path));
+                }
+            }
+        }
+
         crate::sigil_debug!(
             "DEBUG parse_sigil_toml: loaded {} workspace members from {:?}",
             self.workspace_members.len(),
@@ -1610,13 +1628,16 @@ impl Interpreter {
             }
         };
 
-        // Build path to lib.sigil
-        let lib_path = project_root.join(&crate_path).join("src").join("lib.sigil");
-
-        if !lib_path.exists() {
-            crate::sigil_debug!("DEBUG load_crate: lib.sigil not found at {:?}", lib_path);
+        // Build path to lib entry point — probe lib.sg first, then lib.sigil
+        let base = project_root.join(&crate_path).join("src");
+        let lib_path = if base.join("lib.sg").exists() {
+            base.join("lib.sg")
+        } else if base.join("lib.sigil").exists() {
+            base.join("lib.sigil")
+        } else {
+            crate::sigil_debug!("DEBUG load_crate: lib.sg/lib.sigil not found under {:?}", base);
             return Ok(false);
-        }
+        };
 
         // Mark as loading (for circular dependency detection)
         self.loading_crates.insert(crate_name.to_string());
@@ -3680,10 +3701,17 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    // External module: mod foo; - try to load foo.sigil from same directory
+                    // External module: mod foo; - try to load foo.sigil or foo.sg from same directory
                     if let Some(ref source_dir) = self.current_source_dir {
-                        let module_path =
+                        let module_path_sigil =
                             std::path::Path::new(source_dir).join(format!("{}.sigil", module_name));
+                        let module_path_sg =
+                            std::path::Path::new(source_dir).join(format!("{}.sg", module_name));
+                        let module_path = if module_path_sigil.exists() {
+                            module_path_sigil
+                        } else {
+                            module_path_sg
+                        };
 
                         if module_path.exists() {
                             crate::sigil_debug!(
@@ -3976,7 +4004,13 @@ impl Interpreter {
                                     // `invoke tome·analyze;` case: prefix=["tome"], simple_name="analyze"
                                     simple_name.clone()
                                 };
-                                let module_file = format!("{}/{}.sigil", source_dir, module_name);
+                                let module_file_sigil = format!("{}/{}.sigil", source_dir, module_name);
+                                let module_file_sg = format!("{}/{}.sg", source_dir, module_name);
+                                let module_file = if std::path::Path::new(&module_file_sigil).exists() {
+                                    module_file_sigil
+                                } else {
+                                    module_file_sg
+                                };
                                 crate::sigil_debug!(
                                     "DEBUG process_use_tree: loading tome module '{}' from {}",
                                     module_name,
@@ -4053,7 +4087,16 @@ impl Interpreter {
                         self.types.insert(simple_name.clone(), type_def.clone());
                     }
                     // Also register with the qualified name for consistency
-                    self.types.insert(qualified.clone(), type_def);
+                    self.types.insert(qualified.clone(), type_def.clone());
+
+                    // When re-exporting inside a crate load (☉ invoke goals·{Goal} in lib.sg),
+                    // also register as crate·Goal so callers can `invoke tome·crate·{Goal}`.
+                    if let Some(ref crate_mod) = self.current_module.clone() {
+                        let crate_qualified = format!("{}·{}", crate_mod, simple_name);
+                        if crate_qualified != qualified && crate_qualified != simple_name {
+                            self.types.insert(crate_qualified.clone(), type_def.clone());
+                        }
+                    }
 
                     // Also copy const_generic_params for the imported type
                     // This is critical for const generic inference in field types
@@ -4081,7 +4124,14 @@ impl Interpreter {
                         .borrow_mut()
                         .define(simple_name.clone(), val.clone());
                     if lookup_name != qualified {
-                        self.globals.borrow_mut().define(qualified.clone(), val);
+                        self.globals.borrow_mut().define(qualified.clone(), val.clone());
+                    }
+                    // Also register under current crate module prefix for cross-crate re-exports
+                    if let Some(ref crate_mod) = self.current_module.clone() {
+                        let crate_qualified = format!("{}·{}", crate_mod, simple_name);
+                        if crate_qualified != qualified && crate_qualified != simple_name {
+                            self.globals.borrow_mut().define(crate_qualified, val);
+                        }
                     }
                 }
 
@@ -4089,6 +4139,7 @@ impl Interpreter {
                 // e.g., when importing samael_analysis::AnalysisConfig,
                 // also import samael_analysis·AnalysisConfig·default as AnalysisConfig·default
                 let method_prefix = format!("{}·", qualified);
+                let crate_mod_for_methods = self.current_module.clone();
                 let matching_methods: Vec<(String, Value)> = {
                     let globals = self.globals.borrow();
                     globals
@@ -4103,8 +4154,16 @@ impl Interpreter {
                         })
                         .collect()
                 };
-                for (name, val) in matching_methods {
-                    self.globals.borrow_mut().define(name, val);
+                for (name, val) in &matching_methods {
+                    self.globals.borrow_mut().define(name.clone(), val.clone());
+                    // Also register under current crate prefix: daemon·Goal·method
+                    if let Some(ref crate_mod) = crate_mod_for_methods {
+                        let crate_method = format!("{}·{}", crate_mod, name);
+                        let simple_prefix = format!("{}·", simple_name);
+                        if name.starts_with(&simple_prefix) {
+                            self.globals.borrow_mut().define(crate_method, val.clone());
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -5835,6 +5894,15 @@ impl Interpreter {
                 _ => Err(RuntimeError::new("Invalid char/string operation")),
             },
             // Variant equality
+            // TODO(perf): Replace string comparisons (e1==e2, v1==v2) with integer discriminant
+            // comparisons. Each variant should be assigned a u32 discriminant at enum registration
+            // time (Item::Enum branch in execute_item, ~line 3207). Store discriminant in
+            // Value::Variant and compare discriminants here instead of &str. The EnumVariant AST
+            // node already has a `discriminant: Option<Expr>` field — use that or assign
+            // sequentially (0, 1, 2, ...) during registration. This eliminates two heap string
+            // comparisons per == check on every hot enum comparison (e.g. GoalStatus, LifecycleState).
+            // NOTE: JSON serialization MUST continue to use the string form ("GoalStatus::Active")
+            // for persistence interoperability — only in-memory Variant==Variant uses discriminants.
             (
                 Value::Variant {
                     enum_name: e1,
@@ -7619,30 +7687,34 @@ impl Interpreter {
             self.current_self_type = Some(type_name);
         }
 
-        // Extract turbofish type arguments from the call expression's path segments
-        // e.g., dtype_info·<F16>() → type_args = ["F16"]
-        let turbofish_type_args: Vec<String> = if let Expr::Path(path) = func_expr {
-            path.segments
+        // Extract turbofish type arguments from the call expression.
+        // Handles two forms:
+        //   Expr::Path with inline generics — e.g., dtype_info segments with <F16> attached
+        //   Expr::Turbofish { types } — e.g., get_size·<F16>() parsed as Turbofish node
+        let extract_type_names = |types: &[crate::ast::TypeExpr]| -> Vec<String> {
+            types.iter().filter_map(|ty| {
+                if let crate::ast::TypeExpr::Path(tp) = ty {
+                    Some(
+                        tp.segments
+                            .iter()
+                            .map(|s| s.ident.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("·"),
+                    )
+                } else {
+                    None
+                }
+            }).collect()
+        };
+        let turbofish_type_args: Vec<String> = match func_expr {
+            Expr::Path(path) => path
+                .segments
                 .iter()
                 .filter_map(|seg| seg.generics.as_ref())
-                .flat_map(|generics| {
-                    generics.iter().filter_map(|ty| {
-                        if let crate::ast::TypeExpr::Path(tp) = ty {
-                            Some(
-                                tp.segments
-                                    .iter()
-                                    .map(|s| s.ident.name.as_str())
-                                    .collect::<Vec<_>>()
-                                    .join("·"),
-                            )
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect()
-        } else {
-            Vec::new()
+                .flat_map(|generics| extract_type_names(generics))
+                .collect(),
+            Expr::Turbofish { types, .. } => extract_type_names(types),
+            _ => Vec::new(),
         };
 
         // Extract turbofish CONST generic values from the call expression's path segments
@@ -9588,6 +9660,8 @@ impl Interpreter {
             }
             (Value::Char(a), Value::Char(b)) => a == b,
             // Compare enum variants
+            // TODO(perf): same as BinOp::Eq path above — replace en1/vn1 string comparisons with
+            // discriminant integer comparisons once Value::Variant carries a discriminant field.
             (Value::Variant { enum_name: en1, variant_name: vn1, fields: f1 },
              Value::Variant { enum_name: en2, variant_name: vn2, fields: f2 }) => {
                 // Same enum type and variant name

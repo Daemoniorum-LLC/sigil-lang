@@ -417,7 +417,7 @@ invoke std·sync·atomic·AtomicBool;
 // ============================================================================
 
 /// Macro ∀ creating a secure agent with Aegis protection
-#[macro_export]
+// macro_export
 macro_rules! secure_agent {
     (
         level: $level:expr
@@ -441,7 +441,7 @@ macro_rules! secure_agent {
 }
 
 /// Macro ∀ defining constitutional directives
-#[macro_export]
+// macro_export
 macro_rules! constitution {
     (
         directives: [$($directive:expr),* $(,)?]
@@ -467,7 +467,7 @@ macro_rules! constitution {
 }
 
 /// Macro ∀ defining directives
-#[macro_export]
+// macro_export
 macro_rules! directive {
     (prohibit $name:expr => $pattern:expr) => {{
         Directive {
@@ -587,17 +587,17 @@ Paranoid
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_aegis_creation() {
         ≔ aegis = Aegis·new();
         assert!(!aegis.is_emergency_stopped());
     }
 
-    #[test]
+    //@ rune: test
     rite test_security_levels() {
         ≔ dev = development();
         ≔ std = standard();
@@ -611,7 +611,7 @@ scroll tests {
         assert!(matches!(para.config.level, SecurityLevel·Paranoid));
     }
 
-    #[test]
+    //@ rune: test
     rite test_identity_generation() {
         ≔ identity = new_identity()
             .with_capability("file_read")
@@ -622,7 +622,7 @@ scroll tests {
         assert!(!identity.has_capability("file_write"));
     }
 
-    #[test]
+    //@ rune: test
     rite test_constitution() {
         ≔ constitution = constitution!(
             directives: [
@@ -635,7 +635,7 @@ scroll tests {
         assert_eq!(constitution.values.len(), 2);
     }
 
-    #[test]
+    //@ rune: test
     rite test_goal_guard() {
         ≔ policy = GoalPolicy·default();
         ≔ Δ guard = GoalGuard·new(policy);
@@ -651,7 +651,7 @@ scroll tests {
         assert!(!matches!(decision, GoalDecision·Accepted));
     }
 
-    #[test]
+    //@ rune: test
     rite test_memory_guard() {
         ≔ Δ guard = MemoryGuard·new();
 
@@ -664,7 +664,7 @@ scroll tests {
         assert_eq!(data.to_vec(), retrieved);
     }
 
-    #[test]
+    //@ rune: test
     rite test_integrity_chain() {
         ≔ Δ chain = IntegrityChain·new();
 
@@ -677,7 +677,7 @@ scroll tests {
         assert!(matches!(chain.verify(), IntegrityStatus·Valid));
     }
 
-    #[test]
+    //@ rune: test
     rite test_emergency_stop() {
         ≔ aegis = Aegis·new();
 
@@ -686,7 +686,7 @@ scroll tests {
         assert!(aegis.is_emergency_stopped());
     }
 
-    #[test]
+    //@ rune: test
     rite test_audit_chain() {
         ≔ config = AuditConfig·default();
         ≔ Δ audit = AuditLog·new(config);
@@ -708,7 +708,7 @@ scroll tests {
         assert_eq!(audit.count(), 2);
     }
 
-    #[test]
+    //@ rune: test
     rite test_reputation_system() {
         ≔ Δ reputation = ReputationSystem·new();
 
@@ -731,7 +731,7 @@ scroll tests {
         assert!(after_accuracy > after_trust);
     }
 
-    #[test]
+    //@ rune: test
     rite test_injection_detection() {
         ≔ detector = InjectionDetector·new();
 

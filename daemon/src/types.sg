@@ -15,15 +15,15 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ DaemonId {
-    ☉ λ new() -> Self {
+    rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 
-    ☉ λ from_bytes(bytes: [u8; 16]) -> Self {
+    rite from_bytes(bytes: [u8; 16]) -> Self {
         Self { bytes }
     }
 
-    ☉ λ to_string(&self) -> String {
+    rite to_string(&self) -> String {
         uuid_to_string(&self.bytes)
     }
 }
@@ -55,7 +55,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Identity {
-    ☉ λ new(name: &str) -> Self {
+    rite new(name: &str) -> Self {
         ≔ (public_key, private_key) = generate_keypair();
 
         Self {
@@ -71,23 +71,23 @@ invoke engram·{Engram, EngramConfig};
         }
     }
 
-    ☉ λ with_description(Δ self, desc: &str) -> Self {
+    rite with_description(Δ self, desc: &str) -> Self {
         self.description = desc.to_string();
         self
     }
 
-    ☉ λ with_constitution(Δ self, constitution: Constitution) -> Self {
+    rite with_constitution(Δ self, constitution: Constitution) -> Self {
         self.constitution = constitution;
         self
     }
 
     /// Sign data with this identity
-    ☉ λ sign(&self, data: &[u8]) -> Signature {
+    rite sign(&self, data: &[u8]) -> Signature {
         self.private_key.sign(data)
     }
 
     /// Verify signature from this identity
-    ☉ λ verify(&self, data: &[u8], signature: &Signature) -> bool {
+    rite verify(&self, data: &[u8], signature: &Signature) -> bool {
         self.public_key.verify(data, signature)
     }
 }
@@ -108,7 +108,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Default ∀ Constitution {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             directives: vec![],
             allowed_actions: ActionSet·all(),
@@ -130,7 +130,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Directive {
-    ☉ λ new(content: &str) -> Self {
+    rite new(content: &str) -> Self {
         Self {
             priority: 0,
             content: content.to_string(),
@@ -138,12 +138,12 @@ invoke engram·{Engram, EngramConfig};
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: u32) -> Self {
+    rite with_priority(Δ self, priority: u32) -> Self {
         self.priority = priority;
         self
     }
 
-    ☉ λ immutable(Δ self) -> Self {
+    rite immutable(Δ self) -> Self {
         self.immutable = true;
         self
     }
@@ -154,134 +154,80 @@ invoke engram·{Engram, EngramConfig};
 // ============================================================================
 
 /// Unique goal identifier
-☉ Σ GoalId {
-    bytes: [u8; 16],
-}
+Σ GoalId { id: String }
 
 ⊢ GoalId {
-    ☉ λ new() -> Self {
-        Self { bytes: uuid_v7() }
+    rite new() {
+        GoalId { id: uuid_v4() }
+    }
+    rite to_string(self) {
+        ↩ self.id;
     }
 }
 
 /// A goal the daemon is pursuing
-☉ Σ Goal {
-    /// Unique identifier
-    ☉ id: GoalId,
-
-    /// Description of what we want
-    ☉ description: String,
-
-    /// Priority (0.0 - 1.0)
-    ☉ priority: f32,
-
-    /// Success criteria
-    ☉ success: Predicate,
-
-    /// Deadline ⎇ any
-    ☉ deadline: Option<Timestamp>,
-
-    /// Current status
-    ☉ status: GoalStatus,
-
-    /// Parent goal (⎇ sub-goal)
-    ☉ parent: Option<GoalId>,
-
-    /// Constraints on achievement
-    ☉ constraints: Vec<Constraint>,
-
-    /// Tracking
-    ☉ created_at: Timestamp,
-    ☉ attempts: Vec<Attempt>,
+Σ Goal {
+    id: GoalId,
+    description: String,
+    priority: Float,
+    success: Any,
+    deadline: Any,
+    status: GoalStatus,
+    parent: Any,
+    constraints: Array,
+    created_at: Int,
+    attempts: Array,
 }
 
 ⊢ Goal {
-    ☉ λ new(description: &str) -> Self {
-        Self {
+    rite new(description) {
+        Goal {
             id: GoalId·new(),
-            description: description.to_string(),
+            description: description,
             priority: 0.5,
-            success: Predicate·always_false(),  // Must be set
-            deadline: None,
+            success: null,
+            deadline: null,
             status: GoalStatus·Pending,
-            parent: None,
-            constraints: vec![],
-            created_at: Timestamp·now(),
-            attempts: vec![],
+            parent: null,
+            constraints: [],
+            created_at: Sys·clock_gettime(),
+            attempts: [],
         }
     }
 
-    ☉ λ with_priority(Δ self, priority: f32) -> Self {
-        self.priority = priority.clamp(0.0, 1.0);
-        self
+    rite with_priority(self, priority) {
+        self.priority = priority;
+        ↩ self;
     }
 
-    ☉ λ with_deadline(Δ self, deadline: Duration) -> Self {
-        self.deadline = Some(Timestamp·now() + deadline);
-        self
+    rite is_pending(self) {
+        ↩ self.status == GoalStatus·Pending;
     }
 
-    ☉ λ with_success(Δ self, predicate: Predicate) -> Self {
-        self.success = predicate;
-        self
+    rite is_active(self) {
+        ↩ self.status == GoalStatus·Active;
     }
 
-    ☉ λ with_constraint(Δ self, constraint: Constraint) -> Self {
-        self.constraints.push(constraint);
-        self
-    }
-
-    ☉ λ is_active(&self) -> bool {
-        matches!(self.status, GoalStatus·Active)
-    }
-
-    ☉ λ is_complete(&self) -> bool {
-        matches!(self.status, GoalStatus·Completed { .. } | GoalStatus·Abandoned { .. })
+    rite is_done(self) {
+        ↩ self.status == GoalStatus·Completed ∨ self.status == GoalStatus·Abandoned;
     }
 }
 
 /// Current status of a goal
-☉ ᛈ GoalStatus {
-    /// Not yet started
+ᛈ GoalStatus {
     Pending,
-
-    /// Currently being pursued
     Active,
-
-    /// Waiting on something
-    Blocked {
-        reason: String,
-        since: Timestamp,
-    },
-
-    /// Temporarily paused
-    Suspended {
-        reason: String,
-    },
-
-    /// Successfully achieved
-    Completed {
-        at: Timestamp,
-        outcome: Outcome,
-    },
-
-    /// Could not be achieved
-    Failed {
-        at: Timestamp,
-        reason: String,
-    },
-
-    /// Intentionally given up
-    Abandoned {
-        at: Timestamp,
-        reason: String,
-    },
+    Blocked { reason: String, since: Int },
+    Suspended { reason: String },
+    Completed { at: Int, outcome: String },
+    Failed { at: Int, reason: String },
+    Abandoned { at: Int, reason: String },
 }
 
 ☉ ᛈ Outcome {
-    Success(Value),
-    PartialSuccess { degree: f32, result: Value },
-    Failure(String),
+    Success,
+    PartialSuccess { degree: Float, result: String },
+    Failure,
 }
 
 ☉ Σ Attempt {
@@ -301,7 +247,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ ActionId {
-    ☉ λ new() -> Self {
+    rite new() -> Self {
         Self { bytes: uuid_v7() }
     }
 }
@@ -328,7 +274,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Action {
-    ☉ λ name(&self) -> &str {
+    rite name(&self) -> &str {
         ⌥ self {
             Action·Internal(a) => a.name(),
             Action·Tool { name, .. } => name,
@@ -354,7 +300,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ InternalAction {
-    ☉ λ name(&self) -> &str {
+    rite name(&self) -> &str {
         ⌥ self {
             InternalAction·Think { .. } => "think",
             InternalAction·Plan { .. } => "plan",
@@ -379,7 +325,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ CommunicateAction {
-    ☉ λ name(&self) -> &str {
+    rite name(&self) -> &str {
         ⌥ self {
             CommunicateAction·Send { .. } => "send",
             CommunicateAction·Broadcast { .. } => "broadcast",
@@ -407,7 +353,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ GoalAction {
-    ☉ λ name(&self) -> &str {
+    rite name(&self) -> &str {
         ⌥ self {
             GoalAction·AddGoal(_) => "add_goal",
             GoalAction·CompleteGoal { .. } => "complete_goal",
@@ -453,7 +399,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Default ∀ AgentState {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             lifecycle: LifecycleState·Initializing,
             metrics: OperationalMetrics·default(),
@@ -515,7 +461,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Default ∀ OperationalMetrics {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             uptime: Duration·zero(),
             heartbeats: 0,
@@ -535,7 +481,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Default ∀ ResourceUsage {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             memory_bytes: 0,
             cpu_time: Duration·zero(),
@@ -553,7 +499,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Default ∀ ResourceBounds {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             max_memory_bytes: 512 * 1024 * 1024,  // 512 MB
             max_cpu_percent: 50.0,
@@ -573,25 +519,25 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ ToolRegistry {
-    ☉ λ new() -> Self {
+    rite new() -> Self {
         Self {
             tools: HashMap·new(),
         }
     }
 
-    ☉ λ register<T: Tool + 'static>(&Δ self, tool: T) {
+    rite register(self, tool) {
         self.tools.insert(tool.name().to_string(), Box·new(tool));
     }
 
-    ☉ λ get(&self, name: &str) -> Option<&dyn Tool> {
+    rite get(&self, name: &str) -> Option<&dyn Tool> {
         self.tools.get(name).map(|t| t.as_ref())
     }
 
-    ☉ λ list(&self) -> Vec<&str> {
+    rite list(&self) -> Vec<&str> {
         self.tools.keys().map(|s| s.as_str()).collect()
     }
 
-    ☉ λ for_context(&self, context: &Context) -> Vec<&dyn Tool> {
+    rite for_context(&self, context: &Context) -> Vec<&dyn Tool> {
         self.tools.values()
             .filter(|t| t.applicable_to(context))
             .map(|t| t.as_ref())
@@ -602,24 +548,24 @@ invoke engram·{Engram, EngramConfig};
 /// Trait ∀ daemon tools
 ☉ Θ Tool: Send + Sync {
     /// Tool name
-    λ name(&self) -> &str;
+    rite name(&self) -> &str;
 
     /// Tool description
-    λ description(&self) -> &str;
+    rite description(&self) -> &str;
 
     /// Parameter schema
-    λ schema(&self) -> Schema;
+    rite schema(&self) -> Schema;
 
     /// Execute the tool
-    λ execute(&self, params: Value) -> Result<ToolResult, ToolError>;
+    rite execute(&self, params: Value) -> Result<ToolResult, ToolError>;
 
     /// Check ⎇ tool is applicable ∈ context
-    λ applicable_to(&self, context: &Context) -> bool {
+    rite applicable_to(&self, context: &Context) -> bool {
         true  // Default: always applicable
     }
 
     /// Cleanup on daemon shutdown
-    λ cleanup(&self) {}
+    rite cleanup(&self) {}
 }
 
 ☉ Σ ToolResult {
@@ -663,7 +609,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Context {
-    ☉ λ new() -> Self {
+    rite new() -> Self {
         Self {
             current_goal: None,
             memories: vec![],
@@ -674,17 +620,17 @@ invoke engram·{Engram, EngramConfig};
         }
     }
 
-    ☉ λ with_goal(Δ self, goal: Goal) -> Self {
+    rite with_goal(Δ self, goal: Goal) -> Self {
         self.current_goal = Some(goal);
         self
     }
 
-    ☉ λ with_memories(Δ self, memories: Vec<Memory>) -> Self {
+    rite with_memories(Δ self, memories: Vec<Memory>) -> Self {
         self.memories = memories;
         self
     }
 
-    ☉ λ with_knowledge(Δ self, knowledge: Vec<Knowledge>) -> Self {
+    rite with_knowledge(Δ self, knowledge: Vec<Knowledge>) -> Self {
         self.knowledge = knowledge;
         self
     }
@@ -746,7 +692,7 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Default ∀ DaemonConfig {
-    λ default() -> Self {
+    rite default() -> Self {
         Self {
             name: "daemon".to_string(),
             description: String·new(),
@@ -790,18 +736,18 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Snapshot {
-    ☉ λ verify(&self) -> bool {
+    rite verify(&self) -> bool {
         ≔ computed = self.compute_checksum();
         computed == self.checksum
     }
 
-    λ compute_checksum(&self) -> [u8; 32] {
+    rite compute_checksum(&self) -> [u8; 32] {
         // SHA-256 of serialized content
         ≔ data = self.serialize_for_checksum();
         sha256(&data)
     }
 
-    λ serialize_for_checksum(&self) -> Vec<u8> {
+    rite serialize_for_checksum(&self) -> Vec<u8> {
         // Canonical serialization excluding checksum field
         ≔ Δ bytes = Vec·new();
         bytes.extend(&self.version.to_le_bytes());
@@ -821,19 +767,19 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Predicate {
-    ☉ λ new<F: Fn(&Context) -> bool + Send + Sync + 'static>(f: F) -> Self {
+    rite new(f) {
         Self { eval: Box·new(f) }
     }
 
-    ☉ λ always_true() -> Self {
+    rite always_true() -> Self {
         Self·new(|_| true)
     }
 
-    ☉ λ always_false() -> Self {
+    rite always_false() -> Self {
         Self·new(|_| false)
     }
 
-    ☉ λ evaluate(&self, context: &Context) -> bool {
+    rite evaluate(&self, context: &Context) -> bool {
         (self.eval)(context)
     }
 }
@@ -844,18 +790,18 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ Constraint {
-    ☉ λ new<F: Fn(&Action) -> bool + Send + Sync + 'static>(name: &str, f: F) -> Self {
+    rite new(name, f) {
         Self {
             name: name.to_string(),
             check: Box·new(f),
         }
     }
 
-    ☉ λ deadline(deadline: Duration) -> Self {
+    rite deadline(deadline: Duration) -> Self {
         Self·new("deadline", move |_| true)  // Checked elsewhere
     }
 
-    ☉ λ no_breaking_changes() -> Self {
+    rite no_breaking_changes() -> Self {
         Self·new("no_breaking_changes", |action| {
             // Implementation would check action type
             true
@@ -869,28 +815,28 @@ invoke engram·{Engram, EngramConfig};
 }
 
 ⊢ ActionSet {
-    ☉ λ all() -> Self {
+    rite all() -> Self {
         Self {
             allowed: HashSet·new(),
             deny_all: false,
         }
     }
 
-    ☉ λ none() -> Self {
+    rite none() -> Self {
         Self {
             allowed: HashSet·new(),
             deny_all: true,
         }
     }
 
-    ☉ λ only(actions: Vec<&str>) -> Self {
+    rite only(actions: Vec<&str>) -> Self {
         Self {
             allowed: actions.into_iter().map(|s| s.to_string()).collect(),
             deny_all: true,
         }
     }
 
-    ☉ λ is_allowed(&self, action: &str) -> bool {
+    rite is_allowed(&self, action: &str) -> bool {
         ⎇ self.deny_all {
             self.allowed.contains(action)
         } ⎉ {
@@ -909,22 +855,22 @@ invoke engram·{Engram, EngramConfig};
 ☉ Σ Epistemic { level: u8 }
 ☉ Σ EngramSnapshot { data: Vec<u8> }
 
-λ uuid_v7() -> [u8; 16] {
+rite uuid_v7() {
     // Would generate UUID v7
     [0u8; 16]
 }
 
-λ uuid_to_string(bytes: &[u8; 16]) -> String {
+rite uuid_to_string(bytes) {
     // Would format as UUID string
     String·new()
 }
 
-λ generate_keypair() -> (PublicKey, PrivateKey) {
+rite generate_keypair() {
     // Would generate Ed25519 keypair
     (PublicKey { bytes: vec![] }, PrivateKey { bytes: vec![] })
 }
 
-λ sha256(data: &[u8]) -> [u8; 32] {
+rite sha256(data) {
     // Would compute SHA-256
     [0u8; 32]
 }
