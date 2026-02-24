@@ -9557,6 +9557,64 @@ fn register_json(interp: &mut Interpreter) {
         }
     });
 
+    // json·from_str — parse JSON string, return Result::Ok(Map) / Result::Err(CodecError).
+    // Mirrors toml·from_str so that the Stmt::Let post-eval decode step can invoke
+    // T::decode on the resulting Map (e.g. PackageManifest::decode).
+    define(interp, "json·from_str", Some(1), |_, args| {
+        let json_str = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("json·from_str() requires string argument")),
+            },
+            _ => return Err(RuntimeError::new("json·from_str() requires string argument")),
+        };
+
+        fn json_to_map(json: &serde_json::Value) -> Value {
+            match json {
+                serde_json::Value::Null => Value::Null,
+                serde_json::Value::Bool(b) => Value::Bool(*b),
+                serde_json::Value::Number(n) => {
+                    if let Some(i) = n.as_i64() { Value::Int(i) }
+                    else if let Some(f) = n.as_f64() { Value::Float(f) }
+                    else { Value::Null }
+                }
+                serde_json::Value::String(s) => Value::String(Rc::new(s.clone())),
+                serde_json::Value::Array(arr) => {
+                    let values: Vec<Value> = arr.iter().map(json_to_map).collect();
+                    Value::Array(Rc::new(RefCell::new(values)))
+                }
+                serde_json::Value::Object(obj) => {
+                    let mut map = HashMap::new();
+                    for (k, v) in obj { map.insert(k.clone(), json_to_map(v)); }
+                    Value::Map(Rc::new(RefCell::new(map)))
+                }
+            }
+        }
+
+        match serde_json::from_str::<serde_json::Value>(&json_str) {
+            Ok(json) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![json_to_map(&json)])),
+            }),
+            Err(e) => {
+                let mut err_fields = std::collections::HashMap::new();
+                err_fields.insert("message".to_string(), Value::String(Rc::new(format!("JSON parse error: {}", e))));
+                err_fields.insert("format".to_string(), Value::String(Rc::new("json".to_string())));
+                err_fields.insert("kind".to_string(), Value::String(Rc::new("Parse".to_string())));
+                Ok(Value::Variant {
+                    enum_name: "Result".to_string(),
+                    variant_name: "Err".to_string(),
+                    fields: Some(Rc::new(vec![Value::Struct {
+                        name: "CodecError".to_string(),
+                        fields: Rc::new(RefCell::new(err_fields)),
+                    }])),
+                })
+            }
+        }
+    });
+
     // json_stringify - convert Sigil value to JSON string
     define(interp, "json_stringify", Some(1), |_, args| {
         fn value_to_json(val: &Value) -> serde_json::Value {
@@ -49812,235 +49870,6 @@ fn register_tar(interp: &mut Interpreter) {
                 fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
             }),
         }
-    });
-
-    // ── registry·parse_manifest(json_str) → Result[PackageManifest] ─────────
-    //
-    // Parses a package manifest JSON string into a PackageManifest-shaped Sigil
-    // struct.  This is necessary because the generic json::from_str<T> cannot
-    // dispatch T::decode in the interpreter.
-    //
-    // Returns Result::Ok(PackageManifest) on success, Result::Err(String) on failure.
-    define(interp, "registry·parse_manifest", Some(1), |_, args| {
-        let s = match &args[0] {
-            Value::String(s) => s.as_ref().clone(),
-            Value::Ref(r) => match &*r.borrow() {
-                Value::String(s) => s.as_ref().clone(),
-                _ => return Err(RuntimeError::new("registry·parse_manifest: arg must be a string")),
-            },
-            _ => return Err(RuntimeError::new("registry·parse_manifest: arg must be a string")),
-        };
-
-        fn make_str(s: &str) -> Value {
-            Value::String(Rc::new(s.to_string()))
-        }
-        fn make_some(v: Value) -> Value {
-            Value::Variant {
-                enum_name: "Option".to_string(),
-                variant_name: "Some".to_string(),
-                fields: Some(Rc::new(vec![v])),
-            }
-        }
-        fn make_none() -> Value {
-            Value::Variant {
-                enum_name: "Option".to_string(),
-                variant_name: "None".to_string(),
-                fields: None,
-            }
-        }
-        fn make_version(version_str: &str) -> Value {
-            let parts: Vec<i64> = version_str.split('.')
-                .map(|p| p.split(|c: char| c == '-' || c == '+').next().unwrap_or("0")
-                    .parse::<i64>().unwrap_or(0))
-                .collect();
-            let major = parts.get(0).copied().unwrap_or(0);
-            let minor = parts.get(1).copied().unwrap_or(0);
-            let patch = parts.get(2).copied().unwrap_or(0);
-            Value::Struct {
-                name: "semver·Version".to_string(),
-                fields: Rc::new(RefCell::new({
-                    let mut f = HashMap::new();
-                    f.insert("__version_str__".to_string(), Value::String(Rc::new(version_str.to_string())));
-                    f.insert("major".to_string(), Value::Int(major));
-                    f.insert("minor".to_string(), Value::Int(minor));
-                    f.insert("patch".to_string(), Value::Int(patch));
-                    f.insert("pre".to_string(), make_str(""));
-                    f.insert("build".to_string(), make_str(""));
-                    f
-                })),
-            }
-        }
-
-        let json: serde_json::Value = serde_json::from_str(&s)
-            .map_err(|e| RuntimeError::new(format!("registry·parse_manifest: {}", e)))?;
-
-        // ── package (PackageInfo) ─────────────────────────────────────────────
-        let pkg = &json["package"];
-        let pkg_name = pkg["name"].as_str().unwrap_or("").to_string();
-        let pkg_display = pkg["display_name"].as_str().unwrap_or(&pkg_name).to_string();
-        let pkg_version = pkg["version"].as_str().unwrap_or("0.0.0");
-        let pkg_desc = pkg["description"].as_str().unwrap_or("").to_string();
-        let pkg_homepage = pkg["homepage"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
-        let pkg_license = pkg["license"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
-        let pkg_category = pkg["category"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
-        let pkg_icon = pkg["icon"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none);
-
-        let package_info = Value::Struct {
-            name: "PackageInfo".to_string(),
-            fields: Rc::new(RefCell::new({
-                let mut f = HashMap::new();
-                f.insert("name".to_string(), make_str(&pkg_name));
-                f.insert("display_name".to_string(), make_str(&pkg_display));
-                f.insert("version".to_string(), make_version(pkg_version));
-                f.insert("description".to_string(), make_str(&pkg_desc));
-                f.insert("homepage".to_string(), pkg_homepage);
-                f.insert("license".to_string(), pkg_license);
-                f.insert("category".to_string(), pkg_category);
-                f.insert("icon".to_string(), pkg_icon);
-                f
-            })),
-        };
-
-        // ── targets (HashMap<String, TargetInfo>) ─────────────────────────────
-        let mut targets_map = HashMap::new();
-        if let Some(targets) = json["targets"].as_object() {
-            for (k, v) in targets {
-                let target = Value::Struct {
-                    name: "TargetInfo".to_string(),
-                    fields: Rc::new(RefCell::new({
-                        let mut f = HashMap::new();
-                        f.insert("url".to_string(), make_str(v["url"].as_str().unwrap_or("")));
-                        f.insert("sha256".to_string(), make_str(v["sha256"].as_str().unwrap_or("")));
-                        let size_val = match v["size"].as_u64() {
-                            Some(n) => make_some(Value::Int(n as i64)),
-                            None => make_none(),
-                        };
-                        f.insert("size".to_string(), size_val);
-                        f
-                    })),
-                };
-                targets_map.insert(k.clone(), target);
-            }
-        }
-
-        // ── altar (HashMap<String, AltarDep>) ────────────────────────────────
-        let mut altar_map = HashMap::new();
-        if let Some(altar) = json["altar"].as_object() {
-            for (k, v) in altar {
-                let dep = Value::Struct {
-                    name: "AltarDep".to_string(),
-                    fields: Rc::new(RefCell::new({
-                        let mut f = HashMap::new();
-                        f.insert("version".to_string(), make_str(v["version"].as_str().unwrap_or("*")));
-                        f.insert("bundled".to_string(), Value::Bool(v["bundled"].as_bool().unwrap_or(false)));
-                        f.insert("optional".to_string(), Value::Bool(v["optional"].as_bool().unwrap_or(false)));
-                        f
-                    })),
-                };
-                altar_map.insert(k.clone(), dep);
-            }
-        }
-
-        // ── services (HashMap<String, ServiceDef>) ────────────────────────────
-        let mut services_map = HashMap::new();
-        if let Some(services) = json["services"].as_object() {
-            for (k, v) in services {
-                let deps: Vec<Value> = v["depends_on"].as_array()
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| make_str(s))).collect())
-                    .unwrap_or_default();
-                let mut env_map = HashMap::new();
-                if let Some(env) = v["env"].as_object() {
-                    for (ek, ev) in env {
-                        env_map.insert(ek.clone(), make_str(ev.as_str().unwrap_or("")));
-                    }
-                }
-                let svc = Value::Struct {
-                    name: "ServiceDef".to_string(),
-                    fields: Rc::new(RefCell::new({
-                        let mut f = HashMap::new();
-                        f.insert("command".to_string(), make_str(v["command"].as_str().unwrap_or("")));
-                        let port_val = match v["port"].as_u64() {
-                            Some(n) => make_some(Value::Int(n as i64)),
-                            None => make_none(),
-                        };
-                        f.insert("port".to_string(), port_val);
-                        f.insert("depends_on".to_string(), Value::Array(Rc::new(RefCell::new(deps))));
-                        f.insert("env".to_string(), Value::Map(Rc::new(RefCell::new(env_map))));
-                        f
-                    })),
-                };
-                services_map.insert(k.clone(), svc);
-            }
-        }
-
-        // ── rituals (RitualHooks) ─────────────────────────────────────────────
-        let rituals = &json["rituals"];
-        let rituals_struct = Value::Struct {
-            name: "RitualHooks".to_string(),
-            fields: Rc::new(RefCell::new({
-                let mut f = HashMap::new();
-                f.insert("pre_summon".to_string(), rituals["pre_summon"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
-                f.insert("post_summon".to_string(), rituals["post_summon"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
-                f.insert("migrations".to_string(), rituals["migrations"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
-                f
-            })),
-        };
-
-        // ── invocation (InvocationSettings) ───────────────────────────────────
-        let inv = &json["invocation"];
-        let inv_channel = inv["channel"].as_str().unwrap_or("stable").to_string();
-        let inv_struct = Value::Struct {
-            name: "InvocationSettings".to_string(),
-            fields: Rc::new(RefCell::new({
-                let mut f = HashMap::new();
-                f.insert("channel".to_string(), make_str(&inv_channel));
-                f.insert("auto".to_string(), Value::Bool(inv["auto"].as_bool().unwrap_or(false)));
-                f.insert("delta_patches".to_string(), Value::Bool(
-                    inv["delta_patches"].as_bool()
-                        .or_else(|| inv["delta_updates"].as_bool())
-                        .unwrap_or(true)
-                ));
-                f
-            })),
-        };
-
-        // ── banishment (BanishmentSettings) ───────────────────────────────────
-        let ban = &json["banishment"];
-        let ban_struct = Value::Struct {
-            name: "BanishmentSettings".to_string(),
-            fields: Rc::new(RefCell::new({
-                let mut f = HashMap::new();
-                f.insert("preserve_data".to_string(), Value::Bool(
-                    ban["preserve_data"].as_bool()
-                        .or_else(|| ban["preserve_config"].as_bool())
-                        .unwrap_or(true)
-                ));
-                f.insert("post_banish".to_string(), ban["post_banish"].as_str().map(|s| make_some(make_str(s))).unwrap_or_else(make_none));
-                f
-            })),
-        };
-
-        // ── assemble PackageManifest ──────────────────────────────────────────
-        let manifest = Value::Struct {
-            name: "PackageManifest".to_string(),
-            fields: Rc::new(RefCell::new({
-                let mut f = HashMap::new();
-                f.insert("package".to_string(), package_info);
-                f.insert("targets".to_string(), Value::Map(Rc::new(RefCell::new(targets_map))));
-                f.insert("altar".to_string(), Value::Map(Rc::new(RefCell::new(altar_map))));
-                f.insert("services".to_string(), Value::Map(Rc::new(RefCell::new(services_map))));
-                f.insert("rituals".to_string(), rituals_struct);
-                f.insert("invocation".to_string(), inv_struct);
-                f.insert("banishment".to_string(), ban_struct);
-                f
-            })),
-        };
-
-        Ok(Value::Variant {
-            enum_name: "Result".to_string(),
-            variant_name: "Ok".to_string(),
-            fields: Some(Rc::new(vec![manifest])),
-        })
     });
 
     // ── http_test_server·once(status_code, body) → i64 (port) ────────────────

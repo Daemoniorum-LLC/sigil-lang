@@ -7461,7 +7461,35 @@ impl Interpreter {
                         let arg_values: Vec<Value> = args.iter()
                             .map(|a| self.evaluate(a))
                             .collect::<Result<_, _>>()?;
-                        return self.call_function_by_name(&compound_name, arg_values);
+                        // INT-001: bind generic T from dispatch_hint before calling,
+                        // so that T·decode inside the callee resolves to the concrete type.
+                        let old_generic_bindings_early = self.generic_type_bindings.clone();
+                        let bound_any = {
+                            let func_val = if in_env {
+                                self.environment.borrow().get(&compound_name)
+                            } else {
+                                self.globals.borrow().get(&compound_name)
+                            };
+                            if let Some(Value::Function(ref f)) = func_val {
+                                if !f.generic_params.is_empty() {
+                                    if let Some(ref hint) = self.type_context.dispatch_hint.borrow().clone() {
+                                        let concrete = hint.split('<').next()
+                                            .and_then(|s| s.split('[').next())
+                                            .unwrap_or(hint.as_str()).trim().to_string();
+                                        if concrete.chars().next().map_or(false, |c| c.is_uppercase()) {
+                                            self.generic_type_bindings
+                                                .insert(f.generic_params[0].clone(), concrete);
+                                            true
+                                        } else { false }
+                                    } else { false }
+                                } else { false }
+                            } else { false }
+                        };
+                        let result = self.call_function_by_name(&compound_name, arg_values);
+                        if bound_any {
+                            self.generic_type_bindings = old_generic_bindings_early;
+                        }
+                        return result;
                     }
                 }
                 // If first segment is lowercase and is a known variable (not a function/type)
@@ -7478,8 +7506,26 @@ impl Interpreter {
                                 .collect::<Result<_, _>>()?;
                             let method_name = seg1.clone();
                             let recv = Self::unwrap_value(&var_value).clone();
-                            // Dispatch as method call via call_incorporation_method
-                            return self.call_incorporation_method(&recv, &method_name, arg_values);
+                            // INT-001 equivalent: apply dispatch_hint for generic module methods.
+                            // e.g. `≔ v~: T = json·from_str(&s)?` — T must be bound before
+                            // call_incorporation_method dispatches the inner T::decode call.
+                            let old_generic_mod = self.generic_type_bindings.clone();
+                            let mut bound_mod_hint = false;
+                            let hint_val = self.type_context.dispatch_hint.borrow().clone();
+                            if let Some(ref hint) = hint_val {
+                                let concrete = hint.split('<').next()
+                                    .and_then(|s| s.split('[').next())
+                                    .unwrap_or(hint.as_str()).trim().to_string();
+                                if concrete.chars().next().map_or(false, |c| c.is_uppercase()) {
+                                    self.generic_type_bindings.insert("T".to_string(), concrete.clone());
+                                    bound_mod_hint = true;
+                                }
+                            }
+                            let result = self.call_incorporation_method(&recv, &method_name, arg_values);
+                            if bound_mod_hint {
+                                self.generic_type_bindings = old_generic_mod;
+                            }
+                            return result;
                         }
                     }
                 }
@@ -8734,22 +8780,6 @@ impl Interpreter {
             }
         }
         let func = self.evaluate(func_expr)?;
-        // Debug: trace what we got
-        if let Expr::Path(path) = func_expr {
-            let path_str = path
-                .segments
-                .iter()
-                .map(|s| s.ident.name.as_str())
-                .collect::<Vec<_>>()
-                .join("·");
-            if path_str.contains("Result") {
-                eprintln!(
-                    "DEBUG func lookup result: path='{}', value={}",
-                    path_str,
-                    self.format_value(&func)
-                );
-            }
-        }
 
         // Track &mut path arguments for sync-back after function call
         // This enables proper mutable reference semantics where modifications persist
@@ -10131,8 +10161,7 @@ impl Interpreter {
                     }
                     let value = match init {
                         Some(expr) => {
-                            if let crate::ast::Expr::Try(_) = expr {
-                                eprintln!("DEBUG Stmt::Let: evaluating Expr::Try init");
+                            if let Pattern::Ident { name: pat_name, .. } = pattern {
                             }
                             self.evaluate(expr)?
                         }
@@ -10178,31 +10207,18 @@ impl Interpreter {
                         if let Some(ref type_name) = decode_type_name {
                             let is_raw_map = matches!(&value, Value::Map(_))
                                 || matches!(&value, Value::Struct { name, .. } if name == "Map");
-                            if type_name == "PackageManifest" {
-                                eprintln!("DEBUG PackageManifest decode: is_raw_map={} value_type={:?}", is_raw_map, std::mem::discriminant(&value));
-                            }
                             if is_raw_map {
                                 let decode_fn = format!("{}·decode", type_name);
                                 let decode_exists = {
                                     self.environment.borrow().get(&decode_fn).is_some()
                                         || self.globals.borrow().get(&decode_fn).is_some()
                                 };
-                                if type_name == "PackageManifest" {
-                                    eprintln!("DEBUG PackageManifest decode: decode_fn='{}' exists={}", decode_fn, decode_exists);
-                                }
                                 if decode_exists {
                                     let prev_self = self.current_self_type.clone();
                                     self.current_self_type = Some(type_name.clone());
                                     let result = self.call_function_by_name(&decode_fn, vec![value.clone()]);
                                     self.current_self_type = prev_self;
                                     if let Ok(decoded) = result {
-                                        if type_name == "PackageManifest" {
-                                            eprintln!("DEBUG PackageManifest decode returned: {:?}", match &decoded {
-                                                Value::Struct { name, fields } => format!("Struct({}, fields={:?})", name, fields.borrow().iter().map(|(k, v)| format!("{}: {:?}", k, std::mem::discriminant(v))).collect::<Vec<_>>()),
-                                                Value::Variant { enum_name, variant_name, .. } => format!("Variant({}::{})", enum_name, variant_name),
-                                                other => format!("{:?}", std::mem::discriminant(other)),
-                                            });
-                                        }
                                         match decoded {
                                             Value::Variant { ref variant_name, ref fields, .. }
                                                 if variant_name == "Ok" =>
@@ -10210,20 +10226,11 @@ impl Interpreter {
                                                 let inner = fields.as_ref()
                                                     .and_then(|f| f.first().cloned())
                                                     .unwrap_or(value.clone());
-                                                if type_name == "PackageManifest" {
-                                                    eprintln!("DEBUG PackageManifest inner from Ok: {:?}", match &inner {
-                                                        Value::Struct { name, fields } => format!("Struct({}, fields={:?})", name, fields.borrow().iter().map(|(k, v)| format!("{}: {:?}", k, std::mem::discriminant(v))).collect::<Vec<_>>()),
-                                                        other => format!("{:?}", std::mem::discriminant(other)),
-                                                    });
-                                                }
                                                 inner
                                             }
                                             _ => value,
                                         }
                                     } else {
-                                        if type_name == "PackageManifest" {
-                                            eprintln!("DEBUG PackageManifest decode ERROR: {:?}", result.as_ref().err().map(|e| e.to_string()));
-                                        }
                                         value
                                     }
                                 } else {
@@ -10262,19 +10269,6 @@ impl Interpreter {
                                     );
                                 }
                             }
-                        }
-                    }
-                    // Debug: trace variable assignments for "temp" variables
-                    if let Pattern::Ident { name: pat_name, .. } = pattern {
-                        if pat_name.name.contains("temp") || pat_name.name == "info2" || pat_name.name == "info1" {
-                            eprintln!("DEBUG Stmt::Let binding '{}' = {:?}", pat_name.name, match &value {
-                                Value::Struct { name, fields } => {
-                                    let fkeys: Vec<String> = fields.borrow().keys().cloned().collect();
-                                    format!("Struct({}, fields={:?})", name, fkeys)
-                                }
-                                Value::Variant { enum_name, variant_name, .. } => format!("Variant({}::{})", enum_name, variant_name),
-                                _ => format!("{:?}", value),
-                            });
                         }
                     }
                     self.bind_pattern(pattern, value)?;
@@ -12179,6 +12173,18 @@ impl Interpreter {
         let recv_raw = self.evaluate(receiver)?;
         // Unwrap evidential/affective wrappers for method dispatch
         let recv = Self::unwrap_value(&recv_raw).clone();
+
+        // Debug: trace map_err receiver
+        if method.name == "map_err" {
+            eprintln!("DEBUG eval_method_call map_err: recv_raw_disc={:?} recv_disc={:?}",
+                std::mem::discriminant(&recv_raw), std::mem::discriminant(&recv));
+            if let Value::Variant { ref enum_name, ref variant_name, .. } = recv_raw {
+                eprintln!("  recv_raw={}::{}", enum_name, variant_name);
+            }
+            if let Value::Struct { ref name, .. } = recv {
+                eprintln!("  recv_unwrapped=Struct({})", name);
+            }
+        }
 
         // Debug: trace any struct method calls on structs with suspicious names
         if let Value::Struct { name: struct_name, fields: struct_fields } = &recv {
@@ -22628,26 +22634,7 @@ impl Interpreter {
                 }
                 // Try field access first
                 if let Some(val) = fields.borrow().get(field).cloned() {
-                    if struct_name == "ServiceInfo" && field == "state" {
-                        eprintln!("DEBUG ServiceInfo.state = {:?}", std::mem::discriminant(&val));
-                        if let Value::Variant { enum_name: ref en, variant_name: ref vn, .. } = val {
-                            eprintln!("  ServiceInfo.state is Variant({}::{})", en, vn);
-                        }
-                    }
-                    if struct_name == "PackageManifest" {
-                        eprintln!("DEBUG PackageManifest field '{}' = {:?}", field, match &val {
-                            Value::Struct { name, .. } => format!("Struct({})", name),
-                            Value::Map(m) => format!("Map(len={})", m.borrow().len()),
-                            Value::Null => "Null".to_string(),
-                            Value::Array(a) => format!("Array(len={})", a.borrow().len()),
-                            other => format!("{:?}", other),
-                        });
-                    }
                     return Ok(val);
-                }
-                if struct_name == "PackageManifest" {
-                    let field_names: Vec<String> = fields.borrow().keys().cloned().collect();
-                    eprintln!("DEBUG PackageManifest missing field '{}', available: {:?}", field, field_names);
                 }
                 // Handle RwLock and Mutex read/write methods
                 if struct_name == "RwLock" || struct_name == "Mutex" || struct_name == "parking_lot·RwLock" {
@@ -29710,7 +29697,18 @@ impl Interpreter {
                     self.return_value = Some(Value::Null);
                     return Err(RuntimeError::new("return"));
                 }
-                _ => {}
+                _ => {
+                    // Fallthrough: value is not a Result/Option/Null — will be wrapped in Evidential
+                    // Print the expr type for context
+                    eprintln!("  expr_type={}", match expr {
+                        Expr::Call { .. } => "Call",
+                        Expr::MethodCall { .. } => "MethodCall",
+                        Expr::Path(_) => "Path",
+                        Expr::Await { .. } => "Await",
+                        Expr::Evidential { .. } => "Evidential",
+                        _ => "other",
+                    });
+                }
             }
         }
 
