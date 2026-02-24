@@ -49622,6 +49622,198 @@ fn register_tar(interp: &mut Interpreter) {
         }
     });
 
+    // ── registry·get_text(url, timeout_secs) → Result[String] ────────────────
+    //
+    // Plain-text HTTPS GET.  Identical to registry·get_json but sends
+    // Accept: */* — used for checksum endpoints that return sha256:… plain text.
+    // Error conventions same as registry·get_json.
+    define(interp, "registry·get_text", Some(2), |_, args| {
+        let url = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("registry·get_text: arg 0 must be a URL string")),
+            },
+            _ => return Err(RuntimeError::new("registry·get_text: arg 0 must be a URL string")),
+        };
+        let timeout_secs: u64 = match &args[1] {
+            Value::Int(n) => (*n).max(1) as u64,
+            Value::Ref(r) => match &*r.borrow() {
+                Value::Int(n) => (*n).max(1) as u64,
+                _ => 30,
+            },
+            _ => 30,
+        };
+
+        fn parse_url_gt(url: &str) -> Result<(bool, String, u16, String), String> {
+            let (scheme, rest) = url.split_once("://")
+                .ok_or_else(|| format!("invalid URL '{}'", url))?;
+            let use_tls = match scheme {
+                "https" => true,
+                "http"  => false,
+                _ => return Err(format!("unsupported scheme '{}' (only http/https)", scheme)),
+            };
+            let (host_port, path) = if let Some(p) = rest.find('/') {
+                (rest[..p].to_string(), rest[p..].to_string())
+            } else {
+                (rest.to_string(), "/".to_string())
+            };
+            let (host, port) = if let Some(colon) = host_port.rfind(':') {
+                let port_str = &host_port[colon + 1..];
+                if let Ok(p) = port_str.parse::<u16>() {
+                    (host_port[..colon].to_string(), p)
+                } else {
+                    (host_port, if use_tls { 443 } else { 80 })
+                }
+            } else {
+                (host_port, if use_tls { 443 } else { 80 })
+            };
+            Ok((use_tls, host, port, path))
+        }
+
+        fn do_get_text(url: &str, timeout_secs: u64) -> Result<String, String> {
+            use std::io::{BufRead, Read, Write as IoWrite};
+
+            let mut current_url = url.to_string();
+            for _ in 0..10_usize {
+                let (use_tls, host, port, path) = parse_url_gt(&current_url)?;
+                let addr = format!("{}:{}", host, port);
+
+                let request = format!(
+                    "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Ritualis/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+                    path, host
+                );
+
+                let tcp = std::net::TcpStream::connect(&addr)
+                    .map_err(|e| format!("connect {}: {}", addr, e))?;
+                tcp.set_read_timeout(Some(std::time::Duration::from_secs(timeout_secs))).ok();
+
+                let reader_box: Box<dyn Read> = if use_tls {
+                    #[cfg(feature = "websocket")]
+                    {
+                        use native_tls::TlsConnector;
+                        let connector = TlsConnector::new()
+                            .map_err(|e| format!("TLS init: {}", e))?;
+                        let mut tls = connector.connect(&host, tcp)
+                            .map_err(|e| format!("TLS handshake with '{}': {}", host, e))?;
+                        tls.write_all(request.as_bytes())
+                            .map_err(|e| format!("send request: {}", e))?;
+                        Box::new(tls) as Box<dyn Read>
+                    }
+                    #[cfg(not(feature = "websocket"))]
+                    {
+                        return Err(
+                            "HTTPS requires the 'websocket' build feature (native-tls)".to_string()
+                        );
+                    }
+                } else {
+                    let mut plain = tcp;
+                    plain.write_all(request.as_bytes())
+                        .map_err(|e| format!("send request: {}", e))?;
+                    Box::new(plain) as Box<dyn Read>
+                };
+
+                let mut reader = std::io::BufReader::with_capacity(65536, reader_box);
+
+                let mut headers = String::new();
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    reader.read_line(&mut line)
+                        .map_err(|e| format!("read headers: {}", e))?;
+                    if line == "\r\n" || line == "\n" || line.is_empty() { break; }
+                    headers.push_str(&line);
+                    if headers.len() > 131_072 {
+                        return Err("response headers too large".to_string());
+                    }
+                }
+
+                let status: i64 = headers.lines().next().unwrap_or("")
+                    .split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+                if (300..400).contains(&status) {
+                    if let Some(loc_line) = headers.lines()
+                        .find(|l| l.to_lowercase().starts_with("location:"))
+                    {
+                        let loc = loc_line[9..].trim().to_string();
+                        current_url = if loc.starts_with("http://") || loc.starts_with("https://") {
+                            loc
+                        } else if loc.starts_with('/') {
+                            let scheme = if use_tls { "https" } else { "http" };
+                            format!("{}://{}:{}{}", scheme, host, port, loc)
+                        } else {
+                            format!("https://{}", loc)
+                        };
+                        continue;
+                    }
+                }
+
+                if status == 404 {
+                    return Err("NOT_FOUND".to_string());
+                }
+
+                if !(200..300).contains(&status) {
+                    return Err(format!("HTTP {}: request failed for '{}'", status, current_url));
+                }
+
+                let is_chunked = headers.lines().any(|l| {
+                    let ll = l.to_lowercase();
+                    ll.starts_with("transfer-encoding:") && ll.contains("chunked")
+                });
+
+                let mut body_bytes: Vec<u8> = Vec::new();
+                if is_chunked {
+                    let mut chunk_line = String::new();
+                    loop {
+                        chunk_line.clear();
+                        reader.read_line(&mut chunk_line)
+                            .map_err(|e| format!("read chunk size: {}", e))?;
+                        let size_str = chunk_line.trim().split(';').next().unwrap_or("0").trim();
+                        let chunk_size = usize::from_str_radix(size_str, 16).unwrap_or(0);
+                        if chunk_size == 0 { break; }
+                        let mut remaining = chunk_size;
+                        let mut buf = vec![0u8; 65536];
+                        while remaining > 0 {
+                            let to_read = remaining.min(buf.len());
+                            let n = reader.read(&mut buf[..to_read])
+                                .map_err(|e| format!("read chunk: {}", e))?;
+                            if n == 0 { break; }
+                            body_bytes.extend_from_slice(&buf[..n]);
+                            remaining -= n;
+                        }
+                        let mut crlf = String::new();
+                        reader.read_line(&mut crlf).ok();
+                    }
+                } else {
+                    let mut buf = [0u8; 65536];
+                    loop {
+                        let n = reader.read(&mut buf)
+                            .map_err(|e| format!("read body: {}", e))?;
+                        if n == 0 { break; }
+                        body_bytes.extend_from_slice(&buf[..n]);
+                    }
+                }
+
+                let body = String::from_utf8_lossy(&body_bytes).into_owned();
+                return Ok(body);
+            }
+            Err(format!("too many redirects for '{}'", url))
+        }
+
+        match do_get_text(&url, timeout_secs) {
+            Ok(body) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(body))])),
+            }),
+            Err(msg) => Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(msg))])),
+            }),
+        }
+    });
+
     // ── registry·parse_manifest(json_str) → Result[PackageManifest] ─────────
     //
     // Parses a package manifest JSON string into a PackageManifest-shaped Sigil
@@ -50038,5 +50230,82 @@ fn register_tar(interp: &mut Interpreter) {
 
         std::thread::sleep(std::time::Duration::from_millis(20));
         Ok(Value::Int(port as i64))
+    });
+
+    // ── chrono·Utc·now() → String (RFC3339) ──────────────────────────────────
+    //
+    // Returns the current UTC time as an RFC3339 string, e.g.
+    // "2026-02-23T12:34:56Z".  The interpreter treats chrono::DateTime values
+    // as opaque RFC3339 strings; to_rfc3339() on a string is a no-op.
+    define(interp, "chrono·Utc·now", Some(0), |_, _args| {
+        fn unix_to_rfc3339(secs: i64) -> String {
+            let mut days = secs / 86400;
+            let time_of_day = secs % 86400;
+            let hour = time_of_day / 3600;
+            let minute = (time_of_day % 3600) / 60;
+            let second = time_of_day % 60;
+            let mut year = 1970i64;
+            loop {
+                let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+                let days_in_year = if leap { 366 } else { 365 };
+                if days < days_in_year { break; }
+                days -= days_in_year;
+                year += 1;
+            }
+            let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+            let days_per_month: [i64; 12] = if leap {
+                [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            } else {
+                [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            };
+            let mut month = 1i64;
+            for &d in &days_per_month {
+                if days < d { break; }
+                days -= d;
+                month += 1;
+            }
+            let day = days + 1;
+            format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                year, month, day, hour, minute, second)
+        }
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        Ok(Value::String(Rc::new(unix_to_rfc3339(secs))))
+    });
+
+    // ── chrono·DateTime·parse_from_rfc3339(s) → Result[String] ──────────────
+    //
+    // In the interpreter, DateTime values are opaque RFC3339 strings.
+    // Validates the format and returns Result::Ok(string) so that
+    // .map_err(...)?.with_timezone(&chrono·Utc) chains work correctly.
+    define(interp, "chrono·DateTime·parse_from_rfc3339", Some(1), |_, args| {
+        let s = match &args[0] {
+            Value::String(s) => s.as_ref().clone(),
+            Value::Ref(r) => match &*r.borrow() {
+                Value::String(s) => s.as_ref().clone(),
+                _ => return Err(RuntimeError::new("parse_from_rfc3339: expected string")),
+            },
+            _ => return Err(RuntimeError::new("parse_from_rfc3339: expected string")),
+        };
+        // Basic RFC3339 validation: must contain 'T' and be at least 19 chars
+        let valid = s.contains('T') && s.len() >= 19;
+        if valid {
+            Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Ok".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(s))])),
+            })
+        } else {
+            Ok(Value::Variant {
+                enum_name: "Result".to_string(),
+                variant_name: "Err".to_string(),
+                fields: Some(Rc::new(vec![Value::String(Rc::new(
+                    format!("invalid RFC3339 datetime: '{}'", s)
+                ))])),
+            })
+        }
     });
 }

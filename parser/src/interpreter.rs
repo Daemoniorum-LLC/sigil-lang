@@ -14763,6 +14763,10 @@ impl Interpreter {
                             return Ok(Value::Bool(s.contains(substr)));
                         }
                         "trim" => return Ok(Value::String(Rc::new(s.trim().to_string()))),
+                        // DateTime values are stored as RFC3339 strings in the interpreter.
+                        // These two methods are identity operations on strings.
+                        "to_rfc3339" => return Ok(Value::String(s.clone())),
+                        "with_timezone" => return Ok(Value::String(s.clone())),
                         "to_lowercase" => return Ok(Value::String(Rc::new(s.to_lowercase()))),
                         "to_uppercase" => return Ok(Value::String(Rc::new(s.to_uppercase()))),
                         "chars" => {
@@ -21589,9 +21593,12 @@ impl Interpreter {
                 }
                 match &args[0] {
                     Value::String(suffix) => Ok(Value::Bool(s.ends_with(suffix.as_str()))),
-                    _ => Err(RuntimeError::new("ends_with expects string")),
+                    Value::Char(c) => Ok(Value::Bool(s.ends_with(*c))),
+                    _ => Err(RuntimeError::new("ends_with expects string or char")),
                 }
             }
+            (Value::String(s), "to_rfc3339") => Ok(Value::String(s.clone())),
+            (Value::String(s), "with_timezone") => Ok(Value::String(s.clone())),
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "capacity") => Ok(Value::Int(s.capacity() as i64)),
             (Value::String(s), "clone") => Ok(Value::String(Rc::new((**s).clone()))),
