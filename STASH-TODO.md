@@ -107,31 +107,55 @@ code (`ritualis-core`).  Each is worked around by a dedicated native binding for
 now; they should be fixed in the interpreter so the native-binding workarounds can
 be removed.
 
-### INT-001: Generic `json·from_str<T>` Does Not Dispatch T::decode
-
-**Symptom:**
-```sigil
-≔ manifest~: PackageManifest = json·from_str(&body)?;
-// manifest has no fields — accessing manifest·package errors
-```
-`json·from_str` is a generic Sigil function `from_str<T: Decode>(s) -> CodecResult<T>`.
-The interpreter ignores the type annotation on the binding (`PackageManifest`), so
-`T::decode` is never called and the raw parsed value (a `Value::Map` or empty struct)
-is returned instead of the decoded struct.
-
-**Expected behaviour:** The interpreter should propagate the declared type of the
-binding into the function call as the concrete `T`, then dispatch `T::decode`.
-
-**Workaround:** Dedicated native binding `registry·parse_manifest(s)` in `stdlib.rs`
-that uses `serde_json` and builds the Sigil struct tree directly.
-
-**Affects:** Any call to a generic Sigil function where the return type is constrained
-by a trait (`Decode`, `From`, etc.) and the caller relies on the type annotation to
-select the concrete impl.
+*(No open items — all resolved. See Resolved section below.)*
 
 ---
 
 ## Resolved Interpreter Issues
+
+### DONE: INT-001 — Generic `json·from_str<T>` Does Not Dispatch T::decode
+
+**Status:** Fixed — commit pending in sigil-lang
+
+`json·from_str` (and any generic function using a type param T to call `T·decode`)
+did not dispatch the correct impl when no turbofish was supplied at the call site.
+The interpreter's `eval_call` only populated `generic_type_bindings["T"]` from
+turbofish args; without turbofish, T remained unbound and `T·decode` fell through
+to a no-op or returned the raw parsed Map.
+
+**Fix:** In `eval_call`, added an `else` branch to the turbofish-binding block
+(after line 8870) that reads `self.type_context.dispatch_hint` — set by `Stmt::Let`
+from the binding's declared type annotation before evaluating the RHS — and uses it
+to bind the function's first generic param.  Only uppercase hints (concrete types)
+are applied; lowercase primitive names (`i64`, etc.) are ignored.
+
+```rust
+} else {
+    // No turbofish: infer T from binding annotation via dispatch_hint.
+    // e.g.  ≔ manifest~: PackageManifest = json·from_str(&body)?
+    if let Some(ref hint) = self.type_context.dispatch_hint.borrow().clone() {
+        if let Value::Function(ref f) = func {
+            if !f.generic_params.is_empty() {
+                let concrete = hint.split('<').next()
+                    .and_then(|s| s.split('[').next())
+                    .unwrap_or(hint.as_str()).trim().to_string();
+                if concrete.chars().next().map_or(false, |c| c.is_uppercase()) {
+                    self.generic_type_bindings.insert(f.generic_params[0].clone(), concrete);
+                }
+            }
+        }
+    }
+}
+```
+
+**Workaround now removable:** `registry·parse_manifest(s)` native binding in `stdlib.rs`.
+
+**Spec tests added** (3 tests):
+- `test_generic_type_param_inferred_from_binding_annotation`
+- `test_generic_turbofish_still_works_after_int001_fix`
+- `test_generic_inference_does_not_bind_lowercase_hint`
+
+---
 
 ### DONE: INT-002 — `Vec[X·Y]` type annotation strips path suffix
 

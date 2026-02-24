@@ -8867,6 +8867,36 @@ impl Interpreter {
                         .insert(param_name.clone(), concrete_type.clone());
                 }
             }
+        } else {
+            // INT-001: No turbofish present — infer the first type parameter from the
+            // binding's declared type annotation via dispatch_hint.
+            //
+            // Example:
+            //   ≔ manifest~: PackageManifest = json·from_str(&body)?
+            //
+            // Before evaluating the RHS, Stmt::Let sets dispatch_hint = "PackageManifest".
+            // That lets us bind  T → "PackageManifest"  here, so that when eval_call
+            // evaluates the callee path  T·decode  (line 6055), it substitutes to
+            // PackageManifest·decode and dispatches the correct impl.
+            if let Some(ref hint) = self.type_context.dispatch_hint.borrow().clone() {
+                if let Value::Function(ref f) = func {
+                    if !f.generic_params.is_empty() {
+                        // Strip any generic suffix: "Vec[String]" → "Vec", keep simple names.
+                        let concrete = hint
+                            .split('<')
+                            .next()
+                            .and_then(|s| s.split('[').next())
+                            .unwrap_or(hint.as_str())
+                            .trim()
+                            .to_string();
+                        // Only bind when the hint looks like a concrete type (Uppercase start).
+                        if concrete.chars().next().map_or(false, |c| c.is_uppercase()) {
+                            self.generic_type_bindings
+                                .insert(f.generic_params[0].clone(), concrete);
+                        }
+                    }
+                }
+            }
         }
 
         // If turbofish has const generic bindings, also set type_context.struct_generics
@@ -30868,5 +30898,82 @@ mod tests {
         "#);
         assert_eq!(result, "2",
             "Vec[String] push should still work after the qualified-type fix");
+    }
+
+    // ── INT-001: Generic from_str<T> infers T from binding annotation ────────
+    //
+    // Scenario: a generic function that calls T·decode internally.
+    // The caller supplies the concrete type via a binding annotation instead
+    // of a turbofish, mirroring:
+    //   ≔ manifest~: PackageManifest = json·from_str(&body)?
+
+    #[test]
+    fn test_generic_type_param_inferred_from_binding_annotation() {
+        // parse<T>(v) calls T·decode(v) and returns the result.
+        // No turbofish at the call site — T is inferred from ": Point".
+        let prog = r#"
+            ☉ Σ Point { x: i64, y: i64 }
+
+            ⊢ Point {
+                ☉ rite decode(v: i64) -> Point! {
+                    Point { x: v, y: v * 2 }
+                }
+            }
+
+            rite parse<T>(v: i64) -> Point! {
+                T·decode(v)
+            }
+
+            rite main() -> i64! {
+                ≔ p!: Point = parse(5)
+                p·x
+            }
+        "#;
+        let result = eval_to_string(prog);
+        assert_eq!(result, "5",
+            "T should be inferred as Point from the binding annotation, dispatching T·decode");
+    }
+
+    #[test]
+    fn test_generic_turbofish_still_works_after_int001_fix() {
+        // Explicit turbofish must still work — our else-branch must not fire.
+        // Sigil turbofish uses ·<T> syntax (not ::< >).
+        let prog = r#"
+            ☉ Σ Point { x: i64, y: i64 }
+
+            ⊢ Point {
+                ☉ rite decode(v: i64) -> Point! {
+                    Point { x: v, y: v * 2 }
+                }
+            }
+
+            rite parse<T>(v: i64) -> Point! {
+                T·decode(v)
+            }
+
+            rite main() -> i64! {
+                ≔ p! = parse·<Point>(7)
+                p·x
+            }
+        "#;
+        let result = eval_to_string(prog);
+        assert_eq!(result, "7",
+            "Turbofish should still bind T correctly even after INT-001 fix");
+    }
+
+    #[test]
+    fn test_generic_inference_does_not_bind_lowercase_hint() {
+        // dispatch_hint values that start lowercase (e.g. "i64") should NOT
+        // be used to bind T — they are primitives, not user-defined types.
+        let prog = r#"
+            rite identity<T>(v: T) -> T! { v }
+            rite main() -> i64! {
+                ≔ n!: i64 = identity(42)
+                n
+            }
+        "#;
+        let result = eval_to_string(prog);
+        assert_eq!(result, "42",
+            "Lowercase hint should not be bound as T; identity should still return 42");
     }
 }
