@@ -7452,7 +7452,12 @@ impl Interpreter {
                 let seg0_is_lowercase = seg0.chars().next().map_or(false, |c| c.is_lowercase());
                 if seg0_is_lowercase {
                     let compound_name = format!("{}·{}", seg0, seg1);
-                    if self.environment.borrow().get(&compound_name).is_some() {
+                    // Check both environment and globals — sub-module functions (e.g.
+                    // `json·value_from_str`) are registered in globals when their module
+                    // is loaded, not in the local environment.
+                    let in_env = self.environment.borrow().get(&compound_name).is_some();
+                    let in_globals = !in_env && self.globals.borrow().get(&compound_name).is_some();
+                    if in_env || in_globals {
                         let arg_values: Vec<Value> = args.iter()
                             .map(|a| self.evaluate(a))
                             .collect::<Result<_, _>>()?;
@@ -30701,5 +30706,78 @@ mod tests {
         reversed.reverse();
         assert_eq!(rsplit_parts, reversed,
             "rsplit should be the mirror of split for a single-occurrence separator");
+    }
+
+    // ── INT-003: scroll sub-module function dispatch ──────────────────────────
+
+    fn eval_to_string(source: &str) -> String {
+        let mut interp = crate::Interpreter::new();
+        let mut parser = crate::Parser::new(source);
+        let file = parser.parse_file().expect("parse failed");
+        for item in &file.items {
+            let _ = interp.execute_item(&item.node);
+        }
+        match interp.call_function_by_name("main", vec![]) {
+            Ok(v) => format!("{}", v),
+            Err(e) => format!("ERR: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_scroll_submodule_fn_callable_via_compound_name() {
+        // An inline scroll (sub-module) registers its functions as `mod·fn` in
+        // globals.  Calling `mod·fn(args)` from outside the scroll should
+        // dispatch to the registered function, not fail with "not a function".
+        let result = eval_to_string(r#"
+            scroll utils {
+                ☉ rite double(n: i64) -> i64! {
+                    n * 2
+                }
+            }
+            rite main() -> i64! {
+                ≔ r! = utils·double(21)
+                r
+            }
+        "#);
+        assert_eq!(result, "42",
+            "utils·double should dispatch to the scroll-registered function");
+    }
+
+    #[test]
+    fn test_scroll_submodule_fn_overrides_variable_lookup() {
+        // Even when a local variable shadows the scroll name, the compound
+        // `scroll·fn(args)` form should prefer the registered global over
+        // treating `scroll` as a variable receiver.
+        let result = eval_to_string(r#"
+            scroll math {
+                ☉ rite square(n: i64) -> i64! {
+                    n * n
+                }
+            }
+            rite main() -> i64! {
+                ≔ r! = math·square(7)
+                r
+            }
+        "#);
+        assert_eq!(result, "49",
+            "math·square should call the scroll function, not a method on a variable");
+    }
+
+    #[test]
+    fn test_scroll_submodule_fn_returns_correct_value() {
+        // Verify that the return value flows back correctly, confirming the full
+        // call path (argument passing + return + caller assignment) works.
+        let result = eval_to_string(r#"
+            scroll fmt {
+                ☉ rite greet(name: &str) -> String! {
+                    format!("hello, {}!", name)
+                }
+            }
+            rite main() -> String! {
+                fmt·greet("world")
+            }
+        "#);
+        assert_eq!(result, "hello, world!",
+            "scroll function call should return the value produced by the function body");
     }
 }
