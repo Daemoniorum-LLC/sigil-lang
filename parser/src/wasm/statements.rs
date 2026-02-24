@@ -27,6 +27,40 @@ fn extract_type_simple_name(ty: &TypeExpr) -> Option<String> {
     }
 }
 
+/// Extract the element type name for a struct field, for use in for-loop type inference.
+///
+/// For `Vec<T>!` returns `Some("T")`.
+/// For `Option<T>?` returns `Some("T")`.
+/// For `T!` (a plain named type) returns `Some("T")`.
+/// For other complex types returns `None`.
+///
+/// This allows `compile_for` to register the loop variable's type when iterating
+/// over struct fields, so that `t.field` in the loop body resolves the correct offset.
+fn extract_field_elem_type(ty: &TypeExpr) -> Option<String> {
+    match ty {
+        TypeExpr::Evidential { inner, .. } => extract_field_elem_type(inner),
+        TypeExpr::Reference { inner, .. } => extract_field_elem_type(inner),
+        TypeExpr::Pointer { inner, .. } => extract_field_elem_type(inner),
+        TypeExpr::Path(path) => {
+            let seg = path.segments.last()?;
+            let name = seg.ident.name.as_str();
+            // For container types, return the inner generic argument's base name
+            if matches!(name, "Vec" | "Array" | "Slice" | "Option" | "HashSet" | "BTreeSet") {
+                if let Some(generics) = &seg.generics {
+                    if let Some(first) = generics.first() {
+                        return extract_type_simple_name(first);
+                    }
+                }
+                None
+            } else {
+                // Plain named type — store itself
+                Some(name.to_string())
+            }
+        }
+        _ => None,
+    }
+}
+
 impl WasmCompiler {
     /// Compile a source file.
     pub fn compile_file(&mut self, file: &SourceFile) -> WasmResult<()> {
@@ -791,7 +825,13 @@ impl WasmCompiler {
         match &def.fields {
             StructFields::Named(fields) => {
                 for field in fields {
-                    layout.add_field(&field.name.name);
+                    // Extract the element type name for type inference in for-loop bodies.
+                    // For Vec<T> fields, stores "T"; for other fields stores the base type.
+                    if let Some(elem) = extract_field_elem_type(&field.ty) {
+                        layout.add_field_typed(&field.name.name, elem);
+                    } else {
+                        layout.add_field(&field.name.name);
+                    }
                 }
             }
             StructFields::Tuple(types) => {
@@ -1052,6 +1092,31 @@ impl WasmCompiler {
 
         // Set as current function
         self.current_fn_idx = Some(fn_list_idx);
+
+        // Register parameter types for string equality type inference.
+        // e.g. `id: &str` → var_types["id"] = "str" so that `tab.id == id`
+        // can detect a string comparison and call string·eq instead of I64Eq.
+        for param in &func.params {
+            if let (Some(name), Some(ty_name)) = (
+                param.pattern_name(),
+                extract_type_simple_name(&param.ty),
+            ) {
+                if name != "self" && name != "this" {
+                    self.var_types.insert(name.clone(), ty_name);
+                }
+            }
+            // Also register Vec<T> element types in local_var_types so that
+            // `∀ item ∈ param` for-loop type inference resolves field offsets.
+            // e.g. `tabs: &Vec<OpenTab>` → local_var_types["tabs"] = "OpenTab"
+            if let (Some(name), Some(elem_type)) = (
+                param.pattern_name(),
+                extract_field_elem_type(&param.ty),
+            ) {
+                if name != "self" && name != "this" {
+                    self.local_var_types.insert(name, elem_type);
+                }
+            }
+        }
 
         // Track function in source map (if debug info enabled)
         if let Some(ref mut source_map) = self.source_map {

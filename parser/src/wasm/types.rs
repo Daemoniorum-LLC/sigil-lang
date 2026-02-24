@@ -162,6 +162,10 @@ pub struct StructLayout {
     pub fields: Vec<(String, u32)>,
     /// Total size in bytes
     pub size: u32,
+    /// Field element types: field_name → element_type_name.
+    /// For Vec<T> fields stores "T"; for other fields stores the base type name.
+    /// Used by the for-loop compiler to infer the loop variable's type.
+    pub field_types: HashMap<String, String>,
 }
 
 impl StructLayout {
@@ -170,6 +174,7 @@ impl StructLayout {
             name: name.into(),
             fields: Vec::new(),
             size: 0,
+            field_types: HashMap::new(),
         }
     }
 
@@ -180,12 +185,27 @@ impl StructLayout {
         self.size += 8;
     }
 
+    /// Add a field with its element type name (for type inference in for loops).
+    /// For Vec<T> fields, pass the element type "T"; for other fields pass the base type.
+    pub fn add_field_typed(&mut self, name: impl Into<String>, type_name: impl Into<String>) {
+        let name_str: String = name.into();
+        let offset = self.size;
+        self.field_types.insert(name_str.clone(), type_name.into());
+        self.fields.push((name_str, offset));
+        self.size += 8;
+    }
+
     /// Get field offset by name.
     pub fn field_offset(&self, name: &str) -> Option<u32> {
         self.fields
             .iter()
             .find(|(n, _)| n == name)
             .map(|(_, offset)| *offset)
+    }
+
+    /// Get the element type name for a field (for for-loop type inference).
+    pub fn field_type_name(&self, name: &str) -> Option<&str> {
+        self.field_types.get(name).map(|s| s.as_str())
     }
 }
 

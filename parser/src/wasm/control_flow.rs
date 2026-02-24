@@ -260,8 +260,21 @@ impl WasmCompiler {
 
 
 
+        // Infer element type from the iterable BEFORE bind_pattern so we can
+        // register the loop variable in local_var_types for field-offset resolution.
+        let elem_type = self.infer_iter_elem_type(iter);
+
         // Bind pattern
         self.bind_pattern(pattern)?;
+
+        // Register the loop variable's element type so that compile_field_access
+        // can resolve field offsets deterministically instead of searching all
+        // struct_layouts (which is non-deterministic and picks wrong offsets).
+        if let Some(ref type_name) = elem_type {
+            if let Pattern::Ident { name, .. } = pattern {
+                self.local_var_types.insert(name.name.clone(), type_name.clone());
+            }
+        }
 
         // Compile body
         self.compile_block(body)?;
@@ -1250,6 +1263,74 @@ impl WasmCompiler {
                 // Items in blocks are hoisted - skip for now
                 Ok(())
             }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Type inference helpers for for-loop variable resolution
+    // -------------------------------------------------------------------------
+
+    /// Infer the element type of a for-loop iterable expression.
+    ///
+    /// For `∀ t ∈ self.inner.tabs`, returns `Some("OpenTab")` so that the loop
+    /// variable `t` can be registered in `local_var_types` and field accesses like
+    /// `t.id` resolve to the correct struct layout offset.
+    fn infer_iter_elem_type(&self, iter: &Expr) -> Option<String> {
+        match iter {
+            Expr::Field { expr, field } => {
+                // Walk down to find the receiver's struct type, then get the
+                // field's registered element type.
+                let recv_type = self.infer_expr_struct_type(expr)?;
+                self.struct_layouts
+                    .get(recv_type.as_str())
+                    .and_then(|layout| layout.field_type_name(&field.name))
+                    .map(|s| s.to_string())
+            }
+            Expr::Path(path) if path.segments.len() == 1 => {
+                // For named iterable variables like `∀ tab ∈ tabs` where `tabs`
+                // is a function parameter of type `&Vec<OpenTab>`, the element
+                // type was pre-registered in local_var_types by compile_function.
+                let name = &path.segments[0].ident.name;
+                self.local_var_types.get(name.as_str()).cloned()
+            }
+            _ => None,
+        }
+    }
+
+    /// Infer the struct type name for an expression, for use in field-offset
+    /// resolution during for-loop body compilation.
+    fn infer_expr_struct_type(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Path(path) if path.segments.len() == 1 => {
+                let name = &path.segments[0].ident.name;
+                if name == "self" {
+                    // `self` always refers to the current impl type
+                    self.current_impl_type.clone()
+                } else {
+                    // Check local variable type registry first, then actor state vars
+                    self.local_var_types
+                        .get(name.as_str())
+                        .cloned()
+                        .or_else(|| self.var_types.get(name.as_str()).cloned())
+                }
+            }
+            Expr::Field { expr: inner, field } => {
+                // Recurse: find the inner type, then look up this field's type.
+                let inner_type = self.infer_expr_struct_type(inner)?;
+                // Try struct_layouts first (covers plain structs like TabState)
+                if let Some(layout) = self.struct_layouts.get(inner_type.as_str()) {
+                    if let Some(t) = layout.field_type_name(&field.name) {
+                        return Some(t.to_string());
+                    }
+                }
+                // Fallback: for actor types (not in struct_layouts), actor state
+                // field types are stored in var_types by compile_actor.
+                // This is slightly ambiguous (var_types is a flat map across all
+                // actors) but acceptable for the common case where field names are
+                // unique enough across the codebase.
+                self.var_types.get(field.name.as_str()).cloned()
+            }
+            _ => None,
         }
     }
 }
