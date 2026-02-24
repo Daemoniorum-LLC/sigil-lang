@@ -6752,6 +6752,18 @@ impl Interpreter {
                             _ => Rc::ptr_eq(&f1, &f2),
                         };
                         Ok(Value::Bool(eq))
+                    } else if (n1 == "semver·Version" || n1 == "Version")
+                        && (n2 == "semver·Version" || n2 == "Version")
+                    {
+                        // semver::Version: compare by field values (major, minor, patch)
+                        let get_triple = |fields: &Rc<RefCell<std::collections::HashMap<String, Value>>>| {
+                            let b = fields.borrow();
+                            let maj = match b.get("major") { Some(Value::Int(n)) => *n, _ => 0 };
+                            let min = match b.get("minor") { Some(Value::Int(n)) => *n, _ => 0 };
+                            let pat = match b.get("patch") { Some(Value::Int(n)) => *n, _ => 0 };
+                            (maj, min, pat)
+                        };
+                        Ok(Value::Bool(get_triple(&f1) == get_triple(&f2)))
                     } else {
                         Ok(Value::Bool(n1 == n2 && Rc::ptr_eq(&f1, &f2)))
                     }
@@ -6767,6 +6779,18 @@ impl Interpreter {
                             _ => !Rc::ptr_eq(&f1, &f2),
                         };
                         Ok(Value::Bool(neq))
+                    } else if (n1 == "semver·Version" || n1 == "Version")
+                        && (n2 == "semver·Version" || n2 == "Version")
+                    {
+                        // semver::Version: compare by field values (major, minor, patch)
+                        let get_triple = |fields: &Rc<RefCell<std::collections::HashMap<String, Value>>>| {
+                            let b = fields.borrow();
+                            let maj = match b.get("major") { Some(Value::Int(n)) => *n, _ => 0 };
+                            let min = match b.get("minor") { Some(Value::Int(n)) => *n, _ => 0 };
+                            let pat = match b.get("patch") { Some(Value::Int(n)) => *n, _ => 0 };
+                            (maj, min, pat)
+                        };
+                        Ok(Value::Bool(get_triple(&f1) != get_triple(&f2)))
                     } else {
                         Ok(Value::Bool(n1 != n2 || !Rc::ptr_eq(&f1, &f2)))
                     }
@@ -21975,6 +21999,49 @@ impl Interpreter {
                 .get(field)
                 .cloned()
                 .ok_or_else(|| RuntimeError::new(format!("no field '{}' in map", field))),
+            // semver::Version comparison methods: ge, le, gt, lt, eq, ne
+            (Value::Struct { name, fields }, method_name)
+                if (name == "semver·Version" || name == "Version")
+                    && matches!(method_name, "ge" | "le" | "gt" | "lt" | "eq" | "ne") =>
+            {
+                fn version_triple(fields: &std::cell::RefCell<HashMap<String, Value>>) -> (i64, i64, i64) {
+                    let b = fields.borrow();
+                    let maj = match b.get("major") { Some(Value::Int(n)) => *n, _ => 0 };
+                    let min = match b.get("minor") { Some(Value::Int(n)) => *n, _ => 0 };
+                    let pat = match b.get("patch") { Some(Value::Int(n)) => *n, _ => 0 };
+                    (maj, min, pat)
+                }
+                let self_triple = version_triple(fields);
+                let other = args.into_iter().next().unwrap_or(Value::Null);
+                // Unwrap Ref/Evidential
+                let other = match other {
+                    Value::Ref(r) => r.borrow().clone(),
+                    Value::Evidential { value, .. } => *value,
+                    v => v,
+                };
+                let other_triple = match &other {
+                    Value::Struct { fields: of, name: on }
+                        if on == "semver·Version" || on == "Version" =>
+                    {
+                        version_triple(of)
+                    }
+                    _ => return Err(RuntimeError::new(
+                        format!("semver·Version::{} expects a Version argument", method_name)
+                    )),
+                };
+                let ord = self_triple.cmp(&other_triple);
+                use std::cmp::Ordering;
+                let result = match method_name {
+                    "ge" => matches!(ord, Ordering::Greater | Ordering::Equal),
+                    "le" => matches!(ord, Ordering::Less    | Ordering::Equal),
+                    "gt" => matches!(ord, Ordering::Greater),
+                    "lt" => matches!(ord, Ordering::Less),
+                    "eq" => matches!(ord, Ordering::Equal),
+                    "ne" => !matches!(ord, Ordering::Equal),
+                    _    => unreachable!(),
+                };
+                return Ok(Value::Bool(result));
+            }
             // to_string on structs: check user-defined method, else generic debug format
             (Value::Struct { name, fields }, "to_string") | (Value::Struct { name, fields }, "display") => {
                 // semver::Version: format as "major.minor.patch"
