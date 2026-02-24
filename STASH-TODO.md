@@ -131,30 +131,30 @@ select the concrete impl.
 
 ---
 
-### INT-002: `Vec[T]` Type Annotation Breaks `push()` When T Contains `·`
+## Resolved Interpreter Issues
 
-**Symptom:**
-```sigil
-≔ Δ versions~: Vec[semver·Version] = Vec·new();
-versions.push(ver);  // ver: semver·Version
-// Runtime error: type mismatch: expected Vec<semver>.push(semver), found semver·Version
-```
-The interpreter parses `Vec[semver·Version]` and strips the `·Version` suffix,
-creating a Vec typed as `Vec<semver>`. When `push(ver)` is called with a full
-`semver·Version` struct, the type check rejects it.
+### DONE: INT-002 — `Vec[X·Y]` type annotation strips path suffix
 
-**Expected behaviour:** `Vec[semver·Version]` should create a Vec whose element type
-is the struct `semver·Version`, not the module `semver`.
+**Status:** Fixed — commit `5906ea5` in sigil-lang
 
-**Workaround:** Omit the type annotation — `≔ Δ versions~ = Vec·new()` — and let
-the interpreter infer the element type from the first `push`.
+`extract_type_params` called `inner_path.segments.first()`, discarding all
+segments after the first.  `Vec[semver·Version]` was stored as `("Vec", ["semver"])`,
+causing `push(ver)` to fail with "type mismatch: expected Vec<semver>, found semver·Version".
 
-**Affects:** Any `Vec[X·Y]` annotation where the element type is a qualified path
-with two or more components.
+**Fix:** Three changes in `interpreter.rs`:
+1. `extract_type_params` — join all segments with `·` so `Vec[semver·Version]`
+   produces `("Vec", ["semver·Version"])`.
+2. `value_type_name` — unwrap `Evidential`/`Ref` before inspecting the type.
+3. New helper `type_names_compatible(expected, actual)` — matches on exact equality
+   OR on the last `·`-segment, handling the common case where the runtime struct name
+   is registered under its simple name but the annotation uses the qualified path.
+
+**Spec tests added** (3 tests):
+- `test_vec_qualified_elem_type_push_accepted`
+- `test_vec_qualified_elem_type_extract_params_full_path`
+- `test_vec_simple_elem_type_still_works`
 
 ---
-
-## Resolved Interpreter Issues
 
 ### DONE: INT-003 — Scroll sub-module functions not callable via dot notation
 
