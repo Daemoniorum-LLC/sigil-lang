@@ -177,3 +177,26 @@ INT-001 workaround).
 
 **Affects:** Any function call of the form `scroll·fn(args)` where `scroll` is an
 imported sub-module and `fn` is a function defined inside it.
+
+---
+
+## Resolved Interpreter Issues
+
+### DONE: `rsplit` missing from String method dispatch
+
+**Status:** Fixed — commit `5a5c1fe` in sigil-lang
+
+`String·rsplit(sep)` was not handled in the interpreter's method dispatch table.
+Calling `url·rsplit('/')·first()` (needed in `download.sigil` to extract the
+filename from a URL) raised a runtime error.
+
+**Fix:** Added `(Value::String(s), "rsplit")` branch alongside `split` in
+`interpreter.rs`, supporting both `String` and `char` separators. Returns parts
+in right-to-left order, matching Rust's `str::rsplit` semantics.
+
+**Spec tests added** (5 tests in `interpreter.rs` `#[cfg(test)] mod tests`):
+- `test_rsplit_with_string_sep_returns_parts_right_to_left`
+- `test_rsplit_with_char_sep_matches_string_sep_order`
+- `test_rsplit_no_separator_found_returns_whole_string`
+- `test_rsplit_first_gives_last_path_component`
+- `test_rsplit_symmetric_with_split_on_non_overlapping_sep`
