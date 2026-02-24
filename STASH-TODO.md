@@ -154,33 +154,27 @@ with two or more components.
 
 ---
 
-### INT-003: Scroll Sub-module Functions Not Callable via Dot Notation
+## Resolved Interpreter Issues
 
-**Symptom:**
-```sigil
-invoke codec·{json};          // json is a scroll inside codec
-≔ raw~ = json·value_from_str(&body)?;
-// Runtime: call returns the json module struct, not a parsed Value
-// Subsequent field access: "no field 'get_required' in struct 'json'"
-```
-When `json` is imported from a parent module, the interpreter binds it to the
-scroll/module object. Calling `json·value_from_str(...)` resolves `json` as the
-module struct and tries to access `value_from_str` as a field, returning the module
-struct itself rather than calling the function.
+### DONE: INT-003 — Scroll sub-module functions not callable via dot notation
 
-**Expected behaviour:** `json·fn_name(args)` where `json` is an imported scroll
-should dispatch to the function `fn_name` defined inside that scroll.
+**Status:** Fixed — commit `808ca70` in sigil-lang
 
-**Workaround:** Add a native binding named `json·value_from_str` in `stdlib.rs` that
-intercepts the call before module dispatch, OR add a type-specific binding (see
-INT-001 workaround).
+`json·value_from_str(args)` (and any `scroll·fn(args)` form where `scroll` is a
+loaded sub-module) was not dispatching to the registered function.  Sub-module
+functions are stored in `self.globals` as `module·fn_name`, but the 2-segment
+compound-name check in `eval_call` only searched `self.environment`.
 
-**Affects:** Any function call of the form `scroll·fn(args)` where `scroll` is an
-imported sub-module and `fn` is a function defined inside it.
+**Fix:** In `eval_call`, extended the early-exit compound-name check to also probe
+`self.globals`.  `call_function_by_name` already searches both, so the call path
+is correct once the guard passes.
+
+**Spec tests added** (3 tests in `interpreter.rs` `#[cfg(test)] mod tests`):
+- `test_scroll_submodule_fn_callable_via_compound_name`
+- `test_scroll_submodule_fn_overrides_variable_lookup`
+- `test_scroll_submodule_fn_returns_correct_value`
 
 ---
-
-## Resolved Interpreter Issues
 
 ### DONE: `rsplit` missing from String method dispatch
 
