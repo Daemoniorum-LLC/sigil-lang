@@ -12400,7 +12400,7 @@ impl Interpreter {
                         if type_name == "Vec" && !type_params.is_empty() {
                             let expected_type = &type_params[0];
                             let actual_type = self.value_type_name(&arg_values[0]);
-                            if &actual_type != expected_type {
+                            if !Self::type_names_compatible(expected_type, &actual_type) {
                                 return Err(RuntimeError::new(format!(
                                     "type mismatch: expected Vec<{}>.push({}), found {}",
                                     expected_type, expected_type, actual_type
@@ -14850,7 +14850,7 @@ impl Interpreter {
                                     if type_name == "Vec" && !type_params.is_empty() {
                                         let expected_type = &type_params[0];
                                         let actual_type = self.value_type_name(&arg_values[0]);
-                                        if &actual_type != expected_type {
+                                        if !Self::type_names_compatible(expected_type, &actual_type) {
                                             return Err(RuntimeError::new(format!(
                                                 "type mismatch: expected Vec<{}>.push({}), found {}",
                                                 expected_type, expected_type, actual_type
@@ -30145,7 +30145,11 @@ impl Interpreter {
 
     /// Get the runtime type name of a Value
     fn value_type_name(&self, value: &Value) -> String {
-        match value {
+        // Unwrap transparency wrappers before inspecting the concrete type.
+        // This ensures that a `~` (Evidential) or `&` (Ref) wrapper around
+        // e.g. `semver·Version` still reports "semver·Version", not "unknown".
+        let v = Self::unwrap_all(value);
+        let raw_name = match v {
             Value::Int(_) => "i32".to_string(),
             Value::Float(_) => "f64".to_string(),
             Value::String(_) => "String".to_string(),
@@ -30160,7 +30164,23 @@ impl Interpreter {
             Value::BuiltIn(_) => "BuiltIn".to_string(),
             Value::Ref(_) => "Ref".to_string(),
             _ => "unknown".to_string(),
+        };
+        raw_name
+    }
+
+    /// Check whether two type-name strings refer to the same type.
+    ///
+    /// Struct names in the runtime are registered under their simple name
+    /// (e.g. `"Version"`), while type annotations may use the fully-qualified
+    /// path (e.g. `"semver·Version"`).  Two names are considered compatible
+    /// when either matches exactly OR both share the same last `·`-segment.
+    fn type_names_compatible(expected: &str, actual: &str) -> bool {
+        if expected == actual {
+            return true;
         }
+        let exp_last = expected.rsplit('·').next().unwrap_or(expected);
+        let act_last = actual.rsplit('·').next().unwrap_or(actual);
+        exp_last == act_last
     }
 
     /// Extract type name and generic type parameters from a TypeExpr
@@ -30178,8 +30198,16 @@ impl Interpreter {
                     let mut type_params: Vec<String> = Vec::new();
                     for generic in generics {
                         if let TypeExpr::Path(inner_path) = generic {
-                            if let Some(inner_seg) = inner_path.segments.first() {
-                                type_params.push(inner_seg.ident.name.clone());
+                            // Join all segments with · to preserve qualified names
+                            // e.g. Vec[semver·Version] → "semver·Version", not just "semver"
+                            if !inner_path.segments.is_empty() {
+                                let full = inner_path
+                                    .segments
+                                    .iter()
+                                    .map(|s| s.ident.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join("·");
+                                type_params.push(full);
                             }
                         }
                     }
@@ -30779,5 +30807,66 @@ mod tests {
         "#);
         assert_eq!(result, "hello, world!",
             "scroll function call should return the value produced by the function body");
+    }
+
+    // ── INT-002: Vec[X·Y] type annotation strips path suffix ─────────────────
+
+    #[test]
+    fn test_vec_qualified_elem_type_push_accepted() {
+        // Vec[semver·Version] should store "semver·Version" as the element type,
+        // so pushing a semver·Version struct must NOT produce a type-mismatch error.
+        let result = eval_to_string(r#"
+            ☉ Σ Version { major: i64, minor: i64, patch: i64 }
+            scroll semver {
+                ☉ rite new(major: i64, minor: i64, patch: i64) -> Version! {
+                    Version { major, minor, patch }
+                }
+            }
+            rite main() -> i64! {
+                ≔ Δ versions!: Vec[semver·Version] = Vec·new()
+                ≔ v! = semver·new(1, 2, 3)
+                versions.push(v)
+                versions.len() as i64
+            }
+        "#);
+        assert_eq!(result, "1",
+            "push of a qualified-type element into a Vec[X·Y] should succeed");
+    }
+
+    #[test]
+    fn test_vec_qualified_elem_type_extract_params_full_path() {
+        // extract_type_params must preserve the full qualified name for Vec[A·B].
+        // Regression: previously returned ("Vec", ["A"]) instead of ("Vec", ["A·B"]).
+        let result = eval_to_string(r#"
+            ☉ Σ Point { x: i64, y: i64 }
+            scroll geo {
+                ☉ rite pt(x: i64, y: i64) -> Point! {
+                    Point { x, y }
+                }
+            }
+            rite main() -> i64! {
+                ≔ Δ pts!: Vec[geo·Point] = Vec·new()
+                ≔ p! = geo·pt(3, 4)
+                pts.push(p)
+                pts.len() as i64
+            }
+        "#);
+        assert_eq!(result, "1",
+            "Vec[geo·Point] element type must be 'geo·Point', not 'geo'");
+    }
+
+    #[test]
+    fn test_vec_simple_elem_type_still_works() {
+        // Ensure plain Vec[String] and Vec[i64] annotations are unaffected.
+        let result = eval_to_string(r#"
+            rite main() -> i64! {
+                ≔ Δ names!: Vec[String] = Vec·new()
+                names.push("alice")
+                names.push("bob")
+                names.len() as i64
+            }
+        "#);
+        assert_eq!(result, "2",
+            "Vec[String] push should still work after the qualified-type fix");
     }
 }
