@@ -2094,7 +2094,16 @@ impl TypeChecker {
                     for elem in &elements[1..] {
                         let t = self.infer_expr(elem);
                         if !self.unify(&elem_ty, &t) {
-                            self.error(TypeError::new("array elements must have same type"));
+                            // Sigil arrays are untyped i64[] at runtime, so heterogeneous
+                            // struct types (e.g. [CardHeader{..}, CardBody{..}]) are fine.
+                            // Only emit error for fundamentally incompatible types.
+                            let resolved_elem = self.apply_substitutions(&elem_ty);
+                            let resolved_t = self.apply_substitutions(&t);
+                            let both_named = matches!((&resolved_elem, &resolved_t),
+                                (Type::Named { .. }, Type::Named { .. }));
+                            if !both_named {
+                                self.error(TypeError::new("array elements must have same type"));
+                            }
                         }
                     }
                     Type::Array {
@@ -2106,6 +2115,37 @@ impl TypeChecker {
 
             Expr::Tuple(elements) => {
                 Type::Tuple(elements.iter().map(|e| self.infer_expr(e)).collect())
+            }
+
+            Expr::Struct { path, fields, rest } => {
+                // Infer field initializer types for downstream checking
+                for field in fields {
+                    if let Some(ref value) = field.value {
+                        self.infer_expr(value);
+                    }
+                }
+                if let Some(ref rest_expr) = rest {
+                    self.infer_expr(rest_expr);
+                }
+
+                // Build the type name from path segments
+                let segments: Vec<&str> = path.segments.iter().map(|s| s.ident.name.as_str()).collect();
+                if segments.len() >= 2 {
+                    // Multi-segment: e.g. Shape::Rectangle { ... }
+                    // If first segment is an enum, return the enum type
+                    let base = segments[0].to_string();
+                    if let Some(TypeDef::Enum { .. }) = self.types.get(&base) {
+                        Type::Named { name: base, generics: vec![] }
+                    } else {
+                        // Could be Module::Struct — use last segment
+                        let name = segments.last().unwrap().to_string();
+                        Type::Named { name, generics: vec![] }
+                    }
+                } else if let Some(seg) = segments.first() {
+                    Type::Named { name: seg.to_string(), generics: vec![] }
+                } else {
+                    self.fresh_var()
+                }
             }
 
             Expr::Block(block) => self.check_block(block),
@@ -2384,7 +2424,15 @@ impl TypeChecker {
                             .and_then(|methods| methods.get(&method.name))
                             .cloned()
                         {
-                            if let Type::Function { return_type, .. } = self.freshen(&fn_type) {
+                            if let Type::Function { params, return_type, .. } = self.freshen(&fn_type) {
+                                // Arity check: params includes receiver, args does not
+                                let expected_args = if params.len() >= 1 { params.len() - 1 } else { 0 };
+                                if args.len() != expected_args {
+                                    self.error(TypeError::new(format!(
+                                        "method {}·{}() expects {} arguments, found {}",
+                                        type_name, method.name, expected_args, args.len()
+                                    )));
+                                }
                                 result = Some(*return_type);
                             }
                         }
@@ -2396,9 +2444,42 @@ impl TypeChecker {
                                 .and_then(|methods| methods.get(&method.name))
                                 .cloned()
                             {
-                                if let Type::Function { return_type, .. } = self.freshen(&fn_type) {
+                                if let Type::Function { params, return_type, .. } = self.freshen(&fn_type) {
+                                    // Arity check: params includes receiver, args does not
+                                    let expected_args = if params.len() >= 1 { params.len() - 1 } else { 0 };
+                                    if args.len() != expected_args {
+                                        self.error(TypeError::new(format!(
+                                            "method {}·{}() expects {} arguments, found {}",
+                                            type_name, method.name, expected_args, args.len()
+                                        )));
+                                    }
                                     result = Some(*return_type);
                                 }
+                            }
+                        }
+                    }
+                    // Fallback: if receiver type is unknown (type variable), search ALL
+                    // impl_methods by method name for arity checking. If exactly one match
+                    // is found, use it. This catches arity errors even when struct literal
+                    // types aren't fully resolved.
+                    if result.is_none() {
+                        let mut candidates: Vec<(String, Type)> = Vec::new();
+                        for (type_name, methods) in &self.impl_methods {
+                            if let Some(fn_type) = methods.get(&method.name) {
+                                candidates.push((type_name.clone(), fn_type.clone()));
+                            }
+                        }
+                        if candidates.len() == 1 {
+                            let (ref type_name, ref fn_type) = candidates[0];
+                            if let Type::Function { params, return_type, .. } = self.freshen(fn_type) {
+                                let expected_args = if params.len() >= 1 { params.len() - 1 } else { 0 };
+                                if args.len() != expected_args {
+                                    self.error(TypeError::new(format!(
+                                        "method {}·{}() expects {} arguments, found {}",
+                                        type_name, method.name, expected_args, args.len()
+                                    )));
+                                }
+                                result = Some(*return_type);
                             }
                         }
                     }

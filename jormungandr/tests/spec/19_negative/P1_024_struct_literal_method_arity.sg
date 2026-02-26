@@ -1,0 +1,8 @@
+sigil Bar { x: i64 }
+⊢ Bar {
+    rite get(&this) → i64 { this.x }
+}
+rite main() {
+    ≔ b = Bar { x: 42 };
+    ≔ r = b.get(1, 2, 3);
+}
