@@ -614,11 +614,9 @@ impl WasmCompiler {
     /// Resolve a path that may start with "tome" (crate root).
     /// Returns the resolved path segments.
     pub fn resolve_path(&self, segments: &[String]) -> Vec<String> {
-        if segments.first().map(|s| s.as_str()) == Some("tome") {
-            // tome:: means crate root - skip the "tome" prefix
-            segments[1..].to_vec()
-        } else {
-            segments.to_vec()
+        match segments.first().map(|s| s.as_str()) {
+            Some("tome") | Some("crate") => segments[1..].to_vec(),
+            _ => segments.to_vec(),
         }
     }
 

@@ -398,6 +398,8 @@ pub enum Token {
     If,
     #[token("⎉")]  // ISO alternative symbol
     Else,
+    #[token("⎈")]  // Helm symbol - else-if (syntactic sugar for ⎉ ⎇)
+    ElseIf,
     #[token("⌥")]  // Option key - choices
     Match,
     #[token("loop")]
@@ -1194,6 +1196,7 @@ impl Token {
                 | Token::Rune
                 | Token::If
                 | Token::Else
+                | Token::ElseIf
                 | Token::Match
                 | Token::Loop
                 | Token::While

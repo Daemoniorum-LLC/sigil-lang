@@ -2719,6 +2719,7 @@ impl<'a> Parser<'a> {
             Token::ElementOf => "∈".to_string(),
             Token::If => "⎇".to_string(),
             Token::Else => "⎉".to_string(),
+            Token::ElseIf => "⎈".to_string(),
             Token::Match => "⌥".to_string(),
             Token::While => "⟳".to_string(),
             Token::Loop => "loop".to_string(),
@@ -4413,12 +4414,13 @@ impl<'a> Parser<'a> {
                     Some(Token::MiddleDot) => true,  // T::U path
                     Some(Token::Lt) => true,   // T<U> nested generic
                     Some(Token::LBracket) => true, // T[U] bracket generic
-                    // Evidentiality markers after type name: T?, T!, T~, T◊, T‽
+                    // Evidentiality markers after type name: T?, T!, T~, T◊, T‽, T⁂
                     Some(Token::Question) => true,
                     Some(Token::Bang) => true,
                     Some(Token::Tilde) => true,
                     Some(Token::Lozenge) => true,
                     Some(Token::Interrobang) => true,
+                    Some(Token::Asterism) => true,
                     // Associated type bindings: <Item = Type>
                     Some(Token::Eq) => true,
                     // Trait bounds: <T: Trait>
@@ -5354,6 +5356,7 @@ impl<'a> Parser<'a> {
                     Token::Fn => "rite".to_string(),
                     Token::If => "⎇".to_string(),
                     Token::Else => "⎉".to_string(),
+                    Token::ElseIf => "⎈".to_string(),
                     Token::Match => "⌥".to_string(),
                     Token::ForAll => "∀".to_string(),
                     Token::While => "⟳".to_string(),
@@ -5678,7 +5681,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
                 }
-                Some(Token::Tilde) | Some(Token::Interrobang) | Some(Token::Lozenge) => {
+                Some(Token::Tilde) | Some(Token::Interrobang) | Some(Token::Lozenge) | Some(Token::Asterism) => {
                     if let Some(ev) = self.parse_evidentiality_opt() {
                         // After evidentiality marker, check for struct literal: Type~ { ... }
                         // The evidentiality attaches to the struct type
@@ -7143,6 +7146,14 @@ impl<'a> Parser<'a> {
                         evidentiality: Evidentiality::Known,
                     };
                 }
+                Some(Token::Asterism) => {
+                    // ⁂ as evidentiality marker (Chaos) after pipe expression
+                    self.advance();
+                    expr = Expr::Evidential {
+                        expr: Box::new(expr),
+                        evidentiality: Evidentiality::Chaos,
+                    };
+                }
                 Some(Token::Dot) => {
                     self.advance();
                     let field = if let Some(Token::IntLit(idx)) = self.current_token() {
@@ -8603,6 +8614,46 @@ impl<'a> Parser<'a> {
             } else {
                 Some(Box::new(Expr::Block(self.parse_block()?)))
             }
+        } else if self.consume_if(&Token::ElseIf) {
+            // ⎈ is syntactic sugar for ⎉ ⎇ (else-if)
+            Some(Box::new(self.parse_if_expr_body()?))
+        } else {
+            None
+        };
+
+        Ok(Expr::If {
+            condition: Box::new(condition),
+            then_branch,
+            else_branch,
+        })
+    }
+
+    /// Parse the body of an if-expression after the leading ⎇/⎈ keyword has been consumed.
+    /// Used by ⎈ (ElseIf) handling so we don't double-consume the keyword.
+    fn parse_if_expr_body(&mut self) -> ParseResult<Expr> {
+        // Check for if let pattern = expr form
+        let condition = if self.consume_if(&Token::Let) {
+            let pattern = self.parse_or_pattern()?;
+            self.expect(Token::Eq)?;
+            let expr = self.parse_condition()?;
+            Expr::Let {
+                pattern,
+                value: Box::new(expr),
+            }
+        } else {
+            self.parse_condition()?
+        };
+
+        let then_branch = self.parse_block()?;
+        self.skip_comments();
+        let else_branch = if self.consume_if(&Token::Else) {
+            if self.check(&Token::If) {
+                Some(Box::new(self.parse_if_expr()?))
+            } else {
+                Some(Box::new(Expr::Block(self.parse_block()?)))
+            }
+        } else if self.consume_if(&Token::ElseIf) {
+            Some(Box::new(self.parse_if_expr_body()?))
         } else {
             None
         };

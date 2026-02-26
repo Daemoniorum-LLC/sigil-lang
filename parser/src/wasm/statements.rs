@@ -514,6 +514,11 @@ impl WasmCompiler {
             }
             UseTree::Name(name) => {
                 if !prefix.is_empty() {
+                    // Skip intra-crate paths — they resolve via func_map, not WASM imports
+                    let first = prefix[0].as_str();
+                    if matches!(first, "crate" | "super" | "self") {
+                        return Ok(());
+                    }
                     // External import: use foo::bar::Baz
                     // module_name = first segment (e.g., "foo")
                     // qualified_name = full path (e.g., "foo::bar::Baz")
@@ -533,6 +538,11 @@ impl WasmCompiler {
             }
             UseTree::Rename { name, alias } => {
                 if !prefix.is_empty() {
+                    // Skip intra-crate paths — they resolve via func_map, not WASM imports
+                    let first = prefix[0].as_str();
+                    if matches!(first, "crate" | "super" | "self") {
+                        return Ok(());
+                    }
                     let module_name = prefix[0].clone();
                     let mut full_path = prefix.to_vec();
                     full_path.push(name.name.clone());
