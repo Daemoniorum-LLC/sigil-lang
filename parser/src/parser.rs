@@ -1329,6 +1329,9 @@ impl<'a> Parser<'a> {
                     | Token::Return
                     | Token::Tensor
                     | Token::CycleArrow
+                    | Token::CounterArrow
+                    | Token::CircledMinus
+                    | Token::IfSome
                     | Token::Ident(_)
                     | Token::SelfLower
                     | Token::SelfUpper
@@ -2725,6 +2728,9 @@ impl<'a> Parser<'a> {
             Token::Loop => "loop".to_string(),
             Token::Tensor => "⊗".to_string(),
             Token::CycleArrow => "↻".to_string(),
+            Token::CounterArrow => "↺".to_string(),
+            Token::CircledMinus => "⊘".to_string(),
+            Token::IfSome => "⌐".to_string(),
             Token::Return => "⤺".to_string(),
             Token::Yield => "yield".to_string(),
             Token::True => "true".to_string(),
@@ -5363,6 +5369,9 @@ impl<'a> Parser<'a> {
                     Token::Loop => "loop".to_string(),
                     Token::Tensor => "⊗".to_string(),
                     Token::CycleArrow => "↻".to_string(),
+                    Token::CounterArrow => "↺".to_string(),
+                    Token::CircledMinus => "⊘".to_string(),
+                    Token::IfSome => "⌐".to_string(),
                     Token::Return => "⤺".to_string(),
                     Token::Struct => "sigil".to_string(),
                     Token::Enum => "ᛈ".to_string(),
@@ -6272,9 +6281,44 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Break { label, value })
             }
             Some(Token::CycleArrow) => {
-                // ↻ (CycleArrow) is contextually continue at statement start
+                // ↻ (CycleArrow) — context-sensitive:
+                //   ↻ EXPR { body }  →  while loop
+                //   ↻ ;  or  ↻ 'label  or  ↻ }  →  continue (existing behaviour)
                 self.advance();
-                // Check for optional label: continue 'label
+                // Detect while: next token is NOT a terminator, lifetime, or RBrace
+                let is_while = !self.check(&Token::Semi)
+                    && !self.check(&Token::RBrace)
+                    && !matches!(self.current_token(), Some(Token::Lifetime(_)))
+                    && self.current_token().is_some();
+                if is_while {
+                    let condition = self.parse_condition()?;
+                    let body = self.parse_block()?;
+                    Ok(Expr::While {
+                        label: None,
+                        condition: Box::new(condition),
+                        body,
+                    })
+                } else {
+                    // Continue (original semantics)
+                    let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
+                        let span = self.current_span();
+                        let label = Ident {
+                            name,
+                            evidentiality: None,
+                            affect: None,
+                            span,
+                        };
+                        self.advance();
+                        Some(label)
+                    } else {
+                        None
+                    };
+                    Ok(Expr::Continue { label })
+                }
+            }
+            Some(Token::CounterArrow) => {
+                // ↺ (CounterArrow U+21BA) — continue
+                self.advance();
                 let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
                     let span = self.current_span();
                     let label = Ident {
@@ -6289,6 +6333,77 @@ impl<'a> Parser<'a> {
                     None
                 };
                 Ok(Expr::Continue { label })
+            }
+            Some(Token::CircledMinus) => {
+                // ⊘ (CircledMinus U+2298) — break
+                self.advance();
+                let label = if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
+                    let span = self.current_span();
+                    let label = Ident {
+                        name,
+                        evidentiality: None,
+                        affect: None,
+                        span,
+                    };
+                    self.advance();
+                    Some(label)
+                } else {
+                    None
+                };
+                let value = if self.check(&Token::Semi)
+                    || self.check(&Token::RBrace)
+                    || self.check(&Token::Comma)
+                {
+                    None
+                } else {
+                    Some(Box::new(self.parse_expr()?))
+                };
+                Ok(Expr::Break { label, value })
+            }
+            Some(Token::IfSome) => {
+                // ⌐ x = expr? { body } ⎉ { else }
+                // Desugars to: if let Some(x) = expr { body } else { else }
+                self.advance();
+                let pattern = self.parse_pattern()?;
+                self.expect(Token::Eq)?;
+                let value = self.parse_condition()?;
+                // Optional trailing ? marker (syntactic sugar, ignored)
+                self.consume_if(&Token::Question);
+                let then_branch = self.parse_block()?;
+                self.skip_comments();
+                let else_branch = if self.consume_if(&Token::Else) {
+                    if self.check(&Token::If) {
+                        Some(Box::new(self.parse_if_expr()?))
+                    } else {
+                        Some(Box::new(Expr::Block(self.parse_block()?)))
+                    }
+                } else {
+                    None
+                };
+                // Build: if let Some(pattern) = value { then } else { else }
+                use crate::ast::{Pattern as AstPattern, TypePath, PathSegment};
+                let some_pattern = AstPattern::TupleStruct {
+                    path: TypePath {
+                        segments: vec![PathSegment {
+                            ident: Ident {
+                                name: "Some".to_string(),
+                                evidentiality: None,
+                                affect: None,
+                                span: crate::span::Span::new(0, 0),
+                            },
+                            generics: None,
+                        }],
+                    },
+                    fields: vec![pattern],
+                };
+                Ok(Expr::If {
+                    condition: Box::new(Expr::Let {
+                        pattern: some_pattern,
+                        value: Box::new(value),
+                    }),
+                    then_branch,
+                    else_branch,
+                })
             }
             // Morphemes as standalone expressions
             Some(Token::Tau) | Some(Token::Phi) | Some(Token::Sigma) | Some(Token::Rho)

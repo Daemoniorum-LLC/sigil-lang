@@ -701,7 +701,16 @@ pub enum Token {
 
     #[token("↻")]
     #[token("⊳")]  // Right triangle - prose alternative for continue
-    CycleArrow, // Cycle/repeat (U+21BB)
+    CycleArrow, // Cycle/repeat (U+21BB) — while loop (context-sensitive) or continue
+
+    #[token("↺")]
+    CounterArrow, // Counterclockwise arrow (U+21BA) — continue
+
+    #[token("⊘")]
+    CircledMinus, // Circled minus (U+2298) — break
+
+    #[token("⌐")]
+    IfSome, // Reversed not sign (U+2310) — if-let Some binding
 
     #[token("⌺")]
     QuadDiamond, // Windows/stencil (U+233A)
@@ -1202,8 +1211,11 @@ impl Token {
                 | Token::While
                 | Token::ForAll      // ∀ - used as for keyword
                 | Token::ElementOf   // ∈ - used as in keyword
-                | Token::Tensor      // ⊗ - used as break keyword
-                | Token::CycleArrow  // ↻ - used as continue keyword
+                | Token::Tensor        // ⊗ - used as break keyword
+                | Token::CycleArrow   // ↻ - while loop (context) or continue
+                | Token::CounterArrow // ↺ - continue
+                | Token::CircledMinus // ⊘ - break
+                | Token::IfSome       // ⌐ - if-let Some
                 | Token::Return
                 | Token::Yield
                 | Token::Await
