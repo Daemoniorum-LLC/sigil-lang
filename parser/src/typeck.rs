@@ -2888,8 +2888,101 @@ impl TypeChecker {
                 }
             }
 
+            // Break and Continue are diverging — they never produce a value
+            Expr::Break { value, .. } => {
+                if let Some(val) = value {
+                    self.infer_expr(val);
+                }
+                Type::Never
+            }
+            Expr::Continue { .. } => Type::Never,
+
+            // Assignment produces unit (the value is consumed, not returned)
+            Expr::Assign { target, value } => {
+                self.infer_expr(target);
+                self.infer_expr(value);
+                Type::Unit
+            }
+
+            // Let expressions (if-let, while-let) produce bool
+            Expr::Let { value, .. } => {
+                self.infer_expr(value);
+                Type::Bool
+            }
+
+            // Wrapper blocks — propagate inner type
+            // Unsafe blocks may contain extern calls not registered in typeck,
+            // so we only propagate for NoGrad where content is normal Sigil code.
+            Expr::Unsafe(_block) => self.fresh_var(),
+            Expr::NoGrad(block) => {
+                self.check_block(block)
+            }
+            Expr::Async { block, .. } => {
+                self.check_block(block)
+            }
+
+            // Attributed expression — propagate inner expression type
+            Expr::Attributed { expr, .. } => {
+                self.infer_expr(expr)
+            }
+
+            // Cast — the result type is the target type annotation
+            Expr::Cast { expr, ty } => {
+                self.infer_expr(expr);
+                self.convert_type(ty)
+            }
+
+            // Deref — infer inner, return fresh (pointer target unknown at typeck)
+            Expr::Deref(inner) => {
+                self.infer_expr(inner);
+                self.fresh_var()
+            }
+
+            // AddrOf — infer inner; Ptr vs Ref semantics depend on context,
+            // so return fresh_var to avoid false mismatches
+            Expr::AddrOf { expr, .. } => {
+                self.infer_expr(expr);
+                self.fresh_var()
+            }
+
+            // Range — infer endpoints, return Named("Range")
+            Expr::Range { start, end, .. } => {
+                if let Some(s) = start { self.infer_expr(s); }
+                if let Some(e) = end { self.infer_expr(e); }
+                Type::Named { name: "Range".to_string(), generics: vec![] }
+            }
+
+            // Closure — build function type from params and body
+            Expr::Closure { params, return_type, body, .. } => {
+                let param_types: Vec<Type> = params.iter().map(|p| {
+                    if let Some(ref ty) = p.ty {
+                        self.convert_type(ty)
+                    } else {
+                        self.fresh_var()
+                    }
+                }).collect();
+                let ret = if let Some(ref rt) = return_type {
+                    self.convert_type(rt)
+                } else {
+                    self.infer_expr(body)
+                };
+                Type::Function {
+                    params: param_types,
+                    return_type: Box::new(ret),
+                    is_async: false,
+                }
+            }
+
+            // Turbofish — infer inner expression (type params used at call site)
+            Expr::Turbofish { expr, .. } => {
+                self.infer_expr(expr)
+            }
+
+            // Macro invocations — type unknown without expansion
+            Expr::Macro { .. } => self.fresh_var(),
+
             _ => {
-                // Handle other expression types
+                // Handle other expression types (SIMD, Legion, protocol ops, etc.)
                 self.fresh_var()
             }
         }
