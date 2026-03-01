@@ -26,6 +26,14 @@ impl WasmCompiler {
                     BinOp::And => self.compile_short_circuit_and(left, right),
                     BinOp::Or => self.compile_short_circuit_or(left, right),
                     _ => {
+                        // String-aware equality: use string·eq import for string types
+                        // so that content comparison is used instead of address comparison.
+                        let use_string_eq = matches!(op, BinOp::Eq | BinOp::Ne)
+                            && (self.is_string_expr(left) || self.is_string_expr(right));
+                        if use_string_eq {
+                            let negate = matches!(op, BinOp::Ne);
+                            return self.compile_string_eq(left, right, negate);
+                        }
                         // Standard binary: compile operands, then emit operator
                         self.compile_expr(left)?;
                         self.compile_expr(right)?;
@@ -192,7 +200,8 @@ impl WasmCompiler {
             // Unsafe blocks are transparent in WASM — just compile the inner block.
             Expr::Unsafe(block) => self.compile_block(block),
             Expr::Deref(_) => Err(WasmError::unsupported("raw pointer dereference")),
-            Expr::AddrOf { .. } => Err(WasmError::unsupported("address-of expressions")),
+            // References are no-ops in WASM — just compile the inner expression.
+            Expr::AddrOf { expr, .. } => self.compile_expr(expr),
             Expr::InlineAsm(_) => Err(WasmError::unsupported("inline assembly")),
             Expr::VolatileRead { .. } => Err(WasmError::unsupported("volatile read")),
             Expr::VolatileWrite { .. } => Err(WasmError::unsupported("volatile write")),
@@ -725,6 +734,78 @@ impl WasmCompiler {
         self.compile_expr(value)
     }
 
+    /// Returns true if the expression can be inferred to carry a string value.
+    ///
+    /// Used by `Expr::Binary` to route `==`/`!=` to `string·eq` (content comparison)
+    /// instead of `I64Eq` (address comparison).  Conservative: only returns true when
+    /// a string type can be confirmed from available type information.
+    fn is_string_expr(&self, expr: &Expr) -> bool {
+        #[inline]
+        fn is_string_type(ty: &str) -> bool {
+            matches!(ty, "String" | "str")
+        }
+        match expr {
+            // String literals are always strings.
+            Expr::Literal(lit) => matches!(
+                lit,
+                crate::ast::Literal::String(_)
+                    | crate::ast::Literal::MultiLineString(_)
+                    | crate::ast::Literal::RawString(_)
+            ),
+            // Path: single-segment variable — look up in var_types (actor state + params).
+            Expr::Path(path) if path.segments.len() == 1 => {
+                let name = &path.segments[0].ident.name;
+                self.var_types.get(name.as_str())
+                    .map(|ty| is_string_type(ty))
+                    .unwrap_or(false)
+            }
+            _ => false,
+        }
+    }
+
+    /// Compile a content-based string equality comparison using the `string·eq` import.
+    ///
+    /// Both operands are compiled as i64 string pointers.  The `string` JS module
+    /// implements `eq(a, b)` by reading length-prefixed strings from WASM memory and
+    /// comparing their contents.  The result is i64 (1 = equal, 0 = not equal).
+    /// When `negate` is true the result is flipped for `!=` comparisons.
+    fn compile_string_eq(&mut self, left: &Expr, right: &Expr, negate: bool) -> WasmResult<()> {
+        // `string.eq` is registered in standard imports as (I32, I32) -> I32.
+        // Sigil WASM uses i64 uniformly, so we must wrap i64→i32 before the call
+        // and extend i32→i64 after.
+        let string_eq_idx = self.imports.get_func("string_eq")
+            .ok_or_else(|| WasmError::internal("string_eq import not found"))?;
+
+        // Compile left operand (i64), truncate to i32 string pointer.
+        self.compile_expr(left)?;
+        {
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(wasm_encoder::Instruction::I32WrapI64);
+        }
+
+        // Compile right operand (i64), truncate to i32 string pointer.
+        self.compile_expr(right)?;
+        {
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(wasm_encoder::Instruction::I32WrapI64);
+        }
+
+        // Call string.eq (I32, I32) -> I32 and extend result to i64.
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(wasm_encoder::Instruction::Call(string_eq_idx));
+        func.push(wasm_encoder::Instruction::I64ExtendI32U);
+
+        if negate {
+            // Flip: 1 → 0, 0 → 1
+            func.push(wasm_encoder::Instruction::I64Eqz);
+            func.push(wasm_encoder::Instruction::I64ExtendI32U);
+        }
+        Ok(())
+    }
+
     /// Get field offset from struct layout.
     ///
     /// Prefers the layout of the struct currently being compiled (`current_impl_type`)
@@ -974,27 +1055,17 @@ impl WasmCompiler {
 
                 match type_name {
                     "Some" => {
-                        // Option: discriminant 1 = Some
+                        // Non-zero = Some representation: Some(x) compiles to just x,
+                        // None compiles to I64Const(0).  So "is Some" <=> value != 0.
+                        // We do NOT read a struct discriminant; the value IS the payload.
                         let func = self.current_function_mut()
                             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-                        // Store Option pointer
-                        let opt_ptr = func.alloc_local("__let_opt".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(opt_ptr));
+                        // Pop and store the value (the payload itself, or 0 for None)
+                        let val_ptr = func.alloc_local("__let_some_val".to_string(), ValType::I64);
+                        func.push(Instruction::LocalSet(val_ptr));
 
-                        // Load discriminant
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-
-                        // Store discriminant for later
-                        let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalSet(disc));
-
-                        // If pattern has bindings, extract the value
+                        // Bind to pattern variable if present
                         if let Some(first_field) = fields.first() {
                             let binding_name = match first_field {
                                 Pattern::Ident { name, .. } => Some(name.name.clone()),
@@ -1002,25 +1073,16 @@ impl WasmCompiler {
                                 _ => None,
                             };
                             if let Some(bname) = binding_name {
-                                // Load payload from Option (offset 8)
-                                func.push(Instruction::LocalGet(opt_ptr));
-                                func.push(Instruction::I32WrapI64);
-                                func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                                    offset: 8,
-                                    align: 3,
-                                    memory_index: 0,
-                                }));
-
-                                // Bind to local variable
                                 let binding = func.alloc_local(bname, ValType::I64);
+                                func.push(Instruction::LocalGet(val_ptr));
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
 
-                        // Return match result: discriminant == 1
-                        func.push(Instruction::LocalGet(disc));
-                        func.push(Instruction::I64Const(1));
-                        func.push(Instruction::I64Eq);
+                        // Return: value != 0  (non-zero means Some)
+                        func.push(Instruction::LocalGet(val_ptr));
+                        func.push(Instruction::I64Const(0));
+                        func.push(Instruction::I64Ne);
                         func.push(Instruction::I64ExtendI32U);
                     }
                     "Ok" => {
