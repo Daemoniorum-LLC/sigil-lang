@@ -23,7 +23,7 @@ pub mod llvm {
     use std::collections::HashMap;
     use std::path::Path;
 
-    use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, NumBase, PathSegment, TypePath, UnaryOp};
+    use crate::ast::{self, BinOp, Expr, Ident, Item, Literal, NumBase, PathSegment, TypePath, UnaryOp, parse_int_value};
     use crate::const_eval::ConstEvaluator;
     use crate::impl_registry::{ImplRegistry, TypeBindings, MethodDef};
     use crate::monomorph::{MonomorphCache, MonomorphKey, GetOrRequest, substitute_method_signature};
@@ -98,6 +98,8 @@ pub mod llvm {
         enum_types: HashMap<String, EnumInfo>,
         /// Impl method registry: maps (type_name, method_name) -> mangled function name
         impl_methods: HashMap<(String, String), String>,
+        /// R3: Track base-key methods with multiple impls for ambiguity warnings.
+        ambiguous_impl_methods: std::collections::HashSet<(String, String)>,
         /// Counter for generating unique string constant names
         string_counter: std::cell::Cell<u32>,
         /// Evidential wrapper types: maps base type name to {tag: i8, value: T} struct
@@ -1279,6 +1281,7 @@ pub mod llvm {
                 generic_structs: HashMap::new(),
                 enum_types: HashMap::new(),
                 impl_methods: HashMap::new(),
+                ambiguous_impl_methods: std::collections::HashSet::new(),
                 string_counter: std::cell::Cell::new(0),
                 evidential_types: HashMap::new(),
                 current_self_type: None,
@@ -1386,6 +1389,14 @@ pub mod llvm {
             eprintln!("[DEBUG] Main file: adding stub bodies...");
             self.add_stub_bodies(None); // Main file: stub all remaining empty functions
 
+            // Fix any unterminated blocks and invalid function bodies from main file compilation errors
+            // (e.g. calling inline-scroll functions with wrong arg counts leaves partial IR)
+            {
+                let empty_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+                self.fix_unterminated_blocks_in_new_fns(&empty_set);
+                self.replace_invalid_fns_with_stubs(&empty_set);
+            }
+
             // Debug: Check for functions with 0 basic blocks before optimization
             eprintln!("[DEBUG] Checking for empty functions before optimization...");
             for fn_value in self.module.get_functions() {
@@ -1437,15 +1448,32 @@ pub mod llvm {
             let toml_value: toml::Value = toml::from_str(&content)
                 .map_err(|e| format!("Failed to parse Sigil.toml: {}", e))?;
 
-            // Parse workspace.dependencies section for crate paths
-            // Format: crate-name = { path = "relative/path" }
             if let Some(workspace) = toml_value.get("workspace") {
+                // Parse workspace.members array: ["tomes/nihil-core", "tomes/nihil-nn", ...]
+                // Each entry is a relative path; crate name is derived from the last component.
+                if let Some(members) = workspace.get("members") {
+                    if let Some(members_array) = members.as_array() {
+                        for member in members_array {
+                            if let Some(path_str) = member.as_str() {
+                                let crate_path = std::path::Path::new(path_str);
+                                if let Some(dir_name) = crate_path.file_name().and_then(|n| n.to_str()) {
+                                    let sigil_name = dir_name.replace('-', "_");
+                                    self.workspace_members.insert(
+                                        sigil_name,
+                                        std::path::PathBuf::from(path_str),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Parse workspace.dependencies map: crate-name = { path = "relative/path" }
                 if let Some(deps) = workspace.get("dependencies") {
                     if let Some(deps_table) = deps.as_table() {
                         for (crate_name, dep_spec) in deps_table {
                             if let Some(path) = dep_spec.get("path").and_then(|v| v.as_str()) {
-                                // Convert crate-name to crate_name for Sigil's use
-                                let sigil_name = crate_name.replace("-", "_");
+                                let sigil_name = crate_name.replace('-', "_");
                                 self.workspace_members.insert(
                                     sigil_name,
                                     std::path::PathBuf::from(path),
@@ -1456,12 +1484,12 @@ pub mod llvm {
                 }
             }
 
-            // Also check [dependencies] section (non-workspace format)
+            // Also check top-level [dependencies] section (non-workspace / single-crate format)
             if let Some(deps) = toml_value.get("dependencies") {
                 if let Some(deps_table) = deps.as_table() {
                     for (crate_name, dep_spec) in deps_table {
                         if let Some(path) = dep_spec.get("path").and_then(|v| v.as_str()) {
-                            let sigil_name = crate_name.replace("-", "_");
+                            let sigil_name = crate_name.replace('-', "_");
                             self.workspace_members.insert(
                                 sigil_name,
                                 std::path::PathBuf::from(path),
@@ -1607,155 +1635,49 @@ pub mod llvm {
                 }
             }
 
-            // First pass: register types from the crate
-            for spanned_item in &parsed_file.items {
-                match &spanned_item.node {
-                    Item::Struct(s) => {
-                        if let Err(e) = self.register_struct(s) {
-                            eprintln!("Warning: error registering struct in '{}': {}", crate_name, e);
-                        }
-                    }
-                    Item::Enum(e) => {
-                        if let Err(e) = self.register_enum(e) {
-                            eprintln!("Warning: error registering enum in '{}': {}", crate_name, e);
-                        }
-                    }
-                    Item::Actor(actor) => {
-                        // Treat actor state fields as a struct for type registration
-                        let synth_struct = ast::StructDef {
-                            doc_comments: vec![],
-                            visibility: actor.visibility.clone(),
-                            attrs: ast::StructAttrs::default(),
-                            name: actor.name.clone(),
-                            generics: actor.generics.clone(),
-                            fields: ast::StructFields::Named(actor.state.clone()),
-                        };
-                        if let Err(e) = self.register_struct(&synth_struct) {
-                            eprintln!("Warning: error registering actor struct '{}': {}", actor.name.name, e);
-                        }
-                    }
-                    _ => {}
-                }
+            // First pass: register types from the crate (recurses into inline scrolls)
+            {
+                let items: Vec<_> = parsed_file.items.clone();
+                self.crate_pass1_types(crate_name, &items);
             }
 
             // Second pass: process impl blocks
+            // Second pass: declare impl methods (recurses into inline scrolls)
             eprintln!("[DEBUG] Crate '{}': pass 2 - declaring impl methods... ({} items)", crate_name, parsed_file.items.len());
-            for (idx, spanned_item) in parsed_file.items.iter().enumerate() {
-                let item_type = match &spanned_item.node {
-                    Item::Impl(_) => "Impl",
-                    Item::Module(_) => "Module",
-                    Item::Function(_) => "Function",
-                    Item::Struct(_) => "Struct",
-                    Item::Enum(_) => "Enum",
-                    Item::Use(_) => "Use",
-                    Item::Actor(_) => "Actor",
-                    _ => "Other",
-                };
-                eprintln!("[DEBUG] Crate '{}': item {} = {}", crate_name, idx, item_type);
-                if let Item::Impl(impl_block) = &spanned_item.node {
-                    // G56 fix: Pass actual tome name for extension impl registration
-                    if let Err(e) = self.declare_impl_methods(crate_name, impl_block) {
-                        eprintln!("Warning: error declaring impl in '{}': {}", crate_name, e);
-                    }
-                }
-                if let Item::Actor(actor) = &spanned_item.node {
-                    // Treat actor methods as an impl block for declaration
-                    let self_ty = ast::TypeExpr::Path(ast::TypePath {
-                        segments: vec![ast::PathSegment {
-                            ident: actor.name.clone(),
-                            generics: None,
-                        }],
-                    });
-                    let synth_impl = ast::ImplBlock {
-                        doc_comments: vec![],
-                        is_unsafe: false,
-                        generics: actor.generics.clone(),
-                        trait_: None,
-                        self_ty,
-                        where_clause: None,
-                        items: actor.methods.iter().map(|m| ast::ImplItem::Function(m.clone())).collect(),
-                    };
-                    if let Err(e) = self.declare_impl_methods(crate_name, &synth_impl) {
-                        eprintln!("Warning: error declaring actor impl '{}': {}", actor.name.name, e);
-                    }
-                }
+            {
+                let items: Vec<_> = parsed_file.items.clone();
+                self.crate_pass2_impls(crate_name, &items);
             }
             eprintln!("[DEBUG] Crate '{}': pass 2 complete", crate_name);
 
-            // Third pass: declare functions, extern blocks, and process use declarations
+            // Third pass: declare functions, extern blocks, use (recurses into inline scrolls)
             eprintln!("[DEBUG] Crate '{}': pass 3 - declaring functions and use...", crate_name);
-            for spanned_item in &parsed_file.items {
-                match &spanned_item.node {
-                    Item::Function(func) => {
-                        if let Err(e) = self.declare_function(func) {
-                            eprintln!("Warning: error declaring function in '{}': {}", crate_name, e);
-                        }
-                    }
-                    Item::Use(use_decl) => {
-                        if let Err(e) = self.process_use(use_decl) {
-                            eprintln!("Warning: error processing use in '{}': {}", crate_name, e);
-                        }
-                    }
-                    Item::ExternBlock(extern_block) => {
-                        if let Err(e) = self.declare_extern_block(extern_block) {
-                            eprintln!("Warning: error declaring extern block in '{}': {}", crate_name, e);
-                        }
-                    }
-                    _ => {}
-                }
+            {
+                let items: Vec<_> = parsed_file.items.clone();
+                self.crate_pass3_fns_use(&items);
             }
             eprintln!("[DEBUG] Crate '{}': pass 3 complete", crate_name);
 
-            // Fourth pass: compile standalone function bodies FIRST
-            // This ensures that functions called by impl methods are compiled before the methods
+            // Fourth pass: compile standalone function bodies (recurses into inline scrolls)
             eprintln!("[DEBUG] Crate '{}': compiling standalone functions...", crate_name);
-            for spanned_item in &parsed_file.items {
-                if let Item::Function(func) = &spanned_item.node {
-                    if let Err(e) = self.compile_function(func) {
-                        eprintln!("Warning: error compiling function in '{}': {}", crate_name, e);
-                        // Recover: ensure current block has a terminator
-                        self.recover_from_compile_error();
-                    }
-                }
+            {
+                let items: Vec<_> = parsed_file.items.clone();
+                self.crate_pass4_compile_fns(&items);
             }
 
-            // Fifth pass: compile impl method bodies AFTER standalone functions
+            // Fifth pass: compile impl method bodies (recurses into inline scrolls)
             eprintln!("[DEBUG] Crate '{}': compiling impl methods...", crate_name);
-            for spanned_item in &parsed_file.items {
-                if let Item::Impl(impl_block) = &spanned_item.node {
-                    if let Err(e) = self.compile_impl_methods(impl_block) {
-                        eprintln!("Warning: error compiling impl in '{}': {}", crate_name, e);
-                        // Recover: ensure current block has a terminator
-                        self.recover_from_compile_error();
-                    }
-                }
-                if let Item::Actor(actor) = &spanned_item.node {
-                    // Compile actor methods via a synthetic ImplBlock
-                    let self_ty = ast::TypeExpr::Path(ast::TypePath {
-                        segments: vec![ast::PathSegment {
-                            ident: actor.name.clone(),
-                            generics: None,
-                        }],
-                    });
-                    let synth_impl = ast::ImplBlock {
-                        doc_comments: vec![],
-                        is_unsafe: false,
-                        generics: actor.generics.clone(),
-                        trait_: None,
-                        self_ty,
-                        where_clause: None,
-                        items: actor.methods.iter().map(|m| ast::ImplItem::Function(m.clone())).collect(),
-                    };
-                    if let Err(e) = self.compile_impl_methods(&synth_impl) {
-                        eprintln!("Warning: error compiling actor methods '{}': {}", actor.name.name, e);
-                        self.recover_from_compile_error();
-                    }
-                }
+            {
+                let items: Vec<_> = parsed_file.items.clone();
+                self.crate_pass5_compile_impls(&items);
             }
 
-            // Sixth pass: Add stub bodies to any functions that are still empty
-            // This prevents crashes from calling uncompiled functions
-            // IMPORTANT: Only stub functions that were added by THIS crate, not pre-existing ones
+            // Sixth pass: fix unterminated blocks, validate per-function, then stub empties.
+            // Inline scroll compilation can leave blocks without terminators or with
+            // invalid IR (wrong arg counts, dominator violations). Fix and validate
+            // before LLVM module optimization sees the IR.
+            self.fix_unterminated_blocks_in_new_fns(&pre_existing_functions);
+            self.replace_invalid_fns_with_stubs(&pre_existing_functions);
             eprintln!("[DEBUG] Crate '{}': adding stub bodies...", crate_name);
             self.add_stub_bodies(Some(&pre_existing_functions));
             eprintln!("[DEBUG] Crate '{}': done loading", crate_name);
@@ -1769,6 +1691,206 @@ pub mod llvm {
             self.loaded_crates.insert(crate_name.to_string());
 
             Ok(true)
+        }
+
+        // ── Recursive helpers for inline scroll blocks in crate loading ──────────
+
+        /// Pass 1 recursive: register structs/enums from items, diving into inline scrolls.
+        fn crate_pass1_types(
+            &mut self,
+            crate_name: &str,
+            items: &[crate::span::Spanned<Item>],
+        ) {
+            for si in items {
+                match &si.node {
+                    Item::Struct(s) => {
+                        if let Err(e) = self.register_struct(s) {
+                            eprintln!("Warning: error registering struct in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Enum(e) => {
+                        if let Err(e) = self.register_enum(e) {
+                            eprintln!("Warning: error registering enum in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Actor(actor) => {
+                        let synth = ast::StructDef {
+                            doc_comments: vec![],
+                            visibility: actor.visibility.clone(),
+                            attrs: ast::StructAttrs::default(),
+                            name: actor.name.clone(),
+                            generics: actor.generics.clone(),
+                            fields: ast::StructFields::Named(actor.state.clone()),
+                        };
+                        if let Err(e) = self.register_struct(&synth) {
+                            eprintln!("Warning: error registering actor '{}': {}", actor.name.name, e);
+                        }
+                    }
+                    Item::Module(m) => {
+                        if let Some(ref sub) = m.items {
+                            self.current_module.push(m.name.name.clone());
+                            let sub: Vec<crate::span::Spanned<Item>> = sub.clone();
+                            self.crate_pass1_types(crate_name, &sub);
+                            self.current_module.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        /// Pass 2 recursive: declare impl methods from items, diving into inline scrolls.
+        fn crate_pass2_impls(
+            &mut self,
+            crate_name: &str,
+            items: &[crate::span::Spanned<Item>],
+        ) {
+            for si in items {
+                match &si.node {
+                    Item::Impl(impl_block) => {
+                        if let Err(e) = self.declare_impl_methods(crate_name, impl_block) {
+                            eprintln!("Warning: error declaring impl in '{}': {}", crate_name, e);
+                        }
+                    }
+                    Item::Actor(actor) => {
+                        let self_ty = ast::TypeExpr::Path(ast::TypePath {
+                            segments: vec![ast::PathSegment {
+                                ident: actor.name.clone(),
+                                generics: None,
+                            }],
+                        });
+                        let synth = ast::ImplBlock {
+                            doc_comments: vec![],
+                            is_unsafe: false,
+                            generics: actor.generics.clone(),
+                            trait_: None,
+                            self_ty,
+                            where_clause: None,
+                            items: actor.methods.iter().map(|m| ast::ImplItem::Function(m.clone())).collect(),
+                        };
+                        if let Err(e) = self.declare_impl_methods(crate_name, &synth) {
+                            eprintln!("Warning: error declaring actor impl '{}': {}", actor.name.name, e);
+                        }
+                    }
+                    Item::Module(m) => {
+                        if let Some(ref sub) = m.items {
+                            self.current_module.push(m.name.name.clone());
+                            let sub: Vec<crate::span::Spanned<Item>> = sub.clone();
+                            self.crate_pass2_impls(crate_name, &sub);
+                            self.current_module.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        /// Pass 3 recursive: declare functions, use, and extern blocks, diving into inline scrolls.
+        fn crate_pass3_fns_use(
+            &mut self,
+            items: &[crate::span::Spanned<Item>],
+        ) {
+            for si in items {
+                match &si.node {
+                    Item::Function(func) => {
+                        if let Err(e) = self.declare_function(func) {
+                            eprintln!("Warning: error declaring function: {}", e);
+                        }
+                    }
+                    Item::Use(use_decl) => {
+                        if let Err(e) = self.process_use(use_decl) {
+                            eprintln!("Warning: error processing use: {}", e);
+                        }
+                    }
+                    Item::ExternBlock(eb) => {
+                        if let Err(e) = self.declare_extern_block(eb) {
+                            eprintln!("Warning: error declaring extern block: {}", e);
+                        }
+                    }
+                    Item::Module(m) => {
+                        if let Some(ref sub) = m.items {
+                            self.current_module.push(m.name.name.clone());
+                            let sub: Vec<crate::span::Spanned<Item>> = sub.clone();
+                            self.crate_pass3_fns_use(&sub);
+                            self.current_module.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        /// Pass 4 recursive: compile function bodies, diving into inline scrolls.
+        fn crate_pass4_compile_fns(
+            &mut self,
+            items: &[crate::span::Spanned<Item>],
+        ) {
+            for si in items {
+                match &si.node {
+                    Item::Function(func) => {
+                        if let Err(e) = self.compile_function(func) {
+                            eprintln!("Warning: error compiling function: {}", e);
+                            self.recover_from_compile_error();
+                        }
+                    }
+                    Item::Module(m) => {
+                        if let Some(ref sub) = m.items {
+                            self.current_module.push(m.name.name.clone());
+                            let sub: Vec<crate::span::Spanned<Item>> = sub.clone();
+                            self.crate_pass4_compile_fns(&sub);
+                            self.current_module.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        /// Pass 5 recursive: compile impl bodies, diving into inline scrolls.
+        fn crate_pass5_compile_impls(
+            &mut self,
+            items: &[crate::span::Spanned<Item>],
+        ) {
+            for si in items {
+                match &si.node {
+                    Item::Impl(impl_block) => {
+                        if let Err(e) = self.compile_impl_methods(impl_block) {
+                            eprintln!("Warning: error compiling impl: {}", e);
+                            self.recover_from_compile_error();
+                        }
+                    }
+                    Item::Actor(actor) => {
+                        let self_ty = ast::TypeExpr::Path(ast::TypePath {
+                            segments: vec![ast::PathSegment {
+                                ident: actor.name.clone(),
+                                generics: None,
+                            }],
+                        });
+                        let synth = ast::ImplBlock {
+                            doc_comments: vec![],
+                            is_unsafe: false,
+                            generics: actor.generics.clone(),
+                            trait_: None,
+                            self_ty,
+                            where_clause: None,
+                            items: actor.methods.iter().map(|m| ast::ImplItem::Function(m.clone())).collect(),
+                        };
+                        if let Err(e) = self.compile_impl_methods(&synth) {
+                            eprintln!("Warning: error compiling actor methods '{}': {}", actor.name.name, e);
+                            self.recover_from_compile_error();
+                        }
+                    }
+                    Item::Module(m) => {
+                        if let Some(ref sub) = m.items {
+                            self.current_module.push(m.name.name.clone());
+                            let sub: Vec<crate::span::Spanned<Item>> = sub.clone();
+                            self.crate_pass5_compile_impls(&sub);
+                            self.current_module.pop();
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
 
         /// Add stub bodies to functions without basic blocks
@@ -1858,6 +1980,58 @@ pub mod llvm {
             }
             if stubbed_count > 0 {
                 eprintln!("[DEBUG] Stubbed {} empty functions", stubbed_count);
+            }
+        }
+
+        /// Fix unterminated blocks in functions added by a crate load (new functions only).
+        /// Called after all compilation passes to ensure LLVM sees valid IR.
+        fn fix_unterminated_blocks_in_new_fns(
+            &self,
+            pre_existing: &std::collections::HashSet<String>,
+        ) {
+            for fn_value in self.module.get_functions() {
+                let fn_name = fn_value.get_name().to_str().unwrap_or("");
+                if pre_existing.contains(fn_name) {
+                    continue;
+                }
+                for bb in fn_value.get_basic_blocks() {
+                    if bb.get_terminator().is_none() {
+                        self.builder.position_at_end(bb);
+                        let _ = self.builder.build_unreachable();
+                    }
+                }
+            }
+        }
+
+        /// After crate loading, run per-function LLVM verification.
+        /// Any function that fails verification gets its body replaced with a clean stub.
+        /// This prevents LLVM from crashing during module-level optimization on bad IR.
+        fn replace_invalid_fns_with_stubs(
+            &self,
+            pre_existing: &std::collections::HashSet<String>,
+        ) {
+            for fn_value in self.module.get_functions() {
+                let fn_name = fn_value.get_name().to_str().unwrap_or("").to_string();
+                if pre_existing.contains(&fn_name) {
+                    continue;
+                }
+                // verify(false) returns false without printing if the function is invalid
+                if fn_value.count_basic_blocks() > 0 && !fn_value.verify(false) {
+                    eprintln!("[DEBUG] Replacing invalid function body: {}", fn_name);
+                    // Delete all basic blocks and add a clean stub
+                    // We can't delete blocks directly; instead rebuild from scratch.
+                    // Use unsafe_delete_from_parent on basic blocks:
+                    let bbs: Vec<inkwell::basic_block::BasicBlock> = fn_value.get_basic_blocks();
+                    for bb in bbs {
+                        unsafe { bb.delete() }
+                            .unwrap_or_else(|_| eprintln!("[DEBUG] Failed to delete bb in {}", fn_name));
+                    }
+                    // Add clean entry block with appropriate return
+                    let entry = self.context.append_basic_block(fn_value, "entry");
+                    self.builder.position_at_end(entry);
+                    let zero = self.context.i64_type().const_int(0, false);
+                    let _ = self.builder.build_return(Some(&zero));
+                }
             }
         }
 
@@ -3837,7 +4011,7 @@ pub mod llvm {
             // G42 fix: Evaluate const expression at compile time
             let (global, is_float) = match &const_decl.value {
                 Expr::Literal(Literal::Int { value, .. }) => {
-                    let n: i64 = value.replace('_', "").parse().unwrap_or(0);
+                    let n: i64 = parse_int_value(value).unwrap_or(0);
                     let global = self.module.add_global(i64_type, None, name);
                     global.set_initializer(&i64_type.const_int(n as u64, false));
                     (global, false)
@@ -3852,7 +4026,7 @@ pub mod llvm {
                     // Handle negative literals like -1 or -0.5
                     match expr.as_ref() {
                         Expr::Literal(Literal::Int { value, .. }) => {
-                            let n: i64 = value.replace('_', "").parse().unwrap_or(0);
+                            let n: i64 = parse_int_value(value).unwrap_or(0);
                             let global = self.module.add_global(i64_type, None, name);
                             global.set_initializer(&i64_type.const_int((-n) as u64, true));
                             (global, false)
@@ -3892,13 +4066,13 @@ pub mod llvm {
             use crate::const_eval::ConstValue;
             match &const_decl.value {
                 Expr::Literal(Literal::Int { value, .. }) => {
-                    if let Ok(n) = value.replace('_', "").parse::<i64>() {
+                    if let Some(n) = parse_int_value(value) {
                         self.const_evaluator.register_const(name.clone(), ConstValue::Int(n));
                     }
                 }
                 Expr::Unary { op: ast::UnaryOp::Neg, expr } => {
                     if let Expr::Literal(Literal::Int { value, .. }) = expr.as_ref() {
-                        if let Ok(n) = value.replace('_', "").parse::<i64>() {
+                        if let Some(n) = parse_int_value(value) {
                             self.const_evaluator.register_const(name.clone(), ConstValue::Int(-n));
                         }
                     }
@@ -3951,6 +4125,26 @@ pub mod llvm {
 
         /// Extract type name from impl block's self_ty
         /// Extract a mangled type-args suffix from the concrete generic parameters of an impl's
+        /// Gap1: Derive impl_methods key suffix from a RichType's generic parameters.
+        /// Mirrors extract_impl_type_args_suffix but works on RichType (known at call site).
+        /// For RichType::Named { name: "Buffer", generics: [Named { name: "Gpu" }] }
+        ///   called on the outer type → returns "_Gpu"
+        /// For RichType::Named { name: "Gpu", generics: [] }
+        ///   called on a generic element → returns "Gpu"
+        fn rich_type_to_type_args_suffix(rt: &RichType) -> String {
+            match rt {
+                RichType::Named { generics, .. } if !generics.is_empty() => {
+                    let parts: Vec<String> = generics
+                        .iter()
+                        .map(|g| Self::rich_type_to_type_args_suffix(g))
+                        .collect();
+                    format!("_{}", parts.join("_"))
+                }
+                RichType::Named { name, .. } => name.clone(),
+                _ => String::new(),
+            }
+        }
+
         /// self type, per the spec's mangling table (LLVM-GENERIC-DISPATCH-SPEC.md § 3).
         /// For Buffer<Cpu>   → "_Cpu"
         /// For Buffer<Gpu>   → "_Gpu"
@@ -4157,8 +4351,13 @@ pub mod llvm {
                         .insert((full_type_key, method_name.clone()), mangled_name.clone());
                     // Also register under the base type key for backward-compat / unambiguous dispatch.
                     // Use entry API so the first-registered impl wins when there is only one.
+                    let base_key = (type_name.clone(), method_name.clone());
+                    // R3: If already registered, mark as ambiguous (multiple impls for same base key).
+                    if self.impl_methods.contains_key(&base_key) {
+                        self.ambiguous_impl_methods.insert(base_key.clone());
+                    }
                     self.impl_methods
-                        .entry((type_name.clone(), method_name.clone()))
+                        .entry(base_key)
                         .or_insert(mangled_name.clone());
 
                     // G49: Store method return types for struct type inference in MethodCall
@@ -7733,10 +7932,28 @@ pub mod llvm {
                         if has_const_generics {
                             // Fall through to Phase 3 generic resolution
                         } else if let Some(mangled_name) = {
-                            // Check if we have an impl method for this type
-                            let key = (recv_type.clone(), method_name.to_string());
-                            eprintln!("[G63-MCALL] checking impl_methods for key=({:?}, {:?}), found={}", recv_type, method_name, self.impl_methods.contains_key(&key));
-                            self.impl_methods.get(&key).cloned()
+                            // Gap1: Try qualified key from receiver's rich type first.
+                            // E.g., cpu_buf: Buffer<Cpu> → rich_type suffix "_Cpu"
+                            // → key ("Buffer_Cpu", "device_id") → "Buffer_Cpu_device_id" ✓
+                            // This prevents the base key ("Buffer", "device_id") from always
+                            // resolving to the first-registered impl regardless of receiver type.
+                            let qualified_mangled = if let Some(ref rt) = rich_type_for_skip {
+                                let suffix = Self::rich_type_to_type_args_suffix(rt);
+                                if !suffix.is_empty() {
+                                    let qualified_key = (format!("{}{}", recv_type, suffix), method_name.to_string());
+                                    eprintln!("[G63-MCALL-Gap1] trying qualified key=({:?}, {:?}), found={}", qualified_key.0, qualified_key.1, self.impl_methods.contains_key(&qualified_key));
+                                    self.impl_methods.get(&qualified_key).cloned()
+                                } else { None }
+                            } else { None };
+                            // Fallback: base key (backward-compat for unambiguous dispatch)
+                            let base_key = (recv_type.clone(), method_name.to_string());
+                            eprintln!("[G63-MCALL] checking impl_methods for key=({:?}, {:?}), found={}", recv_type, method_name, self.impl_methods.contains_key(&base_key));
+                            // R3: Warn if falling back to base key for an ambiguous method.
+                            if qualified_mangled.is_none() && self.ambiguous_impl_methods.contains(&base_key) {
+                                eprintln!("[R3-WARNING] Ambiguous method call: {}·{} — add return-type annotation to binding to select the correct impl",
+                                    recv_type, method_name);
+                            }
+                            qualified_mangled.or_else(|| self.impl_methods.get(&base_key).cloned())
                         } {
                             eprintln!("[G63-MCALL] found mangled_name: {}, function_exists={}", mangled_name, self.module.get_function(&mangled_name).is_some());
                             if let Some(callee) = self.module.get_function(&mangled_name) {
@@ -10051,7 +10268,7 @@ pub mod llvm {
                 ast::TypeExpr::Array { element, size } => {
                     // Try to evaluate size as constant
                     let size_val = if let Expr::Literal(Literal::Int { value, .. }) = size.as_ref() {
-                        value.parse::<usize>().ok()
+                        parse_int_value(value).map(|v| v as usize)
                     } else {
                         None
                     };
@@ -10097,7 +10314,7 @@ pub mod llvm {
 
                     // Try to evaluate the const expression to get a literal value
                     if let Expr::Literal(Literal::Int { value, .. }) = expr.as_ref() {
-                        if let Ok(val) = value.parse::<i64>() {
+                        if let Some(val) = parse_int_value(value) {
                             return RichType::ConstGeneric(val);
                         }
                     }
@@ -10476,7 +10693,7 @@ pub mod llvm {
         fn extract_const_value(&self, expr: &Expr) -> Option<i64> {
             match expr {
                 Expr::Literal(Literal::Int { value, .. }) => {
-                    value.replace('_', "").parse().ok()
+                    parse_int_value(value)
                 }
                 Expr::Path(path) => {
                     if path.segments.len() == 1 {
@@ -11804,7 +12021,7 @@ pub mod llvm {
 
             // Try to evaluate index at compile time for static arrays
             if let Expr::Literal(ast::Literal::Int { value, .. }) = index_expr {
-                if let Ok(n) = value.parse::<usize>() {
+                if let Some(n) = parse_int_value(value).map(|v| v as usize) {
                     if n < elements.len() {
                         return self.compile_expr(fn_value, scope, &elements[n]);
                     } else {
@@ -15790,7 +16007,14 @@ pub mod llvm {
                                     let arg_val = self.compile_expr(fn_value, scope, arg)?;
                                     compiled_args.push(arg_val.into());
                                 }
-                                eprintln!("[G128-EARLY] Calling '{}' with {} args", direct_name, compiled_args.len());
+                                eprintln!("[G128-EARLY] Calling '{}' with {} args (callee expects {})",
+                                    direct_name, compiled_args.len(), callee.count_params());
+                                // Arity guard: verify arg count matches callee params before build_call
+                                if compiled_args.len() != callee.count_params() as usize {
+                                    eprintln!("Warning: G128-EARLY arity mismatch for '{}': {} args provided, {} expected",
+                                        direct_name, compiled_args.len(), callee.count_params());
+                                    return Ok(self.context.i64_type().const_int(0, false));
+                                }
                                 let call = self.builder
                                     .build_call(callee, &compiled_args, "direct_method_call")
                                     .map_err(|e| e.to_string())?;
@@ -18930,6 +19154,70 @@ pub mod llvm {
                         .unwrap_or_else(|| self.context.i64_type().const_int(0, false)));
                 }
 
+                // G-NEWTYPE fix: Check if this is a tuple struct / newtype constructor.
+                // e.g. `This(0)` inside `Version::new()`, or `Version(42)` at call site.
+                // These hit the fallback because there's no function named "This" or "Version".
+                // Without this fix, they returned i64 0 (null pointer), causing SIGSEGV when
+                // field access (`this.0`) tried to GEP from address 0.
+                let resolved_type = if full_path == "This" || full_path == "Self" {
+                    self.current_self_type.clone()
+                } else if self.struct_types.contains_key(&full_path) {
+                    Some(full_path.clone())
+                } else {
+                    None
+                };
+                if let Some(type_name) = resolved_type {
+                    if let Some(struct_info) = self.struct_types.get(&type_name).cloned() {
+                        if !args.is_empty() {
+                            let struct_size = (struct_info.field_indices.len() as u64).max(1) * 8;
+                            let size_const = self.context.i64_type().const_int(struct_size, false);
+                            // Compile arguments BEFORE allocating (G55 pattern)
+                            let mut compiled_args: Vec<inkwell::values::IntValue<'ctx>> = Vec::new();
+                            for arg in args {
+                                compiled_args.push(self.compile_expr(fn_value, scope, arg)?);
+                            }
+                            // Allocate struct on heap
+                            let alloc_fn = self.module.get_function("sigil_alloc")
+                                .ok_or("sigil_alloc not declared")?;
+                            let alloc_call = self.builder
+                                .build_call(alloc_fn, &[size_const.into()], "newtype_alloc")
+                                .map_err(|e| e.to_string())?;
+                            let alloc_result = alloc_call.try_as_basic_value()
+                                .left()
+                                .ok_or("sigil_alloc returned void")?;
+                            let struct_ptr = if alloc_result.is_pointer_value() {
+                                alloc_result.into_pointer_value()
+                            } else {
+                                self.builder
+                                    .build_int_to_ptr(
+                                        alloc_result.into_int_value(),
+                                        self.context.ptr_type(inkwell::AddressSpace::default()),
+                                        "newtype_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?
+                            };
+                            // Store each argument into the struct fields
+                            for (i, arg_val) in compiled_args.iter().enumerate() {
+                                let field_ptr = self.builder
+                                    .build_struct_gep(
+                                        struct_info.llvm_type,
+                                        struct_ptr,
+                                        i as u32,
+                                        &format!("newtype_field_{}", i),
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(field_ptr, *arg_val)
+                                    .map_err(|e| e.to_string())?;
+                            }
+                            let ptr_int = self.builder
+                                .build_ptr_to_int(struct_ptr, self.context.i64_type(), "newtype_ptr_int")
+                                .map_err(|e| e.to_string())?;
+                            return Ok(ptr_int);
+                        }
+                    }
+                }
+
                 // Default fallback - assume returns something, use 0 as placeholder
                 // eprintln!("DEBUG: Unknown function '{}' - using default stub", full_path);
                 return Ok(self.context.i64_type().const_int(0, false));
@@ -20394,12 +20682,12 @@ pub mod llvm {
             }
 
             eprintln!("[DEBUG] run_llvm_optimizations: verifying IR...");
-            // Verify IR before optimization
+            // Verify IR before optimization.
+            // NOTE: Do NOT call module.print_to_string() on verification failure —
+            // LLVM may crash (SIGSEGV) trying to serialize severely malformed IR.
             if let Err(e) = self.module.verify() {
                 eprintln!("LLVM IR verification failed: {}", e.to_string());
-                // Dump IR on verification failure
-                eprintln!("=== Invalid LLVM IR ===");
-                eprintln!("{}", self.module.print_to_string().to_string());
+                eprintln!("(IR dump skipped to prevent secondary LLVM crash on malformed IR)");
                 return Err(format!("LLVM IR verification failed: {}", e.to_string()));
             }
 

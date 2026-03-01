@@ -23,7 +23,7 @@ pub mod jit {
 
     use crate::ast::{
         self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, PipeOp,
-        TypeExpr, UnaryOp,
+        TypeExpr, UnaryOp, parse_int_value,
     };
     use crate::ffi::ctypes::CType;
     use crate::optimize::{OptLevel, Optimizer};
@@ -839,7 +839,7 @@ pub mod jit {
     /// Try to evaluate a constant expression at compile time
     fn try_const_fold(expr: &Expr) -> Option<i64> {
         match expr {
-            Expr::Literal(Literal::Int { value, .. }) => value.parse().ok(),
+            Expr::Literal(Literal::Int { value, .. }) => parse_int_value(value),
             Expr::Literal(Literal::Bool(b)) => Some(if *b { 1 } else { 0 }),
             Expr::Binary { op, left, right } => {
                 let l = try_const_fold(left)?;
@@ -2076,7 +2076,7 @@ pub mod jit {
     ) -> Result<cranelift_codegen::ir::Value, String> {
         match lit {
             Literal::Int { value, .. } => {
-                let val: i64 = value.parse().map_err(|_| "Invalid integer")?;
+                let val: i64 = parse_int_value(value).ok_or("Invalid integer")?;
                 Ok(builder.ins().iconst(types::I64, val))
             }
             Literal::Float { value, .. } => {

@@ -10383,7 +10383,7 @@ impl Interpreter {
                     for elem in elements {
                         match elem {
                             Expr::Literal(Literal::Int { value, .. }) => {
-                                if let Ok(n) = value.parse::<i64>() {
+                                if let Some(n) = parse_int_value(value) {
                                     dims.push(n);
                                 }
                             }
@@ -11213,7 +11213,7 @@ impl Interpreter {
                 let extract_int = |pat: &Option<Box<Pattern>>| -> Option<i64> {
                     match pat {
                         Some(p) => match p.as_ref() {
-                            Pattern::Literal(Literal::Int { value, .. }) => value.parse().ok(),
+                            Pattern::Literal(Literal::Int { value, .. }) => parse_int_value(value),
                             _ => None,
                         },
                         None => None,

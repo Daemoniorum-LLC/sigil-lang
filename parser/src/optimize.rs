@@ -5,7 +5,7 @@
 
 use crate::ast::{
     self, BinOp, Block, Expr, FunctionAttrs, Ident, Item, Literal, NumBase, Param, PathSegment,
-    Pattern, Stmt, TypeExpr, TypePath, UnaryOp, Visibility,
+    Pattern, Stmt, TypeExpr, TypePath, UnaryOp, Visibility, parse_int_value,
 };
 use crate::span::Span;
 use std::collections::{HashMap, HashSet};
@@ -1194,7 +1194,7 @@ impl Optimizer {
 
     fn as_int(&self, expr: &Expr) -> Option<i64> {
         match expr {
-            Expr::Literal(Literal::Int { value, .. }) => value.parse().ok(),
+            Expr::Literal(Literal::Int { value, .. }) => parse_int_value(value),
             Expr::Literal(Literal::Bool(b)) => Some(if *b { 1 } else { 0 }),
             _ => None,
         }
@@ -1203,7 +1203,7 @@ impl Optimizer {
     fn as_bool(&self, expr: &Expr) -> Option<bool> {
         match expr {
             Expr::Literal(Literal::Bool(b)) => Some(*b),
-            Expr::Literal(Literal::Int { value, .. }) => value.parse::<i64>().ok().map(|v| v != 0),
+            Expr::Literal(Literal::Int { value, .. }) => parse_int_value(value).map(|v| v != 0),
             _ => None,
         }
     }

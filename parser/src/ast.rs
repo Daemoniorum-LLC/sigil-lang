@@ -1946,6 +1946,38 @@ pub enum NumBase {
     Explicit(u8), // N:₆₀ etc.
 }
 
+/// Parse an integer literal string respecting base prefixes and type suffixes.
+/// Handles 0x (hex), 0b (binary), 0o (octal), underscore separators, and
+/// type suffixes like _i64, i32, u64, etc.
+pub fn parse_int_value(value: &str) -> Option<i64> {
+    // Strip underscores (visual separators)
+    let s = value.replace('_', "");
+
+    // Strip known type suffixes (check longer ones first)
+    let suffixes = [
+        "isize", "usize", "i128", "u128", "i64", "u64", "i32", "u32", "i16", "u16", "i8", "u8",
+    ];
+    let s = suffixes.iter().fold(s, |acc, suffix| {
+        if acc.ends_with(suffix) {
+            acc[..acc.len() - suffix.len()].to_string()
+        } else {
+            acc
+        }
+    });
+
+    // Parse based on prefix
+    if s.starts_with("0x") || s.starts_with("0X") {
+        u64::from_str_radix(&s[2..], 16).ok().map(|v| v as i64)
+    } else if s.starts_with("0b") || s.starts_with("0B") {
+        u64::from_str_radix(&s[2..], 2).ok().map(|v| v as i64)
+    } else if s.starts_with("0o") || s.starts_with("0O") {
+        u64::from_str_radix(&s[2..], 8).ok().map(|v| v as i64)
+    } else {
+        s.parse::<i64>().ok()
+            .or_else(|| s.parse::<u64>().ok().map(|v| v as i64))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldInit {
     pub name: Ident,

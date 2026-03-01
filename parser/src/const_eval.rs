@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use crate::ast::{Expr, Literal, BinOp, UnaryOp};
+use crate::ast::{Expr, Literal, BinOp, UnaryOp, parse_int_value};
 use crate::typeck::Type;
 
 /// Result of const evaluation
@@ -171,7 +171,7 @@ impl ConstEvaluator {
     fn eval_literal(&self, lit: &Literal) -> Result<ConstValue, ConstEvalError> {
         match lit {
             Literal::Int { value, suffix, .. } => {
-                let v = value.parse::<i64>().map_err(|_| {
+                let v = parse_int_value(value).ok_or_else(|| {
                     ConstEvalError::overflow()
                 })?;
                 // Check if suffix indicates unsigned
