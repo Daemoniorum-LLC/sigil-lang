@@ -2938,6 +2938,20 @@ pub mod llvm {
             ], false);
             self.module.add_function("sigil_fill_randn_f32_raw", fill_randn_raw_type, None);
 
+            // sigil_fill_randn_f32_scaled(ptr, len, scale_bits: i64) -> void — N(0,1)*scale
+            let fill_randn_scaled_type = void_type.fn_type(&[
+                i64_type.into(), i64_type.into(), i64_type.into(),
+            ], false);
+            self.module.add_function("sigil_fill_randn_f32_scaled", fill_randn_scaled_type, None);
+
+            // sigil_random_normal_f32() -> i64 — N(0,1) as f32-bits-in-i64
+            let random_normal_f32_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_random_normal_f32", random_normal_f32_type, None);
+
+            // sigil_random_normal_f32_scaled(scale_bits: i64) -> i64 — N(0,1)*scale as f32-bits-in-i64
+            let random_normal_f32_scaled_type = i64_type.fn_type(&[i64_type.into()], false);
+            self.module.add_function("sigil_random_normal_f32_scaled", random_normal_f32_scaled_type, None);
+
             // sigil_fill_uniform_01_raw(ptr, len: i64) -> void — uniform [0,1)
             let fill_uniform_01_raw_type = void_type.fn_type(&[
                 i64_type.into(), i64_type.into(),
@@ -18337,6 +18351,40 @@ pub mod llvm {
                         .build_call(fn_, &[ptr.into(), len.into()], "fill_randn_raw")
                         .map_err(|e| e.to_string())?;
                     return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "sigil_fill_randn_f32_scaled" | "fill_randn_f32_scaled" => {
+                    if args.len() < 3 {
+                        return Err("fill_randn_f32_scaled: need (ptr, len, scale_bits)".to_string());
+                    }
+                    let ptr        = self.compile_expr(fn_value, scope, &args[0])?;
+                    let len        = self.compile_expr(fn_value, scope, &args[1])?;
+                    let scale_bits = self.compile_expr(fn_value, scope, &args[2])?;
+                    let fn_ = self.module.get_function("sigil_fill_randn_f32_scaled")
+                        .ok_or("sigil_fill_randn_f32_scaled not declared")?;
+                    self.builder
+                        .build_call(fn_, &[ptr.into(), len.into(), scale_bits.into()], "fill_randn_scaled")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(self.context.i64_type().const_int(0, false));
+                }
+                "sigil_random_normal_f32" | "random_normal_f32" => {
+                    let fn_ = self.module.get_function("sigil_random_normal_f32")
+                        .ok_or("sigil_random_normal_f32 not declared")?;
+                    let result = self.builder
+                        .build_call(fn_, &[], "randn_f32")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(result.try_as_basic_value().left().unwrap().into_int_value());
+                }
+                "sigil_random_normal_f32_scaled" | "random_normal_f32_scaled" => {
+                    if args.len() < 1 {
+                        return Err("random_normal_f32_scaled: need (scale_bits)".to_string());
+                    }
+                    let scale_bits = self.compile_expr(fn_value, scope, &args[0])?;
+                    let fn_ = self.module.get_function("sigil_random_normal_f32_scaled")
+                        .ok_or("sigil_random_normal_f32_scaled not declared")?;
+                    let result = self.builder
+                        .build_call(fn_, &[scale_bits.into()], "randn_f32_scaled")
+                        .map_err(|e| e.to_string())?;
+                    return Ok(result.try_as_basic_value().left().unwrap().into_int_value());
                 }
                 "sigil_kaiming_init_raw" | "kaiming_init_raw" => {
                     if args.len() < 3 {

@@ -1380,15 +1380,16 @@ int64_t sigil_sgemm_tn_sv(int64_t a_ptr, int64_t b_ptr, int64_t out_ptr,
  * gradient element by this scale before updating m/v/w. This preserves gradient
  * direction (all elements scaled equally) unlike element-wise clipping.
  *
- * GNORM_CLIP = 5000.0: normal steps (gnorm ~2000-5000) pass through unclipped;
- * spike steps (gnorm >5000) are proportionally scaled down.
+ * GNORM_CLIP = 2500.0: halved from 5000 for seq_len=256 (Exp I).
+ * Gradient variance scales with seq_len; sqrt(2)x seq_len → sqrt(2)x gnorm in expectation.
+ * 5000 / sqrt(2) ≈ 3535; using 2500 for extra conservatism to stabilise past step 250.
  *
  * SigilVec layout: { int64_t len, int64_t capacity, int64_t* data }
  * Each data element stores float bits zero-extended into int64_t.
  * ============================================================================ */
 static double g_gnorm_ss = 0.0;
 static float  g_grad_clip_scale = 1.0f;
-#define GNORM_CLIP 5000.0
+#define GNORM_CLIP 2500.0
 
 void sigil_gnorm_reset() {
     g_gnorm_ss = 0.0;
@@ -1452,16 +1453,19 @@ void sigil_adamw_step(int64_t w_ptr, int64_t g_ptr, int64_t m_ptr, int64_t v_ptr
 
     if (t < 1) t = 1;
     /* Cosine LR decay: lr(t) = lr * 0.5 * (1 + cos(pi * t / T_max))
-     * T_max = 500. Mirrors Exp E (seq_len=128, lr=5e-6, T_max=500) which
-     * was stable. With T_max=2000, LR was still 97.5% at step 200 — model
-     * found a good minimum but kept drifting. T_max=500 brakes the LR
-     * at the natural convergence point (~step 200-300 for seq_len=256). */
+     * T_max = 500. Brakes LR at the natural convergence point (~step 200-300 for
+     * seq_len=256). Both Exp K (T_max=500) and Exp L (T_max=2000) show best loss
+     * at step ~220; T_max=2000 diverged at step ~250 (LR still 2.41e-6, too high).
+     * Floor raised from 1% → 25%: after step 500, effective LR = 2.5e-6*0.25 = 6.25e-7.
+     * High enough for continued learning; low enough to stay stable in the basin. */
     #ifndef M_PI
     #define M_PI 3.14159265358979323846f
     #endif
     const float T_max = 500.0f;
-    float cos_decay = 0.5f * (1.0f + cosf((float)M_PI * (float)t / T_max));
-    if (cos_decay < 0.01f) cos_decay = 0.01f;  /* floor at 1% to avoid zero LR */
+    float t_sched = (float)t;
+    if (t_sched > T_max) t_sched = T_max;  /* clamp: one-shot decay, no restart */
+    float cos_decay = 0.5f * (1.0f + cosf((float)M_PI * t_sched / T_max));
+    if (cos_decay < 0.25f) cos_decay = 0.25f;  /* floor at 25%: LR=6.25e-7 for continued learning */
     float lr_t = lr * cos_decay;
     /* Bias correction: alpha = lr_t * sqrt(1 - beta2^t) / (1 - beta1^t) */
     float bc1   = 1.0f - powf(beta1, (float)t);
@@ -1934,6 +1938,12 @@ void sigil_cuda_zero_f32(int64_t device_ptr, int64_t n) {
     cuMemsetD8((CUdeviceptr)device_ptr, 0, (size_t)n * sizeof(float));
 }
 
+/* Zero exactly `bytes` bytes of device memory (byte-granularity, for non-float dtypes). */
+void sigil_cuda_memset_zero(int64_t device_ptr, int64_t bytes) {
+    if (bytes <= 0) return;
+    cuMemsetD8((CUdeviceptr)device_ptr, 0, (size_t)bytes);
+}
+
 /* Kernel module storage */
 #define MAX_CUDA_MODULES 64
 static CUmodule g_cuda_modules[MAX_CUDA_MODULES];
@@ -2167,6 +2177,50 @@ double sigil_random_normal(void) {
     if (u1 < 1e-10) u1 = 1e-10;
     double r = sqrt(-2.0 * log(u1));
     return r * cos(2.0 * 3.14159265358979323846 * u2);
+}
+
+/* Returns a standard normal f32 sample as f32-bits-in-i64.
+ * Sigil's LLVM ABI passes f32 as the low 32 bits of i64.
+ * sigil_random_normal() returns f64 which gets mangled through the ABI;
+ * this function does the f64→f32 cast in C and returns the correct bit pattern. */
+int64_t sigil_random_normal_f32(void) {
+    float f = (float)sigil_random_normal();
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(float));
+    return (int64_t)bits;
+}
+
+/* Scaled normal f32 sample: returns (N(0,1) * scale) as f32-bits-in-i64.
+ * scale_bits is f32-bits-in-i64 (Sigil's f32 calling convention). */
+int64_t sigil_random_normal_f32_scaled(int64_t scale_bits) {
+    int32_t lo32 = (int32_t)(scale_bits & 0xFFFFFFFFLL);
+    float scale;
+    memcpy(&scale, &lo32, sizeof(float));
+    float f = (float)sigil_random_normal() * scale;
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(float));
+    return (int64_t)bits;
+}
+
+/* Scaled fill: N(0,1)*scale into raw float* buffer.
+ * Like sigil_fill_randn_f32_raw but with a scale factor.
+ * scale_bits: f32-bits-in-i64 (Sigil's f32 calling convention).
+ * Uses rand() — call srand(seed) first for reproducibility. */
+void sigil_fill_randn_f32_scaled(int64_t ptr, int64_t len, int64_t scale_bits) {
+    float* data = (float*)(uintptr_t)ptr;
+    if (!data || len <= 0) return;
+    int32_t lo32 = (int32_t)(scale_bits & 0xFFFFFFFFLL);
+    float scale;
+    memcpy(&scale, &lo32, sizeof(float));
+    for (int64_t i = 0; i < len; i += 2) {
+        double u1, u2;
+        do { u1 = ((double)rand() + 0.5) / ((double)RAND_MAX + 1.0); } while (u1 <= 0.0);
+        u2 = ((double)rand() + 0.5) / ((double)RAND_MAX + 1.0);
+        double r = sqrt(-2.0 * log(u1));
+        double theta = 2.0 * 3.14159265358979323846 * u2;
+        data[i] = (float)(r * cos(theta)) * scale;
+        if (i + 1 < len) data[i + 1] = (float)(r * sin(theta)) * scale;
+    }
 }
 
 /* ============================================================================
