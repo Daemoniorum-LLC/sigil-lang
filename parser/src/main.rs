@@ -276,7 +276,7 @@ fn main() -> ExitCode {
         "check" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--apply-suggestions]");
+                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--strict] [--apply-suggestions]");
                 return ExitCode::from(1);
             }
             // Parse format option
@@ -288,10 +288,11 @@ fn main() -> ExitCode {
                 OutputFormat::Human
             };
             let quiet = args.iter().any(|a| a == "--quiet");
+            let strict = args.iter().any(|a| a == "--strict");
             let apply_fixes = args
                 .iter()
                 .any(|a| a == "--apply-suggestions" || a == "--fix");
-            check_file(&args[2], format, quiet, apply_fixes)
+            check_file(&args[2], format, quiet, apply_fixes, strict)
         }
         "lint" => {
             // Handle --init flag to generate default config
@@ -2200,7 +2201,7 @@ fn format_size(size: usize) -> String {
 ///
 /// With `--apply-suggestions`, automatically applies fix suggestions
 /// and rewrites the file.
-fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) -> ExitCode {
+fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -2239,6 +2240,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
         Ok(ast) => {
             // Run type checker with evidence enforcement
             let mut type_checker = TypeChecker::new();
+            type_checker.set_strict(strict);
             if let Err(type_errors) = type_checker.check_file(&ast) {
                 for err in type_errors {
                     let mut diag =
@@ -2319,7 +2321,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
                 }
 
                 // Re-check with fixed source
-                return check_file(path, format, quiet, false);
+                return check_file(path, format, quiet, false, strict);
             }
             source // No fixes applied, use original
         } else {

@@ -518,15 +518,28 @@ pub struct TypeChecker {
     errors: Vec<TypeError>,
     /// Span of the current top-level item being checked (for error fallback)
     current_item_span: Span,
+    /// Report unresolved bare identifiers as errors.
+    ///
+    /// Off by default. Name resolution here is single-file — there is no import
+    /// analysis — so a cross-file reference is indistinguishable from a typo, and
+    /// erroring by default would reject working code. See `--strict`.
+    strict: bool,
 }
 
 impl TypeChecker {
+    /// Turn on strict name resolution: report bare identifiers that resolve to
+    /// nothing. Opt-in, because resolution here is single-file.
+    pub fn set_strict(&mut self, strict: bool) {
+        self.strict = strict;
+    }
+
     pub fn new() -> Self {
         let mut checker = Self {
             env: Rc::new(RefCell::new(TypeEnv::new())),
             types: HashMap::new(),
             functions: HashMap::new(),
             stdlib_functions: std::collections::HashSet::new(),
+            strict: false,
             impl_methods: HashMap::new(),
             current_self_type: None,
             current_generics: HashMap::new(),
@@ -1404,6 +1417,34 @@ impl TypeChecker {
                 self.current_self_type = None;
                 self.current_generics.clear();
             }
+            Item::ExternBlock(block) => {
+                // Foreign declarations were never collected, so every FFI symbol —
+                // time_ns, __intrinsic_malloc, the whole vdom_* and sigil_tls_*
+                // surface — was unknown to the checker. Their signatures are
+                // declared right there; there is no reason not to use them.
+                for extern_item in &block.items {
+                    if let crate::ast::ExternItem::Function(f) = extern_item {
+                        let params: Vec<Type> = f
+                            .params
+                            .iter()
+                            .map(|p| self.convert_type(&p.ty))
+                            .collect();
+                        let return_type = f
+                            .return_type
+                            .as_ref()
+                            .map(|t| self.convert_type(t))
+                            .unwrap_or(Type::Unit);
+                        self.functions.insert(
+                            f.name.name.clone(),
+                            Type::Function {
+                                params,
+                                return_type: Box::new(return_type),
+                                is_async: false,
+                            },
+                        );
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1905,9 +1946,40 @@ impl TypeChecker {
                         }
                     }
                 }
-                // For bootstrapping: treat undefined paths as unknown types
-                // This allows cross-file references to not cause errors
-                // A real type checker would require imports or multi-file analysis
+                // For bootstrapping: treat undefined paths as unknown types.
+                // There is no import analysis here, so a name defined in another
+                // file is indistinguishable from a typo.
+                //
+                // The cost is that `sigil check` reports nothing for
+                // `println(totally_undefined_thing)`, which then dies at run time.
+                // --strict trades those false negatives for false positives on
+                // cross-file references, which is why it is opt-in.
+                if self.strict && path.segments.len() == 1 {
+                    let name = path.segments[0].ident.name.clone();
+                    // A bare variant constructor — `Ok`, `Some`, `None`, `Err`,
+                    // or any variant of a user enum — is a name too. Only the
+                    // qualified `Enum·Variant` form goes through the two-segment
+                    // path above.
+                    let is_variant = matches!(name.as_str(), "Ok" | "Err" | "Some" | "None")
+                        || self.types.values().any(|def| {
+                            matches!(def, TypeDef::Enum { variants, .. }
+                                if variants.iter().any(|(v, _)| *v == name))
+                        });
+                    let known = is_variant
+                        || self.functions.contains_key(&name)
+                        || self.stdlib_functions.contains(&name)
+                        || self.types.contains_key(&name)
+                        || self.impl_methods.contains_key(&name)
+                        || self.current_generics.contains_key(&name)
+                        || self.env.borrow().lookup(&name).is_some();
+                    if !known {
+                        let span = path.segments[0].ident.span;
+                        self.error(
+                            TypeError::new(format!("cannot find `{}` in this scope", name))
+                                .with_span(span),
+                        );
+                    }
+                }
                 self.fresh_var()
             }
 
@@ -2158,14 +2230,31 @@ impl TypeChecker {
             }
 
             Expr::For {
-                pattern: _,
+                pattern,
                 iter,
                 body,
                 ..
             } => {
-                // Infer the iterable type (for basic type checking)
-                let _ = self.infer_expr(iter);
+                // Bind the loop variable. The pattern used to be discarded, so
+                // `∀ i ∈ xs { … i … }` left `i` unbound: its type fell through to a
+                // fresh variable, and under --strict it read as an undefined name.
+                // That accounted for the single largest group of false positives.
+                let iter_ty = self.infer_expr(iter);
+                let (iter_inner, iter_ev) = self.strip_evidence(&iter_ty);
+                let elem_ty = match self.apply_substitutions(&iter_inner) {
+                    Type::Array { element, .. } | Type::Slice(element) => *element,
+                    Type::Named { ref name, ref generics }
+                        if !generics.is_empty()
+                            && matches!(name.as_str(), "Vec" | "VecDeque" | "HashSet" | "BTreeSet") =>
+                    {
+                        generics[0].clone()
+                    }
+                    _ => self.fresh_var(),
+                };
+                self.push_scope();
+                self.bind_pattern(pattern, &elem_ty, iter_ev);
                 self.check_block(body);
+                self.pop_scope();
                 Type::Unit
             }
 
@@ -3750,12 +3839,49 @@ impl TypeChecker {
     }
 
     /// Attempt to unify two types
+    /// Whether one side is a C string pointer and the other a string.
+    fn is_cstr_ptr_pair(&self, a: &Type, b: &Type) -> bool {
+        let is_char_ptr = |t: &Type| match t {
+            Type::Ptr { inner, .. } => {
+                let (i, _) = self.strip_evidence(inner);
+                matches!(i, Type::Int(IntSize::U8) | Type::Int(IntSize::I8) | Type::Str)
+            }
+            _ => false,
+        };
+        let is_stringy = |t: &Type| {
+            let (t, _) = self.strip_evidence(t);
+            match &t {
+                Type::Str => true,
+                Type::Named { name, .. } => name == "String",
+                Type::Ref { inner, .. } => {
+                    let (i, _) = self.strip_evidence(inner);
+                    matches!(i, Type::Str) || matches!(&i, Type::Named { name, .. } if name == "String")
+                }
+                _ => false,
+            }
+        };
+        let (a_s, _) = self.strip_evidence(a);
+        let (b_s, _) = self.strip_evidence(b);
+        (is_char_ptr(&a_s) && is_stringy(&b_s)) || (is_stringy(&a_s) && is_char_ptr(&b_s))
+    }
+
     fn unify(&mut self, a: &Type, b: &Type) -> bool {
         // Resolve type aliases first
         let a = self.resolve_alias(a);
         let b = self.resolve_alias(b);
 
         match (&a, &b) {
+            // A string where a C pointer is declared. `extern "C" { rite write(…,
+            // buf: *const u8, …) }` called as `write(1, "Hello", 5)` is the ordinary
+            // way to reach a `const char*` parameter, and the FFI layer does exactly
+            // that coercion at run time. Registering extern signatures made the
+            // checker see these calls for the first time, so this has to be allowed
+            // or every FFI string argument becomes an error.
+            //
+            // Evidence has to be stripped on both sides: the declaration is written
+            // `*const !u8`, so the pointee is Evidential(U8), not U8.
+            _ if self.is_cstr_ptr_pair(&a, &b) => true,
+
             // Type variables - check these FIRST before other patterns
             (Type::Var(v), t) => {
                 if let Some(resolved) = self.substitutions.get(v) {
@@ -4385,6 +4511,12 @@ impl PatternExt for Pattern {
     fn binding_name(&self) -> Option<String> {
         match self {
             Pattern::Ident { name, .. } => Some(name.name.clone()),
+            // See through a reference pattern. `rite g(&self)` — by far the most
+            // common receiver form — wraps the binding in Pattern::Ref, so it bound
+            // nothing at all and `self` was undefined for the whole method body.
+            // Bare `self` and `&Δ self` take different shapes and did bind, which
+            // is why this survived: the one spelling that failed was the usual one.
+            Pattern::Ref { pattern, .. } => pattern.binding_name(),
             _ => None,
         }
     }
@@ -4392,6 +4524,7 @@ impl PatternExt for Pattern {
     fn binding_span(&self) -> Option<Span> {
         match self {
             Pattern::Ident { name, .. } => Some(name.span),
+            Pattern::Ref { pattern, .. } => pattern.binding_span(),
             _ => None,
         }
     }
