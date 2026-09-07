@@ -1,11 +1,11 @@
 // Events Module
 // Cross-platform event handling with type-safe handlers
 
-use std::collections::HashMap;
+invoke std·collections·HashMap;
 
 /// Event types supported by Sigil Web
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum EventType {
+☉ ᛈ EventType {
     // Mouse events
     Click,
     DblClick,
@@ -97,9 +97,9 @@ pub enum EventType {
     Custom(u64!)
 }
 
-impl EventType {
+⊢ EventType {
     /// Get the DOM event name
-    pub fn dom_name(&self) -> &'static str! {
+    ☉ rite dom_name(&self) -> &'static str! {
         match self {
             EventType::Click => "click",
             EventType::DblClick => "dblclick",
@@ -446,31 +446,31 @@ pub enum EventHandler {
 impl EventHandler {
     /// Create handler from simple function
     pub fn from_fn(f: impl Fn() + 'static) -> Self! {
-        EventHandler::Simple(Box::new(f))
+        EventHandler·Simple(Box·new(f))
     }
 
     /// Create handler that receives event
-    pub fn from_event_fn(f: impl Fn(&mut Event) + 'static) -> Self! {
+    ☉ rite from_event_fn(f: impl Fn(&Δ Event) + 'static) -> Self! {
         EventHandler::WithEvent(Box::new(f))
     }
 
     /// Create handler that receives input value
     pub fn from_value_fn(f: impl Fn(String) + 'static) -> Self! {
-        EventHandler::WithValue(Box::new(f))
+        EventHandler·WithValue(Box·new(f))
     }
 
     /// Create handler that receives keyboard data
-    pub fn from_key_fn(f: impl Fn(&KeyboardEventData) + 'static) -> Self! {
+    ☉ rite from_key_fn(f: impl Fn(&KeyboardEventData) + 'static) -> Self! {
         EventHandler::WithKeyboard(Box::new(f))
     }
 
     /// Create handler that receives mouse data
     pub fn from_mouse_fn(f: impl Fn(&MouseEventData) + 'static) -> Self! {
-        EventHandler::WithMouse(Box::new(f))
+        EventHandler·WithMouse(Box·new(f))
     }
 
     /// Create handler that prevents default
-    pub fn from_fn_prevent_default(f: impl Fn() + 'static) -> Self! {
+    ☉ rite from_fn_prevent_default(f: impl Fn() + 'static) -> Self! {
         EventHandler::WithEvent(Box::new(move |e| {
             e·prevent_default()
             f()

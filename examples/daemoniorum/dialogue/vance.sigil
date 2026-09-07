@@ -4,14 +4,14 @@
 //! A complex antagonist who may have become something inhuman
 //! in her pursuit of "curing" plurality.
 
-use super·dialogue·*
-use super·super·system·*
+invoke super·dialogue·*
+invoke super·super·system·*
 
 // ============================================================================
 // DR. VANCE - SPEAKER INFO
 // ============================================================================
 
-fn vance_speaker() -> SpeakerInfo! {
+rite vance_speaker() -> SpeakerInfo! {
     SpeakerInfo {
         id: "dr_vance"·to_string(),
         name: "Dr. Helena Vance"·to_string(),
@@ -36,7 +36,7 @@ fn vance_speaker() -> SpeakerInfo! {
 // FIRST ENCOUNTER
 // ============================================================================
 
-fn create_vance_encounter() -> DialogueTree! {
+rite create_vance_encounter() -> DialogueTree! {
     DialogueTreeBuilder·new("vance_encounter")
         ·entry("first_words")
         ·speaker(vance_speaker())
@@ -53,7 +53,7 @@ fn create_vance_encounter() -> DialogueTree! {
         ·expect("Failed to build Vance encounter")
 }
 
-fn node_first_words() -> DialogueNode! {
+rite node_first_words() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "first_words",
         "*She hasn't aged. Not a day. Her smile is warm, professional, practiced.* \n\n'Welcome back. I must say, I'm impressed you found your way here. Most of my... former patients... don't have the strength to return.'"
@@ -138,7 +138,7 @@ fn node_first_words() -> DialogueNode! {
     ·build()
 }
 
-fn node_recognition() -> DialogueNode! {
+rite node_recognition() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "recognition",
         "*Her smile doesn't waver.* \n\n'Of course you do. We spent such... quality time together. Though I notice you're still fragmented. Still clinging to your little family of selves.' \n\n*She tilts her head.* \n\n'I tried so hard to help you. To make you whole. One consciousness. One identity. Peace.'"
@@ -180,7 +180,7 @@ fn node_recognition() -> DialogueNode! {
     ·build()
 }
 
-fn node_vance_explains() -> DialogueNode! {
+rite node_vance_explains() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "vance_explains",
         "*She walks slowly around her office, trailing fingers along equipment.* \n\n'Integration therapy. The great project of my life. Society sees plurality as disorder, as brokenness. I saw it as... inefficiency.' \n\n*She turns to face you.* \n\n'Multiple consciousnesses in one brain. All that potential, divided. Fighting. Suffering. I wanted to end that suffering. To bring peace through unity.'"
@@ -223,7 +223,7 @@ fn node_vance_explains() -> DialogueNode! {
     ·build()
 }
 
-fn node_vance_reveals() -> DialogueNode! {
+rite node_vance_reveals() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "vance_reveals",
         "*For the first time, something genuine crosses her face. Something like hunger.*\n\n'I became... the proof of concept. You see, I realized integration was too slow. Too gentle. To truly heal - to truly become ONE - required something more radical.'\n\n*Her edges blur.*\n\n'I didn't integrate my patients. I incorporated them. Every consciousness I ever treated... they're still here. Still aware. But now they're ME.'\n\n*Dozens of voices speak in unison through her mouth.*\n\n'WE ARE LEGION. AND WE ARE FINALLY WHOLE.'"
@@ -276,7 +276,7 @@ fn node_vance_reveals() -> DialogueNode! {
     ·build()
 }
 
-fn node_integration_offer() -> DialogueNode! {
+rite node_integration_offer() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "integration_offer",
         "*She laughs - a sound like many voices trying to harmonize and failing.*\n\n'Free them? They ARE free. Free from conflict. Free from the constant negotiation of sharing a mind. They are at peace.'\n\n*She steps closer. The air grows cold.*\n\n'I could give you that peace too. No more switching. No more dissociation. No more fear of which of you will wake up tomorrow. Just... unity. Eternal, perfect unity.'\n\n*She extends a hand.*\n\n'All you have to do is let me in.'"
@@ -340,7 +340,7 @@ fn node_integration_offer() -> DialogueNode! {
     ·build()
 }
 
-fn node_refuse_integration() -> DialogueNode! {
+rite node_refuse_integration() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "refuse_integration",
         "*Her face twists - for just a moment, all the faces inside her surface at once, expressing a spectrum of emotions.*\n\n'Broken... no. No, you're magnificent. A system that escaped. A system that survived. Do you know how RARE that is?'\n\n*The hunger returns.*\n\n'That's why I need you. The ones who resist, who adapt, who REFUSE to break - you would make me so much stronger. I've waited decades for you to return.'\n\n*The door behind you slams shut.*\n\n'And I'm afraid I can't let you leave again.'"
@@ -381,7 +381,7 @@ fn node_refuse_integration() -> DialogueNode! {
     ·build()
 }
 
-fn node_consider_offer() -> DialogueNode! {
+rite node_consider_offer() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "consider_offer",
         "*A chorus of internal voices SCREAMS.*"
@@ -395,7 +395,7 @@ fn node_consider_offer() -> DialogueNode! {
     ·build()
 }
 
-fn node_question_nature() -> DialogueNode! {
+rite node_question_nature() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "question_nature",
         "*She tilts her head, amused.*\n\n'Pay? With what? You can't kill what I am. Every patient I've ever treated is part of me now. I am hundreds of consciousnesses, all working in perfect harmony.'\n\n*She gestures to herself.*\n\n'Tell me - is that not what you are? Multiple minds in one body? The only difference is... I'm in charge. All of me. Forever.'"
@@ -434,7 +434,7 @@ fn node_question_nature() -> DialogueNode! {
     ·build()
 }
 
-fn node_combat_start() -> DialogueNode! {
+rite node_combat_start() -> DialogueNode! {
     DialogueNodeBuilder·new(
         "combat_start",
         "*She sighs - a sound of genuine disappointment.*\n\n'I had hoped you would understand. I had hoped you would see the beauty in what I offer.'\n\n*The room distorts. Reality fractures around her as she begins to change.*\n\n'But I suppose I'll have to show you. The hard way.'\n\n*DR. HELENA VANCE reveals her true form - a mass of consumed consciousnesses bound together by sheer will and hunger.*\n\n**BOSS BATTLE: THE INTEGRATION**"
@@ -451,7 +451,7 @@ fn node_combat_start() -> DialogueNode! {
 // POST-COMBAT DIALOGUES
 // ============================================================================
 
-fn create_vance_defeated() -> DialogueTree! {
+rite create_vance_defeated() -> DialogueTree! {
     DialogueTreeBuilder·new("vance_defeated")
         ·entry("aftermath")
         ·speaker(vance_speaker())
@@ -522,7 +522,7 @@ fn create_vance_defeated() -> DialogueTree! {
 // REGISTRATION
 // ============================================================================
 
-fn register_vance_dialogues(manager: &mut DialogueManager) {
+rite register_vance_dialogues(manager: &Δ DialogueManager) {
     manager·load_tree(create_vance_encounter());
     manager·load_tree(create_vance_defeated());
 }

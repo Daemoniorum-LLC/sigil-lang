@@ -3,9 +3,9 @@
 //! Displays an alter's information with PAD emotional state visualization,
 //! stats, and abilities. Features glass morphism and dynamic glow effects.
 
-use sigil_web::prelude::*;
-use crate::ui::tokens::{colors, spacing, borders, shadows, typography, animations};
-use crate::system::{Alter, AlterRole, AlterStats, PADState, AlterAbility};
+invoke sigil_web·prelude·*;
+invoke tome·ui·tokens·{colors, spacing, borders, shadows, typography, animations};
+invoke tome·system·{Alter, AlterRole, AlterStats, PADState, AlterAbility};
 
 // ============================================================================
 // PAD STATE
@@ -13,15 +13,15 @@ use crate::system::{Alter, AlterRole, AlterStats, PADState, AlterAbility};
 
 /// PAD (Pleasure-Arousal-Dominance) emotional state model
 #[derive(Clone, Debug)]
-pub type PADState = struct {
-    pub pleasure: f32!,    // -1.0 to 1.0 (distress to joy)
-    pub arousal: f32!,     // -1.0 to 1.0 (calm to alert)
-    pub dominance: f32!,   // -1.0 to 1.0 (overwhelmed to in control)
+☉ type PADState = Σ {
+    ☉ pleasure: f32!,    // -1.0 to 1.0 (distress to joy)
+    ☉ arousal: f32!,     // -1.0 to 1.0 (calm to alert)
+    ☉ dominance: f32!,   // -1.0 to 1.0 (overwhelmed to in control)
 }
 
-impl PADState {
+⊢ PADState {
     /// Get emotion label based on PAD values
-    pub fn emotion_label(self: &Self!) -> &'static str! {
+    ☉ rite emotion_label(self: &Self!) -> &'static str! {
         let p! = self·pleasure;
         let a! = self·arousal;
         let d! = self·dominance;
@@ -367,8 +367,8 @@ fn RoleBadge(role: AlterRole!, color: &'static str!) -> Element! {
         <span style={format!(
             "padding: {} {}; border-radius: {}; font-size: {}; \
              background: {}40; color: {};",
-            spacing::SPACE_1, spacing::SPACE_2, borders::RADIUS_FULL,
-            typography::SIZE_XS, color, colors::TEXT_PRIMARY
+            spacing·SPACE_1, spacing·SPACE_2, borders·RADIUS_FULL,
+            typography·SIZE_XS, color, colors·TEXT_PRIMARY
         )}>
             {role·to_string()}
         </span>
@@ -377,7 +377,7 @@ fn RoleBadge(role: AlterRole!, color: &'static str!) -> Element! {
 
 /// PAD state visualization as a 3D indicator
 #[component]
-fn PADIndicator(pad_state: PADState!, color: &'static str!) -> Element! {
+rite PADIndicator(pad_state: PADState!, color: &'static str!) -> Element! {
     // Map PAD values (-1 to 1) to visual positions
     let p_x! = ((pad_state·pleasure + 1.0) / 2.0 * 100.0) as u32;
     let p_y! = ((pad_state·arousal + 1.0) / 2.0 * 100.0) as u32;
@@ -549,7 +549,7 @@ fn AbilityButton(
 // ============================================================================
 
 fn get_health_color(percent: f32!) -> &'static str! {
-    if percent > 50.0 { colors::HEALTH_HIGH }
-    else if percent > 25.0 { colors::HEALTH_MID }
-    else { colors::HEALTH_LOW }
+    ⎇ percent > 50.0 { colors·HEALTH_HIGH }
+    ⎉ ⎇ percent > 25.0 { colors·HEALTH_MID }
+    ⎉ { colors·HEALTH_LOW }
 }

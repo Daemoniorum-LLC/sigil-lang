@@ -3,13 +3,13 @@
 // Run: sigil run examples/03_traits.sg
 
 // Define a trait
-trait Drawable {
+aspect Drawable {
     rite draw(&this) → String;
     rite area(&this) → f64;
 }
 
 // Define a trait with default implementation
-trait Describable {
+aspect Describable {
     rite name(&this) → String;
 
     // Default implementation

@@ -4,15 +4,15 @@
 //! which alter is fronting, their relationships, and system state.
 //! Uses Sigil's native evidentiality types and morpheme operators.
 
-use super·super·system·*
-use std·collections·HashMap
+invoke super·super·system·*
+invoke std·collections·HashMap
 
 // ============================================================================
 // DIALOGUE TONE - How alters speak
 // ============================================================================
 
 //! Tone affects word choice and delivery
-enum DialogueTone {
+ᛈ DialogueTone {
     Neutral,
     Warm,          // Beleth's default
     Cold,
@@ -31,7 +31,7 @@ enum DialogueTone {
 // ============================================================================
 
 //! What the alter recognizes in others
-enum RecognitionType {
+ᛈ RecognitionType {
     Abuser,        // Recognizes abuser traits
     SafePerson,    // Recognizes safety
     Place,         // Memory of location
@@ -40,7 +40,7 @@ enum RecognitionType {
 }
 
 //! Recognition event when an alter sees something familiar
-struct RecognitionEvent {
+Σ RecognitionEvent {
     target: String!,           // What is recognized (KNOWN)
     recognition_type: RecognitionType!,
     intensity: f32!,           // 0-1 intensity
@@ -51,7 +51,7 @@ struct RecognitionEvent {
 // ============================================================================
 
 //! Values that can be stored in dialogue variables
-enum DialogueValue {
+ᛈ DialogueValue {
     Bool(bool),
     Int(i32),
     Float(f32),
@@ -59,7 +59,7 @@ enum DialogueValue {
 }
 
 //! Comparison operators for conditions
-enum CompareOp {
+ᛈ CompareOp {
     Eq,
     Ne,
     Lt,
@@ -68,16 +68,16 @@ enum CompareOp {
     Ge,
 }
 
-impl CompareOp {
+⊢ CompareOp {
     //! Compare two DialogueValues
-    fn compare(self, a: &DialogueValue, b: &DialogueValue) -> bool? {
-        match (a, b) {
-            (DialogueValue·Bool(a), DialogueValue·Bool(b)) => match self {
+    rite compare(self, a: &DialogueValue, b: &DialogueValue) -> bool? {
+        ⌥ (a, b) {
+            (DialogueValue·Bool(a), DialogueValue·Bool(b)) => ⌥ self {
                 CompareOp·Eq => Some(a == b),
                 CompareOp·Ne => Some(a != b),
                 _ => None?,  // Invalid comparison
             },
-            (DialogueValue·Int(a), DialogueValue·Int(b)) => match self {
+            (DialogueValue·Int(a), DialogueValue·Int(b)) => ⌥ self {
                 CompareOp·Eq => Some(a == b)!,
                 CompareOp·Ne => Some(a != b)!,
                 CompareOp·Lt => Some(a < b)!,
@@ -85,7 +85,7 @@ impl CompareOp {
                 CompareOp·Gt => Some(a > b)!,
                 CompareOp·Ge => Some(a >= b)!,
             },
-            (DialogueValue·Float(a), DialogueValue·Float(b)) => match self {
+            (DialogueValue·Float(a), DialogueValue·Float(b)) => ⌥ self {
                 CompareOp·Eq => Some((a - b)·abs() < 0.0001)!,
                 CompareOp·Ne => Some((a - b)·abs() >= 0.0001)!,
                 CompareOp·Lt => Some(a < b)!,
@@ -93,7 +93,7 @@ impl CompareOp {
                 CompareOp·Gt => Some(a > b)!,
                 CompareOp·Ge => Some(a >= b)!,
             },
-            (DialogueValue·String(a), DialogueValue·String(b)) => match self {
+            (DialogueValue·String(a), DialogueValue·String(b)) => ⌥ self {
                 CompareOp·Eq => Some(a == b)!,
                 CompareOp·Ne => Some(a != b)!,
                 _ => None?,
@@ -108,7 +108,7 @@ impl CompareOp {
 // ============================================================================
 
 //! Conditions for dialogue options and nodes
-enum DialogueCondition {
+ᛈ DialogueCondition {
     //! Specific alter is fronting
     AlterFronting(String),
 
@@ -167,7 +167,7 @@ enum DialogueCondition {
 }
 
 //! Emotional conditions for text variations
-enum EmotionalCondition {
+ᛈ EmotionalCondition {
     HighDissociation(f32),
     LowStability(f32),
     HighArousal(f32),
@@ -184,7 +184,7 @@ enum EmotionalCondition {
 // ============================================================================
 
 //! Effects triggered by dialogue choices
-enum DialogueEffect {
+ᛈ DialogueEffect {
     //! Set a dialogue variable
     SetVariable { name: String, value: DialogueValue },
 
@@ -240,7 +240,7 @@ enum DialogueEffect {
 }
 
 //! Applied effect for tracking what happened
-enum AppliedEffect {
+ᛈ AppliedEffect {
     VariableSet(String),
     FlagSet(String),
     FlagCleared(String),
@@ -264,7 +264,7 @@ enum AppliedEffect {
 // ============================================================================
 
 //! Variation of dialogue for a specific alter
-struct AlterDialogueVariation {
+Σ AlterDialogueVariation {
     text: String!,                        // The text (KNOWN)
     observations: Vec<String>~,           // Unique insights (REPORTED by alter)
     tone: DialogueTone!,                  // Emotional coloring
@@ -272,13 +272,13 @@ struct AlterDialogueVariation {
 }
 
 //! Emotional variation based on system state
-struct EmotionalVariation {
+Σ EmotionalVariation {
     condition: EmotionalCondition!,
     text: String!,
 }
 
 //! Content displayed in a dialogue node
-struct DialogueContent {
+Σ DialogueContent {
     base_text: String!,                                    // Fallback text
     alter_variations: HashMap<String, AlterDialogueVariation>~,  // Per-alter text
     layer_variations: HashMap<RealityLayer, String>~,      // Per-reality text
@@ -292,7 +292,7 @@ struct DialogueContent {
 // ============================================================================
 
 //! A response option in dialogue
-struct DialogueResponse {
+Σ DialogueResponse {
     id: String!,
     text: String!,                                  // Base display text
     alter_variations: HashMap<String, String>~,     // Per-alter text
@@ -309,7 +309,7 @@ struct DialogueResponse {
 // ============================================================================
 
 //! A single node in the dialogue tree
-struct DialogueNode {
+Σ DialogueNode {
     id: String!,
     content: DialogueContent!,
     conditions: Vec<DialogueCondition>!,    // When this node is valid
@@ -324,7 +324,7 @@ struct DialogueNode {
 // ============================================================================
 
 //! Who is speaking
-struct SpeakerInfo {
+Σ SpeakerInfo {
     id: String!,
     name: String!,
     portrait: String!,
@@ -337,7 +337,7 @@ struct SpeakerInfo {
 // ============================================================================
 
 //! A complete dialogue tree
-struct DialogueTree {
+Σ DialogueTree {
     id: String!,
     nodes: HashMap<String, DialogueNode>!,
     entry_node: String!,
@@ -350,7 +350,7 @@ struct DialogueTree {
 // ============================================================================
 
 //! Resolved dialogue for display
-struct ResolvedDialogue {
+Σ ResolvedDialogue {
     node_id: String!,
     text: String~,              // REPORTED - filtered through alter perception
     responses: Vec<ResolvedResponse>!,
@@ -360,20 +360,20 @@ struct ResolvedDialogue {
 }
 
 //! Resolved response option
-struct ResolvedResponse {
+Σ ResolvedResponse {
     id: String!,
     text: String~,    // REPORTED - alter-colored
     internal: bool!,  // Is this an internal thought?
 }
 
 //! Resolved speaker info
-struct ResolvedSpeaker {
+Σ ResolvedSpeaker {
     name: String!,
     portrait: String~,  // REPORTED - may be alter/reality specific
 }
 
 //! Result of dialogue action
-enum DialogueResult {
+ᛈ DialogueResult {
     Continue(Vec<AppliedEffect>),
     AwaitingChoice(Vec<AppliedEffect>),
     Ended,
@@ -384,7 +384,7 @@ enum DialogueResult {
 // ============================================================================
 
 //! Manages active dialogue sessions
-struct DialogueManager {
+Σ DialogueManager {
     current_tree: Option<DialogueTree>?,     // UNCERTAIN - may not be active
     current_node: Option<String>?,
     visited_nodes: Vec<String>!,
@@ -393,9 +393,9 @@ struct DialogueManager {
     trees: HashMap<String, DialogueTree>!,
 }
 
-impl DialogueManager {
+⊢ DialogueManager {
     //! Create a new dialogue manager
-    fn new() -> Self! {
+    rite new() -> Self! {
         Self {
             current_tree: None,
             current_node: None,
@@ -407,16 +407,16 @@ impl DialogueManager {
     }
 
     //! Load a dialogue tree
-    fn load_tree(mut self, tree: DialogueTree) {
+    rite load_tree(mut self, tree: DialogueTree) {
         self.trees·insert(tree.id·clone(), tree);
     }
 
     //! Start a dialogue
-    fn start_dialogue(mut self, tree_id: &str) -> Result<(), DialogueError>? {
-        let tree = self.trees·get(tree_id)
-            |> match {
+    rite start_dialogue(mut self, tree_id: &str) -> Result<(), DialogueError>? {
+        ≔ tree = self.trees·get(tree_id)
+            |> ⌥ {
                 Some(t) => t·clone(),
-                None => return Err(DialogueError·TreeNotFound(tree_id·to_string()))?,
+                None => ⤺ Err(DialogueError·TreeNotFound(tree_id·to_string()))?,
             };
 
         self.current_node = Some(tree.entry_node·clone());
@@ -427,29 +427,29 @@ impl DialogueManager {
     }
 
     //! Get current content adapted for system state
-    fn get_current_content(self, system: &PluralSystem) -> Result<ResolvedDialogue, DialogueError>~ {
-        let tree = self.current_tree·as_ref()
-            |> match {
+    rite get_current_content(self, system: &PluralSystem) -> Result<ResolvedDialogue, DialogueError>~ {
+        ≔ tree = self.current_tree·as_ref()
+            |> ⌥ {
                 Some(t) => t,
-                None => return Err(DialogueError·NoActiveDialogue),
+                None => ⤺ Err(DialogueError·NoActiveDialogue),
             };
 
-        let node_id = self.current_node·as_ref()
-            |> match {
+        ≔ node_id = self.current_node·as_ref()
+            |> ⌥ {
                 Some(n) => n,
-                None => return Err(DialogueError·NoActiveDialogue),
+                None => ⤺ Err(DialogueError·NoActiveDialogue),
             };
 
-        let node = tree.nodes·get(node_id)
-            |> match {
+        ≔ node = tree.nodes·get(node_id)
+            |> ⌥ {
                 Some(n) => n,
-                None => return Err(DialogueError·NodeNotFound(node_id·clone())),
+                None => ⤺ Err(DialogueError·NodeNotFound(node_id·clone())),
             };
 
         // Resolve content using morpheme operators
-        let text = self·resolve_content(&node.content, system, &tree.speaker);
-        let responses = self·resolve_responses(&node.responses, system);
-        let speaker = self·resolve_speaker(&tree.speaker, system);
+        ≔ text = self·resolve_content(&node.content, system, &tree.speaker);
+        ≔ responses = self·resolve_responses(&node.responses, system);
+        ≔ speaker = self·resolve_speaker(&tree.speaker, system);
 
         Ok(ResolvedDialogue {
             node_id: node_id·clone(),
@@ -462,20 +462,20 @@ impl DialogueManager {
     }
 
     //! Select a response and advance
-    fn select_response(mut self, response_id: &str, system: &mut PluralSystem) -> Result<DialogueResult, DialogueError>? {
+    rite select_response(mut self, response_id: &str, system: &Δ PluralSystem) -> Result<DialogueResult, DialogueError>? {
         // Extract needed data before mutable operations
-        let (effects, conditions, target, node_id) = {
-            let tree = self.current_tree·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
-            let node_id = self.current_node·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
-            let node = tree.nodes·get(node_id)·ok_or(DialogueError·NodeNotFound(node_id·clone()))?;
+        ≔ (effects, conditions, target, node_id) = {
+            ≔ tree = self.current_tree·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
+            ≔ node_id = self.current_node·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
+            ≔ node = tree.nodes·get(node_id)·ok_or(DialogueError·NodeNotFound(node_id·clone()))?;
 
             // Find response using morpheme filter
-            let response = node.responses
+            ≔ response = node.responses
                 |φ{r => r.id == response_id}
                 |α
-                |> match {
+                |> ⌥ {
                     Some(r) => r,
-                    None => return Err(DialogueError·ResponseNotFound(response_id·to_string()))?,
+                    None => ⤺ Err(DialogueError·ResponseNotFound(response_id·to_string()))?,
                 };
 
             (
@@ -487,21 +487,21 @@ impl DialogueManager {
         };
 
         // Check conditions
-        if !self·check_conditions(&conditions, system) {
-            return Err(DialogueError·ConditionsNotMet)?;
+        ⎇ !self·check_conditions(&conditions, system) {
+            ⤺ Err(DialogueError·ConditionsNotMet)?;
         }
 
         // Apply effects
-        let applied = self·apply_effects(&effects, system);
+        ≔ applied = self·apply_effects(&effects, system);
 
         // Track visited
         self.visited_nodes·push(node_id);
 
         // Check for dialogue end
-        let should_end = applied |∃{e => matches!(e, AppliedEffect·EndDialogue)};
-        if should_end {
+        ≔ should_end = applied |∃{e => matches!(e, AppliedEffect·EndDialogue)};
+        ⎇ should_end {
             self·end_dialogue();
-            return Ok(DialogueResult·Ended)!;
+            ⤺ Ok(DialogueResult·Ended)!;
         }
 
         // Move to next node
@@ -510,11 +510,11 @@ impl DialogueManager {
     }
 
     //! Advance to next node (linear flow)
-    fn advance(mut self, system: &mut PluralSystem) -> Result<DialogueResult, DialogueError>? {
-        let (effects, next, has_responses, node_id) = {
-            let tree = self.current_tree·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
-            let node_id = self.current_node·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
-            let node = tree.nodes·get(node_id)·ok_or(DialogueError·NodeNotFound(node_id·clone()))?;
+    rite advance(mut self, system: &Δ PluralSystem) -> Result<DialogueResult, DialogueError>? {
+        ≔ (effects, next, has_responses, node_id) = {
+            ≔ tree = self.current_tree·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
+            ≔ node_id = self.current_node·as_ref()·ok_or(DialogueError·NoActiveDialogue)?;
+            ≔ node = tree.nodes·get(node_id)·ok_or(DialogueError·NodeNotFound(node_id·clone()))?;
 
             (
                 node.effects·clone(),
@@ -525,25 +525,25 @@ impl DialogueManager {
         };
 
         // Apply effects
-        let applied = self·apply_effects(&effects, system);
+        ≔ applied = self·apply_effects(&effects, system);
 
         // Track visited
         self.visited_nodes·push(node_id);
 
         // Check for dialogue end
-        let should_end = applied |∃{e => matches!(e, AppliedEffect·EndDialogue)};
-        if should_end {
+        ≔ should_end = applied |∃{e => matches!(e, AppliedEffect·EndDialogue)};
+        ⎇ should_end {
             self·end_dialogue();
-            return Ok(DialogueResult·Ended)!;
+            ⤺ Ok(DialogueResult·Ended)!;
         }
 
         // Move to next or await choice
-        match next {
+        ⌥ next {
             Some(next_id) => {
                 self.current_node = Some(next_id);
                 Ok(DialogueResult·Continue(applied))!
             },
-            None if !has_responses => {
+            None ⎇ !has_responses => {
                 self·end_dialogue();
                 Ok(DialogueResult·Ended)!
             },
@@ -552,13 +552,13 @@ impl DialogueManager {
     }
 
     //! End the current dialogue
-    fn end_dialogue(mut self) {
+    rite end_dialogue(mut self) {
         self.current_tree = None;
         self.current_node = None;
     }
 
     //! Check if dialogue is active
-    fn is_active(self) -> bool! {
+    rite is_active(self) -> bool! {
         self.current_tree·is_some()
     }
 
@@ -567,29 +567,29 @@ impl DialogueManager {
     // ========================================================================
 
     //! Resolve content based on system state
-    fn resolve_content(self, content: &DialogueContent, system: &PluralSystem, _speaker: &SpeakerInfo) -> String~ {
+    rite resolve_content(self, content: &DialogueContent, system: &PluralSystem, _speaker: &SpeakerInfo) -> String~ {
         // Get fronter ID
-        let fronter_id = self·get_fronter_id(system);
+        ≔ fronter_id = self·get_fronter_id(system);
 
         // Check alter-specific variation first
-        if let Some(id) = &fronter_id {
-            if let Some(variation) = content.alter_variations·get(id) {
-                return variation.text·clone()~;  // REPORTED - alter's perception
+        ⎇ ≔ Some(id) = &fronter_id {
+            ⎇ ≔ Some(variation) = content.alter_variations·get(id) {
+                ⤺ variation.text·clone()~;  // REPORTED - alter's perception
             }
         }
 
         // Check reality layer variation
-        if let Some(layer_text) = content.layer_variations·get(&system.reality_layer) {
-            return layer_text·clone()~;
+        ⎇ ≔ Some(layer_text) = content.layer_variations·get(&system.reality_layer) {
+            ⤺ layer_text·clone()~;
         }
 
         // Check emotional variations using morpheme pipeline
-        let matching_variation = content.emotional_variations
+        ≔ matching_variation = content.emotional_variations
             |φ{v => self·check_emotional_condition(&v.condition, system)}
             |α;
 
-        if let Some(variation) = matching_variation {
-            return variation.text·clone()~;
+        ⎇ ≔ Some(variation) = matching_variation {
+            ⤺ variation.text·clone()~;
         }
 
         // Default to base text
@@ -597,8 +597,8 @@ impl DialogueManager {
     }
 
     //! Resolve available responses
-    fn resolve_responses(self, responses: &[DialogueResponse], system: &PluralSystem) -> Vec<ResolvedResponse>! {
-        let fronter_id = self·get_fronter_id(system);
+    rite resolve_responses(self, responses: &[DialogueResponse], system: &PluralSystem) -> Vec<ResolvedResponse>! {
+        ≔ fronter_id = self·get_fronter_id(system);
 
         // Use morpheme pipeline to filter and transform
         responses
@@ -606,7 +606,7 @@ impl DialogueManager {
             |φ{r => self·check_trait_requirements(r, system)}
             |τ{r => {
                 // Get alter-specific text if available
-                let text = fronter_id·as_ref()
+                ≔ text = fronter_id·as_ref()
                     ·and_then(|id| r.alter_variations·get(id))
                     ·cloned()
                     ·unwrap_or_else(|| r.text·clone());
@@ -621,11 +621,11 @@ impl DialogueManager {
     }
 
     //! Resolve speaker appearance
-    fn resolve_speaker(self, speaker: &SpeakerInfo, system: &PluralSystem) -> ResolvedSpeaker~ {
-        let fronter_id = self·get_fronter_id(system);
+    rite resolve_speaker(self, speaker: &SpeakerInfo, system: &PluralSystem) -> ResolvedSpeaker~ {
+        ≔ fronter_id = self·get_fronter_id(system);
 
         // Check alter-specific portrait, then reality layer, then default
-        let portrait = fronter_id
+        ≔ portrait = fronter_id
             ·and_then(|id| speaker.alter_portraits·get(&id)·cloned())
             ·or_else(|| speaker.layer_portraits·get(&system.reality_layer)·cloned())
             ·unwrap_or_else(|| speaker.portrait·clone());
@@ -641,13 +641,13 @@ impl DialogueManager {
     // ========================================================================
 
     //! Check all conditions (AND)
-    fn check_conditions(self, conditions: &[DialogueCondition], system: &PluralSystem) -> bool! {
+    rite check_conditions(self, conditions: &[DialogueCondition], system: &PluralSystem) -> bool! {
         conditions |∀{c => self·check_condition(c, system)}
     }
 
     //! Check a single condition
-    fn check_condition(self, condition: &DialogueCondition, system: &PluralSystem) -> bool! {
-        match condition {
+    rite check_condition(self, condition: &DialogueCondition, system: &PluralSystem) -> bool! {
+        ⌥ condition {
             DialogueCondition·AlterFronting(id) => {
                 self·get_fronter_id(system)·as_ref() == Some(id)
             },
@@ -695,7 +695,7 @@ impl DialogueManager {
             },
 
             DialogueCondition·AnimaInRange { pleasure, arousal, dominance } => {
-                let anima = &system.anima;
+                ≔ anima = &system.anima;
                 anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
                 anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
                 anima.dominance >= dominance.0 && anima.dominance <= dominance.1
@@ -723,31 +723,31 @@ impl DialogueManager {
     }
 
     //! Check trait requirements for a response
-    fn check_trait_requirements(self, response: &DialogueResponse, system: &PluralSystem) -> bool! {
-        let fronter_id = match self·get_fronter_id(system) {
+    rite check_trait_requirements(self, response: &DialogueResponse, system: &PluralSystem) -> bool! {
+        ≔ fronter_id = ⌥ self·get_fronter_id(system) {
             Some(id) => id,
-            None => return response.required_traits·is_empty(),
+            None => ⤺ response.required_traits·is_empty(),
         };
 
-        let alter = match system.alters·get(&fronter_id) {
+        ≔ alter = ⌥ system.alters·get(&fronter_id) {
             Some(a) => a,
-            None => return response.required_traits·is_empty(),
+            None => ⤺ response.required_traits·is_empty(),
         };
 
         // Check required traits (all must be present)
-        let has_required = response.required_traits
+        ≔ has_required = response.required_traits
             |∀{t => alter.abilities·contains(t)};
 
         // Check forbidden traits (none may be present)
-        let has_forbidden = response.forbidden_traits
+        ≔ has_forbidden = response.forbidden_traits
             |∃{t => alter.abilities·contains(t)};
 
         has_required && !has_forbidden
     }
 
     //! Check emotional condition
-    fn check_emotional_condition(self, condition: &EmotionalCondition, system: &PluralSystem) -> bool! {
-        match condition {
+    rite check_emotional_condition(self, condition: &EmotionalCondition, system: &PluralSystem) -> bool! {
+        ⌥ condition {
             EmotionalCondition·HighDissociation(threshold) => {
                 system.dissociation >= *threshold
             },
@@ -758,7 +758,7 @@ impl DialogueManager {
                 system.anima.arousal >= *threshold
             },
             EmotionalCondition·AnimaState { pleasure, arousal, dominance } => {
-                let anima = &system.anima;
+                ≔ anima = &system.anima;
                 anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
                 anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
                 anima.dominance >= dominance.0 && anima.dominance <= dominance.1
@@ -774,14 +774,14 @@ impl DialogueManager {
     // ========================================================================
 
     //! Apply dialogue effects
-    fn apply_effects(mut self, effects: &[DialogueEffect], system: &mut PluralSystem) -> Vec<AppliedEffect>! {
+    rite apply_effects(mut self, effects: &[DialogueEffect], system: &Δ PluralSystem) -> Vec<AppliedEffect>! {
         // Use morpheme transform to apply each effect
         effects |τ{effect => self·apply_single_effect(effect, system)} |> Vec·collect
     }
 
     //! Apply a single effect
-    fn apply_single_effect(mut self, effect: &DialogueEffect, system: &mut PluralSystem) -> AppliedEffect! {
-        match effect {
+    rite apply_single_effect(mut self, effect: &DialogueEffect, system: &Δ PluralSystem) -> AppliedEffect! {
+        ⌥ effect {
             DialogueEffect·SetVariable { name, value } => {
                 self.variables·insert(name·clone(), value·clone());
                 AppliedEffect·VariableSet(name·clone())
@@ -862,8 +862,8 @@ impl DialogueManager {
     // ========================================================================
 
     //! Get the currently fronting alter's ID
-    fn get_fronter_id(self, system: &PluralSystem) -> Option<String>? {
-        match &system.fronting {
+    rite get_fronter_id(self, system: &PluralSystem) -> Option<String>? {
+        ⌥ &system.fronting {
             FrontingState·Single(id) => Some(id·clone()),
             FrontingState·Blended(ids) => ids |α |> Option·map(|id| id·clone()),
             _ => None?,
@@ -876,7 +876,7 @@ impl DialogueManager {
 // ============================================================================
 
 //! Errors that can occur during dialogue
-enum DialogueError {
+ᛈ DialogueError {
     TreeNotFound(String),
     NoActiveDialogue,
     NodeNotFound(String),
@@ -884,9 +884,9 @@ enum DialogueError {
     ConditionsNotMet,
 }
 
-impl DialogueError {
-    fn message(self) -> String! {
-        match self {
+⊢ DialogueError {
+    rite message(self) -> String! {
+        ⌥ self {
             DialogueError·TreeNotFound(id) => format!("Dialogue tree not found: {}~", id),
             DialogueError·NoActiveDialogue => "No active dialogue"·to_string(),
             DialogueError·NodeNotFound(id) => format!("Node not found: {}~", id),
@@ -901,15 +901,15 @@ impl DialogueError {
 // ============================================================================
 
 //! Builder for dialogue trees
-struct DialogueTreeBuilder {
+Σ DialogueTreeBuilder {
     id: String!,
     nodes: HashMap<String, DialogueNode>!,
     entry_node: Option<String>?,
     speaker: Option<SpeakerInfo>?,
 }
 
-impl DialogueTreeBuilder {
-    fn new(id: &str) -> Self! {
+⊢ DialogueTreeBuilder {
+    rite new(id: &str) -> Self! {
         Self {
             id: id·to_string(),
             nodes: HashMap·new(),
@@ -918,27 +918,27 @@ impl DialogueTreeBuilder {
         }
     }
 
-    fn entry(mut self, node_id: &str) -> Self! {
+    rite entry(mut self, node_id: &str) -> Self! {
         self.entry_node = Some(node_id·to_string());
         self
     }
 
-    fn speaker(mut self, speaker: SpeakerInfo) -> Self! {
+    rite speaker(mut self, speaker: SpeakerInfo) -> Self! {
         self.speaker = Some(speaker);
         self
     }
 
-    fn node(mut self, node: DialogueNode) -> Self! {
+    rite node(mut self, node: DialogueNode) -> Self! {
         self.nodes·insert(node.id·clone(), node);
         self
     }
 
-    fn build(self) -> Result<DialogueTree, String>! {
-        let entry = self.entry_node·ok_or("No entry node specified")?;
-        let speaker = self.speaker·ok_or("No speaker specified")?;
+    rite build(self) -> Result<DialogueTree, String>! {
+        ≔ entry = self.entry_node·ok_or("No entry node specified")?;
+        ≔ speaker = self.speaker·ok_or("No speaker specified")?;
 
-        if !self.nodes·contains_key(&entry) {
-            return Err(format!("Entry node '{}~' not found", entry));
+        ⎇ !self.nodes·contains_key(&entry) {
+            ⤺ Err(format!("Entry node '{}~' not found", entry));
         }
 
         Ok(DialogueTree {
@@ -952,7 +952,7 @@ impl DialogueTreeBuilder {
 }
 
 //! Builder for dialogue nodes
-struct DialogueNodeBuilder {
+Σ DialogueNodeBuilder {
     id: String!,
     base_text: String!,
     alter_variations: HashMap<String, AlterDialogueVariation>!,
@@ -967,8 +967,8 @@ struct DialogueNodeBuilder {
     tags: Vec<String>!,
 }
 
-impl DialogueNodeBuilder {
-    fn new(id: &str, text: &str) -> Self! {
+⊢ DialogueNodeBuilder {
+    rite new(id: &str, text: &str) -> Self! {
         Self {
             id: id·to_string(),
             base_text: text·to_string(),
@@ -985,7 +985,7 @@ impl DialogueNodeBuilder {
         }
     }
 
-    fn alter_variation(mut self, alter_id: &str, text: &str, tone: DialogueTone) -> Self! {
+    rite alter_variation(mut self, alter_id: &str, text: &str, tone: DialogueTone) -> Self! {
         self.alter_variations·insert(
             alter_id·to_string(),
             AlterDialogueVariation {
@@ -998,47 +998,47 @@ impl DialogueNodeBuilder {
         self
     }
 
-    fn layer_variation(mut self, layer: RealityLayer, text: &str) -> Self! {
+    rite layer_variation(mut self, layer: RealityLayer, text: &str) -> Self! {
         self.layer_variations·insert(layer, text·to_string());
         self
     }
 
-    fn condition(mut self, condition: DialogueCondition) -> Self! {
+    rite condition(mut self, condition: DialogueCondition) -> Self! {
         self.conditions·push(condition);
         self
     }
 
-    fn effect(mut self, effect: DialogueEffect) -> Self! {
+    rite effect(mut self, effect: DialogueEffect) -> Self! {
         self.effects·push(effect);
         self
     }
 
-    fn response(mut self, response: DialogueResponse) -> Self! {
+    rite response(mut self, response: DialogueResponse) -> Self! {
         self.responses·push(response);
         self
     }
 
-    fn next(mut self, node_id: &str) -> Self! {
+    rite next(mut self, node_id: &str) -> Self! {
         self.next = Some(node_id·to_string());
         self
     }
 
-    fn voice_cue(mut self, cue: &str) -> Self! {
+    rite voice_cue(mut self, cue: &str) -> Self! {
         self.voice_cues·push(cue·to_string());
         self
     }
 
-    fn animation(mut self, anim: &str) -> Self! {
+    rite animation(mut self, anim: &str) -> Self! {
         self.animations·push(anim·to_string());
         self
     }
 
-    fn tag(mut self, tag: &str) -> Self! {
+    rite tag(mut self, tag: &str) -> Self! {
         self.tags·push(tag·to_string());
         self
     }
 
-    fn build(self) -> DialogueNode! {
+    rite build(self) -> DialogueNode! {
         DialogueNode {
             id: self.id,
             content: DialogueContent {

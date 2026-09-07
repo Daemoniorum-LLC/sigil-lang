@@ -4,9 +4,9 @@
 //! Uses Sigil's evidentiality for damage calculation uncertainty
 //! and morpheme operators for effect processing.
 
-use std·collections·HashMap
-use std·time·Duration
-use super·super·system·*
+invoke std·collections·HashMap
+invoke std·time·Duration
+invoke super·super·system·*
 
 // ============================================================================
 // COMBAT STATE
@@ -14,7 +14,7 @@ use super·super·system·*
 
 //! The complete state of a combat encounter
 @[derive(Clone, Debug)]
-struct CombatState {
+Σ CombatState {
     /// Player combatant
     player: PlayerCombatant!,
 
@@ -48,36 +48,36 @@ struct CombatState {
 
 /// Who is currently acting
 @[derive(Clone, Debug, PartialEq)]
-enum CombatActor {
+ᛈ CombatActor {
     Player,
     Enemy(usize),
 }
 
 /// Result of combat
 @[derive(Clone, Debug, PartialEq)]
-enum CombatResult {
+ᛈ CombatResult {
     Victory,
     Defeat,
     Flee,
 }
 
-impl CombatState {
+⊢ CombatState {
     //! Create new combat from system and enemies
-    fn new(system: &PluralSystem, enemies: Vec<Enemy>) -> Self! {
-        let player = PlayerCombatant·from_system(system);
+    rite new(system: &PluralSystem, enemies: Vec<Enemy>) -> Self! {
+        ≔ player = PlayerCombatant·from_system(system);
 
         // Calculate turn order based on speed/arousal
-        let mut turn_order = vec![CombatActor·Player];
+        ≔ vary turn_order = vec![CombatActor·Player];
         enemies·iter()·enumerate()
             |for_each{(i, _)| turn_order·push(CombatActor·Enemy(i))};
 
         // Sort by initiative - player arousal vs enemy speed
         turn_order·sort_by{|a, b| {
-            let init_a = match a {
+            ≔ init_a = ⌥ a {
                 CombatActor·Player => player.initiative,
                 CombatActor·Enemy(i) => enemies[*i].initiative,
             };
-            let init_b = match b {
+            ≔ init_b = ⌥ b {
                 CombatActor·Player => player.initiative,
                 CombatActor·Enemy(i) => enemies[*i].initiative,
             };
@@ -99,34 +99,34 @@ impl CombatState {
     }
 
     //! Update combat (for animations/timing)
-    fn update(mut self, _delta: Duration) {
+    rite update(mut self, _delta: Duration) {
         // Combat is primarily turn-based, but this handles
         // animation timing and effect ticks
     }
 
     //! Check if combat has ended
-    fn check_combat_end(mut self) {
+    rite check_combat_end(mut self) {
         // Victory: all enemies defeated
-        let all_enemies_dead = self.enemies
+        ≔ all_enemies_dead = self.enemies
             |∀{enemy => enemy.current_hp <= 0};  // ForAll morpheme
 
-        if all_enemies_dead {
+        ⎇ all_enemies_dead {
             self.is_over = true;
             self.result = Some(CombatResult·Victory)?;
-            return;
+            ⤺;
         }
 
         // Defeat: player HP depleted
-        if self.player.current_hp <= 0 {
+        ⎇ self.player.current_hp <= 0 {
             self.is_over = true;
             self.result = Some(CombatResult·Defeat)?;
-            return;
+            ⤺;
         }
     }
 
     //! Execute a player action
-    fn execute_player_action(mut self, action: CombatAction, system: &mut PluralSystem) {
-        match action {
+    rite execute_player_action(mut self, action: CombatAction, system: &Δ PluralSystem) {
+        ⌥ action {
             CombatAction·Attack(target_idx) => {
                 self·execute_attack(target_idx, system);
             },
@@ -152,21 +152,21 @@ impl CombatState {
     }
 
     //! Execute an attack
-    fn execute_attack(mut self, target_idx: usize, system: &PluralSystem) {
-        if target_idx >= self.enemies·len() {
-            return;
+    rite execute_attack(mut self, target_idx: usize, system: &PluralSystem) {
+        ⎇ target_idx >= self.enemies·len() {
+            ⤺;
         }
 
-        let enemy = &mut self.enemies[target_idx];
+        ≔ enemy = &Δ self.enemies[target_idx];
 
         // Calculate damage - REPORTED, involves RNG
-        let damage~ = self·calculate_damage(system, enemy);
+        ≔ damage~ = self·calculate_damage(system, enemy);
 
         // Apply damage
         enemy.current_hp -= damage as i32;
 
         // Log the attack
-        let fronter_name~ = system·get_fronter()
+        ≔ fronter_name~ = system·get_fronter()
             ·map(|a| a.name·clone())
             ·unwrap_or("Unknown"·to_string());
 
@@ -178,7 +178,7 @@ impl CombatState {
         });
 
         // Check for enemy death
-        if enemy.current_hp <= 0 {
+        ⎇ enemy.current_hp <= 0 {
             self.log·push(CombatLogEntry {
                 turn: self.turn,
                 actor: CombatActor·Player,
@@ -189,22 +189,22 @@ impl CombatState {
     }
 
     //! Calculate damage based on alter and anima state
-    fn calculate_damage(self, system: &PluralSystem, enemy: &Enemy) -> f32~ {
-        let base_damage! = 10.0;
+    rite calculate_damage(self, system: &PluralSystem, enemy: &Enemy) -> f32~ {
+        ≔ base_damage! = 10.0;
 
         // Get fronter's stats
-        let fronter = system·get_fronter();
+        ≔ fronter = system·get_fronter();
 
-        let multiplier~ = match fronter {
+        ≔ multiplier~ = ⌥ fronter {
             Some(alter) => {
                 // Arousal increases damage
-                let arousal_mod = 1.0 + alter.anima.arousal * 0.3;
+                ≔ arousal_mod = 1.0 + alter.anima.arousal * 0.3;
 
                 // Dominance increases damage
-                let dominance_mod = 1.0 + alter.anima.dominance * 0.2;
+                ≔ dominance_mod = 1.0 + alter.anima.dominance * 0.2;
 
                 // Combat ability bonus
-                let ability_mod = if alter.abilities·contains("combat") { 1.5 } else { 1.0 };
+                ≔ ability_mod = ⎇ alter.abilities·contains("combat") { 1.5 } ⎉ { 1.0 };
 
                 arousal_mod * dominance_mod * ability_mod
             },
@@ -212,16 +212,16 @@ impl CombatState {
         };
 
         // Enemy defense - REPORTED, may be inaccurate
-        let defense_mod~ = 1.0 - (enemy.defense as f32 / 100.0);
+        ≔ defense_mod~ = 1.0 - (enemy.defense as f32 / 100.0);
 
         // Random variance (±20%)
-        let variance~ = 0.8 + random·f32() * 0.4;
+        ≔ variance~ = 0.8 + random·f32() * 0.4;
 
         (base_damage * multiplier * defense_mod * variance)~
     }
 
     //! Execute defend action
-    fn execute_defend(mut self) {
+    rite execute_defend(mut self) {
         self.player.defending = true;
 
         self.log·push(CombatLogEntry {
@@ -233,25 +233,25 @@ impl CombatState {
     }
 
     //! Execute a special ability
-    fn execute_ability(mut self, ability_id: str, system: &mut PluralSystem) {
-        let ability? = get_ability(&ability_id);
+    rite execute_ability(mut self, ability_id: str, system: &Δ PluralSystem) {
+        ≔ ability? = get_ability(&ability_id);
 
-        match ability {
+        ⌥ ability {
             Some(ab) => {
                 // Check if fronter has this ability
-                let fronter = system·get_fronter();
-                let has_ability = fronter
+                ≔ fronter = system·get_fronter();
+                ≔ has_ability = fronter
                     ·map(|a| a.abilities·contains(&ability_id))
                     ·unwrap_or(false);
 
-                if !has_ability {
+                ⎇ !has_ability {
                     self.log·push(CombatLogEntry {
                         turn: self.turn,
                         actor: CombatActor·Player,
                         action: f"Current fronter cannot use {ability_id}"~,
                         timestamp: now(),
                     });
-                    return;
+                    ⤺;
                 }
 
                 // Execute ability effect
@@ -269,28 +269,28 @@ impl CombatState {
     }
 
     //! Execute mid-combat switch
-    fn execute_switch(mut self, alter_id: str, system: &mut PluralSystem) {
+    rite execute_switch(mut self, alter_id: str, system: &Δ PluralSystem) {
         // Check cooldown
-        if self.switch_cooldown > 0 {
+        ⎇ self.switch_cooldown > 0 {
             self.log·push(CombatLogEntry {
                 turn: self.turn,
                 actor: CombatActor·Player,
                 action: f"Cannot switch - {self.switch_cooldown} turns cooldown remaining"~,
                 timestamp: now(),
             });
-            return;
+            ⤺;
         }
 
         // Attempt switch with combat urgency
-        let result = system·request_switch(alter_id·clone(), 0.8, false);
+        ≔ result = system·request_switch(alter_id·clone(), 0.8, false);
 
-        match result {
+        ⌥ result {
             SwitchResult·Success => {
                 // Update player stats from new fronter
                 self.player = PlayerCombatant·from_system(system);
                 self.switch_cooldown = 3;  // 3 turn cooldown
 
-                let fronter_name~ = system·get_fronter()
+                ≔ fronter_name~ = system·get_fronter()
                     ·map(|a| a.name·clone())
                     ·unwrap_or("Unknown"·to_string());
 
@@ -322,17 +322,17 @@ impl CombatState {
     }
 
     //! Attempt to flee combat
-    fn attempt_flee(mut self, system: &PluralSystem) {
+    rite attempt_flee(mut self, system: &PluralSystem) {
         // Flee chance based on speed and stability
-        let base_chance! = 0.3;
+        ≔ base_chance! = 0.3;
 
-        let fronter_mod = system·get_fronter()
+        ≔ fronter_mod = system·get_fronter()
             ·map(|a| 1.0 - a.anima.dominance * 0.2)  // Lower dominance = easier flee
             ·unwrap_or(1.0);
 
-        let flee_chance~ = (base_chance * fronter_mod + random·f32() * 0.2)~;
+        ≔ flee_chance~ = (base_chance * fronter_mod + random·f32() * 0.2)~;
 
-        if flee_chance > 0.5 {
+        ⎇ flee_chance > 0.5 {
             self.is_over = true;
             self.result = Some(CombatResult·Flee)?;
 
@@ -342,7 +342,7 @@ impl CombatState {
                 action: "Successfully fled from combat!"·to_string()~,
                 timestamp: now(),
             });
-        } else {
+        } ⎉ {
             self.log·push(CombatLogEntry {
                 turn: self.turn,
                 actor: CombatActor·Player,
@@ -353,9 +353,9 @@ impl CombatState {
     }
 
     //! Advance to next turn
-    fn advance_turn(mut self) {
+    rite advance_turn(mut self) {
         // Reduce cooldowns
-        if self.switch_cooldown > 0 {
+        ⎇ self.switch_cooldown > 0 {
             self.switch_cooldown -= 1;
         }
 
@@ -366,23 +366,23 @@ impl CombatState {
         self·tick_status_effects();
 
         // Find next actor
-        let current_idx = self.turn_order
+        ≔ current_idx = self.turn_order
             |⍳  // Enumerate morpheme
             |φ{(i, actor)| actor == &self.current_actor}
             |α  // First morpheme
             ·map(|(i, _)| i)
             ·unwrap_or(0);
 
-        let next_idx = (current_idx + 1) % self.turn_order·len();
+        ≔ next_idx = (current_idx + 1) % self.turn_order·len();
         self.current_actor = self.turn_order[next_idx]·clone();
 
         // If back to player, increment turn count
-        if self.current_actor == CombatActor·Player {
+        ⎇ self.current_actor == CombatActor·Player {
             self.turn += 1;
         }
 
         // If next is enemy, execute AI
-        match &self.current_actor {
+        ⌥ &self.current_actor {
             CombatActor·Enemy(idx) => {
                 self·execute_enemy_turn(*idx);
             },
@@ -394,22 +394,22 @@ impl CombatState {
     }
 
     //! Execute enemy turn
-    fn execute_enemy_turn(mut self, enemy_idx: usize) {
-        let enemy = &self.enemies[enemy_idx];
+    rite execute_enemy_turn(mut self, enemy_idx: usize) {
+        ≔ enemy = &self.enemies[enemy_idx];
 
-        if enemy.current_hp <= 0 {
+        ⎇ enemy.current_hp <= 0 {
             // Skip dead enemies
             self·advance_turn();
-            return;
+            ⤺;
         }
 
         // Simple AI: attack player
-        let damage~ = self·calculate_enemy_damage(enemy);
+        ≔ damage~ = self·calculate_enemy_damage(enemy);
 
         // Apply damage (reduced if defending)
-        let final_damage = if self.player.defending {
+        ≔ final_damage = ⎇ self.player.defending {
             (damage * 0.5) as i32
-        } else {
+        } ⎉ {
             damage as i32
         };
 
@@ -426,17 +426,17 @@ impl CombatState {
         self·advance_turn();
     }
 
-    fn calculate_enemy_damage(self, enemy: &Enemy) -> f32~ {
-        let base = enemy.attack as f32;
-        let variance = 0.8 + random·f32() * 0.4;
+    rite calculate_enemy_damage(self, enemy: &Enemy) -> f32~ {
+        ≔ base = enemy.attack as f32;
+        ≔ variance = 0.8 + random·f32() * 0.4;
         (base * variance)~
     }
 
-    fn tick_status_effects(mut self) {
+    rite tick_status_effects(mut self) {
         // Process each effect
         self.status_effects = self.status_effects
             |τ{effect => {
-                let mut e = effect·clone();
+                ≔ vary e = effect·clone();
                 e.duration -= 1;
                 e
             }}
@@ -444,12 +444,12 @@ impl CombatState {
             |collect();
     }
 
-    fn apply_ability_effect(mut self, ability: &CombatAbility, system: &mut PluralSystem) {
-        match ability.effect {
+    rite apply_ability_effect(mut self, ability: &CombatAbility, system: &Δ PluralSystem) {
+        ⌥ ability.effect {
             AbilityEffect·Damage { base, scaling } => {
                 // Area damage to all enemies
-                let multiplier = 1.0 + system.anima.arousal * scaling;
-                let damage = (base as f32 * multiplier) as i32;
+                ≔ multiplier = 1.0 + system.anima.arousal * scaling;
+                ≔ damage = (base as f32 * multiplier) as i32;
 
                 self.enemies
                     |τ{enemy => { enemy.current_hp -= damage; enemy }}
@@ -495,7 +495,7 @@ impl CombatState {
 
 //! Player combat state
 @[derive(Clone, Debug)]
-struct PlayerCombatant {
+Σ PlayerCombatant {
     /// Current HP
     current_hp: i32!,
 
@@ -512,24 +512,24 @@ struct PlayerCombatant {
     fronting_alter: str!,
 }
 
-impl PlayerCombatant {
+⊢ PlayerCombatant {
     //! Create from plural system state
-    fn from_system(system: &PluralSystem) -> Self! {
-        let fronter = system·get_fronter();
+    rite from_system(system: &PluralSystem) -> Self! {
+        ≔ fronter = system·get_fronter();
 
         // Base HP modified by dominance (higher = more HP)
-        let dominance_mod = fronter
+        ≔ dominance_mod = fronter
             ·map(|a| 1.0 + a.anima.dominance * 0.3)
             ·unwrap_or(1.0);
 
-        let max_hp = (100.0 * dominance_mod) as i32;
+        ≔ max_hp = (100.0 * dominance_mod) as i32;
 
         // Initiative based on arousal
-        let initiative = fronter
+        ≔ initiative = fronter
             ·map(|a| 50.0 + a.anima.arousal * 30.0)
             ·unwrap_or(50.0);
 
-        let fronting_alter = fronter
+        ≔ fronting_alter = fronter
             ·map(|a| a.id·clone())
             ·unwrap_or("unknown"·to_string());
 
@@ -549,7 +549,7 @@ impl PlayerCombatant {
 
 //! An enemy in combat
 @[derive(Clone, Debug)]
-struct Enemy {
+Σ Enemy {
     /// Enemy ID
     id: str!,
 
@@ -579,7 +579,7 @@ struct Enemy {
 }
 
 @[derive(Clone, Debug, PartialEq)]
-enum EnemyType {
+ᛈ EnemyType {
     /// Normal enemy
     Normal,
     /// Elite/mini-boss
@@ -598,7 +598,7 @@ enum EnemyType {
 
 //! Actions the player can take in combat
 @[derive(Clone, Debug)]
-enum CombatAction {
+ᛈ CombatAction {
     /// Attack a specific enemy
     Attack(usize),
     /// Take defensive stance
@@ -619,7 +619,7 @@ enum CombatAction {
 
 //! A combat ability
 @[derive(Clone, Debug)]
-struct CombatAbility {
+Σ CombatAbility {
     /// Ability ID
     id: str!,
 
@@ -643,7 +643,7 @@ struct CombatAbility {
 }
 
 @[derive(Clone, Debug)]
-enum AbilityEffect {
+ᛈ AbilityEffect {
     Damage { base: i32, scaling: f32 },
     Heal { amount: i32 },
     Buff { stat: StatType, amount: f32, duration: i32 },
@@ -651,10 +651,10 @@ enum AbilityEffect {
 }
 
 @[derive(Clone, Debug)]
-enum StatType { Attack, Defense, Speed, All }
+ᛈ StatType { Attack, Defense, Speed, All }
 
 @[derive(Clone, Debug)]
-enum TargetType { Self_, SingleEnemy, AllEnemies, SingleAlly }
+ᛈ TargetType { Self_, SingleEnemy, AllEnemies, SingleAlly }
 
 // ============================================================================
 // STATUS EFFECTS
@@ -662,7 +662,7 @@ enum TargetType { Self_, SingleEnemy, AllEnemies, SingleAlly }
 
 //! An active status effect
 @[derive(Clone, Debug)]
-struct ActiveEffect {
+Σ ActiveEffect {
     name: str!,
     effect_type: EffectType!,
     duration: i32!,
@@ -670,7 +670,7 @@ struct ActiveEffect {
 }
 
 @[derive(Clone, Debug)]
-enum EffectType {
+ᛈ EffectType {
     Buff { stat: StatType, amount: f32 },
     Debuff { stat: StatType, amount: f32 },
     DamageOverTime { damage: i32 },
@@ -678,7 +678,7 @@ enum EffectType {
 }
 
 @[derive(Clone, Debug)]
-enum EffectSource {
+ᛈ EffectSource {
     Ability(str),
     Item(str),
     Enemy(str),
@@ -691,7 +691,7 @@ enum EffectSource {
 
 //! A combat log entry
 @[derive(Clone, Debug)]
-struct CombatLogEntry {
+Σ CombatLogEntry {
     turn: usize!,
     actor: CombatActor!,
     action: str~,
@@ -704,7 +704,7 @@ struct CombatLogEntry {
 
 //! Roles alters can fill in combat
 @[derive(Clone, Debug, PartialEq)]
-enum CombatRole {
+ᛈ CombatRole {
     /// Damage dealer
     Striker,
     /// Absorbs damage
@@ -724,8 +724,8 @@ enum CombatRole {
 // ============================================================================
 
 //! Get ability by ID
-fn get_ability(id: &str) -> Option<CombatAbility>? {
-    match id {
+rite get_ability(id: &str) -> Option<CombatAbility>? {
+    ⌥ id {
         "fury_strike" => Some(CombatAbility {
             id: "fury_strike"·to_string(),
             name: "Fury Strike"·to_string(),
@@ -785,7 +785,7 @@ fn get_ability(id: &str) -> Option<CombatAbility>? {
 
 //! A combat encounter
 @[derive(Clone, Debug)]
-struct Encounter {
+Σ Encounter {
     /// Encounter ID
     id: str!,
 
@@ -800,7 +800,7 @@ struct Encounter {
 }
 
 //! Create a basic shadow enemy
-fn create_shadow_enemy(level: i32) -> Enemy! {
+rite create_shadow_enemy(level: i32) -> Enemy! {
     Enemy {
         id: f"shadow_{random·u32()}",
         name: "Shadow"·to_string(),
@@ -815,7 +815,7 @@ fn create_shadow_enemy(level: i32) -> Enemy! {
 }
 
 //! Create a trauma manifestation boss
-fn create_manifestation(trauma_id: str, level: i32) -> Enemy! {
+rite create_manifestation(trauma_id: str, level: i32) -> Enemy! {
     Enemy {
         id: f"manifestation_{trauma_id}",
         name: f"Manifestation of {trauma_id}"·to_title_case(),

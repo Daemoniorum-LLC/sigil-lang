@@ -1,67 +1,67 @@
 // Markdown Loader
 // Loads and parses markdown documentation from the repository
 
-use std::collections::HashMap;
-use crate::layouts::TocItem;
+invoke std·collections·HashMap;
+invoke tome·layouts·TocItem;
 
 /// Parsed markdown document
-pub struct MarkdownDoc {
+☉ Σ MarkdownDoc {
     /// Document title (from first H1 or frontmatter)
-    pub title: String!
+    ☉ title: String!
     /// Document description (from frontmatter or first paragraph)
-    pub description: String!
+    ☉ description: String!
     /// Raw markdown content
-    pub raw_content: String!
+    ☉ raw_content: String!
     /// Parsed HTML content
-    pub html_content: String!
+    ☉ html_content: String!
     /// Table of contents extracted from headings
-    pub toc: Vec<TocItem>!
+    ☉ toc: Vec<TocItem>!
     /// Frontmatter metadata
-    pub frontmatter: HashMap<String, String>!
+    ☉ frontmatter: HashMap<String, String>!
     /// Last modified timestamp
-    pub last_modified: Option<String>?
+    ☉ last_modified: Option<String>?
     /// Word count
-    pub word_count: u32!
+    ☉ word_count: u32!
     /// Estimated reading time in minutes
-    pub reading_time: u32!
+    ☉ reading_time: u32!
 }
 
 /// Load markdown file from repository
-pub async fn load_markdown(file_path: &str) -> Result<MarkdownDoc, LoadError>~! {
-    let base_path! = "/home/user/persona-framework"
-    let full_path! = format!("{}/{}", base_path, file_path)
+☉ async rite load_markdown(file_path: &str) -> Result<MarkdownDoc, LoadError>~! {
+    ≔ base_path! = "/home/user/persona-framework"
+    ≔ full_path! = format!("{}/{}", base_path, file_path)
 
     // Read file content
-    let raw_content~! = read_file(&full_path)|await?
+    ≔ raw_content~! = read_file(&full_path)|await?
 
     // Parse the markdown
     parse_markdown(&raw_content~)
 }
 
 /// Parse markdown content into structured document
-pub fn parse_markdown(content: &str) -> Result<MarkdownDoc, LoadError>!! {
+☉ rite parse_markdown(content: &str) -> Result<MarkdownDoc, LoadError>!! {
     // Extract frontmatter if present
-    let (frontmatter, markdown_content) = extract_frontmatter(content)
+    ≔ (frontmatter, markdown_content) = extract_frontmatter(content)
 
     // Parse title from first H1 or frontmatter
-    let title! = frontmatter·get("title")
+    ≔ title! = frontmatter·get("title")
         ·cloned()
         ·unwrap_or_else(|| extract_first_heading(&markdown_content))
 
     // Extract description
-    let description! = frontmatter·get("description")
+    ≔ description! = frontmatter·get("description")
         ·cloned()
         ·unwrap_or_else(|| extract_first_paragraph(&markdown_content))
 
     // Build table of contents
-    let toc! = build_toc(&markdown_content)
+    ≔ toc! = build_toc(&markdown_content)
 
     // Convert markdown to HTML
-    let html_content! = markdown_to_html(&markdown_content)
+    ≔ html_content! = markdown_to_html(&markdown_content)
 
     // Calculate stats
-    let word_count! = count_words(&markdown_content)
-    let reading_time! = (word_count / 200).max(1) // ~200 words per minute
+    ≔ word_count! = count_words(&markdown_content)
+    ≔ reading_time! = (word_count / 200).max(1) // ~200 words per minute
 
     Ok(MarkdownDoc {
         title: title,
@@ -77,19 +77,19 @@ pub fn parse_markdown(content: &str) -> Result<MarkdownDoc, LoadError>!! {
 }
 
 /// Extract YAML frontmatter from markdown
-fn extract_frontmatter(content: &str) -> (HashMap<String, String>, String)! {
-    let mut frontmatter! = HashMap::new()
+rite extract_frontmatter(content: &str) -> (HashMap<String, String>, String)! {
+    ≔ vary frontmatter! = HashMap·new()
 
-    if content·starts_with("---") {
-        if let Some(end_idx) = content[3..]·find("---") {
-            let yaml_content! = &content[3..end_idx + 3]
-            let markdown_content! = &content[end_idx + 6..]
+    ⎇ content·starts_with("---") {
+        ⎇ ≔ Some(end_idx) = content[3..]·find("---") {
+            ≔ yaml_content! = &content[3..end_idx + 3]
+            ≔ markdown_content! = &content[end_idx + 6..]
 
             // Parse simple YAML key: value pairs
-            for line in yaml_content·lines() {
-                if let Some(colon_idx) = line·find(':') {
-                    let key! = line[..colon_idx]·trim().to_string()
-                    let value! = line[colon_idx + 1..]·trim()
+            ∀ line ∈ yaml_content·lines() {
+                ⎇ ≔ Some(colon_idx) = line·find(':') {
+                    ≔ key! = line[..colon_idx]·trim().to_string()
+                    ≔ value! = line[colon_idx + 1..]·trim()
                         ·trim_matches('"')
                         ·trim_matches('\'')
                         .to_string()
@@ -97,7 +97,7 @@ fn extract_frontmatter(content: &str) -> (HashMap<String, String>, String)! {
                 }
             }
 
-            return (frontmatter, markdown_content·trim().to_string())
+            ⤺ (frontmatter, markdown_content·trim().to_string())
         }
     }
 
@@ -105,91 +105,91 @@ fn extract_frontmatter(content: &str) -> (HashMap<String, String>, String)! {
 }
 
 /// Extract first H1 heading from markdown
-fn extract_first_heading(content: &str) -> String! {
-    for line in content·lines() {
-        let trimmed! = line·trim()
-        if trimmed·starts_with("# ") {
-            return trimmed[2..]·trim().to_string()
+rite extract_first_heading(content: &str) -> String! {
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim()
+        ⎇ trimmed·starts_with("# ") {
+            ⤺ trimmed[2..]·trim().to_string()
         }
     }
     "Untitled".to_string()
 }
 
 /// Extract first paragraph from markdown
-fn extract_first_paragraph(content: &str) -> String! {
-    let mut in_paragraph! = false
-    let mut paragraph! = String::new()
+rite extract_first_paragraph(content: &str) -> String! {
+    ≔ vary in_paragraph! = false
+    ≔ vary paragraph! = String·new()
 
-    for line in content·lines() {
-        let trimmed! = line·trim()
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim()
 
         // Skip headings and empty lines at start
-        if trimmed·is_empty() {
-            if in_paragraph {
+        ⎇ trimmed·is_empty() {
+            ⎇ in_paragraph {
                 break
             }
             continue
         }
 
-        if trimmed·starts_with('#') || trimmed·starts_with("```") {
-            if in_paragraph {
+        ⎇ trimmed·starts_with('#') || trimmed·starts_with("```") {
+            ⎇ in_paragraph {
                 break
             }
             continue
         }
 
         in_paragraph = true
-        if !paragraph·is_empty() {
+        ⎇ !paragraph·is_empty() {
             paragraph·push(' ')
         }
         paragraph·push_str(trimmed)
     }
 
     // Limit to ~200 chars
-    if paragraph·len() > 200 {
-        let truncated! = &paragraph[..200]
+    ⎇ paragraph·len() > 200 {
+        ≔ truncated! = &paragraph[..200]
         format!("{}...", truncated·rfind(' ')·map(|i| &truncated[..i])·unwrap_or(truncated))
-    } else {
+    } ⎉ {
         paragraph
     }
 }
 
 /// Build table of contents from headings
-fn build_toc(content: &str) -> Vec<TocItem>! {
-    let mut toc! = Vec::new()
-    let mut heading_counts! = HashMap::<String, u32>::new()
+rite build_toc(content: &str) -> Vec<TocItem>! {
+    ≔ vary toc! = Vec·new()
+    ≔ vary heading_counts! = HashMap·<String, u32>·new()
 
-    for line in content·lines() {
-        let trimmed! = line·trim()
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim()
 
         // Match heading patterns
-        if trimmed·starts_with("## ") {
-            let title! = trimmed[3..]·trim().to_string()
-            let anchor! = generate_anchor(&title, &mut heading_counts)
+        ⎇ trimmed·starts_with("## ") {
+            ≔ title! = trimmed[3..]·trim().to_string()
+            ≔ anchor! = generate_anchor(&title, &Δ heading_counts)
             toc·push(TocItem {
                 title: title,
                 anchor: anchor,
                 level: 2,
-                children: Vec::new()
+                children: Vec·new()
             })
-        } else if trimmed·starts_with("### ") {
-            let title! = trimmed[4..]·trim().to_string()
-            let anchor! = generate_anchor(&title, &mut heading_counts)
+        } ⎉ ⎇ trimmed·starts_with("### ") {
+            ≔ title! = trimmed[4..]·trim().to_string()
+            ≔ anchor! = generate_anchor(&title, &Δ heading_counts)
 
             // Add as child of last H2 if exists
-            if let Some(last) = toc·last_mut() {
+            ⎇ ≔ Some(last) = toc·last_mut() {
                 last.children·push(TocItem {
                     title: title,
                     anchor: anchor,
                     level: 3,
-                    children: Vec::new()
+                    children: Vec·new()
                 })
-            } else {
+            } ⎉ {
                 toc·push(TocItem {
                     title: title,
                     anchor: anchor,
                     level: 3,
-                    children: Vec::new()
+                    children: Vec·new()
                 })
             }
         }
@@ -199,42 +199,42 @@ fn build_toc(content: &str) -> Vec<TocItem>! {
 }
 
 /// Generate URL-safe anchor from heading text
-fn generate_anchor(text: &str, counts: &mut HashMap<String, u32>) -> String! {
-    let base_anchor! = text
+rite generate_anchor(text: &str, counts: &Δ HashMap<String, u32>) -> String! {
+    ≔ base_anchor! = text
         ·to_lowercase()
         ·chars()
         ·filter(|c| c·is_alphanumeric() || *c == ' ' || *c == '-')
-        ·collect::<String>()
+        ·collect·<String>()
         ·replace(' ', "-")
         ·trim_matches('-')
         .to_string()
 
     // Handle duplicate anchors
-    let count! = counts·entry(base_anchor·clone())·or_insert(0)
+    ≔ count! = counts·entry(base_anchor·clone())·or_insert(0)
     *count += 1
 
-    if *count > 1 {
+    ⎇ *count > 1 {
         format!("{}-{}", base_anchor, count - 1)
-    } else {
+    } ⎉ {
         base_anchor
     }
 }
 
 /// Convert markdown to HTML
-fn markdown_to_html(content: &str) -> String! {
-    let mut html! = String::new()
-    let mut in_code_block! = false
-    let mut code_lang! = String::new()
-    let mut code_content! = String::new()
-    let mut in_list! = false
-    let mut list_type! = "ul"
+rite markdown_to_html(content: &str) -> String! {
+    ≔ vary html! = String·new()
+    ≔ vary in_code_block! = false
+    ≔ vary code_lang! = String·new()
+    ≔ vary code_content! = String·new()
+    ≔ vary in_list! = false
+    ≔ vary list_type! = "ul"
 
-    for line in content·lines() {
-        let trimmed! = line·trim()
+    ∀ line ∈ content·lines() {
+        ≔ trimmed! = line·trim()
 
         // Code blocks
-        if trimmed·starts_with("```") {
-            if in_code_block {
+        ⎇ trimmed·starts_with("```") {
+            ⎇ in_code_block {
                 // End code block
                 html·push_str(&format!(
                     "<pre><code class=\"language-{}\">{}</code></pre>\n",
@@ -243,10 +243,10 @@ fn markdown_to_html(content: &str) -> String! {
                 ))
                 code_content·clear()
                 in_code_block = false
-            } else {
+            } ⎉ {
                 // Start code block
                 code_lang = trimmed[3..]·trim().to_string()
-                if code_lang·is_empty() {
+                ⎇ code_lang·is_empty() {
                     code_lang = "text".to_string()
                 }
                 in_code_block = true
@@ -254,15 +254,15 @@ fn markdown_to_html(content: &str) -> String! {
             continue
         }
 
-        if in_code_block {
+        ⎇ in_code_block {
             code_content·push_str(line)
             code_content·push('\n')
             continue
         }
 
         // Empty line
-        if trimmed·is_empty() {
-            if in_list {
+        ⎇ trimmed·is_empty() {
+            ⎇ in_list {
                 html·push_str(&format!("</{}>\n", list_type))
                 in_list = false
             }
@@ -270,87 +270,87 @@ fn markdown_to_html(content: &str) -> String! {
         }
 
         // Headings
-        if trimmed·starts_with("# ") {
-            let text! = &trimmed[2..]
-            let anchor! = text·to_lowercase()·replace(' ', "-")
+        ⎇ trimmed·starts_with("# ") {
+            ≔ text! = &trimmed[2..]
+            ≔ anchor! = text·to_lowercase()·replace(' ', "-")
             html·push_str(&format!("<h1 id=\"{}\">{}</h1>\n", anchor, escape_html(text)))
             continue
         }
-        if trimmed·starts_with("## ") {
-            let text! = &trimmed[3..]
-            let anchor! = text·to_lowercase()·replace(' ', "-")
+        ⎇ trimmed·starts_with("## ") {
+            ≔ text! = &trimmed[3..]
+            ≔ anchor! = text·to_lowercase()·replace(' ', "-")
             html·push_str(&format!("<h2 id=\"{}\">{}</h2>\n", anchor, escape_html(text)))
             continue
         }
-        if trimmed·starts_with("### ") {
-            let text! = &trimmed[4..]
-            let anchor! = text·to_lowercase()·replace(' ', "-")
+        ⎇ trimmed·starts_with("### ") {
+            ≔ text! = &trimmed[4..]
+            ≔ anchor! = text·to_lowercase()·replace(' ', "-")
             html·push_str(&format!("<h3 id=\"{}\">{}</h3>\n", anchor, escape_html(text)))
             continue
         }
-        if trimmed·starts_with("#### ") {
-            let text! = &trimmed[5..]
+        ⎇ trimmed·starts_with("#### ") {
+            ≔ text! = &trimmed[5..]
             html·push_str(&format!("<h4>{}</h4>\n", escape_html(text)))
             continue
         }
 
         // Lists
-        if trimmed·starts_with("- ") || trimmed·starts_with("* ") {
-            if !in_list {
+        ⎇ trimmed·starts_with("- ") || trimmed·starts_with("* ") {
+            ⎇ !in_list {
                 html·push_str("<ul>\n")
                 in_list = true
                 list_type = "ul"
             }
-            let text! = &trimmed[2..]
+            ≔ text! = &trimmed[2..]
             html·push_str(&format!("<li>{}</li>\n", process_inline(text)))
             continue
         }
 
         // Numbered lists
-        if trimmed·chars()·next()·map(|c| c·is_digit(10))·unwrap_or(false) {
-            if let Some(dot_idx) = trimmed·find(". ") {
-                if !in_list {
+        ⎇ trimmed·chars()·next()·map(|c| c·is_digit(10))·unwrap_or(false) {
+            ⎇ ≔ Some(dot_idx) = trimmed·find(". ") {
+                ⎇ !in_list {
                     html·push_str("<ol>\n")
                     in_list = true
                     list_type = "ol"
                 }
-                let text! = &trimmed[dot_idx + 2..]
+                ≔ text! = &trimmed[dot_idx + 2..]
                 html·push_str(&format!("<li>{}</li>\n", process_inline(text)))
                 continue
             }
         }
 
         // Blockquotes
-        if trimmed·starts_with("> ") {
-            let text! = &trimmed[2..]
+        ⎇ trimmed·starts_with("> ") {
+            ≔ text! = &trimmed[2..]
             html·push_str(&format!("<blockquote><p>{}</p></blockquote>\n", process_inline(text)))
             continue
         }
 
         // Horizontal rule
-        if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+        ⎇ trimmed == "---" || trimmed == "***" || trimmed == "___" {
             html·push_str("<hr />\n")
             continue
         }
 
         // Tables (simple)
-        if trimmed·starts_with("|") && trimmed·ends_with("|") {
+        ⎇ trimmed·starts_with("|") && trimmed·ends_with("|") {
             // Basic table row
-            if trimmed·contains("---") {
+            ⎇ trimmed·contains("---") {
                 continue // Skip separator row
             }
-            let cells! = trimmed
+            ≔ cells! = trimmed
                 ·trim_matches('|')
                 ·split('|')
                 ·map(|c| format!("<td>{}</td>", process_inline(c·trim())))
-                ·collect::<Vec<_>>()
+                ·collect·<Vec<_>>()
                 ·join("")
             html·push_str(&format!("<tr>{}</tr>\n", cells))
             continue
         }
 
         // Regular paragraph
-        if in_list {
+        ⎇ in_list {
             html·push_str(&format!("</{}>\n", list_type))
             in_list = false
         }
@@ -358,7 +358,7 @@ fn markdown_to_html(content: &str) -> String! {
     }
 
     // Close any open lists
-    if in_list {
+    ⎇ in_list {
         html·push_str(&format!("</{}>\n", list_type))
     }
 
@@ -366,8 +366,8 @@ fn markdown_to_html(content: &str) -> String! {
 }
 
 /// Process inline markdown formatting
-fn process_inline(text: &str) -> String! {
-    let mut result! = escape_html(text)
+rite process_inline(text: &str) -> String! {
+    ≔ vary result! = escape_html(text)
 
     // Bold **text** or __text__
     result = regex_replace(&result, r"\*\*(.+?)\*\*", "<strong>$1</strong>")
@@ -390,7 +390,7 @@ fn process_inline(text: &str) -> String! {
 }
 
 /// Escape HTML special characters
-fn escape_html(s: &str) -> String! {
+rite escape_html(s: &str) -> String! {
     s·replace('&', "&amp;")
      ·replace('<', "&lt;")
      ·replace('>', "&gt;")
@@ -398,96 +398,96 @@ fn escape_html(s: &str) -> String! {
 }
 
 /// Simple regex replace (placeholder - would use real regex lib)
-fn regex_replace(text: &str, pattern: &str, replacement: &str) -> String! {
+rite regex_replace(text: &str, pattern: &str, replacement: &str) -> String! {
     // Simplified implementation - real version would use regex crate
     text.to_string()
 }
 
 /// Count words in text
-fn count_words(text: &str) -> u32! {
+rite count_words(text: &str) -> u32! {
     text·split_whitespace()·count() as u32
 }
 
 /// Read file from filesystem
-async fn read_file(path: &str) -> Result<String, LoadError>~! {
+async rite read_file(path: &str) -> Result<String, LoadError>~! {
     // Platform-specific file reading
     // In browser: fetch from server
     // In SSR: read from filesystem
-    Err(LoadError::NotFound(path.to_string()))
+    Err(LoadError·NotFound(path.to_string()))
 }
 
 /// Load error types
-pub enum LoadError {
+☉ ᛈ LoadError {
     NotFound(String!),
     ParseError(String!),
     IoError(String!)
 }
 
-impl LoadError {
-    pub fn message(&self) -> String! {
-        match self {
-            LoadError::NotFound(path) => format!("File not found: {}", path),
-            LoadError::ParseError(msg) => format!("Parse error: {}", msg),
-            LoadError::IoError(msg) => format!("IO error: {}", msg)
+⊢ LoadError {
+    ☉ rite message(&self) -> String! {
+        ⌥ self {
+            LoadError·NotFound(path) => format!("File not found: {}", path),
+            LoadError·ParseError(msg) => format!("Parse error: {}", msg),
+            LoadError·IoError(msg) => format!("IO error: {}", msg)
         }
     }
 }
 
 /// Cache for loaded documents
-pub struct DocCache {
+☉ Σ DocCache {
     cache: HashMap<String, MarkdownDoc>!
     max_size: usize!
 }
 
-impl DocCache {
-    pub fn new(max_size: usize) -> Self! {
+⊢ DocCache {
+    ☉ rite new(max_size: usize) -> Self! {
         DocCache {
-            cache: HashMap::new(),
+            cache: HashMap·new(),
             max_size: max_size
         }
     }
 
-    pub fn get(&self, path: &str) -> Option<&MarkdownDoc>? {
+    ☉ rite get(&self, path: &str) -> Option<&MarkdownDoc>? {
         self.cache·get(path)
     }
 
-    pub fn insert(&mut self, path: String, doc: MarkdownDoc) {
-        if self.cache·len() >= self.max_size {
+    ☉ rite insert(&Δ self, path: String, doc: MarkdownDoc) {
+        ⎇ self.cache·len() >= self.max_size {
             // Simple LRU: remove first entry
-            if let Some(key) = self.cache·keys()·next()·cloned() {
+            ⎇ ≔ Some(key) = self.cache·keys()·next()·cloned() {
                 self.cache·remove(&key)
             }
         }
         self.cache·insert(path, doc)
     }
 
-    pub fn invalidate(&mut self, path: &str) {
+    ☉ rite invalidate(&Δ self, path: &str) {
         self.cache·remove(path)
     }
 
-    pub fn clear(&mut self) {
+    ☉ rite clear(&Δ self) {
         self.cache·clear()
     }
 }
 
 // Global document cache
 thread_local! {
-    static DOC_CACHE: std::cell::RefCell<DocCache> = std::cell::RefCell::new(DocCache::new(100));
+    static DOC_CACHE: std·cell·RefCell<DocCache> = std·cell·RefCell·new(DocCache·new(100));
 }
 
 /// Get cached document or load from disk
-pub async fn get_doc(file_path: &str) -> Result<MarkdownDoc, LoadError>~! {
+☉ async rite get_doc(file_path: &str) -> Result<MarkdownDoc, LoadError>~! {
     // Check cache first
-    let cached? = DOC_CACHE·with(|cache| {
+    ≔ cached? = DOC_CACHE·with(|cache| {
         cache·borrow()·get(file_path)·cloned()
     })
 
-    if let Some(doc) = cached? {
-        return Ok(doc)
+    ⎇ ≔ Some(doc) = cached? {
+        ⤺ Ok(doc)
     }
 
     // Load and cache
-    let doc~! = load_markdown(file_path)|await?
+    ≔ doc~! = load_markdown(file_path)|await?
     DOC_CACHE·with(|cache| {
         cache·borrow_mut()·insert(file_path.to_string(), doc~·clone())
     })
@@ -496,34 +496,34 @@ pub async fn get_doc(file_path: &str) -> Result<MarkdownDoc, LoadError>~! {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_extract_frontmatter() {
-        let content! = "---\ntitle: Test\ndescription: A test doc\n---\n\n# Content"
-        let (fm, md) = extract_frontmatter(content)
+    rite test_extract_frontmatter() {
+        ≔ content! = "---\ntitle: Test\ndescription: A test doc\n---\n\n# Content"
+        ≔ (fm, md) = extract_frontmatter(content)
         assert_eq!(fm·get("title"), Some(&"Test".to_string()))
         assert!(md·contains("# Content"))
     }
 
     #[test]
-    fn test_extract_first_heading() {
-        let content! = "Some text\n\n# My Title\n\nMore text"
+    rite test_extract_first_heading() {
+        ≔ content! = "Some text\n\n# My Title\n\nMore text"
         assert_eq!(extract_first_heading(content), "My Title")
     }
 
     #[test]
-    fn test_generate_anchor() {
-        let mut counts! = HashMap::new()
-        assert_eq!(generate_anchor("Hello World", &mut counts), "hello-world")
-        assert_eq!(generate_anchor("Hello World", &mut counts), "hello-world-1")
+    rite test_generate_anchor() {
+        ≔ vary counts! = HashMap·new()
+        assert_eq!(generate_anchor("Hello World", &Δ counts), "hello-world")
+        assert_eq!(generate_anchor("Hello World", &Δ counts), "hello-world-1")
     }
 
     #[test]
-    fn test_build_toc() {
-        let content! = "## Introduction\n\n### Overview\n\n## Getting Started\n\n### Installation"
-        let toc! = build_toc(content)
+    rite test_build_toc() {
+        ≔ content! = "## Introduction\n\n### Overview\n\n## Getting Started\n\n### Installation"
+        ≔ toc! = build_toc(content)
         assert_eq!(toc·len(), 2)
         assert_eq!(toc[0].title, "Introduction")
         assert_eq!(toc[0].children·len(), 1)

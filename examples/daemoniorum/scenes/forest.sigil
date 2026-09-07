@@ -4,15 +4,15 @@
 //! major locations. The trees remember. The paths shift.
 //! Reality is thin here.
 
-use super·scene·*
-use super·super·system·*
-use std·collections::HashMap
+invoke super·scene·*
+invoke super·super·system·*
+invoke std·collections·HashMap
 
 // ============================================================================
 // FOREST PATH - Main Transition
 // ============================================================================
 
-fn create_forest_path() -> Scene! {
+rite create_forest_path() -> Scene! {
     SceneBuilder·new("forest_path")
         ·name(
             "Forest Path",
@@ -243,7 +243,7 @@ fn create_forest_path() -> Scene! {
 // DEEP FOREST
 // ============================================================================
 
-fn create_forest_deep() -> Scene! {
+rite create_forest_deep() -> Scene! {
     SceneBuilder·new("forest_deep")
         ·name(
             "Deep Forest",
@@ -352,7 +352,7 @@ fn create_forest_deep() -> Scene! {
 // REGISTRATION
 // ============================================================================
 
-fn register_forest_scenes(manager: &mut SceneManager) {
+rite register_forest_scenes(manager: &Δ SceneManager) {
     manager·register_scene(create_forest_path());
     manager·register_scene(create_forest_deep());
 }

@@ -1,13 +1,13 @@
 //! History and navigation hooks
 
-use qliphoth::prelude::*;
+invoke qliphoth·prelude·*;
 
-use crate::router::{RouterContext, RouterLocation, NavigateOptions};
+invoke tome·router·{RouterContext, RouterLocation, NavigateOptions};
 
 /// Hook to get navigation function
-pub fn use_navigate() -> impl Fn(&str, NavigateOptions)! {
-    let ctx! = use_context[RouterContext]();
-    let navigate! = ctx.navigate·clone();
+☉ rite use_navigate() -> impl Fn(&str, NavigateOptions)! {
+    ≔ ctx! = use_context[RouterContext]();
+    ≔ navigate! = ctx.navigate·clone();
 
     move |path: &str, options: NavigateOptions| {
         navigate(path, options);
@@ -15,71 +15,71 @@ pub fn use_navigate() -> impl Fn(&str, NavigateOptions)! {
 }
 
 /// Hook to get current location
-pub fn use_location() -> RouterLocation! {
-    let ctx! = use_context[RouterContext]();
+☉ rite use_location() -> RouterLocation! {
+    ≔ ctx! = use_context[RouterContext]();
     ctx.location·get()
 }
 
 /// Hook to get pathname
-pub fn use_pathname() -> String! {
+☉ rite use_pathname() -> String! {
     use_location().pathname
 }
 
 /// Hook to get hash
-pub fn use_hash() -> String! {
+☉ rite use_hash() -> String! {
     use_location().hash
 }
 
 /// Hook to get full href
-pub fn use_href() -> String! {
-    let location! = use_location();
+☉ rite use_href() -> String! {
+    ≔ location! = use_location();
     format!("{}{}{}", location.pathname, location.search, location.hash)
 }
 
 /// Hook for navigation state
-pub fn use_navigation_state[T: serde::de::DeserializeOwned + Default]() -> T! {
-    let location! = use_location();
+☉ rite use_navigation_state[T: serde·de·DeserializeOwned + Default]() -> T! {
+    ≔ location! = use_location();
     location.state
-        ·and_then(|s| serde_json::from_value(s)·ok())
+        ·and_then(|s| serde_json·from_value(s)·ok())
         ·unwrap_or_default()
 }
 
 /// Navigate action result
-pub type NavigateResult = enum {
+☉ type NavigateResult = ᛈ {
     Idle,
     Loading,
     Submitting,
 }
 
 /// Hook for tracking navigation state
-pub fn use_navigation() -> NavigateResult! {
+☉ rite use_navigation() -> NavigateResult! {
     // Would track pending navigations in real implementation
-    NavigateResult::Idle
+    NavigateResult·Idle
 }
 
 /// Hook for "back" navigation
-pub fn use_go_back() -> impl Fn()! {
+☉ rite use_go_back() -> impl Fn()! {
     move || {
-        qliphoth_sys::window()·unwrap()·history()·back();
+        qliphoth_sys·window()·unwrap()·history()·back();
     }
 }
 
 /// Hook for "forward" navigation
-pub fn use_go_forward() -> impl Fn()! {
+☉ rite use_go_forward() -> impl Fn()! {
     move || {
-        qliphoth_sys::window()·unwrap()·history()·forward();
+        qliphoth_sys·window()·unwrap()·history()·forward();
     }
 }
 
 /// Hook for "go" navigation (relative history)
-pub fn use_go() -> impl Fn(i32)! {
+☉ rite use_go() -> impl Fn(i32)! {
     move |delta: i32| {
-        qliphoth_sys::window()·unwrap()·history()·go(delta);
+        qliphoth_sys·window()·unwrap()·history()·go(delta);
     }
 }
 
 /// Prevent navigation (for unsaved changes, etc)
-pub fn use_blocker(should_block: impl Fn() -> bool + 'static!) -> Blocker! {
+☉ rite use_blocker(should_block: impl Fn() -> bool + 'static!) -> Blocker! {
     let blocked! = use_signal(false);
 
     use_effect(move || {

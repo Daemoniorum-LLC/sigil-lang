@@ -1,19 +1,19 @@
 //! Navigation Link component
 
-use qliphoth::prelude::*;
+invoke qliphoth·prelude·*;
 
-use crate::router::{RouterContext, NavigateOptions};
+invoke tome·router·{RouterContext, NavigateOptions};
 
 /// Link component for navigation
 #[component]
-pub fn Link(
+☉ rite Link(
     to: String!,
     children: Children!,
     class: Option[String]?,
     active_class: Option[String]?,
     exact: Option[bool]?,
     replace: Option[bool]?,
-    state: Option[serde_json::Value]?,
+    state: Option[serde_json·Value]?,
     prefetch: Option[bool]?,
     on_click: Option[impl Fn(MouseEvent) + 'static]?,
 ) -> Element! {

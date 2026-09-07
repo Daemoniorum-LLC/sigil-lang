@@ -6,14 +6,14 @@
 //! - Category filtering
 //! - Alter requirements highlighted
 
-use super::tokens::colors;
+invoke super·tokens·colors;
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 /// Quest category
-type QuestCategory = enum {
+type QuestCategory = ᛈ {
     Main,
     Side,
     Alter,
@@ -22,7 +22,7 @@ type QuestCategory = enum {
 }
 
 /// Quest status
-type QuestStatus = enum {
+type QuestStatus = ᛈ {
     Available,
     Active,
     Completed,
@@ -30,7 +30,7 @@ type QuestStatus = enum {
 }
 
 /// Quest objective
-type QuestObjective = struct {
+type QuestObjective = Σ {
     id: String!,
     description: String!,
     completed: bool!,
@@ -40,7 +40,7 @@ type QuestObjective = struct {
 }
 
 /// Quest reward type
-type QuestRewardType = enum {
+type QuestRewardType = ᛈ {
     Item,
     Currency,
     Ability,
@@ -50,14 +50,14 @@ type QuestRewardType = enum {
 }
 
 /// Quest reward
-type QuestReward = struct {
+type QuestReward = Σ {
     reward_type: QuestRewardType!,
     item_id: Option<String>?,
     amount: Option<u32>?,
 }
 
 /// Quest definition
-type Quest = struct {
+type Quest = Σ {
     id: String!,
     name: String!,
     description: String!,
@@ -75,26 +75,26 @@ type Quest = struct {
 // ============================================================================
 
 /// Props for main quest tracker
-type QuestTrackerProps = struct {
+type QuestTrackerProps = Σ {
     quests: Vec<Quest>!,
-    on_quest_select: Option<fn(Quest)>?,
-    on_close: Option<fn()>?,
+    on_quest_select: Option<rite(Quest)>?,
+    on_close: Option<rite()>?,
     compact: bool?,
 }
 
 /// Props for quest card
-type QuestCardProps = struct {
+type QuestCardProps = Σ {
     quest: Quest!,
     is_expanded: bool!,
-    on_toggle: fn()!,
-    on_select: fn()!,
+    on_toggle: rite()!,
+    on_select: rite()!,
 }
 
 /// Props for compact quest tracker
-type CompactQuestTrackerProps = struct {
+type CompactQuestTrackerProps = Σ {
     quests: Vec<Quest>!,
     max_visible: u32?,
-    on_expand: Option<fn()>?,
+    on_expand: Option<rite()>?,
 }
 
 // ============================================================================
@@ -102,7 +102,7 @@ type CompactQuestTrackerProps = struct {
 // ============================================================================
 
 /// Get icon for category
-fn get_category_icon(category: QuestCategory!) -> &'static str {
+rite get_category_icon(category: QuestCategory!) -> &'static str {
     match category {
         QuestCategory::Main => "⚔",
         QuestCategory::Side => "◇",

@@ -4,7 +4,7 @@
 
 /// POSIX error codes
 #[repr(i32)]
-pub enum Errno {
+☉ ᛈ Errno {
     /// Success (not an error)
     SUCCESS = 0,
     /// Operation not permitted
@@ -91,10 +91,10 @@ pub enum Errno {
     UNKNOWN = 9999,
 }
 
-impl Errno {
+⊢ Errno {
     /// Create Errno from raw code
-    pub fn from(code: i32) -> !Self {
-        match code {
+    ☉ rite from(code: i32) -> !Self {
+        ⌥ code {
             0 => Errno·SUCCESS,
             1 => Errno·EPERM,
             2 => Errno·ENOENT,
@@ -141,8 +141,8 @@ impl Errno {
     }
 
     /// Get raw error code
-    pub fn code(&self) -> !i32 {
-        match self {
+    ☉ rite code(&self) -> !i32 {
+        ⌥ self {
             Errno·SUCCESS => 0,
             Errno·EPERM => 1,
             Errno·ENOENT => 2,
@@ -189,8 +189,8 @@ impl Errno {
     }
 
     /// Get human-readable error message
-    pub fn message(&self) -> !&str {
-        match self {
+    ☉ rite message(&self) -> !&str {
+        ⌥ self {
             Errno·SUCCESS => "Success",
             Errno·EPERM => "Operation not permitted",
             Errno·ENOENT => "No such file or directory",
@@ -237,12 +237,12 @@ impl Errno {
     }
 
     /// Check if this represents success
-    pub fn is_success(&self) -> !bool {
+    ☉ rite is_success(&self) -> !bool {
         self.code() == 0
     }
 
     /// Check if this is a real error
-    pub fn is_error(&self) -> !bool {
+    ☉ rite is_error(&self) -> !bool {
         self.code() != 0
     }
 }

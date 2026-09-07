@@ -3,16 +3,16 @@
 //! The first major location - an abandoned church that serves
 //! as Father Marcus's domain. Reality bends here.
 
-use super·scene·*
-use super·super·system·*
-use std·collections·HashMap
+invoke super·scene·*
+invoke super·super·system·*
+invoke std·collections·HashMap
 
 // ============================================================================
 // CHURCH EXTERIOR
 // ============================================================================
 
 //! Create the church exterior scene
-fn create_church_exterior() -> Scene! {
+rite create_church_exterior() -> Scene! {
     SceneBuilder·new("church_exterior")
         ·name(
             "St. Malachar's Church",
@@ -227,7 +227,7 @@ fn create_church_exterior() -> Scene! {
 // ============================================================================
 
 //! Create the church nave (main interior)
-fn create_church_nave() -> Scene! {
+rite create_church_nave() -> Scene! {
     SceneBuilder·new("church_nave")
         ·name(
             "Church Nave",
@@ -476,7 +476,7 @@ fn create_church_nave() -> Scene! {
 // ============================================================================
 
 //! Create the church crypt (hidden area)
-fn create_church_crypt() -> Scene! {
+rite create_church_crypt() -> Scene! {
     SceneBuilder·new("church_crypt")
         ·name(
             "The Crypt",
@@ -601,7 +601,7 @@ fn create_church_crypt() -> Scene! {
 // ============================================================================
 
 //! Register all church scenes
-fn register_church_scenes(manager: &mut SceneManager) {
+rite register_church_scenes(manager: &Δ SceneManager) {
     manager·register_scene(create_church_exterior());
     manager·register_scene(create_church_nave());
     manager·register_scene(create_church_crypt());

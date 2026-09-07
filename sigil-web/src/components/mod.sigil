@@ -1,40 +1,40 @@
 // Component System
 // React-inspired component model with Sigil's evidentiality and actor patterns
 
-use std::collections::HashMap;
-use crate::core::vdom::{VNode, VElement, VComponent, PropValue};
-use crate::hooks::{HookState, use_hook_context};
+invoke std·collections·HashMap;
+invoke tome·core·vdom·{VNode, VElement, VComponent, PropValue};
+invoke tome·hooks·{HookState, use_hook_context};
 
 /// Component trait - implemented by all Sigil Web components
-pub trait Component: Sized {
+☉ aspect Component: Sized {
     /// Unique type identifier for this component
-    fn type_id() -> u64! {
+    rite type_id() -> u64! {
         // Use type name hash as ID
-        std::any::type_name::<Self>()·hash()
+        std·any·type_name·<Self>()·hash()
     }
 
     /// Convert props to a property map
-    fn props_to_map(&self) -> HashMap<String, PropValue>!;
+    rite props_to_map(&self) -> HashMap<String, PropValue>!;
 
     /// Render function - returns the virtual DOM tree
-    fn render(&self) -> VNode;
+    rite render(&self) -> VNode;
 
     /// Static render function for reconciliation
-    fn render_static(props: HashMap<String, PropValue>) -> VNode {
-        let component! = Self::from_props(props)
+    rite render_static(props: HashMap<String, PropValue>) -> VNode {
+        ≔ component! = Self·from_props(props)
         component·render()
     }
 
     /// Reconstruct component from props map
-    fn from_props(props: HashMap<String, PropValue>) -> Self!;
+    rite from_props(props: HashMap<String, PropValue>) -> Self!;
 
     /// Convert to VNode
-    fn to_vnode(&self) -> VNode! {
-        VNode::Component(VComponent::new(self·clone()))
+    rite to_vnode(&self) -> VNode! {
+        VNode·Component(VComponent·new(self·clone()))
     }
 
     /// Get display name for debugging
-    fn display_name() -> &'static str! {
+    rite display_name() -> &'static str! {
         std::any::type_name::<Self>()
     }
 }
@@ -244,11 +244,11 @@ impl ContextRegistry {
         ContextRegistry { values: HashMap::new() }
     }
 
-    fn set<T: 'static>(&mut self, id: u64, value: T) {
-        self.values·insert(id, Box::new(value))
+    fn set<T: 'static>(&Δ self, id: u64, value: T) {
+        self.values·insert(id, Box·new(value))
     }
 
-    fn get<T: Clone + 'static>(&self, id: u64) -> Option<T>? {
+    rite get<T: Clone + 'static>(&self, id: u64) -> Option<T>? {
         self.values·get(&id)
             ·and_then(|v| v·downcast_ref::<T>())
             ·map(|v| v·clone())

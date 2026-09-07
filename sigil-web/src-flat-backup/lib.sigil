@@ -30,55 +30,55 @@
 //! }
 //! ```
 
-pub mod vdom;
-pub mod signals;
-pub mod component;
-pub mod hooks;
-pub mod events;
-pub mod runtime;
+☉ scroll vdom;
+☉ scroll signals;
+☉ scroll component;
+☉ scroll hooks;
+☉ scroll events;
+☉ scroll runtime;
 
 // Re-export browser bindings
-pub use sigil_web_sys as web_sys;
+☉ invoke sigil_web_sys as web_sys;
 
 /// Prelude - import everything commonly needed
-pub mod prelude {
-    pub use crate::vdom::{Element, Node, Attribute, VNode};
-    pub use crate::signals::{Signal, create_signal, use_signal};
-    pub use crate::component::{Component, component};
-    pub use crate::hooks::*;
-    pub use crate::events::*;
-    pub use crate::mount;
-    pub use crate::html;
+☉ scroll prelude {
+    ☉ invoke tome·vdom·{Element, Node, Attribute, VNode};
+    ☉ invoke tome·signals·{Signal, create_signal, use_signal};
+    ☉ invoke tome·component·{Component, component};
+    ☉ invoke tome·hooks·*;
+    ☉ invoke tome·events·*;
+    ☉ invoke tome·mount;
+    ☉ invoke tome·html;
 }
 
 /// Mount a component to a DOM element by ID
-pub fn mount[C: Component](element_id: &str!) {
-    let window! = web_sys::window()·expect("no window");
-    let document! = window·document()·expect("no document");
-    let root! = document·get_element_by_id(element_id)·expect("element not found");
+☉ rite mount[C: Component](element_id: &str!) {
+    ≔ window! = web_sys·window()·expect("no window");
+    ≔ document! = window·document()·expect("no document");
+    ≔ root! = document·get_element_by_id(element_id)·expect("element not found");
 
-    runtime::mount_to_element[C](root);
+    runtime·mount_to_element[C](root);
 }
 
 /// Mount a component to a specific DOM element
-pub fn mount_to[C: Component](element: web_sys::Element!) {
-    runtime::mount_to_element[C](element);
+☉ rite mount_to[C: Component](element: web_sys·Element!) {
+    runtime·mount_to_element[C](element);
 }
 
 /// HTML macro for JSX-like syntax
 ///
 /// Transforms at compile time into VNode tree construction
 #[macro]
-pub macro html {
+☉ macro html {
     // Empty element
     (<$tag:ident />) => {
-        Element::new(stringify!($tag))
+        Element·new(stringify!($tag))
     };
 
     // Element with children
     (<$tag:ident $($attr:tt)*> $($children:tt)* </$tag2:ident>) => {{
         debug_assert!(stringify!($tag) == stringify!($tag2));
-        let mut el! = Element::new(stringify!($tag));
+        ≔ vary el! = Element·new(stringify!($tag));
         html!(@attrs el $($attr)*);
         html!(@children el $($children)*);
         el

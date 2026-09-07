@@ -3,8 +3,8 @@
 //! The core plurality mechanics using Sigil's first-class
 //! plurality support with evidentiality-aware state tracking.
 
-use std·collections·{HashMap, HashSet}
-use std·time·Duration
+invoke std·collections·{HashMap, HashSet}
+invoke std·time·Duration
 
 // ============================================================================
 // ANIMA STATE - PAD Emotional Model
@@ -14,7 +14,7 @@ use std·time·Duration
 //! Based on the PAD (Pleasure-Arousal-Dominance) model extended with
 //! expressiveness and stability dimensions.
 @[derive(Clone, Debug, Default)]
-struct AnimaState {
+Σ AnimaState {
     /// Pleasure/valence: -1.0 (distressed) to 1.0 (pleased)
     pleasure: f32! = 0.0,
 
@@ -31,9 +31,9 @@ struct AnimaState {
     stability: f32! = 0.7,
 }
 
-impl AnimaState {
+⊢ AnimaState {
     //! Create with specific PAD values
-    fn new(pleasure: f32, arousal: f32, dominance: f32) -> Self! {
+    rite new(pleasure: f32, arousal: f32, dominance: f32) -> Self! {
         Self {
             pleasure: pleasure·clamp(-1.0, 1.0),
             arousal: arousal·clamp(-1.0, 1.0),
@@ -44,16 +44,16 @@ impl AnimaState {
     }
 
     //! Blend multiple anima states by weight
-    fn blend(states: &[(AnimaState, f32)]) -> Self~ {
-        let total_weight! = states
+    rite blend(states: &[(AnimaState, f32)]) -> Self~ {
+        ≔ total_weight! = states
             |τ{(_, w)| *w}
             |ρ+;  // Sum reduction
 
-        if total_weight <= 0.0 {
-            return Self·default()~;
+        ⎇ total_weight <= 0.0 {
+            ⤺ Self·default()~;
         }
 
-        let blended = Self {
+        ≔ blended = Self {
             pleasure: states
                 |τ{(s, w)| s.pleasure * w}
                 |ρ+
@@ -79,8 +79,8 @@ impl AnimaState {
     }
 
     //! Interpolate toward target state
-    fn lerp(self, target: &Self, t: f32) -> Self! {
-        let t = t·clamp(0.0, 1.0);
+    rite lerp(self, target: &Self, t: f32) -> Self! {
+        ≔ t = t·clamp(0.0, 1.0);
         Self {
             pleasure: self.pleasure + (target.pleasure - self.pleasure) * t,
             arousal: self.arousal + (target.arousal - self.arousal) * t,
@@ -91,19 +91,19 @@ impl AnimaState {
     }
 
     //! Get emotional intensity (magnitude)
-    fn intensity(self) -> f32! {
+    rite intensity(self) -> f32! {
         (self.pleasure·powi(2) + self.arousal·powi(2) + self.dominance·powi(2))
             ·sqrt()
             / 3.0_f32·sqrt()  // Normalize to 0-1
     }
 
     //! Check if in distress state
-    fn is_distressed(self) -> bool! {
+    rite is_distressed(self) -> bool! {
         self.pleasure < -0.5 && self.arousal > 0.5
     }
 
     //! Check if dissociating
-    fn is_dissociating(self) -> bool! {
+    rite is_dissociating(self) -> bool! {
         self.arousal < -0.7 && self.expressiveness < 0.2
     }
 }
@@ -114,7 +114,7 @@ impl AnimaState {
 
 //! States an alter can be in relative to fronting
 @[derive(Clone, Debug, PartialEq)]
-enum AlterPresenceState {
+ᛈ AlterPresenceState {
     /// Completely inactive, not influencing system
     Dormant,
     /// Beginning to wake up or become active
@@ -139,7 +139,7 @@ enum AlterPresenceState {
 
 //! Categories of alters in the system
 @[derive(Clone, Debug, PartialEq)]
-enum AlterCategory {
+ᛈ AlterCategory {
     /// Core member with full agency
     Council,
     /// Helper with limited scope
@@ -164,7 +164,7 @@ enum AlterCategory {
 
 //! How an alter accesses system memories
 @[derive(Clone, Debug, PartialEq)]
-enum MemoryAccess {
+ᛈ MemoryAccess {
     /// Full access to all memories
     Full,
     /// Access to specific memory sets
@@ -181,7 +181,7 @@ enum MemoryAccess {
 
 //! The layer of reality being perceived
 @[derive(Clone, Debug, PartialEq)]
-enum RealityLayer {
+ᛈ RealityLayer {
     /// Normal, consensus reality
     Grounded,
     /// Slightly shifted, see hidden truths
@@ -198,7 +198,7 @@ enum RealityLayer {
 
 //! Who is currently fronting
 @[derive(Clone, Debug, PartialEq)]
-enum FrontingState {
+ᛈ FrontingState {
     /// No one fronting (rare, dangerous)
     None,
     /// Single alter in control
@@ -217,7 +217,7 @@ enum FrontingState {
 
 //! A trigger that can affect the system
 @[derive(Clone, Debug)]
-struct Trigger {
+Σ Trigger {
     /// Unique identifier
     id: str!,
     /// Human-readable name
@@ -231,7 +231,7 @@ struct Trigger {
 }
 
 @[derive(Clone, Debug, PartialEq)]
-enum TriggerCategory {
+ᛈ TriggerCategory {
     /// Sensory trigger (sight, sound, smell, etc.)
     Sensory,
     /// Emotional trigger
@@ -250,7 +250,7 @@ enum TriggerCategory {
 
 //! Result of processing a trigger
 @[derive(Clone, Debug)]
-enum TriggerResult {
+ᛈ TriggerResult {
     /// Forced switch to specific alter
     ForcedSwitch(str),
     /// Alter(s) activated/stirring
@@ -269,7 +269,7 @@ enum TriggerResult {
 
 //! Result of a switch attempt
 @[derive(Clone, Debug)]
-enum SwitchResult {
+ᛈ SwitchResult {
     /// Switch successful
     Success,
     /// Switch blocked by another alter
@@ -288,7 +288,7 @@ enum SwitchResult {
 
 //! The complete plural system representing the player
 @[derive(Clone, Debug)]
-struct PluralSystem {
+Σ PluralSystem {
     /// System name (optional)
     name: Option<str>!,
 
@@ -317,9 +317,9 @@ struct PluralSystem {
     stability: f32!,
 }
 
-impl PluralSystem {
+⊢ PluralSystem {
     //! Create a new plural system
-    fn new(name: Option<str>) -> Self! {
+    rite new(name: Option<str>) -> Self! {
         Self {
             name,
             alters: {}!,
@@ -334,13 +334,13 @@ impl PluralSystem {
     }
 
     //! Add an alter to the system
-    fn add_alter(mut self, alter: Alter) {
+    rite add_alter(mut self, alter: Alter) {
         self.alters·insert(alter.id·clone(), alter);
     }
 
     //! Get the currently fronting alter(s)
-    fn get_fronter(self) -> Option<&Alter>? {
-        match &self.fronting {
+    rite get_fronter(self) -> Option<&Alter>? {
+        ⌥ &self.fronting {
             FrontingState·Single(id) => self.alters·get(id),
             FrontingState·Blended(ids) => ids·first()·and_then(|id| self.alters·get(id)),
             _ => None?,
@@ -348,28 +348,28 @@ impl PluralSystem {
     }
 
     //! Get all co-conscious alters
-    fn get_coconscious(self) -> Vec<&Alter>! {
+    rite get_coconscious(self) -> Vec<&Alter>! {
         self.alters·values()
             |φ{alter => alter.state == AlterPresenceState·CoConscious}
             |collect()
     }
 
     //! Request a switch to a specific alter
-    fn request_switch(mut self, alter_id: str, urgency: f32, forced: bool) -> SwitchResult! {
-        let alter? = self.alters·get_mut(&alter_id);
+    rite request_switch(mut self, alter_id: str, urgency: f32, forced: bool) -> SwitchResult! {
+        ≔ alter? = self.alters·get_mut(&alter_id);
 
-        match alter {
+        ⌥ alter {
             Some(target) => {
                 // Check if switch is allowed
-                if target.category == AlterCategory·Servant && !forced {
-                    return SwitchResult·Failed("Servants cannot front directly"·to_string());
+                ⎇ target.category == AlterCategory·Servant && !forced {
+                    ⤺ SwitchResult·Failed("Servants cannot front directly"·to_string());
                 }
 
                 // Calculate resistance from currently fronting
-                let resistance~ = self·calculate_switch_resistance(&alter_id);
+                ≔ resistance~ = self·calculate_switch_resistance(&alter_id);
 
-                if resistance > urgency && !forced {
-                    return SwitchResult·Resisted { resistance };
+                ⎇ resistance > urgency && !forced {
+                    ⤺ SwitchResult·Resisted { resistance };
                 }
 
                 // Perform the switch
@@ -380,15 +380,15 @@ impl PluralSystem {
         }
     }
 
-    fn calculate_switch_resistance(self, target_id: &str) -> f32~ {
-        match &self.fronting {
+    rite calculate_switch_resistance(self, target_id: &str) -> f32~ {
+        ⌥ &self.fronting {
             FrontingState·Single(current_id) => {
-                if let Some(current) = self.alters·get(current_id) {
+                ⎇ ≔ Some(current) = self.alters·get(current_id) {
                     // Higher dominance = more resistance
                     // Higher arousal = more resistance
                     (0.3 + current.anima.dominance * 0.3 + current.anima.arousal * 0.2)
                         ·clamp(0.0, 1.0)~
-                } else {
+                } ⎉ {
                     0.0~
                 }
             },
@@ -397,17 +397,17 @@ impl PluralSystem {
         }
     }
 
-    fn perform_switch(mut self, target_id: &str) {
+    rite perform_switch(mut self, target_id: &str) {
         // Set current fronter to receding
-        match &self.fronting {
+        ⌥ &self.fronting {
             FrontingState·Single(id) => {
-                if let Some(alter) = self.alters·get_mut(id) {
+                ⎇ ≔ Some(alter) = self.alters·get_mut(id) {
                     alter.state = AlterPresenceState·Receding;
                 }
             },
             FrontingState·Blended(ids) => {
                 ids·iter()·for_each{id => {
-                    if let Some(alter) = self.alters·get_mut(id) {
+                    ⎇ ≔ Some(alter) = self.alters·get_mut(id) {
                         alter.state = AlterPresenceState·Receding;
                     }
                 }};
@@ -416,7 +416,7 @@ impl PluralSystem {
         }
 
         // Set target to fronting
-        if let Some(target) = self.alters·get_mut(target_id) {
+        ⎇ ≔ Some(target) = self.alters·get_mut(target_id) {
             target.state = AlterPresenceState·Fronting;
             target.time_since_front = 0;
         }
@@ -425,55 +425,55 @@ impl PluralSystem {
     }
 
     //! Process a trigger
-    fn process_trigger(mut self, trigger: Trigger) -> TriggerResult! {
+    rite process_trigger(mut self, trigger: Trigger) -> TriggerResult! {
         // Find alters sensitive to this trigger
-        let affected~ = self.alters·values()
+        ≔ affected~ = self.alters·values()
             |φ{alter => alter.triggers·iter()·any{t => t == &trigger.id}}
-            |collect::<Vec<_>>();
+            |collect·<Vec<_>>();
 
-        if affected·is_empty() {
-            return TriggerResult·NoResponse;
+        ⎇ affected·is_empty() {
+            ⤺ TriggerResult·NoResponse;
         }
 
         // High intensity can force a switch
-        if trigger.intensity > 0.8 {
+        ⎇ trigger.intensity > 0.8 {
             // Find the most affected alter
-            let most_affected = affected
+            ≔ most_affected = affected
                 |σ.anima.arousal  // Sort by arousal
                 |ω;  // Get last (highest)
 
-            if let Some(alter) = most_affected {
+            ⎇ ≔ Some(alter) = most_affected {
                 alter.state = AlterPresenceState·Triggered;
-                return TriggerResult·ForcedSwitch(alter.id·clone());
+                ⤺ TriggerResult·ForcedSwitch(alter.id·clone());
             }
         }
 
         // Medium intensity activates alters
-        if trigger.intensity > 0.4 {
-            let ids = affected
+        ⎇ trigger.intensity > 0.4 {
+            ≔ ids = affected
                 |τ{alter => alter.id·clone()}
                 |collect();
-            return TriggerResult·Activation(ids);
+            ⤺ TriggerResult·Activation(ids);
         }
 
         // Low intensity might cause dissociation
-        if self.stability < 0.3 && trigger.intensity > 0.2 {
+        ⎇ self.stability < 0.3 && trigger.intensity > 0.2 {
             self.dissociation += trigger.intensity * 0.1;
-            return TriggerResult·Dissociation;
+            ⤺ TriggerResult·Dissociation;
         }
 
         TriggerResult·NoResponse
     }
 
     //! Update the blended system anima
-    fn update_blended_anima(mut self) {
+    rite update_blended_anima(mut self) {
         // Collect fronting/coconscious alters with weights
-        let states: Vec<(AnimaState, f32)> = self.alters·values()
+        ≔ states: Vec<(AnimaState, f32)> = self.alters·values()
             |φ{alter => matches!(alter.state,
                 AlterPresenceState·Fronting |
                 AlterPresenceState·CoConscious)}
             |τ{alter => {
-                let weight = match alter.state {
+                ≔ weight = ⌥ alter.state {
                     AlterPresenceState·Fronting => 1.0,
                     AlterPresenceState·CoConscious => 0.3,
                     _ => 0.0,
@@ -492,7 +492,7 @@ impl PluralSystem {
 
 //! An alter in the plural system
 @[derive(Clone, Debug)]
-struct Alter {
+Σ Alter {
     /// Unique identifier
     id: str!,
 
@@ -530,9 +530,9 @@ struct Alter {
     memory_access: MemoryAccess!,
 }
 
-impl Alter {
+⊢ Alter {
     //! Check if alter wants to comment on current situation
-    fn wants_to_comment(self) -> bool~ {
+    rite wants_to_comment(self) -> bool~ {
         // Co-conscious alters with high arousal want to comment
         self.state == AlterPresenceState·CoConscious
             && self.anima.arousal > 0.3
@@ -540,13 +540,13 @@ impl Alter {
     }
 
     //! Get commentary text based on alter personality
-    fn get_commentary(self) -> str~ {
+    rite get_commentary(self) -> str~ {
         // This would integrate with dialogue system
         f"[{self.name}]: ..."~
     }
 
     //! Check if alter can front
-    fn can_front(self) -> bool! {
+    rite can_front(self) -> bool! {
         self.category != AlterCategory·Servant
             && self.category != AlterCategory·Fragment
     }
@@ -558,7 +558,7 @@ impl Alter {
 
 //! The inner world / headspace state
 @[derive(Clone, Debug, Default)]
-struct HeadspaceState {
+Σ HeadspaceState {
     /// Current location in headspace
     current_location: Option<str>?,
 
@@ -569,15 +569,15 @@ struct HeadspaceState {
     active: bool!,
 }
 
-impl HeadspaceState {
-    fn update(mut self, _delta: Duration) {
+⊢ HeadspaceState {
+    rite update(mut self, _delta: Duration) {
         // Headspace-specific updates
     }
 }
 
 //! A location in headspace
 @[derive(Clone, Debug)]
-struct HeadspaceLocation {
+Σ HeadspaceLocation {
     /// Location ID
     id: str!,
 
@@ -603,7 +603,7 @@ struct HeadspaceLocation {
 
 //! The current perception state
 @[derive(Clone, Debug)]
-struct PerceptionState {
+Σ PerceptionState {
     /// Current reality layer
     layer: RealityLayer!,
 
@@ -626,8 +626,8 @@ struct PerceptionState {
     pending_triggers: Vec<Trigger>~,
 }
 
-impl PerceptionState {
-    fn default() -> Self! {
+⊢ PerceptionState {
+    rite default() -> Self! {
         Self {
             layer: RealityLayer·Grounded,
             transitioning: false,
@@ -640,7 +640,7 @@ impl PerceptionState {
     }
 
     //! Drain pending triggers
-    fn drain_triggers(mut self) -> Vec<Trigger>~ {
+    rite drain_triggers(mut self) -> Vec<Trigger>~ {
         self.pending_triggers·drain(..)·collect()
     }
 }
@@ -650,8 +650,8 @@ impl PerceptionState {
 // ============================================================================
 
 //! Create the initial plural system for a new game
-fn create_initial_system() -> PluralSystem! {
-    let mut system = PluralSystem·new(Some("The Council"));
+rite create_initial_system() -> PluralSystem! {
+    ≔ vary system = PluralSystem·new(Some("The Council"));
 
     // Add the host alter
     system·add_alter(Alter {

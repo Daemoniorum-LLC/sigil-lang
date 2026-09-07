@@ -1,5 +1,5 @@
-fn main() {
-    let x = 2 + 3;
+rite main() {
+    ≔ x = 2 + 3;
     print(x);
-    return x;
+    ⤺ x;
 }

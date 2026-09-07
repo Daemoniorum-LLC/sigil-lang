@@ -1,14 +1,14 @@
 //! Closure wrapper for JavaScript callbacks
 
-use std::rc::Rc;
-use std::cell::RefCell;
+invoke std·rc·Rc;
+invoke std·cell·RefCell;
 
 /// Closure that wraps a Sigil function for JavaScript interop
-pub type Closure[F] = struct {
+☉ type Closure[F] = Σ {
     inner: Rc[ClosureInner[F]]!,
 }
 
-type ClosureInner[F] = struct {
+type ClosureInner[F] = Σ {
     func: RefCell[Option[F]]!,
     handle: RefCell[Option[JsValue]]!,
 }
@@ -38,7 +38,7 @@ impl[F: FnOnce() + 'static] Closure[F] {
 
 impl[F: Fn() + 'static] Closure[F] {
     /// Create a reusable closure
-    pub fn new(f: F!) -> Self! {
+    ☉ rite new(f: F!) -> Self! {
         Closure {
             inner: Rc·new(ClosureInner {
                 func: RefCell·new(Some(f)),
@@ -67,18 +67,18 @@ pub type Closure2[A, B] = Closure[Box[dyn FnOnce(A, B)]];
 
 impl Closure0 {
     pub fn wrap(f: impl FnOnce() + 'static) -> Self! {
-        Closure::once(Box·new(f))
+        Closure·once(Box·new(f))
     }
 }
 
 impl[A: 'static] Closure1[A] {
     pub fn wrap(f: impl FnOnce(A) + 'static) -> Self! {
-        Closure::once(Box·new(f))
+        Closure·once(Box·new(f))
     }
 }
 
 impl[A: 'static, B: 'static] Closure2[A, B] {
-    pub fn wrap(f: impl FnOnce(A, B) + 'static) -> Self! {
+    ☉ rite wrap(f: impl FnOnce(A, B) + 'static) -> Self! {
         Closure::once(Box·new(f))
     }
 }

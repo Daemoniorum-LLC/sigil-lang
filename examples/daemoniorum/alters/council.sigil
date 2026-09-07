@@ -3,7 +3,7 @@
 //! These are the primary alters that form the ruling body of the system.
 //! Using Sigil's native alter declaration syntax.
 
-use super·super·system·*
+invoke super·super·system·*
 
 // ============================================================================
 // ABADDON - The Destroyer
@@ -53,7 +53,7 @@ alter Abaddon: Council {
         Emerging -> Fronting: on switch_approved,
         Fronting -> Receding: on combat_ended && arousal < 0.3,
         Receding -> CoConscious: after 5000ms,
-        CoConscious -> Dormant: after 60000ms if arousal < 0.2,
+        CoConscious -> Dormant: after 60000ms ⎇ arousal < 0.2,
         * -> Triggered: on trigger_intensity > 0.8,
     },
 
@@ -112,7 +112,7 @@ alter Stolas: Council {
         Stirring -> CoConscious: on curiosity_activated,
         CoConscious -> Fronting: on analysis_needed,
         Fronting -> CoConscious: on analysis_complete,
-        CoConscious -> Dormant: after 30000ms if no_active_puzzles,
+        CoConscious -> Dormant: after 30000ms ⎇ no_active_puzzles,
     },
 
     dialogue: {
@@ -225,7 +225,7 @@ alter Paimon: Council {
         Stirring -> CoConscious: always after 1000ms,
         CoConscious -> Fronting: on decision_point,
         Fronting -> CoConscious: on path_chosen,
-        CoConscious -> Dormant: after 45000ms if destination_reached,
+        CoConscious -> Dormant: after 45000ms ⎇ destination_reached,
     },
 
     dialogue: {
@@ -335,7 +335,7 @@ alter Warden: Protector {
         Dormant -> Stirring: on danger_detected,
         Stirring -> Fronting: on immediate_threat,  // Skip CoConscious
         Fronting -> CoConscious: on threat_passed,
-        CoConscious -> Dormant: after 10000ms if safety_confirmed,
+        CoConscious -> Dormant: after 10000ms ⎇ safety_confirmed,
         * -> Fronting: on system_overwhelm,  // Emergency takeover
     },
 
@@ -356,14 +356,14 @@ alter Warden: Protector {
 // ============================================================================
 
 //! Register all council alters with the system
-fn register_council_alters(system: &mut PluralSystem) {
+rite register_council_alters(system: &Δ PluralSystem) {
     // The alters defined above are automatically registered
     // when using the `alter` declaration syntax.
     //
     // This function can be used for runtime modifications.
 
     // Verify all council members are present
-    let council_ids = ["abaddon", "stolas", "beleth", "paimon", "vessel", "warden"];
+    ≔ council_ids = ["abaddon", "stolas", "beleth", "paimon", "vessel", "warden"];
 
     council_ids
         |φ{id => !system.alters·contains_key(id)}

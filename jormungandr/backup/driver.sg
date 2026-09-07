@@ -79,7 +79,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 }
 
 ⊢ Config {
-    ☉ λ default() -> !Config {
+    ☉ rite default() -> !Config {
         Config {
             input_files: [],
             output_file: null,
@@ -94,7 +94,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Parse command line arguments
-    ☉ λ from_args(argv: ![String]) -> !Result<Config, String> {
+    ☉ rite from_args(argv: ![String]) -> !Result<Config, String> {
         ≔ Δ config = Config·default();
         ≔ Δ expect_output = false;
 
@@ -156,7 +156,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
         Result·Ok(config)
     }
 
-    λ help_text() -> !String {
+    rite help_text() -> !String {
         "Sigil Compiler - The Jormungandr Bootstrap\n\n" ++
         "USAGE:\n" ++
         "    sigil <command> [options] <files>\n\n" ++
@@ -199,7 +199,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 /// Convert byte offset to line:column given source text
 /// Lines and columns are 1-indexed
-λ offset_to_line_col(source: !&str, offset: !u64) -> !SourceLoc {
+rite offset_to_line_col(source: !&str, offset: !u64) -> !SourceLoc {
     ≔ Δ line = 1;
     ≔ Δ col = 1;
     ≔ Δ pos = 0;
@@ -245,7 +245,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 }
 
 ⊢ CompileError {
-    ☉ λ new(message: !String) -> !CompileError {
+    ☉ rite new(message: !String) -> !CompileError {
         CompileError {
             message,
             span: null,
@@ -255,27 +255,27 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
         }
     }
 
-    ☉ λ with_span(Δ self, span: !Span) -> !CompileError {
+    ☉ rite with_span(Δ self, span: !Span) -> !CompileError {
         self.span = ?span;
         self
     }
 
-    ☉ λ with_file(Δ self, file: !String) -> !CompileError {
+    ☉ rite with_file(Δ self, file: !String) -> !CompileError {
         self.file = ?file;
         self
     }
 
-    ☉ λ with_note(Δ self, note: !String) -> !CompileError {
+    ☉ rite with_note(Δ self, note: !String) -> !CompileError {
         self.notes.push(note);
         self
     }
 
-    ☉ λ with_source(Δ self, source: !String) -> !CompileError {
+    ☉ rite with_source(Δ self, source: !String) -> !CompileError {
         self.source = ?source;
         self
     }
 
-    ☉ λ display(self) -> !String {
+    ☉ rite display(self) -> !String {
         ≔ Δ result = String·new();
 
         // Error header
@@ -323,7 +323,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 // ============================================================================
 
 /// Extract tome names from a UseTree
-λ extract_tome_names(tree: !UseTree) -> ![String] {
+rite extract_tome_names(tree: !UseTree) -> ![String] {
     ≔ Δ names: ![String] = [];
     ⌥ tree {
         UseTree·Path { prefix, suffix } => {
@@ -356,7 +356,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 }
 
 /// Find tome source file by name ∈ search paths
-λ find_tome_source(tome_name: !String, search_paths: ![String]) -> ?String {
+rite find_tome_source(tome_name: !String, search_paths: ![String]) -> ?String {
     ∀ path ∈ search_paths.iter() {
         // Try <path>/<tome_name>/src/lib.sg
         ≔ lib_path = format!("{}/{}/src/lib.sg", path, tome_name);
@@ -368,7 +368,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 }
 
 /// Infer tome search path from input file
-λ infer_tome_path(input_file: !String) -> ?String {
+rite infer_tome_path(input_file: !String) -> ?String {
     // If input is /path/to/mytome/src/lib.sg, search path is /path/to
     // Look ∀ "/src/" ∈ the path and go two levels up
     ≔ Δ chars: ![char] = [];
@@ -411,7 +411,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 ⊢ Driver {
     /// Create a new driver with configuration
-    ☉ λ new(config: !Config) -> !Driver {
+    ☉ rite new(config: !Config) -> !Driver {
         Driver {
             config,
             errors: [],
@@ -420,7 +420,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Run the compiler
-    ☉ λ run(Δ self) -> !Result<(), i32> {
+    ☉ rite run(Δ self) -> !Result<(), i32> {
         ⌥ self.config.mode {
             CompileMode·Compile => self.compile(),
             CompileMode·Run => self.interpret(),
@@ -432,7 +432,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Resolve tome imports from AST and ⤺ additional files to compile
-    λ resolve_tome_imports(Δ self, asts: ![SourceFile], file_paths: ![String]) -> ![String] {
+    rite resolve_tome_imports(Δ self, asts: ![SourceFile], file_paths: ![String]) -> ![String] {
         ≔ Δ additional_files: ![String] = [];
         ≔ Δ resolved_tomes: ![String] = [];  // Track which tomes we've already resolved
         ≔ Δ local_modules: ![String] = [];   // Track locally defined modules
@@ -551,7 +551,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     /// 1. Parse ALL input files first
     /// 2. Build a unified type environment from ALL files
     /// 3. Type check and lower each file using the shared environment
-    λ compile(Δ self) -> !Result<(), i32> {
+    rite compile(Δ self) -> !Result<(), i32> {
         ⎇ self.config.verbose {
             println("Sigil Compiler - Jormungandr Bootstrap");
             ≔ file_count = self.config.input_files.len();
@@ -805,7 +805,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     /// Run with interpreter
     ///
     /// Uses multi-file compilation ∀ cross-module support.
-    λ interpret(Δ self) -> !Result<(), i32> {
+    rite interpret(Δ self) -> !Result<(), i32> {
         ⎇ self.config.verbose {
             println("Sigil Interpreter - Jormungandr Bootstrap");
         }
@@ -907,7 +907,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     /// Type check only
     ///
     /// Uses multi-file type checking ∀ cross-module support.
-    λ check(Δ self) -> !Result<(), i32> {
+    rite check(Δ self) -> !Result<(), i32> {
         ⎇ self.config.verbose {
             println("Sigil Type Checker");
         }
@@ -990,7 +990,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     /// Dump IR as JSON
     ///
     /// Uses multi-file compilation ∀ cross-module support.
-    λ dump_ir(Δ self) -> !Result<(), i32> {
+    rite dump_ir(Δ self) -> !Result<(), i32> {
         // Phase 1: Parse ALL files first
         ≔ Δ file_paths: ![String] = [];
         ≔ Δ asts: ![SourceFile] = [];
@@ -1081,7 +1081,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Dump AST
-    λ dump_ast(Δ self) -> !Result<(), i32> {
+    rite dump_ast(Δ self) -> !Result<(), i32> {
         ∀ file_path ∈ self.config.input_files {
             ≔ source = self.read_file(file_path)?;
             ≔ ast = self.parse(file_path, source)?;
@@ -1097,7 +1097,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Dump tokens
-    λ dump_tokens(Δ self) -> !Result<(), i32> {
+    rite dump_tokens(Δ self) -> !Result<(), i32> {
         ∀ file_path ∈ self.config.input_files {
             ≔ source = self.read_file(file_path)?;
 
@@ -1121,12 +1121,12 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     // ========================================================================
 
     /// Read a source file
-    λ read_file(Δ self, path: !&str) -> !Result<String, i32> {
+    rite read_file(Δ self, path: !&str) -> !Result<String, i32> {
         // In a real implementation, this would read from the filesystem
         // For now, we'll invoke a placeholder
         extern "C" {
-            λ sigil_read_file(path: *const u8, len: u64) -> *Δ u8;
-            λ sigil_file_len() -> u64;
+            rite sigil_read_file(path: *const u8, len: u64) -> *Δ u8;
+            rite sigil_file_len() -> u64;
         }
 
         unsafe {
@@ -1142,9 +1142,9 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Write output file
-    λ write_file(Δ self, path: !&str, content: !String) -> !Result<(), i32> {
+    rite write_file(Δ self, path: !&str, content: !String) -> !Result<(), i32> {
         extern "C" {
-            λ sigil_write_file(path: *const u8, path_len: u64,
+            rite sigil_write_file(path: *const u8, path_len: u64,
                                content: *const u8, content_len: u64) -> bool;
         }
 
@@ -1162,7 +1162,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Parse source code
-    λ parse(Δ self, file: !&str, source: !String) -> !Result<SourceFile, i32> {
+    rite parse(Δ self, file: !&str, source: !String) -> !Result<SourceFile, i32> {
         ≔ Δ parser = Parser·new(source.clone());
 
         ⌥ parser.parse_file() {
@@ -1182,7 +1182,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Lower AST to IR
-    λ lower(Δ self, file: !&str, ast: !SourceFile) -> !Result<IrModule, i32> {
+    rite lower(Δ self, file: !&str, ast: !SourceFile) -> !Result<IrModule, i32> {
         // Type check first
         ≔ Δ checker = TypeChecker·new();
         ⌥ checker.check_file(ast.clone()) {
@@ -1211,7 +1211,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
     }
 
     /// Print collected errors
-    λ print_errors(self) {
+    rite print_errors(self) {
         ∀ err ∈ self.errors {
             eprint(err.display());
         }
@@ -1226,7 +1226,7 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 // ============================================================================
 
 /// Main entry point ∀ the compiler
-☉ λ main(args: ![String]) -> !i32 {
+☉ rite main(args: ![String]) -> !i32 {
     // Parse configuration
     ≔ config = ⌥ Config·from_args(args) {
         Result·Ok(c) => c,
@@ -1250,10 +1250,10 @@ invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 /// Print functions - implemented ∈ runtime (build.sh header)
 extern "C" {
-    λ print(s: !&str);
-    λ println(s: !&str);
-    λ eprint(s: !&str);
-    λ eprintln(s: !&str);
+    rite print(s: !&str);
+    rite println(s: !&str);
+    rite eprint(s: !&str);
+    rite eprintln(s: !&str);
 }
 
 // ============================================================================
@@ -1265,7 +1265,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_config_parse_compile() {
+    rite test_config_parse_compile() {
         ≔ args = ["compile", "test.sg", "-o", "test.c"];
         ≔ config = Config·from_args(args).unwrap();
         ≔ is_compile = ⌥ config.mode { CompileMode·Compile => true, _ => false };
@@ -1275,7 +1275,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_config_parse_run() {
+    rite test_config_parse_run() {
         ≔ args = ["run", "test.sg"];
         ≔ config = Config·from_args(args).unwrap();
         ≔ is_run = ⌥ config.mode { CompileMode·Run => true, _ => false };
@@ -1283,14 +1283,14 @@ scroll tests {
     }
 
     #[test]
-    λ test_config_verbose() {
+    rite test_config_verbose() {
         ≔ args = ["check", "-v", "test.sg"];
         ≔ config = Config·from_args(args).unwrap();
         assert!(config.verbose);
     }
 
     #[test]
-    λ test_error_display() {
+    rite test_error_display() {
         ≔ err = CompileError·new("type mismatch")
             .with_file("test.sg")
             .with_note("expected i64, found string");

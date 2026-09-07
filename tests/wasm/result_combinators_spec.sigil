@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Simple Result type for testing
-enum TestResult[T, E] {
+ᛈ TestResult[T, E] {
     Ok(T),
     Err(E),
 }

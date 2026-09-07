@@ -1,36 +1,36 @@
 // Product Catalog
 // Daemoniorum product data for the documentation platform
 
-use crate::layouts::TocItem;
+invoke tome·layouts·TocItem;
 
 /// Product information
-pub struct Product {
-    pub id: String!
-    pub name: String!
-    pub tagline: String!
-    pub description: String!
-    pub version: String!
-    pub icon: String!
-    pub category: ProductCategory!
-    pub features: Vec<String>!
-    pub quick_start: String!
-    pub sections: Vec<Section>!
-    pub api_description: String!
-    pub api_modules: Vec<ApiModule>!
-    pub api_items_count: u32!
+☉ Σ Product {
+    ☉ id: String!
+    ☉ name: String!
+    ☉ tagline: String!
+    ☉ description: String!
+    ☉ version: String!
+    ☉ icon: String!
+    ☉ category: ProductCategory!
+    ☉ features: Vec<String>!
+    ☉ quick_start: String!
+    ☉ sections: Vec<Section>!
+    ☉ api_description: String!
+    ☉ api_modules: Vec<ApiModule>!
+    ☉ api_items_count: u32!
 }
 
 /// Product categories
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub enum ProductCategory {
+☉ ᛈ ProductCategory {
     Languages,
     Frameworks,
     Infrastructure,
     Tools
 }
 
-impl ProductCategory {
-    pub fn to_string(&self) -> &'static str! {
+⊢ ProductCategory {
+    ☉ rite to_string(&self) -> &'static str! {
         match self {
             ProductCategory::Languages => "Languages",
             ProductCategory::Frameworks => "Frameworks",
@@ -560,23 +560,23 @@ npm run dev"#.to_string(),
             "Schema registry".to_string(),
             "Monitoring dashboard".to_string()
         ],
-        quick_start: r#"use moloch::prelude::*
+        quick_start: r#"invoke moloch·prelude·*
 
 #[event]
-struct OrderPlaced {
+Σ OrderPlaced {
     order_id: String!
     customer_id: String!
     total: Decimal!
 }
 
 #[consumer]
-async fn handle_order(event: OrderPlaced~) {
+async rite handle_order(event: OrderPlaced~) {
     // Process the order
     println!("Order {} placed by {}", event~.order_id, event~.customer_id)
 }
 
-fn main() {
-    Moloch::new()
+rite main() {
+    Moloch·new()
         .topic("orders")
         .consumer(handle_order)
         .run()
@@ -634,23 +634,23 @@ fn main() {
             "HSM integration".to_string(),
             "Audit logging".to_string()
         ],
-        quick_start: r#"use arcanum::prelude::*
+        quick_start: r#"invoke arcanum·prelude·*
 
-fn main() {
+rite main() {
     // Generate a key pair
-    let keypair! = Ed25519::generate()
+    ≔ keypair! = Ed25519·generate()
 
     // Sign a message
-    let message! = b"Hello, Arcanum!"
-    let signature! = keypair·sign(message)
+    ≔ message! = b"Hello, Arcanum!"
+    ≔ signature! = keypair·sign(message)
 
     // Verify
     assert!(keypair·verify(message, &signature))
 
     // Encrypt data
-    let key! = Aes256Gcm::generate_key()
-    let encrypted! = key·encrypt(message)
-    let decrypted! = key·decrypt(&encrypted)
+    ≔ key! = Aes256Gcm·generate_key()
+    ≔ encrypted! = key·encrypt(message)
+    ≔ decrypted! = key·decrypt(&encrypted)
 }"#.to_string(),
         sections: vec![
             Section {

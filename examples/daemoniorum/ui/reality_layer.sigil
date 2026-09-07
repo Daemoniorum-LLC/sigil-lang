@@ -6,24 +6,24 @@
 //! - Fractured: Subtle distortions, glitch effects
 //! - Shattered: Heavy distortions, reality-breaking visuals
 
-use sigil_web::prelude::*;
-use crate::ui::tokens::{colors, spacing, borders, shadows, typography, animations};
-use crate::system::RealityLayer;
+invoke sigil_web·prelude·*;
+invoke tome·ui·tokens·{colors, spacing, borders, shadows, typography, animations};
+invoke tome·system·RealityLayer;
 
 // ============================================================================
 // REALITY LAYER INDICATOR
 // ============================================================================
 
 #[derive(Clone, Debug)]
-pub type RealityLayerIndicatorProps = struct {
-    pub layer: RealityLayer!,
-    pub transitioning: bool!,
-    pub size: IndicatorSize!,
-    pub show_description: bool!,
+☉ type RealityLayerIndicatorProps = Σ {
+    ☉ layer: RealityLayer!,
+    ☉ transitioning: bool!,
+    ☉ size: IndicatorSize!,
+    ☉ show_description: bool!,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub type IndicatorSize = enum {
+☉ type IndicatorSize = ᛈ {
     Small,
     Medium,
     Large,
@@ -31,36 +31,36 @@ pub type IndicatorSize = enum {
 
 /// Visual orb indicator for reality layer
 #[component]
-pub fn RealityLayerIndicator(props: RealityLayerIndicatorProps!) -> Element! {
-    let (color, glow!) = match props.layer {
-        RealityLayer::Grounded => (colors::GROUNDED, colors::GROUNDED_GLOW),
-        RealityLayer::Fractured => (colors::FRACTURED, colors::FRACTURED_GLOW),
-        RealityLayer::Shattered => (colors::SHATTERED, colors::SHATTERED_GLOW),
+☉ rite RealityLayerIndicator(props: RealityLayerIndicatorProps!) -> Element! {
+    ≔ (color, glow!) = ⌥ props.layer {
+        RealityLayer·Grounded => (colors·GROUNDED, colors·GROUNDED_GLOW),
+        RealityLayer·Fractured => (colors·FRACTURED, colors·FRACTURED_GLOW),
+        RealityLayer·Shattered => (colors·SHATTERED, colors·SHATTERED_GLOW),
     };
 
-    let (size, inner_inset, font_size!) = match props.size {
-        IndicatorSize::Small => ("6rem", "1rem", typography::SIZE_XL),
-        IndicatorSize::Medium => ("8rem", "1.5rem", typography::SIZE_2XL),
-        IndicatorSize::Large => ("12rem", "2rem", typography::SIZE_3XL),
+    ≔ (size, inner_inset, font_size!) = ⌥ props.size {
+        IndicatorSize·Small => ("6rem", "1rem", typography·SIZE_XL),
+        IndicatorSize·Medium => ("8rem", "1.5rem", typography·SIZE_2XL),
+        IndicatorSize·Large => ("12rem", "2rem", typography·SIZE_3XL),
     };
 
-    let (symbol, description!) = match props.layer {
-        RealityLayer::Grounded => ("◈", "Reality is stable. Perceptions are reliable."),
-        RealityLayer::Fractured => ("◇", "Reality wavers. Some things may not be as they seem."),
-        RealityLayer::Shattered => ("✧", "Reality is broken. Trust nothing you see."),
+    ≔ (symbol, description!) = ⌥ props.layer {
+        RealityLayer·Grounded => ("◈", "Reality is stable. Perceptions are reliable."),
+        RealityLayer·Fractured => ("◇", "Reality wavers. Some things may not be as they seem."),
+        RealityLayer·Shattered => ("✧", "Reality is broken. Trust nothing you see."),
     };
 
-    let animation! = if props.layer == RealityLayer::Shattered {
-        animations::GLITCH
-    } else if props.transitioning {
-        animations::PULSE_SLOW
-    } else {
+    ≔ animation! = ⎇ props.layer == RealityLayer·Shattered {
+        animations·GLITCH
+    } ⎉ ⎇ props.transitioning {
+        animations·PULSE_SLOW
+    } ⎉ {
         "none"
     };
 
-    let glitch_effect! = if props.layer == RealityLayer::Shattered || props.layer == RealityLayer::Fractured {
-        animations::GLITCH
-    } else {
+    ≔ glitch_effect! = ⎇ props.layer == RealityLayer·Shattered || props.layer == RealityLayer·Fractured {
+        animations·GLITCH
+    } ⎉ {
         "none"
     };
 
@@ -86,12 +86,12 @@ pub fn RealityLayerIndicator(props: RealityLayerIndicatorProps!) -> Element! {
                 <div style={format!(
                     "font-size: {}; font-weight: {}; color: {}; \
                      text-shadow: 0 0 15px {}; animation: {};",
-                    font_size, typography::WEIGHT_BOLD, color, color, glitch_effect
+                    font_size, typography·WEIGHT_BOLD, color, color, glitch_effect
                 )}>
                     {symbol}
 
                     // Glitch duplicates for Shattered
-                    {if props.layer == RealityLayer::Shattered {
+                    {⎇ props.layer == RealityLayer·Shattered {
                         html! {
                             <>
                                 <span style={format!(
@@ -110,26 +110,26 @@ pub fn RealityLayerIndicator(props: RealityLayerIndicatorProps!) -> Element! {
                                 </span>
                             </>
                         }
-                    } else {
+                    } ⎉ {
                         html! { <></> }
                     }}
                 </div>
 
                 // Shattered fragments
-                {if props.layer == RealityLayer::Shattered {
+                {⎇ props.layer == RealityLayer·Shattered {
                     html! {
                         <ShatteredFragments color={color} />
                     }
-                } else {
+                } ⎉ {
                     html! { <></> }
                 }}
 
                 // Fractured cracks
-                {if props.layer == RealityLayer::Fractured {
+                {⎇ props.layer == RealityLayer·Fractured {
                     html! {
                         <FracturedCracks color={color} />
                     }
-                } else {
+                } ⎉ {
                     html! { <></> }
                 }}
             </div>
@@ -139,24 +139,24 @@ pub fn RealityLayerIndicator(props: RealityLayerIndicatorProps!) -> Element! {
                 <div style={format!(
                     "font-size: {}; font-weight: {}; letter-spacing: 0.1em; \
                      color: {}; text-shadow: 0 0 10px {}60; animation: {};",
-                    if props.size == IndicatorSize::Small { typography::SIZE_SM } else { typography::SIZE_BASE },
-                    typography::WEIGHT_BOLD, color, color, glitch_effect
+                    ⎇ props.size == IndicatorSize·Small { typography·SIZE_SM } ⎉ { typography·SIZE_BASE },
+                    typography·WEIGHT_BOLD, color, color, glitch_effect
                 )}>
                     {props.layer·to_string()·to_uppercase()}
                 </div>
 
-                {if props.show_description {
+                {⎇ props.show_description {
                     html! {
                         <p style={format!(
                             "margin-top: {}; font-size: {}; color: {}; max-width: 200px;",
-                            spacing::SPACE_1,
-                            if props.size == IndicatorSize::Small { typography::SIZE_XS } else { typography::SIZE_SM },
-                            colors::TEXT_MUTED
+                            spacing·SPACE_1,
+                            ⎇ props.size == IndicatorSize·Small { typography·SIZE_XS } ⎉ { typography·SIZE_SM },
+                            colors·TEXT_MUTED
                         )}>
                             {description}
                         </p>
                     }
-                } else {
+                } ⎉ {
                     html! { <></> }
                 }}
             </div>
@@ -166,7 +166,7 @@ pub fn RealityLayerIndicator(props: RealityLayerIndicatorProps!) -> Element! {
 
 /// Animated fragments for Shattered layer
 #[component]
-fn ShatteredFragments(color: &'static str!) -> Element! {
+rite ShatteredFragments(color: &'static str!) -> Element! {
     // Generate 8 fragments at different angles
     let fragments! = (0..8)
         |τ{i => {
@@ -226,26 +226,26 @@ fn FracturedCracks(color: &'static str!) -> Element! {
 // ============================================================================
 
 #[derive(Clone, Debug)]
-pub type RealityLayerSelectorProps = struct {
-    pub current_layer: RealityLayer!,
-    pub on_change: fn(RealityLayer!) -> ()!,
+☉ type RealityLayerSelectorProps = Σ {
+    ☉ current_layer: RealityLayer!,
+    ☉ on_change: rite(RealityLayer!) -> ()!,
 }
 
 /// Selector for switching between reality layers (dev/debug)
 #[component]
-pub fn RealityLayerSelector(props: RealityLayerSelectorProps!) -> Element! {
-    let layers! = [RealityLayer::Grounded, RealityLayer::Fractured, RealityLayer::Shattered];
+☉ rite RealityLayerSelector(props: RealityLayerSelectorProps!) -> Element! {
+    ≔ layers! = [RealityLayer·Grounded, RealityLayer·Fractured, RealityLayer·Shattered];
 
     html! {
-        <div style={format!("display: flex; gap: {};", spacing::SPACE_2)}>
+        <div style={format!("display: flex; gap: {};", spacing·SPACE_2)}>
             {layers·iter()
                 |τ{layer => {
-                    let color! = match layer {
-                        RealityLayer::Grounded => colors::GROUNDED,
-                        RealityLayer::Fractured => colors::FRACTURED,
-                        RealityLayer::Shattered => colors::SHATTERED,
+                    ≔ color! = ⌥ layer {
+                        RealityLayer·Grounded => colors·GROUNDED,
+                        RealityLayer·Fractured => colors·FRACTURED,
+                        RealityLayer·Shattered => colors·SHATTERED,
                     };
-                    let is_active! = *layer == props.current_layer;
+                    ≔ is_active! = *layer == props.current_layer;
 
                     html! {
                         <button
@@ -256,12 +256,12 @@ pub fn RealityLayerSelector(props: RealityLayerSelectorProps!) -> Element! {
                                  background: {}; color: {}; \
                                  opacity: {}; transition: all 0.2s ease; \
                                  box-shadow: {};",
-                                spacing::SPACE_1, spacing::SPACE_3, borders::RADIUS_LG,
-                                typography::SIZE_SM, typography::WEIGHT_MEDIUM,
-                                if is_active { format!("{}30", color) } else { "rgba(0,0,0,0.3)" },
-                                if is_active { color } else { colors::TEXT_PRIMARY },
-                                if is_active { "1" } else { "0.6" },
-                                if is_active { format!("0 0 15px {}40", color) } else { "none" }
+                                spacing·SPACE_1, spacing·SPACE_3, borders·RADIUS_LG,
+                                typography·SIZE_SM, typography·WEIGHT_MEDIUM,
+                                ⎇ is_active { format!("{}30", color) } ⎉ { "rgba(0,0,0,0.3)" },
+                                ⎇ is_active { color } ⎉ { colors·TEXT_PRIMARY },
+                                ⎇ is_active { "1" } ⎉ { "0.6" },
+                                ⎇ is_active { format!("0 0 15px {}40", color) } ⎉ { "none" }
                             )}
                         >
                             {layer·to_string()}

@@ -9,8 +9,8 @@
 //   r10 = arg4, r8 = arg5, r9 = arg6
 //   Return value in rax (-errno on error)
 
-use super·errno·Errno;
-use super·Timespec;
+invoke super·errno·Errno;
+invoke super·Timespec;
 
 // ============================================================================
 // Syscall Numbers (Linux x86_64)
@@ -75,27 +75,27 @@ const CLOCK_PROCESS_CPUTIME_ID: i32 = 2;
 const CLOCK_THREAD_CPUTIME_ID: i32 = 3;
 
 // Open flags
-pub const O_RDONLY: i32 = 0;
-pub const O_WRONLY: i32 = 1;
-pub const O_RDWR: i32 = 2;
-pub const O_CREAT: i32 = 64;
-pub const O_EXCL: i32 = 128;
-pub const O_TRUNC: i32 = 512;
-pub const O_APPEND: i32 = 1024;
-pub const O_NONBLOCK: i32 = 2048;
-pub const O_CLOEXEC: i32 = 524288;
+☉ const O_RDONLY: i32 = 0;
+☉ const O_WRONLY: i32 = 1;
+☉ const O_RDWR: i32 = 2;
+☉ const O_CREAT: i32 = 64;
+☉ const O_EXCL: i32 = 128;
+☉ const O_TRUNC: i32 = 512;
+☉ const O_APPEND: i32 = 1024;
+☉ const O_NONBLOCK: i32 = 2048;
+☉ const O_CLOEXEC: i32 = 524288;
 
 // mmap protection flags
-pub const PROT_NONE: i32 = 0;
-pub const PROT_READ: i32 = 1;
-pub const PROT_WRITE: i32 = 2;
-pub const PROT_EXEC: i32 = 4;
+☉ const PROT_NONE: i32 = 0;
+☉ const PROT_READ: i32 = 1;
+☉ const PROT_WRITE: i32 = 2;
+☉ const PROT_EXEC: i32 = 4;
 
 // mmap flags
-pub const MAP_SHARED: i32 = 1;
-pub const MAP_PRIVATE: i32 = 2;
-pub const MAP_FIXED: i32 = 16;
-pub const MAP_ANONYMOUS: i32 = 32;
+☉ const MAP_SHARED: i32 = 1;
+☉ const MAP_PRIVATE: i32 = 2;
+☉ const MAP_FIXED: i32 = 16;
+☉ const MAP_ANONYMOUS: i32 = 32;
 
 // ============================================================================
 // Raw Syscall Wrappers
@@ -103,8 +103,8 @@ pub const MAP_ANONYMOUS: i32 = 32;
 
 /// Raw syscall with 0 arguments
 #[inline(always)]
-unsafe fn syscall0(num: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall0(num: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -117,8 +117,8 @@ unsafe fn syscall0(num: u64) -> i64~ {
 
 /// Raw syscall with 1 argument
 #[inline(always)]
-unsafe fn syscall1(num: u64, a1: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall1(num: u64, a1: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -132,8 +132,8 @@ unsafe fn syscall1(num: u64, a1: u64) -> i64~ {
 
 /// Raw syscall with 2 arguments
 #[inline(always)]
-unsafe fn syscall2(num: u64, a1: u64, a2: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall2(num: u64, a1: u64, a2: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -148,8 +148,8 @@ unsafe fn syscall2(num: u64, a1: u64, a2: u64) -> i64~ {
 
 /// Raw syscall with 3 arguments
 #[inline(always)]
-unsafe fn syscall3(num: u64, a1: u64, a2: u64, a3: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall3(num: u64, a1: u64, a2: u64, a3: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -165,8 +165,8 @@ unsafe fn syscall3(num: u64, a1: u64, a2: u64, a3: u64) -> i64~ {
 
 /// Raw syscall with 4 arguments
 #[inline(always)]
-unsafe fn syscall4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -183,8 +183,8 @@ unsafe fn syscall4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64~ {
 
 /// Raw syscall with 5 arguments
 #[inline(always)]
-unsafe fn syscall5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -202,8 +202,8 @@ unsafe fn syscall5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64
 
 /// Raw syscall with 6 arguments
 #[inline(always)]
-unsafe fn syscall6(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u64) -> i64~ {
-    let mut ret: i64;
+unsafe rite syscall6(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u64) -> i64~ {
+    ≔ vary ret: i64;
     asm!(
         "syscall",
         inout("rax") num => ret,
@@ -225,19 +225,19 @@ unsafe fn syscall6(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: u6
 // ============================================================================
 
 #[inline]
-fn to_result(ret: i64) -> Result<u64, Errno>~ {
-    if ret < 0 {
+rite to_result(ret: i64) -> Result<u64, Errno>~ {
+    ⎇ ret < 0 {
         Err(Errno·from((-ret) as i32))
-    } else {
+    } ⎉ {
         Ok(ret as u64)
     }
 }
 
 #[inline]
-fn to_result_i32(ret: i64) -> Result<i32, Errno>~ {
-    if ret < 0 {
+rite to_result_i32(ret: i64) -> Result<i32, Errno>~ {
+    ⎇ ret < 0 {
         Err(Errno·from((-ret) as i32))
-    } else {
+    } ⎉ {
         Ok(ret as i32)
     }
 }
@@ -247,57 +247,57 @@ fn to_result_i32(ret: i64) -> Result<i32, Errno>~ {
 // ============================================================================
 
 /// Write to file descriptor
-pub fn write(fd: i32, buf: &[u8]) -> Result<u64, Errno>~ {
+☉ rite write(fd: i32, buf: &[u8]) -> Result<u64, Errno>~ {
     unsafe {
-        let ret = syscall3(SYS_WRITE, fd as u64, buf.as_ptr() as u64, buf.len() as u64);
+        ≔ ret = syscall3(SYS_WRITE, fd as u64, buf.as_ptr() as u64, buf.len() as u64);
         to_result(ret)
     }
 }
 
 /// Read from file descriptor
-pub fn read(fd: i32, buf: &mut [u8]) -> Result<u64, Errno>~ {
+☉ rite read(fd: i32, buf: &Δ [u8]) -> Result<u64, Errno>~ {
     unsafe {
-        let ret = syscall3(SYS_READ, fd as u64, buf.as_mut_ptr() as u64, buf.len() as u64);
+        ≔ ret = syscall3(SYS_READ, fd as u64, buf.as_mut_ptr() as u64, buf.len() as u64);
         to_result(ret)
     }
 }
 
 /// Open file
-pub fn open(path: *const u8, flags: i32, mode: i32) -> Result<i32, Errno>~ {
+☉ rite open(path: *const u8, flags: i32, mode: i32) -> Result<i32, Errno>~ {
     unsafe {
-        let ret = syscall3(SYS_OPEN, path as u64, flags as u64, mode as u64);
+        ≔ ret = syscall3(SYS_OPEN, path as u64, flags as u64, mode as u64);
         to_result_i32(ret)
     }
 }
 
 /// Close file descriptor
-pub fn close(fd: i32) -> Result<(), Errno>~ {
+☉ rite close(fd: i32) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall1(SYS_CLOSE, fd as u64);
-        if ret < 0 {
+        ≔ ret = syscall1(SYS_CLOSE, fd as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Unlink (delete) file
-pub fn unlink(path: *const u8) -> Result<(), Errno>~ {
+☉ rite unlink(path: *const u8) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall1(SYS_UNLINK, path as u64);
-        if ret < 0 {
+        ≔ ret = syscall1(SYS_UNLINK, path as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Seek in file
-pub fn lseek(fd: i32, offset: i64, whence: i32) -> Result<u64, Errno>~ {
+☉ rite lseek(fd: i32, offset: i64, whence: i32) -> Result<u64, Errno>~ {
     unsafe {
-        let ret = syscall3(SYS_LSEEK, fd as u64, offset as u64, whence as u64);
+        ≔ ret = syscall3(SYS_LSEEK, fd as u64, offset as u64, whence as u64);
         to_result(ret)
     }
 }
@@ -307,12 +307,12 @@ pub fn lseek(fd: i32, offset: i64, whence: i32) -> Result<u64, Errno>~ {
 // ============================================================================
 
 /// Memory map (anonymous)
-pub fn mmap_anon(size: u64) -> Result<*mut u8, Errno>~ {
-    let prot = PROT_READ | PROT_WRITE;
-    let flags = MAP_PRIVATE | MAP_ANONYMOUS;
+☉ rite mmap_anon(size: u64) -> Result<*mut u8, Errno>~ {
+    ≔ prot = PROT_READ | PROT_WRITE;
+    ≔ flags = MAP_PRIVATE | MAP_ANONYMOUS;
 
     unsafe {
-        let ret = syscall6(
+        ≔ ret = syscall6(
             SYS_MMAP,
             0,                  // addr (let kernel choose)
             size,               // length
@@ -322,18 +322,18 @@ pub fn mmap_anon(size: u64) -> Result<*mut u8, Errno>~ {
             0                   // offset
         );
 
-        if ret < 0 || ret == (-1i64) as i64 {
+        ⎇ ret < 0 || ret == (-1i64) as i64 {
             Err(Errno·ENOMEM)
-        } else {
+        } ⎉ {
             Ok(ret as *mut u8)
         }
     }
 }
 
 /// Memory map with custom flags
-pub fn mmap(addr: *mut u8, size: u64, prot: i32, flags: i32, fd: i32, offset: i64) -> Result<*mut u8, Errno>~ {
+☉ rite mmap(addr: *mut u8, size: u64, prot: i32, flags: i32, fd: i32, offset: i64) -> Result<*mut u8, Errno>~ {
     unsafe {
-        let ret = syscall6(
+        ≔ ret = syscall6(
             SYS_MMAP,
             addr as u64,
             size,
@@ -343,33 +343,33 @@ pub fn mmap(addr: *mut u8, size: u64, prot: i32, flags: i32, fd: i32, offset: i6
             offset as u64
         );
 
-        if ret < 0 || ret == (-1i64) as i64 {
+        ⎇ ret < 0 || ret == (-1i64) as i64 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(ret as *mut u8)
         }
     }
 }
 
 /// Unmap memory
-pub fn munmap(addr: *mut u8, size: u64) -> Result<(), Errno>~ {
+☉ rite munmap(addr: *mut u8, size: u64) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_MUNMAP, addr as u64, size);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_MUNMAP, addr as u64, size);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Change memory protection
-pub fn mprotect(addr: *mut u8, size: u64, prot: i32) -> Result<(), Errno>~ {
+☉ rite mprotect(addr: *mut u8, size: u64, prot: i32) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall3(SYS_MPROTECT, addr as u64, size, prot as u64);
-        if ret < 0 {
+        ≔ ret = syscall3(SYS_MPROTECT, addr as u64, size, prot as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
@@ -380,39 +380,39 @@ pub fn mprotect(addr: *mut u8, size: u64, prot: i32) -> Result<(), Errno>~ {
 // ============================================================================
 
 /// Get realtime clock (wall clock)
-pub fn clock_gettime_realtime() -> Result<Timespec, Errno>~ {
-    let mut ts = Timespec·new();
+☉ rite clock_gettime_realtime() -> Result<Timespec, Errno>~ {
+    ≔ vary ts = Timespec·new();
     unsafe {
-        let ret = syscall2(SYS_CLOCK_GETTIME, CLOCK_REALTIME as u64, &mut ts as *mut Timespec as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_CLOCK_GETTIME, CLOCK_REALTIME as u64, &Δ ts as *mut Timespec as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(ts)
         }
     }
 }
 
 /// Get monotonic clock (for measuring intervals)
-pub fn clock_gettime_monotonic() -> Result<Timespec, Errno>~ {
-    let mut ts = Timespec·new();
+☉ rite clock_gettime_monotonic() -> Result<Timespec, Errno>~ {
+    ≔ vary ts = Timespec·new();
     unsafe {
-        let ret = syscall2(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC as u64, &mut ts as *mut Timespec as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_CLOCK_GETTIME, CLOCK_MONOTONIC as u64, &Δ ts as *mut Timespec as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(ts)
         }
     }
 }
 
 /// Sleep for specified duration
-pub fn nanosleep(duration: &Timespec) -> Result<(), Errno>~ {
-    let mut remaining = Timespec·new();
+☉ rite nanosleep(duration: &Timespec) -> Result<(), Errno>~ {
+    ≔ vary remaining = Timespec·new();
     unsafe {
-        let ret = syscall2(SYS_NANOSLEEP, duration as *const Timespec as u64, &mut remaining as *mut Timespec as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_NANOSLEEP, duration as *const Timespec as u64, &Δ remaining as *mut Timespec as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
@@ -423,7 +423,7 @@ pub fn nanosleep(duration: &Timespec) -> Result<(), Errno>~ {
 // ============================================================================
 
 /// Exit process
-pub fn exit(code: i32) -> ! {
+☉ rite exit(code: i32) -> ! {
     unsafe {
         syscall1(SYS_EXIT_GROUP, code as u64);
     }
@@ -432,42 +432,42 @@ pub fn exit(code: i32) -> ! {
 }
 
 /// Get process ID
-pub fn getpid() -> !i32 {
+☉ rite getpid() -> !i32 {
     unsafe {
         syscall0(SYS_GETPID) as i32
     }
 }
 
 /// Get parent process ID
-pub fn getppid() -> !i32 {
+☉ rite getppid() -> !i32 {
     unsafe {
         syscall0(SYS_GETPPID) as i32
     }
 }
 
 /// Get user ID
-pub fn getuid() -> !u32 {
+☉ rite getuid() -> !u32 {
     unsafe {
         syscall0(SYS_GETUID) as u32
     }
 }
 
 /// Get effective user ID
-pub fn geteuid() -> !u32 {
+☉ rite geteuid() -> !u32 {
     unsafe {
         syscall0(SYS_GETEUID) as u32
     }
 }
 
 /// Get group ID
-pub fn getgid() -> !u32 {
+☉ rite getgid() -> !u32 {
     unsafe {
         syscall0(SYS_GETGID) as u32
     }
 }
 
 /// Get effective group ID
-pub fn getegid() -> !u32 {
+☉ rite getegid() -> !u32 {
     unsafe {
         syscall0(SYS_GETEGID) as u32
     }
@@ -478,45 +478,45 @@ pub fn getegid() -> !u32 {
 // ============================================================================
 
 /// Create directory
-pub fn mkdir(path: *const u8, mode: i32) -> Result<(), Errno>~ {
+☉ rite mkdir(path: *const u8, mode: i32) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_MKDIR, path as u64, mode as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_MKDIR, path as u64, mode as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Remove directory
-pub fn rmdir(path: *const u8) -> Result<(), Errno>~ {
+☉ rite rmdir(path: *const u8) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall1(SYS_RMDIR, path as u64);
-        if ret < 0 {
+        ≔ ret = syscall1(SYS_RMDIR, path as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Change directory
-pub fn chdir(path: *const u8) -> Result<(), Errno>~ {
+☉ rite chdir(path: *const u8) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall1(SYS_CHDIR, path as u64);
-        if ret < 0 {
+        ≔ ret = syscall1(SYS_CHDIR, path as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Get current working directory
-pub fn getcwd(buf: &mut [u8]) -> Result<u64, Errno>~ {
+☉ rite getcwd(buf: &Δ [u8]) -> Result<u64, Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_GETCWD, buf.as_mut_ptr() as u64, buf.len() as u64);
+        ≔ ret = syscall2(SYS_GETCWD, buf.as_mut_ptr() as u64, buf.len() as u64);
         to_result(ret)
     }
 }
@@ -526,48 +526,48 @@ pub fn getcwd(buf: &mut [u8]) -> Result<u64, Errno>~ {
 // ============================================================================
 
 /// Rename file
-pub fn rename(oldpath: *const u8, newpath: *const u8) -> Result<(), Errno>~ {
+☉ rite rename(oldpath: *const u8, newpath: *const u8) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_RENAME, oldpath as u64, newpath as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_RENAME, oldpath as u64, newpath as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Change file mode
-pub fn chmod(path: *const u8, mode: i32) -> Result<(), Errno>~ {
+☉ rite chmod(path: *const u8, mode: i32) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_CHMOD, path as u64, mode as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_CHMOD, path as u64, mode as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Truncate file
-pub fn ftruncate(fd: i32, length: i64) -> Result<(), Errno>~ {
+☉ rite ftruncate(fd: i32, length: i64) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_FTRUNCATE, fd as u64, length as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_FTRUNCATE, fd as u64, length as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }
 }
 
 /// Check file access
-pub fn access(path: *const u8, mode: i32) -> Result<(), Errno>~ {
+☉ rite access(path: *const u8, mode: i32) -> Result<(), Errno>~ {
     unsafe {
-        let ret = syscall2(SYS_ACCESS, path as u64, mode as u64);
-        if ret < 0 {
+        ≔ ret = syscall2(SYS_ACCESS, path as u64, mode as u64);
+        ⎇ ret < 0 {
             Err(Errno·from((-ret) as i32))
-        } else {
+        } ⎉ {
             Ok(())
         }
     }

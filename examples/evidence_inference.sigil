@@ -13,36 +13,36 @@
 // ==========================================
 
 // Without explicit annotation, evidence is inferred from initialization
-fn demonstrate_inference() {
+rite demonstrate_inference() {
     // Explicitly known - the ! annotation is honored
-    let known_value: i64! = 42
+    ≔ known_value: i64! = 42
 
     // Reported from network - the ~ annotation carries through
-    let network_data: str~ = "from_external_source"
+    ≔ network_data: str~ = "from_external_source"
 
     // Inference: x inherits ~ from network_data
-    let x = network_data.len  // x is now i64~
+    ≔ x = network_data.len  // x is now i64~
 
     // Inference: y inherits ! from known_value
-    let y = known_value + 1   // y is now i64!
+    ≔ y = known_value + 1   // y is now i64!
 
     // Binary ops join evidence: ~ + ! = ~
-    let combined = x + y      // combined is i64~
+    ≔ combined = x + y      // combined is i64~
 }
 
 // ==========================================
 // 2. CONTROL FLOW EVIDENCE JOINING
 // ==========================================
 
-fn if_else_evidence_join(condition: bool!) -> i64 {
-    let known: i64! = 1
-    let reported: i64~ = 2
+rite if_else_evidence_join(condition: bool!) -> i64 {
+    ≔ known: i64! = 1
+    ≔ reported: i64~ = 2
 
     // Result evidence is join of both branches: ! ⊔ ~ = ~
     // The returned value has ~ evidence
-    let result = if condition {
+    ≔ result = ⎇ condition {
         known   // ! evidence
-    } else {
+    } ⎉ {
         reported  // ~ evidence
     }
 
@@ -50,11 +50,11 @@ fn if_else_evidence_join(condition: bool!) -> i64 {
 }
 
 // Match expressions also join evidence from all arms
-fn match_evidence_join(variant: i64!) -> str {
-    let known: str! = "known"
-    let uncertain: str? = "uncertain"
+rite match_evidence_join(variant: i64!) -> str {
+    ≔ known: str! = "known"
+    ≔ uncertain: str? = "uncertain"
 
-    match variant {
+    ⌥ variant {
         1 => known,       // ! evidence
         2 => uncertain,   // ? evidence
         _ => known,       // ! evidence
@@ -66,7 +66,7 @@ fn match_evidence_join(variant: i64!) -> str {
 // 3. EVIDENCE PROMOTION OPERATIONS
 // ==========================================
 
-struct User {
+Σ User {
     id: u64,
     name: str,
     email: str,
@@ -74,7 +74,7 @@ struct User {
 
 // |validate!{predicate} - Promote evidence with validation
 // Reported (~) -> Known (!) if validation passes
-fn validate_user(user: User~) -> User! {
+rite validate_user(user: User~) -> User! {
     // The predicate checks invariants
     // If true: ~ -> !, if false: runtime error
     user|validate!{u =>
@@ -86,14 +86,14 @@ fn validate_user(user: User~) -> User! {
 
 // |assume!("reason") - Explicit trust with audit trail
 // Dangerous but sometimes necessary - always logged
-fn trust_legacy_system(data: str~) -> str! {
+rite trust_legacy_system(data: str~) -> str! {
     // This is an escape hatch for trusted sources
     // The reason is recorded for security audits
     data|assume!("Data from trusted internal legacy system")
 }
 
 // |assert_evidence! - Compile-time evidence verification
-fn ensure_known(data: i64) {
+rite ensure_known(data: i64) {
     // Fails compilation if data doesn't have ! evidence
     data|assert_evidence!{!}
 }
@@ -103,7 +103,7 @@ fn ensure_known(data: i64) {
 // ==========================================
 
 // Private functions can have inferred return evidence
-fn private_network_call() -> str {
+rite private_network_call() -> str {
     // Evidence is inferred as ~ from the body
     // (assuming http_get returns ~)
     "simulated_network_response"
@@ -111,7 +111,7 @@ fn private_network_call() -> str {
 
 // Public functions should have explicit evidence annotations
 // This will warn at compile time if not annotated
-pub fn public_api(input: str!) -> str~ {
+☉ rite public_api(input: str!) -> str~ {
     // Public APIs are module boundaries - evidence should be explicit
     input
 }
@@ -121,7 +121,7 @@ pub fn public_api(input: str!) -> str~ {
 // ==========================================
 
 // Parameters infer evidence from their type annotation
-fn process_data(
+rite process_data(
     known: i64!,      // Explicit: must be known
     reported: str~,   // Explicit: accepts reported
     inferred: bool,   // Defaults to ! (known)
@@ -135,7 +135,7 @@ fn process_data(
 // ==========================================
 
 // Network API client with evidence tracking
-async fn fetch_user(id: u64!) -> User~ {
+async rite fetch_user(id: u64!) -> User~ {
     // Network operations automatically return ~ evidence
     // let response~ = http_get("/users/{id}")
     // response~|json_parse~
@@ -144,12 +144,12 @@ async fn fetch_user(id: u64!) -> User~ {
 }
 
 // Complete flow: fetch, validate, use
-async fn safe_user_flow(id: u64!) -> str! {
+async rite safe_user_flow(id: u64!) -> str! {
     // Step 1: Fetch (returns ~)
-    let user = fetch_user(id).await
+    ≔ user = fetch_user(id).await
 
     // Step 2: Validate (~ -> !)
-    let validated = user|validate!{u =>
+    ≔ validated = user|validate!{u =>
         u.id == id && u.email.contains("@")
     }
 
@@ -157,14 +157,14 @@ async fn safe_user_flow(id: u64!) -> str! {
     validated.name
 }
 
-fn main() {
+rite main() {
     // Inference reduces annotation burden
-    let x = 42           // Inferred as i64!
-    let y: i64~ = 10     // Explicitly ~
+    ≔ x = 42           // Inferred as i64!
+    ≔ y: i64~ = 10     // Explicitly ~
 
     // Operations propagate evidence
-    let z = x + y        // z is i64~ (! ⊔ ~ = ~)
+    ≔ z = x + y        // z is i64~ (! ⊔ ~ = ~)
 
     // Control flow joins evidence
-    let result = if true { x } else { y }  // i64~
+    ≔ result = ⎇ true { x } ⎉ { y }  // i64~
 }

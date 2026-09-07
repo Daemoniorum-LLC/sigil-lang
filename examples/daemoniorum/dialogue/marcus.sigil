@@ -4,15 +4,15 @@
 //! reality layer variations. Father Marcus is a suspicious priest
 //! who may be hiding something sinister.
 
-use super·dialogue·*
-use super·super·system·*
+invoke super·dialogue·*
+invoke super·super·system·*
 
 // ============================================================================
 // FATHER MARCUS - THE SUSPICIOUS PRIEST
 // ============================================================================
 
 //! Create Father Marcus's speaker info
-fn marcus_speaker() -> SpeakerInfo! {
+rite marcus_speaker() -> SpeakerInfo! {
     SpeakerInfo {
         id: "marcus"·to_string(),
         name: "Father Marcus"·to_string(),
@@ -36,7 +36,7 @@ fn marcus_speaker() -> SpeakerInfo! {
 // ============================================================================
 
 //! Create the Marcus greeting dialogue tree
-fn create_marcus_greeting() -> DialogueTree! {
+rite create_marcus_greeting() -> DialogueTree! {
     DialogueTreeBuilder·new("marcus_greeting")
         ·entry("intro")
         ·speaker(marcus_speaker())
@@ -56,7 +56,7 @@ fn create_marcus_greeting() -> DialogueTree! {
 // ============================================================================
 
 //! Introduction node - first words
-fn node_intro() -> DialogueNode! {
+rite node_intro() -> DialogueNode! {
     DialogueNodeBuilder·new("intro", "Greetings, traveler. The Lord's light shines upon all who enter this place.")
         // Abaddon sees through facades
         ·alter_variation(
@@ -190,7 +190,7 @@ fn node_intro() -> DialogueNode! {
 }
 
 //! Help offered - mundane path
-fn node_help_offered() -> DialogueNode! {
+rite node_help_offered() -> DialogueNode! {
     DialogueNodeBuilder·new("help_offered", "Of course, my child. The church offers sanctuary to all who seek it. What troubles you?")
         ·alter_variation(
             "stolas",
@@ -203,7 +203,7 @@ fn node_help_offered() -> DialogueNode! {
 }
 
 //! Analysis result - Stolas sees the truth
-fn node_analysis_result() -> DialogueNode! {
+rite node_analysis_result() -> DialogueNode! {
     DialogueNodeBuilder·new("analysis_result", "*His smile wavers for just a moment.* Off? Whatever do you mean?")
         ·alter_variation(
             "stolas",
@@ -224,7 +224,7 @@ fn node_analysis_result() -> DialogueNode! {
 }
 
 //! Abaddon confrontation - violence imminent
-fn node_abaddon_confrontation() -> DialogueNode! {
+rite node_abaddon_confrontation() -> DialogueNode! {
     DialogueNodeBuilder·new("abaddon_confrontation", "*All pretense drops. His face twists into something inhuman.* Clever little morsel. But you've made a mistake coming here alone.")
         ·layer_variation(
             RealityLayer·Fractured,
@@ -246,7 +246,7 @@ fn node_abaddon_confrontation() -> DialogueNode! {
 }
 
 //! Beleth connection - emotional vulnerability
-fn node_beleth_connection() -> DialogueNode! {
+rite node_beleth_connection() -> DialogueNode! {
     DialogueNodeBuilder·new("beleth_connection", "*For a moment, something genuine flickers in his eyes.* Burdened? I... yes. Perhaps I am.")
         ·alter_variation(
             "beleth",
@@ -264,7 +264,7 @@ fn node_beleth_connection() -> DialogueNode! {
 }
 
 //! Warden suspicion - protective instincts
-fn node_warden_suspicion() -> DialogueNode! {
+rite node_warden_suspicion() -> DialogueNode! {
     DialogueNodeBuilder·new("warden_suspicion", "*He notices your wariness.* Is something wrong, child? You seem... tense.")
         ·alter_variation(
             "warden",
@@ -279,7 +279,7 @@ fn node_warden_suspicion() -> DialogueNode! {
 }
 
 //! Shattered reality vision - full horror
-fn node_shattered_vision() -> DialogueNode! {
+rite node_shattered_vision() -> DialogueNode! {
     DialogueNodeBuilder·new("shattered_vision", "*REALITY TEARS. The church was never here. The priest was never human. You were never safe.*")
         ·layer_variation(
             RealityLayer·Shattered,
@@ -300,7 +300,7 @@ fn node_shattered_vision() -> DialogueNode! {
 // ============================================================================
 
 //! Create dialogue for returning to Marcus after seeing the truth
-fn create_marcus_aftermath() -> DialogueTree! {
+rite create_marcus_aftermath() -> DialogueTree! {
     DialogueTreeBuilder·new("marcus_aftermath")
         ·entry("return_start")
         ·speaker(marcus_speaker())
@@ -311,7 +311,7 @@ fn create_marcus_aftermath() -> DialogueTree! {
         ·expect("Failed to build Marcus aftermath dialogue")
 }
 
-fn node_return_start() -> DialogueNode! {
+rite node_return_start() -> DialogueNode! {
     DialogueNodeBuilder·new("return_start", "*The church is empty. Or is it? The shadows move wrong.*")
         ·condition(DialogueCondition·FlagSet("marcus_confronted"·to_string()))
         ·layer_variation(
@@ -351,14 +351,14 @@ fn node_return_start() -> DialogueNode! {
         ·build()
 }
 
-fn node_negotiate() -> DialogueNode! {
+rite node_negotiate() -> DialogueNode! {
     DialogueNodeBuilder·new("negotiate", "*Something ancient and tired looks out through his eyes.* A deal? You have nothing I want... or do you?")
         ·effect(DialogueEffect·GrantInsight { id: "marcus_bargain"·to_string(), amount: 50.0 })
         ·effect(DialogueEffect·EndDialogue)
         ·build()
 }
 
-fn node_destroy() -> DialogueNode! {
+rite node_destroy() -> DialogueNode! {
     DialogueNodeBuilder·new("destroy", "*He laughs, a sound like breaking bones.* Then let us see if your destroyer is equal to the task.")
         ·effect(DialogueEffect·StartCutscene("marcus_boss_fight"·to_string()))
         ·effect(DialogueEffect·EndDialogue)
@@ -370,7 +370,7 @@ fn node_destroy() -> DialogueNode! {
 // ============================================================================
 
 //! Register all Marcus dialogues with the manager
-fn register_marcus_dialogues(manager: &mut DialogueManager) {
+rite register_marcus_dialogues(manager: &Δ DialogueManager) {
     manager·load_tree(create_marcus_greeting());
     manager·load_tree(create_marcus_aftermath());
 }

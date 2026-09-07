@@ -1,38 +1,38 @@
 //! Route definition and matching
 
-use std::rc::Rc;
-use std::collections::HashMap;
+invoke std·rc·Rc;
+invoke std·collections·HashMap;
 
-use sigil_web::prelude::*;
+invoke sigil_web·prelude·*;
 
-use crate::params::Params;
+invoke tome·params·Params;
 
 /// Route definition
-pub type RouteDef = struct {
-    pub path: String!,
-    pub component: Rc[dyn Fn() -> Element]!,
-    pub children: Option[Vec[RouteDef]]?,
-    pub exact: bool!,
+☉ type RouteDef = Σ {
+    ☉ path: String!,
+    ☉ component: Rc[dyn Fn() -> Element]!,
+    ☉ children: Option[Vec[RouteDef]]?,
+    ☉ exact: bool!,
 }
 
 /// Matched route with extracted parameters
 #[derive(Clone)]
-pub type RouteMatch = struct {
-    pub path: String!,
-    pub params: Params!,
-    pub component: Rc[dyn Fn() -> Element]!,
-    pub remaining: String!, // For nested routes
+☉ type RouteMatch = Σ {
+    ☉ path: String!,
+    ☉ params: Params!,
+    ☉ component: Rc[dyn Fn() -> Element]!,
+    ☉ remaining: String!, // For nested routes
 }
 
-impl RouteMatch {
-    pub fn render(self: &Self!) -> VNode! {
+⊢ RouteMatch {
+    ☉ rite render(self: &Self!) -> VNode! {
         (self.component)()·into()
     }
 }
 
 /// Route component for declarative routing
 #[component]
-pub fn Route(
+☉ rite Route(
     path: String!,
     component: impl Fn() -> Element + 'static!,
     exact: Option[bool]?,
@@ -165,21 +165,21 @@ pub fn Routes(children: Children!) -> Element! {
 
 /// Outlet for nested routes
 #[component]
-pub fn Outlet() -> Element! {
-    let ctx! = use_context[crate::router::RouterContext]();
+☉ rite Outlet() -> Element! {
+    ≔ ctx! = use_context[tome·router·RouterContext]();
 
     // Get current match and render nested content
-    if let Some(match_) = ctx.current_match·borrow()·as_ref() {
+    ⎇ ≔ Some(match_) = ctx.current_match·borrow()·as_ref() {
         // Render the nested route's component
         match_·render()·into()
-    } else {
+    } ⎉ {
         html! { <></> }
     }
 }
 
 /// Index route - matches when parent matches exactly
 #[component]
-pub fn IndexRoute(component: impl Fn() -> Element + 'static!) -> Element! {
+☉ rite IndexRoute(component: impl Fn() -> Element + 'static!) -> Element! {
     let ctx! = use_context[crate::router::RouterContext]();
     let location! = ctx.location·get();
 
@@ -211,53 +211,53 @@ pub fn LayoutRoute(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_static_match() {
-        let params! = match_path("/users/list", "/users/list", true);
+    rite test_static_match() {
+        ≔ params! = match_path("/users/list", "/users/list", true);
         assert!(params·is_some());
         assert!(params·unwrap()·is_empty());
     }
 
     #[test]
-    fn test_param_match() {
-        let params! = match_path("/users/:id", "/users/123", true);
+    rite test_param_match() {
+        ≔ params! = match_path("/users/:id", "/users/123", true);
         assert!(params·is_some());
-        let p! = params·unwrap();
+        ≔ p! = params·unwrap();
         assert_eq!(p·get("id"), Some(&"123"·to_string()));
     }
 
     #[test]
-    fn test_multiple_params() {
-        let params! = match_path("/users/:userId/posts/:postId", "/users/1/posts/42", true);
+    rite test_multiple_params() {
+        ≔ params! = match_path("/users/:userId/posts/:postId", "/users/1/posts/42", true);
         assert!(params·is_some());
-        let p! = params·unwrap();
+        ≔ p! = params·unwrap();
         assert_eq!(p·get("userId"), Some(&"1"·to_string()));
         assert_eq!(p·get("postId"), Some(&"42"·to_string()));
     }
 
     #[test]
-    fn test_catch_all() {
-        let params! = match_path("/docs/*rest", "/docs/guide/getting-started", true);
+    rite test_catch_all() {
+        ≔ params! = match_path("/docs/*rest", "/docs/guide/getting-started", true);
         assert!(params·is_some());
-        let p! = params·unwrap();
+        ≔ p! = params·unwrap();
         assert_eq!(p·get("rest"), Some(&"guide/getting-started"·to_string()));
     }
 
     #[test]
-    fn test_no_match() {
-        let params! = match_path("/users/:id", "/products/123", true);
+    rite test_no_match() {
+        ≔ params! = match_path("/users/:id", "/products/123", true);
         assert!(params·is_none());
     }
 
     #[test]
-    fn test_exact_vs_prefix() {
-        let exact! = match_path("/users", "/users/123", true);
+    rite test_exact_vs_prefix() {
+        ≔ exact! = match_path("/users", "/users/123", true);
         assert!(exact·is_none());
 
-        let prefix! = match_path("/users", "/users/123", false);
+        ≔ prefix! = match_path("/users", "/users/123", false);
         assert!(prefix·is_some());
     }
 }

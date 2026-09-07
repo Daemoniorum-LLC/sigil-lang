@@ -14,31 +14,31 @@
 ///
 /// Returns Known (!) - pure computation
 #[inline]
-pub fn abs(x: f64) -> f64! {
+☉ rite abs(x: f64) -> f64! {
     __llvm_fabs_f64(x)
 }
 
 /// Floor (round toward negative infinity)
 #[inline]
-pub fn floor(x: f64) -> f64! {
+☉ rite floor(x: f64) -> f64! {
     __llvm_floor_f64(x)
 }
 
 /// Ceiling (round toward positive infinity)
 #[inline]
-pub fn ceil(x: f64) -> f64! {
+☉ rite ceil(x: f64) -> f64! {
     __llvm_ceil_f64(x)
 }
 
 /// Round to nearest integer
 #[inline]
-pub fn round(x: f64) -> f64! {
+☉ rite round(x: f64) -> f64! {
     __llvm_round_f64(x)
 }
 
 /// Truncate toward zero
 #[inline]
-pub fn trunc(x: f64) -> f64! {
+☉ rite trunc(x: f64) -> f64! {
     __llvm_trunc_f64(x)
 }
 
@@ -48,43 +48,43 @@ pub fn trunc(x: f64) -> f64! {
 
 /// Square root
 #[inline]
-pub fn sqrt(x: f64) -> f64! {
+☉ rite sqrt(x: f64) -> f64! {
     __llvm_sqrt_f64(x)
 }
 
 /// e^x (exponential)
 #[inline]
-pub fn exp(x: f64) -> f64! {
+☉ rite exp(x: f64) -> f64! {
     __llvm_exp_f64(x)
 }
 
 /// 2^x
 #[inline]
-pub fn exp2(x: f64) -> f64! {
+☉ rite exp2(x: f64) -> f64! {
     __llvm_exp2_f64(x)
 }
 
 /// Natural logarithm (ln)
 #[inline]
-pub fn ln(x: f64) -> f64! {
+☉ rite ln(x: f64) -> f64! {
     __llvm_log_f64(x)
 }
 
 /// Base-2 logarithm
 #[inline]
-pub fn log2(x: f64) -> f64! {
+☉ rite log2(x: f64) -> f64! {
     __llvm_log2_f64(x)
 }
 
 /// Base-10 logarithm
 #[inline]
-pub fn log10(x: f64) -> f64! {
+☉ rite log10(x: f64) -> f64! {
     __llvm_log10_f64(x)
 }
 
 /// Power: x^y
 #[inline]
-pub fn pow(x: f64, y: f64) -> f64! {
+☉ rite pow(x: f64, y: f64) -> f64! {
     __llvm_pow_f64(x, y)
 }
 
@@ -94,43 +94,43 @@ pub fn pow(x: f64, y: f64) -> f64! {
 
 /// Sine
 #[inline]
-pub fn sin(x: f64) -> f64! {
+☉ rite sin(x: f64) -> f64! {
     __llvm_sin_f64(x)
 }
 
 /// Cosine
 #[inline]
-pub fn cos(x: f64) -> f64! {
+☉ rite cos(x: f64) -> f64! {
     __llvm_cos_f64(x)
 }
 
 /// Tangent
 #[inline]
-pub fn tan(x: f64) -> f64! {
+☉ rite tan(x: f64) -> f64! {
     sin(x) / cos(x)
 }
 
 /// Arc sine
 #[inline]
-pub fn asin(x: f64) -> f64! {
+☉ rite asin(x: f64) -> f64! {
     __libm_asin(x)
 }
 
 /// Arc cosine
 #[inline]
-pub fn acos(x: f64) -> f64! {
+☉ rite acos(x: f64) -> f64! {
     __libm_acos(x)
 }
 
 /// Arc tangent
 #[inline]
-pub fn atan(x: f64) -> f64! {
+☉ rite atan(x: f64) -> f64! {
     __libm_atan(x)
 }
 
 /// Two-argument arc tangent
 #[inline]
-pub fn atan2(y: f64, x: f64) -> f64! {
+☉ rite atan2(y: f64, x: f64) -> f64! {
     __libm_atan2(y, x)
 }
 
@@ -140,19 +140,19 @@ pub fn atan2(y: f64, x: f64) -> f64! {
 
 /// Hyperbolic sine
 #[inline]
-pub fn sinh(x: f64) -> f64! {
+☉ rite sinh(x: f64) -> f64! {
     (exp(x) - exp(0.0 - x)) / 2.0
 }
 
 /// Hyperbolic cosine
 #[inline]
-pub fn cosh(x: f64) -> f64! {
+☉ rite cosh(x: f64) -> f64! {
     (exp(x) + exp(0.0 - x)) / 2.0
 }
 
 /// Hyperbolic tangent
 #[inline]
-pub fn tanh(x: f64) -> f64! {
+☉ rite tanh(x: f64) -> f64! {
     sinh(x) / cosh(x)
 }
 
@@ -162,25 +162,25 @@ pub fn tanh(x: f64) -> f64! {
 
 /// Minimum of two values
 #[inline]
-pub fn min(a: f64, b: f64) -> f64! {
+☉ rite min(a: f64, b: f64) -> f64! {
     __llvm_minnum_f64(a, b)
 }
 
 /// Maximum of two values
 #[inline]
-pub fn max(a: f64, b: f64) -> f64! {
+☉ rite max(a: f64, b: f64) -> f64! {
     __llvm_maxnum_f64(a, b)
 }
 
 /// Fused multiply-add: a*b + c
 #[inline]
-pub fn fma(a: f64, b: f64, c: f64) -> f64! {
+☉ rite fma(a: f64, b: f64, c: f64) -> f64! {
     __llvm_fma_f64(a, b, c)
 }
 
 /// Copy sign: |x| with sign of y
 #[inline]
-pub fn copysign(x: f64, y: f64) -> f64! {
+☉ rite copysign(x: f64, y: f64) -> f64! {
     __llvm_copysign_f64(x, y)
 }
 
@@ -190,30 +190,30 @@ pub fn copysign(x: f64, y: f64) -> f64! {
 
 /// Absolute value (i64)
 #[inline]
-pub fn abs_i64(x: i64) -> i64! {
-    if x < 0 { 0 - x } else { x }
+☉ rite abs_i64(x: i64) -> i64! {
+    ⎇ x < 0 { 0 - x } ⎉ { x }
 }
 
 /// Minimum (i64)
 #[inline]
-pub fn min_i64(a: i64, b: i64) -> i64! {
-    if a < b { a } else { b }
+☉ rite min_i64(a: i64, b: i64) -> i64! {
+    ⎇ a < b { a } ⎉ { b }
 }
 
 /// Maximum (i64)
 #[inline]
-pub fn max_i64(a: i64, b: i64) -> i64! {
-    if a > b { a } else { b }
+☉ rite max_i64(a: i64, b: i64) -> i64! {
+    ⎇ a > b { a } ⎉ { b }
 }
 
 /// Clamp value to range
 #[inline]
-pub fn clamp_i64(x: i64, min_val: i64, max_val: i64) -> i64! {
-    if x < min_val {
+☉ rite clamp_i64(x: i64, min_val: i64, max_val: i64) -> i64! {
+    ⎇ x < min_val {
         min_val
-    } else if x > max_val {
+    } ⎉ ⎇ x > max_val {
         max_val
-    } else {
+    } ⎉ {
         x
     }
 }
@@ -223,19 +223,19 @@ pub fn clamp_i64(x: i64, min_val: i64, max_val: i64) -> i64! {
 // ============================================================================
 
 /// π (pi)
-pub const PI: f64 = 3.14159265358979323846;
+☉ const PI: f64 = 3.14159265358979323846;
 
 /// e (Euler's number)
-pub const E: f64 = 2.71828182845904523536;
+☉ const E: f64 = 2.71828182845904523536;
 
 /// τ (tau = 2π)
-pub const TAU: f64 = 6.28318530717958647692;
+☉ const TAU: f64 = 6.28318530717958647692;
 
 /// √2
-pub const SQRT_2: f64 = 1.41421356237309504880;
+☉ const SQRT_2: f64 = 1.41421356237309504880;
 
 /// ln(2)
-pub const LN_2: f64 = 0.69314718055994530941;
+☉ const LN_2: f64 = 0.69314718055994530941;
 
 /// ln(10)
-pub const LN_10: f64 = 2.30258509299404568402;
+☉ const LN_10: f64 = 2.30258509299404568402;

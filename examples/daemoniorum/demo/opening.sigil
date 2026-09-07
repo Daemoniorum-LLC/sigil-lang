@@ -16,8 +16,8 @@
 //! - Basic controls and mechanics
 //! - The mystery drawing the system to this place
 
-use crate::system::*;
-use crate::ui::game_hud::*;
+invoke tome·system·*;
+invoke tome·ui·game_hud·*;
 
 // ============================================================================
 // OPENING CUTSCENE DATA
@@ -27,89 +27,89 @@ use crate::ui::game_hud::*;
 const OPENING_SEQUENCE: [OpeningBeat; 12]! = [
     // Black screen - internal voices
     OpeningBeat {
-        speaker: Speaker::Internal("???"),
+        speaker: Speaker·Internal("???"),
         text: "...something's wrong...",
         duration_ms: 2000,
-        effect: BeatEffect::FadeIn,
+        effect: BeatEffect·FadeIn,
     },
     OpeningBeat {
-        speaker: Speaker::Internal("Stolas"),
+        speaker: Speaker·Internal("Stolas"),
         text: "I sense it too. There's a... resonance here.",
         duration_ms: 3000,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
     OpeningBeat {
-        speaker: Speaker::Internal("Abaddon"),
+        speaker: Speaker·Internal("Abaddon"),
         text: "Finally. Let me handle this.",
         duration_ms: 2500,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
     OpeningBeat {
-        speaker: Speaker::Internal("Warden"),
+        speaker: Speaker·Internal("Warden"),
         text: "No. We assess first. Vessel, you have the front.",
         duration_ms: 3000,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
     OpeningBeat {
-        speaker: Speaker::Internal("Beleth"),
+        speaker: Speaker·Internal("Beleth"),
         text: "Be careful. Something here is... hurting.",
         duration_ms: 3000,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
     OpeningBeat {
-        speaker: Speaker::Internal("Paimon"),
+        speaker: Speaker·Internal("Paimon"),
         text: "The church. That's where we need to go.",
         duration_ms: 2500,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
 
     // Visual fade in
     OpeningBeat {
-        speaker: Speaker::None,
+        speaker: Speaker·None,
         text: "",
         duration_ms: 1500,
-        effect: BeatEffect::FadeToScene,
+        effect: BeatEffect·FadeToScene,
     },
 
     // Scene description - Grounded reality
     OpeningBeat {
-        speaker: Speaker::Narration,
+        speaker: Speaker·Narration,
         text: "The iron gate stands before you, its bars twisted by decades of neglect.",
         duration_ms: 4000,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
     OpeningBeat {
-        speaker: Speaker::Narration,
+        speaker: Speaker·Narration,
         text: "Beyond it, the abandoned Church of St. Dymphna rises against the moonless sky.",
         duration_ms: 4000,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
     OpeningBeat {
-        speaker: Speaker::Narration,
+        speaker: Speaker·Narration,
         text: "You don't remember how you got here. But you know you're not alone.",
         duration_ms: 4000,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
 
     // Final internal moment
     OpeningBeat {
-        speaker: Speaker::Internal("Vessel"),
+        speaker: Speaker·Internal("Vessel"),
         text: "(I can feel them all, watching through my eyes. Ready.)",
         duration_ms: 3500,
-        effect: BeatEffect::None,
+        effect: BeatEffect·None,
     },
 
     // Transition to gameplay
     OpeningBeat {
-        speaker: Speaker::None,
+        speaker: Speaker·None,
         text: "",
         duration_ms: 500,
-        effect: BeatEffect::TransitionToGameplay,
+        effect: BeatEffect·TransitionToGameplay,
     },
 ];
 
 /// A single beat in the opening sequence
-type OpeningBeat = struct {
+type OpeningBeat = Σ {
     speaker: Speaker!,
     text: &'static str!,
     duration_ms: u64!,

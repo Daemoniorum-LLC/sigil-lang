@@ -15,25 +15,25 @@
 //   Kernel
 
 /// Platform syscall layer
-pub mod sys;
+☉ scroll sys;
 
 /// Memory allocation
-pub mod alloc;
+☉ scroll alloc;
 
 /// Core types (Vec, String)
-pub mod types;
+☉ scroll types;
 
 /// I/O operations (print, file)
-pub mod io;
+☉ scroll io;
 
 /// Math functions (LLVM intrinsics)
-pub mod math;
+☉ scroll math;
 
 /// Time functions
-pub mod time;
+☉ scroll time;
 
 /// Initialize the native runtime
 /// Must be called before using any runtime functions
-pub fn init() {
+☉ rite init() {
     alloc·init_allocator();
 }

@@ -9,24 +9,24 @@
 //!
 //! Tutorials appear contextually and can be dismissed or disabled.
 
-use crate::system::*;
-use crate::combat::combat::*;
-use crate::runtime::state::*;
-use qliphoth::prelude::*;
+invoke tome·system·*;
+invoke tome·combat·combat·*;
+invoke tome·runtime·state·*;
+invoke qliphoth·prelude·*;
 
 // ============================================================================
 // TUTORIAL DEFINITIONS
 // ============================================================================
 
 /// All tutorial definitions
-pub const TUTORIALS: &[Tutorial]! = &[
+☉ const TUTORIALS: &[Tutorial]! = &[
     // Movement tutorial
     Tutorial {
         id: "movement",
         title: "Exploration",
         content: "Use WASD or Arrow Keys to move.\nPress E to interact with highlighted objects.\nPress TAB to open the menu.",
-        trigger: TutorialTrigger::SceneEntered("church_exterior"),
-        position: TutorialPosition::BottomCenter,
+        trigger: TutorialTrigger·SceneEntered("church_exterior"),
+        position: TutorialPosition·BottomCenter,
         dismissable: true,
         auto_dismiss_ms: Some(8000),
         prerequisite: None,
@@ -37,8 +37,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "alter_switching",
         title: "Plurality System",
         content: "Press 1-6 to switch between alters.\nEach alter has unique abilities and perceptions.\nCurrent: Vessel (Host)",
-        trigger: TutorialTrigger::FlagSet("explored_gate"),
-        position: TutorialPosition::TopRight,
+        trigger: TutorialTrigger·FlagSet("explored_gate"),
+        position: TutorialPosition·TopRight,
         dismissable: true,
         auto_dismiss_ms: Some(10000),
         prerequisite: Some("movement"),
@@ -49,8 +49,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "first_switch",
         title: "Switch Complete",
         content: "You're now seeing through different eyes.\nNotice how the environment description changed.\nDifferent alters notice different details.",
-        trigger: TutorialTrigger::AlterSwitched,
-        position: TutorialPosition::TopRight,
+        trigger: TutorialTrigger·AlterSwitched,
+        position: TutorialPosition·TopRight,
         dismissable: true,
         auto_dismiss_ms: Some(6000),
         prerequisite: Some("alter_switching"),
@@ -61,8 +61,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "cocon",
         title: "Co-Consciousness",
         content: "Hold SHIFT + number to bring an alter co-conscious.\nBoth alters contribute their abilities.\nUseful for combining skills in combat.",
-        trigger: TutorialTrigger::AbilityUnlocked("cocon"),
-        position: TutorialPosition::TopRight,
+        trigger: TutorialTrigger·AbilityUnlocked("cocon"),
+        position: TutorialPosition·TopRight,
         dismissable: true,
         auto_dismiss_ms: Some(10000),
         prerequisite: Some("first_switch"),
@@ -73,8 +73,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "reality_layers",
         title: "Reality Shift",
         content: "Reality is... unstable here.\nYou may see things that aren't there.\nOr fail to see things that are.\n\nTrust your system.",
-        trigger: TutorialTrigger::RealityShifted,
-        position: TutorialPosition::Center,
+        trigger: TutorialTrigger·RealityShifted,
+        position: TutorialPosition·Center,
         dismissable: true,
         auto_dismiss_ms: None, // Must be dismissed manually
         prerequisite: None,
@@ -85,8 +85,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "dialogue",
         title: "Dialogue",
         content: "Choose responses with 1-4 or click.\nDifferent alters unlock different options.\nYour choices affect the story.",
-        trigger: TutorialTrigger::DialogueStarted,
-        position: TutorialPosition::TopCenter,
+        trigger: TutorialTrigger·DialogueStarted,
+        position: TutorialPosition·TopCenter,
         dismissable: true,
         auto_dismiss_ms: Some(8000),
         prerequisite: None,
@@ -97,8 +97,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "combat_start",
         title: "Combat",
         content: "Shadows emerge from the darkness!\n\nSelect actions for your fronting alter.\nSwitch alters mid-combat for different abilities.\nCoordinate your system to survive.",
-        trigger: TutorialTrigger::CombatStarted,
-        position: TutorialPosition::TopCenter,
+        trigger: TutorialTrigger·CombatStarted,
+        position: TutorialPosition·TopCenter,
         dismissable: true,
         auto_dismiss_ms: None,
         prerequisite: None,
@@ -109,8 +109,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "combat_actions",
         title: "Combat Actions",
         content: "Each alter has unique abilities:\n• Strikers deal damage\n• Healers restore stability\n• Tanks draw attacks\n• Tacticians buff allies\n\nChoose wisely!",
-        trigger: TutorialTrigger::FirstCombatTurn,
-        position: TutorialPosition::Right,
+        trigger: TutorialTrigger·FirstCombatTurn,
+        position: TutorialPosition·Right,
         dismissable: true,
         auto_dismiss_ms: Some(12000),
         prerequisite: Some("combat_start"),
@@ -121,8 +121,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "stability_warning",
         title: "System Stability",
         content: "WARNING: Stability is low!\n\nIf stability reaches zero, you'll dissociate.\nSwitch to Vessel to ground the system.\nUse healing abilities to restore stability.",
-        trigger: TutorialTrigger::StabilityLow,
-        position: TutorialPosition::Center,
+        trigger: TutorialTrigger·StabilityLow,
+        position: TutorialPosition·Center,
         dismissable: true,
         auto_dismiss_ms: None,
         prerequisite: None,
@@ -133,8 +133,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "dissociation",
         title: "Dissociation",
         content: "The system is fragmenting...\n\nHigh dissociation makes switches harder.\nReality perception becomes unreliable.\nFind a safe space to ground.",
-        trigger: TutorialTrigger::DissociationHigh,
-        position: TutorialPosition::Center,
+        trigger: TutorialTrigger·DissociationHigh,
+        position: TutorialPosition·Center,
         dismissable: false,
         auto_dismiss_ms: None,
         prerequisite: None,
@@ -142,7 +142,7 @@ pub const TUTORIALS: &[Tutorial]! = &[
 ];
 
 /// Tutorial definition
-type Tutorial = struct {
+type Tutorial = Σ {
     id: &'static str!,
     title: &'static str!,
     content: &'static str!,
@@ -154,7 +154,7 @@ type Tutorial = struct {
 };
 
 /// What triggers a tutorial
-type TutorialTrigger = enum {
+type TutorialTrigger = ᛈ {
     /// Scene entered
     SceneEntered(&'static str),
     /// Flag set

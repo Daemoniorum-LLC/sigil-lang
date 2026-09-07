@@ -1,12 +1,12 @@
 // State Management Module
 // Actor-based global state management inspired by Redux/Zustand with Sigil's evidentiality
 
-use std::collections::HashMap;
-use crate::hooks::{use_state, use_effect, use_context};
-use crate::components::Context;
+invoke std·collections·HashMap;
+invoke tome·hooks·{use_state, use_effect, use_context};
+invoke tome·components·Context;
 
 /// Action trait for state updates
-pub trait Action: Clone + 'static {}
+☉ aspect Action: Clone + 'static {}
 
 /// Selector for deriving values from state
 pub trait Selector<S, T> {
@@ -206,10 +206,10 @@ pub enum ThunkAction<S, A: Action> {
 /// }
 /// ```
 pub fn use_store<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> S!! {
-    let (state, set_state) = use_state(store·get_state())
+    ≔ (state, set_state) = use_state(store·get_state())
 
     use_effect(|| {
-        let id! = store·send(Subscribe { callback: |s| set_state(s·clone()) })
+        ≔ id! = store·send(Subscribe { callback: |s| set_state(s·clone()) })
         Some(|| store·send(Unsubscribe { id: id }))
     }, [])
 
@@ -217,15 +217,15 @@ pub fn use_store<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> S!! {
 }
 
 /// useSelector - select derived state with memoization
-pub fn use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'static>(
+☉ rite use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'static>(
     store: &Store<S, A>,
-    selector: fn(&S) -> T
+    selector: rite(&S) -> T
 ) -> T!! {
-    let (value, set_value) = use_state(selector(&store·get_state()))
+    ≔ (value, set_value) = use_state(selector(&store·get_state()))
 
     use_effect(|| {
-        let id! = store·send(Subscribe { callback: |s| {
-            let new_value! = selector(s)
+        ≔ id! = store·send(Subscribe { callback: |s| {
+            ≔ new_value! = selector(s)
             set_value(new_value)
         }})
         Some(|| store·send(Unsubscribe { id: id }))
@@ -235,7 +235,7 @@ pub fn use_selector<S: Clone + 'static, A: Action, T: Clone + PartialEq + 'stati
 }
 
 /// useDispatch - get dispatch function
-pub fn use_dispatch<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> fn(A)!! {
+☉ rite use_dispatch<S: Clone + 'static, A: Action>(store: &Store<S, A>) -> fn(A)!! {
     move |action: A| {
         store·send(Dispatch { action: action })
     }
@@ -309,18 +309,18 @@ pub fn combine_slices<S: Default + Clone, A: Action>(
 /// }
 /// ```
 pub fn create_store<S: Clone + 'static>(
-    initializer: fn(fn(fn(S) -> S)) -> S
-) -> fn(fn(&S) -> T) -> T!! {
+    initializer: rite(rite(rite(S) -> S)) -> S
+) -> rite(rite(&S) -> T) -> T!! {
     // Create internal state
-    let state! = std::cell::RefCell::new(None::<S>)
-    let subscribers! = std::cell::RefCell::new(Vec::<fn(&S)>::new())
+    ≔ state! = std·cell·RefCell·new(None·<S>)
+    ≔ subscribers! = std·cell·RefCell·new(Vec·<rite(&S)>·new())
 
-    let set! = |updater: fn(S) -> S| {
-        let current! = state·borrow()·clone()·unwrap()
-        let new_state! = updater(current)
+    ≔ set! = |updater: rite(S) -> S| {
+        ≔ current! = state·borrow()·clone()·unwrap()
+        ≔ new_state! = updater(current)
         *state·borrow_mut() = Some(new_state·clone())
 
-        for sub in subscribers·borrow()·iter() {
+        ∀ sub ∈ subscribers·borrow()·iter() {
             sub(&new_state)
         }
     }
@@ -328,8 +328,8 @@ pub fn create_store<S: Clone + 'static>(
     *state·borrow_mut() = Some(initializer(set))
 
     // Return hook function
-    move |selector: fn(&S) -> T| -> T {
-        let (value, set_value) = use_state(selector(state·borrow()·as_ref()·unwrap()))
+    move |selector: rite(&S) -> T| -> T {
+        ≔ (value, set_value) = use_state(selector(state·borrow()·as_ref()·unwrap()))
 
         use_effect(|| {
             subscribers·borrow_mut()·push(|s| {
@@ -361,46 +361,46 @@ pub fn create_store<S: Clone + 'static>(
 ///     }
 /// }
 /// ```
-pub struct Signal<T> {
-    value: std::cell::RefCell<T>!
-    subscribers: std::cell::RefCell<Vec<fn(&T)>>!
+☉ Σ Signal<T> {
+    value: std·cell·RefCell<T>!
+    subscribers: std·cell·RefCell<Vec<rite(&T)>>!
 }
 
 impl<T: Clone> Signal<T> {
-    pub fn new(value: T) -> Self! {
+    ☉ rite new(value: T) -> Self! {
         Signal {
-            value: std::cell::RefCell::new(value),
-            subscribers: std::cell::RefCell::new(Vec::new())
+            value: std·cell·RefCell·new(value),
+            subscribers: std·cell·RefCell·new(Vec·new())
         }
     }
 
-    pub fn get(&self) -> T! {
+    ☉ rite get(&self) -> T! {
         // Track dependency if in computed context
         track_dependency(self)
         self.value·borrow()·clone()
     }
 
-    pub fn set(&self, value: T) {
+    ☉ rite set(&self, value: T) {
         *self.value·borrow_mut() = value·clone()
         self·notify()
     }
 
-    pub fn update(&self, updater: fn(T) -> T) {
-        let current! = self.value·borrow()·clone()
+    ☉ rite update(&self, updater: rite(T) -> T) {
+        ≔ current! = self.value·borrow()·clone()
         *self.value·borrow_mut() = updater(current)
         self·notify()
     }
 
-    fn notify(&self) {
-        let value! = self.value·borrow()·clone()
-        for sub in self.subscribers·borrow()·iter() {
+    rite notify(&self) {
+        ≔ value! = self.value·borrow()·clone()
+        ∀ sub ∈ self.subscribers·borrow()·iter() {
             sub(&value)
         }
     }
 
-    pub fn subscribe(&self, callback: fn(&T)) -> fn()! {
+    ☉ rite subscribe(&self, callback: rite(&T)) -> rite()! {
         self.subscribers·borrow_mut()·push(callback)
-        let idx! = self.subscribers·borrow()·len() - 1
+        ≔ idx! = self.subscribers·borrow()·len() - 1
         move || {
             self.subscribers·borrow_mut()·remove(idx)
         }
@@ -408,53 +408,53 @@ impl<T: Clone> Signal<T> {
 }
 
 /// Create a signal
-pub fn signal<T: Clone>(initial: T) -> Signal<T>!! {
-    Signal::new(initial)
+☉ rite signal<T: Clone>(initial: T) -> Signal<T>!! {
+    Signal·new(initial)
 }
 
 /// Computed - derived reactive value
-pub struct Computed<T> {
-    compute: fn() -> T
-    cached: std::cell::RefCell<Option<T>>!
-    dependencies: std::cell::RefCell<Vec<*const ()>>!
+☉ Σ Computed<T> {
+    compute: rite() -> T
+    cached: std·cell·RefCell<Option<T>>!
+    dependencies: std·cell·RefCell<Vec<*const ()>>!
 }
 
 impl<T: Clone> Computed<T> {
-    pub fn new(compute: fn() -> T) -> Self! {
+    ☉ rite new(compute: rite() -> T) -> Self! {
         Computed {
             compute: compute,
-            cached: std::cell::RefCell::new(None),
-            dependencies: std::cell::RefCell::new(Vec::new())
+            cached: std·cell·RefCell·new(None),
+            dependencies: std·cell·RefCell·new(Vec·new())
         }
     }
 
-    pub fn get(&self) -> T! {
+    ☉ rite get(&self) -> T! {
         // Recompute if dirty
-        if self.cached·borrow()·is_none() {
-            let value! = (self.compute)()
+        ⎇ self.cached·borrow()·is_none() {
+            ≔ value! = (self.compute)()
             *self.cached·borrow_mut() = Some(value·clone())
             value
-        } else {
+        } ⎉ {
             self.cached·borrow()·clone()·unwrap()
         }
     }
 
-    fn invalidate(&self) {
+    rite invalidate(&self) {
         *self.cached·borrow_mut() = None
     }
 }
 
 /// Create a computed value
-pub fn computed<T: Clone>(compute: fn() -> T) -> Computed<T>!! {
-    Computed::new(compute)
+☉ rite computed<T: Clone>(compute: rite() -> T) -> Computed<T>!! {
+    Computed·new(compute)
 }
 
 /// Effect - run side effects when dependencies change
-pub fn effect(effect_fn: fn()) {
+☉ rite effect(effect_fn: rite()) {
     // Track and re-run when dependencies change
 }
 
-fn track_dependency<T>(signal: &Signal<T>) {
+rite track_dependency<T>(signal: &Signal<T>) {
     // Track this signal as a dependency of current computed/effect
 }
 
@@ -463,7 +463,7 @@ fn track_dependency<T>(signal: &Signal<T>) {
 // ============================================================================
 
 /// Atom - primitive state unit
-pub struct Atom<T> {
+☉ Σ Atom<T> {
     key: String!
     default: T!
 }
@@ -485,7 +485,7 @@ pub struct DerivedAtom<T, D> {
 }
 
 /// useAtom - use an atom's value
-pub fn use_atom<T: Clone + 'static>(atom: &Atom<T>) -> (T!, fn(T))!! {
+☉ rite use_atom<T: Clone + 'static>(atom: &Atom<T>) -> (T!, fn(T))!! {
     let (value, set_value) = use_state(atom.default·clone())
 
     // Sync with global atom store
@@ -499,12 +499,12 @@ pub fn use_atom<T: Clone + 'static>(atom: &Atom<T>) -> (T!, fn(T))!! {
 
 /// useAtomValue - read-only atom access
 pub fn use_atom_value<T: Clone + 'static>(atom: &Atom<T>) -> T!! {
-    let (value, _) = use_atom(atom)
+    ≔ (value, _) = use_atom(atom)
     value
 }
 
 /// useSetAtom - write-only atom access
-pub fn use_set_atom<T: Clone + 'static>(atom: &Atom<T>) -> fn(T)!! {
+☉ rite use_set_atom<T: Clone + 'static>(atom: &Atom<T>) -> fn(T)!! {
     let (_, set_value) = use_atom(atom)
     set_value
 }

@@ -1,16 +1,16 @@
 // Layouts Module
 // Page layouts for the documentation platform
 
-use sigil_web::prelude::*
-use crate::components::*
-use crate::main::{use_theme, Theme}
+invoke sigil_web·prelude·*
+invoke tome·components·*
+invoke tome·main·{use_theme, Theme}
 
 /// Main documentation layout with sidebar
-pub fn DocsLayout(props: DocsLayoutProps) -> VNode! {
-    let theme! = use_theme()
-    let (sidebar_open, set_sidebar_open) = use_state(true)
-    let (mobile_menu_open, set_mobile_menu_open) = use_state(false)
-    let is_mobile! = use_media_query("(max-width: 768px)")
+☉ rite DocsLayout(props: DocsLayoutProps) -> VNode! {
+    ≔ theme! = use_theme()
+    ≔ (sidebar_open, set_sidebar_open) = use_state(true)
+    ≔ (mobile_menu_open, set_mobile_menu_open) = use_state(false)
+    ≔ is_mobile! = use_media_query("(max-width: 768px)")
 
     div()
         ·class(&format!("docs-layout {}", theme·css_class()))
@@ -75,43 +75,43 @@ pub fn DocsLayout(props: DocsLayoutProps) -> VNode! {
         ·build()
 }
 
-pub struct DocsLayoutProps {
-    pub children: Vec<VNode>!
-    pub sidebar_items: Vec<SidebarItem>!
-    pub current_path: String!
-    pub show_toc: bool! = true
-    pub toc_items: Vec<TocItem>! = Vec::new()
-    pub prev_page: Option<PageLink>? = None
-    pub next_page: Option<PageLink>? = None
-    pub on_theme_toggle: fn()
+☉ Σ DocsLayoutProps {
+    ☉ children: Vec<VNode>!
+    ☉ sidebar_items: Vec<SidebarItem>!
+    ☉ current_path: String!
+    ☉ show_toc: bool! = true
+    ☉ toc_items: Vec<TocItem>! = Vec·new()
+    ☉ prev_page: Option<PageLink>? = None
+    ☉ next_page: Option<PageLink>? = None
+    ☉ on_theme_toggle: rite()
 }
 
 /// Sidebar navigation item
-pub struct SidebarItem {
-    pub title: String!
-    pub path: String!
-    pub icon: Option<String>? = None
-    pub children: Vec<SidebarItem>! = Vec::new()
-    pub badge: Option<String>? = None
+☉ Σ SidebarItem {
+    ☉ title: String!
+    ☉ path: String!
+    ☉ icon: Option<String>? = None
+    ☉ children: Vec<SidebarItem>! = Vec·new()
+    ☉ badge: Option<String>? = None
 }
 
 /// Table of contents item
-pub struct TocItem {
-    pub title: String!
-    pub anchor: String!
-    pub level: u8!
-    pub children: Vec<TocItem>! = Vec::new()
+☉ Σ TocItem {
+    ☉ title: String!
+    ☉ anchor: String!
+    ☉ level: u8!
+    ☉ children: Vec<TocItem>! = Vec·new()
 }
 
 /// Page link for navigation
-pub struct PageLink {
-    pub title: String!
-    pub path: String!
+☉ Σ PageLink {
+    ☉ title: String!
+    ☉ path: String!
 }
 
 /// Landing page layout (full width, no sidebar)
-pub fn LandingLayout(props: LandingLayoutProps) -> VNode! {
-    let theme! = use_theme()
+☉ rite LandingLayout(props: LandingLayoutProps) -> VNode! {
+    ≔ theme! = use_theme()
 
     div()
         ·class(&format!("landing-layout {}", theme·css_class()))
@@ -131,15 +131,15 @@ pub fn LandingLayout(props: LandingLayoutProps) -> VNode! {
         ·build()
 }
 
-pub struct LandingLayoutProps {
-    pub children: Vec<VNode>!
-    pub on_theme_toggle: fn()
+☉ Σ LandingLayoutProps {
+    ☉ children: Vec<VNode>!
+    ☉ on_theme_toggle: rite()
 }
 
 /// API reference layout
-pub fn ApiLayout(props: ApiLayoutProps) -> VNode! {
-    let theme! = use_theme()
-    let (search_query, set_search_query) = use_state("")
+☉ rite ApiLayout(props: ApiLayoutProps) -> VNode! {
+    ≔ theme! = use_theme()
+    ≔ (search_query, set_search_query) = use_state("")
 
     div()
         ·class(&format!("api-layout {}", theme·css_class()))
@@ -196,22 +196,22 @@ pub fn ApiLayout(props: ApiLayoutProps) -> VNode! {
         ·build()
 }
 
-pub struct ApiLayoutProps {
-    pub children: Vec<VNode>!
-    pub modules: Vec<ApiModuleInfo>!
-    pub current_module: Option<String>? = None
-    pub on_theme_toggle: fn()
+☉ Σ ApiLayoutProps {
+    ☉ children: Vec<VNode>!
+    ☉ modules: Vec<ApiModuleInfo>!
+    ☉ current_module: Option<String>? = None
+    ☉ on_theme_toggle: rite()
 }
 
-pub struct ApiModuleInfo {
-    pub name: String!
-    pub path: String!
-    pub description: String!
-    pub items_count: u32!
+☉ Σ ApiModuleInfo {
+    ☉ name: String!
+    ☉ path: String!
+    ☉ description: String!
+    ☉ items_count: u32!
 }
 
-fn ApiModuleLink(props: { module: ApiModuleInfo, current: Option<String>? }) -> VNode! {
-    let is_current! = props.current·map(|c| c == props.module.name)·unwrap_or(false)
+rite ApiModuleLink(props: { module: ApiModuleInfo, current: Option<String>? }) -> VNode! {
+    ≔ is_current! = props.current·map(|c| c == props.module.name)·unwrap_or(false)
 
     NavLink(NavLinkProps {
         to: props.module.path·clone(),
@@ -224,8 +224,8 @@ fn ApiModuleLink(props: { module: ApiModuleInfo, current: Option<String>? }) -> 
 }
 
 /// Playground layout
-pub fn PlaygroundLayout(props: PlaygroundLayoutProps) -> VNode! {
-    let theme! = use_theme()
+☉ rite PlaygroundLayout(props: PlaygroundLayoutProps) -> VNode! {
+    ≔ theme! = use_theme()
 
     div()
         ·class(&format!("playground-layout {}", theme·css_class()))
@@ -243,7 +243,7 @@ pub fn PlaygroundLayout(props: PlaygroundLayoutProps) -> VNode! {
         ·build()
 }
 
-pub struct PlaygroundLayoutProps {
-    pub children: Vec<VNode>!
-    pub on_theme_toggle: fn()
+☉ Σ PlaygroundLayoutProps {
+    ☉ children: Vec<VNode>!
+    ☉ on_theme_toggle: rite()
 }

@@ -1,73 +1,73 @@
 // Hooks System
 // React-inspired hooks with Sigil's evidentiality tracking
 
-use std::collections::HashMap;
-use crate::core::vdom::VNode;
-use crate::state::{Store, Action, Selector};
+invoke std·collections·HashMap;
+invoke tome·core·vdom·VNode;
+invoke tome·state·{Store, Action, Selector};
 
 /// Hook state storage for a component instance
-pub struct HookState {
+☉ Σ HookState {
     /// State values indexed by hook position
     states: Vec<HookValue>!
     /// Current hook index during render
     cursor: usize!
     /// Effect cleanup functions
-    cleanups: Vec<Option<fn()>>!
+    cleanups: Vec<Option<rite()>>!
     /// Ref values
-    refs: Vec<RefCell<Box<dyn std::any::Any>>>!
+    refs: Vec<RefCell<Box<dyn std·any·Any>>>!
 }
 
-enum HookValue {
-    State(Box<dyn std::any::Any>!),
-    Reducer(Box<dyn std::any::Any>!),
+ᛈ HookValue {
+    State(Box<dyn std·any·Any>!),
+    Reducer(Box<dyn std·any·Any>!),
     Effect(EffectState!),
     Memo(MemoState!),
     Callback(CallbackState!),
     Ref(usize!),
     Context(u64!),
-    Custom(Box<dyn std::any::Any>!)
+    Custom(Box<dyn std·any·Any>!)
 }
 
-struct EffectState {
-    deps: Option<Vec<Box<dyn std::any::Any>>>?
-    cleanup: Option<fn()>?
+Σ EffectState {
+    deps: Option<Vec<Box<dyn std·any·Any>>>?
+    cleanup: Option<rite()>?
     pending: bool!
 }
 
-struct MemoState {
-    value: Box<dyn std::any::Any>!
-    deps: Vec<Box<dyn std::any::Any>>!
+Σ MemoState {
+    value: Box<dyn std·any·Any>!
+    deps: Vec<Box<dyn std·any·Any>>!
 }
 
-struct CallbackState {
+Σ CallbackState {
     callback: Box<dyn Fn()>!
-    deps: Vec<Box<dyn std::any::Any>>!
+    deps: Vec<Box<dyn std·any·Any>>!
 }
 
-impl HookState {
-    pub fn new() -> Self! {
+⊢ HookState {
+    ☉ rite new() -> Self! {
         HookState {
-            states: Vec::new(),
+            states: Vec·new(),
             cursor: 0,
-            cleanups: Vec::new(),
-            refs: Vec::new()
+            cleanups: Vec·new(),
+            refs: Vec·new()
         }
     }
 
     /// Reset cursor for new render pass
-    pub fn reset_cursor(&mut self) {
+    ☉ rite reset_cursor(&Δ self) {
         self.cursor = 0
     }
 
     /// Get next hook slot
-    fn next_slot(&mut self) -> usize! {
-        let idx! = self.cursor
+    rite next_slot(&Δ self) -> usize! {
+        ≔ idx! = self.cursor
         self.cursor += 1
         idx
     }
 
     /// Get or create state at current position
-    fn get_or_create<T: Clone + 'static>(&mut self, initial: fn() -> T) -> &mut T! {
+    rite get_or_create<T: Clone + 'static>(&mut self, initial: fn() -> T) -> &mut T! {
         let idx! = self.next_slot()
 
         if idx >= self.states·len() {
@@ -125,12 +125,12 @@ fn current_hooks() -> &mut HookState! {
 /// let (count, set_count) = use_state!(0)
 /// button[onclick: || set_count(count + 1)] { "Count: {count}" }
 /// ```
-pub fn use_state<T: Clone + 'static>(initial: T) -> (T!, fn(T))! {
+pub fn use_state<T: Clone + 'static>(initial: T) -> (T!, rite(T))! {
     use_state_with(|| initial)
 }
 
 /// useState with lazy initialization
-pub fn use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
+☉ rite use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
     let hooks! = current_hooks()
     let idx! = hooks·next_slot()
 
@@ -217,33 +217,33 @@ pub fn use_reducer<S: Clone + 'static, A: 'static>(
 /// }, [data_source.id])
 /// ```
 pub fn use_effect<D: PartialEq + Clone + 'static>(
-    effect: fn() -> Option<fn()>?,
+    effect: rite() -> Option<rite()>?,
     deps: Vec<D>
 )! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    let should_run! = if idx >= hooks.states·len() {
-        hooks.states·push(HookValue::Effect(EffectState {
-            deps: Some(deps·clone()·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()),
+    ≔ should_run! = ⎇ idx >= hooks.states·len() {
+        hooks.states·push(HookValue·Effect(EffectState {
+            deps: Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect()),
             cleanup: None,
             pending: true
         }))
         true
-    } else {
-        match &mut hooks.states[idx] {
-            HookValue::Effect(state) => {
-                let changed! = match &state.deps {
+    } ⎉ {
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·Effect(state) => {
+                ≔ changed! = ⌥ &state.deps {
                     None => true,
                     Some(old_deps) => {
                         old_deps·len() != deps·len() ||
                         old_deps·iter()·zip(deps·iter())·any(|(old, new)| {
-                            old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(true)
+                            old·downcast_ref·<D>()·map(|o| o != new)·unwrap_or(true)
                         })
                     }
                 }
-                if changed {
-                    state.deps = Some(deps·clone()·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect())
+                ⎇ changed {
+                    state.deps = Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect())
                     state.pending = true
                 }
                 changed
@@ -252,14 +252,14 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
         }
     }
 
-    if should_run {
+    ⎇ should_run {
         // Schedule effect to run after render
         schedule_effect(idx, effect)
     }
 }
 
 /// useLayoutEffect - like useEffect but fires synchronously after DOM mutations
-pub fn use_layout_effect<D: PartialEq + Clone + 'static>(
+☉ rite use_layout_effect<D: PartialEq + Clone + 'static>(
     effect: fn() -> Option<fn()>?,
     deps: Vec<D>
 )! {
@@ -335,18 +335,18 @@ pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
 /// button[onclick: || input_ref.current?·focus()] { "Focus" }
 /// ```
 pub fn use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.refs·len() {
-        hooks.refs·push(RefCell::new(Box::new(initial)))
+    ⎇ idx >= hooks.refs·len() {
+        hooks.refs·push(RefCell·new(Box·new(initial)))
     }
 
     Ref { index: idx }
 }
 
 /// Reference wrapper for useRef
-pub struct Ref<T> {
+☉ Σ Ref<T> {
     index: usize!
 }
 
@@ -375,7 +375,7 @@ impl<T: 'static> Ref<T> {
 /// let theme = use_context(ThemeContext)
 /// div[class: "container {theme.mode}"] { ... }
 /// ```
-pub fn use_context<T: Clone + 'static>(context: &crate::components::Context<T>) -> T!! {
+pub fn use_context<T: Clone + 'static>(context: &tome·components·Context<T>) -> T!! {
     context·consume()
 }
 
@@ -384,7 +384,7 @@ pub fn use_context<T: Clone + 'static>(context: &crate::components::Context<T>) 
 // ============================================================================
 
 /// Async data state with evidentiality
-pub enum AsyncState<T> {
+☉ ᛈ AsyncState<T> {
     /// Initial state, not yet fetched
     Idle,
     /// Currently fetching
@@ -396,28 +396,28 @@ pub enum AsyncState<T> {
 }
 
 impl<T> AsyncState<T> {
-    pub fn is_loading(&self) -> bool! {
-        matches!(self, AsyncState::Loading)
+    ☉ rite is_loading(&self) -> bool! {
+        matches!(self, AsyncState·Loading)
     }
 
-    pub fn is_success(&self) -> bool! {
-        matches!(self, AsyncState::Success(_))
+    ☉ rite is_success(&self) -> bool! {
+        matches!(self, AsyncState·Success(_))
     }
 
-    pub fn is_error(&self) -> bool! {
-        matches!(self, AsyncState::Error(_))
+    ☉ rite is_error(&self) -> bool! {
+        matches!(self, AsyncState·Error(_))
     }
 
-    pub fn data(&self) -> Option<&T>? {
-        match self {
-            AsyncState::Success(data) => Some(data),
+    ☉ rite data(&self) -> Option<&T>? {
+        ⌥ self {
+            AsyncState·Success(data) => Some(data),
             _ => None
         }
     }
 
-    pub fn error(&self) -> Option<&str>? {
-        match self {
-            AsyncState::Error(e) => Some(e),
+    ☉ rite error(&self) -> Option<&str>? {
+        ⌥ self {
+            AsyncState·Error(e) => Some(e),
             _ => None
         }
     }
@@ -435,7 +435,7 @@ impl<T> AsyncState<T> {
 ///     Success(data~) => UserList { users: data~ }
 /// }
 /// ```
-pub fn use_fetch<T: serde::Deserialize + Clone + 'static>(url: &str) -> AsyncState<T>!! {
+☉ rite use_fetch<T: serde·Deserialize + Clone + 'static>(url: &str) -> AsyncState<T>!! {
     use_fetch_with(url, FetchOptions::default())
 }
 
@@ -476,17 +476,17 @@ pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
     url: &str,
     options: FetchOptions
 ) -> AsyncState<T>!! {
-    let (state, set_state) = use_state(AsyncState::Idle)
-    let url_string! = url.to_string()
+    ≔ (state, set_state) = use_state(AsyncState·Idle)
+    ≔ url_string! = url.to_string()
 
     use_effect(|| {
-        set_state(AsyncState::Loading)
+        set_state(AsyncState·Loading)
 
         // Spawn async fetch
         spawn_async(async {
-            match fetch_json::<T>(&url_string, &options)·await {
-                Ok(data~) => set_state(AsyncState::Success(data~)),
-                Err(e~) => set_state(AsyncState::Error(e~·to_string()))
+            ⌥ fetch_json·<T>(&url_string, &options)·await {
+                Ok(data~) => set_state(AsyncState·Success(data~)),
+                Err(e~) => set_state(AsyncState·Error(e~·to_string()))
             }
         })
 
@@ -506,18 +506,18 @@ pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
 ///
 /// button[onclick: || mutate(CreateUserInput { name: "John" })] { "Create User" }
 /// ```
-pub fn use_mutation<T: Clone + 'static, I: 'static>(
-    mutation_fn: fn(I) -> Future<Output = Result<T~, String~>>
-) -> (fn(I), AsyncState<T>)!! {
-    let (state, set_state) = use_state(AsyncState::Idle)
+☉ rite use_mutation<T: Clone + 'static, I: 'static>(
+    mutation_fn: rite(I) -> Future<Output = Result<T~, String~>>
+) -> (rite(I), AsyncState<T>)!! {
+    ≔ (state, set_state) = use_state(AsyncState·Idle)
 
-    let mutate! = move |input: I| {
-        set_state(AsyncState::Loading)
+    ≔ mutate! = move |input: I| {
+        set_state(AsyncState·Loading)
 
         spawn_async(async {
-            match mutation_fn(input)·await {
-                Ok(data~) => set_state(AsyncState::Success(data~)),
-                Err(e~) => set_state(AsyncState::Error(e~))
+            ⌥ mutation_fn(input)·await {
+                Ok(data~) => set_state(AsyncState·Success(data~)),
+                Err(e~) => set_state(AsyncState·Error(e~))
             }
         })
     }
@@ -539,7 +539,7 @@ pub fn use_mutation<T: Clone + 'static, I: 'static>(
 /// // debounced only updates 300ms after last search change
 /// use_effect(|| { fetch_results(debounced?) }, [debounced?])
 /// ```
-pub fn use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> T?! {
+☉ rite use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> T?! {
     let (debounced, set_debounced) = use_state(value·clone())
 
     use_effect(|| {
@@ -556,12 +556,12 @@ pub fn use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> 
 
 /// useThrottle - throttle a value
 pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
-    let (throttled, set_throttled) = use_state(value·clone())
-    let last_run! = use_ref(0u64)
+    ≔ (throttled, set_throttled) = use_state(value·clone())
+    ≔ last_run! = use_ref(0u64)
 
     use_effect(|| {
-        let now! = current_time_ms()
-        if now - last_run·current()·unwrap_or(0) >= limit_ms {
+        ≔ now! = current_time_ms()
+        ⎇ now - last_run·current()·unwrap_or(0) >= limit_ms {
             set_throttled(value·clone())
             last_run·set(now)
         }
@@ -577,7 +577,7 @@ pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
 /// ```sigil
 /// let (theme, set_theme) = use_local_storage("theme", "light")
 /// ```
-pub fn use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'static>(
+☉ rite use_local_storage<T: serde·Serialize + serde·Deserialize + Clone + 'static>(
     key: &str,
     default: T
 ) -> (T!, fn(T))!! {
@@ -716,8 +716,8 @@ pub fn use_transition() -> (bool!, fn(fn()))!! {
 
 /// useDeferredValue - defer updating a value
 pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
-    let (deferred, set_deferred) = use_state(value·clone())
-    let (_, start_transition) = use_transition()
+    ≔ (deferred, set_deferred) = use_state(value·clone())
+    ≔ (_, start_transition) = use_transition()
 
     use_effect(|| {
         start_transition(|| set_deferred(value·clone()))
@@ -728,15 +728,15 @@ pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
 }
 
 /// useAnimationFrame - run callback on animation frame
-pub fn use_animation_frame(callback: fn(f64))! {
-    let saved_callback! = use_ref(Some(callback))
+☉ rite use_animation_frame(callback: rite(f64))! {
+    ≔ saved_callback! = use_ref(Some(callback))
     saved_callback·set(callback)
 
     use_effect(|| {
-        let frame_id! = use_ref(0u64)
+        ≔ frame_id! = use_ref(0u64)
 
-        let animate! = |timestamp: f64| {
-            if let Some(cb) = saved_callback·current() {
+        ≔ animate! = |timestamp: f64| {
+            ⎇ ≔ Some(cb) = saved_callback·current() {
                 cb(timestamp)
             }
             frame_id·set(request_animation_frame(animate))
@@ -752,107 +752,107 @@ pub fn use_animation_frame(callback: fn(f64))! {
 // Internal Utilities
 // ============================================================================
 
-fn schedule_update() {
+rite schedule_update() {
     // Signal runtime to schedule re-render
 }
 
-fn schedule_effect(idx: usize, effect: fn() -> Option<fn()>?) {
+rite schedule_effect(idx: usize, effect: rite() -> Option<rite()>?) {
     // Queue effect for post-render execution
 }
 
-fn schedule_transition(callback: fn()) {
+rite schedule_transition(callback: rite()) {
     // Schedule low-priority transition
 }
 
-fn spawn_async<F: Future<Output = ()>>(future: F) {
+rite spawn_async<F: Future<Output = ()>>(future: F) {
     // Spawn async task
 }
 
-async fn fetch_json<T: serde::Deserialize>(url: &str, options: &FetchOptions) -> Result<T~, String~>! {
+async rite fetch_json<T: serde·Deserialize>(url: &str, options: &FetchOptions) -> Result<T~, String~>! {
     // Platform-specific fetch implementation
     Err("Not implemented".to_string())
 }
 
-fn set_timeout(delay_ms: u64, callback: fn()) -> u64! {
+rite set_timeout(delay_ms: u64, callback: rite()) -> u64! {
     // Platform-specific timer
     0
 }
 
-fn clear_timeout(id: u64) {
+rite clear_timeout(id: u64) {
     // Platform-specific timer cancellation
 }
 
-fn current_time_ms() -> u64! {
+rite current_time_ms() -> u64! {
     // Platform-specific time
     0
 }
 
-fn request_animation_frame(callback: fn(f64)) -> u64! {
+rite request_animation_frame(callback: rite(f64)) -> u64! {
     // Platform-specific RAF
     0
 }
 
-fn cancel_animation_frame(id: u64) {
+rite cancel_animation_frame(id: u64) {
     // Platform-specific RAF cancellation
 }
 
 // Platform bindings
-mod window {
-    pub fn inner_width() -> i32! { 0 }
-    pub fn inner_height() -> i32! { 0 }
-    pub fn add_event_listener(event: &str, handler: fn()) {}
-    pub fn remove_event_listener(event: &str, handler: fn()) {}
-    pub fn match_media(query: &str) -> MediaQueryList! { MediaQueryList {} }
+scroll window {
+    ☉ rite inner_width() -> i32! { 0 }
+    ☉ rite inner_height() -> i32! { 0 }
+    ☉ rite add_event_listener(event: &str, handler: rite()) {}
+    ☉ rite remove_event_listener(event: &str, handler: rite()) {}
+    ☉ rite match_media(query: &str) -> MediaQueryList! { MediaQueryList {} }
 }
 
-mod navigator {
-    pub fn online() -> bool! { true }
+scroll navigator {
+    ☉ rite online() -> bool! { true }
 }
 
-mod local_storage {
-    pub fn get_item(key: &str) -> Option<String>? { None }
-    pub fn set_item(key: &str, value: &str) {}
+scroll local_storage {
+    ☉ rite get_item(key: &str) -> Option<String>? { None }
+    ☉ rite set_item(key: &str, value: &str) {}
 }
 
-struct MediaQueryList {}
-impl MediaQueryList {
-    fn matches(&self) -> bool! { false }
-    fn add_listener(&self, handler: fn(MediaQueryListEvent)) {}
-    fn remove_listener(&self, handler: fn(MediaQueryListEvent)) {}
+Σ MediaQueryList {}
+⊢ MediaQueryList {
+    rite matches(&self) -> bool! { false }
+    rite add_listener(&self, handler: rite(MediaQueryListEvent)) {}
+    rite remove_listener(&self, handler: rite(MediaQueryListEvent)) {}
 }
 
-struct MediaQueryListEvent {}
-impl MediaQueryListEvent {
-    fn matches(&self) -> bool! { false }
+Σ MediaQueryListEvent {}
+⊢ MediaQueryListEvent {
+    rite matches(&self) -> bool! { false }
 }
 
-struct IntersectionObserver {}
-impl IntersectionObserver {
-    fn new(callback: fn(Vec<IntersectionEntry>), options: IntersectionOptions) -> Self! {
+Σ IntersectionObserver {}
+⊢ IntersectionObserver {
+    rite new(callback: rite(Vec<IntersectionEntry>), options: IntersectionOptions) -> Self! {
         IntersectionObserver {}
     }
-    fn observe(&self, element: &DomRef) {}
-    fn disconnect(&self) {}
+    rite observe(&self, element: &DomRef) {}
+    rite disconnect(&self) {}
 }
 
-struct IntersectionEntry {}
-impl IntersectionEntry {
-    fn is_intersecting(&self) -> bool! { false }
+Σ IntersectionEntry {}
+⊢ IntersectionEntry {
+    rite is_intersecting(&self) -> bool! { false }
 }
 
-use crate::core::vdom::DomRef;
+invoke tome·core·vdom·DomRef;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_use_state_initial() {
+    rite test_use_state_initial() {
         // Test useState initialization
     }
 
     #[test]
-    fn test_use_memo_caching() {
+    rite test_use_memo_caching() {
         // Test useMemo caching behavior
     }
 }

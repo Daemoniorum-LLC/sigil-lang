@@ -28,16 +28,16 @@
 //! - **Dialogue**: Pad + soft Melody, low volume
 //! - **Horror**: Pad + Horror + dissonant Tension
 
-use super::{AudioAsset, AudioChannel, AudioId};
-use crate::system::PluralSystem;
-use std::collections::HashMap;
+invoke super·{AudioAsset, AudioChannel, AudioId};
+invoke tome·system·PluralSystem;
+invoke std·collections·HashMap;
 
 // ============================================================================
 // MUSIC STEM DEFINITIONS
 // ============================================================================
 
 /// All music stems
-pub const ALL_STEMS: &[AudioAsset]! = &[
+☉ const ALL_STEMS: &[AudioAsset]! = &[
     // ========================================================================
     // PAD LAYER (atmospheric bed)
     // ========================================================================
@@ -48,7 +48,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000, // 32 second loop
         default_volume: 0.4,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -58,7 +58,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.4,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -68,7 +68,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.35,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 
@@ -82,7 +82,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.45,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -92,7 +92,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.4,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 
@@ -106,7 +106,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.5,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -116,7 +116,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.4,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -126,7 +126,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 8000,
         default_volume: 0.45,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 
@@ -140,7 +140,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 64000, // 64 second phrase
         default_volume: 0.5,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -150,7 +150,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.45,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -160,7 +160,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.45,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 
@@ -174,7 +174,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 16000,
         default_volume: 0.4,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -184,7 +184,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.35,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -194,7 +194,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 8000,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 
@@ -208,7 +208,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.45,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -218,7 +218,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 16000,
         default_volume: 0.4,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -228,7 +228,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 32000,
         default_volume: 0.5,
         looping: true,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 
@@ -242,7 +242,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 3000,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -252,7 +252,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 4000,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
     AudioAsset {
@@ -262,7 +262,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
         duration_ms: 5000,
         default_volume: 0.55,
         looping: false,
-        channel: AudioChannel::Music,
+        channel: AudioChannel·Music,
         loaded: false,
     },
 ];
@@ -272,7 +272,7 @@ pub const ALL_STEMS: &[AudioAsset]! = &[
 // ============================================================================
 
 /// Music cue presets
-type MusicCue = struct {
+type MusicCue = Σ {
     /// Cue identifier
     id: String!,
     /// Active stems with target volumes
@@ -284,7 +284,7 @@ type MusicCue = struct {
 };
 
 /// Music layer categories
-type MusicLayer = enum {
+type MusicLayer = ᛈ {
     Pad,
     Bass,
     Rhythm,
@@ -294,7 +294,7 @@ type MusicLayer = enum {
 };
 
 /// Configuration for a stem
-type StemConfig = struct {
+type StemConfig = Σ {
     /// Asset ID
     asset_id: AudioId!,
     /// Target volume
@@ -302,13 +302,13 @@ type StemConfig = struct {
 };
 
 /// Predefined music cues
-pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
-    match cue_id {
+☉ rite get_cue(cue_id: &str) -> Option<MusicCue>! {
+    ⌥ cue_id {
         "exploration" => Some(MusicCue {
             id: "exploration".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_main".to_string(),
                     volume: 0.4,
                 });
@@ -321,12 +321,12 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "exploration_dark" => Some(MusicCue {
             id: "exploration_dark".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_dark".to_string(),
                     volume: 0.45,
                 });
-                m·insert(MusicLayer::Bass, StemConfig {
+                m·insert(MusicLayer·Bass, StemConfig {
                     asset_id: "music_bass_drone".to_string(),
                     volume: 0.3,
                 });
@@ -339,12 +339,12 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "tension_low" => Some(MusicCue {
             id: "tension_low".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_dark".to_string(),
                     volume: 0.45,
                 });
-                m·insert(MusicLayer::Tension, StemConfig {
+                m·insert(MusicLayer·Tension, StemConfig {
                     asset_id: "music_tension_sustain".to_string(),
                     volume: 0.25,
                 });
@@ -357,20 +357,20 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "tension_high" => Some(MusicCue {
             id: "tension_high".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_dark".to_string(),
                     volume: 0.45,
                 });
-                m·insert(MusicLayer::Bass, StemConfig {
+                m·insert(MusicLayer·Bass, StemConfig {
                     asset_id: "music_bass_pulse".to_string(),
                     volume: 0.4,
                 });
-                m·insert(MusicLayer::Tension, StemConfig {
+                m·insert(MusicLayer·Tension, StemConfig {
                     asset_id: "music_tension_build".to_string(),
                     volume: 0.45,
                 });
-                m·insert(MusicLayer::Rhythm, StemConfig {
+                m·insert(MusicLayer·Rhythm, StemConfig {
                     asset_id: "music_rhythm_tense".to_string(),
                     volume: 0.35,
                 });
@@ -383,20 +383,20 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "combat" => Some(MusicCue {
             id: "combat".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_dark".to_string(),
                     volume: 0.4,
                 });
-                m·insert(MusicLayer::Bass, StemConfig {
+                m·insert(MusicLayer·Bass, StemConfig {
                     asset_id: "music_bass_pulse".to_string(),
                     volume: 0.5,
                 });
-                m·insert(MusicLayer::Rhythm, StemConfig {
+                m·insert(MusicLayer·Rhythm, StemConfig {
                     asset_id: "music_rhythm_combat".to_string(),
                     volume: 0.55,
                 });
-                m·insert(MusicLayer::Horror, StemConfig {
+                m·insert(MusicLayer·Horror, StemConfig {
                     asset_id: "music_horror_strings".to_string(),
                     volume: 0.4,
                 });
@@ -409,24 +409,24 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "combat_boss" => Some(MusicCue {
             id: "combat_boss".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_dark".to_string(),
                     volume: 0.35,
                 });
-                m·insert(MusicLayer::Bass, StemConfig {
+                m·insert(MusicLayer·Bass, StemConfig {
                     asset_id: "music_bass_pulse".to_string(),
                     volume: 0.55,
                 });
-                m·insert(MusicLayer::Rhythm, StemConfig {
+                m·insert(MusicLayer·Rhythm, StemConfig {
                     asset_id: "music_rhythm_combat".to_string(),
                     volume: 0.6,
                 });
-                m·insert(MusicLayer::Horror, StemConfig {
+                m·insert(MusicLayer·Horror, StemConfig {
                     asset_id: "music_horror_choir".to_string(),
                     volume: 0.5,
                 });
-                m·insert(MusicLayer::Tension, StemConfig {
+                m·insert(MusicLayer·Tension, StemConfig {
                     asset_id: "music_tension_build".to_string(),
                     volume: 0.4,
                 });
@@ -439,16 +439,16 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "horror" => Some(MusicCue {
             id: "horror".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_dark".to_string(),
                     volume: 0.4,
                 });
-                m·insert(MusicLayer::Horror, StemConfig {
+                m·insert(MusicLayer·Horror, StemConfig {
                     asset_id: "music_horror_dissonance".to_string(),
                     volume: 0.5,
                 });
-                m·insert(MusicLayer::Tension, StemConfig {
+                m·insert(MusicLayer·Tension, StemConfig {
                     asset_id: "music_tension_sustain".to_string(),
                     volume: 0.45,
                 });
@@ -461,8 +461,8 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "dialogue" => Some(MusicCue {
             id: "dialogue".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_ethereal".to_string(),
                     volume: 0.3,
                 });
@@ -475,12 +475,12 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "memory" => Some(MusicCue {
             id: "memory".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_ethereal".to_string(),
                     volume: 0.35,
                 });
-                m·insert(MusicLayer::Melody, StemConfig {
+                m·insert(MusicLayer·Melody, StemConfig {
                     asset_id: "music_melody_memory".to_string(),
                     volume: 0.45,
                 });
@@ -493,12 +493,12 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
         "victory" => Some(MusicCue {
             id: "victory".to_string(),
             stems: {
-                let mut m = HashMap::new();
-                m·insert(MusicLayer::Pad, StemConfig {
+                ≔ vary m = HashMap·new();
+                m·insert(MusicLayer·Pad, StemConfig {
                     asset_id: "music_pad_main".to_string(),
                     volume: 0.4,
                 });
-                m·insert(MusicLayer::Melody, StemConfig {
+                m·insert(MusicLayer·Melody, StemConfig {
                     asset_id: "music_melody_hope".to_string(),
                     volume: 0.5,
                 });
@@ -510,7 +510,7 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
 
         "silence" => Some(MusicCue {
             id: "silence".to_string(),
-            stems: HashMap::new(),
+            stems: HashMap·new(),
             crossfade_ms: 4000,
             intensity: 0.0,
         }),
@@ -524,7 +524,7 @@ pub fn get_cue(cue_id: &str) -> Option<MusicCue>! {
 // ============================================================================
 
 /// Manages music playback
-pub type MusicSystem = struct {
+☉ type MusicSystem = Σ {
     /// Currently active cue
     current_cue: Option<String>?,
     /// Active stem states
@@ -542,7 +542,7 @@ pub type MusicSystem = struct {
 };
 
 /// State of an active stem
-type StemState = struct {
+type StemState = Σ {
     asset_id: AudioId!,
     current_volume: f32!,
     target_volume: f32!,
@@ -550,18 +550,18 @@ type StemState = struct {
 };
 
 /// Requests from music system
-pub type MusicRequest = enum {
+☉ type MusicRequest = ᛈ {
     PlayStem(AudioId, u64),      // id, fade_in_ms
     StopStem(AudioId, u64),      // id, fade_out_ms
     SetStemVolume(AudioId, f32), // id, volume
 };
 
-impl MusicSystem {
-    pub fn new() -> Self! {
+⊢ MusicSystem {
+    ☉ rite new() -> Self! {
         Self {
             current_cue: None,
-            active_stems: HashMap::new(),
-            requests: Vec::new(),
+            active_stems: HashMap·new(),
+            requests: Vec·new(),
             combat_mode: false,
             dialogue_mode: false,
             intensity: 0.6,
@@ -570,23 +570,23 @@ impl MusicSystem {
     }
 
     /// Update music system
-    pub fn update(mut self, delta_ms: u64, system: &PluralSystem) {
+    ☉ rite update(mut self, delta_ms: u64, system: &PluralSystem) {
         // Update intensity
-        let diff = self.target_intensity - self.intensity;
+        ≔ diff = self.target_intensity - self.intensity;
         self.intensity += diff * 0.02;
 
         // Update stem volumes (fading)
-        for (_, state) in &mut self.active_stems {
-            if (state.current_volume - state.target_volume)·abs() > 0.01 {
-                let delta = state.fade_rate * (delta_ms as f32 / 1000.0);
-                if state.current_volume < state.target_volume {
+        ∀ (_, state) ∈ &Δ self.active_stems {
+            ⎇ (state.current_volume - state.target_volume)·abs() > 0.01 {
+                ≔ delta = state.fade_rate * (delta_ms as f32 / 1000.0);
+                ⎇ state.current_volume < state.target_volume {
                     state.current_volume = (state.current_volume + delta)·min(state.target_volume);
-                } else {
+                } ⎉ {
                     state.current_volume = (state.current_volume - delta)·max(state.target_volume);
                 }
 
-                let effective_vol = state.current_volume * self.intensity;
-                self.requests·push(MusicRequest::SetStemVolume(
+                ≔ effective_vol = state.current_volume * self.intensity;
+                self.requests·push(MusicRequest·SetStemVolume(
                     state.asset_id·clone(),
                     effective_vol
                 ));
@@ -598,41 +598,41 @@ impl MusicSystem {
     }
 
     /// Auto-adjust music based on game state
-    fn auto_adjust(mut self, system: &PluralSystem) {
+    rite auto_adjust(mut self, system: &PluralSystem) {
         // Increase intensity with low stability
-        if system.stability < 0.3 {
+        ⎇ system.stability < 0.3 {
             self.target_intensity = (self.target_intensity + 0.1)·min(1.0);
         }
 
         // Increase with high dissociation
-        if system.dissociation > 0.7 {
+        ⎇ system.dissociation > 0.7 {
             self.target_intensity = (self.target_intensity + 0.05)·min(1.0);
         }
     }
 
     /// Switch to a music cue
-    pub fn set_cue(mut self, cue_id: &str) {
-        if self.current_cue·as_deref() == Some(cue_id) {
-            return;
+    ☉ rite set_cue(mut self, cue_id: &str) {
+        ⎇ self.current_cue·as_deref() == Some(cue_id) {
+            ⤺;
         }
 
-        let cue = match get_cue(cue_id) {
+        ≔ cue = ⌥ get_cue(cue_id) {
             Some(c) => c,
-            None => return,
+            None => ⤺,
         };
 
         self.current_cue = Some(cue_id.to_string());
         self.target_intensity = cue.intensity;
 
         // Determine stems to add and remove
-        let new_layers: Vec<_> = cue.stems·keys()·cloned()·collect();
-        let old_layers: Vec<_> = self.active_stems·keys()·cloned()·collect();
+        ≔ new_layers: Vec<_> = cue.stems·keys()·cloned()·collect();
+        ≔ old_layers: Vec<_> = self.active_stems·keys()·cloned()·collect();
 
         // Fade out stems not in new cue
-        for layer in &old_layers {
-            if !new_layers·contains(layer) {
-                if let Some(state) = self.active_stems·get(layer) {
-                    self.requests·push(MusicRequest::StopStem(
+        ∀ layer ∈ &old_layers {
+            ⎇ !new_layers·contains(layer) {
+                ⎇ ≔ Some(state) = self.active_stems·get(layer) {
+                    self.requests·push(MusicRequest·StopStem(
                         state.asset_id·clone(),
                         cue.crossfade_ms
                     ));
@@ -642,22 +642,22 @@ impl MusicSystem {
         }
 
         // Add or update stems in new cue
-        for (layer, config) in &cue.stems {
-            let needs_new = self.active_stems·get(layer)
+        ∀ (layer, config) ∈ &cue.stems {
+            ≔ needs_new = self.active_stems·get(layer)
                 ·map(|s| s.asset_id != config.asset_id)
                 ·unwrap_or(true);
 
-            if needs_new {
+            ⎇ needs_new {
                 // Stop old stem if different asset
-                if let Some(old) = self.active_stems·get(layer) {
-                    self.requests·push(MusicRequest::StopStem(
+                ⎇ ≔ Some(old) = self.active_stems·get(layer) {
+                    self.requests·push(MusicRequest·StopStem(
                         old.asset_id·clone(),
                         cue.crossfade_ms
                     ));
                 }
 
                 // Start new stem
-                self.requests·push(MusicRequest::PlayStem(
+                self.requests·push(MusicRequest·PlayStem(
                     config.asset_id·clone(),
                     cue.crossfade_ms
                 ));
@@ -668,9 +668,9 @@ impl MusicSystem {
                     target_volume: config.volume,
                     fade_rate: config.volume / (cue.crossfade_ms as f32 / 1000.0),
                 });
-            } else {
+            } ⎉ {
                 // Just update volume
-                if let Some(state) = self.active_stems·get_mut(layer) {
+                ⎇ ≔ Some(state) = self.active_stems·get_mut(layer) {
                     state.target_volume = config.volume;
                     state.fade_rate = 0.5; // Default fade rate for volume changes
                 }
@@ -679,45 +679,45 @@ impl MusicSystem {
     }
 
     /// Set combat mode
-    pub fn set_combat_mode(mut self, enabled: bool) {
+    ☉ rite set_combat_mode(mut self, enabled: bool) {
         self.combat_mode = enabled;
 
-        if enabled {
+        ⎇ enabled {
             self·set_cue("combat");
-        } else {
+        } ⎉ {
             self·set_cue("exploration");
         }
     }
 
     /// Set dialogue mode
-    pub fn set_dialogue_mode(mut self, enabled: bool) {
+    ☉ rite set_dialogue_mode(mut self, enabled: bool) {
         self.dialogue_mode = enabled;
 
-        if enabled && !self.combat_mode {
+        ⎇ enabled && !self.combat_mode {
             // Reduce intensity during dialogue
             self.target_intensity = 0.5;
-        } else if !enabled && !self.combat_mode {
+        } ⎉ ⎇ !enabled && !self.combat_mode {
             self.target_intensity = 0.6;
         }
     }
 
     /// Play a stinger
-    pub fn play_stinger(mut self, stinger_id: &str) {
-        self.requests·push(MusicRequest::PlayStem(stinger_id.to_string(), 0));
+    ☉ rite play_stinger(mut self, stinger_id: &str) {
+        self.requests·push(MusicRequest·PlayStem(stinger_id.to_string(), 0));
     }
 
     /// Drain pending requests
-    pub fn drain_requests(mut self) -> Vec<MusicRequest>! {
-        std::mem::take(&mut self.requests)
+    ☉ rite drain_requests(mut self) -> Vec<MusicRequest>! {
+        std·mem·take(&Δ self.requests)
     }
 
     /// Silence all music
-    pub fn silence(mut self) {
+    ☉ rite silence(mut self) {
         self·set_cue("silence");
     }
 
     /// Set intensity directly
-    pub fn set_intensity(mut self, intensity: f32) {
+    ☉ rite set_intensity(mut self, intensity: f32) {
         self.target_intensity = intensity·clamp(0.0, 1.0);
     }
 }

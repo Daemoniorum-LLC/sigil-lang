@@ -41,13 +41,24 @@ WORD_SUBS = [
     (r"\bwhile\b",        "⟳"),
     (r"&mut\b",           "&Δ"),
     (r"\bcrate·",         "tome·"),
+    # Anything else `pub` qualifies — `pub type`, `pub const`, `pub static`, and
+    # struct fields such as `pub children`. Runs last so the specific forms above
+    # win first.
+    (r"\bpub\s+",          "☉ "),
 ]
+
+# `λ name(` is the older spelling of a function declaration, from before `rite`.
+# A real lambda is `|x| …`, so requiring an identifier and an open paren after it
+# distinguishes the two.
+LAMBDA_FN = re.compile(r"λ\s+([A-Za-z_]\w*)\s*\(")
 
 # `impl Foo {` and `impl Trait for Foo {` — the second form binds the trait.
 IMPL_FOR = re.compile(r"\bimpl\s+([A-Za-z_][\w·:<>, ]*?)\s+for\s+([A-Za-z_][\w·:<>, ]*?)\s*\{")
 IMPL_PLAIN = re.compile(r"\bimpl\s+([A-Za-z_][\w·:<>, ]*?)\s*\{")
 # `for x in xs {` — must run before the bare `in` of other constructs.
-FOR_IN = re.compile(r"\bfor\s+(\w+)\s+in\s+")
+# `for x in xs` and `for (a, b) in xs` — the tuple pattern form is common in
+# iteration over maps and has to be matched too.
+FOR_IN = re.compile(r"\bfor\s+(\([^)]*\)|\w+)\s+in\s+")
 
 
 def split_regions(src):
@@ -86,6 +97,7 @@ def migrate_code(code):
     code = IMPL_FOR.sub(lambda m: f"⊢ {m.group(1)} ∀ {m.group(2)} {{", code)
     code = IMPL_PLAIN.sub(lambda m: f"⊢ {m.group(1)} {{", code)
     code = FOR_IN.sub(lambda m: f"∀ {m.group(1)} ∈ ", code)
+    code = LAMBDA_FN.sub(lambda m: f"rite {m.group(1)}(", code)
     for pat, rep in WORD_SUBS:
         code = re.sub(pat, rep, code)
     code = code.replace("::", "·")

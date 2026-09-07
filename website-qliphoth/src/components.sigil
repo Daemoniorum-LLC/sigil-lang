@@ -3,8 +3,8 @@
 //! Shared components for the Sigil language website.
 //! These wrap Qliphoth primitives with site-specific styling.
 
-use qliphoth_ui::prelude::*;
-use sigil_web::prelude::*;
+invoke qliphoth_ui·prelude·*;
+invoke sigil_web·prelude·*;
 
 // =============================================================================
 // Announcement Banner
@@ -12,7 +12,7 @@ use sigil_web::prelude::*;
 
 /// Fixed Point announcement banner at the top of every page
 #[component]
-pub fn AnnouncementBanner() -> Element! {
+☉ rite AnnouncementBanner() -> Element! {
     html! {
         <aside class="announcement-banner" role="banner" aria-label="Sigil 1.0 announcement">
             <div class="announcement-container">
@@ -38,10 +38,10 @@ pub fn AnnouncementBanner() -> Element! {
 
 /// Site navigation header
 #[component]
-pub fn Nav() -> Element! {
-    let mobile_open! = create_signal(false!);
+☉ rite Nav() -> Element! {
+    ≔ mobile_open! = create_signal(false!);
 
-    let nav_style! = "
+    ≔ nav_style! = "
         position: fixed;
         top: 40px;
         left: 0;
@@ -52,7 +52,7 @@ pub fn Nav() -> Element! {
         border-bottom: 1px solid rgba(20, 160, 136, 0.12);
     ";
 
-    let container_style! = "
+    ≔ container_style! = "
         max-width: 1200px;
         margin: 0 auto;
         padding: 0 1.5rem;
@@ -62,7 +62,7 @@ pub fn Nav() -> Element! {
         justify-content: space-between;
     ";
 
-    let logo_style! = "
+    ≔ logo_style! = "
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -72,20 +72,20 @@ pub fn Nav() -> Element! {
         color: #e8e8ec;
     ";
 
-    let links_style! = "
+    ≔ links_style! = "
         display: flex;
         align-items: center;
         gap: 2rem;
     ";
 
-    let link_style! = "
+    ≔ link_style! = "
         color: #a0a0aa;
         font-size: 0.9375rem;
         text-decoration: none;
         transition: color 150ms ease;
     ";
 
-    let version_badge_style! = "
+    ≔ version_badge_style! = "
         font-size: 0.6875rem;
         font-weight: 500;
         padding: 0.125rem 0.375rem;
@@ -130,7 +130,7 @@ pub fn Nav() -> Element! {
 
 /// GitHub icon SVG
 #[component]
-fn GitHubIcon() -> Element! {
+rite GitHubIcon() -> Element! {
     html! {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
@@ -144,14 +144,14 @@ fn GitHubIcon() -> Element! {
 
 /// Site footer
 #[component]
-pub fn Footer() -> Element! {
-    let footer_style! = "
+☉ rite Footer() -> Element! {
+    ≔ footer_style! = "
         background: #0a0a0d;
         border-top: 1px solid rgba(20, 160, 136, 0.08);
         padding: 4rem 0 2rem;
     ";
 
-    let container_style! = "
+    ≔ container_style! = "
         max-width: 1200px;
         margin: 0 auto;
         padding: 0 1.5rem;
@@ -160,13 +160,13 @@ pub fn Footer() -> Element! {
         gap: 2rem;
     ";
 
-    let brand_style! = "
+    ≔ brand_style! = "
         display: flex;
         flex-direction: column;
         gap: 1rem;
     ";
 
-    let logo_style! = "
+    ≔ logo_style! = "
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -176,32 +176,32 @@ pub fn Footer() -> Element! {
         color: #e8e8ec;
     ";
 
-    let tagline_style! = "
+    ≔ tagline_style! = "
         color: #a0a0aa;
         font-size: 0.875rem;
         line-height: 1.6;
     ";
 
-    let copyright_style! = "
+    ≔ copyright_style! = "
         color: #6c6c76;
         font-size: 0.75rem;
         margin-top: 1rem;
     ";
 
-    let column_style! = "
+    ≔ column_style! = "
         display: flex;
         flex-direction: column;
         gap: 0.75rem;
     ";
 
-    let column_title_style! = "
+    ≔ column_title_style! = "
         color: #e8e8ec;
         font-weight: 600;
         font-size: 0.875rem;
         margin-bottom: 0.5rem;
     ";
 
-    let link_style! = "
+    ≔ link_style! = "
         color: #a0a0aa;
         font-size: 0.875rem;
         text-decoration: none;
@@ -272,8 +272,8 @@ pub fn Footer() -> Element! {
 
 /// Hero section with the main tagline and problem statement
 #[component]
-pub fn Hero() -> Element! {
-    let hero_style! = "
+☉ rite Hero() -> Element! {
+    ≔ hero_style! = "
         padding: 10rem 0 6rem;
         text-align: center;
         background: linear-gradient(180deg, #050507 0%, #0a0a0d 100%);
@@ -281,13 +281,13 @@ pub fn Hero() -> Element! {
         overflow: hidden;
     ";
 
-    let container_style! = "
+    ≔ container_style! = "
         max-width: 900px;
         margin: 0 auto;
         padding: 0 1.5rem;
     ";
 
-    let title_style! = "
+    ≔ title_style! = "
         font-size: 3rem;
         font-weight: 700;
         line-height: 1.15;
@@ -295,21 +295,21 @@ pub fn Hero() -> Element! {
         margin-bottom: 1.5rem;
     ";
 
-    let highlight_style! = "
+    ≔ highlight_style! = "
         background: linear-gradient(135deg, #14A088 0%, #1AB89D 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
     ";
 
-    let problem_style! = "
+    ≔ problem_style! = "
         font-size: 1.25rem;
         color: #a0a0aa;
         line-height: 1.7;
         margin-bottom: 2rem;
     ";
 
-    let solution_style! = "
+    ≔ solution_style! = "
         background: rgba(20, 160, 136, 0.08);
         border: 1px solid rgba(20, 160, 136, 0.2);
         border-radius: 0.75rem;
@@ -318,13 +318,13 @@ pub fn Hero() -> Element! {
         text-align: left;
     ";
 
-    let solution_text_style! = "
+    ≔ solution_text_style! = "
         color: #e8e8ec;
         font-size: 1rem;
         margin-bottom: 1rem;
     ";
 
-    let evidence_list_style! = "
+    ≔ evidence_list_style! = "
         list-style: none;
         padding: 0;
         margin: 0;
@@ -333,14 +333,14 @@ pub fn Hero() -> Element! {
         gap: 0.75rem;
     ";
 
-    let evidence_item_style! = "
+    ≔ evidence_item_style! = "
         display: flex;
         align-items: center;
         gap: 0.75rem;
         color: #e8e8ec;
     ";
 
-    let actions_style! = "
+    ≔ actions_style! = "
         display: flex;
         gap: 1rem;
         justify-content: center;
@@ -399,10 +399,10 @@ pub fn Hero() -> Element! {
                 </div>
 
                 <div style={actions_style}>
-                    <Button variant={ButtonVariant::Primary} href="/pages/learn.html">
+                    <Button variant={ButtonVariant·Primary} href="/pages/learn.html">
                         "Learn Sigil"
                     </Button>
-                    <Button variant={ButtonVariant::Ghost} href="#the-pattern">
+                    <Button variant={ButtonVariant·Ghost} href="#the-pattern">
                         "The deeper pattern"
                     </Button>
                 </div>
@@ -417,14 +417,14 @@ pub fn Hero() -> Element! {
 
 /// Standard page section
 #[derive(Clone, Debug)]
-pub type SectionProps = struct {
-    pub id: Option[String]?,
-    pub dark: bool!,
-    pub children: Element!,
+☉ type SectionProps = Σ {
+    ☉ id: Option[String]?,
+    ☉ dark: bool!,
+    ☉ children: Element!,
 }
 
-impl Default for SectionProps {
-    fn default() -> Self! {
+⊢ Default ∀ SectionProps {
+    rite default() -> Self! {
         SectionProps {
             id: None,
             dark: false!,
@@ -434,10 +434,10 @@ impl Default for SectionProps {
 }
 
 #[component]
-pub fn Section(props: SectionProps!) -> Element! {
-    let bg_color! = if props.dark { "#0a0a0d" } else { "#050507" };
+☉ rite Section(props: SectionProps!) -> Element! {
+    ≔ bg_color! = ⎇ props.dark { "#0a0a0d" } ⎉ { "#050507" };
 
-    let style! = format!(
+    ≔ style! = format!(
         "padding: 6rem 0; background: {};",
         bg_color
     );
@@ -453,20 +453,20 @@ pub fn Section(props: SectionProps!) -> Element! {
 
 /// Section header with title and optional subtitle
 #[derive(Clone, Debug)]
-pub type SectionHeaderProps = struct {
-    pub eyebrow: Option[String]?,
-    pub title: String!,
-    pub subtitle: Option[String]?,
+☉ type SectionHeaderProps = Σ {
+    ☉ eyebrow: Option[String]?,
+    ☉ title: String!,
+    ☉ subtitle: Option[String]?,
 }
 
 #[component]
-pub fn SectionHeader(props: SectionHeaderProps!) -> Element! {
-    let header_style! = "
+☉ rite SectionHeader(props: SectionHeaderProps!) -> Element! {
+    ≔ header_style! = "
         text-align: center;
         margin-bottom: 3rem;
     ";
 
-    let eyebrow_style! = "
+    ≔ eyebrow_style! = "
         display: inline-block;
         font-size: 0.875rem;
         font-weight: 500;
@@ -476,14 +476,14 @@ pub fn SectionHeader(props: SectionHeaderProps!) -> Element! {
         margin-bottom: 1rem;
     ";
 
-    let title_style! = "
+    ≔ title_style! = "
         font-size: 2.5rem;
         font-weight: 700;
         color: #e8e8ec;
         margin-bottom: 1rem;
     ";
 
-    let subtitle_style! = "
+    ≔ subtitle_style! = "
         font-size: 1.125rem;
         color: #a0a0aa;
         max-width: 600px;
@@ -492,12 +492,12 @@ pub fn SectionHeader(props: SectionHeaderProps!) -> Element! {
 
     html! {
         <div style={header_style}>
-            {match &props.eyebrow {
+            {⌥ &props.eyebrow {
                 Some(text) => html! { <span style={eyebrow_style}>{text.clone()}</span> },
                 None => html! { <></> },
             }}
             <h2 style={title_style}>{props.title.clone()}</h2>
-            {match &props.subtitle {
+            {⌥ &props.subtitle {
                 Some(text) => html! { <p style={subtitle_style}>{text.clone()}</p> },
                 None => html! { <></> },
             }}
@@ -511,24 +511,24 @@ pub fn SectionHeader(props: SectionHeaderProps!) -> Element! {
 
 /// Syntax-highlighted code block for Sigil code
 #[derive(Clone, Debug)]
-pub type CodeBlockProps = struct {
-    pub code: String!,
-    pub language: String!,
-    pub title: Option[String]?,
-    pub badge: Option[String]?,
-    pub badge_variant: Option[String]?,
+☉ type CodeBlockProps = Σ {
+    ☉ code: String!,
+    ☉ language: String!,
+    ☉ title: Option[String]?,
+    ☉ badge: Option[String]?,
+    ☉ badge_variant: Option[String]?,
 }
 
 #[component]
-pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
-    let container_style! = "
+☉ rite SigilCodeBlock(props: CodeBlockProps!) -> Element! {
+    ≔ container_style! = "
         background: #030305;
         border: 1px solid #1a1a1f;
         border-radius: 0.5rem;
         overflow: hidden;
     ";
 
-    let header_style! = "
+    ≔ header_style! = "
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -537,13 +537,13 @@ pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
         border-bottom: 1px solid #1a1a1f;
     ";
 
-    let title_style! = "
+    ≔ title_style! = "
         font-family: 'IBM Plex Mono', monospace;
         font-size: 0.875rem;
         color: #a0a0aa;
     ";
 
-    let badge_success! = "
+    ≔ badge_success! = "
         font-size: 0.75rem;
         font-weight: 500;
         padding: 0.25rem 0.5rem;
@@ -552,7 +552,7 @@ pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
         border-radius: 0.25rem;
     ";
 
-    let badge_danger! = "
+    ≔ badge_danger! = "
         font-size: 0.75rem;
         font-weight: 500;
         padding: 0.25rem 0.5rem;
@@ -561,7 +561,7 @@ pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
         border-radius: 0.25rem;
     ";
 
-    let code_style! = "
+    ≔ code_style! = "
         font-family: 'IBM Plex Mono', monospace;
         font-size: 0.875rem;
         line-height: 1.6;
@@ -571,7 +571,7 @@ pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
         color: #e8e8ec;
     ";
 
-    let badge_style! = match props.badge_variant·as_deref() {
+    ≔ badge_style! = ⌥ props.badge_variant·as_deref() {
         Some("success") => badge_success,
         Some("danger") => badge_danger,
         _ => badge_success,
@@ -579,7 +579,7 @@ pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
 
     html! {
         <div style={container_style}>
-            {match (&props.title, &props.badge) {
+            {⌥ (&props.title, &props.badge) {
                 (Some(title), Some(badge)) => html! {
                     <div style={header_style}>
                         <span style={title_style}>{title.clone()}</span>
@@ -606,13 +606,13 @@ pub fn SigilCodeBlock(props: CodeBlockProps!) -> Element! {
 
 /// Evidentiality marker display
 #[derive(Clone, Debug)]
-pub type EvidenceProps = struct {
-    pub level: EvidenceLevel!,
-    pub large: bool!,
+☉ type EvidenceProps = Σ {
+    ☉ level: EvidenceLevel!,
+    ☉ large: bool!,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub type EvidenceLevel = enum {
+☉ type EvidenceLevel = ᛈ {
     Known,
     Uncertain,
     Predicted,
@@ -621,16 +621,16 @@ pub type EvidenceLevel = enum {
 }
 
 #[component]
-pub fn EvidenceMarker(props: EvidenceProps!) -> Element! {
-    let (symbol, class) = match props.level {
-        EvidenceLevel::Known => ("!", "ev ev-known"),
-        EvidenceLevel::Uncertain => ("?", "ev ev-uncertain"),
-        EvidenceLevel::Predicted => ("◊", "ev ev-predicted"),
-        EvidenceLevel::Reported => ("~", "ev ev-reported"),
-        EvidenceLevel::Paradox => ("‽", "ev ev-paradox"),
+☉ rite EvidenceMarker(props: EvidenceProps!) -> Element! {
+    ≔ (symbol, class) = ⌥ props.level {
+        EvidenceLevel·Known => ("!", "ev ev-known"),
+        EvidenceLevel·Uncertain => ("?", "ev ev-uncertain"),
+        EvidenceLevel·Predicted => ("◊", "ev ev-predicted"),
+        EvidenceLevel·Reported => ("~", "ev ev-reported"),
+        EvidenceLevel·Paradox => ("‽", "ev ev-paradox"),
     };
 
-    let size! = if props.large { "font-size: 1.5rem;" } else { "" };
+    ≔ size! = ⎇ props.large { "font-size: 1.5rem;" } ⎉ { "" };
 
     html! {
         <span class={class} style={size}>{symbol}</span>
@@ -643,15 +643,15 @@ pub fn EvidenceMarker(props: EvidenceProps!) -> Element! {
 
 /// Morpheme operator card
 #[derive(Clone, Debug)]
-pub type MorphemeCardProps = struct {
-    pub symbol: String!,
-    pub name: String!,
-    pub description: String!,
+☉ type MorphemeCardProps = Σ {
+    ☉ symbol: String!,
+    ☉ name: String!,
+    ☉ description: String!,
 }
 
 #[component]
-pub fn MorphemeCard(props: MorphemeCardProps!) -> Element! {
-    let card_style! = "
+☉ rite MorphemeCard(props: MorphemeCardProps!) -> Element! {
+    ≔ card_style! = "
         display: flex;
         align-items: center;
         gap: 1rem;
@@ -661,20 +661,20 @@ pub fn MorphemeCard(props: MorphemeCardProps!) -> Element! {
         border-radius: 0.5rem;
     ";
 
-    let symbol_style! = "
+    ≔ symbol_style! = "
         font-size: 1.5rem;
         font-weight: 500;
         color: #1AB89D;
         font-family: 'IBM Plex Mono', monospace;
     ";
 
-    let name_style! = "
+    ≔ name_style! = "
         font-weight: 600;
         color: #e8e8ec;
         margin-bottom: 0.25rem;
     ";
 
-    let desc_style! = "
+    ≔ desc_style! = "
         font-size: 0.875rem;
         color: #a0a0aa;
     ";

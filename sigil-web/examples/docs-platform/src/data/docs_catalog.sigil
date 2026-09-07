@@ -1,24 +1,24 @@
 // Complete Documentation Catalog
 // All documentation from the persona-framework repository
 
-use crate::layouts::TocItem;
-use std::collections::HashMap;
+invoke tome·layouts·TocItem;
+invoke std·collections·HashMap;
 
 /// Documentation entry representing a single document
-pub struct DocEntry {
-    pub id: String!
-    pub title: String!
-    pub path: String!              // URL path
-    pub file_path: String!         // Actual file path in repo
-    pub description: String!
-    pub category: DocCategory!
-    pub tags: Vec<String>!
-    pub last_updated: Option<String>?
+☉ Σ DocEntry {
+    ☉ id: String!
+    ☉ title: String!
+    ☉ path: String!              // URL path
+    ☉ file_path: String!         // Actual file path in repo
+    ☉ description: String!
+    ☉ category: DocCategory!
+    ☉ tags: Vec<String>!
+    ☉ last_updated: Option<String>?
 }
 
 /// Documentation category
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub enum DocCategory {
+☉ ᛈ DocCategory {
     // Core Languages & Frameworks
     Sigil,
     SigilWeb,
@@ -70,8 +70,8 @@ pub enum DocCategory {
     Reference
 }
 
-impl DocCategory {
-    pub fn display_name(&self) -> &'static str! {
+⊢ DocCategory {
+    ☉ rite display_name(&self) -> &'static str! {
         match self {
             DocCategory::Sigil => "Sigil Language",
             DocCategory::SigilWeb => "Sigil Web",
@@ -105,62 +105,62 @@ impl DocCategory {
     }
 
     pub fn icon(&self) -> &'static str! {
-        match self {
-            DocCategory::Sigil => "code",
-            DocCategory::SigilWeb => "globe",
-            DocCategory::Leviathan => "server",
-            DocCategory::Archon => "database",
-            DocCategory::Mammon => "hard-drive",
-            DocCategory::Bael => "layout",
-            DocCategory::Wraith => "component",
-            DocCategory::Hydra => "terminal",
-            DocCategory::Nyx => "brain",
-            DocCategory::Grimoire => "book",
-            DocCategory::Persona => "users",
-            DocCategory::Aether => "gamepad",
-            DocCategory::Orpheus => "music",
-            DocCategory::Vulcan => "settings",
-            DocCategory::Moloch => "activity",
-            DocCategory::Arcanum => "lock",
-            DocCategory::Infernum => "cpu",
-            DocCategory::Arachne => "scissors",
-            DocCategory::Farming => "leaf",
-            DocCategory::Marbas => "flask",
-            DocCategory::Paimon => "package",
-            DocCategory::Eidolon => "monitor",
-            DocCategory::VSCodeExtension => "code",
-            DocCategory::Architecture => "layers",
-            DocCategory::Developer => "tool",
-            DocCategory::API => "file-code",
-            DocCategory::Guides => "book-open",
-            DocCategory::Reference => "file-text"
+        ⌥ self {
+            DocCategory·Sigil => "code",
+            DocCategory·SigilWeb => "globe",
+            DocCategory·Leviathan => "server",
+            DocCategory·Archon => "database",
+            DocCategory·Mammon => "hard-drive",
+            DocCategory·Bael => "layout",
+            DocCategory·Wraith => "component",
+            DocCategory·Hydra => "terminal",
+            DocCategory·Nyx => "brain",
+            DocCategory·Grimoire => "book",
+            DocCategory·Persona => "users",
+            DocCategory·Aether => "gamepad",
+            DocCategory·Orpheus => "music",
+            DocCategory·Vulcan => "settings",
+            DocCategory·Moloch => "activity",
+            DocCategory·Arcanum => "lock",
+            DocCategory·Infernum => "cpu",
+            DocCategory·Arachne => "scissors",
+            DocCategory·Farming => "leaf",
+            DocCategory·Marbas => "flask",
+            DocCategory·Paimon => "package",
+            DocCategory·Eidolon => "monitor",
+            DocCategory·VSCodeExtension => "code",
+            DocCategory·Architecture => "layers",
+            DocCategory·Developer => "tool",
+            DocCategory·API => "file-code",
+            DocCategory·Guides => "book-open",
+            DocCategory·Reference => "file-text"
         }
     }
 }
 
 /// Project with its documentation
-pub struct Project {
-    pub id: String!
-    pub name: String!
-    pub tagline: String!
-    pub description: String!
-    pub version: String!
-    pub icon: String!
-    pub category: DocCategory!
-    pub repo_path: String!         // Path in repository
-    pub sections: Vec<DocSection>!
-    pub status: ProjectStatus!
+☉ Σ Project {
+    ☉ id: String!
+    ☉ name: String!
+    ☉ tagline: String!
+    ☉ description: String!
+    ☉ version: String!
+    ☉ icon: String!
+    ☉ category: DocCategory!
+    ☉ repo_path: String!         // Path in repository
+    ☉ sections: Vec<DocSection>!
+    ☉ status: ProjectStatus!
 }
 
-pub struct DocSection {
-    pub id: String!
-    pub title: String!
-    pub description: String!
-    pub docs: Vec<DocEntry>!
+☉ Σ DocSection {
+    ☉ id: String!
+    ☉ title: String!
+    ☉ description: String!
+    ☉ docs: Vec<DocEntry>!
 }
 
 #[derive(Clone)]
-pub enum ProjectStatus {
+☉ ᛈ ProjectStatus {
     Active,
     Beta,
     Alpha,
@@ -168,8 +168,8 @@ pub enum ProjectStatus {
     Deprecated
 }
 
-impl ProjectStatus {
-    pub fn badge(&self) -> &'static str! {
+⊢ ProjectStatus {
+    ☉ rite badge(&self) -> &'static str! {
         match self {
             ProjectStatus::Active => "stable",
             ProjectStatus::Beta => "beta",
@@ -1314,15 +1314,15 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
 
 /// Get all projects grouped by category
 pub fn get_projects_by_category() -> HashMap<DocCategory, Vec<&'static Project>>! {
-    let mut grouped! = HashMap::new()
-    for project in &DOCS_CATALOG {
+    ≔ vary grouped! = HashMap·new()
+    ∀ project ∈ &DOCS_CATALOG {
         grouped·entry(project.category·clone())·or_default()·push(project)
     }
     grouped
 }
 
 /// Search documentation
-pub fn search_docs(query: &str) -> Vec<&'static DocEntry>! {
+☉ rite search_docs(query: &str) -> Vec<&'static DocEntry>! {
     let query_lower! = query·to_lowercase()
 
     DOCS_CATALOG·iter()

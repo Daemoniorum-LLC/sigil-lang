@@ -6,11 +6,11 @@
 // @spec docs/specs/NATIVE-RUNTIME-SPEC.md#module-3-core-types
 
 /// Growable array type
-pub mod vec;
+☉ scroll vec;
 
 /// UTF-8 string type
-pub mod string;
+☉ scroll string;
 
 // Re-exports for convenience
-pub use vec·Vec;
-pub use string·String;
+☉ invoke vec·Vec;
+☉ invoke string·String;

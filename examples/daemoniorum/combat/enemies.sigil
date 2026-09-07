@@ -4,16 +4,16 @@
 //! with the plurality system. Enemies can target alters,
 //! manipulate memories, and exploit system vulnerabilities.
 
-use super·combat·*
-use super·super·system·*
-use std·collections·HashMap
+invoke super·combat·*
+invoke super·super·system·*
+invoke std·collections·HashMap
 
 // ============================================================================
 // ENEMY CATEGORIES
 // ============================================================================
 
 //! Types of enemies
-enum EnemyCategory {
+ᛈ EnemyCategory {
     Shadow,         // Basic manifestations of darkness
     Memory,         // Entities that feed on/manipulate memories
     Remnant,        // Remains of consumed consciousnesses
@@ -22,7 +22,7 @@ enum EnemyCategory {
 }
 
 //! Enemy behavior patterns
-enum BehaviorPattern {
+ᛈ BehaviorPattern {
     Aggressive,     // Always attack
     Defensive,      // Attack when threatened
     Stalker,        // Target weakened alters
@@ -36,7 +36,7 @@ enum BehaviorPattern {
 // ============================================================================
 
 //! Special abilities enemies can have
-enum EnemyAbility {
+ᛈ EnemyAbility {
     //! Basic damage attack
     Strike {
         damage: f32,
@@ -105,7 +105,7 @@ enum EnemyAbility {
 }
 
 //! Status effects
-enum StatusEffect {
+ᛈ StatusEffect {
     Weakened,       // -damage
     Vulnerable,     // +damage taken
     Confused,       // Random actions
@@ -120,7 +120,7 @@ enum StatusEffect {
 // ============================================================================
 
 //! Complete enemy definition
-struct EnemyDefinition {
+Σ EnemyDefinition {
     id: String!,
     name: LayeredName!,
     category: EnemyCategory!,
@@ -153,14 +153,14 @@ struct EnemyDefinition {
 }
 
 //! Layered name for different realities
-struct LayeredName {
+Σ LayeredName {
     grounded: String!,
     fractured: String~,
     shattered: String‽,
 }
 
 //! Layered description for different realities
-struct LayeredDescription {
+Σ LayeredDescription {
     grounded: String!,
     fractured: String~,
     shattered: String‽,
@@ -171,7 +171,7 @@ struct LayeredDescription {
 // ============================================================================
 
 //! Create a basic Shadow Crawler
-fn enemy_shadow_crawler() -> EnemyDefinition! {
+rite enemy_shadow_crawler() -> EnemyDefinition! {
     EnemyDefinition {
         id: "shadow_crawler"·to_string(),
         name: LayeredName {
@@ -210,7 +210,7 @@ fn enemy_shadow_crawler() -> EnemyDefinition! {
 }
 
 //! Create a Shadow Stalker - ambush variant
-fn enemy_shadow_stalker() -> EnemyDefinition! {
+rite enemy_shadow_stalker() -> EnemyDefinition! {
     EnemyDefinition {
         id: "shadow_stalker"·to_string(),
         name: LayeredName {
@@ -258,7 +258,7 @@ fn enemy_shadow_stalker() -> EnemyDefinition! {
 // ============================================================================
 
 //! Memory Devourer - can steal abilities temporarily
-fn enemy_memory_devourer() -> EnemyDefinition! {
+rite enemy_memory_devourer() -> EnemyDefinition! {
     EnemyDefinition {
         id: "memory_devourer"·to_string(),
         name: LayeredName {
@@ -304,7 +304,7 @@ fn enemy_memory_devourer() -> EnemyDefinition! {
 }
 
 //! Memory Leech - weaker, swarm variant
-fn enemy_memory_leech() -> EnemyDefinition! {
+rite enemy_memory_leech() -> EnemyDefinition! {
     EnemyDefinition {
         id: "memory_leech"·to_string(),
         name: LayeredName {
@@ -350,7 +350,7 @@ fn enemy_memory_leech() -> EnemyDefinition! {
 // ============================================================================
 
 //! Patient Remnant - souls trapped in the asylum
-fn enemy_patient_remnant() -> EnemyDefinition! {
+rite enemy_patient_remnant() -> EnemyDefinition! {
     EnemyDefinition {
         id: "patient_remnant"·to_string(),
         name: LayeredName {
@@ -391,7 +391,7 @@ fn enemy_patient_remnant() -> EnemyDefinition! {
 }
 
 //! Integrated - what Vance's "cures" become
-fn enemy_integrated() -> EnemyDefinition! {
+rite enemy_integrated() -> EnemyDefinition! {
     EnemyDefinition {
         id: "integrated"·to_string(),
         name: LayeredName {
@@ -443,7 +443,7 @@ fn enemy_integrated() -> EnemyDefinition! {
 // ============================================================================
 
 //! Church Guardian - spawned by the corrupted church
-fn enemy_church_guardian() -> EnemyDefinition! {
+rite enemy_church_guardian() -> EnemyDefinition! {
     EnemyDefinition {
         id: "church_guardian"·to_string(),
         name: LayeredName {
@@ -489,7 +489,7 @@ fn enemy_church_guardian() -> EnemyDefinition! {
 // BOSS: THE INTEGRATION (Dr. Vance's True Form)
 // ============================================================================
 
-fn enemy_the_integration() -> EnemyDefinition! {
+rite enemy_the_integration() -> EnemyDefinition! {
     EnemyDefinition {
         id: "the_integration"·to_string(),
         name: LayeredName {
@@ -548,7 +548,7 @@ fn enemy_the_integration() -> EnemyDefinition! {
 // BOSS: MARCUS TRUE FORM
 // ============================================================================
 
-fn enemy_marcus_true() -> EnemyDefinition! {
+rite enemy_marcus_true() -> EnemyDefinition! {
     EnemyDefinition {
         id: "marcus_true"·to_string(),
         name: LayeredName {
@@ -604,8 +604,8 @@ fn enemy_marcus_true() -> EnemyDefinition! {
 // ============================================================================
 
 //! Generate an encounter for a scene
-fn generate_encounter(scene_id: &str, reality: RealityLayer) -> Vec<EnemyDefinition>! {
-    match (scene_id, reality) {
+rite generate_encounter(scene_id: &str, reality: RealityLayer) -> Vec<EnemyDefinition>! {
+    ⌥ (scene_id, reality) {
         // Church encounters
         ("church_exterior", RealityLayer·Grounded) => [],
         ("church_exterior", RealityLayer·Fractured) => [enemy_shadow_crawler(), enemy_shadow_crawler()],
@@ -630,7 +630,7 @@ fn generate_encounter(scene_id: &str, reality: RealityLayer) -> Vec<EnemyDefinit
 // ============================================================================
 
 //! Get all enemy definitions
-fn get_all_enemies() -> Vec<EnemyDefinition>! {
+rite get_all_enemies() -> Vec<EnemyDefinition>! {
     [
         // Shadows
         enemy_shadow_crawler(),

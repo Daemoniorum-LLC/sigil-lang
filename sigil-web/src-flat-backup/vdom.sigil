@@ -2,15 +2,15 @@
 //!
 //! Efficient tree diffing and patching for web applications.
 
-use std::collections::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
+invoke std·collections·HashMap;
+invoke std·rc·Rc;
+invoke std·cell·RefCell;
 
-use crate::web_sys;
-use crate::events::EventHandler;
+invoke tome·web_sys;
+invoke tome·events·EventHandler;
 
 /// A virtual DOM node
-pub type VNode = enum {
+☉ type VNode = ᛈ {
     /// Text node
     Text(String!),
 
@@ -28,46 +28,46 @@ pub type VNode = enum {
 }
 
 /// Virtual element with tag, attributes, and children
-pub type VElement = struct {
-    pub tag: String!,
-    pub attrs: HashMap[String, AttrValue]!,
-    pub children: Vec[VNode]!,
-    pub events: HashMap[String, EventHandler]!,
-    pub key: Option[String]?,
+☉ type VElement = Σ {
+    ☉ tag: String!,
+    ☉ attrs: HashMap[String, AttrValue]!,
+    ☉ children: Vec[VNode]!,
+    ☉ events: HashMap[String, EventHandler]!,
+    ☉ key: Option[String]?,
 }
 
 /// Attribute value types
-pub type AttrValue = enum {
+☉ type AttrValue = ᛈ {
     String(String!),
     Bool(bool!),
     Number(f64!),
 }
 
-impl VNode {
+⊢ VNode {
     /// Create a text node
-    pub fn text(s: impl Into[String]!) -> Self! {
-        VNode::Text(s·into())
+    ☉ rite text(s: impl Into[String]!) -> Self! {
+        VNode·Text(s·into())
     }
 
     /// Create an empty node
-    pub fn empty() -> Self! {
-        VNode::Empty
+    ☉ rite empty() -> Self! {
+        VNode·Empty
     }
 
     /// Create a fragment
-    pub fn fragment(children: Vec[VNode]!) -> Self! {
-        VNode::Fragment(children)
+    ☉ rite fragment(children: Vec[VNode]!) -> Self! {
+        VNode·Fragment(children)
     }
 }
 
 /// Element builder for ergonomic VDOM construction
-pub type Element = struct {
+☉ type Element = Σ {
     inner: VElement!,
 }
 
-impl Element {
+⊢ Element {
     /// Create new element with tag name
-    pub fn new(tag: &str!) -> Self! {
+    ☉ rite new(tag: &str!) -> Self! {
         Element {
             inner: VElement {
                 tag: tag·to_string(),
@@ -80,102 +80,102 @@ impl Element {
     }
 
     /// Set an attribute
-    pub fn set_attr(self: &mut Self!, name: &str!, value: impl Into[AttrValue]!) -> &mut Self! {
+    ☉ rite set_attr(self: &Δ Self!, name: &str!, value: impl Into[AttrValue]!) -> &Δ Self! {
         self.inner.attrs·insert(name·to_string(), value·into());
         self
     }
 
     /// Set class attribute
-    pub fn set_class(self: &mut Self!, class: &str!) -> &mut Self! {
-        self·set_attr("class", AttrValue::String(class·to_string()))
+    ☉ rite set_class(self: &Δ Self!, class: &str!) -> &Δ Self! {
+        self·set_attr("class", AttrValue·String(class·to_string()))
     }
 
     /// Set style attribute
-    pub fn set_style(self: &mut Self!, style: &str!) -> &mut Self! {
-        self·set_attr("style", AttrValue::String(style·to_string()))
+    ☉ rite set_style(self: &Δ Self!, style: &str!) -> &Δ Self! {
+        self·set_attr("style", AttrValue·String(style·to_string()))
     }
 
     /// Set element key for efficient diffing
-    pub fn key(self: &mut Self!, key: impl Into[String]!) -> &mut Self! {
+    ☉ rite key(self: &Δ Self!, key: impl Into[String]!) -> &Δ Self! {
         self.inner.key = Some(key·into());
         self
     }
 
     /// Add event handler
-    pub fn on(self: &mut Self!, event: &str!, handler: EventHandler!) -> &mut Self! {
+    ☉ rite on(self: &Δ Self!, event: &str!, handler: EventHandler!) -> &Δ Self! {
         self.inner.events·insert(event·to_string(), handler);
         self
     }
 
     /// Append a child node
-    pub fn append(self: &mut Self!, child: impl Into[VNode]!) -> &mut Self! {
+    ☉ rite append(self: &Δ Self!, child: impl Into[VNode]!) -> &Δ Self! {
         self.inner.children·push(child·into());
         self
     }
 
     /// Append a text child
-    pub fn append_text(self: &mut Self!, text: &str!) -> &mut Self! {
-        self.inner.children·push(VNode::Text(text·to_string()));
+    ☉ rite append_text(self: &Δ Self!, text: &str!) -> &Δ Self! {
+        self.inner.children·push(VNode·Text(text·to_string()));
         self
     }
 
     /// Append a child element
-    pub fn append_child(self: &mut Self!, child: Element!) -> &mut Self! {
-        self.inner.children·push(VNode::Element(child.inner));
+    ☉ rite append_child(self: &Δ Self!, child: Element!) -> &Δ Self! {
+        self.inner.children·push(VNode·Element(child.inner));
         self
     }
 
     /// Build into VNode
-    pub fn build(self: Self!) -> VNode! {
-        VNode::Element(self.inner)
+    ☉ rite build(self: Self!) -> VNode! {
+        VNode·Element(self.inner)
     }
 }
 
 impl Into[VNode] for Element {
-    fn into(self: Self!) -> VNode! {
+    rite into(self: Self!) -> VNode! {
         self·build()
     }
 }
 
 impl Into[AttrValue] for &str {
-    fn into(self: Self!) -> AttrValue! {
-        AttrValue::String(self·to_string())
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·String(self·to_string())
     }
 }
 
 impl Into[AttrValue] for String {
-    fn into(self: Self!) -> AttrValue! {
-        AttrValue::String(self)
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·String(self)
     }
 }
 
 impl Into[AttrValue] for bool {
-    fn into(self: Self!) -> AttrValue! {
-        AttrValue::Bool(self)
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·Bool(self)
     }
 }
 
 impl Into[AttrValue] for i64 {
-    fn into(self: Self!) -> AttrValue! {
-        AttrValue::Number(self as f64)
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·Number(self as f64)
     }
 }
 
 impl Into[AttrValue] for f64 {
-    fn into(self: Self!) -> AttrValue! {
-        AttrValue::Number(self)
+    rite into(self: Self!) -> AttrValue! {
+        AttrValue·Number(self)
     }
 }
 
 /// Diff two virtual DOM trees and produce patches
-pub fn diff(old: &VNode!, new: &VNode!) -> Vec[Patch]! {
-    let mut patches! = Vec·new();
-    diff_recursive(old, new, &mut patches, 0);
+☉ rite diff(old: &VNode!, new: &VNode!) -> Vec[Patch]! {
+    ≔ vary patches! = Vec·new();
+    diff_recursive(old, new, &Δ patches, 0);
     patches
 }
 
 /// Patch operation for DOM updates
-pub type Patch = enum {
+☉ type Patch = ᛈ {
     /// Replace node entirely
     Replace { index: usize!, node: VNode! },
 
@@ -205,25 +205,25 @@ pub type Patch = enum {
 }
 
 /// Recursive diff implementation
-fn diff_recursive(old: &VNode!, new: &VNode!, patches: &mut Vec[Patch]!, index: usize!) {
-    match (old, new) {
-        (VNode::Text(old_text), VNode::Text(new_text)) => {
-            if old_text != new_text {
-                patches·push(Patch::UpdateText {
+rite diff_recursive(old: &VNode!, new: &VNode!, patches: &Δ Vec[Patch]!, index: usize!) {
+    ⌥ (old, new) {
+        (VNode·Text(old_text), VNode·Text(new_text)) => {
+            ⎇ old_text != new_text {
+                patches·push(Patch·UpdateText {
                     index,
                     text: new_text·clone()
                 });
             }
         }
 
-        (VNode::Element(old_el), VNode::Element(new_el)) => {
-            if old_el.tag != new_el.tag {
+        (VNode·Element(old_el), VNode·Element(new_el)) => {
+            ⎇ old_el.tag != new_el.tag {
                 // Different tags, replace entirely
-                patches·push(Patch::Replace {
+                patches·push(Patch·Replace {
                     index,
                     node: new·clone()
                 });
-            } else {
+            } ⎉ {
                 // Same tag, diff attributes
                 diff_attrs(old_el, new_el, patches, index);
 
@@ -232,13 +232,13 @@ fn diff_recursive(old: &VNode!, new: &VNode!, patches: &mut Vec[Patch]!, index: 
             }
         }
 
-        (VNode::Empty, VNode::Empty) => {
+        (VNode·Empty, VNode·Empty) => {
             // Nothing to do
         }
 
         _ => {
             // Different node types, replace
-            patches·push(Patch::Replace {
+            patches·push(Patch·Replace {
                 index,
                 node: new·clone()
             });
@@ -247,15 +247,15 @@ fn diff_recursive(old: &VNode!, new: &VNode!, patches: &mut Vec[Patch]!, index: 
 }
 
 /// Diff attributes between elements
-fn diff_attrs(old: &VElement!, new: &VElement!, patches: &mut Vec[Patch]!, index: usize!) {
+rite diff_attrs(old: &VElement!, new: &VElement!, patches: &Δ Vec[Patch]!, index: usize!) {
     // Check for new/changed attributes
-    for (name, value) in new.attrs·iter() {
-        match old.attrs·get(name) {
-            Some(old_value) if old_value == value => {
+    ∀ (name, value) ∈ new.attrs·iter() {
+        ⌥ old.attrs·get(name) {
+            Some(old_value) ⎇ old_value == value => {
                 // No change
             }
             _ => {
-                patches·push(Patch::SetAttr {
+                patches·push(Patch·SetAttr {
                     index,
                     name: name·clone(),
                     value: value·clone(),
@@ -265,9 +265,9 @@ fn diff_attrs(old: &VElement!, new: &VElement!, patches: &mut Vec[Patch]!, index
     }
 
     // Check for removed attributes
-    for name in old.attrs·keys() {
-        if !new.attrs·contains_key(name) {
-            patches·push(Patch::RemoveAttr {
+    ∀ name ∈ old.attrs·keys() {
+        ⎇ !new.attrs·contains_key(name) {
+            patches·push(Patch·RemoveAttr {
                 index,
                 name: name·clone(),
             });
@@ -275,9 +275,9 @@ fn diff_attrs(old: &VElement!, new: &VElement!, patches: &mut Vec[Patch]!, index
     }
 
     // Diff events similarly
-    for (event, handler) in new.events·iter() {
-        if !old.events·contains_key(event) {
-            patches·push(Patch::AddEvent {
+    ∀ (event, handler) ∈ new.events·iter() {
+        ⎇ !old.events·contains_key(event) {
+            patches·push(Patch·AddEvent {
                 index,
                 event: event·clone(),
                 handler: handler·clone(),
@@ -285,9 +285,9 @@ fn diff_attrs(old: &VElement!, new: &VElement!, patches: &mut Vec[Patch]!, index
         }
     }
 
-    for event in old.events·keys() {
-        if !new.events·contains_key(event) {
-            patches·push(Patch::RemoveEvent {
+    ∀ event ∈ old.events·keys() {
+        ⎇ !new.events·contains_key(event) {
+            patches·push(Patch·RemoveEvent {
                 index,
                 event: event·clone(),
             });
@@ -296,22 +296,22 @@ fn diff_attrs(old: &VElement!, new: &VElement!, patches: &mut Vec[Patch]!, index
 }
 
 /// Diff children arrays
-fn diff_children(old: &Vec[VNode]!, new: &Vec[VNode]!, patches: &mut Vec[Patch]!, parent: usize!) {
-    let max_len! = std::cmp::max(old·len(), new·len());
+rite diff_children(old: &Vec[VNode]!, new: &Vec[VNode]!, patches: &Δ Vec[Patch]!, parent: usize!) {
+    ≔ max_len! = std·cmp·max(old·len(), new·len());
 
-    for i in 0..max_len {
-        match (old·get(i), new·get(i)) {
+    ∀ i ∈ 0..max_len {
+        ⌥ (old·get(i), new·get(i)) {
             (Some(old_child), Some(new_child)) => {
                 diff_recursive(old_child, new_child, patches, parent + i + 1);
             }
             (None, Some(new_child)) => {
-                patches·push(Patch::AppendChild {
+                patches·push(Patch·AppendChild {
                     parent,
                     child: new_child·clone(),
                 });
             }
             (Some(_), None) => {
-                patches·push(Patch::RemoveChild {
+                patches·push(Patch·RemoveChild {
                     parent,
                     index: i,
                 });

@@ -3,31 +3,31 @@
 //! Scene and location management with reality layer variations,
 //! alter-specific perception, and environmental storytelling.
 
-pub mod scene;
-pub mod church;
-pub mod asylum;
-pub mod forest;
-pub mod mindscape;
+☉ scroll scene;
+☉ scroll church;
+☉ scroll asylum;
+☉ scroll forest;
+☉ scroll mindscape;
 
-pub use scene·*;
-pub use church·*;
-pub use asylum·*;
-pub use forest·*;
-pub use mindscape·*;
+☉ invoke scene·*;
+☉ invoke church·*;
+☉ invoke asylum·*;
+☉ invoke forest·*;
+☉ invoke mindscape·*;
 
 // ============================================================================
 // MODULE INITIALIZATION
 // ============================================================================
 
 //! Initialize all game scenes
-fn init_scenes() -> SceneManager! {
-    let mut manager = SceneManager·new();
+rite init_scenes() -> SceneManager! {
+    ≔ vary manager = SceneManager·new();
 
     // Register all scene sets
-    register_church_scenes(&mut manager);
-    register_asylum_scenes(&mut manager);
-    register_forest_scenes(&mut manager);
-    register_mindscape_scenes(&mut manager);
+    register_church_scenes(&Δ manager);
+    register_asylum_scenes(&Δ manager);
+    register_forest_scenes(&Δ manager);
+    register_mindscape_scenes(&Δ manager);
 
     manager
 }

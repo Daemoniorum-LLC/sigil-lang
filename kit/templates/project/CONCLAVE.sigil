@@ -11,14 +11,14 @@
 //! @methodology methodologies/AGENT-TDD.md
 //! @archive     docs/sessions/conclave/
 
-use coordination·*
+invoke coordination·*
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACOLYTE TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /// Platform-specific acolyte variants
-enum AcolytePlatform {
+ᛈ AcolytePlatform {
     Claude { model: str!, version: str? },
     Infernum { model: str!, backend: str? },
     Other { platform: str!, details: str~ },
@@ -34,7 +34,7 @@ enum AcolytePlatform {
 ///   Active → Reflecting:  on task·complete
 ///   Reflecting → Archived: on session·end
 ///   * → Blocked:          on blocker·discovered
-enum AcolyteState {
+ᛈ AcolyteState {
     Dormant,      // Registered but inactive
     Stirring,     // Initializing, gathering context
     Active,       // Actively working on task
@@ -44,7 +44,7 @@ enum AcolyteState {
 }
 
 /// SDD phase alignment
-enum SddPhase {
+ᛈ SddPhase {
     Spec,         // Writing/updating specification
     Build,        // Implementing according to spec
     Learn,        // Discovery happened
@@ -52,7 +52,7 @@ enum SddPhase {
 }
 
 /// TDD phase alignment
-enum TddPhase {
+ᛈ TddPhase {
     Red,          // Writing failing test (specification)
     Green,        // Making test pass (implementation)
     Refactor,     // Improving while tests protect

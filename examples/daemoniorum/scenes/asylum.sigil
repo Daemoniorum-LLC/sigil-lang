@@ -4,15 +4,15 @@
 //! The asylum represents society's misunderstanding of plurality,
 //! and holds secrets about the system's past.
 
-use super·scene·*
-use super·super·system·*
-use std·collections·HashMap
+invoke super·scene·*
+invoke super·super·system·*
+invoke std·collections·HashMap
 
 // ============================================================================
 // ASYLUM EXTERIOR
 // ============================================================================
 
-fn create_asylum_exterior() -> Scene! {
+rite create_asylum_exterior() -> Scene! {
     SceneBuilder·new("asylum_exterior")
         ·name(
             "Blackwood Asylum",
@@ -201,7 +201,7 @@ fn create_asylum_exterior() -> Scene! {
 // ASYLUM LOBBY
 // ============================================================================
 
-fn create_asylum_lobby() -> Scene! {
+rite create_asylum_lobby() -> Scene! {
     SceneBuilder·new("asylum_lobby")
         ·name(
             "Asylum Lobby",
@@ -441,7 +441,7 @@ fn create_asylum_lobby() -> Scene! {
 // ASYLUM EAST WING - PATIENT WARDS
 // ============================================================================
 
-fn create_asylum_east_wing() -> Scene! {
+rite create_asylum_east_wing() -> Scene! {
     SceneBuilder·new("asylum_east_wing")
         ·name(
             "East Wing - Patient Wards",
@@ -588,7 +588,7 @@ fn create_asylum_east_wing() -> Scene! {
 // ASYLUM WEST WING - TREATMENT ROOMS
 // ============================================================================
 
-fn create_asylum_west_wing() -> Scene! {
+rite create_asylum_west_wing() -> Scene! {
     SceneBuilder·new("asylum_west_wing")
         ·name(
             "West Wing - Treatment Rooms",
@@ -722,7 +722,7 @@ fn create_asylum_west_wing() -> Scene! {
 // ============================================================================
 
 //! Register all asylum scenes
-fn register_asylum_scenes(manager: &mut SceneManager) {
+rite register_asylum_scenes(manager: &Δ SceneManager) {
     manager·register_scene(create_asylum_exterior());
     manager·register_scene(create_asylum_lobby());
     manager·register_scene(create_asylum_east_wing());

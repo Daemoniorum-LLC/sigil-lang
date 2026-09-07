@@ -3,15 +3,15 @@
 //! The protagonist's internal mental landscape where alters
 //! exist, interact, and process trauma.
 
-use daemoniorum::core::{Location, Stream, Hazard};
-use daemoniorum::anima::AnimaState;
+invoke daemoniorum·core·{Location, Stream, Hazard};
+invoke daemoniorum·anima·AnimaState;
 
 // ============================================================================
 // THE INNER WORLD
 // ============================================================================
 
 /// The complete internal headspace
-pub headspace InnerWorld {
+☉ headspace InnerWorld {
 
     // ========================================================================
     // SANCTUARY LOCATIONS
@@ -31,17 +31,17 @@ pub headspace InnerWorld {
         ],
 
         /// Council chamber within the Citadel
-        fn council_chamber() -> Room@! {
-            Room::new("Council Chamber")
+        rite council_chamber() -> Room@! {
+            Room·new("Council Chamber")
                 .with_seats(8)
-                .with_protections(Protection::Full)
+                .with_protections(Protection·Full)
         }
 
         /// Emergency lockdown procedure
-        fn lockdown() -> LockdownResult! {
+        rite lockdown() -> LockdownResult! {
             self.connections.iter_mut().for_each(|c| c.lock());
             self.raise_shields();
-            LockdownResult::Secure
+            LockdownResult·Secure
         }
     }
 
@@ -58,12 +58,12 @@ pub headspace InnerWorld {
         ],
 
         hazards: [
-            Hazard::forbidden_knowledge(trigger: "curiosity", damage: 0.1),
+            Hazard·forbidden_knowledge(trigger: "curiosity", damage: 0.1),
         ],
 
         /// Search the library for specific knowledge
-        fn search(query: Query) -> SearchResult@? {
-            let shelves = self.relevant_shelves(query);
+        rite search(query: Query) -> SearchResult@? {
+            ≔ shelves = self.relevant_shelves(query);
             shelves.iter()
                 .filter_map(|s| s.search(query))
                 .collect()
@@ -82,15 +82,15 @@ pub headspace InnerWorld {
         ],
 
         /// Meditate to recover stability
-        fn meditate(alter: Alter, duration: Duration) -> RecoveryResult@! {
-            let base_recovery = duration.as_minutes() * 0.01;
-            let bonus = if alter.preferred_reality == RealityLayer::Grounded {
+        rite meditate(alter: Alter, duration: Duration) -> RecoveryResult@! {
+            ≔ base_recovery = duration.as_minutes() * 0.01;
+            ≔ bonus = ⎇ alter.preferred_reality == RealityLayer·Grounded {
                 0.1
-            } else {
+            } ⎉ {
                 0.0
             };
             alter.stability += base_recovery + bonus;
-            RecoveryResult::Success(alter.stability)
+            RecoveryResult·Success(alter.stability)
         }
     }
 
@@ -107,13 +107,13 @@ pub headspace InnerWorld {
         ],
 
         /// Prepare for combat
-        fn arm(alter: Alter) -> CombatReadiness@! {
-            requires alter.category == AlterCategory::Council;
+        rite arm(alter: Alter) -> CombatReadiness@! {
+            requires alter.category == AlterCategory·Council;
 
-            let weapons = self.select_weapons(alter);
-            let armor = self.forge_armor(alter.anima);
+            ≔ weapons = self.select_weapons(alter);
+            ≔ armor = self.forge_armor(alter.anima);
 
-            CombatReadiness::new(weapons, armor)
+            CombatReadiness·new(weapons, armor)
         }
     }
 
@@ -134,19 +134,19 @@ pub headspace InnerWorld {
         ],
 
         hazards: [
-            Hazard::trauma_flashback(intensity: 0.6),
-            Hazard::dissociation_risk(threshold: 0.7),
-            Hazard::memory_fragment(volatile: true),
+            Hazard·trauma_flashback(intensity: 0.6),
+            Hazard·dissociation_risk(threshold: 0.7),
+            Hazard·memory_fragment(volatile: true),
         ],
 
         /// Attempt to retrieve a buried memory
-        fn retrieve_memory(id: MemoryId) -> Memory@? {
+        rite retrieve_memory(id: MemoryId) -> Memory@? {
             requires system.stability > 0.5;
 
-            let fragment = self.locate_fragment(id)?;
+            ≔ fragment = self.locate_fragment(id)?;
 
             // Processing trauma is risky
-            if fragment.trauma_level > 0.7 {
+            ⎇ fragment.trauma_level > 0.7 {
                 system.dissociation += 0.2;
             }
 
@@ -166,23 +166,23 @@ pub headspace InnerWorld {
         ],
 
         hazards: [
-            Hazard::void_exposure(damage: 0.3),
-            Hazard::fragmentation_risk(threshold: 0.3),
-            Hazard::identity_dissolution(rate: 0.1),
+            Hazard·void_exposure(damage: 0.3),
+            Hazard·fragmentation_risk(threshold: 0.3),
+            Hazard·identity_dissolution(rate: 0.1),
         ],
 
         /// Only trauma holders should venture here
-        fn descend(alter: Alter) -> DescentResult@‽ {
-            requires alter.category == AlterCategory::TraumaHolder;
+        rite descend(alter: Alter) -> DescentResult@‽ {
+            requires alter.category == AlterCategory·TraumaHolder;
 
-            let tether = system.create_tether(alter);
-            let depth = self.measure_depth();
+            ≔ tether = system.create_tether(alter);
+            ≔ depth = self.measure_depth();
 
-            if depth > alter.capacity {
-                return DescentResult::TooDeep;
+            ⎇ depth > alter.capacity {
+                ⤺ DescentResult·TooDeep;
             }
 
-            DescentResult::Descended(tether)
+            DescentResult·Descended(tether)
         }
     }
 
@@ -191,46 +191,46 @@ pub headspace InnerWorld {
     // ========================================================================
 
     /// Navigate between locations
-    fn navigate(from: Location, to: Location) -> NavigationResult@? {
+    rite navigate(from: Location, to: Location) -> NavigationResult@? {
         // Check if path exists
-        let path = self.find_path(from, to)?;
+        ≔ path = self.find_path(from, to)?;
 
         // Check if all streams are unlocked
-        for stream in path.streams() {
-            if stream.locked {
-                return NavigationResult::Blocked(stream);
+        ∀ stream ∈ path.streams() {
+            ⎇ stream.locked {
+                ⤺ NavigationResult·Blocked(stream);
             }
         }
 
         // Check safety requirements
-        let min_safety = path.minimum_safety();
-        if min_safety < 0.3 && system.stability < 0.5 {
-            return NavigationResult::TooRisky;
+        ≔ min_safety = path.minimum_safety();
+        ⎇ min_safety < 0.3 && system.stability < 0.5 {
+            ⤺ NavigationResult·TooRisky;
         }
 
         // Perform navigation
-        for location in path.locations() {
+        ∀ location ∈ path.locations() {
             self.enter(location);
             location.on_enter(system.current_fronter())?;
         }
 
-        NavigationResult::Arrived(to)
+        NavigationResult·Arrived(to)
     }
 
     /// Emergency evacuation to Citadel
-    fn emergency_evacuate() -> EvacuationResult! {
-        let current = self.current_location;
+    rite emergency_evacuate() -> EvacuationResult! {
+        ≔ current = self.current_location;
 
         // Find fastest path to safety
-        let escape_path = self.find_emergency_exit(current, Citadel)?;
+        ≔ escape_path = self.find_emergency_exit(current, Citadel)?;
 
         // Force navigation, ignoring some hazards
-        for location in escape_path {
+        ∀ location ∈ escape_path {
             self.force_transit(location);
         }
 
         Citadel.lockdown();
-        EvacuationResult::Safe
+        EvacuationResult·Safe
     }
 }
 
@@ -250,25 +250,25 @@ location MemoryVault: Sanctuary {
     ],
 
     /// Store a memory safely
-    fn store(memory: Memory, protection: Protection) -> StorageResult@! {
+    rite store(memory: Memory, protection: Protection) -> StorageResult@! {
         requires memory.processed;
 
-        let crystal = self.crystallize(memory);
-        let location = self.find_slot(crystal.size);
+        ≔ crystal = self.crystallize(memory);
+        ≔ location = self.find_slot(crystal.size);
 
         location.place(crystal, protection);
-        StorageResult::Stored(crystal.id)
+        StorageResult·Stored(crystal.id)
     }
 
     /// Retrieve a stored memory
-    fn retrieve(id: CrystalId) -> Memory@! {
-        let crystal = self.find_crystal(id)?;
-        let permission = council.vote_retrieval(crystal)?;
+    rite retrieve(id: CrystalId) -> Memory@! {
+        ≔ crystal = self.find_crystal(id)?;
+        ≔ permission = council.vote_retrieval(crystal)?;
 
-        if permission.approved {
+        ⎇ permission.approved {
             crystal.thaw()
-        } else {
-            Memory::Denied(permission.reason)
+        } ⎉ {
+            Memory·Denied(permission.reason)
         }
     }
 }
