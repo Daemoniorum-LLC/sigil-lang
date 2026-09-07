@@ -4166,10 +4166,20 @@ impl<'a> Parser<'a> {
         // - For type paths starting with uppercase (HashMap·new), allow · as separator
         // - For variable paths starting with lowercase (tag·to_string), DON'T consume ·
         //   because those are method calls handled by postfix expression parsing
-        let first_segment_is_type = segments
+        // A path root that can never be a value: `tome`/`crate` and `super` are
+        // keywords, so `tome·router·Opts` is unambiguously a path even though the
+        // first segment is lowercase. `self` is deliberately NOT in this list —
+        // `self·field` is a legitimate field access on the receiver, and treating
+        // it as a path root would break method bodies.
+        let first_segment_is_path_keyword = segments
             .first()
-            .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
-            .unwrap_or(false);
+            .is_some_and(|s| matches!(s.ident.name.as_str(), "tome" | "crate" | "super"));
+
+        let first_segment_is_type = first_segment_is_path_keyword
+            || segments
+                .first()
+                .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
+                .unwrap_or(false);
 
         while !self.pending_gt.is_some() {
             // Only allow · as a path separator for type paths (uppercase first letter).
