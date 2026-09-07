@@ -161,7 +161,8 @@ fn to_snake_case(s: &str) -> String {
             result.push(c);
         }
     }
-    result
+    // A prop named `ref` or `type` is a parse error, not a type error.
+    crate::migrate::react::spec::escape_sigil_keyword(&result)
 }
 
 /// Convert snake_case to PascalCase
@@ -312,7 +313,7 @@ impl<'a> ExprTransformer<'a> {
             Lit::Regex(r) => {
                 self.warn("Regex literal");
                 // Regex exp and flags are Atom, need to convert to string
-                format!("/* regex: /{}/{} */", &r.exp, &r.flags)
+                format!("∅ /* regex: /{}/{} — unsupported */", &r.exp, &r.flags)
             }
             Lit::JSXText(t) => {
                 // JSXText value is Atom, convert to string
@@ -364,10 +365,20 @@ impl<'a> ExprTransformer<'a> {
         if bin.op == BinaryOp::LogicalAnd {
             if self.is_non_boolean_value(&bin.right) {
                 let cond_src = self.transform_expr(&bin.left);
-                let cond = Self::boolify(&bin.left, cond_src);
+                let cond = self.boolify(&bin.left, cond_src);
                 let value = self.transform_expr(&bin.right);
                 return format!("⎇ {} {{ {} }} ⎉ {{ \"\" }}", cond, value);
             }
+
+            // Otherwise it is a genuine boolean conjunction — but Sigil's ∧ takes
+            // bools on BOTH sides where JS takes truthiness on both. Boolifying the
+            // conjunction as a whole reached only the last operand, so
+            // `error && !refreshing` left `error` as a raw Option next to ∧.
+            let left = self.transform_expr(&bin.left);
+            let right = self.transform_expr(&bin.right);
+            let left = self.boolify(&bin.left, left);
+            let right = self.boolify(&bin.right, right);
+            return format!("{} ∧ {}", left, right);
         }
 
         // Special case: `condition || defaultValue` (nullish coalescing pattern)
@@ -385,7 +396,7 @@ impl<'a> ExprTransformer<'a> {
         if bin.op == BinaryOp::LogicalOr || bin.op == BinaryOp::NullishCoalescing {
             let left = self.transform_expr(&bin.left);
             let right = self.transform_expr(&bin.right);
-            let guard = Self::boolify(&bin.left, left.clone());
+            let guard = self.boolify(&bin.left, left.clone());
             return format!("⎇ {} {{ {} }} ⎉ {{ {} }}", guard, left, right);
         }
 
@@ -471,7 +482,7 @@ impl<'a> ExprTransformer<'a> {
 
         match unary.op {
             // JS `!x` is truthiness-negation over any value; Sigil's ¬ wants a bool.
-            UnaryOp::Bang => format!("¬{}", Self::boolify(&unary.arg, arg)),
+            UnaryOp::Bang => format!("¬{}", self.boolify(&unary.arg, arg)),
             UnaryOp::Minus => format!("-{}", arg),
             UnaryOp::Plus => arg, // Unary + is a no-op
             UnaryOp::Tilde => format!("~{}", arg),
@@ -492,7 +503,7 @@ impl<'a> ExprTransformer<'a> {
         // A JS ternary test is truthy-evaluated; Sigil's ⎇ wants a real bool. A
         // bare prop (`disabled ? … : …`) would otherwise emit `⎇ disabled` and
         // fail with "if condition must be bool".
-        let test = Self::boolify(&cond.test, test);
+        let test = self.boolify(&cond.test, test);
 
         // Sigil uses ⎇ (U+2387) for if and ⎉ (U+2389) for else
         format!("⎇ {} {{ {} }} ⎉ {{ {} }}", test, cons, alt)
@@ -502,31 +513,46 @@ impl<'a> ExprTransformer<'a> {
     ///
     /// Comparisons, logical operators and `!x` are already boolean; everything
     /// else — identifiers, member accesses, calls — needs `·to_bool()`.
-    fn boolify(test_ast: &Expr, rendered: String) -> String {
+    fn boolify(&self, test_ast: &Expr, rendered: String) -> String {
         let already_bool = match test_ast {
             Expr::Lit(Lit::Bool(_)) => true,
             Expr::Unary(u) => matches!(u.op, UnaryOp::Bang),
-            Expr::Bin(b) => matches!(
-                b.op,
+            Expr::Paren(p) => return self.boolify(&p.expr, rendered),
+            Expr::Bin(b) => match b.op {
                 BinaryOp::EqEq
-                    | BinaryOp::EqEqEq
-                    | BinaryOp::NotEq
-                    | BinaryOp::NotEqEq
-                    | BinaryOp::Lt
-                    | BinaryOp::LtEq
-                    | BinaryOp::Gt
-                    | BinaryOp::GtEq
-                    | BinaryOp::LogicalAnd
-                    | BinaryOp::LogicalOr
-                    | BinaryOp::In
-                    | BinaryOp::InstanceOf
-            ),
+                | BinaryOp::EqEqEq
+                | BinaryOp::NotEq
+                | BinaryOp::NotEqEq
+                | BinaryOp::Lt
+                | BinaryOp::LtEq
+                | BinaryOp::Gt
+                | BinaryOp::GtEq
+                | BinaryOp::In
+                | BinaryOp::InstanceOf => true,
+                // `a && b` renders as `a ∧ b` with both sides boolified, which is a
+                // bool — but only on that path. When the right side is a plain value
+                // it renders as ⎇/⎉ yielding that value instead.
+                BinaryOp::LogicalAnd => !self.is_non_boolean_value(&b.right),
+                // `a || b` and `a ?? b` are fallbacks: they render as ⎇/⎉ and yield
+                // one of the operands. Calling them bool appended ·to_bool() to
+                // nothing, or to the wrong operand.
+                BinaryOp::LogicalOr | BinaryOp::NullishCoalescing => false,
+                _ => false,
+            },
             _ => false,
         };
         if already_bool {
-            rendered
-        } else {
+            return rendered;
+        }
+        // `·to_bool()` binds to the last operand, not the expression. Appending it to
+        // `error ∧ ¬refreshing` produced `error ∧ ¬(refreshing·to_bool())`, leaving
+        // `error` — an Option — as a bare logical operand. Parenthesise anything that
+        // is not a single atom.
+        let atomic = !rendered.contains(' ') && !rendered.starts_with('⎇');
+        if atomic {
             format!("{}·to_bool()", rendered)
+        } else {
+            format!("({})·to_bool()", rendered)
         }
     }
 

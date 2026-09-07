@@ -1176,7 +1176,8 @@ fn to_snake_case(s: &str) -> String {
             result.push(c);
         }
     }
-    result
+    // A prop named `ref` or `type` is a parse error, not a type error.
+    escape_sigil_keyword(&result)
 }
 
 fn to_pascal_case(s: &str) -> String {
@@ -1336,6 +1337,28 @@ fn map_ts_type_to_sigil(ts_type: &str) -> String {
         return "Any".to_string();
     }
 
+    // A generic application — `Record<string, DirState>`, `Readonly<Record<…>>`.
+    // The ARGUMENTS have to be mapped as well. Sigil accepts a lowercase name as a
+    // standalone type but rejects one as a type argument, so a bare `string` parsed
+    // while `Record<string, X>` did not, and the whole file failed on it.
+    if let Some((head, args)) = split_generic(t) {
+        let mapped: Vec<String> = args.iter().map(|a| map_ts_type_to_sigil(a)).collect();
+        return match head {
+            // Erasable TS wrappers with no Sigil counterpart.
+            "Readonly" | "Partial" | "Required" | "NonNullable" if mapped.len() == 1 => {
+                mapped.into_iter().next().unwrap()
+            }
+            "Record" if mapped.len() == 2 => format!("Map<{}>", mapped.join(", ")),
+            "ReadonlyArray" if mapped.len() == 1 => format!("Vec<{}>", mapped[0]),
+            h if !h.is_empty()
+                && h.chars().all(|c| c.is_alphanumeric() || c == '_') =>
+            {
+                format!("{}<{}>", h, mapped.join(", "))
+            }
+            _ => "Any".to_string(),
+        };
+    }
+
     // Custom named types pass through — but only if they are actually spellable in
     // Sigil. Anything still carrying TypeScript syntax (a colon, an arrow, a union
     // bar, a brace or paren, a leftover modifier) would be emitted verbatim into a
@@ -1351,6 +1374,61 @@ fn map_ts_type_to_sigil(ts_type: &str) -> String {
     } else {
         "Any".to_string()
     }
+}
+
+/// Sigil's reserved words, taken from the lexer's `#[token("…")]` set.
+///
+/// React prop names collide with these more often than you would guess — `ref`,
+/// `type`, `on`, `body`, `from`, `to`, `scope`, `location`. A prop named `ref`
+/// emitted `rite new(ref: Any)`, which is a parse error, not a type error.
+const SIGIL_KEYWORDS: &[&str] = &[
+    "actor", "affine", "alter", "amqp", "anima", "as", "asm", "aspect", "async", "atomic",
+    "await", "body", "broadcast", "close", "cocon", "connect", "consensus", "const",
+    "derive", "distribute", "dyn", "each", "extern", "false", "forever", "from", "gather",
+    "gpu", "graphql", "grpc", "header", "headspace", "http", "https", "interfere", "invoke",
+    "kafka", "layer", "legion_field", "linear", "location", "loop", "macro", "macro_rules",
+    "move", "mut", "naked", "nay", "no_grad", "null", "of", "on", "packed", "parallel",
+    "reality", "recv", "ref", "relevant", "retry", "rite", "rune", "saga", "scope",
+    "scroll", "self", "send", "sigil", "simd", "split", "states", "static", "stream", "super",
+    "switch", "this", "timeout", "to", "tome", "trigger", "true", "type", "unsafe", "vary",
+    "volatile", "where", "ws", "wss", "yay", "yea", "yield",
+];
+
+/// Make an identifier safe to emit. Applied inside every `to_snake_case`, so a field
+/// declared `ref_` is also referenced as `ref_` — escaping one and not the other
+/// would be worse than not escaping at all.
+pub fn escape_sigil_keyword(name: &str) -> String {
+    if SIGIL_KEYWORDS.contains(&name) {
+        format!("{}_", name)
+    } else {
+        name.to_string()
+    }
+}
+
+/// Split `Head<A, B>` into ("Head", ["A", "B"]). Returns None when the type is not a
+/// generic application. Commas inside nested arguments do not split.
+fn split_generic(t: &str) -> Option<(&str, Vec<String>)> {
+    let open = t.find('<')?;
+    if !t.ends_with('>') {
+        return None;
+    }
+    let head = t[..open].trim();
+    let inner = &t[open + 1..t.len() - 1];
+    let mut args = Vec::new();
+    let mut depth = 0i32;
+    let mut cur = String::new();
+    for c in inner.chars() {
+        match c {
+            '<' => { depth += 1; cur.push(c); }
+            '>' => { depth -= 1; cur.push(c); }
+            ',' if depth == 0 => { args.push(cur.trim().to_string()); cur.clear(); }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.trim().is_empty() {
+        args.push(cur.trim().to_string());
+    }
+    if args.is_empty() { None } else { Some((head, args)) }
 }
 
 fn derive_message_name(state_name: &str, setter_name: &str) -> String {
@@ -2048,4 +2126,69 @@ pub fn derive_event_message_payload(handler_code: &str) -> Vec<String> {
         return Vec::new();
     }
     args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SIGIL_KEYWORDS is transcribed from the lexer, and transcription drops entries:
+    /// the first version of that list was missing exactly one word — `ref` — which was
+    /// the one React actually uses, so two files still failed to parse after the fix
+    /// that was supposed to handle them. Pin it to the lexer at compile time.
+    #[test]
+    fn keyword_list_matches_the_lexer() {
+        let lexer = include_str!("../../lexer.rs");
+        let mut from_lexer: Vec<&str> = lexer
+            .match_indices("#[token(\"")
+            .filter_map(|(i, _)| {
+                let rest = &lexer[i + 9..];
+                let end = rest.find('"')?;
+                let word = &rest[..end];
+                if rest[end..].starts_with("\")]")
+                    && !word.is_empty()
+                    && word.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                {
+                    Some(word)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        from_lexer.sort_unstable();
+        from_lexer.dedup();
+
+        let missing: Vec<&&str> = from_lexer
+            .iter()
+            .filter(|w| !SIGIL_KEYWORDS.contains(w))
+            .collect();
+        assert!(missing.is_empty(), "keywords in the lexer but not escaped: {:?}", missing);
+    }
+
+    #[test]
+    fn keywords_are_escaped_and_ordinary_names_are_not() {
+        assert_eq!(escape_sigil_keyword("ref"), "ref_");
+        assert_eq!(escape_sigil_keyword("type"), "type_");
+        assert_eq!(escape_sigil_keyword("on_change"), "on_change");
+        assert_eq!(escape_sigil_keyword("reference"), "reference");
+    }
+
+    /// Sigil accepts a lowercase name as a standalone type but rejects one as a type
+    /// ARGUMENT, so mapping only the outer name left `Record<string, X>` unparseable.
+    #[test]
+    fn generic_arguments_are_mapped_too() {
+        assert_eq!(map_ts_type_to_sigil("Record<string, DirState>"), "Map<String, DirState>");
+        assert_eq!(map_ts_type_to_sigil("Readonly<Record<string, P>>"), "Map<String, P>");
+        assert_eq!(map_ts_type_to_sigil("Array<number>"), "Vec<f64>");
+        assert_eq!(map_ts_type_to_sigil("Option<string>"), "Option<String>");
+    }
+
+    #[test]
+    fn payload_rejects_what_the_dispatch_site_cannot_reproduce() {
+        // The dispatch site is a node builder, not a closure: `e` is not in scope.
+        assert!(derive_event_message_payload("e => onPick(e.target.value)").is_empty());
+        assert!(derive_event_message_payload("() => onSave(build())").is_empty());
+        assert_eq!(derive_event_message_payload("() => onExpand(slot.id)"), vec!["slot.id"]);
+        assert_eq!(derive_event_message_payload("() => onView(\"active\")"), vec!["\"active\""]);
+    }
 }

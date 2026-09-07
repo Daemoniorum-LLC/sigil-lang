@@ -406,11 +406,19 @@ impl<'a> QliphothGenerator<'a> {
                 let mut inner_scope = scope.clone();
                 inner_scope.locals.push(item_name.clone());
                 let body_code = self.generate_vnode(body, indent + 1, &inner_scope);
+                // The comment carries the raw JS iterable, and a Sigil comment ends at
+                // the newline — so a multi-line one (`epicOptions\n.filter(e => …)`)
+                // spilled its tail out as code. Collapse and cap it.
+                let mut iter_src: String =
+                    iterable.split_whitespace().collect::<Vec<_>>().join(" ");
+                if iter_src.chars().count() > 80 {
+                    iter_src = iter_src.chars().take(77).collect::<String>() + "...";
+                }
                 format!(
                     "{pad}// Map: ∀ {item} ∈ {iter}\n{pad}·children({iter_expr}.iter().map(|{item}| {body}).collect())",
                     pad = pad,
                     item = item_name,
-                    iter = iterable,
+                    iter = iter_src,
                     iter_expr = iter_expr,
                     body = body_code.trim()
                 )
@@ -894,7 +902,8 @@ fn to_snake_case(s: &str) -> String {
             result.push(c);
         }
     }
-    result
+    // A prop named `ref` or `type` is a parse error, not a type error.
+    crate::migrate::react::spec::escape_sigil_keyword(&result)
 }
 
 fn to_pascal_case(s: &str) -> String {
