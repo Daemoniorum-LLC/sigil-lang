@@ -11520,16 +11520,20 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
     });
 
-    // num_cpus functions (native-only: requires num_cpus crate)
+    // CPU counts live under Sys·, with the rest of the process and machine facts
+    // (Sys·getpid, Sys·getenv, ...). They used to be reachable only as `num_cpus·get`
+    // — a Rust crate name, and one no Sigil program could actually call: a lowercase
+    // path root does not resolve, so every `num_cpus·`, `std·`, `env·`, `fs·`,
+    // `slice·` and `parking_lot·` binding in this file was dead on arrival.
     #[cfg(feature = "native")]
     {
-        // num_cpus::get - get number of available CPUs
-        define(interp, "num_cpus·get", Some(0), |_, _| {
+        // Sys·num_cpus - logical CPUs available to this process
+        define(interp, "Sys·num_cpus", Some(0), |_, _| {
             Ok(Value::Int(num_cpus::get() as i64))
         });
 
-        // num_cpus::get_physical - get number of physical CPU cores
-        define(interp, "num_cpus·get_physical", Some(0), |_, _| {
+        // Sys·num_cpus_physical - physical cores
+        define(interp, "Sys·num_cpus_physical", Some(0), |_, _| {
             Ok(Value::Int(num_cpus::get_physical() as i64))
         });
     }

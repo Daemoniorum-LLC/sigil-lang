@@ -1,18 +1,18 @@
-// Stdlib Tests: num_cpus
-// CPU count functions with REAL assertions
+// Stdlib Tests: CPU counts
+// Sigil spells these Sys·num_cpus and Sys·num_cpus_physical, alongside the rest of
+// the machine facts under Sys·. The former `num_cpus·get` was a Rust crate name and
+// was unreachable — a lowercase path root does not resolve.
 
 rite main() {
-    println("=== Testing num_cpus ===");
+    println("=== Testing Sys·num_cpus ===");
 
-    // num_cpus·get - returns logical CPU count
-    ≔ cpus = num_cpus·get();
+    ≔ cpus = Sys·num_cpus();
     assert_true(cpus >= 1);
     assert_eq(type_of(cpus), "int");
 
-    // num_cpus·get_physical - returns physical CPU count
-    ≔ phys = num_cpus·get_physical();
+    ≔ phys = Sys·num_cpus_physical();
     assert_true(phys >= 1);
-    assert_true(phys <= cpus);  // Physical <= logical
+    assert_true(phys <= cpus);  // physical <= logical
 
     println("ALL NUM_CPUS TESTS PASSED!");
 }
