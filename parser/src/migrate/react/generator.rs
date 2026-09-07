@@ -121,7 +121,10 @@ impl<'a> QliphothGenerator<'a> {
 
         for msg in &self.spec.recommendations.messages {
             if let Some(payload) = &msg.payload {
-                variants.push(format!("    {} {},", msg.name, payload));
+                // Tuple payloads bind tight: `Expand(Any)`, not `Expand (Any)`.
+                // Struct payloads keep the separating space: `Expand { id: Any }`.
+                let sep = if payload.starts_with('(') { "" } else { " " };
+                variants.push(format!("    {}{}{},", msg.name, sep, payload));
             } else {
                 variants.push(format!("    {},", msg.name));
             }
@@ -756,7 +759,42 @@ impl<'a> QliphothGenerator<'a> {
                     _ => "",
                 };
                 let msg_name = crate::migrate::react::spec::derive_event_message_name(code, name);
-                format!("·on_{}({})", event_name.to_lowercase(), msg_name)
+
+                // Arity is dictated by the DECLARATION, never by this call site.
+                // The same message name can be reached from several handlers, and
+                // the enum only carries the first one's shape; deriving the
+                // dispatch arity locally would emit `Expand(x)` against a bare
+                // `Expand` variant. Missing arguments become ∅, extras are dropped.
+                let declared_arity = self
+                    .spec
+                    .recommendations
+                    .messages
+                    .iter()
+                    .find(|m| m.name == msg_name)
+                    .and_then(|m| m.payload.as_ref())
+                    .filter(|p| p.starts_with('('))
+                    .map(|p| p.trim_start_matches('(').trim_end_matches(')').split(',').count())
+                    .unwrap_or(0);
+
+                if declared_arity == 0 {
+                    format!("·on_{}({})", event_name.to_lowercase(), msg_name)
+                } else {
+                    let raw = crate::migrate::react::spec::derive_event_message_payload(code);
+                    let mut args: Vec<String> = raw
+                        .iter()
+                        .take(declared_arity)
+                        .map(|a| self.transform_expression_scoped(a, scope))
+                        .collect();
+                    while args.len() < declared_arity {
+                        args.push("∅".to_string());
+                    }
+                    format!(
+                        "·on_{}({}({}))",
+                        event_name.to_lowercase(),
+                        msg_name,
+                        args.join(", ")
+                    )
+                }
             }
             "disabled" | "checked" | "selected" | "readonly" => {
                 // Boolean attributes

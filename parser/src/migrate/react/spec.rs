@@ -612,10 +612,22 @@ impl<'a> SpecGenerator<'a> {
             if messages.iter().any(|m| m.name == msg_name) {
                 continue;
             }
+            // Carry the handler's arguments through as a tuple payload, so
+            // `onExpand(slot.id)` declares `Expand(Any)` rather than throwing the
+            // id away and leaving the actor unable to tell which row was clicked.
+            let args = derive_event_message_payload(&code);
+            let payload = if args.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "({})",
+                    vec!["Any"; args.len()].join(", ")
+                ))
+            };
             messages.push(MessageRecommendation {
                 name: msg_name,
                 from_handler: code,
-                payload: None,
+                payload,
                 state_changes: vec![],
                 side_effects: vec![],
                 service_calls: vec![],
@@ -1813,4 +1825,190 @@ pub fn collect_jsx_event_messages(jsx: &JsxTree) -> Vec<(String, String)> {
         walk(root, &mut out);
     }
     out
+}
+
+/// The parameter names bound by a handler's arrow function, if it is one.
+///
+/// `(e: React.MouseEvent) => onPick(e.target.value)` binds `e`. Anything rooted
+/// at one of these names cannot become a message payload: the dispatch site in
+/// the generated Sigil is the node builder, not a closure, so the event object
+/// is simply not in scope there.
+fn arrow_param_names(handler_code: &str) -> Vec<String> {
+    let head = match handler_code.find("=>") {
+        Some(i) => handler_code[..i].trim(),
+        None => return Vec::new(),
+    };
+    let head = head
+        .trim()
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .trim();
+    head.split(',')
+        .filter_map(|p| {
+            let ident: String = p
+                .trim()
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+                .collect();
+            if ident.is_empty() { None } else { Some(ident) }
+        })
+        .collect()
+}
+
+/// Locate the first `ident(` in `body`, returning the name and the byte offset
+/// of its opening paren.
+fn find_invocation(body: &str) -> Option<(String, usize)> {
+    let mut ident = String::new();
+    let mut start = 0usize;
+    for (i, c) in body.char_indices() {
+        if c.is_alphanumeric() || c == '_' || c == '$' {
+            if ident.is_empty() {
+                start = i;
+            }
+            ident.push(c);
+        } else {
+            if c == '(' && !ident.is_empty() {
+                let _ = start;
+                return Some((ident, i));
+            }
+            ident.clear();
+        }
+    }
+    None
+}
+
+/// Split the balanced argument list beginning at `open` (the index of `(`) into
+/// its top-level comma-separated pieces.
+fn split_call_args(body: &str, open: usize) -> Option<Vec<String>> {
+    let mut depth = 0i32;
+    let mut args: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for (i, c) in body.char_indices() {
+        if i < open {
+            continue;
+        }
+        if let Some(q) = quote {
+            cur.push(c);
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' | '`' => {
+                quote = Some(c);
+                cur.push(c);
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                if depth > 1 {
+                    cur.push(c);
+                }
+            }
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    if !cur.trim().is_empty() {
+                        args.push(cur.trim().to_string());
+                    }
+                    return Some(args);
+                }
+                cur.push(c);
+            }
+            ',' if depth == 1 => {
+                args.push(cur.trim().to_string());
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+    }
+    None
+}
+
+/// Whether an argument expression can be carried verbatim into a message payload.
+///
+/// Conservative on purpose. A payload is emitted at the node-builder dispatch
+/// site, so it may only reference bindings that are live there — a `map` item,
+/// a prop, a signal — and must survive `transform_expression` unchanged in
+/// shape. Calls, object/array literals, ternaries and arithmetic are all
+/// rejected rather than mistranslated.
+fn is_payloadable_arg(arg: &str, params: &[String]) -> bool {
+    let a = arg.trim();
+    if a.is_empty() || a.len() > 60 {
+        return false;
+    }
+    if a.chars().any(|c| {
+        matches!(
+            c,
+            '(' | ')' | '{' | '}' | '=' | '>' | '<' | '?' | ':' | '+' | '*' | '/' | '&' | '|'
+                | '!' | '%' | '^' | '~' | ';'
+        )
+    }) {
+        return false;
+    }
+    // String and numeric literals pass straight through.
+    let first = a.chars().next().unwrap();
+    if first == '"' || first == '\'' || first.is_ascii_digit() || first == '-' {
+        return !a.contains('`');
+    }
+    if !(first.is_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    let root: String = a
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+        .collect();
+    if params.iter().any(|p| *p == root) {
+        return false;
+    }
+    // `this`/`window`/`document` have no Sigil equivalent at the dispatch site.
+    !matches!(root.as_str(), "this" | "window" | "document" | "globalThis")
+}
+
+/// The payload arguments implied by an inline event handler.
+///
+/// `() => onExpand(slot.id)` yields `["slot.id"]`, so the message can be
+/// declared `Expand(Any)` and dispatched as `Expand(slot·id)` instead of losing
+/// the one piece of information the handler was carrying. Returns an empty
+/// vector when the handler takes no arguments, or when any of them is not
+/// safely reproducible at the dispatch site.
+pub fn derive_event_message_payload(handler_code: &str) -> Vec<String> {
+    let body = match handler_code.find("=>") {
+        Some(i) => &handler_code[i + 2..],
+        None => handler_code,
+    }
+    .trim();
+
+    let params = arrow_param_names(handler_code);
+
+    let (name, open) = match find_invocation(body) {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+
+    // Skip the event plumbing, the same way the message name does, so payload
+    // and name are always read off the same call.
+    let (_, open) = if matches!(
+        name.as_str(),
+        "preventDefault" | "stopPropagation" | "stopImmediatePropagation"
+    ) {
+        match body.find(");").and_then(|i| {
+            find_invocation(&body[i + 1..]).map(|(n, o)| (n, o + i + 1))
+        }) {
+            Some(v) => v,
+            None => return Vec::new(),
+        }
+    } else {
+        (name, open)
+    };
+
+    let args = match split_call_args(body, open) {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    if args.is_empty() || !args.iter().all(|a| is_payloadable_arg(a, &params)) {
+        return Vec::new();
+    }
+    args
 }
