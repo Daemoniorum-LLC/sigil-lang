@@ -2701,8 +2701,20 @@ impl TypeChecker {
                     }
                 };
 
-                // Propagate evidence from receiver
-                if recv_ev > EvidenceLevel::Known {
+                // Propagate evidence from receiver — except where the method's whole
+                // purpose is to discharge the uncertainty.
+                //
+                // `unwrap`, `expect` and the `unwrap_or*` family exist precisely to turn
+                // a maybe-value into a definite one: after `opt·unwrap_or(0)` the result
+                // is 0 or the contained value, and there is nothing uncertain left to
+                // report. Propagating the receiver's evidence through them made
+                // `-> usize!` unsatisfiable from any Option, which is what blocked
+                // qliphoth-sys/storage and qliphoth-router/params.
+                let discharges_evidence = matches!(
+                    method.name.as_str(),
+                    "unwrap" | "expect" | "unwrap_or" | "unwrap_or_else" | "unwrap_or_default"
+                );
+                if recv_ev > EvidenceLevel::Known && !discharges_evidence {
                     Type::Evidential {
                         inner: Box::new(result_ty),
                         evidence: recv_ev,
