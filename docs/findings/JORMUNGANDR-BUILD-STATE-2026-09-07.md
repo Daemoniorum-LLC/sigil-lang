@@ -276,20 +276,54 @@ types in doc comments and the generic bound `F: λ(T) -> U`. jormungandr's own l
 `fn` but not `rite`, so `rite` was added there too; otherwise it could not lex its own
 migrated source.
 
-**Result: 13/28 → 18/28 checking clean.**
+**Result: 13/28 → 22/28 checking clean** (18 after the λ pass, 22 after the four fixes below).
 
-### The remaining 10 are not one more cheap fix
+### Four more causes, all resolved
 
-| Kind | Files |
+**`aspect` is a reserved word.** Canonical Sigil lexes it as `Token::Trait` — the prose
+alternative for `trait`, alongside `Θ`. jormungandr used it as a struct field and a local
+binding, producing the opaque *"expected identifier, found Trait"*. Renamed to
+`aspect_kind` (3 sites; the field is never read elsewhere). `lexer_util.sg`'s
+`☉ aspect CharExt` genuinely uses it as the keyword and was left alone.
+
+**Identifier-level corruption — a third class**, beyond the string-literal and comment
+damage in §3. The migration renamed parts of identifiers but not their uses:
+
+| corrupted binding | intended | evidence |
+|---|---|---|
+| `≔ expected_⤺` | `expected_return` | used as `expected_return` 2 lines later |
+| `≔ ir_⎉` | `ir_else` | used as `ir_else` 7 lines later |
+| `λ test_type_mis⌥` | `test_type_mismatch` | matches the message text |
+
+The surviving use sites gave the correct names, so nothing was guessed. Note the code
+referenced names that no longer existed — it would have failed even if it parsed.
+
+**Function types spell `Fn(T) -> U`,** not `λ(T) -> U`. `span.sg` held the only such bound.
+
+**`wasm_bridge.sg` used Rust `use crate::a::B;`** imports; converted to `invoke tome·a·B;`.
+The 9 remaining `invoke crate·` Rustisms were normalised to `tome·` (58 sites already used
+it, and `crate` is not a Sigil token).
+
+### What is left
+
+| File | Error |
 |---|---|
-| Evidence / type mismatches (need semantic judgment) | `interp_eval`, `lexer`, `lexer_string`, `runtime` |
-| `Trait` used as an identifier / pattern | `ast`, `parser` |
-| `use` in item position | `wasm_bridge` |
-| `Eq` where `LBrace` expected | `lower`, `typeck` |
-| Generics followed by `LParen` | `span` |
+| `interp_eval`, `lexer`, `lexer_string`, `parser`, `runtime` | **E0003** evidence/type mismatches |
+| `wasm_bridge` | still substantially un-migrated Rust (`pub`, `fn`, `let`, `match`) |
 
-Each needs its own investigation. Some may be further dialect drift like the `λ` case;
-others (the E0003s) may be genuine type errors in jormungandr.
+Every remaining failure except `wasm_bridge` is now **semantic rather than syntactic** —
+they need type-system judgment, not mechanical fixes. `wasm_bridge` is a WASM entry point,
+not part of the compiler bootstrap, so it is off the critical path.
+
+### A warning about `sigil migrate`
+
+The repo ships `sigil migrate <file>` — "Convert Rust syntax to native Sigil". **It is
+almost certainly what caused the corruption these commits have been cleaning up.** Run on a
+copy of `wasm_bridge.sg` it reproduces exactly the kind of keyword rewriting that damaged
+`codegen.sg`'s C templates, `typeck.sg`'s diagnostics, and the identifiers above.
+
+It should not be run again until it is taught to leave string literals, comments and
+identifier interiors alone.
 
 ### Order of work from here
 
