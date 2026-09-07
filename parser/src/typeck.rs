@@ -4012,6 +4012,15 @@ impl TypeChecker {
             // Cycles
             (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
 
+            // Lifetimes. There is no borrow checker here and no lifetime inference, so a
+            // lifetime bound carries nothing this pass can check — but it still has to
+            // unify, because it travels inside `impl Trait` bounds. With no arm at all
+            // it fell through to the catch-all and `'static` failed to unify with
+            // itself, which reported `impl Fn<(), I64> + 'static!` as mismatched against
+            // a character-for-character identical type. `impl Fn() -> T` alone was fine;
+            // adding `+ 'static` broke it.
+            (Type::Lifetime(_), Type::Lifetime(_)) => true,
+
             // ImplTrait: impl Trait bounds
             // Two impl Trait types unify if their bounds match
             (Type::ImplTrait(bounds_a), Type::ImplTrait(bounds_b)) => {

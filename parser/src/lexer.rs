@@ -161,13 +161,18 @@ fn block_comment_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
 }
 
 fn raw_string_delimited_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
-    let remainder = lex.remainder();
+    // The opening delimiter fixes how many hashes close the literal: r#"…"#,
+    // r##"…"##, and so on. Only one hash used to be supported, so any content
+    // containing the sequence `"#` ended the literal early — a Sigil sample
+    // containing `App·mount("#preview-target", …)` closed at the `"#` inside its
+    // own argument, and the rest of the file was parsed as code.
+    let hashes = lex.slice().matches('#').count();
+    let close: String = std::iter::once('"').chain(std::iter::repeat('#').take(hashes)).collect();
 
-    // Find the closing "#
-    if let Some(end_pos) = remainder.find("\"#") {
+    let remainder = lex.remainder();
+    if let Some(end_pos) = remainder.find(&close) {
         let content = &remainder[..end_pos];
-        // Bump past content and closing "# (2 chars)
-        lex.bump(end_pos + 2);
+        lex.bump(end_pos + close.len());
         Some(content.to_string())
     } else {
         None
@@ -1150,8 +1155,9 @@ pub enum Token {
     })]
     RawStringLit(String),
 
-    // Raw string with delimiter (r#"..."# style) - handles internal quotes
-    #[token(r##"r#""##, raw_string_delimited_callback)]
+    // Raw string with delimiter (r#"..."#, r##"..."##, ... ) - handles internal
+    // quotes, and internal `"#` sequences when more hashes are used.
+    #[regex(r###"r#+""###, raw_string_delimited_callback)]
     RawStringDelimited(String),
 
     // === Lifetime/Label (for loop labels like 'outer: loop { break 'outer }) ===
