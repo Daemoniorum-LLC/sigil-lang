@@ -570,7 +570,7 @@ invoke tome·token·Token;
             '0' => '\0',
             'x' => self.lex_hex_escape(2),
             'u' => self.lex_unicode_escape(),
-            c => c?, // Unknown escape, ⤺ as-is
+            c => c, // Unknown escape, return as-is
         }
     }
 

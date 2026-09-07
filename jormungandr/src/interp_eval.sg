@@ -162,7 +162,7 @@ invoke tome·interp·Interpreter;
                     },
                     Value·Tuple(elements) => {
                         // Tuple field access like .0, .1
-                        ≔ idx: ?u64 = field.parse().ok();
+                        ≔ idx: Option<u64> = field.parse().ok();
                         ⌥ idx {
                             ?i ⎇ i < elements.len() => Result·Ok(EvidentialValue {
                                 value: elements[i].clone(),
