@@ -3164,6 +3164,31 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // Attributes on an extern item. `#[wasm_bindgen(method)]` and friends are
+            // how every js-ABI binding in the ecosystem is written, and this loop only
+            // skipped comments — so an attribute inside an extern block was a parse
+            // error, while the same attribute on an item, in an impl, on a struct
+            // field or inside a scroll all parsed fine.
+            while self.check(&Token::Hash)
+                || self.check(&Token::At)
+                || matches!(self.current_token(), Some(Token::RuneAnnotation(_)))
+            {
+                if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    let _ = self.parse_rune_annotation()?;
+                } else {
+                    let _ = self.parse_outer_attribute()?;
+                }
+                while matches!(
+                    self.current_token(),
+                    Some(Token::LineComment(_)) | Some(Token::BlockComment(_))
+                ) {
+                    self.advance();
+                }
+            }
+            if self.check(&Token::RBrace) || self.is_eof() {
+                break;
+            }
+
             let visibility = self.parse_visibility()?;
 
             match self.current_token() {
@@ -3233,6 +3258,31 @@ impl<'a> Parser<'a> {
             // Skip comments inside extern blocks
             while matches!(self.current_token(), Some(Token::LineComment(_)) | Some(Token::BlockComment(_))) {
                 self.advance();
+            }
+            if self.check(&Token::RBrace) || self.is_eof() {
+                break;
+            }
+
+            // Attributes on an extern item. `#[wasm_bindgen(method)]` and friends are
+            // how every js-ABI binding in the ecosystem is written, and this loop only
+            // skipped comments — so an attribute inside an extern block was a parse
+            // error, while the same attribute on an item, in an impl, on a struct
+            // field or inside a scroll all parsed fine.
+            while self.check(&Token::Hash)
+                || self.check(&Token::At)
+                || matches!(self.current_token(), Some(Token::RuneAnnotation(_)))
+            {
+                if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    let _ = self.parse_rune_annotation()?;
+                } else {
+                    let _ = self.parse_outer_attribute()?;
+                }
+                while matches!(
+                    self.current_token(),
+                    Some(Token::LineComment(_)) | Some(Token::BlockComment(_))
+                ) {
+                    self.advance();
+                }
             }
             if self.check(&Token::RBrace) || self.is_eof() {
                 break;
