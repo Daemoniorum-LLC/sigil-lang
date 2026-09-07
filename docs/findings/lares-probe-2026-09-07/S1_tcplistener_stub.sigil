@@ -1,0 +1,6 @@
+rite main() {
+    ≔ listener = TcpListener·bind("127.0.0.1:18100");
+    println("listening");
+    ≔ conn = TcpListener·accept(listener);
+    println("accepted");
+}

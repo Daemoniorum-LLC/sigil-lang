@@ -1,0 +1,7 @@
+rite main() {
+    println("before_open");
+    ≔ pty = Pty·open();
+    println("after_open");
+    println(pty.master_fd);
+    println(pty.slave_fd);
+}
