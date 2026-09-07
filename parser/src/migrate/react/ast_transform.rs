@@ -363,7 +363,8 @@ impl<'a> ExprTransformer<'a> {
         // This should become `⎇ condition { "string" } ⎉ { "" }`
         if bin.op == BinaryOp::LogicalAnd {
             if self.is_non_boolean_value(&bin.right) {
-                let cond = self.transform_expr(&bin.left);
+                let cond_src = self.transform_expr(&bin.left);
+                let cond = Self::boolify(&bin.left, cond_src);
                 let value = self.transform_expr(&bin.right);
                 return format!("⎇ {} {{ {} }} ⎉ {{ \"\" }}", cond, value);
             }
@@ -371,13 +372,21 @@ impl<'a> ExprTransformer<'a> {
 
         // Special case: `condition || defaultValue` (nullish coalescing pattern)
         // Keep as-is if both sides are same type, otherwise use ⎇/⎉
+        // JS `a || b` and `a ?? b` are fallbacks, not boolean ors, and `∨` requires
+        // bools in Sigil. Emit the conditional they actually mean.
+        //
+        // This is deliberately unconditional rather than gated on
+        // is_non_boolean_value: that heuristic returns false for identifiers, member
+        // accesses and index expressions — the very things `||` falls back on in JSX —
+        // so gating on it let most real cases through as a bare `∨`.
+        //
+        // `a` is evaluated twice. For the property accesses that dominate JSX that is
+        // fine; a side-effecting left operand would run twice.
         if bin.op == BinaryOp::LogicalOr || bin.op == BinaryOp::NullishCoalescing {
-            if self.is_non_boolean_value(&bin.right) && self.is_non_boolean_value(&bin.left) {
-                // Both are values, use ∨ for "or" / fallback
-                let left = self.transform_expr(&bin.left);
-                let right = self.transform_expr(&bin.right);
-                return format!("{} ∨ {}", left, right);
-            }
+            let left = self.transform_expr(&bin.left);
+            let right = self.transform_expr(&bin.right);
+            let guard = Self::boolify(&bin.left, left.clone());
+            return format!("⎇ {} {{ {} }} ⎉ {{ {} }}", guard, left, right);
         }
 
         let left = self.transform_expr(&bin.left);
@@ -479,8 +488,45 @@ impl<'a> ExprTransformer<'a> {
         let cons = self.transform_expr(&cond.cons);
         let alt = self.transform_expr(&cond.alt);
 
+        // A JS ternary test is truthy-evaluated; Sigil's ⎇ wants a real bool. A
+        // bare prop (`disabled ? … : …`) would otherwise emit `⎇ disabled` and
+        // fail with "if condition must be bool".
+        let test = Self::boolify(&cond.test, test);
+
         // Sigil uses ⎇ (U+2387) for if and ⎉ (U+2389) for else
         format!("⎇ {} {{ {} }} ⎉ {{ {} }}", test, cons, alt)
+    }
+
+    /// Coerce a JS truthiness test into a Sigil bool, unless it already is one.
+    ///
+    /// Comparisons, logical operators and `!x` are already boolean; everything
+    /// else — identifiers, member accesses, calls — needs `·to_bool()`.
+    fn boolify(test_ast: &Expr, rendered: String) -> String {
+        let already_bool = match test_ast {
+            Expr::Lit(Lit::Bool(_)) => true,
+            Expr::Unary(u) => matches!(u.op, UnaryOp::Bang),
+            Expr::Bin(b) => matches!(
+                b.op,
+                BinaryOp::EqEq
+                    | BinaryOp::EqEqEq
+                    | BinaryOp::NotEq
+                    | BinaryOp::NotEqEq
+                    | BinaryOp::Lt
+                    | BinaryOp::LtEq
+                    | BinaryOp::Gt
+                    | BinaryOp::GtEq
+                    | BinaryOp::LogicalAnd
+                    | BinaryOp::LogicalOr
+                    | BinaryOp::In
+                    | BinaryOp::InstanceOf
+            ),
+            _ => false,
+        };
+        if already_bool {
+            rendered
+        } else {
+            format!("{}·to_bool()", rendered)
+        }
     }
 
     fn transform_member(&mut self, member: &MemberExpr) -> String {

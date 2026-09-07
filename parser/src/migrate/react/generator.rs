@@ -200,7 +200,7 @@ impl<'a> QliphothGenerator<'a> {
         let props = &self.spec.recommendations.props_handling;
 
         let params: Vec<String> = props.fields.iter()
-            .map(|f| format!("{}: {}", f.name, f.field_type))
+            .map(|f| format!("{}: {}", f.name, normalize_prop_type(&f.field_type)))
             .collect();
 
         let assignments: Vec<String> = props.fields.iter()
@@ -310,7 +310,7 @@ impl<'a> QliphothGenerator<'a> {
                         let name = &f.name[3..]; // Remove "..." prefix
                         format!("{}: Vec<Any>", name)
                     } else {
-                        format!("{}: {}", f.name, f.field_type)
+                        format!("{}: {}", f.name, normalize_prop_type(&f.field_type))
                     }
                 })
                 .collect::<Vec<_>>()
@@ -1249,4 +1249,29 @@ fn camel_to_snake(s: &str) -> String {
     }
 
     result
+}
+
+/// Normalise an extracted prop type into something that can appear in a Sigil
+/// signature.
+///
+/// Extraction usually yields `Any`, but an inline TypeScript object type comes
+/// through raw with its leading colon still attached, e.g.
+/// `": { label: string, up: boolean | null }"`. Emitting that produced
+/// `props: : { ... }` — a double colon followed by TypeScript — which failed to
+/// parse. Anything that is not a plain Sigil type name degrades to `Any`, which
+/// is already what the generator uses for the overwhelming majority of props
+/// (324 of 328 across the Lares UI).
+fn normalize_prop_type(raw: &str) -> String {
+    let t = raw.trim().trim_start_matches(':').trim();
+    if t.is_empty() {
+        return "Any".to_string();
+    }
+    let simple = t
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '<' | '>' | ',' | ' ' | '[' | ']'));
+    if simple {
+        t.to_string()
+    } else {
+        "Any".to_string()
+    }
 }
