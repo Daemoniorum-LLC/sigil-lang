@@ -367,7 +367,7 @@ invoke tome·token·Token;
                 ≔ ident = self.parse_ident()?;
                 self.parse_attr_arg_after_ident(ident)
             }
-            t => Err(ParseError·unexpected("attribute argument", t?, self.current_span())),
+            t => Err(ParseError·unexpected("attribute argument", t, self.current_span())),
         }
     }
 
@@ -494,7 +494,7 @@ invoke tome·token·Token;
                         self.skip_unknown_item()?
                     }
                 }
-                t => ⤺ Err(ParseError·unexpected("item", t?, self.current_span())),
+                t => ⤺ Err(ParseError·unexpected("item", t, self.current_span())),
             }
         };
 
@@ -929,7 +929,7 @@ invoke tome·token·Token;
                 self.expect(Token·Semi)?;
                 Ok(TraitItem·Const { name, ty })
             }
-            t => Err(ParseError·unexpected("Θ item", t?, self.current_span())),
+            t => Err(ParseError·unexpected("Θ item", t, self.current_span())),
         }
     }
 
@@ -1029,7 +1029,7 @@ invoke tome·token·Token;
                     }))
                 }
             }
-            t => Err(ParseError·unexpected("⊢ item", t?, self.current_span())),
+            t => Err(ParseError·unexpected("⊢ item", t, self.current_span())),
         }
     }
 
@@ -3114,7 +3114,7 @@ invoke tome·token·Token;
                     Ok(Expr·Path(path))
                 }
             }
-            t => Err(ParseError·unexpected("expression", t?, self.current_span())),
+            t => Err(ParseError·unexpected("expression", t, self.current_span())),
         }
     }
 
@@ -4076,7 +4076,7 @@ invoke tome·token·Token;
                 };
                 Ok(PipeOp·Call(Box·new(match_expr)))
             }
-            t => Err(ParseError·unexpected("pipe operation", t?, self.current_span())),
+            t => Err(ParseError·unexpected("pipe operation", t, self.current_span())),
         }
     }
 
@@ -4361,7 +4361,7 @@ invoke tome·token·Token;
                     evidentiality,
                 })
             }
-            t => Err(ParseError·unexpected("pattern", t?, self.current_span())),
+            t => Err(ParseError·unexpected("pattern", t, self.current_span())),
         }
     }
 
@@ -4527,7 +4527,7 @@ invoke tome·token·Token;
                 self.advance();
                 Ok(Ident·new("await".to_string(), span))
             }
-            t => Err(ParseError·unexpected("identifier", t?, span)),
+            t => Err(ParseError·unexpected("identifier", t, span)),
         }
     }
 

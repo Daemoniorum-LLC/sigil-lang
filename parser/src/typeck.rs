@@ -1080,11 +1080,40 @@ impl TypeChecker {
 
     /// Check if actual evidence can satisfy expected evidence requirement.
     /// Returns Ok(()) if compatible, Err with helpful message if not.
+    /// Best-effort source span for an expression, used to anchor diagnostics.
+    ///
+    /// `Expr` carries no uniform span, so this walks to the nearest identifier.
+    /// Returning `None` is safe: the caller then falls back to the enclosing
+    /// item's span, which is the previous behaviour.
+    fn expr_span(expr: &Expr) -> Option<Span> {
+        match expr {
+            Expr::Path(p) => p.segments.first().map(|s| s.ident.span),
+            Expr::Field { field, .. } => Some(field.span),
+            Expr::MethodCall { method, .. } => Some(method.span),
+            Expr::Struct { path, .. } => path.segments.first().map(|s| s.ident.span),
+            Expr::Call { func, .. } => Self::expr_span(func),
+            Expr::Unary { expr, .. } => Self::expr_span(expr),
+            Expr::Index { expr, .. } => Self::expr_span(expr),
+            Expr::Binary { left, .. } => Self::expr_span(left),
+            // Wrappers: recurse to the expression that actually names something.
+            // Evidential is the common one for this diagnostic — an argument
+            // written `x?` or `x~` arrives wrapped here.
+            Expr::Evidential { expr, .. } => Self::expr_span(expr),
+            Expr::Try(expr) => Self::expr_span(expr),
+            Expr::Await { expr, .. } => Self::expr_span(expr),
+            Expr::Morpheme { body, .. } => Self::expr_span(body),
+            Expr::Pipe { expr, .. } => Self::expr_span(expr),
+            Expr::Macro { path, .. } => path.segments.first().map(|s| s.ident.span),
+            _ => None,
+        }
+    }
+
     fn check_evidence(
         &mut self,
         expected: EvidenceLevel,
         actual: EvidenceLevel,
         context: &str,
+        span: Option<Span>,
     ) -> bool {
         if actual.satisfies(expected) {
             true
@@ -1097,6 +1126,11 @@ impl TypeChecker {
                 actual.name(),
                 actual.symbol(),
             ));
+            // Without this the error falls back to the enclosing item's span, which
+            // for a method inside a large impl block points at the whole block.
+            if let Some(sp) = span {
+                err = err.with_span(sp);
+            }
 
             // Add helpful notes based on the specific mismatch
             match (expected, actual) {
@@ -1539,6 +1573,7 @@ impl TypeChecker {
                         expected_evidence,
                         actual_evidence,
                         &format!("in return type of '{}'", func.name.name),
+                        None,
                     );
                 }
                 // If name has evidentiality, skip the check - function transforms evidence
@@ -1942,7 +1977,12 @@ impl TypeChecker {
                     }
 
                     // Check argument types and evidence levels
-                    for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
+                    for (i, ((param, arg), arg_expr)) in params
+                        .iter()
+                        .zip(arg_types.iter())
+                        .zip(args.iter())
+                        .enumerate()
+                    {
                         // Check argument type matches parameter type
                         if !self.unify(param, arg) {
                             // Allow implicit numeric coercion: int → float
@@ -1955,10 +1995,14 @@ impl TypeChecker {
                             if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_))
                                 && !is_numeric_coercion && !is_reference_coercion
                                 && !is_ref_value_coercion {
-                                self.error(TypeError::new(format!(
+                                let mut e = TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
                                     i + 1, param, arg
-                                )));
+                                ));
+                                if let Some(sp) = Self::expr_span(arg_expr) {
+                                    e = e.with_span(sp);
+                                }
+                                self.error(e);
                             }
                         }
 
@@ -1973,6 +2017,7 @@ impl TypeChecker {
                                 expected_evidence,
                                 actual_evidence,
                                 &format!("in argument {}", i + 1),
+                                Self::expr_span(arg_expr),
                             );
                         }
                     }
