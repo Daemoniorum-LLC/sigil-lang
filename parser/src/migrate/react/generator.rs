@@ -742,9 +742,20 @@ impl<'a> QliphothGenerator<'a> {
                 format!("·style(∅)")
             }
             name if attr.is_event_handler => {
-                // Event handler -> message dispatch
+                // Event handler -> message dispatch.
+                //
+                // The message name comes from the callback the handler invokes, not
+                // from the event type. Deriving it from the event meant every onClick
+                // in a component dispatched the same `Click`, so distinct buttons were
+                // indistinguishable — and `Click` was never declared in the actor's
+                // enum either. derive_event_message_name is shared with
+                // recommend_messages so dispatch and declaration cannot drift.
                 let event_name = name.strip_prefix("on").unwrap_or(name);
-                let msg_name = to_pascal_case(event_name);
+                let code = match &attr.value {
+                    JsxAttributeValue::Expression { code } => code.as_str(),
+                    _ => "",
+                };
+                let msg_name = crate::migrate::react::spec::derive_event_message_name(code, name);
                 format!("·on_{}({})", event_name.to_lowercase(), msg_name)
             }
             "disabled" | "checked" | "selected" | "readonly" => {

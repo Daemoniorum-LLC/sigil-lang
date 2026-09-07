@@ -605,6 +605,23 @@ impl<'a> SpecGenerator<'a> {
             });
         }
 
+        // Inline JSX handlers (`onClick={() => onExpand(id)}`) are not in
+        // comp.handlers, which only holds named handler functions. Without these the
+        // generated view dispatched messages that the actor's enum never declared.
+        for (msg_name, code) in collect_jsx_event_messages(&comp.jsx) {
+            if messages.iter().any(|m| m.name == msg_name) {
+                continue;
+            }
+            messages.push(MessageRecommendation {
+                name: msg_name,
+                from_handler: code,
+                payload: None,
+                state_changes: vec![],
+                side_effects: vec![],
+                service_calls: vec![],
+            });
+        }
+
         messages
     }
 
@@ -1651,4 +1668,149 @@ fn infer_type_from_name(name: &str) -> String {
 
     // Default to Any
     "Any".to_string()
+}
+
+/// Derive a message name for an inline JSX event handler.
+///
+/// `onChange={e => onChange(e.target.checked)}` should not become the same message
+/// as every other onChange in the file. The meaningful name is the callback the
+/// handler actually invokes, so this looks past any arrow to the first call:
+///
+///   `e => onChange(e.target.checked)` -> Change
+///   `() => onExpand(slot.id)`         -> Expand
+///   `() => setOpen(true)`             -> UpdateOpen
+///   `handleSubmit`                    -> HandleSubmit
+///
+/// Falls back to the event name when nothing better can be found.
+pub fn derive_event_message_name(handler_code: &str, event_name: &str) -> String {
+    let body = match handler_code.find("=>") {
+        Some(i) => &handler_code[i + 2..],
+        None => handler_code,
+    }
+    .trim();
+
+    // First identifier followed by '(' — the callback being invoked.
+    let bytes: Vec<char> = body.chars().collect();
+    let mut ident = String::new();
+    let mut found = None;
+    for (i, c) in bytes.iter().enumerate() {
+        if c.is_alphanumeric() || *c == '_' || *c == '$' {
+            ident.push(*c);
+        } else {
+            if *c == '(' && !ident.is_empty() {
+                found = Some(ident.clone());
+                break;
+            }
+            // a '.' continues a member chain; keep the LAST segment
+            if *c == '.' {
+                ident.clear();
+            } else {
+                ident.clear();
+            }
+        }
+        if i + 1 == bytes.len() && !ident.is_empty() && found.is_none() {
+            // bare reference, e.g. onClick={handleSubmit}
+            found = Some(ident.clone());
+        }
+    }
+
+    let name = match found {
+        Some(n) => n,
+        None => return to_pascal_case(event_name.trim_start_matches("on")),
+    };
+
+    // `e => { e.preventDefault(); onSubmit(x) }` names the message after the real
+    // action, not the event plumbing that happens to come first.
+    let name = if matches!(
+        name.as_str(),
+        "preventDefault" | "stopPropagation" | "stopImmediatePropagation"
+    ) {
+        match body.find(");").and_then(|i| {
+            let rest = &body[i + 1..];
+            let mut ident = String::new();
+            let mut found2 = None;
+            for c in rest.chars() {
+                if c.is_alphanumeric() || c == '_' || c == '$' {
+                    ident.push(c);
+                } else {
+                    if c == '(' && !ident.is_empty() {
+                        found2 = Some(ident.clone());
+                        break;
+                    }
+                    ident.clear();
+                }
+            }
+            found2
+        }) {
+            Some(next) => next,
+            None => return to_pascal_case(event_name.trim_start_matches("on")),
+        }
+    } else {
+        name
+    };
+
+    if let Some(rest) = name.strip_prefix("set") {
+        if rest.chars().next().map_or(false, |c| c.is_uppercase()) {
+            return format!("Update{}", to_pascal_case(rest));
+        }
+    }
+    if let Some(rest) = name.strip_prefix("on") {
+        if rest.chars().next().map_or(false, |c| c.is_uppercase()) {
+            return to_pascal_case(rest);
+        }
+    }
+    to_pascal_case(&name)
+}
+
+/// Collect the message names implied by inline event handlers in a JSX tree.
+///
+/// These never appear in `ComponentExtraction::handlers`, which only holds named
+/// handler functions, so without this every inline handler dispatched a message
+/// that was never declared in the actor's enum.
+pub fn collect_jsx_event_messages(jsx: &JsxTree) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+
+    fn walk(node: &JsxNode, out: &mut Vec<(String, String)>) {
+        match &node.node_type {
+            JsxNodeType::Element { attributes, children, .. } => {
+                for a in attributes {
+                    if !a.is_event_handler {
+                        continue;
+                    }
+                    let code = match &a.value {
+                        JsxAttributeValue::Expression { code } => code.clone(),
+                        _ => String::new(),
+                    };
+                    let msg = derive_event_message_name(&code, &a.name);
+                    if !out.iter().any(|(m, _)| *m == msg) {
+                        out.push((msg, code));
+                    }
+                }
+                for c in children {
+                    walk(c, out);
+                }
+            }
+            JsxNodeType::Fragment { children } => {
+                for c in children {
+                    walk(c, out);
+                }
+            }
+            // Conditionals and maps hold the bulk of a real component's handlers —
+            // rows rendered from `items.map(...)`, panels behind `cond && <div/>`.
+            // Skipping them meant a large tab contributed no handler messages at all.
+            JsxNodeType::Conditional { consequent, alternate, .. } => {
+                walk(consequent, out);
+                if let Some(alt) = alternate {
+                    walk(alt, out);
+                }
+            }
+            JsxNodeType::Map { body, .. } => walk(body, out),
+            _ => {}
+        }
+    }
+
+    if let Some(root) = &jsx.root {
+        walk(root, &mut out);
+    }
+    out
 }
