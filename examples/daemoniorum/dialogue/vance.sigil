@@ -16,19 +16,19 @@ rite vance_speaker() -> SpeakerInfo! {
         id: "dr_vance"·to_string(),
         name: "Dr. Helena Vance"·to_string(),
         portrait: "vance_default"·to_string(),
-        alter_portraits: {
+        alter_portraits: HashMap·from([
             // Different alters perceive her differently
-            "abaddon" => "vance_monster",      // Sees her true nature
-            "stolas" => "vance_analytical",    // Sees her as puzzle
-            "beleth" => "vance_tragic",        // Sees her pain
-            "warden" => "vance_threat",        // Sees her as danger
-            "vessel" => "vance_familiar",      // Remembers her
-        }~,
-        layer_portraits: {
-            RealityLayer·Grounded => "vance_professional",
-            RealityLayer·Fractured => "vance_wrong",
-            RealityLayer·Shattered => "vance_consumed",
-        }~,
+            ("abaddon", "vance_monster"),  // Sees her true nature
+            ("stolas", "vance_analytical"),  // Sees her as puzzle
+            ("beleth", "vance_tragic"),  // Sees her pain
+            ("warden", "vance_threat"),  // Sees her as danger
+            ("vessel", "vance_familiar"),  // Remembers her
+        ])~,
+        layer_portraits: HashMap·from([
+            (RealityLayer·Grounded, "vance_professional"),
+            (RealityLayer·Fractured, "vance_wrong"),
+            (RealityLayer·Shattered, "vance_consumed"),
+        ])~,
     }
 }
 
@@ -94,10 +94,10 @@ rite node_first_words() -> DialogueNode! {
     ·response(DialogueResponse {
         id: "recognize"·to_string(),
         text: "I remember you."·to_string(),
-        alter_variations: {
-            "vessel" => "You... you did something to me. To us.",
-            "abaddon" => "I remember EVERYTHING you did.",
-        }~,
+        alter_variations: HashMap·from([
+            ("vessel", "You... you did something to me. To us."),
+            ("abaddon", "I remember EVERYTHING you did."),
+        ])~,
         conditions: [],
         target_node: "recognition"·to_string(),
         effects: [
@@ -121,9 +121,9 @@ rite node_first_words() -> DialogueNode! {
     ·response(DialogueResponse {
         id: "attack_immediately"·to_string(),
         text: "[Combat] You don't get to talk."·to_string(),
-        alter_variations: {
-            "abaddon" => "[Combat] DIE.",
-        }~,
+        alter_variations: HashMap·from([
+            ("abaddon", "[Combat] DIE."),
+        ])~,
         conditions: [
             DialogueCondition·AlterFronting("abaddon"·to_string()),
         ],
@@ -208,9 +208,9 @@ rite node_vance_explains() -> DialogueNode! {
     ·response(DialogueResponse {
         id: "reject_philosophy"·to_string(),
         text: "You're wrong. We're not broken. We're family."·to_string(),
-        alter_variations: {
-            "paimon" => "Each of us serves a purpose. Together we are MORE than one.",
-        }~,
+        alter_variations: HashMap·from([
+            ("paimon", "Each of us serves a purpose. Together we are MORE than one."),
+        ])~,
         conditions: [],
         target_node: "integration_offer"·to_string(),
         effects: [
@@ -263,9 +263,9 @@ rite node_vance_reveals() -> DialogueNode! {
     ·response(DialogueResponse {
         id: "ask_freedom"·to_string(),
         text: "Can they be freed? The ones inside you?"·to_string(),
-        alter_variations: {
-            "beleth" => "There has to be a way to save them. All those people...",
-        }~,
+        alter_variations: HashMap·from([
+            ("beleth", "There has to be a way to save them. All those people..."),
+        ])~,
         conditions: [],
         target_node: "integration_offer"·to_string(),
         effects: [],
@@ -294,9 +294,9 @@ rite node_integration_offer() -> DialogueNode! {
     ·response(DialogueResponse {
         id: "refuse_firmly"·to_string(),
         text: "We are not broken. We don't need your 'cure.'"·to_string(),
-        alter_variations: {
-            "vessel" => "We are a family. We protect each other. That's not disorder - that's love.",
-        }~,
+        alter_variations: HashMap·from([
+            ("vessel", "We are a family. We protect each other. That's not disorder - that's love."),
+        ])~,
         conditions: [],
         target_node: "refuse_integration"·to_string(),
         effects: [
@@ -403,9 +403,9 @@ rite node_question_nature() -> DialogueNode! {
     ·response(DialogueResponse {
         id: "difference"·to_string(),
         text: "The difference is consent. We CHOSE each other."·to_string(),
-        alter_variations: {
-            "paimon" => "We are partners. You are a prison.",
-        }~,
+        alter_variations: HashMap·from([
+            ("paimon", "We are partners. You are a prison."),
+        ])~,
         conditions: [],
         target_node: "vance_reveals"·to_string(),
         effects: [
@@ -481,9 +481,9 @@ rite create_vance_defeated() -> DialogueTree! {
             ·response(DialogueResponse {
                 id: "finish"·to_string(),
                 text: "This ends now. All of it."·to_string(),
-                alter_variations: {
-                    "abaddon" => "Die, monster.",
-                }~,
+                alter_variations: HashMap·from([
+                    ("abaddon", "Die, monster."),
+                ])~,
                 conditions: [],
                 target_node: "final_end"·to_string(),
                 effects: [],

@@ -172,26 +172,26 @@ rite create_asylum_exterior() -> Scene! {
         ·ambiance(Ambiance {
             background_sound: "wind_hollow"·to_string(),
             music_track: Some("dread_institutional"·to_string())?,
-            layer_sounds: {
-                RealityLayer·Fractured => "distant_screams_subtle",
-                RealityLayer·Shattered => "chorus_of_patients",
-            }~,
+            layer_sounds: HashMap·from([
+                (RealityLayer·Fractured, "distant_screams_subtle"),
+                (RealityLayer·Shattered, "chorus_of_patients"),
+            ])~,
             weather_sounds: HashMap·new()~,
             lighting: Lighting {
                 base_level: 0.5,
                 color: (0.7, 0.7, 0.75),
-                layer_modifiers: {
-                    RealityLayer·Fractured => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Fractured, LightingMod {
                         level_delta: -0.15,
                         color_shift: (-0.1, -0.15, 0.0),
                         flicker: false,
-                    },
-                    RealityLayer·Shattered => LightingMod {
+                    }),
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: -0.2,
                         color_shift: (-0.2, -0.2, -0.1),
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·build()
@@ -412,26 +412,26 @@ rite create_asylum_lobby() -> Scene! {
         ·ambiance(Ambiance {
             background_sound: "asylum_echoes"·to_string(),
             music_track: Some("creeping_dread"·to_string())?,
-            layer_sounds: {
-                RealityLayer·Fractured => "wheelchair_squeak_distant",
-                RealityLayer·Shattered => "electroshock_echoes",
-            }~,
+            layer_sounds: HashMap·from([
+                (RealityLayer·Fractured, "wheelchair_squeak_distant"),
+                (RealityLayer·Shattered, "electroshock_echoes"),
+            ])~,
             weather_sounds: HashMap·new()~,
             lighting: Lighting {
                 base_level: 0.3,
                 color: (0.8, 0.85, 0.8),  // Sickly institutional green-white
-                layer_modifiers: {
-                    RealityLayer·Fractured => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Fractured, LightingMod {
                         level_delta: -0.1,
                         color_shift: (-0.1, -0.05, -0.1),
                         flicker: true,
-                    },
-                    RealityLayer·Shattered => LightingMod {
+                    }),
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: 0.2,  // Harsh fluorescents
                         color_shift: (0.0, 0.1, -0.1),
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·build()
@@ -564,21 +564,21 @@ rite create_asylum_east_wing() -> Scene! {
         ·ambiance(Ambiance {
             background_sound: "ward_ambiance"·to_string(),
             music_track: Some("isolation_dread"·to_string())?,
-            layer_sounds: {
-                RealityLayer·Fractured => "door_breathing",
-                RealityLayer·Shattered => "patient_whispers",
-            }~,
+            layer_sounds: HashMap·from([
+                (RealityLayer·Fractured, "door_breathing"),
+                (RealityLayer·Shattered, "patient_whispers"),
+            ])~,
             weather_sounds: HashMap·new()~,
             lighting: Lighting {
                 base_level: 0.25,
                 color: (0.75, 0.8, 0.75),
-                layer_modifiers: {
-                    RealityLayer·Shattered => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: -0.1,
                         color_shift: (-0.15, -0.1, -0.1),
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·build()
@@ -697,21 +697,21 @@ rite create_asylum_west_wing() -> Scene! {
         ·ambiance(Ambiance {
             background_sound: "machinery_hum"·to_string(),
             music_track: Some("clinical_horror"·to_string())?,
-            layer_sounds: {
-                RealityLayer·Fractured => "electroshock_crackle",
-                RealityLayer·Shattered => "screaming_chorus",
-            }~,
+            layer_sounds: HashMap·from([
+                (RealityLayer·Fractured, "electroshock_crackle"),
+                (RealityLayer·Shattered, "screaming_chorus"),
+            ])~,
             weather_sounds: HashMap·new()~,
             lighting: Lighting {
                 base_level: 0.4,
                 color: (0.9, 0.95, 1.0),  // Harsh clinical white
-                layer_modifiers: {
-                    RealityLayer·Shattered => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: 0.3,  // Blinding
                         color_shift: (0.1, 0.1, 0.0),
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·build()

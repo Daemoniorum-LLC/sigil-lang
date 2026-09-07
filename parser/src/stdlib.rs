@@ -737,6 +737,52 @@ fn register_core(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
     });
 
+    // HashMap::from([(k, v), …]) — build a map from an array of pairs.
+    //
+    // This did not exist, and calling it did not fail: the method fallback handed
+    // back an empty map, so `HashMap·from([("a", 1)])` silently produced a map of
+    // length 0. It is also the only reasonable way to write a map inside a struct
+    // literal, since Sigil has no map-literal syntax and `new` + `insert` needs
+    // statements.
+    define(interp, "HashMap·from", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        let pairs = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            other => {
+                return Err(RuntimeError::new(format!(
+                    "HashMap·from expects an array of (key, value) pairs, got {:?}",
+                    other
+                )))
+            }
+        };
+        for pair in pairs {
+            match &pair {
+                Value::Tuple(items) if items.len() == 2 => {
+                    let key = match &items[0] {
+                        Value::String(s) => (**s).clone(),
+                        other => format!("{}", other),
+                    };
+                    map.insert(key, items[1].clone());
+                }
+                Value::Array(items) if items.borrow().len() == 2 => {
+                    let items = items.borrow();
+                    let key = match &items[0] {
+                        Value::String(s) => (**s).clone(),
+                        other => format!("{}", other),
+                    };
+                    map.insert(key, items[1].clone());
+                }
+                other => {
+                    return Err(RuntimeError::new(format!(
+                        "HashMap·from expects (key, value) pairs, got {:?}",
+                        other
+                    )))
+                }
+            }
+        }
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
     // HashMap::with_capacity
     define(interp, "HashMap·with_capacity", Some(1), |_, _args| {
         // Capacity hint is ignored in our implementation
@@ -14176,7 +14222,7 @@ fn register_devex(interp: &mut Interpreter) {
             Ok(Value::Bool(true))
         } else {
             Err(RuntimeError::new(format!(
-                "Assertion failed: expected null, got {}",
+                "Assertion failed: expected null, got {:?}",
                 format_value_debug(&args[0])
             )))
         }
@@ -14278,7 +14324,7 @@ fn register_devex(interp: &mut Interpreter) {
             Ok(Value::Bool(true))
         } else {
             Err(RuntimeError::new(format!(
-                "Assertion failed: expected length {}, got {}",
+                "Assertion failed: expected length {}, got {:?}",
                 expected, actual
             )))
         }

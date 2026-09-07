@@ -295,9 +295,9 @@ rite create_beleth_comfort() -> DialogueTree! {
             ·response(DialogueResponse {
                 id: "resist"·to_string(),
                 text: "*Pull away* I'm fine."·to_string(),
-                alter_variations: {
-                    "abaddon" => "*Push the softness away* We don't have time for this.",
-                }~,
+                alter_variations: HashMap·from([
+                    ("abaddon", "*Push the softness away* We don't have time for this."),
+                ])~,
                 conditions: [],
                 target_node: "rejected"·to_string(),
                 effects: [

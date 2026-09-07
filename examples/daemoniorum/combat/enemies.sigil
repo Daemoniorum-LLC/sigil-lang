@@ -189,10 +189,10 @@ rite enemy_shadow_crawler() -> EnemyDefinition! {
             EnemyAbility·Strike { damage: 8.0, accuracy: 0.85 },
             EnemyAbility·Unsettle { amount: 0.05 },
         ],
-        ability_weights: {
-            "Strike" => 0.7,
-            "Unsettle" => 0.3,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.7),
+            ("Unsettle", 0.3),
+        ])~,
         vulnerable_to: [AlterCategory·Council],  // Council members deal +damage
         resistant_to: [],
         targets_preferentially: None,
@@ -232,11 +232,11 @@ rite enemy_shadow_stalker() -> EnemyDefinition! {
             },
             EnemyAbility·Destabilize { amount: 0.1 },
         ],
-        ability_weights: {
-            "Strike" => 0.5,
-            "Focus" => 0.3,
-            "Destabilize" => 0.2,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.5),
+            ("Focus", 0.3),
+            ("Destabilize", 0.2),
+        ])~,
         vulnerable_to: [AlterCategory·Council],
         resistant_to: [],
         targets_preferentially: Some(AlterCategory·Core)?,  // Hunts the Vessel
@@ -281,12 +281,12 @@ rite enemy_memory_devourer() -> EnemyDefinition! {
                 duration: 2,
             },
         ],
-        ability_weights: {
-            "MemoryDrain" => 0.4,  // Primary ability
-            "Strike" => 0.3,
-            "Unsettle" => 0.2,
-            "Afflict" => 0.1,
-        }~,
+        ability_weights: HashMap·from([
+            ("MemoryDrain", 0.4),  // Primary ability
+            ("Strike", 0.3),
+            ("Unsettle", 0.2),
+            ("Afflict", 0.1),
+        ])~,
         vulnerable_to: [],
         resistant_to: [AlterCategory·Introject],  // Resists alters formed from memories
         targets_preferentially: None,
@@ -325,10 +325,10 @@ rite enemy_memory_leech() -> EnemyDefinition! {
                 duration: 1,
             },
         ],
-        ability_weights: {
-            "Strike" => 0.6,
-            "Afflict" => 0.4,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.6),
+            ("Afflict", 0.4),
+        ])~,
         vulnerable_to: [AlterCategory·Council],
         resistant_to: [],
         targets_preferentially: None,
@@ -369,11 +369,11 @@ rite enemy_patient_remnant() -> EnemyDefinition! {
             EnemyAbility·Destabilize { amount: 0.08 },
             EnemyAbility·Disrupt { urgency: 0.4 },  // Can force switches
         ],
-        ability_weights: {
-            "Strike" => 0.5,
-            "Destabilize" => 0.3,
-            "Disrupt" => 0.2,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.5),
+            ("Destabilize", 0.3),
+            ("Disrupt", 0.2),
+        ])~,
         vulnerable_to: [AlterCategory·Council],
         resistant_to: [],
         targets_preferentially: None,
@@ -415,13 +415,13 @@ rite enemy_integrated() -> EnemyDefinition! {
                 duration: 1,
             },
         ],
-        ability_weights: {
-            "Strike" => 0.35,
-            "Swipe" => 0.25,
-            "Destabilize" => 0.2,
-            "Disrupt" => 0.1,
-            "Afflict" => 0.1,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.35),
+            ("Swipe", 0.25),
+            ("Destabilize", 0.2),
+            ("Disrupt", 0.1),
+            ("Afflict", 0.1),
+        ])~,
         vulnerable_to: [],
         resistant_to: [AlterCategory·Council],  // Hard to hurt
         targets_preferentially: None,
@@ -463,12 +463,12 @@ rite enemy_church_guardian() -> EnemyDefinition! {
             EnemyAbility·Regenerate { amount: 10.0 },
             EnemyAbility·Empower { damage_buff: 0.2, defense_buff: 0.0 },
         ],
-        ability_weights: {
-            "Strike" => 0.4,
-            "Regenerate" => 0.25,
-            "RealityWarp" => 0.2,
-            "Empower" => 0.15,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.4),
+            ("Regenerate", 0.25),
+            ("RealityWarp", 0.2),
+            ("Empower", 0.15),
+        ])~,
         vulnerable_to: [],
         resistant_to: [],
         targets_preferentially: None,
@@ -517,17 +517,17 @@ rite enemy_the_integration() -> EnemyDefinition! {
                 duration: 2,
             },
         ],
-        ability_weights: {
-            "Strike" => 0.2,
-            "Swipe" => 0.15,
-            "MemoryDrain" => 0.15,
-            "Destabilize" => 0.1,
-            "Disrupt" => 0.1,
-            "RealityWarp" => 0.1,
-            "Spawn" => 0.1,
-            "Regenerate" => 0.05,
-            "Afflict" => 0.05,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.2),
+            ("Swipe", 0.15),
+            ("MemoryDrain", 0.15),
+            ("Destabilize", 0.1),
+            ("Disrupt", 0.1),
+            ("RealityWarp", 0.1),
+            ("Spawn", 0.1),
+            ("Regenerate", 0.05),
+            ("Afflict", 0.05),
+        ])~,
         vulnerable_to: [],  // No easy weaknesses
         resistant_to: [],
         targets_preferentially: Some(AlterCategory·Core)?,  // Wants the Vessel
@@ -574,15 +574,15 @@ rite enemy_marcus_true() -> EnemyDefinition! {
             },
             EnemyAbility·Spawn { enemy_type: "shadow_crawler"·to_string(), count: 3 },
         ],
-        ability_weights: {
-            "Strike" => 0.25,
-            "Swipe" => 0.2,
-            "Destabilize" => 0.15,
-            "RealityWarp" => 0.1,
-            "Regenerate" => 0.1,
-            "Afflict" => 0.1,
-            "Spawn" => 0.1,
-        }~,
+        ability_weights: HashMap·from([
+            ("Strike", 0.25),
+            ("Swipe", 0.2),
+            ("Destabilize", 0.15),
+            ("RealityWarp", 0.1),
+            ("Regenerate", 0.1),
+            ("Afflict", 0.1),
+            ("Spawn", 0.1),
+        ])~,
         vulnerable_to: [],
         resistant_to: [],
         targets_preferentially: None,
