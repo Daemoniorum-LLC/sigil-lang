@@ -4166,14 +4166,21 @@ impl<'a> Parser<'a> {
         // - For type paths starting with uppercase (HashMap·new), allow · as separator
         // - For variable paths starting with lowercase (tag·to_string), DON'T consume ·
         //   because those are method calls handled by postfix expression parsing
-        // A path root that can never be a value: `tome`/`crate` and `super` are
-        // keywords, so `tome·router·Opts` is unambiguously a path even though the
-        // first segment is lowercase. `self` is deliberately NOT in this list —
-        // `self·field` is a legitimate field access on the receiver, and treating
-        // it as a path root would break method bodies.
+        // A path root that can never be a value: `tome` and `super` are keywords, so
+        // `tome·router·Opts` is unambiguously a path even though the first segment
+        // is lowercase.
+        //
+        // Only real Sigil spellings belong here. Rust's `crate` is NOT one — the
+        // lexer defines `#[token("tome")]` and no `crate` token, so a source
+        // `crate` lexes as an ordinary identifier. Listing it would silently
+        // reinterpret a user's variable named `crate`, turning `crate·to_string()`
+        // from a method call into a path.
+        //
+        // `self` is excluded for the same class of reason: `self·field` is a
+        // legitimate field access on the receiver.
         let first_segment_is_path_keyword = segments
             .first()
-            .is_some_and(|s| matches!(s.ident.name.as_str(), "tome" | "crate" | "super"));
+            .is_some_and(|s| matches!(s.ident.name.as_str(), "tome" | "super"));
 
         let first_segment_is_type = first_segment_is_path_keyword
             || segments

@@ -210,6 +210,7 @@ from the actual cause.
 | `S11` | Evidentiality not narrowed through `unwrap_or` | `len() -> usize!` ending `·unwrap_or(0)` | Open. Needs an owner's judgment. |
 | `S12` | Unknown characters are silently discarded | a file of `≤ § ⌘` | Open. `sigil check` reports **no errors**. Root cause of S10's silence. |
 | `S13` | Lowercase module roots are treated as variables | `std·collections·HashMap·new()` | Open. Runtime: *undefined variable: `std`*. Same root as S9, but unfixable by enumerating keywords. |
+| `Q1` | **Qliphoth** writes Rust's `crate·` where Sigil has `tome·` | 53 uses across 19 files | Qliphoth's to fix. Passes `check`, fails at runtime. |
 
 ### S10 was silent, not loud
 
@@ -236,8 +237,34 @@ argument". It never worked: `sigil check` passed and the runtime then said *unde
 variable: `crate`*. `parse_type_path` infers path-vs-method from the first segment's
 **case**, and `crate` is lowercase.
 
-Fixed for `tome`/`crate`/`super`, which are keywords and can never be values. `self` is
+Fixed for `tome` and `super`, which are keywords and can never be values. `self` is
 excluded on purpose — `self·field` is a real field access.
+
+**A correction, and a finding it produced.** The first version of this fix also matched
+`crate`. That was wrong twice over. Sigil has no `crate` token — the lexer defines
+`#[token("tome")]` only — so `crate` lexes as an ordinary identifier, and listing it
+silently reinterpreted a user's variable:
+
+```sigil
+≔ crate = "i am a variable";
+println(crate·to_string());   // → "to_string() expects 1 arguments, got 0"
+```
+
+It also never helped: a real `tome·` path produces the segment name `tome`, so the `crate`
+arm only ever fired on user identifiers. Removed, with the Qliphoth sweep unchanged at
+32/39 — confirming it was carrying nothing.
+
+The reason it got written is worth recording: the original reproduction was copied from
+Qliphoth's `params.sigil`, which writes `crate·router·NavigateOptions`. **That is a
+Rustism in Qliphoth, not valid Sigil** — and it appears **53 times across 19 files**,
+including `router.sigil`, `link.sigil`, `websocket.sigil` and `storage.sigil`. Those files
+pass `sigil check` (the path parses as a variable) and would fail at runtime with
+*undefined variable: `crate`* — the same check-passes/runtime-fails shape as `S13`. They
+should be `tome·`.
+
+So the compiler fix was verified against invalid syntax until the Rustism was spotted. The
+corrected reproduction in `./lares-probe-2026-09-07/s6-s11/S9_structlit_call_arg.sigil`
+uses `tome·` and passes.
 
 But the general case remains: `std·collections·HashMap·new()` still fails, because any
 module name may be lowercase and the case heuristic cannot distinguish
@@ -248,7 +275,7 @@ close it — it needs resolution against known modules, or a syntactic distincti
 
 | Check | Result |
 |---|---|
-| Full suite | **714 pass / 11 fail** vs 713/11 baseline; failure set identical. The +1 is the S5 test. |
+| Full suite | **716 pass / 11 fail** vs a 713/11 baseline; failure set byte-identical. The +3 are the S5, S7 and S10 regression tests. |
 | Qliphoth sweep | 31/39 → **32/39** |
 | `params.sigil`, `native.sigil` | now fail *later* — evidentiality, and deprecated `&mut` — not at S9/S10 |
 | `self·field`, `Vec·new()`, lowercase method calls | unchanged |

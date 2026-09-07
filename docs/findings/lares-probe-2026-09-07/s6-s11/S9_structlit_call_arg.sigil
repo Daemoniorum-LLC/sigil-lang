@@ -1,5 +1,24 @@
+// S9 — a qualified path rooted at a keyword was parsed as a variable.
+//
+// NOTE: the first version of this file used `crate·router·Opts`, copying what
+// Qliphoth writes. That is a Rustism, not Sigil: the lexer defines
+// #[token("tome")] and has no `crate` token, so `crate` lexes as an ordinary
+// identifier. The correct Sigil spelling is `tome·`.
+//
+// Before the fix this failed with "expected RParen, found LBrace" as a call
+// argument, and with "undefined variable" at runtime everywhere else —
+// parse_type_path inferred path-vs-method from the first segment's case, and
+// `tome` is lowercase.
+
 ☉ Σ Opts { ☉ replace: bool! }
-rite go(p: &str!, o: Opts!) { }
+
+rite go(p: &str!, o: Opts!) -> bool! { ↩ o.replace; }
+
 rite main() {
-    go("/x", crate·router·Opts { replace: true });
+    // as a call argument — the original failure
+    println(go("/x", tome·router·Opts { replace: true }));
+
+    // and in an assignment, which failed at runtime rather than parse time
+    ≔ o = tome·router·Opts { replace: false };
+    println(o.replace);
 }
