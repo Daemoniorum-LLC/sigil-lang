@@ -23,7 +23,7 @@ invoke tome·runtime·ComponentInstance;
 ☉ aspect Props: Clone + 'static {}
 
 // Implement Props for common types
-impl Props for () {}
+⊢ Props for () {}
 
 /// Component attribute macro
 ///

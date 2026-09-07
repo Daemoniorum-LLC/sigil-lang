@@ -445,32 +445,32 @@ invoke HashMap;
 
 ⊢ EventHandler {
     /// Create handler from simple function
-    ☉ rite from_fn(f: impl Fn() + 'static) -> Self! {
+    ☉ rite from_fn(f: ⊢ Fn() + 'static) -> Self! {
         EventHandler·Simple(Box·new(f))
     }
 
     /// Create handler that receives event
-    ☉ rite from_event_fn(f: impl Fn(&Δ Event) + 'static) -> Self! {
+    ☉ rite from_event_fn(f: ⊢ Fn(&Δ Event) + 'static) -> Self! {
         EventHandler·WithEvent(Box·new(f))
     }
 
     /// Create handler that receives input value
-    ☉ rite from_value_fn(f: impl Fn(String) + 'static) -> Self! {
+    ☉ rite from_value_fn(f: ⊢ Fn(String) + 'static) -> Self! {
         EventHandler·WithValue(Box·new(f))
     }
 
     /// Create handler that receives keyboard data
-    ☉ rite from_key_fn(f: impl Fn(&KeyboardEventData) + 'static) -> Self! {
+    ☉ rite from_key_fn(f: ⊢ Fn(&KeyboardEventData) + 'static) -> Self! {
         EventHandler·WithKeyboard(Box·new(f))
     }
 
     /// Create handler that receives mouse data
-    ☉ rite from_mouse_fn(f: impl Fn(&MouseEventData) + 'static) -> Self! {
+    ☉ rite from_mouse_fn(f: ⊢ Fn(&MouseEventData) + 'static) -> Self! {
         EventHandler·WithMouse(Box·new(f))
     }
 
     /// Create handler that prevents default
-    ☉ rite from_fn_prevent_default(f: impl Fn() + 'static) -> Self! {
+    ☉ rite from_fn_prevent_default(f: ⊢ Fn() + 'static) -> Self! {
         EventHandler·WithEvent(Box·new(move |e| {
             e·prevent_default()
             f()
@@ -568,7 +568,7 @@ invoke HashMap;
 
 invoke crate·dom·KeyEvent;
 
-impl From<&KeyboardEventData> for KeyEvent {
+⊢ From<&KeyboardEventData> for KeyEvent {
     rite from(data: &KeyboardEventData) -> Self! {
         KeyEvent {
             key: data.key·clone(),

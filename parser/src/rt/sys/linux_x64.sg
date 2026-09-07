@@ -122,7 +122,7 @@ unsafe rite syscall1(num: u64, a1: u64) -> i64~ {
     asm!(
         "syscall",
         inout("rax") num => ret,
-        in("rdi") a1,
+        ∈("rdi") a1,
         out("rcx") _,
         out("r11") _,
         options(nostack)
@@ -137,8 +137,8 @@ unsafe rite syscall2(num: u64, a1: u64, a2: u64) -> i64~ {
     asm!(
         "syscall",
         inout("rax") num => ret,
-        in("rdi") a1,
-        in("rsi") a2,
+        ∈("rdi") a1,
+        ∈("rsi") a2,
         out("rcx") _,
         out("r11") _,
         options(nostack)
@@ -153,9 +153,9 @@ unsafe rite syscall3(num: u64, a1: u64, a2: u64, a3: u64) -> i64~ {
     asm!(
         "syscall",
         inout("rax") num => ret,
-        in("rdi") a1,
-        in("rsi") a2,
-        in("rdx") a3,
+        ∈("rdi") a1,
+        ∈("rsi") a2,
+        ∈("rdx") a3,
         out("rcx") _,
         out("r11") _,
         options(nostack)
@@ -170,10 +170,10 @@ unsafe rite syscall4(num: u64, a1: u64, a2: u64, a3: u64, a4: u64) -> i64~ {
     asm!(
         "syscall",
         inout("rax") num => ret,
-        in("rdi") a1,
-        in("rsi") a2,
-        in("rdx") a3,
-        in("r10") a4,
+        ∈("rdi") a1,
+        ∈("rsi") a2,
+        ∈("rdx") a3,
+        ∈("r10") a4,
         out("rcx") _,
         out("r11") _,
         options(nostack)
@@ -188,11 +188,11 @@ unsafe rite syscall5(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i
     asm!(
         "syscall",
         inout("rax") num => ret,
-        in("rdi") a1,
-        in("rsi") a2,
-        in("rdx") a3,
-        in("r10") a4,
-        in("r8") a5,
+        ∈("rdi") a1,
+        ∈("rsi") a2,
+        ∈("rdx") a3,
+        ∈("r10") a4,
+        ∈("r8") a5,
         out("rcx") _,
         out("r11") _,
         options(nostack)
@@ -207,12 +207,12 @@ unsafe rite syscall6(num: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64, a6: 
     asm!(
         "syscall",
         inout("rax") num => ret,
-        in("rdi") a1,
-        in("rsi") a2,
-        in("rdx") a3,
-        in("r10") a4,
-        in("r8") a5,
-        in("r9") a6,
+        ∈("rdi") a1,
+        ∈("rsi") a2,
+        ∈("rdx") a3,
+        ∈("r10") a4,
+        ∈("r8") a5,
+        ∈("r9") a6,
         out("rcx") _,
         out("r11") _,
         options(nostack)

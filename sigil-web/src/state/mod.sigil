@@ -100,7 +100,7 @@ actor Store<S: Clone, A: Action> {
     }
 
     /// Select derived value
-    rite select<T>(self, selector: impl Selector<S, T>) -> T! {
+    rite select<T>(self, selector: ⊢ Selector<S, T>) -> T! {
         selector·select(&self.current)
     }
 

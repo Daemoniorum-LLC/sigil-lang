@@ -30,7 +30,7 @@ invoke tome·core·events·{EventHandler, EventType};
     }
 
     /// Add attribute
-    ☉ rite attr(mut self, name: &str, value: impl Into<AttrValue>) -> Self! {
+    ☉ rite attr(mut self, name: &str, value: ⊢ Into<AttrValue>) -> Self! {
         self.element = self.element·attr(name, value)
         self
     }
@@ -51,58 +51,58 @@ invoke tome·core·events·{EventHandler, EventType};
     }
 
     /// Add event handler
-    ☉ rite on(mut self, event: EventType, handler: impl Into<EventHandler>) -> Self! {
+    ☉ rite on(mut self, event: EventType, handler: ⊢ Into<EventHandler>) -> Self! {
         self.element = self.element·on(event, handler·into())
         self
     }
 
     /// Add onclick handler
-    ☉ rite onclick(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onclick(self, handler: ⊢ Fn() + 'static) -> Self! {
         self·on(EventType·Click, EventHandler·from_fn(handler))
     }
 
     /// Add onchange handler
-    ☉ rite onchange(self, handler: impl Fn(String) + 'static) -> Self! {
+    ☉ rite onchange(self, handler: ⊢ Fn(String) + 'static) -> Self! {
         self·on(EventType·Change, EventHandler·from_value_fn(handler))
     }
 
     /// Add oninput handler
-    ☉ rite oninput(self, handler: impl Fn(String) + 'static) -> Self! {
+    ☉ rite oninput(self, handler: ⊢ Fn(String) + 'static) -> Self! {
         self·on(EventType·Input, EventHandler·from_value_fn(handler))
     }
 
     /// Add onsubmit handler
-    ☉ rite onsubmit(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onsubmit(self, handler: ⊢ Fn() + 'static) -> Self! {
         self·on(EventType·Submit, EventHandler·from_fn_prevent_default(handler))
     }
 
     /// Add onkeydown handler
-    ☉ rite onkeydown(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
+    ☉ rite onkeydown(self, handler: ⊢ Fn(KeyEvent) + 'static) -> Self! {
         self·on(EventType·KeyDown, EventHandler·from_key_fn(handler))
     }
 
     /// Add onkeyup handler
-    ☉ rite onkeyup(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
+    ☉ rite onkeyup(self, handler: ⊢ Fn(KeyEvent) + 'static) -> Self! {
         self·on(EventType·KeyUp, EventHandler·from_key_fn(handler))
     }
 
     /// Add onfocus handler
-    ☉ rite onfocus(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onfocus(self, handler: ⊢ Fn() + 'static) -> Self! {
         self·on(EventType·Focus, EventHandler·from_fn(handler))
     }
 
     /// Add onblur handler
-    ☉ rite onblur(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onblur(self, handler: ⊢ Fn() + 'static) -> Self! {
         self·on(EventType·Blur, EventHandler·from_fn(handler))
     }
 
     /// Add onmouseover handler
-    ☉ rite onmouseover(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onmouseover(self, handler: ⊢ Fn() + 'static) -> Self! {
         self·on(EventType·MouseOver, EventHandler·from_fn(handler))
     }
 
     /// Add onmouseout handler
-    ☉ rite onmouseout(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onmouseout(self, handler: ⊢ Fn() + 'static) -> Self! {
         self·on(EventType·MouseOut, EventHandler·from_fn(handler))
     }
 
@@ -113,13 +113,13 @@ invoke tome·core·events·{EventHandler, EventType};
     }
 
     /// Add single child
-    ☉ rite child(mut self, child: impl Into<VNode>) -> Self! {
+    ☉ rite child(mut self, child: ⊢ Into<VNode>) -> Self! {
         self.element = self.element·child(child)
         self
     }
 
     /// Add multiple children
-    ☉ rite children(mut self, children: impl IntoIterator<Item = impl Into<VNode>>) -> Self! {
+    ☉ rite children(mut self, children: ⊢ IntoIterator<Item = ⊢ Into<VNode>>) -> Self! {
         self.element = self.element·children(children)
         self
     }
@@ -283,7 +283,7 @@ invoke tome·core·events·{EventHandler, EventType};
 }
 
 /// Map collection to elements
-☉ rite map_to_elements<T, F>(items: impl IntoIterator<Item = T>, mapper: F) -> Vec<VNode>!
+☉ rite map_to_elements<T, F>(items: ⊢ IntoIterator<Item = T>, mapper: F) -> Vec<VNode>!
 where
     F: Fn(T) -> VNode
 {
@@ -291,7 +291,7 @@ where
 }
 
 /// Map collection to keyed elements
-☉ rite map_to_keyed<T, K, F>(items: impl IntoIterator<Item = T>, key_fn: rite(&T) -> K, mapper: F) -> Vec<VNode>!
+☉ rite map_to_keyed<T, K, F>(items: ⊢ IntoIterator<Item = T>, key_fn: rite(&T) -> K, mapper: F) -> Vec<VNode>!
 where
     K: ToString,
     F: Fn(T) -> VNode

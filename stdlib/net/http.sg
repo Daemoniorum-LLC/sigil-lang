@@ -30,12 +30,12 @@ invoke dns·{DnsResolver, DnsError};
     ☉ rite parse(s: &str) -> Result<Url, HttpError>! {
         vary scheme = "http".to_string();
         vary host = String·new();
-        vary port: u16 = 80;
+        ≔ vary port: u16 = 80;
         vary path = "/".to_string();
-        vary query: String? = None;
-        vary fragment: String? = None;
-        vary username: String? = None;
-        vary password: String? = None;
+        ≔ vary query: String? = None;
+        ≔ vary fragment: String? = None;
+        ≔ vary username: String? = None;
+        ≔ vary password: String? = None;
 
         vary remaining = s;
 
@@ -440,7 +440,7 @@ invoke dns·{DnsResolver, DnsError};
 
     /// Read HTTP response from TCP stream
     rite read_response(&self, stream: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
-        vary buf: [u8; 8192] = [0; 8192];
+        ≔ vary buf: [u8; 8192] = [0; 8192];
         vary data = Vec·new();
 
         // Read until we have headers
@@ -466,7 +466,7 @@ invoke dns·{DnsResolver, DnsError};
 
     /// Read HTTP response from TLS stream
     rite read_response_tls(&self, stream: &vary TlsStream) -> Result<HttpResponse, HttpError>! {
-        vary buf: [u8; 8192] = [0; 8192];
+        ≔ vary buf: [u8; 8192] = [0; 8192];
         vary data = Vec·new();
 
         loop {
@@ -492,7 +492,7 @@ invoke dns·{DnsResolver, DnsError};
     /// Parse HTTP response (simplified)
     rite parse_response_simple(&self, data: &[u8]) -> Result<HttpResponse, HttpError>! {
         // Find header/body boundary
-        vary header_end: usize = 0;
+        ≔ vary header_end: usize = 0;
         ∀ i ∈ 0..data.len() - 3 {
             ⎇ data[i] == b'\r' && data[i + 1] == b'\n' && data[i + 2] == b'\r' && data[i + 3] == b'\n' {
                 header_end = i;

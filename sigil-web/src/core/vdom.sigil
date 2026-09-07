@@ -62,13 +62,13 @@ invoke tome·core·events·{EventHandler, EventType};
     }
 
     /// Add an attribute
-    ☉ rite attr(mut self, name: &str, value: impl Into<AttrValue>) -> Self! {
+    ☉ rite attr(mut self, name: &str, value: ⊢ Into<AttrValue>) -> Self! {
         self.attrs·insert(name.to_string(), value·into())
         self
     }
 
     /// Add a property
-    ☉ rite prop(mut self, name: &str, value: impl Into<PropValue>) -> Self! {
+    ☉ rite prop(mut self, name: &str, value: ⊢ Into<PropValue>) -> Self! {
         self.props·insert(name.to_string(), value·into())
         self
     }
@@ -80,13 +80,13 @@ invoke tome·core·events·{EventHandler, EventType};
     }
 
     /// Add a child node
-    ☉ rite child(mut self, node: impl Into<VNode>) -> Self! {
+    ☉ rite child(mut self, node: ⊢ Into<VNode>) -> Self! {
         self.children·push(node·into())
         self
     }
 
     /// Add multiple children
-    ☉ rite children(mut self, nodes: impl IntoIterator<Item = impl Into<VNode>>) -> Self! {
+    ☉ rite children(mut self, nodes: ⊢ IntoIterator<Item = ⊢ Into<VNode>>) -> Self! {
         self.children·extend(nodes|τ{n => n·into()})
         self
     }
@@ -115,7 +115,7 @@ invoke tome·core·events·{EventHandler, EventType};
     Remote(String~)
 }
 
-impl From<&str> for AttrValue {
+⊢ From<&str> for AttrValue {
     rite from(s: &str) -> Self! {
         AttrValue·String(s.to_string())
     }
@@ -173,7 +173,7 @@ impl From<&str> for AttrValue {
     }
 }
 
-impl From<&str> for VNode {
+⊢ From<&str> for VNode {
     rite from(s: &str) -> Self! {
         VNode·Text(VText·new(s))
     }

@@ -20,9 +20,9 @@ invoke sys·*;
 ☉ ⊢ IpAddr {
     /// Parse IPv4 address from string "a.b.c.d"
     ☉ rite parse_v4(s: &str) -> Result<IpAddr, SocketError>! {
-        vary parts: [u8; 4] = [0; 4];
-        vary part_idx: usize = 0;
-        vary current: u16 = 0;
+        ≔ vary parts: [u8; 4] = [0; 4];
+        ≔ vary part_idx: usize = 0;
+        ≔ vary current: u16 = 0;
 
         ∀ c ∈ s.chars() {
             ⎇ c == '.' {
@@ -54,7 +54,7 @@ invoke sys·*;
     ☉ rite parse_v6(s: &str) -> Result<IpAddr, SocketError>! {
         // Handle ·1 (localhost)
         ⎇ s == "·1" {
-            vary addr: [u8; 16] = [0; 16];
+            ≔ vary addr: [u8; 16] = [0; 16];
             addr[15] = 1;
             ret Ok(IpAddr·V6(addr));
         }
@@ -143,7 +143,7 @@ invoke sys·*;
 
     /// Convert to raw sockaddr bytes ∀ syscalls
     ☉ rite to_raw(&self) -> ([u8; 28], u32)! {
-        vary raw: [u8; 28] = [0; 28];
+        ≔ vary raw: [u8; 28] = [0; 28];
 
         ⌥ &self.ip {
             IpAddr·V4(octets) => {
@@ -189,7 +189,7 @@ invoke sys·*;
             Ok(SocketAddr { ip: IpAddr·V4(octets), port })
         } ⎉ ⎇ family == AF_INET6 && len >= 24 {
             ≔ port = ((raw[2] as u16) << 8) | (raw[3] as u16);
-            vary bytes: [u8; 16] = [0; 16];
+            ≔ vary bytes: [u8; 16] = [0; 16];
             ∀ i ∈ 0..16 {
                 bytes[i] = raw[8 + i];
             }
@@ -344,7 +344,7 @@ invoke sys·*;
 
     /// Read exactly `buf.len()` bytes, blocking until complete
     ☉ rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), SocketError>! {
-        vary total_read: usize = 0;
+        ≔ vary total_read: usize = 0;
         vary remaining = buf;
 
         ⟳ total_read < buf.len() {
@@ -370,7 +370,7 @@ invoke sys·*;
             ret Err(SocketError·NotConnected);
         }
 
-        vary total_written: usize = 0;
+        ≔ vary total_written: usize = 0;
 
         ⟳ total_written < buf.len() {
             ≔ remaining = &buf[total_written..];
@@ -394,9 +394,9 @@ invoke sys·*;
 
     /// Set read timeout ∈ milliseconds (0 = no timeout)
     ☉ rite set_read_timeout(&vary self, ms: u32) -> Result<(), SocketError>! {
-        vary tv_sec: i64 = (ms / 1000) as i64;
-        vary tv_usec: i64 = ((ms % 1000) * 1000) as i64;
-        vary timeval: [i64; 2] = [tv_sec, tv_usec];
+        ≔ vary tv_sec: i64 = (ms / 1000) as i64;
+        ≔ vary tv_usec: i64 = ((ms % 1000) * 1000) as i64;
+        ≔ vary timeval: [i64; 2] = [tv_sec, tv_usec];
 
         sys_setsockopt(self.fd, SOL_SOCKET, SO_RCVTIMEO, &timeval as *u8, 16)
             .map_err(SocketError·from_syscall)?;
@@ -405,9 +405,9 @@ invoke sys·*;
 
     /// Set write timeout ∈ milliseconds (0 = no timeout)
     ☉ rite set_write_timeout(&vary self, ms: u32) -> Result<(), SocketError>! {
-        vary tv_sec: i64 = (ms / 1000) as i64;
-        vary tv_usec: i64 = ((ms % 1000) * 1000) as i64;
-        vary timeval: [i64; 2] = [tv_sec, tv_usec];
+        ≔ vary tv_sec: i64 = (ms / 1000) as i64;
+        ≔ vary tv_usec: i64 = ((ms % 1000) * 1000) as i64;
+        ≔ vary timeval: [i64; 2] = [tv_sec, tv_usec];
 
         sys_setsockopt(self.fd, SOL_SOCKET, SO_SNDTIMEO, &timeval as *u8, 16)
             .map_err(SocketError·from_syscall)?;
@@ -421,8 +421,8 @@ invoke sys·*;
 
     /// Get the local address
     ☉ rite local_addr(&self) -> Result<SocketAddr, SocketError>! {
-        vary raw: [u8; 28] = [0; 28];
-        vary len: u32 = 28;
+        ≔ vary raw: [u8; 28] = [0; 28];
+        ≔ vary len: u32 = 28;
 
         sys_getsockname(self.fd, &raw as *u8, &len)
             .map_err(SocketError·from_syscall)?;
@@ -459,7 +459,7 @@ invoke sys·*;
             .map_err(SocketError·from_syscall)? as i32;
 
         // Set SO_REUSEADDR
-        vary optval: i32 = 1;
+        ≔ vary optval: i32 = 1;
         sys_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval as *u8, 4);
 
         // Bind
@@ -482,8 +482,8 @@ invoke sys·*;
         }
 
         // Get actual bound address (in case port was 0)
-        vary actual_addr: [u8; 28] = [0; 28];
-        vary actual_len: u32 = 28;
+        ≔ vary actual_addr: [u8; 28] = [0; 28];
+        ≔ vary actual_len: u32 = 28;
         sys_getsockname(fd, &actual_addr as *u8, &actual_len);
         ≔ local_addr = SocketAddr·from_raw(&actual_addr, actual_len)
             .unwrap_or(addr.clone());
@@ -493,8 +493,8 @@ invoke sys·*;
 
     /// Accept a new connection
     ☉ rite accept(&self) -> Result<(TcpStream, SocketAddr), SocketError>! {
-        vary client_addr: [u8; 28] = [0; 28];
-        vary addrlen: u32 = 28;
+        ≔ vary client_addr: [u8; 28] = [0; 28];
+        ≔ vary addrlen: u32 = 28;
 
         ≔ client_fd = sys_accept(self.fd, &client_addr as *u8, &addrlen)
             .map_err(SocketError·from_syscall)? as i32;
@@ -568,8 +568,8 @@ invoke sys·*;
         }
 
         // Get actual bound address
-        vary actual_addr: [u8; 28] = [0; 28];
-        vary actual_len: u32 = 28;
+        ≔ vary actual_addr: [u8; 28] = [0; 28];
+        ≔ vary actual_len: u32 = 28;
         sys_getsockname(fd, &actual_addr as *u8, &actual_len);
         ≔ bound_addr = SocketAddr·from_raw(&actual_addr, actual_len).ok();
 
@@ -585,8 +585,8 @@ invoke sys·*;
 
     /// Receive data and the sender's address
     ☉ rite recv_from(&self, buf: &vary [u8]) -> Result<(usize, SocketAddr), SocketError>! {
-        vary sender_addr: [u8; 28] = [0; 28];
-        vary addrlen: u32 = 28;
+        ≔ vary sender_addr: [u8; 28] = [0; 28];
+        ≔ vary addrlen: u32 = 28;
 
         ≔ n = sys_recvfrom(self.fd, buf.as_mut_ptr(), buf.len(), 0, &sender_addr as *u8, &addrlen)
             .map_err(SocketError·from_syscall)?;

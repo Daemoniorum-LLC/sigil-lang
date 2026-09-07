@@ -138,7 +138,7 @@ invoke tome·router·RouterContext;
 }
 
 /// Hook to manage query parameters
-☉ rite use_search_params() -> (QueryParams, impl Fn(QueryParams))! {
+☉ rite use_search_params() -> (QueryParams, ⊢ Fn(QueryParams))! {
     ≔ ctx! = use_context[RouterContext]();
     ≔ query! = use_query();
     ≔ navigate! = ctx.navigate·clone();

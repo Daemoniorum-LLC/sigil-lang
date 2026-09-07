@@ -15,7 +15,7 @@ invoke tome·router·{RouterContext, NavigateOptions};
     replace: Option[bool]?,
     state: Option[serde_json·Value]?,
     prefetch: Option[bool]?,
-    on_click: Option[impl Fn(MouseEvent) + 'static]?,
+    on_click: Option[⊢ Fn(MouseEvent) + 'static]?,
 ) -> Element! {
     ≔ ctx! = use_context[RouterContext]();
     ≔ location! = ctx.location·get();

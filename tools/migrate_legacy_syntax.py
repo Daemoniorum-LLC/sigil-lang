@@ -186,3 +186,56 @@ def migrate_std_paths(src):
         )
     out = "".join(one(t) if is_code else t for t, is_code in split_regions(src))
     return STD_INVOKE.sub("", out)
+
+
+# ---------------------------------------------------------------------------
+# Constructs that have a Sigil spelling, just not the Rust one
+# ---------------------------------------------------------------------------
+# Established by probing the compiler, not by assumption:
+#
+#   in("rdi") x       ->  ∈("rdi") x     asm input operands use ∈, like the rest
+#                                        of Sigil's vocabulary (the parser matches
+#                                        Token::ElementOf here)
+#   vary x: T;        ->  ≔ vary x: T;   `vary` is a modifier on the ≔ binder, not
+#                                        a statement starter of its own
+#   c: impl Fn()      ->  c: ⊢ Fn()      `impl Trait` in argument position is
+#                                        spelled with the same impl sigil
+#
+# Generic bounds needed no change at all: [T: Clone], [F: Fn() + 'static] and
+# [T: Into<String>] already parse.
+
+ASM_IN = re.compile(r"(?<![\w·])in\(")
+BARE_VARY = re.compile(r"^([ \t]*)vary\s+(\w+\s*:)", re.M)
+IMPL_ARG = re.compile(r"(?<![\w·])impl\s+(?=[A-Z])")
+
+
+def migrate_constructs(src, in_asm_only=True):
+    """Rewrite Rust-spelled constructs to their Sigil equivalents. Region-safe."""
+    def one(text):
+        text = BARE_VARY.sub(lambda m: f"{m.group(1)}≔ vary {m.group(2)}", text)
+        text = IMPL_ARG.sub("⊢ ", text)
+        return text
+
+    out = "".join(one(t) if is_code else t for t, is_code in split_regions(src))
+
+    # `in(` is only an asm operand inside an asm! block; rewriting it everywhere
+    # would hit ordinary calls to a function named `in`.
+    if "asm!" in out:
+        pieces, idx = [], 0
+        for m in re.finditer(r"asm!\s*\(", out):
+            start = m.end() - 1
+            depth, j = 0, start
+            while j < len(out):
+                if out[j] == "(":
+                    depth += 1
+                elif out[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            pieces.append(out[idx:start])
+            pieces.append(ASM_IN.sub("∈(", out[start : j + 1]))
+            idx = j + 1
+        pieces.append(out[idx:])
+        out = "".join(pieces)
+    return out

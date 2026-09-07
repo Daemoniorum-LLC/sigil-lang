@@ -355,7 +355,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
         self.next_id = self.next_id.wrapping_add(1);
 
         // Build query packet
-        vary query_buf: [u8; 512] = [0; 512];
+        ≔ vary query_buf: [u8; 512] = [0; 512];
         ≔ header = DnsHeader·new_query(id);
         vary pos = header.encode(&vary query_buf);
 
@@ -406,7 +406,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
             .map_err(|e| DnsError·NetworkError { inner: e })?;
 
         // Receive response
-        vary response_buf: [u8; 512] = [0; 512];
+        ≔ vary response_buf: [u8; 512] = [0; 512];
         ≔ (response_len, _) = socket.recv_from(&vary response_buf)
             .map_err(|e| DnsError·NetworkError { inner: e })?;
 
@@ -442,7 +442,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
         }
 
         // Skip question section
-        vary pos: usize = 12;  // After header
+        ≔ vary pos: usize = 12;  // After header
 
         ∀ _ ∈ 0..header.qdcount {
             ≔ (_, new_pos) = decode_name(buf, pos)?;
@@ -478,7 +478,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
                 ≔ octets: [u8; 4] = [buf[pos], buf[pos + 1], buf[pos + 2], buf[pos + 3]];
                 addresses.push(IpAddr·V4(octets));
             } ⎉ ⎇ rtype == TYPE_AAAA && rdlength == 16 {
-                vary bytes: [u8; 16] = [0; 16];
+                ≔ vary bytes: [u8; 16] = [0; 16];
                 ∀ i ∈ 0..16 {
                     bytes[i] = buf[pos + i];
                 }

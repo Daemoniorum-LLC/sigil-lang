@@ -37,11 +37,11 @@ invoke super·{SyscallError, syscall_result};
 // ============================================================================
 
 rite syscall0(nr: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
+            ∈("x8") nr,
             lateout("x0") result,
             options(nostack)
         );
@@ -50,12 +50,12 @@ rite syscall0(nr: i64) -> isize! {
 }
 
 rite syscall1(nr: i64, a1: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
-            in("x0") a1,
+            ∈("x8") nr,
+            ∈("x0") a1,
             lateout("x0") result,
             options(nostack)
         );
@@ -64,13 +64,13 @@ rite syscall1(nr: i64, a1: i64) -> isize! {
 }
 
 rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
-            in("x0") a1,
-            in("x1") a2,
+            ∈("x8") nr,
+            ∈("x0") a1,
+            ∈("x1") a2,
             lateout("x0") result,
             options(nostack)
         );
@@ -79,14 +79,14 @@ rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
 }
 
 rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
-            in("x0") a1,
-            in("x1") a2,
-            in("x2") a3,
+            ∈("x8") nr,
+            ∈("x0") a1,
+            ∈("x1") a2,
+            ∈("x2") a3,
             lateout("x0") result,
             options(nostack)
         );
@@ -95,15 +95,15 @@ rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
 }
 
 rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
-            in("x0") a1,
-            in("x1") a2,
-            in("x2") a3,
-            in("x3") a4,
+            ∈("x8") nr,
+            ∈("x0") a1,
+            ∈("x1") a2,
+            ∈("x2") a3,
+            ∈("x3") a4,
             lateout("x0") result,
             options(nostack)
         );
@@ -112,16 +112,16 @@ rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
 }
 
 rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
-            in("x0") a1,
-            in("x1") a2,
-            in("x2") a3,
-            in("x3") a4,
-            in("x4") a5,
+            ∈("x8") nr,
+            ∈("x0") a1,
+            ∈("x1") a2,
+            ∈("x2") a3,
+            ∈("x3") a4,
+            ∈("x4") a5,
             lateout("x0") result,
             options(nostack)
         );
@@ -130,17 +130,17 @@ rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
 }
 
 rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "svc #0",
-            in("x8") nr,
-            in("x0") a1,
-            in("x1") a2,
-            in("x2") a3,
-            in("x3") a4,
-            in("x4") a5,
-            in("x5") a6,
+            ∈("x8") nr,
+            ∈("x0") a1,
+            ∈("x1") a2,
+            ∈("x2") a3,
+            ∈("x3") a4,
+            ∈("x4") a5,
+            ∈("x5") a6,
             lateout("x0") result,
             options(nostack)
         );
@@ -231,10 +231,10 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
 ☉ rite sys_poll(fds: *u8, nfds: usize, timeout_ms: i32) -> Result<usize, SyscallError>! {
     // Convert timeout_ms to timespec ∀ ppoll
     // For simplicity, pass null sigmask
-    vary ts_sec: i64 = (timeout_ms / 1000) as i64;
-    vary ts_nsec: i64 = ((timeout_ms % 1000) * 1000000) as i64;
+    ≔ vary ts_sec: i64 = (timeout_ms / 1000) as i64;
+    ≔ vary ts_nsec: i64 = ((timeout_ms % 1000) * 1000000) as i64;
 
-    vary timespec: [i64; 2] = [ts_sec, ts_nsec];
+    ≔ vary timespec: [i64; 2] = [ts_sec, ts_nsec];
 
     ⎇ timeout_ms < 0 {
         // Infinite timeout - pass null timespec

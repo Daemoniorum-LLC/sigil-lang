@@ -6672,6 +6672,17 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.expect(Token::LParen)?;
                     while !self.check(&Token::RParen) {
+                        // `volatile` lexes as a keyword, not an identifier, so an
+                        // Ident-only match could never see the most common asm
+                        // option — `options(volatile)` was unparseable.
+                        if self.check(&Token::Volatile) {
+                            self.advance();
+                            options.volatile = true;
+                            if !self.consume_if(&Token::Comma) {
+                                break;
+                            }
+                            continue;
+                        }
                         if let Some(Token::Ident(opt)) = self.current_token().cloned() {
                             self.advance();
                             match opt.as_str() {

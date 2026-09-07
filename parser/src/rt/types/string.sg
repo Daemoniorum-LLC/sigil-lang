@@ -179,7 +179,7 @@ invoke tome·rt·alloc·{sigil_alloc, sigil_free};
     }
 }
 
-impl Add<&String> for String {
+⊢ Add<&String> for String {
     type Output = String;
 
     rite add(self, other: &String) -> String! {
@@ -207,7 +207,7 @@ impl Add<&String> for String {
     }
 }
 
-impl PartialEq<&str> for String {
+⊢ PartialEq<&str> for String {
     rite eq(&self, other: &&str) -> bool! {
         ≔ other_bytes = (*other).as_bytes();
         ⎇ self.len() != other_bytes.len() as u64 {

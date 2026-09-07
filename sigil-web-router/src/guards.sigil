@@ -31,8 +31,8 @@ invoke tome·router·RouterContext;
 ☉ rite Guard[G: RouteGuard + 'static](
     guard: G!,
     children: Children!,
-    fallback: Option[impl Fn() -> Element + 'static]?,
-    loading: Option[impl Fn() -> Element + 'static]?,
+    fallback: Option[⊢ Fn() -> Element + 'static]?,
+    loading: Option[⊢ Fn() -> Element + 'static]?,
 ) -> Element! {
     ≔ result! = guard·can_activate();
 
@@ -70,7 +70,7 @@ invoke tome·router·RouterContext;
 }
 
 ⊢ AuthGuard {
-    ☉ rite new(is_authenticated: impl Fn() -> bool + 'static!, login_path: &str!) -> Self! {
+    ☉ rite new(is_authenticated: ⊢ Fn() -> bool + 'static!, login_path: &str!) -> Self! {
         AuthGuard {
             is_authenticated: Rc·new(is_authenticated),
             login_path: login_path·to_string(),
@@ -98,7 +98,7 @@ invoke tome·router·RouterContext;
 ⊢ RoleGuard {
     ☉ rite new(
         required_roles: Vec[String]!,
-        get_user_roles: impl Fn() -> Vec[String] + 'static!,
+        get_user_roles: ⊢ Fn() -> Vec[String] + 'static!,
         unauthorized_path: &str!,
     ) -> Self! {
         RoleGuard {
@@ -108,7 +108,7 @@ invoke tome·router·RouterContext;
         }
     }
 
-    ☉ rite any_of(roles: Vec[String]!, get_user_roles: impl Fn() -> Vec[String] + 'static!) -> Self! {
+    ☉ rite any_of(roles: Vec[String]!, get_user_roles: ⊢ Fn() -> Vec[String] + 'static!) -> Self! {
         RoleGuard·new(roles, get_user_roles, "/unauthorized")
     }
 }

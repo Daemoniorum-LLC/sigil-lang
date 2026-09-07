@@ -116,7 +116,7 @@ invoke security·*;
 
     /// Read exactly `buf.len()` bytes
     ☉ rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), TlsError>! {
-        vary total_read: usize = 0;
+        ≔ vary total_read: usize = 0;
         vary remaining = buf;
 
         ⟳ total_read < buf.len() {
@@ -143,7 +143,7 @@ invoke security·*;
             ret Err(TlsError·NotConnected);
         }
 
-        vary total_written: usize = 0;
+        ≔ vary total_written: usize = 0;
 
         ⟳ total_written < buf.len() {
             ≔ remaining = &buf[total_written..];

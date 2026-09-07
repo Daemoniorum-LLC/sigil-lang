@@ -66,19 +66,19 @@ impl[F: FnMut() + 'static] Closure[F] {
 ☉ type Closure2[A, B] = Closure[Box[dyn FnOnce(A, B)]];
 
 ⊢ Closure0 {
-    ☉ rite wrap(f: impl FnOnce() + 'static) -> Self! {
+    ☉ rite wrap(f: ⊢ FnOnce() + 'static) -> Self! {
         Closure·once(Box·new(f))
     }
 }
 
 impl[A: 'static] Closure1[A] {
-    ☉ rite wrap(f: impl FnOnce(A) + 'static) -> Self! {
+    ☉ rite wrap(f: ⊢ FnOnce(A) + 'static) -> Self! {
         Closure·once(Box·new(f))
     }
 }
 
 impl[A: 'static, B: 'static] Closure2[A, B] {
-    ☉ rite wrap(f: impl FnOnce(A, B) + 'static) -> Self! {
+    ☉ rite wrap(f: ⊢ FnOnce(A, B) + 'static) -> Self! {
         Closure·once(Box·new(f))
     }
 }

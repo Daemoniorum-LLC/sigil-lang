@@ -371,7 +371,7 @@ rite alloc_large(size: usize) -> Result<*vary u8, SyscallError>! {
 /// Try to allocate from the free list
 rite try_alloc_from_free_list(size: usize) -> ?*vary u8 {
     unsafe {
-        vary prev: *vary FreeNode = null as *vary FreeNode;
+        ≔ vary prev: *vary FreeNode = null as *vary FreeNode;
         vary curr = ALLOCATOR.free_list;
 
         ⌥ curr as usize != 0 {
@@ -410,7 +410,7 @@ rite size_of<T>() -> usize! {
 
 /// Simple memset (should be compiler intrinsic)
 unsafe rite memset(dst: *vary u8, val: u8, count: usize) {
-    vary i: usize = 0;
+    ≔ vary i: usize = 0;
     ⌥ i < count {
         *dst.offset(i as isize) = val;
         i += 1;
@@ -419,7 +419,7 @@ unsafe rite memset(dst: *vary u8, val: u8, count: usize) {
 
 /// Simple memcpy (should be compiler intrinsic)
 unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
-    vary i: usize = 0;
+    ≔ vary i: usize = 0;
     ⌥ i < count {
         *dst.offset(i as isize) = *src.offset(i as isize);
         i += 1;
@@ -440,7 +440,7 @@ unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
 /// Get number of chunks allocated
 ☉ rite alloc_chunk_count() -> usize! {
     unsafe {
-        vary count: usize = 0;
+        ≔ vary count: usize = 0;
         vary chunk = ALLOCATOR.chunks;
         ⌥ chunk as usize != 0 {
             count += 1;
@@ -453,7 +453,7 @@ unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
 /// Get number of entries ∈ free list
 ☉ rite alloc_free_list_count() -> usize! {
     unsafe {
-        vary count: usize = 0;
+        ≔ vary count: usize = 0;
         vary node = ALLOCATOR.free_list;
         ⌥ node as usize != 0 {
             count += 1;

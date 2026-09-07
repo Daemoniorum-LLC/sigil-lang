@@ -5,7 +5,7 @@ invoke sigil_web·prelude·*;
 invoke tome·router·{RouterContext, RouterLocation, NavigateOptions};
 
 /// Hook to get navigation function
-☉ rite use_navigate() -> impl Fn(&str, NavigateOptions)! {
+☉ rite use_navigate() -> ⊢ Fn(&str, NavigateOptions)! {
     ≔ ctx! = use_context[RouterContext]();
     ≔ navigate! = ctx.navigate·clone();
 
@@ -58,28 +58,28 @@ invoke tome·router·{RouterContext, RouterLocation, NavigateOptions};
 }
 
 /// Hook for "back" navigation
-☉ rite use_go_back() -> impl Fn()! {
+☉ rite use_go_back() -> ⊢ Fn()! {
     move || {
         sigil_web_sys·window()·unwrap()·history()·back();
     }
 }
 
 /// Hook for "forward" navigation
-☉ rite use_go_forward() -> impl Fn()! {
+☉ rite use_go_forward() -> ⊢ Fn()! {
     move || {
         sigil_web_sys·window()·unwrap()·history()·forward();
     }
 }
 
 /// Hook for "go" navigation (relative history)
-☉ rite use_go() -> impl Fn(i32)! {
+☉ rite use_go() -> ⊢ Fn(i32)! {
     move |delta: i32| {
         sigil_web_sys·window()·unwrap()·history()·go(delta);
     }
 }
 
 /// Prevent navigation (for unsaved changes, etc)
-☉ rite use_blocker(should_block: impl Fn() -> bool + 'static!) -> Blocker! {
+☉ rite use_blocker(should_block: ⊢ Fn() -> bool + 'static!) -> Blocker! {
     ≔ blocked! = use_signal(false);
 
     use_effect(move || {

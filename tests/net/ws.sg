@@ -42,7 +42,7 @@ rite syscall1(num: i64, arg1: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
+            ∈("rdi") arg1,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -55,8 +55,8 @@ rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -69,9 +69,9 @@ rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -84,12 +84,12 @@ rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, a
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
-            in("r10") arg4,
-            in("r8") arg5,
-            in("r9") arg6,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
+            ∈("r10") arg4,
+            ∈("r8") arg5,
+            ∈("r9") arg6,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -118,8 +118,8 @@ rite mem_copy(dst: i64, src: i64, len: i64) {
     ⟳ i < len {
         ≔ byte: i64 = 0;
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") src + i, out("rax") byte, options(nostack, readonly));
-            asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") byte as i8, options(nostack));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") src + i, out("rax") byte, options(nostack, readonly));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") dst + i, ∈("al") byte as i8, options(nostack));
         }
         i = i + 1;
     }
@@ -129,7 +129,7 @@ rite mem_set(dst: i64, val: i8, len: i64) {
     ≔ i: i64 = 0;
     ⟳ i < len {
         unsafe {
-            asm!("mov byte ptr [rdi], al", in("rdi") dst + i, in("al") val, options(nostack));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") dst + i, ∈("al") val, options(nostack));
         }
         i = i + 1;
     }
@@ -140,7 +140,7 @@ rite str_len(s: i64) -> i64 {
     ≔ byte: i64 = 1;
     ⟳ byte != 0 {
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") s + len, out("rax") byte, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") s + len, out("rax") byte, options(nostack, readonly));
         }
         ⎇ byte != 0 {
             len = len + 1;
@@ -167,7 +167,7 @@ rite write_cstr(s: i64) {
 
 rite write_newline() {
     ≔ nl = alloc_mem(8);
-    unsafe { asm!("mov byte ptr [rdi], 10", in("rdi") nl, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 10", ∈("rdi") nl, options(nostack)); }
     write_stdout(nl, 1);
     free_mem(nl, 8);
 }
@@ -182,18 +182,18 @@ rite write_int(n: i64) {
     }
     ≔ idx: i64 = 30;
     ⎇ num == 0 {
-        unsafe { asm!("mov byte ptr [rdi], 0x30", in("rdi") buf + idx, options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], 0x30", ∈("rdi") buf + idx, options(nostack)); }
         idx = idx - 1;
     } ⎉ {
         ⟳ num > 0 {
             ≔ digit = (num % 10) + 48;
-            unsafe { asm!("mov byte ptr [rdi], al", in("rdi") buf + idx, in("al") digit as i8, options(nostack)); }
+            unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") buf + idx, ∈("al") digit as i8, options(nostack)); }
             idx = idx - 1;
             num = num / 10;
         }
     }
     ⎇ neg == 1 {
-        unsafe { asm!("mov byte ptr [rdi], 0x2d", in("rdi") buf + idx, options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], 0x2d", ∈("rdi") buf + idx, options(nostack)); }
         idx = idx - 1;
     }
     write_stdout(buf + idx + 1, 30 - idx);
@@ -216,9 +216,9 @@ rite socket_poll_read(fd: i64, timeout_ms: i64) -> i64 {
     ≔ pollfd = alloc_mem(16);
     ⎇ pollfd < 0 { ⤺ -1; }
     unsafe {
-        asm!("mov dword ptr [rdi], esi", in("rdi") pollfd, in("esi") fd as i32, options(nostack));
-        asm!("mov word ptr [rdi], 1", in("rdi") pollfd + 4, options(nostack));
-        asm!("mov word ptr [rdi], 0", in("rdi") pollfd + 6, options(nostack));
+        asm!("mov dword ptr [rdi], esi", ∈("rdi") pollfd, ∈("esi") fd as i32, options(nostack));
+        asm!("mov word ptr [rdi], 1", ∈("rdi") pollfd + 4, options(nostack));
+        asm!("mov word ptr [rdi], 0", ∈("rdi") pollfd + 6, options(nostack));
     }
     ≔ result = syscall3(SYS_POLL, pollfd, 1, timeout_ms);
     free_mem(pollfd, 16);
@@ -230,14 +230,14 @@ rite socket_connect_ipv4(fd: i64, ip_packed: i64, port: i64) -> i64 {
     ⎇ addr_buf < 0 { ⤺ -1; }
     mem_set(addr_buf, 0, 16);
     unsafe {
-        asm!("mov word ptr [rdi], 2", in("rdi") addr_buf, options(nostack));
+        asm!("mov word ptr [rdi], 2", ∈("rdi") addr_buf, options(nostack));
     }
     ≔ port_hi = (port >> 8) & 255;
     ≔ port_lo = port & 255;
     unsafe {
-        asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 2, in("al") port_hi as i8, options(nostack));
-        asm!("mov byte ptr [rdi], al", in("rdi") addr_buf + 3, in("al") port_lo as i8, options(nostack));
-        asm!("mov dword ptr [rdi], eax", in("rdi") addr_buf + 4, in("eax") ip_packed as i32, options(nostack));
+        asm!("mov byte ptr [rdi], al", ∈("rdi") addr_buf + 2, ∈("al") port_hi as i8, options(nostack));
+        asm!("mov byte ptr [rdi], al", ∈("rdi") addr_buf + 3, ∈("al") port_lo as i8, options(nostack));
+        asm!("mov dword ptr [rdi], eax", ∈("rdi") addr_buf + 4, ∈("eax") ip_packed as i32, options(nostack));
     }
     ≔ result = syscall3(SYS_CONNECT, fd, addr_buf, 16);
     free_mem(addr_buf, 32);
@@ -260,7 +260,7 @@ rite generate_fixed_ws_key(key_buf: i64) -> i64 {
     ≔ i: i64 = 0;
     ⟳ i < 24 {
         unsafe {
-            asm!("mov byte ptr [rdi], al", in("rdi") key_buf + i, in("al") key[i as usize], options(nostack));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") key_buf + i, ∈("al") key[i as usize], options(nostack));
         }
         i = i + 1;
     }
@@ -295,10 +295,10 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
 
     // "GET "
     unsafe {
-        asm!("mov byte ptr [rdi], 71", in("rdi") req + pos, options(nostack));      // G
-        asm!("mov byte ptr [rdi], 69", in("rdi") req + pos + 1, options(nostack));  // E
-        asm!("mov byte ptr [rdi], 84", in("rdi") req + pos + 2, options(nostack));  // T
-        asm!("mov byte ptr [rdi], 32", in("rdi") req + pos + 3, options(nostack));  // space
+        asm!("mov byte ptr [rdi], 71", ∈("rdi") req + pos, options(nostack));      // G
+        asm!("mov byte ptr [rdi], 69", ∈("rdi") req + pos + 1, options(nostack));  // E
+        asm!("mov byte ptr [rdi], 84", ∈("rdi") req + pos + 2, options(nostack));  // T
+        asm!("mov byte ptr [rdi], 32", ∈("rdi") req + pos + 3, options(nostack));  // space
     }
     pos = pos + 4;
 
@@ -310,7 +310,7 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
     ≔ http_ver: [i8; 11] = [32, 72, 84, 84, 80, 47, 49, 46, 49, 13, 10];
     ≔ i: i64 = 0;
     ⟳ i < 11 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") http_ver[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") req + pos + i, ∈("al") http_ver[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 11;
@@ -319,15 +319,15 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
     ≔ host_hdr: [i8; 6] = [72, 111, 115, 116, 58, 32];
     i = 0;
     ⟳ i < 6 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") host_hdr[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") req + pos + i, ∈("al") host_hdr[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 6;
     mem_copy(req + pos, host, host_len);
     pos = pos + host_len;
     unsafe {
-        asm!("mov byte ptr [rdi], 13", in("rdi") req + pos, options(nostack));
-        asm!("mov byte ptr [rdi], 10", in("rdi") req + pos + 1, options(nostack));
+        asm!("mov byte ptr [rdi], 13", ∈("rdi") req + pos, options(nostack));
+        asm!("mov byte ptr [rdi], 10", ∈("rdi") req + pos + 1, options(nostack));
     }
     pos = pos + 2;
 
@@ -335,7 +335,7 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
     ≔ upgrade: [i8; 20] = [85, 112, 103, 114, 97, 100, 101, 58, 32, 119, 101, 98, 115, 111, 99, 107, 101, 116, 13, 10];
     i = 0;
     ⟳ i < 20 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") upgrade[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") req + pos + i, ∈("al") upgrade[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 20;
@@ -344,7 +344,7 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
     ≔ conn: [i8; 21] = [67, 111, 110, 110, 101, 99, 116, 105, 111, 110, 58, 32, 85, 112, 103, 114, 97, 100, 101, 13, 10];
     i = 0;
     ⟳ i < 21 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") conn[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") req + pos + i, ∈("al") conn[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 21;
@@ -353,15 +353,15 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
     ≔ ws_key_hdr: [i8; 19] = [83, 101, 99, 45, 87, 101, 98, 83, 111, 99, 107, 101, 116, 45, 75, 101, 121, 58, 32];
     i = 0;
     ⟳ i < 19 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") ws_key_hdr[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") req + pos + i, ∈("al") ws_key_hdr[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 19;
     mem_copy(req + pos, key, key_len);
     pos = pos + key_len;
     unsafe {
-        asm!("mov byte ptr [rdi], 13", in("rdi") req + pos, options(nostack));
-        asm!("mov byte ptr [rdi], 10", in("rdi") req + pos + 1, options(nostack));
+        asm!("mov byte ptr [rdi], 13", ∈("rdi") req + pos, options(nostack));
+        asm!("mov byte ptr [rdi], 10", ∈("rdi") req + pos + 1, options(nostack));
     }
     pos = pos + 2;
 
@@ -369,16 +369,16 @@ rite build_ws_handshake(host: i64, host_len: i64, path: i64, path_len: i64, key:
     ≔ ws_ver: [i8; 27] = [83, 101, 99, 45, 87, 101, 98, 83, 111, 99, 107, 101, 116, 45, 86, 101, 114, 115, 105, 111, 110, 58, 32, 49, 51, 13, 10];
     i = 0;
     ⟳ i < 27 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") req + pos + i, in("al") ws_ver[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") req + pos + i, ∈("al") ws_ver[i as usize], options(nostack)); }
         i = i + 1;
     }
     pos = pos + 27;
 
     // "\r\n"
     unsafe {
-        asm!("mov byte ptr [rdi], 13", in("rdi") req + pos, options(nostack));
-        asm!("mov byte ptr [rdi], 10", in("rdi") req + pos + 1, options(nostack));
-        asm!("mov byte ptr [rdi], 0", in("rdi") req + pos + 2, options(nostack));
+        asm!("mov byte ptr [rdi], 13", ∈("rdi") req + pos, options(nostack));
+        asm!("mov byte ptr [rdi], 10", ∈("rdi") req + pos + 1, options(nostack));
+        asm!("mov byte ptr [rdi], 0", ∈("rdi") req + pos + 2, options(nostack));
     }
     pos = pos + 2;
 
@@ -394,10 +394,10 @@ rite check_ws_response(data: i64, data_len: i64) -> i64 {
     ≔ b10: i64 = 0;
     ≔ b11: i64 = 0;
     unsafe {
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") data, out("rax") b0, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 9, out("rax") b9, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 10, out("rax") b10, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 11, out("rax") b11, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data, out("rax") b0, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data + 9, out("rax") b9, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data + 10, out("rax") b10, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data + 11, out("rax") b11, options(nostack, readonly));
     }
 
     // Check "HTTP" start and "101" status
@@ -422,7 +422,7 @@ rite ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
 
     // FIN + opcode
     unsafe {
-        asm!("mov byte ptr [rdi], 0x81", in("rdi") output + pos, options(nostack));
+        asm!("mov byte ptr [rdi], 0x81", ∈("rdi") output + pos, options(nostack));
     }
     pos = pos + 1;
 
@@ -430,20 +430,20 @@ rite ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     ⎇ payload_len < 126 {
         ≔ len_byte = (payload_len | 128) as i8;  // Set MASK bit
         unsafe {
-            asm!("mov byte ptr [rdi], al", in("rdi") output + pos, in("al") len_byte, options(nostack));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos, ∈("al") len_byte, options(nostack));
         }
         pos = pos + 1;
     } ⎉ {
         // Extended length (16-bit)
         unsafe {
-            asm!("mov byte ptr [rdi], 0xfe", in("rdi") output + pos, options(nostack));  // 126 | 128
+            asm!("mov byte ptr [rdi], 0xfe", ∈("rdi") output + pos, options(nostack));  // 126 | 128
         }
         pos = pos + 1;
         ≔ len_hi = ((payload_len >> 8) & 255) as i8;
         ≔ len_lo = (payload_len & 255) as i8;
         unsafe {
-            asm!("mov byte ptr [rdi], al", in("rdi") output + pos, in("al") len_hi, options(nostack));
-            asm!("mov byte ptr [rdi], al", in("rdi") output + pos + 1, in("al") len_lo, options(nostack));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos, ∈("al") len_hi, options(nostack));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos + 1, ∈("al") len_lo, options(nostack));
         }
         pos = pos + 2;
     }
@@ -458,14 +458,14 @@ rite ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     ≔ m2: i64 = 0;
     ≔ m3: i64 = 0;
     unsafe {
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") mask, out("rax") m0, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") mask + 1, out("rax") m1, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") mask + 2, out("rax") m2, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") mask + 3, out("rax") m3, options(nostack, readonly));
-        asm!("mov byte ptr [rdi], al", in("rdi") output + pos, in("al") m0 as i8, options(nostack));
-        asm!("mov byte ptr [rdi], al", in("rdi") output + pos + 1, in("al") m1 as i8, options(nostack));
-        asm!("mov byte ptr [rdi], al", in("rdi") output + pos + 2, in("al") m2 as i8, options(nostack));
-        asm!("mov byte ptr [rdi], al", in("rdi") output + pos + 3, in("al") m3 as i8, options(nostack));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") mask, out("rax") m0, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") mask + 1, out("rax") m1, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") mask + 2, out("rax") m2, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") mask + 3, out("rax") m3, options(nostack, readonly));
+        asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos, ∈("al") m0 as i8, options(nostack));
+        asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos + 1, ∈("al") m1 as i8, options(nostack));
+        asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos + 2, ∈("al") m2 as i8, options(nostack));
+        asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos + 3, ∈("al") m3 as i8, options(nostack));
     }
     pos = pos + 4;
 
@@ -474,7 +474,7 @@ rite ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
     ⟳ i < payload_len {
         ≔ byte: i64 = 0;
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") payload + i, out("rax") byte, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") payload + i, out("rax") byte, options(nostack, readonly));
         }
         ≔ mask_idx = i % 4;
         ≔ mask_byte = m0;
@@ -483,7 +483,7 @@ rite ws_frame_text(payload: i64, payload_len: i64, output: i64) -> i64 {
         ⎉ ⎇ mask_idx == 3 { mask_byte = m3; }
         ≔ masked = byte ^ mask_byte;
         unsafe {
-            asm!("mov byte ptr [rdi], al", in("rdi") output + pos + i, in("al") masked as i8, options(nostack));
+            asm!("mov byte ptr [rdi], al", ∈("rdi") output + pos + i, ∈("al") masked as i8, options(nostack));
         }
         i = i + 1;
     }
@@ -501,8 +501,8 @@ rite ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out:
     ≔ b0: i64 = 0;
     ≔ b1: i64 = 0;
     unsafe {
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") data, out("rax") b0, options(nostack, readonly));
-        asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 1, out("rax") b1, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data, out("rax") b0, options(nostack, readonly));
+        asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data + 1, out("rax") b1, options(nostack, readonly));
     }
 
     ≔ opcode = b0 & 15;
@@ -517,8 +517,8 @@ rite ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out:
         ≔ hi: i64 = 0;
         ≔ lo: i64 = 0;
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 2, out("rax") hi, options(nostack, readonly));
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") data + 3, out("rax") lo, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data + 2, out("rax") hi, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") data + 3, out("rax") lo, options(nostack, readonly));
         }
         actual_len = (hi << 8) | lo;
         header_len = 4;
@@ -531,8 +531,8 @@ rite ws_parse_frame(data: i64, data_len: i64, payload_out: i64, payload_len_out:
 
     // Write payload info
     unsafe {
-        asm!("mov [rdi], rax", in("rdi") payload_out, in("rax") data + header_len, options(nostack));
-        asm!("mov [rdi], rax", in("rdi") payload_len_out, in("rax") actual_len, options(nostack));
+        asm!("mov [rdi], rax", ∈("rdi") payload_out, ∈("rax") data + header_len, options(nostack));
+        asm!("mov [rdi], rax", ∈("rdi") payload_len_out, ∈("rax") actual_len, options(nostack));
     }
 
     opcode
@@ -548,11 +548,11 @@ rite test_fixed_ws_key() -> i64 {
     ≔ chars: [i8; 23] = [84, 101, 115, 116, 32, 49, 58, 32, 70, 105, 120, 101, 100, 32, 87, 83, 32, 107, 101, 121, 46, 46, 46];
     ≔ i: i64 = 0;
     ⟳ i < 23 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") msg + i, ∈("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
-    unsafe { asm!("mov byte ptr [rdi], 32", in("rdi") msg + 23, options(nostack)); }
-    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") msg + 24, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 32", ∈("rdi") msg + 23, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 0", ∈("rdi") msg + 24, options(nostack)); }
     write_cstr(msg);
     free_mem(msg, 32);
 
@@ -566,8 +566,8 @@ rite test_fixed_ws_key() -> i64 {
         ≔ c0: i64 = 0;
         ≔ c23: i64 = 0;
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") key, out("rax") c0, options(nostack, readonly));
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") key + 23, out("rax") c23, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") key, out("rax") c0, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") key + 23, out("rax") c23, options(nostack, readonly));
         }
         ⎇ c0 == 100 && c23 == 61 {  // d and =
             success = 1;
@@ -579,11 +579,11 @@ rite test_fixed_ws_key() -> i64 {
     ⎇ success == 1 {
         ≔ pass_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") pass_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 80", ∈("rdi") pass_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") pass_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") pass_msg + 4, options(nostack));
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
@@ -591,11 +591,11 @@ rite test_fixed_ws_key() -> i64 {
     } ⎉ {
         ≔ fail_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 70", ∈("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", ∈("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", ∈("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") fail_msg + 4, options(nostack));
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
@@ -609,10 +609,10 @@ rite test_ws_key_generation() -> i64 {
     ≔ chars: [i8; 29] = [84, 101, 115, 116, 32, 50, 58, 32, 87, 83, 32, 107, 101, 121, 32, 103, 101, 110, 101, 114, 97, 116, 105, 111, 110, 46, 46, 46, 32];
     ≔ i: i64 = 0;
     ⟳ i < 29 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") msg + i, ∈("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
-    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") msg + 29, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 0", ∈("rdi") msg + 29, options(nostack)); }
     write_cstr(msg);
     free_mem(msg, 32);
 
@@ -630,11 +630,11 @@ rite test_ws_key_generation() -> i64 {
     ⎇ success == 1 {
         ≔ pass_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") pass_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 80", ∈("rdi") pass_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") pass_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") pass_msg + 4, options(nostack));
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
@@ -642,11 +642,11 @@ rite test_ws_key_generation() -> i64 {
     } ⎉ {
         ≔ fail_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 70", ∈("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", ∈("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", ∈("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") fail_msg + 4, options(nostack));
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
@@ -660,19 +660,19 @@ rite test_ws_framing() -> i64 {
     ≔ chars: [i8; 21] = [84, 101, 115, 116, 32, 51, 58, 32, 87, 83, 32, 102, 114, 97, 109, 105, 110, 103, 46, 46, 46];
     ≔ i: i64 = 0;
     ⟳ i < 21 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") msg + i, ∈("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
-    unsafe { asm!("mov byte ptr [rdi], 32", in("rdi") msg + 21, options(nostack)); }
-    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") msg + 22, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 32", ∈("rdi") msg + 21, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 0", ∈("rdi") msg + 22, options(nostack)); }
     write_cstr(msg);
     free_mem(msg, 32);
 
     // Create a text frame with "Hi"
     ≔ payload = alloc_mem(8);
     unsafe {
-        asm!("mov byte ptr [rdi], 72", in("rdi") payload, options(nostack));     // H
-        asm!("mov byte ptr [rdi], 105", in("rdi") payload + 1, options(nostack)); // i
+        asm!("mov byte ptr [rdi], 72", ∈("rdi") payload, options(nostack));     // H
+        asm!("mov byte ptr [rdi], 105", ∈("rdi") payload + 1, options(nostack)); // i
     }
 
     ≔ frame = alloc_mem(64);
@@ -684,7 +684,7 @@ rite test_ws_framing() -> i64 {
     ⎇ frame_len == 8 {
         ≔ b0: i64 = 0;
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") frame, out("rax") b0, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") frame, out("rax") b0, options(nostack, readonly));
         }
         ⎇ b0 == 129 {  // 0x81 = FIN + text opcode
             success = 1;
@@ -696,11 +696,11 @@ rite test_ws_framing() -> i64 {
     ⎇ success == 1 {
         ≔ pass_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") pass_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 80", ∈("rdi") pass_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") pass_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") pass_msg + 4, options(nostack));
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
@@ -708,11 +708,11 @@ rite test_ws_framing() -> i64 {
     } ⎉ {
         ≔ fail_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 70", ∈("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", ∈("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", ∈("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") fail_msg + 4, options(nostack));
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
@@ -726,11 +726,11 @@ rite test_ws_handshake_build() -> i64 {
     ≔ chars: [i8; 23] = [84, 101, 115, 116, 32, 52, 58, 32, 87, 83, 32, 104, 97, 110, 100, 115, 104, 97, 107, 101, 46, 46, 46];
     ≔ i: i64 = 0;
     ⟳ i < 23 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") msg + i, in("al") chars[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") msg + i, ∈("al") chars[i as usize], options(nostack)); }
         i = i + 1;
     }
-    unsafe { asm!("mov byte ptr [rdi], 32", in("rdi") msg + 23, options(nostack)); }
-    unsafe { asm!("mov byte ptr [rdi], 0", in("rdi") msg + 24, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 32", ∈("rdi") msg + 23, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 0", ∈("rdi") msg + 24, options(nostack)); }
     write_cstr(msg);
     free_mem(msg, 32);
 
@@ -738,25 +738,25 @@ rite test_ws_handshake_build() -> i64 {
     ≔ host = alloc_mem(16);
     // "example.com"
     unsafe {
-        asm!("mov byte ptr [rdi], 101", in("rdi") host, options(nostack));      // e
-        asm!("mov byte ptr [rdi], 120", in("rdi") host + 1, options(nostack));  // x
-        asm!("mov byte ptr [rdi], 97", in("rdi") host + 2, options(nostack));   // a
-        asm!("mov byte ptr [rdi], 109", in("rdi") host + 3, options(nostack));  // m
-        asm!("mov byte ptr [rdi], 112", in("rdi") host + 4, options(nostack));  // p
-        asm!("mov byte ptr [rdi], 108", in("rdi") host + 5, options(nostack));  // l
-        asm!("mov byte ptr [rdi], 101", in("rdi") host + 6, options(nostack));  // e
-        asm!("mov byte ptr [rdi], 46", in("rdi") host + 7, options(nostack));   // .
-        asm!("mov byte ptr [rdi], 99", in("rdi") host + 8, options(nostack));   // c
-        asm!("mov byte ptr [rdi], 111", in("rdi") host + 9, options(nostack));  // o
-        asm!("mov byte ptr [rdi], 109", in("rdi") host + 10, options(nostack)); // m
+        asm!("mov byte ptr [rdi], 101", ∈("rdi") host, options(nostack));      // e
+        asm!("mov byte ptr [rdi], 120", ∈("rdi") host + 1, options(nostack));  // x
+        asm!("mov byte ptr [rdi], 97", ∈("rdi") host + 2, options(nostack));   // a
+        asm!("mov byte ptr [rdi], 109", ∈("rdi") host + 3, options(nostack));  // m
+        asm!("mov byte ptr [rdi], 112", ∈("rdi") host + 4, options(nostack));  // p
+        asm!("mov byte ptr [rdi], 108", ∈("rdi") host + 5, options(nostack));  // l
+        asm!("mov byte ptr [rdi], 101", ∈("rdi") host + 6, options(nostack));  // e
+        asm!("mov byte ptr [rdi], 46", ∈("rdi") host + 7, options(nostack));   // .
+        asm!("mov byte ptr [rdi], 99", ∈("rdi") host + 8, options(nostack));   // c
+        asm!("mov byte ptr [rdi], 111", ∈("rdi") host + 9, options(nostack));  // o
+        asm!("mov byte ptr [rdi], 109", ∈("rdi") host + 10, options(nostack)); // m
     }
 
     ≔ path = alloc_mem(8);
     // "/ws"
     unsafe {
-        asm!("mov byte ptr [rdi], 47", in("rdi") path, options(nostack));      // /
-        asm!("mov byte ptr [rdi], 119", in("rdi") path + 1, options(nostack)); // w
-        asm!("mov byte ptr [rdi], 115", in("rdi") path + 2, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 47", ∈("rdi") path, options(nostack));      // /
+        asm!("mov byte ptr [rdi], 119", ∈("rdi") path + 1, options(nostack)); // w
+        asm!("mov byte ptr [rdi], 115", ∈("rdi") path + 2, options(nostack)); // s
     }
 
     ≔ key = alloc_mem(32);
@@ -774,9 +774,9 @@ rite test_ws_handshake_build() -> i64 {
         ≔ b1: i64 = 0;
         ≔ b2: i64 = 0;
         unsafe {
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") req, out("rax") b0, options(nostack, readonly));
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") req + 1, out("rax") b1, options(nostack, readonly));
-            asm!("movzx rax, byte ptr [rdi]", in("rdi") req + 2, out("rax") b2, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") req, out("rax") b0, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") req + 1, out("rax") b1, options(nostack, readonly));
+            asm!("movzx rax, byte ptr [rdi]", ∈("rdi") req + 2, out("rax") b2, options(nostack, readonly));
         }
         ⎇ b0 == 71 && b1 == 69 && b2 == 84 {  // GET
             success = 1;
@@ -787,11 +787,11 @@ rite test_ws_handshake_build() -> i64 {
     ⎇ success == 1 {
         ≔ pass_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 80", in("rdi") pass_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") pass_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 83", in("rdi") pass_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") pass_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 80", ∈("rdi") pass_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") pass_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 83", ∈("rdi") pass_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") pass_msg + 4, options(nostack));
         }
         write_stdout(pass_msg, 5);
         free_mem(pass_msg, 8);
@@ -799,11 +799,11 @@ rite test_ws_handshake_build() -> i64 {
     } ⎉ {
         ≔ fail_msg = alloc_mem(8);
         unsafe {
-            asm!("mov byte ptr [rdi], 70", in("rdi") fail_msg, options(nostack));
-            asm!("mov byte ptr [rdi], 65", in("rdi") fail_msg + 1, options(nostack));
-            asm!("mov byte ptr [rdi], 73", in("rdi") fail_msg + 2, options(nostack));
-            asm!("mov byte ptr [rdi], 76", in("rdi") fail_msg + 3, options(nostack));
-            asm!("mov byte ptr [rdi], 10", in("rdi") fail_msg + 4, options(nostack));
+            asm!("mov byte ptr [rdi], 70", ∈("rdi") fail_msg, options(nostack));
+            asm!("mov byte ptr [rdi], 65", ∈("rdi") fail_msg + 1, options(nostack));
+            asm!("mov byte ptr [rdi], 73", ∈("rdi") fail_msg + 2, options(nostack));
+            asm!("mov byte ptr [rdi], 76", ∈("rdi") fail_msg + 3, options(nostack));
+            asm!("mov byte ptr [rdi], 10", ∈("rdi") fail_msg + 4, options(nostack));
         }
         write_stdout(fail_msg, 5);
         free_mem(fail_msg, 8);
@@ -822,7 +822,7 @@ rite main() -> i64 {
     ≔ h_chars: [i8; 24] = [61, 61, 61, 32, 87, 101, 98, 83, 111, 99, 107, 101, 116, 32, 84, 101, 115, 116, 115, 32, 61, 61, 61, 10];
     ≔ i: i64 = 0;
     ⟳ i < 24 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") header + i, in("al") h_chars[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") header + i, ∈("al") h_chars[i as usize], options(nostack)); }
         i = i + 1;
     }
     write_stdout(header, 24);
@@ -841,27 +841,27 @@ rite main() -> i64 {
     ≔ result_msg = alloc_mem(16);
     // "Results: "
     unsafe {
-        asm!("mov byte ptr [rdi], 82", in("rdi") result_msg, options(nostack));      // R
-        asm!("mov byte ptr [rdi], 101", in("rdi") result_msg + 1, options(nostack)); // e
-        asm!("mov byte ptr [rdi], 115", in("rdi") result_msg + 2, options(nostack)); // s
-        asm!("mov byte ptr [rdi], 117", in("rdi") result_msg + 3, options(nostack)); // u
-        asm!("mov byte ptr [rdi], 108", in("rdi") result_msg + 4, options(nostack)); // l
-        asm!("mov byte ptr [rdi], 116", in("rdi") result_msg + 5, options(nostack)); // t
-        asm!("mov byte ptr [rdi], 115", in("rdi") result_msg + 6, options(nostack)); // s
-        asm!("mov byte ptr [rdi], 58", in("rdi") result_msg + 7, options(nostack));  // :
-        asm!("mov byte ptr [rdi], 32", in("rdi") result_msg + 8, options(nostack));  // space
-        asm!("mov byte ptr [rdi], 0", in("rdi") result_msg + 9, options(nostack));
+        asm!("mov byte ptr [rdi], 82", ∈("rdi") result_msg, options(nostack));      // R
+        asm!("mov byte ptr [rdi], 101", ∈("rdi") result_msg + 1, options(nostack)); // e
+        asm!("mov byte ptr [rdi], 115", ∈("rdi") result_msg + 2, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 117", ∈("rdi") result_msg + 3, options(nostack)); // u
+        asm!("mov byte ptr [rdi], 108", ∈("rdi") result_msg + 4, options(nostack)); // l
+        asm!("mov byte ptr [rdi], 116", ∈("rdi") result_msg + 5, options(nostack)); // t
+        asm!("mov byte ptr [rdi], 115", ∈("rdi") result_msg + 6, options(nostack)); // s
+        asm!("mov byte ptr [rdi], 58", ∈("rdi") result_msg + 7, options(nostack));  // :
+        asm!("mov byte ptr [rdi], 32", ∈("rdi") result_msg + 8, options(nostack));  // space
+        asm!("mov byte ptr [rdi], 0", ∈("rdi") result_msg + 9, options(nostack));
     }
     write_cstr(result_msg);
     write_int(passed);
-    unsafe { asm!("mov byte ptr [rdi], 47", in("rdi") result_msg, options(nostack)); }
+    unsafe { asm!("mov byte ptr [rdi], 47", ∈("rdi") result_msg, options(nostack)); }
     write_stdout(result_msg, 1);
     write_int(total);
     // " passed\n"
     ≔ p_chars: [i8; 8] = [32, 112, 97, 115, 115, 101, 100, 10];
     i = 0;
     ⟳ i < 8 {
-        unsafe { asm!("mov byte ptr [rdi], al", in("rdi") result_msg + i, in("al") p_chars[i as usize], options(nostack)); }
+        unsafe { asm!("mov byte ptr [rdi], al", ∈("rdi") result_msg + i, ∈("al") p_chars[i as usize], options(nostack)); }
         i = i + 1;
     }
     write_stdout(result_msg, 8);

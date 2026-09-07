@@ -176,7 +176,7 @@ invoke dns·DnsResolver;
         self.write_all(request.as_bytes())?;
 
         // Read response
-        vary buf: [u8; 1024] = [0; 1024];
+        ≔ vary buf: [u8; 1024] = [0; 1024];
         ≔ n = self.read(&vary buf)?;
 
         // Parse response
@@ -220,7 +220,7 @@ invoke dns·DnsResolver;
         }
 
         // Read frame header
-        vary header: [u8; 2] = [0; 2];
+        ≔ vary header: [u8; 2] = [0; 2];
         self.read_exact(&vary header)?;
 
         ≔ fin = (header[0] & 0x80) != 0;
@@ -230,11 +230,11 @@ invoke dns·DnsResolver;
 
         // Extended payload length
         ⎇ payload_len == 126 {
-            vary ext: [u8; 2] = [0; 2];
+            ≔ vary ext: [u8; 2] = [0; 2];
             self.read_exact(&vary ext)?;
             payload_len = ((ext[0] as usize) << 8) | (ext[1] as usize);
         } ⎉ ⎇ payload_len == 127 {
-            vary ext: [u8; 8] = [0; 8];
+            ≔ vary ext: [u8; 8] = [0; 8];
             self.read_exact(&vary ext)?;
             payload_len = ((ext[4] as usize) << 24)
                 | ((ext[5] as usize) << 16)
@@ -251,7 +251,7 @@ invoke dns·DnsResolver;
         }
 
         // Read mask (⎇ present - server frames are usually unmasked)
-        vary mask: [u8; 4] = [0; 4];
+        ≔ vary mask: [u8; 4] = [0; 4];
         ⎇ masked {
             self.read_exact(&vary mask)?;
         }
@@ -286,8 +286,8 @@ invoke dns·DnsResolver;
                 Ok(WsMessage·Pong(payload))
             }
             OPCODE_CLOSE => {
-                vary code: u16? = None;
-                vary reason: String? = None;
+                ≔ vary code: u16? = None;
+                ≔ vary reason: String? = None;
 
                 ⎇ payload.len() >= 2 {
                     code = Some(((payload[0] as u16) << 8) | (payload[1] as u16));

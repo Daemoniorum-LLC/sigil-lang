@@ -45,7 +45,7 @@ invoke tome·events·EventHandler;
 
 ⊢ VNode {
     /// Create a text node
-    ☉ rite text(s: impl Into[String]!) -> Self! {
+    ☉ rite text(s: ⊢ Into[String]!) -> Self! {
         VNode·Text(s·into())
     }
 
@@ -80,7 +80,7 @@ invoke tome·events·EventHandler;
     }
 
     /// Set an attribute
-    ☉ rite set_attr(self: &Δ Self!, name: &str!, value: impl Into[AttrValue]!) -> &Δ Self! {
+    ☉ rite set_attr(self: &Δ Self!, name: &str!, value: ⊢ Into[AttrValue]!) -> &Δ Self! {
         self.inner.attrs·insert(name·to_string(), value·into());
         self
     }
@@ -96,7 +96,7 @@ invoke tome·events·EventHandler;
     }
 
     /// Set element key for efficient diffing
-    ☉ rite key(self: &Δ Self!, key: impl Into[String]!) -> &Δ Self! {
+    ☉ rite key(self: &Δ Self!, key: ⊢ Into[String]!) -> &Δ Self! {
         self.inner.key = Some(key·into());
         self
     }
@@ -108,7 +108,7 @@ invoke tome·events·EventHandler;
     }
 
     /// Append a child node
-    ☉ rite append(self: &Δ Self!, child: impl Into[VNode]!) -> &Δ Self! {
+    ☉ rite append(self: &Δ Self!, child: ⊢ Into[VNode]!) -> &Δ Self! {
         self.inner.children·push(child·into());
         self
     }
@@ -131,37 +131,37 @@ invoke tome·events·EventHandler;
     }
 }
 
-impl Into[VNode] for Element {
+⊢ Into[VNode] for Element {
     rite into(self: Self!) -> VNode! {
         self·build()
     }
 }
 
-impl Into[AttrValue] for &str {
+⊢ Into[AttrValue] for &str {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·String(self·to_string())
     }
 }
 
-impl Into[AttrValue] for String {
+⊢ Into[AttrValue] for String {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·String(self)
     }
 }
 
-impl Into[AttrValue] for bool {
+⊢ Into[AttrValue] for bool {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·Bool(self)
     }
 }
 
-impl Into[AttrValue] for i64 {
+⊢ Into[AttrValue] for i64 {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·Number(self as f64)
     }
 }
 
-impl Into[AttrValue] for f64 {
+⊢ Into[AttrValue] for f64 {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·Number(self)
     }

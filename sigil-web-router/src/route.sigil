@@ -34,7 +34,7 @@ invoke tome·params·Params;
 #[component]
 ☉ rite Route(
     path: String!,
-    component: impl Fn() -> Element + 'static!,
+    component: ⊢ Fn() -> Element + 'static!,
     exact: Option[bool]?,
     children: Option[Children]?
 ) -> Element! {
@@ -179,7 +179,7 @@ rite parse_pattern(pattern: &str!) -> Vec[PathSegment]! {
 
 /// Index route - matches when parent matches exactly
 #[component]
-☉ rite IndexRoute(component: impl Fn() -> Element + 'static!) -> Element! {
+☉ rite IndexRoute(component: ⊢ Fn() -> Element + 'static!) -> Element! {
     ≔ ctx! = use_context[crate·router·RouterContext]();
     ≔ location! = ctx.location·get();
 
@@ -200,7 +200,7 @@ rite parse_pattern(pattern: &str!) -> Vec[PathSegment]! {
 /// Layout route for shared layouts
 #[component]
 ☉ rite LayoutRoute(
-    component: impl Fn(Children) -> Element + 'static!,
+    component: ⊢ Fn(Children) -> Element + 'static!,
     children: Children!
 ) -> Element! {
     html! {
