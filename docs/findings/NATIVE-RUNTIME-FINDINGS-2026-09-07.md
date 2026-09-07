@@ -94,6 +94,48 @@ build in this environment — untested.
 
 ---
 
+## S4 — WebSocket echo round-trip returns `true`, not the payload
+
+`spec/15_protocols/P0_003_websocket_real.sg`, marked **P0 — Bootstrap Critical**:
+
+```sigil
+≔ conn = "wss://ws.postman-echo.com/raw"|connect;
+≔ response! = conn|send{"Hello from Sigil!"};
+println(response!);
+```
+
+Expected `Hello from Sigil!`. Actual: `true`.
+
+**Checked first: this is not the sandbox.** `curl https://ws.postman-echo.com/raw` returns
+HTTP 404 from the real host — reachable, just wanting a WS upgrade rather than a GET. So
+outbound networking works and the failure is ours.
+
+Same shape as S1: a networking call returning a success value instead of doing the work.
+Whether `connect`/`send` are stubbed or the test tracks an older API is unresolved, but
+**two instances make it a pattern worth sweeping for** — see priority 3 below.
+
+This also puts `HttpClient` in question. Nothing here has run it; it is assumed to work on
+the strength of its name.
+
+---
+
+## Test suite status
+
+Run 2026-09-07, minimal build: **713 pass, 11 fail**, then a hard hang on `P1_065_pty`
+until a 900s timeout killed it.
+
+That is broadly consistent with the 745/749 in `CLAUDE.md` — the harness is real and most
+of the language works. Of the 11: 4 are the Kafka/AMQP broker tests already documented as
+infrastructure-dependent, 5 are `test_stdlib_*` runtime errors possibly tied to the
+minimal feature set, and 2 are genuine (`P1_042_socket_server` = S1,
+`P0_003_websocket_real` = S4).
+
+**The issue is not the pass rate — it is that no total can be produced at all** while one
+case hangs. That blocks CI as surely as a failure would. A per-test timeout in
+`run_tests_rust.sh` is worth adding regardless of when S2 is fixed.
+
+---
+
 ## What is already good
 
 The probe expected to find a thin POSIX layer. It found a broad one, and most of it
@@ -119,8 +161,12 @@ exist are invisible to inspection.
 
 1. **S1** — unblocks the whole server story.
 2. **S2** — unblocks terminals, and stops the suite hanging.
-3. **Sweep for other stubs.** S1 proves a symbol can exist, export, print success and do
-   nothing. A behavioural smoke test per stdlib module would be cheap and would probably
-   find more. `HttpClient` first — it is widely assumed to work.
+3. **Sweep for other stubs — arguably the highest-value item here.** S1 and S4 both show
+   a symbol that exists, exports, reports success and does not do the work. Two is a
+   pattern. A behavioural smoke test per stdlib module would be cheap and would likely
+   find more. `HttpClient` first: nothing has run it, and it is widely assumed to work.
+
+5. **Add a per-test timeout to `run_tests_rust.sh`.** Independent of S2, and it restores
+   the suite's ability to report a total.
 4. **S3** — may be acceptable as documented behaviour rather than a fix, but it should be
    written down either way; today it is discovered by surprise.
