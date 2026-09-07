@@ -7782,10 +7782,35 @@ impl<'a> Parser<'a> {
                 // |assume!("reason") - assume evidence level
                 if name.name == "validate" || name.name == "assume" {
                     // Check for evidentiality marker followed by { or (
-                    // NOTE: ! (Bang) is NOT treated as evidence marker here because
-                    // |validate!{...} should be parsed as a macro invocation (line 6980+).
-                    // Only ? and ~ are evidence markers for built-in validate.
-                    let (has_marker, target_evidence) = if self.check(&Token::Question) {
+                    //
+                    // `!` is handled here alongside `?` and `~`. It used to be routed
+                    // to the macro path instead, which captured `{|x| x > 0}` as raw
+                    // text — so the README's own example,
+                    // `external|validate!{|x| x > 0}`, failed at run time with
+                    // "Cannot call non-function value in pipe: \"| x | x > 0\"".
+                    // That contradicted the doc comment four lines above, which says
+                    // `|validate!{predicate}` validates and promotes to Known — and
+                    // `!` IS the Known marker, so this is the one spelling that had to
+                    // work. The marker is only consumed when a `{` or `(` follows, so
+                    // a genuine `validate!` macro invocation with any other shape is
+                    // untouched.
+                    //
+                    // `validate!` is also a legitimate user macro name — there is a
+                    // `rune validate!` in spec/07_metaprogramming taking struct-shaped
+                    // fields — so `!` alone cannot decide. What decides is the shape
+                    // of the argument: a closure (`{|x| …}`, `{λ …}`) is the built-in
+                    // predicate form, while anything else (`{prompt: non_empty, …}`)
+                    // is a macro invocation and must reach the macro path untouched.
+                    let bang_opens_closure = self.check(&Token::Bang)
+                        && matches!(self.peek_next(), Some(Token::LBrace))
+                        && matches!(
+                            self.peek_n(1),
+                            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LambdaExpr)
+                        );
+                    let (has_marker, target_evidence) = if bang_opens_closure {
+                        self.advance(); // consume !
+                        (true, Evidentiality::Known)
+                    } else if self.check(&Token::Question) {
                         let peek = self.peek_next();
                         if matches!(peek, Some(Token::LBrace) | Some(Token::LParen)) {
                             self.advance(); // consume ?
