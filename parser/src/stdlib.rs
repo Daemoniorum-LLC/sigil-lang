@@ -38633,10 +38633,10 @@ fn register_sys(interp: &mut Interpreter) {
                 Ok(Value::Int(output.len() as i64))
             }
             _ => {
-                // Native: use libc::write for real fds (< 4000; fake counters start at 4000+)
+                // Native: use libc::write for real fds (below FAKE_FD_THRESHOLD)
                 #[cfg(all(unix, feature = "native"))]
                 {
-                    if fd > 2 && fd < 4000 {
+                    if fd > 2 && fd < FAKE_FD_THRESHOLD {
                         let bytes = output.as_bytes();
                         let n = unsafe {
                             libc::write(fd as i32, bytes.as_ptr() as *const libc::c_void, bytes.len())
@@ -38732,10 +38732,10 @@ fn register_sys(interp: &mut Interpreter) {
                 }
             }
             _ => {
-                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                // Native: use libc::read for real fds (below FAKE_FD_THRESHOLD)
                 #[cfg(all(unix, feature = "native"))]
                 {
-                    if fd > 2 && fd < 4000 {
+                    if fd > 2 && fd < FAKE_FD_THRESHOLD {
                         let mut buffer = vec![0u8; len];
                         let n = unsafe {
                             libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, len)
@@ -38905,7 +38905,7 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
-        // Native path: use libc::open directly so we get a real OS fd (<4000)
+        // Native path: use libc::open directly so we get a real OS fd (below FAKE_FD_THRESHOLD)
         // that Sys·read_string / Sys·poll_fds can handle natively.
         // This is required for FIFOs (O_NONBLOCK) and Unix socket paths.
         #[cfg(all(unix, feature = "native"))]
@@ -38995,10 +38995,10 @@ fn register_sys(interp: &mut Interpreter) {
             map.borrow_mut().remove(&fd).is_some()
         });
 
-        // Native: close real fd via libc (real OS fds are < 4000; fake counters start at 4000+)
+        // Native: close real fd via libc (real OS fds are below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd > 2 && fd < 4000 {
+            if fd > 2 && fd < FAKE_FD_THRESHOLD {
                 unsafe { libc::close(fd as i32); }
             }
         }
@@ -39207,6 +39207,46 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·bind requires int fd")),
         };
 
+        // Native path for real OS sockets, matching listen/accept, which have had one
+        // all along. bind was the only member of the socket/bind/listen/accept group
+        // that never reached libc, so a real socket could be listened on but never
+        // actually bound. The address arrives as "host:port"; the POSIX signature's
+        // sockaddr pointer has no Sigil spelling, and callers pass 0 for it, which is
+        // why the simulated path below stays the default.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                if let Value::String(addr_str) = &args[1] {
+                    let parsed: Result<std::net::SocketAddr, _> = addr_str.parse();
+                    let addr = match parsed {
+                        Ok(a) => a,
+                        Err(_) => return Ok(Value::Int(-22)), // -EINVAL
+                    };
+                    let ret = match addr {
+                        std::net::SocketAddr::V4(v4) => {
+                            let sa = libc::sockaddr_in {
+                                sin_family: libc::AF_INET as libc::sa_family_t,
+                                sin_port: v4.port().to_be(),
+                                sin_addr: libc::in_addr {
+                                    s_addr: u32::from_ne_bytes(v4.ip().octets()),
+                                },
+                                sin_zero: [0; 8],
+                            };
+                            unsafe {
+                                libc::bind(
+                                    fd as i32,
+                                    &sa as *const libc::sockaddr_in as *const libc::sockaddr,
+                                    std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+                                )
+                            }
+                        }
+                        std::net::SocketAddr::V6(_) => return Ok(Value::Int(-97)), // -EAFNOSUPPORT
+                    };
+                    return Ok(Value::Int(if ret == 0 { 0 } else { -(nix_errno()) }));
+                }
+            }
+        }
+
         let exists = FAKE_SOCKET_STATE.with(|map| {
             map.borrow().contains_key(&fd)
         });
@@ -39233,10 +39273,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 8,
         };
 
-        // Native path for real OS sockets (fd < 4000)
+        // Native path for real OS sockets (fd < FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 let ret = unsafe { libc::listen(fd as i32, backlog) };
                 return Ok(Value::Int(ret as i64));
             }
@@ -39265,10 +39305,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·accept requires int fd")),
         };
 
-        // Native path for real OS sockets (fd < 4000)
+        // Native path for real OS sockets (fd < FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 let client = unsafe {
                     libc::accept(fd as i32, std::ptr::null_mut(), std::ptr::null_mut())
                 };
@@ -39307,7 +39347,7 @@ fn register_sys(interp: &mut Interpreter) {
         #[cfg(all(unix, feature = "native"))]
         {
             use std::ffi::CString;
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 if let Ok(c_path) = CString::new(path.as_str()) {
                     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
                     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
@@ -39347,7 +39387,7 @@ fn register_sys(interp: &mut Interpreter) {
         #[cfg(all(unix, feature = "native"))]
         {
             use std::ffi::CString;
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 if let Ok(c_path) = CString::new(path.as_str()) {
                     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
                     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
@@ -39893,10 +39933,10 @@ fn register_sys(interp: &mut Interpreter) {
         if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
             return Ok(Value::Int(-22)); // -EINVAL
         }
-        // Native: use ioctl TIOCSWINSZ for real fds (< 4000; fake counters start at 4000+)
+        // Native: use ioctl TIOCSWINSZ for real fds (below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd > 0 && fd < 4000 {
+            if fd > 0 && fd < FAKE_FD_THRESHOLD {
                 let ws = libc::winsize {
                     ws_row: rows as u16,
                     ws_col: cols as u16,
@@ -40069,10 +40109,10 @@ fn register_sys(interp: &mut Interpreter) {
                 }
             }
             _ => {
-                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                // Native: use libc::read for real fds (below FAKE_FD_THRESHOLD)
                 #[cfg(all(unix, feature = "native"))]
                 {
-                    if fd > 2 && fd < 4000 {
+                    if fd > 2 && fd < FAKE_FD_THRESHOLD {
                         let mut buffer = vec![0u8; max_len];
                         let n = unsafe {
                             libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, max_len)
@@ -40195,10 +40235,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
-        // Native: use libc::poll() for real fds (< 4000; fake counters start at 4000+)
+        // Native: use libc::poll() for real fds (below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
                 let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
                 return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
@@ -40258,7 +40298,7 @@ fn register_sys(interp: &mut Interpreter) {
             let mut idx_map: Vec<usize> = Vec::new();
 
             for (i, &fd) in fds.iter().enumerate() {
-                if fd >= 0 && fd < 4000 {
+                if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                     pollfds.push(libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 });
                     idx_map.push(i);
                 } else {
@@ -40429,10 +40469,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·spawn_pty requires int slave_fd")),
         };
 
-        // Native: real fork/exec for real PTY fds (< 4000; fake counters start at 4000+)
+        // Native: real fork/exec for real PTY fds (below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if slave_fd < 4000 {
+            if slave_fd < FAKE_FD_THRESHOLD {
                 let master_fd_val = FAKE_PTY_STATE.with(|map| {
                     map.borrow().get(&slave_fd).map(|p| p.peer_fd)
                 });
@@ -40764,13 +40804,36 @@ thread_local! {
     #[cfg(all(unix, feature = "native"))]
     static NATIVE_TERMIOS_STATE: RefCell<HashMap<i64, libc::termios>> = RefCell::new(HashMap::new());
 }
-static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
-static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
-static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(2000);
-static FAKE_TERMIOS_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(3000);
+/// Descriptors at or above this are simulated by this file; below it they are real
+/// OS file descriptors and every native path calls libc directly. Every simulated
+/// counter below MUST start at or above it — see the note there for what happens
+/// when one does not.
+const FAKE_FD_THRESHOLD: i64 = 4000;
+
+/// The current errno, as a positive number. The Sys· layer reports failures as a
+/// negative errno, matching what the raw syscalls return.
+#[cfg(all(unix, feature = "native"))]
+fn nix_errno() -> i64 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(5) as i64
+}
+
+// Simulated descriptors MUST all sit above FAKE_FD_THRESHOLD. Every native path in
+// this file decides "is this a real OS fd?" by testing `fd < FAKE_FD_THRESHOLD`, and four of these
+// counters used to start below it — 100, 1000, 2000 and 3000. So an fd handed out by
+// Sys·socket or Sys·open was then classified as REAL by Sys·read, write, close,
+// listen, accept, poll_fd and the ioctl path, which called libc with a descriptor
+// this process does not own. P1_042 shows the mild version: bind succeeds in the
+// simulation, then listen(1000, 10) reaches libc and fails. The severe version is a
+// collision, where the call lands on an unrelated real fd of the same number.
+//
+// Each band is 1000 wide and none overlaps another.
+static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(20000);
+static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(21000);
+static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(22000);
+static FAKE_TERMIOS_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(23000);
 static FAKE_TERMIOS_RAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(4000);
-static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(5000);
+static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(24000);
+static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(25000);
 static FAKE_BG_PID_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(7000);
 
 // Native signal handling: global atomic flags set by C signal handler
