@@ -743,15 +743,7 @@ fn register_core(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
     });
 
-    // std::collections::HashMap::new
-    define(interp, "std·collections·HashMap·new", Some(0), |_, _| {
-        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
-    });
 
-    // std::collections::HashMap::with_capacity
-    define(interp, "std·collections·HashMap·with_capacity", Some(1), |_, _args| {
-        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
-    });
 
     // HashSet::new
     define(interp, "HashSet·new", Some(0), |_, _| {
@@ -763,10 +755,6 @@ fn register_core(interp: &mut Interpreter) {
         Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
     });
 
-    // std::collections::HashSet::new
-    define(interp, "std·collections·HashSet·new", Some(0), |_, _| {
-        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
-    });
 
     // Vec::new - create empty vector/array
     define(interp, "Vec·new", Some(0), |_, _| {
@@ -822,15 +810,6 @@ fn register_core(interp: &mut Interpreter) {
         }
     });
 
-    // slice::from_raw_parts - FFI emulation
-    define(interp, "slice·from_raw_parts", Some(2), |_, args| {
-        // First arg is the "pointer" (string), second is len
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(s.clone())),
-            Value::Array(arr) => Ok(Value::Array(arr.clone())),
-            _ => Ok(args[0].clone()),
-        }
-    });
 }
 
 // Deep clone helper
@@ -3838,26 +3817,6 @@ fn register_io(interp: &mut Interpreter) {
         }
     });
 
-    // env::var - Rust-style env::var that returns Result<String, VarError>
-    define(interp, "env·var", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(name) => {
-                match std::env::var(name.as_str()) {
-                    Ok(value) => Ok(Value::Variant {
-                        enum_name: "Result".to_string(),
-                        variant_name: "Ok".to_string(),
-                        fields: Some(Rc::new(vec![Value::String(Rc::new(value))])),
-                    }),
-                    Err(_) => Ok(Value::Variant {
-                        enum_name: "Result".to_string(),
-                        variant_name: "Err".to_string(),
-                        fields: Some(Rc::new(vec![Value::String(Rc::new("environment variable not found".to_string()))])),
-                    }),
-                }
-            }
-            _ => Err(RuntimeError::new("env::var() requires variable name string")),
-        }
-    });
 
     // env_or - get environment variable with default
     define(interp, "env_or", Some(2), |_, args| {
@@ -4052,16 +4011,6 @@ fn register_time(interp: &mut Interpreter) {
         })
     });
 
-    // std::time::UNIX_EPOCH alias
-    define(interp, "std·time·UNIX_EPOCH", Some(0), |_, _| {
-        let mut fields = std::collections::HashMap::new();
-        fields.insert("secs".to_string(), Value::Int(0));
-        fields.insert("nanos".to_string(), Value::Int(0));
-        Ok(Value::Struct {
-            name: "SystemTime".to_string(),
-            fields: Rc::new(RefCell::new(fields)),
-        })
-    });
 
     // timer_start - start a timer (returns opaque handle)
     define(interp, "timer_start", Some(0), |_, _| {
@@ -5715,63 +5664,7 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Null)
     });
 
-    // std::thread::spawn - spawn a thread with a closure
-    // In interpreter mode, execute synchronously (Rc is not thread-safe)
-    // Returns a JoinHandle-like value
-    define(interp, "std·thread·spawn", Some(1), |interp, args| {
-        // The argument should be a closure/function
-        match &args[0] {
-            Value::Function(f) => {
-                // Execute the closure synchronously for now
-                // This makes the server work in single-threaded mode
-                match interp.call_function(f, vec![]) {
-                    Ok(_) => {}
-                    Err(e) => eprintln!("[Sigil thread] Error: {}", e),
-                }
-                // Return a mock JoinHandle
-                let mut map = HashMap::new();
-                map.insert("__type__".to_string(), Value::String(Rc::new("JoinHandle".to_string())));
-                map.insert("done".to_string(), Value::Bool(true));
-                Ok(Value::Map(Rc::new(RefCell::new(map))))
-            }
-            Value::BuiltIn(b) => {
-                match (b.func)(interp, vec![]) {
-                    Ok(_) => {}
-                    Err(e) => eprintln!("[Sigil thread] Error: {}", e),
-                }
-                let mut map = HashMap::new();
-                map.insert("__type__".to_string(), Value::String(Rc::new("JoinHandle".to_string())));
-                map.insert("done".to_string(), Value::Bool(true));
-                Ok(Value::Map(Rc::new(RefCell::new(map))))
-            }
-            _ => Err(RuntimeError::new("std::thread::spawn requires a closure")),
-        }
-    });
 
-    // std::thread::available_parallelism - get number of available CPU cores
-    // Returns Result<NonZeroUsize, io::Error> as a Variant
-    define(interp, "std·thread·available_parallelism", Some(0), |_, _args| {
-        match std::thread::available_parallelism() {
-            Ok(n) => {
-                // Create NonZeroUsize-like struct with get() method capability
-                // For now, just return the inner value directly wrapped in Ok
-                let inner = Value::Int(n.get() as i64);
-                Ok(Value::Variant {
-                    enum_name: "Result".to_string(),
-                    variant_name: "Ok".to_string(),
-                    fields: Some(Rc::new(vec![inner])),
-                })
-            }
-            Err(e) => {
-                // Return Err variant with error message
-                Ok(Value::Variant {
-                    enum_name: "Result".to_string(),
-                    variant_name: "Err".to_string(),
-                    fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
-                })
-            }
-        }
-    });
 
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
@@ -5823,39 +5716,9 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(format!("{:?}", id))))
     });
 
-    // --- SYNCHRONIZATION PRIMITIVES ---
-    // parking_lot::Mutex::new - create a mutex wrapper
-    // Returns a Map with __type__="Mutex" and inner value
-    define(interp, "parking_lot·Mutex·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Mutex".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
-    // Also register as std::sync::Mutex::new
-    define(interp, "std·sync·Mutex·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Mutex".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
-    // parking_lot::RwLock::new - create a read-write lock wrapper
-    define(interp, "parking_lot·RwLock·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
-    // std::sync::RwLock::new
-    define(interp, "std·sync·RwLock·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // RwLock::new (short form)
     define(interp, "RwLock·new", Some(1), |_, args| {
@@ -5877,16 +5740,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     };
     define(interp, "AtomicU8·new", Some(1), atomic_u8_new);
-    define(interp, "std·sync·atomic·AtomicU8·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 0,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU8".to_string())));
-        map.insert("value".to_string(), Value::Int(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // AtomicUsize::new - create atomic usize counter
     let atomic_usize_new = |_: &mut crate::interpreter::Interpreter, args: Vec<Value>| -> Result<Value, RuntimeError> {
@@ -5900,16 +5753,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     };
     define(interp, "AtomicUsize·new", Some(1), atomic_usize_new);
-    define(interp, "std·sync·atomic·AtomicUsize·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 0,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicUsize".to_string())));
-        map.insert("value".to_string(), Value::Int(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // AtomicU64::new - create atomic counter
     define(interp, "AtomicU64·new", Some(1), |_, args| {
@@ -5923,17 +5766,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    // std::sync::atomic::AtomicU64::new
-    define(interp, "std·sync·atomic·AtomicU64·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 0,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU64".to_string())));
-        map.insert("value".to_string(), Value::Int(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // AtomicBool::new
     define(interp, "AtomicBool·new", Some(1), |_, args| {
@@ -5947,16 +5779,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    define(interp, "std·sync·atomic·AtomicBool·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Bool(b) => *b,
-            _ => false,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicBool".to_string())));
-        map.insert("value".to_string(), Value::Bool(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // Arc::new - create atomic reference counted wrapper
     define(interp, "Arc·new", Some(1), |_, args| {
@@ -5966,12 +5788,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    define(interp, "std·sync·Arc·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Arc".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // OnceLock::new - create a lazy-init cell (empty)
     // Returns a Map with __type__="OnceLock" and initialized=false
@@ -5983,13 +5799,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     };
     define(interp, "OnceLock·new", Some(0), once_lock_new);
-    define(interp, "std·sync·OnceLock·new", Some(0), |_, _args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("OnceLock".to_string())));
-        map.insert("initialized".to_string(), Value::Bool(false));
-        map.insert("value".to_string(), Value::Null);
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // --- NETWORKING ---
     // TCP/IP networking support for HTTP servers
@@ -6080,81 +5889,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         })
     });
 
-    define(interp, "std·net·TcpListener·bind", Some(1), |_, args| {
-        let addr_str = match &args[0] {
-            Value::String(s) => s.to_string(),
-            Value::Ref(r) => {
-                match &*r.borrow() {
-                    Value::String(s) => s.to_string(),
-                    Value::Struct { name, fields } if name == "SocketAddr" => {
-                        let f = fields.borrow();
-                        let ip = match f.get("ip") {
-                            Some(Value::String(s)) => s.to_string(),
-                            _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
-                        };
-                        let port = match f.get("port") {
-                            Some(Value::Int(p)) => *p,
-                            _ => return Err(RuntimeError::new("SocketAddr missing port field")),
-                        };
-                        format!("{}:{}", ip, port)
-                    }
-                    _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
-                }
-            }
-            // Handle SocketAddr map (from parse())
-            Value::Map(m) => {
-                let borrowed = m.borrow();
-                if let Some(Value::String(addr)) = borrowed.get("addr") {
-                    addr.to_string()
-                } else {
-                    return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
-                }
-            }
-            // Handle SocketAddr struct (from parse())
-            Value::Struct { name, fields } if name == "SocketAddr" => {
-                let f = fields.borrow();
-                let ip = match f.get("ip") {
-                    Some(Value::String(s)) => s.to_string(),
-                    _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
-                };
-                let port = match f.get("port") {
-                    Some(Value::Int(p)) => *p,
-                    _ => return Err(RuntimeError::new("SocketAddr missing port field")),
-                };
-                format!("{}:{}", ip, port)
-            }
-            _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
-        };
-
-        let addr: std::net::SocketAddr = match addr_str.parse() {
-            Ok(a) => a,
-            Err(e) => return Err(RuntimeError::new(format!("Invalid address: {}", e))),
-        };
-
-        let listener = match std::net::TcpListener::bind(addr) {
-            Ok(l) => l,
-            Err(e) => return Err(RuntimeError::new(format!("Failed to bind: {}", e))),
-        };
-
-        let local_addr = listener.local_addr().map(|a| a.to_string()).unwrap_or_default();
-
-        // Store the listener in the global registry
-        let listener_id = store_listener(listener);
-
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("TcpListener".to_string())));
-        map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
-        map.insert("local_addr".to_string(), Value::String(Rc::new(local_addr)));
-        map.insert("__listener_id__".to_string(), Value::Int(listener_id as i64));
-
-        eprintln!("[Sigil] TcpListener bound to {} (id={})", addr, listener_id);
-
-        Ok(Value::Variant {
-            enum_name: "Result".to_string(),
-            variant_name: "Ok".to_string(),
-            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
-        })
-    });
 
     // SocketAddr::parse - parse a socket address string
     define(interp, "SocketAddr·parse", Some(1), |_, args| {
@@ -9850,21 +9584,6 @@ fn register_fs(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(path)))
     });
 
-    // std::path::PathBuf::from - full path variant
-    define(interp, "std·path·PathBuf·from", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            Value::Ref(r) => {
-                if let Value::String(s) = &*r.borrow() {
-                    s.to_string()
-                } else {
-                    return Err(RuntimeError::new("PathBuf::from() requires string"));
-                }
-            }
-            _ => return Err(RuntimeError::new("PathBuf::from() requires string")),
-        };
-        Ok(Value::String(Rc::new(path)))
-    });
 
     // Path::new - create Path from string
     define(interp, "Path·new", Some(1), |_, args| {
@@ -9882,71 +9601,10 @@ fn register_fs(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(path)))
     });
 
-    // std::path::Path::new - full path variant
-    define(interp, "std·path·Path·new", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("Path::new() requires string")),
-        };
-        Ok(Value::String(Rc::new(path)))
-    });
 
-    // std::fs::read_to_string - alias for fs_read
-    define(interp, "std·fs·read_to_string", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("read_to_string() requires string path")),
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(content) => Ok(Value::String(Rc::new(content))),
-            Err(e) => Err(RuntimeError::new(format!("read_to_string() error: {}", e))),
-        }
-    });
 
-    // fs·read_to_string - returns Result variant for pattern matching
-    define(interp, "fs·read_to_string", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("read_to_string() requires string path")),
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(content) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Ok".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new(content))])),
-            }),
-            Err(e) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Err".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
-            }),
-        }
-    });
 
-    // std::fs::write - alias for fs_write
-    define(interp, "std·fs·write", Some(2), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("fs::write() requires string path")),
-        };
-        let content = format!("{}", args[1]);
-        match std::fs::write(&path, content) {
-            Ok(()) => Ok(Value::Null),
-            Err(e) => Err(RuntimeError::new(format!("fs::write() error: {}", e))),
-        }
-    });
 
-    // std::fs::create_dir_all - create directory and all parents
-    define(interp, "std·fs·create_dir_all", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("create_dir_all() requires string path")),
-        };
-        match std::fs::create_dir_all(&path) {
-            Ok(()) => Ok(Value::Null),
-            Err(e) => Err(RuntimeError::new(format!("create_dir_all() error: {}", e))),
-        }
-    });
 
     // OpenOptions::new - create file open options builder
     // Returns a map that can be configured with .read(), .write(), etc.
@@ -9962,18 +9620,6 @@ fn register_fs(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(opts))))
     });
 
-    // std::fs::OpenOptions::new
-    define(interp, "std·fs·OpenOptions·new", Some(0), |_, _| {
-        let mut opts = HashMap::new();
-        opts.insert("read".to_string(), Value::Bool(false));
-        opts.insert("write".to_string(), Value::Bool(false));
-        opts.insert("append".to_string(), Value::Bool(false));
-        opts.insert("truncate".to_string(), Value::Bool(false));
-        opts.insert("create".to_string(), Value::Bool(false));
-        opts.insert("create_new".to_string(), Value::Bool(false));
-        opts.insert("__type__".to_string(), Value::String(Rc::new("OpenOptions".to_string())));
-        Ok(Value::Map(Rc::new(RefCell::new(opts))))
-    });
 
     // File::create - create a file for writing
     define(interp, "File·create", Some(1), |_, args| {
@@ -9993,21 +9639,6 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::fs::File::create
-    define(interp, "std·fs·File·create", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("File::create() requires string path")),
-        };
-        let mut handle = HashMap::new();
-        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
-        handle.insert("mode".to_string(), Value::String(Rc::new("write".to_string())));
-        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
-        match std::fs::File::create(&path) {
-            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
-            Err(e) => Err(RuntimeError::new(format!("File::create() error: {}", e))),
-        }
-    });
 
     // File::open - open a file for reading
     define(interp, "File·open", Some(1), |_, args| {
@@ -10025,21 +9656,6 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::fs::File::open
-    define(interp, "std·fs·File·open", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("File::open() requires string path")),
-        };
-        let mut handle = HashMap::new();
-        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
-        handle.insert("mode".to_string(), Value::String(Rc::new("read".to_string())));
-        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
-        match std::fs::File::open(&path) {
-            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
-            Err(e) => Err(RuntimeError::new(format!("File::open() error: {}", e))),
-        }
-    });
 
     // BufWriter::new - create a buffered writer wrapper
     define(interp, "BufWriter·new", Some(1), |_, args| {
@@ -10057,19 +9673,6 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::io::BufWriter::new
-    define(interp, "std·io·BufWriter·new", Some(1), |_, args| {
-        match &args[0] {
-            Value::Map(file_map) => {
-                let mut wrapper = HashMap::new();
-                wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
-                wrapper.insert("buffer".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
-                wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufWriter".to_string())));
-                Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
-            }
-            _ => Err(RuntimeError::new("BufWriter::new requires a file handle")),
-        }
-    });
 
     // BufReader::new - create a buffered reader wrapper (handles both file and TcpStream)
     define(interp, "BufReader·new", Some(1), |_, args| {
@@ -10133,72 +9736,12 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::io::BufReader::new
-    define(interp, "std·io·BufReader·new", Some(1), |_, args| {
-        // Helper to extract map from value, handling Ref wrappers
-        let get_map = |val: &Value| -> Option<Rc<RefCell<HashMap<String, Value>>>> {
-            match val {
-                Value::Map(m) => Some(m.clone()),
-                Value::Ref(r) => {
-                    let inner = r.borrow();
-                    if let Value::Map(m) = &*inner {
-                        Some(m.clone())
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        };
-
-        if let Some(file_map) = get_map(&args[0]) {
-            let borrowed = file_map.borrow();
-            let mut wrapper = HashMap::new();
-
-            // Check if this is a TcpStream
-            if let Some(Value::String(t)) = borrowed.get("__type__") {
-                if t.as_str() == "TcpStream" {
-                    if let Some(Value::Int(stream_id)) = borrowed.get("__stream_id__") {
-                        wrapper.insert("__stream_id__".to_string(), Value::Int(*stream_id));
-                    }
-                }
-            }
-
-            drop(borrowed);
-            wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
-            wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufReader".to_string())));
-            Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
-        } else {
-            Err(RuntimeError::new("BufReader::new requires a file handle or TcpStream"))
-        }
-    });
 
     // dirs_next functions (native-only: requires dirs crate)
     #[cfg(feature = "native")]
     {
-        // dirs_next::config_dir - get user config directory
-        define(interp, "dirs_next·config_dir", Some(0), |_, _| {
-            match dirs::config_dir() {
-                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-                None => Ok(Value::Null),
-            }
-        });
 
-        // dirs_next::data_dir - get user data directory
-        define(interp, "dirs_next·data_dir", Some(0), |_, _| {
-            match dirs::data_dir() {
-                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-                None => Ok(Value::Null),
-            }
-        });
 
-        // dirs_next::home_dir - get user home directory
-        define(interp, "dirs_next·home_dir", Some(0), |_, _| {
-            match dirs::home_dir() {
-                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-                None => Ok(Value::Null),
-            }
-        });
     }
 }
 
@@ -11356,31 +10899,7 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    // std::env::var - get single environment variable as Result<String, VarError>
-    define(interp, "std·env·var", Some(1), |_, args| {
-        let key = match &args[0] {
-            Value::String(s) => s.as_str().to_string(),
-            _ => return Err(RuntimeError::new("env::var expects string key")),
-        };
-        match std::env::var(&key) {
-            Ok(val) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Ok".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new(val))])),
-            }),
-            Err(_) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Err".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new("environment variable not found".to_string()))])),
-            }),
-        }
-    });
 
-    // std::env::temp_dir - get system temp directory
-    define(interp, "std·env·temp_dir", Some(0), |_, _| {
-        let temp_dir = std::env::temp_dir();
-        Ok(Value::String(Rc::new(temp_dir.to_string_lossy().to_string())))
-    });
 
     // Also register with alternate names
     define(interp, "temp_dir", Some(0), |_, _| {
@@ -11388,29 +10907,7 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(temp_dir.to_string_lossy().to_string())))
     });
 
-    // std::env::current_dir - get current working directory (alternate name)
-    define(interp, "std·env·current_dir", Some(0), |_, _| {
-        match std::env::current_dir() {
-            Ok(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            Err(e) => Err(RuntimeError::new(format!("current_dir() error: {}", e))),
-        }
-    });
 
-    // std::env::args - get command line arguments (filtered to exclude interpreter args)
-    define(interp, "std·env·args", Some(0), |interp, _| {
-        let args: Vec<Value> = if interp.program_args.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
-            // Fallback: return all args if program_args not set
-            std::env::args()
-                .map(|s| Value::String(Rc::new(s)))
-                .collect()
-        } else {
-            // Return filtered program args
-            interp.program_args.as_ref().unwrap().iter()
-                .map(|a| Value::String(Rc::new(a.clone())))
-                .collect()
-        };
-        Ok(Value::Array(Rc::new(RefCell::new(args))))
-    });
 
     // args - get command line arguments (filtered to exclude interpreter args)
     define(interp, "args", Some(0), |interp, _| {
@@ -11472,14 +10969,6 @@ fn register_system(interp: &mut Interpreter) {
         std::process::exit(code);
     });
 
-    // std::process::exit - exit the program with code (qualified name)
-    define(interp, "std·process·exit", Some(1), |_, args| {
-        let code = match &args[0] {
-            Value::Int(n) => *n as i32,
-            _ => 0,
-        };
-        std::process::exit(code);
-    });
 
     // shell - execute shell command and return output
     define(interp, "shell", Some(1), |_, args| {
