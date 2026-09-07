@@ -704,8 +704,18 @@ impl<'a> QliphothGenerator<'a> {
                     JsxAttributeValue::String { value } => format!("·class(\"{}\")", value),
                     JsxAttributeValue::Expression { code } => {
                         let transformed = self.transform_expression_scoped(code, scope);
-                        // Ensure class strings are properly quoted
-                        if transformed.starts_with('"') && !transformed.ends_with('"') {
+                        // Ensure class strings are properly quoted.
+                        //
+                        // The test is whether the quotes are BALANCED, not whether the
+                        // text ends in one. A concatenation such as
+                        //     "base " + ⎇ cond { "a" } ⎉ { "b" }·to_string()
+                        // starts with a quote and ends with ')', but is already
+                        // well-formed; appending a quote there produced an unterminated
+                        // string literal that swallowed the following lines. That single
+                        // mistake accounted for 30 of 44 failures when generating the
+                        // Lares UI.
+                        let unbalanced_quotes = transformed.matches('"').count() % 2 == 1;
+                        if transformed.starts_with('"') && unbalanced_quotes {
                             format!("·class({}\")", transformed)
                         } else if !transformed.starts_with('"') && !transformed.contains('"') {
                             // Simple identifier, wrap in quotes
