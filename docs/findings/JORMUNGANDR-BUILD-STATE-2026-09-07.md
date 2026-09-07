@@ -276,7 +276,7 @@ types in doc comments and the generic bound `F: λ(T) -> U`. jormungandr's own l
 `fn` but not `rite`, so `rite` was added there too; otherwise it could not lex its own
 migrated source.
 
-**Result: 13/28 → 26/28 checking clean** (18 after the λ pass, 22 after the four fixes below, 26 after the evidence-marker fixes and S15).
+**Result: 13/28 → 27/28 checking clean** (18 after the λ pass, 22 after the four fixes below, 26 after the evidence-marker fixes and S15).
 
 ### Four more causes, all resolved
 
@@ -308,8 +308,12 @@ it, and `crate` is not a Sigil token).
 
 | File | Error |
 |---|---|
-| `runtime` | blocked on **S14**, a checker gap in resolving `Map<K,V>::get` through if-let — not a jormungandr bug |
-| `wasm_bridge` | still substantially un-migrated Rust (`pub`, `fn`, `let`, `match`) |
+| `wasm_bridge` | still substantially un-migrated Rust (`pub`, `fn`, `let`, `match`) — a WASM entry point, not part of the bootstrap |
+
+`runtime.sg` is now clean. It needed two checker fixes rather than any source change:
+**S14** (Option payload derived from the receiver, so `Map<String,u32>::get` yields
+`Option<U32>`) and **S16** (an `?x` if-let binding takes the payload rather than the whole
+Option). Every file the compiler bootstrap needs now checks clean.
 
 `interp_eval`, `lexer`, `lexer_string` and `parser` are now clean. Their errors were all
 the same species: a value marked `?` where the contract declares `!`. In `lexer` it was

@@ -2085,8 +2085,13 @@ impl TypeChecker {
                 } else if let Expr::Let { pattern, value } = condition.as_ref() {
                     // Type-check the value being matched
                     let value_ty = self.infer_expr(value);
+                    // `⎇ ≔ ?x = e` is a Some/Ok test, so the binding receives the
+                    // PAYLOAD, not the Option/Result itself. Without this narrowing
+                    // `?x` is just an evidentiality-marked identifier and binds the
+                    // whole Option<T>, which then fails against any use of T.
+                    let bind_ty = self.iflet_binding_type(pattern, &value_ty);
                     // Bind pattern variables to the environment for the then_branch
-                    self.bind_pattern(pattern, &value_ty, EvidenceLevel::Known);
+                    self.bind_pattern(pattern, &bind_ty, EvidenceLevel::Known);
                 }
 
                 let then_ty = self.check_block(then_branch);
@@ -3603,6 +3608,34 @@ impl TypeChecker {
 
     /// Bind pattern variables with the given type and evidence level.
     /// This propagates evidence through pattern matching.
+    /// Type an `⎇ ≔ <pattern> = <value>` binding.
+    ///
+    /// A `?x` pattern is a Some/Ok test rather than an evidence annotation, so the
+    /// bound name takes the payload of an Option/Result. Any other pattern, or a
+    /// scrutinee that is not an Option/Result, is left untouched.
+    fn iflet_binding_type(&self, pattern: &Pattern, value_ty: &Type) -> Type {
+        let is_some_test = matches!(
+            pattern,
+            Pattern::Ident {
+                evidentiality: Some(Evidentiality::Uncertain),
+                ..
+            }
+        );
+        if !is_some_test {
+            return value_ty.clone();
+        }
+        let resolved = self.apply_substitutions(value_ty);
+        let (stripped, _) = self.strip_evidence(&resolved);
+        match &stripped {
+            Type::Named { name, generics }
+                if (name == "Option" || name == "Result") && !generics.is_empty() =>
+            {
+                generics[0].clone()
+            }
+            _ => value_ty.clone(),
+        }
+    }
+
     fn bind_pattern(&mut self, pattern: &Pattern, ty: &Type, evidence: EvidenceLevel) {
         let (inner_ty, ty_ev) = self.strip_evidence(ty);
         // Use the more restrictive evidence level
