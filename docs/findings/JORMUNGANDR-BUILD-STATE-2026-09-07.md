@@ -276,7 +276,7 @@ types in doc comments and the generic bound `F: λ(T) -> U`. jormungandr's own l
 `fn` but not `rite`, so `rite` was added there too; otherwise it could not lex its own
 migrated source.
 
-**Result: 13/28 → 22/28 checking clean** (18 after the λ pass, 22 after the four fixes below).
+**Result: 13/28 → 26/28 checking clean** (18 after the λ pass, 22 after the four fixes below, 26 after the evidence-marker fixes and S15).
 
 ### Four more causes, all resolved
 
@@ -308,8 +308,14 @@ it, and `crate` is not a Sigil token).
 
 | File | Error |
 |---|---|
-| `interp_eval`, `lexer`, `lexer_string`, `parser`, `runtime` | **E0003** evidence/type mismatches |
+| `runtime` | blocked on **S14**, a checker gap in resolving `Map<K,V>::get` through if-let — not a jormungandr bug |
 | `wasm_bridge` | still substantially un-migrated Rust (`pub`, `fn`, `let`, `match`) |
+
+`interp_eval`, `lexer`, `lexer_string` and `parser` are now clean. Their errors were all
+the same species: a value marked `?` where the contract declares `!`. In `lexer` it was
+`c => c?` under a `-> !char`; in `parser.sg` it was `t?` passed to `found: !Token` at eight
+sites; in `interp_eval` it was `?u64` written where `Option<u64>` was meant. Finding the
+`parser.sg` eight required fixing **S15** first.
 
 Every remaining failure except `wasm_bridge` is now **semantic rather than syntactic** —
 they need type-system judgment, not mechanical fixes. `wasm_bridge` is a WASM entry point,
