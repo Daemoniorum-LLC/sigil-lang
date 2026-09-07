@@ -83,7 +83,7 @@
     }
 
     /// Map the inner value ⟳ preserving the span.
-    ☉ rite map<U, F: λ(T) -> U>(self, f: !F) -> !Spanned<U> {
+    ☉ rite map<U, F: Fn(T) -> U>(self, f: !F) -> !Spanned<U> {
         Spanned {
             node: f(self.node),
             span: self.span,

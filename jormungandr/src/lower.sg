@@ -978,7 +978,7 @@ rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
             ≔ else_branch = expr.else_branch;
             ≔ ir_cond = lower_expr(ctx, *condition);
             ≔ ir_then = lower_block(ctx, then_branch);
-            ≔ ir_⎉ = ⌥ else_branch {
+            ≔ ir_else = ⌥ else_branch {
                 ?e => ?Box·new(lower_expr(ctx, *e)),
                 null => null,
             };
@@ -1915,7 +1915,7 @@ rite lower_stmt(ctx: &Δ LoweringContext, stmt: !Stmt) -> !IrOperation {
             };
 
             ≔ ir_init = lower_expr(ctx, init);
-            ≔ ir_⎉ = lower_expr(ctx, else_branch);
+            ≔ ir_else = lower_expr(ctx, else_branch);
 
             // Lower to a conditional with pattern matching
             // The ⎉ branch should diverge (return/panic)

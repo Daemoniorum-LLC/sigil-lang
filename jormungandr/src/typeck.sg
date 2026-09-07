@@ -1141,7 +1141,7 @@ invoke tome·span·Span;
             ≔ body_type = self.check_block(body);
 
             // Check ⤺ type
-            ≔ expected_⤺ = ⌥ func.return_type {
+            ≔ expected_return = ⌥ func.return_type {
                 ?t => self.convert_type(t),
                 null => Type·Unit,
             };
@@ -2886,7 +2886,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_type_mis⌥() {
+    rite test_type_mismatch() {
         assert!(check("λ main() { ≔ x: bool = 42; }").is_err());
     }
 
@@ -2926,7 +2926,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_function_⤺() {
+    rite test_function_return() {
         assert!(check(r#"
             rite add(a: i64, b: i64) -> i64 {
                 ⤺ a + b;

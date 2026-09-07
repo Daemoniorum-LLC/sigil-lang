@@ -19,13 +19,13 @@
 //! Success: `{ "ok": true, "output": "...", "exit_code": 0, "duration_ms": N }`
 //! Error: `{ "ok": false, "error": "...", "phase": "parse|typecheck|runtime" }`
 
-use crate::lexer::Lexer;
-use crate::parser::{Parser, ParseError};
-use crate::typeck::{TypeChecker, TypeError};
-use crate::lower::{lower_file, LowerError};
-use crate::interp::{Interpreter, RuntimeError, Value, EvidentialValue};
-use crate::span::Span;
-use crate::ast::SourceFile;
+invoke tome·lexer·Lexer;
+invoke tome·parser·{Parser, ParseError};
+invoke tome·typeck·{TypeChecker, TypeError};
+invoke tome·lower·{lower_file, LowerError};
+invoke tome·interp·{Interpreter, RuntimeError, Value, EvidentialValue};
+invoke tome·span·Span;
+invoke tome·ast·SourceFile;
 
 // ============================================================================
 // Memory Management

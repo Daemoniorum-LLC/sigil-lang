@@ -526,7 +526,7 @@ invoke tome·token·Token;
             self.consume_if(&Token·Question) || self.consume_if(&Token·Lozenge);
 
         // Parse optional aspect: λ name·ing, λ name·ed, etc.
-        ≔ aspect = ⎇ self.check(&Token·AspectProgressive) {
+        ≔ aspect_kind = ⎇ self.check(&Token·AspectProgressive) {
             self.advance();
             Aspect·Progressive
         } ⎉ ⎇ self.check(&Token·AspectPerfective) {
@@ -577,7 +577,7 @@ invoke tome·token·Token;
             is_async,
             attrs: fn_attrs,
             name,
-            aspect,
+            aspect_kind,
             generics,
             params,
             return_type,

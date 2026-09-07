@@ -304,7 +304,7 @@ invoke tome·span·{Span, Spanned};
     ☉ is_async: !bool,
     ☉ attrs: !FunctionAttrs,
     ☉ name: !Ident,
-    ☉ aspect: ?Aspect,
+    ☉ aspect_kind: ?Aspect,
     ☉ generics: ?Generics,
     ☉ params: ![Param],
     ☉ return_type: ?TypeExpr,
