@@ -592,7 +592,7 @@ type SoundCategory = ᛈ {
 }
 
 /// Get all sounds in a category
-pub fn get_sounds_by_category(category: SoundCategory) -> Vec<&'static AudioAsset>! {
+☉ rite get_sounds_by_category(category: SoundCategory) -> Vec<&'static AudioAsset>! {
     ≔ prefix = ⌥ category {
         SoundCategory·UI => "ui_",
         SoundCategory·Combat => ["combat_", "attack_", "damage_", "defend_", "ability_", "enemy_"].as_slice(),

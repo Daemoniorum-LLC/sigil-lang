@@ -67,16 +67,16 @@ invoke tome·state·{Store, Action, Selector};
     }
 
     /// Get or create state at current position
-    rite get_or_create<T: Clone + 'static>(&mut self, initial: fn() -> T) -> &mut T! {
-        let idx! = self.next_slot()
+    rite get_or_create<T: Clone + 'static>(&Δ self, initial: rite() -> T) -> &Δ T! {
+        ≔ idx! = self.next_slot()
 
-        if idx >= self.states·len() {
-            self.states·push(HookValue::State(Box::new(initial())))
+        ⎇ idx >= self.states·len() {
+            self.states·push(HookValue·State(Box·new(initial())))
         }
 
-        match &mut self.states[idx] {
-            HookValue::State(boxed) => {
-                boxed·downcast_mut::<T>()·unwrap()
+        ⌥ &Δ self.states[idx] {
+            HookValue·State(boxed) => {
+                boxed·downcast_mut·<T>()·unwrap()
             }
             _ => panic!("Hook type mismatch at index {idx}")
         }
@@ -85,18 +85,18 @@ invoke tome·state·{Store, Action, Selector};
 
 // Thread-local hook context
 thread_local! {
-    static HOOK_CONTEXT: RefCell<Option<*mut HookState>> = RefCell::new(None);
+    static HOOK_CONTEXT: RefCell<Option<*mut HookState>> = RefCell·new(None);
 }
 
 /// Enter hook context for a component render
-pub fn use_hook_context<R>(state: &mut HookState, render: fn() -> R) -> R! {
+☉ rite use_hook_context<R>(state: &Δ HookState, render: rite() -> R) -> R! {
     state·reset_cursor()
 
     HOOK_CONTEXT·with(|ctx| {
         *ctx·borrow_mut() = Some(state as *mut HookState)
     })
 
-    let result! = render()
+    ≔ result! = render()
 
     HOOK_CONTEXT·with(|ctx| {
         *ctx·borrow_mut() = None
@@ -106,10 +106,10 @@ pub fn use_hook_context<R>(state: &mut HookState, render: fn() -> R) -> R! {
 }
 
 /// Get current hook state (panics if called outside component)
-fn current_hooks() -> &mut HookState! {
+rite current_hooks() -> &Δ HookState! {
     HOOK_CONTEXT·with(|ctx| {
-        let ptr! = ctx·borrow()·expect("Hooks must be called inside a component")
-        unsafe { &mut *ptr }
+        ≔ ptr! = ctx·borrow()·expect("Hooks must be called inside a component")
+        unsafe { &Δ *ptr }
     })
 }
 
@@ -125,29 +125,29 @@ fn current_hooks() -> &mut HookState! {
 /// let (count, set_count) = use_state!(0)
 /// button[onclick: || set_count(count + 1)] { "Count: {count}" }
 /// ```
-pub fn use_state<T: Clone + 'static>(initial: T) -> (T!, rite(T))! {
+☉ rite use_state<T: Clone + 'static>(initial: T) -> (T!, rite(T))! {
     use_state_with(|| initial)
 }
 
 /// useState with lazy initialization
-☉ rite use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+☉ rite use_state_with<T: Clone + 'static>(init: rite() -> T) -> (T!, rite(T))! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        hooks.states·push(HookValue::State(Box::new(init())))
+    ⎇ idx >= hooks.states·len() {
+        hooks.states·push(HookValue·State(Box·new(init())))
     }
 
-    let value! = match &hooks.states[idx] {
-        HookValue::State(boxed) => boxed·downcast_ref::<T>()·unwrap()·clone(),
+    ≔ value! = ⌥ &hooks.states[idx] {
+        HookValue·State(boxed) => boxed·downcast_ref·<T>()·unwrap()·clone(),
         _ => panic!("Hook type mismatch")
     }
 
-    let setter! = move |new_value: T| {
-        let hooks! = current_hooks()
-        match &mut hooks.states[idx] {
-            HookValue::State(boxed) => {
-                *boxed = Box::new(new_value)
+    ≔ setter! = move |new_value: T| {
+        ≔ hooks! = current_hooks()
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·State(boxed) => {
+                *boxed = Box·new(new_value)
             }
             _ => {}
         }
@@ -175,28 +175,28 @@ pub fn use_state<T: Clone + 'static>(initial: T) -> (T!, rite(T))! {
 /// let (count, dispatch) = use_reducer(reducer, 0)
 /// button[onclick: || dispatch(Increment)] { "+" }
 /// ```
-pub fn use_reducer<S: Clone + 'static, A: 'static>(
-    reducer: fn(S, A) -> S,
+☉ rite use_reducer<S: Clone + 'static, A: 'static>(
+    reducer: rite(S, A) -> S,
     initial: S
-) -> (S!, fn(A))! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+) -> (S!, rite(A))! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        hooks.states·push(HookValue::Reducer(Box::new(initial)))
+    ⎇ idx >= hooks.states·len() {
+        hooks.states·push(HookValue·Reducer(Box·new(initial)))
     }
 
-    let state! = match &hooks.states[idx] {
-        HookValue::Reducer(boxed) => boxed·downcast_ref::<S>()·unwrap()·clone(),
+    ≔ state! = ⌥ &hooks.states[idx] {
+        HookValue·Reducer(boxed) => boxed·downcast_ref·<S>()·unwrap()·clone(),
         _ => panic!("Hook type mismatch")
     }
 
-    let dispatch! = move |action: A| {
-        let hooks! = current_hooks()
-        match &mut hooks.states[idx] {
-            HookValue::Reducer(boxed) => {
-                let current! = boxed·downcast_ref::<S>()·unwrap()·clone()
-                *boxed = Box::new(reducer(current, action))
+    ≔ dispatch! = move |action: A| {
+        ≔ hooks! = current_hooks()
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·Reducer(boxed) => {
+                ≔ current! = boxed·downcast_ref·<S>()·unwrap()·clone()
+                *boxed = Box·new(reducer(current, action))
             }
             _ => {}
         }
@@ -216,7 +216,7 @@ pub fn use_reducer<S: Clone + 'static, A: 'static>(
 ///     || subscription·unsubscribe()
 /// }, [data_source.id])
 /// ```
-pub fn use_effect<D: PartialEq + Clone + 'static>(
+☉ rite use_effect<D: PartialEq + Clone + 'static>(
     effect: rite() -> Option<rite()>?,
     deps: Vec<D>
 )! {
@@ -260,7 +260,7 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
 
 /// useLayoutEffect - like useEffect but fires synchronously after DOM mutations
 ☉ rite use_layout_effect<D: PartialEq + Clone + 'static>(
-    effect: fn() -> Option<fn()>?,
+    effect: rite() -> Option<rite()>?,
     deps: Vec<D>
 )! {
     // Similar to use_effect but runs synchronously
@@ -275,35 +275,35 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
 ///     data|φ{_.active}|τ{compute_score}|ρ+
 /// }, [data])
 /// ```
-pub fn use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
-    compute: fn() -> T,
+☉ rite use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
+    compute: rite() -> T,
     deps: Vec<D>
 ) -> T!! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        let value! = compute()
-        hooks.states·push(HookValue::Memo(MemoState {
-            value: Box::new(value·clone()),
-            deps: deps·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()
+    ⎇ idx >= hooks.states·len() {
+        ≔ value! = compute()
+        hooks.states·push(HookValue·Memo(MemoState {
+            value: Box·new(value·clone()),
+            deps: deps·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect()
         }))
         value
-    } else {
-        match &mut hooks.states[idx] {
-            HookValue::Memo(state) => {
-                let changed! = state.deps·len() != deps·len() ||
+    } ⎉ {
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·Memo(state) => {
+                ≔ changed! = state.deps·len() != deps·len() ||
                     state.deps·iter()·zip(deps·iter())·any(|(old, new)| {
-                        old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(true)
+                        old·downcast_ref·<D>()·map(|o| o != new)·unwrap_or(true)
                     })
 
-                if changed {
-                    let value! = compute()
-                    state.value = Box::new(value·clone())
-                    state.deps = deps·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()
+                ⎇ changed {
+                    ≔ value! = compute()
+                    state.value = Box·new(value·clone())
+                    state.deps = deps·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect()
                     value
-                } else {
-                    state.value·downcast_ref::<T>()·unwrap()·clone()
+                } ⎉ {
+                    state.value·downcast_ref·<T>()·unwrap()·clone()
                 }
             }
             _ => panic!("Hook type mismatch")
@@ -319,7 +319,7 @@ pub fn use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
 ///     do_something(item.id)
 /// }, [item.id])
 /// ```
-pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
+☉ rite use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
     callback: F,
     deps: Vec<D>
 ) -> F!! {
@@ -334,7 +334,7 @@ pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
 /// input[ref: input_ref]
 /// button[onclick: || input_ref.current?·focus()] { "Focus" }
 /// ```
-pub fn use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
+☉ rite use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
     ≔ hooks! = current_hooks()
     ≔ idx! = hooks·next_slot()
 
@@ -351,19 +351,19 @@ pub fn use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
 }
 
 impl<T: 'static> Ref<T> {
-    pub fn current(&self) -> Option<&T>? {
-        let hooks! = current_hooks()
+    ☉ rite current(&self) -> Option<&T>? {
+        ≔ hooks! = current_hooks()
         hooks.refs·get(self.index)
             ·and_then(|cell| {
-                cell·borrow()·downcast_ref::<Option<T>>()
+                cell·borrow()·downcast_ref·<Option<T>>()
                     ·and_then(|opt| opt·as_ref())
             })
     }
 
-    pub fn set(&self, value: T) {
-        let hooks! = current_hooks()
-        if let Some(cell) = hooks.refs·get(self.index) {
-            *cell·borrow_mut() = Box::new(Some(value))
+    ☉ rite set(&self, value: T) {
+        ≔ hooks! = current_hooks()
+        ⎇ ≔ Some(cell) = hooks.refs·get(self.index) {
+            *cell·borrow_mut() = Box·new(Some(value))
         }
     }
 }
@@ -375,7 +375,7 @@ impl<T: 'static> Ref<T> {
 /// let theme = use_context(ThemeContext)
 /// div[class: "container {theme.mode}"] { ... }
 /// ```
-pub fn use_context<T: Clone + 'static>(context: &tome·components·Context<T>) -> T!! {
+☉ rite use_context<T: Clone + 'static>(context: &tome·components·Context<T>) -> T!! {
     context·consume()
 }
 
@@ -436,33 +436,33 @@ impl<T> AsyncState<T> {
 /// }
 /// ```
 ☉ rite use_fetch<T: serde·Deserialize + Clone + 'static>(url: &str) -> AsyncState<T>!! {
-    use_fetch_with(url, FetchOptions::default())
+    use_fetch_with(url, FetchOptions·default())
 }
 
 /// Fetch options
-pub struct FetchOptions {
+☉ Σ FetchOptions {
     method: String! = "GET"
-    headers: HashMap<String, String>! = HashMap::new()
+    headers: HashMap<String, String>! = HashMap·new()
     body: Option<String>? = None
-    cache: CachePolicy! = CachePolicy::Default
-    retry: RetryPolicy! = RetryPolicy::default()
+    cache: CachePolicy! = CachePolicy·Default
+    retry: RetryPolicy! = RetryPolicy·default()
 }
 
-pub enum CachePolicy {
+☉ ᛈ CachePolicy {
     Default,
     NoCache,
     ForceCache,
     StaleWhileRevalidate(u64!)
 }
 
-pub struct RetryPolicy {
+☉ Σ RetryPolicy {
     max_attempts: u32! = 3
     delay_ms: u64! = 1000
     backoff: f64! = 2.0
 }
 
-impl RetryPolicy {
-    pub fn default() -> Self! {
+⊢ RetryPolicy {
+    ☉ rite default() -> Self! {
         RetryPolicy {
             max_attempts: 3,
             delay_ms: 1000,
@@ -472,7 +472,7 @@ impl RetryPolicy {
 }
 
 /// useFetch with options
-pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
+☉ rite use_fetch_with<T: serde·Deserialize + Clone + 'static>(
     url: &str,
     options: FetchOptions
 ) -> AsyncState<T>!! {
@@ -540,10 +540,10 @@ pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
 /// use_effect(|| { fetch_results(debounced?) }, [debounced?])
 /// ```
 ☉ rite use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> T?! {
-    let (debounced, set_debounced) = use_state(value·clone())
+    ≔ (debounced, set_debounced) = use_state(value·clone())
 
     use_effect(|| {
-        let timer_id! = set_timeout(delay_ms, || {
+        ≔ timer_id! = set_timeout(delay_ms, || {
             set_debounced(value·clone())
         })
 
@@ -555,7 +555,7 @@ pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
 }
 
 /// useThrottle - throttle a value
-pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
+☉ rite use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
     ≔ (throttled, set_throttled) = use_state(value·clone())
     ≔ last_run! = use_ref(0u64)
 
@@ -580,19 +580,19 @@ pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
 ☉ rite use_local_storage<T: serde·Serialize + serde·Deserialize + Clone + 'static>(
     key: &str,
     default: T
-) -> (T!, fn(T))!! {
-    let initial! = || {
-        match local_storage·get_item(key) {
-            Some(json) => serde_json::from_str(&json)·unwrap_or(default·clone()),
+) -> (T!, rite(T))!! {
+    ≔ initial! = || {
+        ⌥ local_storage·get_item(key) {
+            Some(json) => serde_json·from_str(&json)·unwrap_or(default·clone()),
             None => default·clone()
         }
     }
 
-    let (value, set_value) = use_state_with(initial)
-    let key_string! = key.to_string()
+    ≔ (value, set_value) = use_state_with(initial)
+    ≔ key_string! = key.to_string()
 
-    let set_stored! = move |new_value: T| {
-        let json! = serde_json::to_string(&new_value)·unwrap()
+    ≔ set_stored! = move |new_value: T| {
+        ≔ json! = serde_json·to_string(&new_value)·unwrap()
         local_storage·set_item(&key_string, &json)
         set_value(new_value)
     }
@@ -607,15 +607,15 @@ pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
 /// let is_mobile = use_media_query("(max-width: 768px)")
 /// if is_mobile { MobileNav {} } else { DesktopNav {} }
 /// ```
-pub fn use_media_query(query: &str) -> bool!! {
-    let (matches, set_matches) = use_state(false)
-    let query_string! = query.to_string()
+☉ rite use_media_query(query: &str) -> bool!! {
+    ≔ (matches, set_matches) = use_state(false)
+    ≔ query_string! = query.to_string()
 
     use_effect(|| {
-        let mql! = window·match_media(&query_string)
+        ≔ mql! = window·match_media(&query_string)
         set_matches(mql·matches())
 
-        let listener! = |e: MediaQueryListEvent| {
+        ≔ listener! = |e: MediaQueryListEvent| {
             set_matches(e·matches())
         }
         mql·add_listener(listener)
@@ -627,11 +627,11 @@ pub fn use_media_query(query: &str) -> bool!! {
 }
 
 /// useWindowSize - track window dimensions
-pub fn use_window_size() -> (i32!, i32!)!! {
-    let (size, set_size) = use_state((window·inner_width(), window·inner_height()))
+☉ rite use_window_size() -> (i32!, i32!)!! {
+    ≔ (size, set_size) = use_state((window·inner_width(), window·inner_height()))
 
     use_effect(|| {
-        let listener! = || {
+        ≔ listener! = || {
             set_size((window·inner_width(), window·inner_height()))
         }
         window·add_event_listener("resize", listener)
@@ -643,12 +643,12 @@ pub fn use_window_size() -> (i32!, i32!)!! {
 }
 
 /// useOnline - track online/offline status
-pub fn use_online() -> bool!! {
-    let (online, set_online) = use_state(navigator·online())
+☉ rite use_online() -> bool!! {
+    ≔ (online, set_online) = use_state(navigator·online())
 
     use_effect(|| {
-        let handle_online! = || set_online(true)
-        let handle_offline! = || set_online(false)
+        ≔ handle_online! = || set_online(true)
+        ≔ handle_offline! = || set_online(false)
 
         window·add_event_listener("online", handle_online)
         window·add_event_listener("offline", handle_offline)
@@ -663,16 +663,16 @@ pub fn use_online() -> bool!! {
 }
 
 /// useIntersection - observe element intersection
-pub fn use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!! {
-    let ref_! = use_ref::<DomRef>(None)
-    let (is_intersecting, set_intersecting) = use_state(false)
+☉ rite use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!! {
+    ≔ ref_! = use_ref·<DomRef>(None)
+    ≔ (is_intersecting, set_intersecting) = use_state(false)
 
     use_effect(|| {
-        let element? = ref_·current()
-        match element? {
+        ≔ element? = ref_·current()
+        ⌥ element? {
             Some(el) => {
-                let observer! = IntersectionObserver::new(|entries| {
-                    for entry in entries {
+                ≔ observer! = IntersectionObserver·new(|entries| {
+                    ∀ entry ∈ entries {
                         set_intersecting(entry·is_intersecting())
                     }
                 }, options)
@@ -688,7 +688,7 @@ pub fn use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!!
     (ref_, is_intersecting)
 }
 
-pub struct IntersectionOptions {
+☉ Σ IntersectionOptions {
     root: Option<String>? = None
     root_margin: String! = "0px"
     threshold: f64! = 0.0
@@ -699,10 +699,10 @@ pub struct IntersectionOptions {
 // ============================================================================
 
 /// useTransition - manage transition state for async updates
-pub fn use_transition() -> (bool!, fn(fn()))!! {
-    let (is_pending, set_pending) = use_state(false)
+☉ rite use_transition() -> (bool!, rite(rite()))!! {
+    ≔ (is_pending, set_pending) = use_state(false)
 
-    let start_transition! = |callback: fn()| {
+    ≔ start_transition! = |callback: rite()| {
         set_pending(true)
         // Schedule low-priority update
         schedule_transition(|| {
@@ -715,7 +715,7 @@ pub fn use_transition() -> (bool!, fn(fn()))!! {
 }
 
 /// useDeferredValue - defer updating a value
-pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
+☉ rite use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
     ≔ (deferred, set_deferred) = use_state(value·clone())
     ≔ (_, start_transition) = use_transition()
 

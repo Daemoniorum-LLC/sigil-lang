@@ -58,51 +58,51 @@ invoke tome·core·events·{EventHandler, EventType};
 
     /// Add onclick handler
     ☉ rite onclick(self, handler: impl Fn() + 'static) -> Self! {
-        self·on(EventType::Click, EventHandler::from_fn(handler))
+        self·on(EventType·Click, EventHandler·from_fn(handler))
     }
 
     /// Add onchange handler
-    pub fn onchange(self, handler: impl Fn(String) + 'static) -> Self! {
+    ☉ rite onchange(self, handler: impl Fn(String) + 'static) -> Self! {
         self·on(EventType·Change, EventHandler·from_value_fn(handler))
     }
 
     /// Add oninput handler
     ☉ rite oninput(self, handler: impl Fn(String) + 'static) -> Self! {
-        self·on(EventType::Input, EventHandler::from_value_fn(handler))
+        self·on(EventType·Input, EventHandler·from_value_fn(handler))
     }
 
     /// Add onsubmit handler
-    pub fn onsubmit(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onsubmit(self, handler: impl Fn() + 'static) -> Self! {
         self·on(EventType·Submit, EventHandler·from_fn_prevent_default(handler))
     }
 
     /// Add onkeydown handler
     ☉ rite onkeydown(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
-        self·on(EventType::KeyDown, EventHandler::from_key_fn(handler))
+        self·on(EventType·KeyDown, EventHandler·from_key_fn(handler))
     }
 
     /// Add onkeyup handler
-    pub fn onkeyup(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
+    ☉ rite onkeyup(self, handler: impl Fn(KeyEvent) + 'static) -> Self! {
         self·on(EventType·KeyUp, EventHandler·from_key_fn(handler))
     }
 
     /// Add onfocus handler
     ☉ rite onfocus(self, handler: impl Fn() + 'static) -> Self! {
-        self·on(EventType::Focus, EventHandler::from_fn(handler))
+        self·on(EventType·Focus, EventHandler·from_fn(handler))
     }
 
     /// Add onblur handler
-    pub fn onblur(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onblur(self, handler: impl Fn() + 'static) -> Self! {
         self·on(EventType·Blur, EventHandler·from_fn(handler))
     }
 
     /// Add onmouseover handler
     ☉ rite onmouseover(self, handler: impl Fn() + 'static) -> Self! {
-        self·on(EventType::MouseOver, EventHandler::from_fn(handler))
+        self·on(EventType·MouseOver, EventHandler·from_fn(handler))
     }
 
     /// Add onmouseout handler
-    pub fn onmouseout(self, handler: impl Fn() + 'static) -> Self! {
+    ☉ rite onmouseout(self, handler: impl Fn() + 'static) -> Self! {
         self·on(EventType·MouseOut, EventHandler·from_fn(handler))
     }
 

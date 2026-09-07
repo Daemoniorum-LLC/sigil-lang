@@ -154,19 +154,19 @@ thread_local! {
 
     /// Use a hook value
     ☉ rite use_hook[T: Clone + 'static, F: FnOnce() -> T](self: &Self!, init: F!) -> T! {
-        let component_id! = self.current_component·get();
-        let hook_index! = self.current_hook_index·get();
+        ≔ component_id! = self.current_component·get();
+        ≔ hook_index! = self.current_hook_index·get();
         self.current_hook_index·set(hook_index + 1);
 
-        let mut states! = self.hook_states·borrow_mut();
-        let hooks! = states·entry(component_id)·or_insert_with(Vec·new);
+        ≔ vary states! = self.hook_states·borrow_mut();
+        ≔ hooks! = states·entry(component_id)·or_insert_with(Vec·new);
 
-        if hook_index >= hooks·len() {
+        ⎇ hook_index >= hooks·len() {
             // First render, initialize hook
-            let value! = init();
+            ≔ value! = init();
             hooks·push(Box·new(value·clone()));
             value
-        } else {
+        } ⎉ {
             // Subsequent render, return existing value
             hooks[hook_index]
                 ·downcast_ref[T]()
@@ -176,7 +176,7 @@ thread_local! {
     }
 
     /// Get hook state
-    pub fn get_hook_state[T: 'static](self: &Self!) -> &T! {
+    ☉ rite get_hook_state[T: 'static](self: &Self!) -> &T! {
         ≔ component_id! = self.current_component·get();
         ≔ hook_index! = self.current_hook_index·get() - 1; // Already incremented
 
@@ -205,7 +205,7 @@ thread_local! {
     }
 
     /// Create an effect (for computed signals)
-    pub fn create_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
+    ☉ rite create_effect[F: Fn() + 'static](self: &Self!, effect: F!) {
         ≔ subscriber_id! = self·allocate_subscriber_id();
 
         // Track dependencies during first run
@@ -226,11 +226,11 @@ thread_local! {
 
     /// Provide a context value
     ☉ rite provide_context[T: Clone + 'static](self: &Self!, value: T!) {
-        self.contexts·borrow_mut()·insert(TypeId::of[T](), Box·new(value));
+        self.contexts·borrow_mut()·insert(TypeId·of[T](), Box·new(value));
     }
 
     /// Get a context value
-    pub fn get_context[T: Clone + 'static](self: &Self!) -> Option[T]? {
+    ☉ rite get_context[T: Clone + 'static](self: &Self!) -> Option[T]? {
         self.contexts·borrow()
             ·get(&TypeId·of[T]())
             ·and_then(|v| v·downcast_ref[T]())

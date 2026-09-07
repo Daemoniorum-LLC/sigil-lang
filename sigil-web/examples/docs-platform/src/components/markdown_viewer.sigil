@@ -377,19 +377,19 @@ rite set_timeout(ms: u64, callback: rite()) {}
 
 ⊢ AdmonitionVariant {
     rite to_string(&self) -> &'static str! {
-        match self {
-            AdmonitionVariant::Note => "note",
-            AdmonitionVariant::Tip => "tip",
-            AdmonitionVariant::Warning => "warning",
-            AdmonitionVariant::Danger => "danger",
-            AdmonitionVariant::Info => "info",
-            AdmonitionVariant::Success => "success"
+        ⌥ self {
+            AdmonitionVariant·Note => "note",
+            AdmonitionVariant·Tip => "tip",
+            AdmonitionVariant·Warning => "warning",
+            AdmonitionVariant·Danger => "danger",
+            AdmonitionVariant·Info => "info",
+            AdmonitionVariant·Success => "success"
         }
     }
 }
 
 /// API reference item display
-pub fn ApiItem(props: ApiItemProps) -> VNode! {
+☉ rite ApiItem(props: ApiItemProps) -> VNode! {
     div()
         ·class(&format!("api-item api-item--{}", props.kind·to_string()))
         ·id(&props.anchor)
@@ -449,7 +449,7 @@ pub fn ApiItem(props: ApiItemProps) -> VNode! {
 
             // Returns
             when(props.returns·is_some(), || {
-                let (ret_type, ret_desc) = props.returns·clone()·unwrap()
+                ≔ (ret_type, ret_desc) = props.returns·clone()·unwrap()
                 div()
                     ·class("api-item-returns")
                     ·children(vec![
@@ -483,19 +483,19 @@ pub fn ApiItem(props: ApiItemProps) -> VNode! {
         ·build()
 }
 
-pub struct ApiItemProps {
-    pub name: String!
-    pub kind: ApiItemKind!
-    pub anchor: String!
-    pub signature: Option<String>? = None
-    pub parameters: Vec<(String, String, String)>! = Vec::new()
-    pub returns: Option<(String, String)>? = None
-    pub example: Option<String>? = None
-    pub children: Vec<VNode>!
+☉ Σ ApiItemProps {
+    ☉ name: String!
+    ☉ kind: ApiItemKind!
+    ☉ anchor: String!
+    ☉ signature: Option<String>? = None
+    ☉ parameters: Vec<(String, String, String)>! = Vec·new()
+    ☉ returns: Option<(String, String)>? = None
+    ☉ example: Option<String>? = None
+    ☉ children: Vec<VNode>!
 }
 
 #[derive(Clone, Copy)]
-pub enum ApiItemKind {
+☉ ᛈ ApiItemKind {
     Function,
     Struct,
     Enum,
@@ -506,8 +506,8 @@ pub enum ApiItemKind {
     Macro
 }
 
-impl ApiItemKind {
-    fn to_string(&self) -> &'static str! {
+⊢ ApiItemKind {
+    rite to_string(&self) -> &'static str! {
         ⌥ self {
             ApiItemKind·Function => "function",
             ApiItemKind·Struct => "struct",

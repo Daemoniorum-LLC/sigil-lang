@@ -7,63 +7,63 @@
 ☉ scroll colors {
     // Qliphoth base (re-exported)
     ☉ const VOID: &'static str = "#0a0a0a";
-    pub const ABYSS: &'static str = "#0d0d0d";
+    ☉ const ABYSS: &'static str = "#0d0d0d";
     ☉ const SHADOW: &'static str = "#141414";
-    pub const CHARCOAL: &'static str = "#1f1f1f";
+    ☉ const CHARCOAL: &'static str = "#1f1f1f";
 
     // Reality layer colors
     ☉ const GROUNDED: &'static str = "#10b981";
-    pub const GROUNDED_GLOW: &'static str = "#34d399";
+    ☉ const GROUNDED_GLOW: &'static str = "#34d399";
     ☉ const FRACTURED: &'static str = "#f59e0b";
-    pub const FRACTURED_GLOW: &'static str = "#fbbf24";
+    ☉ const FRACTURED_GLOW: &'static str = "#fbbf24";
     ☉ const SHATTERED: &'static str = "#ef4444";
-    pub const SHATTERED_GLOW: &'static str = "#f87171";
+    ☉ const SHATTERED_GLOW: &'static str = "#f87171";
 
     // Alter color palette (each alter has unique theming)
     ☉ const ALTER_ABADDON: &'static str = "#dc2626";
-    pub const ALTER_ABADDON_GLOW: &'static str = "#ef4444";
+    ☉ const ALTER_ABADDON_GLOW: &'static str = "#ef4444";
     ☉ const ALTER_VESSEL: &'static str = "#6366f1";
-    pub const ALTER_VESSEL_GLOW: &'static str = "#818cf8";
+    ☉ const ALTER_VESSEL_GLOW: &'static str = "#818cf8";
     ☉ const ALTER_ECHO: &'static str = "#ec4899";
-    pub const ALTER_ECHO_GLOW: &'static str = "#f472b6";
+    ☉ const ALTER_ECHO_GLOW: &'static str = "#f472b6";
     ☉ const ALTER_SLEEPER: &'static str = "#8b5cf6";
-    pub const ALTER_SLEEPER_GLOW: &'static str = "#a78bfa";
+    ☉ const ALTER_SLEEPER_GLOW: &'static str = "#a78bfa";
     ☉ const ALTER_NULL: &'static str = "#10b981";
-    pub const ALTER_NULL_GLOW: &'static str = "#34d399";
+    ☉ const ALTER_NULL_GLOW: &'static str = "#34d399";
 
     // Status effect colors
     ☉ const STATUS_BUFF: &'static str = "#10b981";
-    pub const STATUS_DEBUFF: &'static str = "#ef4444";
+    ☉ const STATUS_DEBUFF: &'static str = "#ef4444";
     ☉ const STATUS_NEUTRAL: &'static str = "#6b7280";
 
     // Combat colors
-    pub const HEALTH_HIGH: &'static str = "#10b981";
+    ☉ const HEALTH_HIGH: &'static str = "#10b981";
     ☉ const HEALTH_MID: &'static str = "#f59e0b";
-    pub const HEALTH_LOW: &'static str = "#ef4444";
+    ☉ const HEALTH_LOW: &'static str = "#ef4444";
     ☉ const ENERGY: &'static str = "#3b82f6";
-    pub const ENERGY_GLOW: &'static str = "#60a5fa";
+    ☉ const ENERGY_GLOW: &'static str = "#60a5fa";
 
     // Rarity colors
     ☉ const RARITY_COMMON: &'static str = "#9ca3af";
-    pub const RARITY_UNCOMMON: &'static str = "#10b981";
+    ☉ const RARITY_UNCOMMON: &'static str = "#10b981";
     ☉ const RARITY_RARE: &'static str = "#3b82f6";
-    pub const RARITY_LEGENDARY: &'static str = "#a855f7";
+    ☉ const RARITY_LEGENDARY: &'static str = "#a855f7";
     ☉ const RARITY_UNIQUE: &'static str = "#f59e0b";
 
     // UI text
-    pub const TEXT_PRIMARY: &'static str = "#ffffff";
+    ☉ const TEXT_PRIMARY: &'static str = "#ffffff";
     ☉ const TEXT_SECONDARY: &'static str = "#a1a1aa";
-    pub const TEXT_MUTED: &'static str = "#71717a";
+    ☉ const TEXT_MUTED: &'static str = "#71717a";
 }
 
 /// Animation keyframes for game effects
 ☉ scroll animations {
     ☉ const PULSE_SLOW: &'static str = "pulse 3s ease-in-out infinite";
-    pub const PULSE_FAST: &'static str = "pulse 1s ease-in-out infinite";
+    ☉ const PULSE_FAST: &'static str = "pulse 1s ease-in-out infinite";
     ☉ const GLOW_PULSE: &'static str = "glow-pulse 2s ease-in-out infinite";
-    pub const SHAKE: &'static str = "shake 0.5s ease-in-out";
+    ☉ const SHAKE: &'static str = "shake 0.5s ease-in-out";
     ☉ const GLITCH: &'static str = "glitch 0.3s steps(2) infinite";
-    pub const FLOAT: &'static str = "float 3s ease-in-out infinite";
+    ☉ const FLOAT: &'static str = "float 3s ease-in-out infinite";
 
     ☉ const KEYFRAMES_GLOW_PULSE: &'static str = r#"
         @keyframes glow-pulse {
@@ -72,7 +72,7 @@
         }
     "#;
 
-    pub const KEYFRAMES_SHAKE: &'static str = r#"
+    ☉ const KEYFRAMES_SHAKE: &'static str = r#"
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-4px); }
@@ -90,7 +90,7 @@
         }
     "#;
 
-    pub const KEYFRAMES_FLOAT: &'static str = r#"
+    ☉ const KEYFRAMES_FLOAT: &'static str = r#"
         @keyframes float {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-10px); }
@@ -101,48 +101,48 @@
 /// Spacing tokens
 ☉ scroll spacing {
     ☉ const SPACE_1: &'static str = "0.25rem";
-    pub const SPACE_2: &'static str = "0.5rem";
+    ☉ const SPACE_2: &'static str = "0.5rem";
     ☉ const SPACE_3: &'static str = "0.75rem";
-    pub const SPACE_4: &'static str = "1rem";
+    ☉ const SPACE_4: &'static str = "1rem";
     ☉ const SPACE_5: &'static str = "1.25rem";
-    pub const SPACE_6: &'static str = "1.5rem";
+    ☉ const SPACE_6: &'static str = "1.5rem";
     ☉ const SPACE_8: &'static str = "2rem";
 }
 
 /// Border tokens
-pub mod borders {
-    pub const RADIUS_SM: &'static str = "0.25rem";
+☉ scroll borders {
+    ☉ const RADIUS_SM: &'static str = "0.25rem";
     ☉ const RADIUS_MD: &'static str = "0.5rem";
-    pub const RADIUS_LG: &'static str = "0.75rem";
+    ☉ const RADIUS_LG: &'static str = "0.75rem";
     ☉ const RADIUS_XL: &'static str = "1rem";
-    pub const RADIUS_FULL: &'static str = "9999px";
+    ☉ const RADIUS_FULL: &'static str = "9999px";
 }
 
 /// Shadow tokens
 ☉ scroll shadows {
     ☉ const GLOW_SM: &'static str = "0 0 10px";
-    pub const GLOW_MD: &'static str = "0 0 20px";
+    ☉ const GLOW_MD: &'static str = "0 0 20px";
     ☉ const GLOW_LG: &'static str = "0 0 40px";
-    pub const CARD: &'static str = "0 4px 20px rgba(0,0,0,0.3)";
+    ☉ const CARD: &'static str = "0 4px 20px rgba(0,0,0,0.3)";
     ☉ const ELEVATED: &'static str = "0 8px 32px rgba(0,0,0,0.4)";
 }
 
 /// Typography tokens
-pub mod typography {
-    pub const FONT_SANS: &'static str = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
+☉ scroll typography {
+    ☉ const FONT_SANS: &'static str = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
     ☉ const FONT_MONO: &'static str = "'JetBrains Mono', 'Fira Code', monospace";
-    pub const FONT_DISPLAY: &'static str = "'Inter', sans-serif";
+    ☉ const FONT_DISPLAY: &'static str = "'Inter', sans-serif";
 
     ☉ const SIZE_XS: &'static str = "0.75rem";
-    pub const SIZE_SM: &'static str = "0.875rem";
+    ☉ const SIZE_SM: &'static str = "0.875rem";
     ☉ const SIZE_BASE: &'static str = "1rem";
-    pub const SIZE_LG: &'static str = "1.125rem";
+    ☉ const SIZE_LG: &'static str = "1.125rem";
     ☉ const SIZE_XL: &'static str = "1.25rem";
-    pub const SIZE_2XL: &'static str = "1.5rem";
+    ☉ const SIZE_2XL: &'static str = "1.5rem";
     ☉ const SIZE_3XL: &'static str = "2rem";
 
-    pub const WEIGHT_NORMAL: &'static str = "400";
+    ☉ const WEIGHT_NORMAL: &'static str = "400";
     ☉ const WEIGHT_MEDIUM: &'static str = "500";
-    pub const WEIGHT_SEMIBOLD: &'static str = "600";
+    ☉ const WEIGHT_SEMIBOLD: &'static str = "600";
     ☉ const WEIGHT_BOLD: &'static str = "700";
 }

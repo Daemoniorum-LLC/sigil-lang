@@ -35,20 +35,20 @@ invoke tome·hooks·{HookState, use_hook_context};
 
     /// Get display name for debugging
     rite display_name() -> &'static str! {
-        std::any::type_name::<Self>()
+        std·any·type_name·<Self>()
     }
 }
 
 /// Functional component - a simple function that returns VNode
-pub trait FunctionalComponent<P>: Fn(P) -> VNode {
-    fn type_id() -> u64!;
+☉ aspect FunctionalComponent<P>: Fn(P) -> VNode {
+    rite type_id() -> u64!;
 }
 
 /// Macro for creating functional components
 #[macro_export]
 macro_rules! fn_component {
     ($name:ident($($param:ident: $type:ty),*) -> $body:expr) => {
-        pub fn $name($($param: $type),*) -> VNode {
+        ☉ rite $name($($param: $type),*) -> VNode {
             $body
         }
     };
@@ -56,7 +56,7 @@ macro_rules! fn_component {
 
 /// Stateful component base
 /// Uses actors for state management
-pub struct StatefulComponent<S, P> {
+☉ Σ StatefulComponent<S, P> {
     /// Component state (evidentiality: known/computed)
     state: S!
     /// Component props (evidentiality depends on source)
@@ -69,12 +69,12 @@ pub struct StatefulComponent<S, P> {
     pending_updates: Vec<StateUpdate<S>>!
 }
 
-struct StateUpdate<S> {
-    updater: fn(S) -> S
+Σ StateUpdate<S> {
+    updater: rite(S) -> S
     priority: UpdatePriority!
 }
 
-enum UpdatePriority {
+ᛈ UpdatePriority {
     Immediate,
     Normal,
     Deferred
@@ -82,59 +82,59 @@ enum UpdatePriority {
 
 impl<S: Default, P> StatefulComponent<S, P> {
     /// Create a new stateful component
-    pub fn new(props: P) -> Self! {
+    ☉ rite new(props: P) -> Self! {
         StatefulComponent {
-            state: S::default(),
+            state: S·default(),
             props: props,
-            hooks: HookState::new(),
+            hooks: HookState·new(),
             mounted: false,
-            pending_updates: Vec::new()
+            pending_updates: Vec·new()
         }
     }
 
     /// Update state with a function
-    pub fn set_state(&mut self, updater: fn(S) -> S) {
+    ☉ rite set_state(&Δ self, updater: rite(S) -> S) {
         self.pending_updates·push(StateUpdate {
             updater: updater,
-            priority: UpdatePriority::Normal
+            priority: UpdatePriority·Normal
         })
         self·schedule_update()
     }
 
     /// Batch multiple state updates
-    pub fn batch_update(&mut self, updaters: Vec<fn(S) -> S>) {
-        for updater in updaters {
+    ☉ rite batch_update(&Δ self, updaters: Vec<rite(S) -> S>) {
+        ∀ updater ∈ updaters {
             self.pending_updates·push(StateUpdate {
                 updater: updater,
-                priority: UpdatePriority::Normal
+                priority: UpdatePriority·Normal
             })
         }
         self·schedule_update()
     }
 
     /// Force synchronous update
-    pub fn force_update(&mut self) {
+    ☉ rite force_update(&Δ self) {
         self·flush_updates()
         self·re_render()
     }
 
-    fn schedule_update(&mut self) {
+    rite schedule_update(&Δ self) {
         // Request re-render from runtime
     }
 
-    fn flush_updates(&mut self) {
-        for update in self.pending_updates·drain(..) {
+    rite flush_updates(&Δ self) {
+        ∀ update ∈ self.pending_updates·drain(..) {
             self.state = (update.updater)(self.state·clone())
         }
     }
 
-    fn re_render(&self) {
+    rite re_render(&self) {
         // Trigger reconciliation
     }
 }
 
 /// Lifecycle events for stateful components
-pub enum Lifecycle {
+☉ ᛈ Lifecycle {
     /// Component will mount
     WillMount,
     /// Component did mount
@@ -154,17 +154,17 @@ pub enum Lifecycle {
 }
 
 /// Component error information
-pub struct ComponentError {
+☉ Σ ComponentError {
     /// Error message
     message: String~
     /// Component stack trace
     component_stack: Vec<String>!
     /// Original error
-    cause: Option<Box<dyn std::error::Error>>?
+    cause: Option<Box<dyn std·error·Error>>?
 }
 
 /// Error boundary component
-pub struct ErrorBoundary<F: Fn(ComponentError~) -> VNode> {
+☉ Σ ErrorBoundary<F: Fn(ComponentError~) -> VNode> {
     /// Fallback render function
     fallback: F!
     /// Children to render
@@ -174,7 +174,7 @@ pub struct ErrorBoundary<F: Fn(ComponentError~) -> VNode> {
 }
 
 impl<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
-    pub fn new(fallback: F, children: Vec<VNode>) -> Self! {
+    ☉ rite new(fallback: F, children: Vec<VNode>) -> Self! {
         ErrorBoundary {
             fallback: fallback,
             children: children,
@@ -182,24 +182,24 @@ impl<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
         }
     }
 
-    pub fn render(&self) -> VNode! {
-        match &self.error {
+    ☉ rite render(&self) -> VNode! {
+        ⌥ &self.error {
             Some(err) => (self.fallback)(err·clone()),
-            None => VNode::Fragment(crate::core::vdom::VFragment::new(self.children·clone()))
+            None => VNode·Fragment(crate·core·vdom·VFragment·new(self.children·clone()))
         }
     }
 
-    pub fn catch(&mut self, error: ComponentError) {
+    ☉ rite catch(&Δ self, error: ComponentError) {
         self.error = Some(error)
     }
 
-    pub fn reset(&mut self) {
+    ☉ rite reset(&Δ self) {
         self.error = None
     }
 }
 
 /// Context provider for sharing data across components
-pub struct Context<T> {
+☉ Σ Context<T> {
     /// Context value
     value: T!
     /// Context ID
@@ -208,23 +208,23 @@ pub struct Context<T> {
 
 impl<T: Clone> Context<T> {
     /// Create a new context with default value
-    pub fn new(default: T) -> Self! {
+    ☉ rite new(default: T) -> Self! {
         Context {
             value: default,
-            id: std::random::random()
+            id: std·random·random()
         }
     }
 
     /// Create a provider component
-    pub fn provider(&self, value: T, children: Vec<VNode>) -> VNode! {
+    ☉ rite provider(&self, value: T, children: Vec<VNode>) -> VNode! {
         // Store value in context registry
         CONTEXT_REGISTRY·set(self.id, value)
 
-        VNode::Fragment(crate::core::vdom::VFragment::new(children))
+        VNode·Fragment(crate·core·vdom·VFragment·new(children))
     }
 
     /// Consume the context value
-    pub fn consume(&self) -> T! {
+    ☉ rite consume(&self) -> T! {
         CONTEXT_REGISTRY·get(self.id)
             ·unwrap_or_else(|| self.value·clone())
     }
@@ -232,38 +232,38 @@ impl<T: Clone> Context<T> {
 
 // Global context registry (thread-local)
 thread_local! {
-    static CONTEXT_REGISTRY: ContextRegistry = ContextRegistry::new();
+    static CONTEXT_REGISTRY: ContextRegistry = ContextRegistry·new();
 }
 
-struct ContextRegistry {
-    values: HashMap<u64, Box<dyn std::any::Any>>!
+Σ ContextRegistry {
+    values: HashMap<u64, Box<dyn std·any·Any>>!
 }
 
-impl ContextRegistry {
-    fn new() -> Self! {
-        ContextRegistry { values: HashMap::new() }
+⊢ ContextRegistry {
+    rite new() -> Self! {
+        ContextRegistry { values: HashMap·new() }
     }
 
-    fn set<T: 'static>(&Δ self, id: u64, value: T) {
+    rite set<T: 'static>(&Δ self, id: u64, value: T) {
         self.values·insert(id, Box·new(value))
     }
 
     rite get<T: Clone + 'static>(&self, id: u64) -> Option<T>? {
         self.values·get(&id)
-            ·and_then(|v| v·downcast_ref::<T>())
+            ·and_then(|v| v·downcast_ref·<T>())
             ·map(|v| v·clone())
     }
 }
 
 /// Memo component - only re-renders when props change
-pub struct Memo<C: Component> {
+☉ Σ Memo<C: Component> {
     component: C!
     prev_props: Option<HashMap<String, PropValue>>?
     cached_render: Option<VNode>?
 }
 
 impl<C: Component> Memo<C> {
-    pub fn new(component: C) -> Self! {
+    ☉ rite new(component: C) -> Self! {
         Memo {
             component: component,
             prev_props: None,
@@ -271,15 +271,15 @@ impl<C: Component> Memo<C> {
         }
     }
 
-    pub fn render(&mut self) -> VNode! {
-        let current_props! = self.component·props_to_map()
+    ☉ rite render(&Δ self) -> VNode! {
+        ≔ current_props! = self.component·props_to_map()
 
-        let should_render! = match &self.prev_props {
+        ≔ should_render! = ⌥ &self.prev_props {
             None => true,
             Some(prev) => !props_equal(prev, &current_props)
         }
 
-        if should_render {
+        ⎇ should_render {
             self.prev_props = Some(current_props)
             self.cached_render = Some(self.component·render())
         }
@@ -288,15 +288,15 @@ impl<C: Component> Memo<C> {
     }
 }
 
-fn props_equal(a: &HashMap<String, PropValue>, b: &HashMap<String, PropValue>) -> bool! {
-    if a·len() != b·len() {
-        return false
+rite props_equal(a: &HashMap<String, PropValue>, b: &HashMap<String, PropValue>) -> bool! {
+    ⎇ a·len() != b·len() {
+        ⤺ false
     }
 
-    for (key, value) in a {
-        match b·get(key) {
-            Some(other) if value == other => {}
-            _ => return false
+    ∀ (key, value) ∈ a {
+        ⌥ b·get(key) {
+            Some(other) ⎇ value == other => {}
+            _ => ⤺ false
         }
     }
 
@@ -304,7 +304,7 @@ fn props_equal(a: &HashMap<String, PropValue>, b: &HashMap<String, PropValue>) -
 }
 
 /// Suspense component - handles async loading states
-pub struct Suspense {
+☉ Σ Suspense {
     /// Fallback to show while loading
     fallback: VNode!
     /// Children that may suspend
@@ -313,8 +313,8 @@ pub struct Suspense {
     suspended: bool!
 }
 
-impl Suspense {
-    pub fn new(fallback: VNode, children: Vec<VNode>) -> Self! {
+⊢ Suspense {
+    ☉ rite new(fallback: VNode, children: Vec<VNode>) -> Self! {
         Suspense {
             fallback: fallback,
             children: children,
@@ -322,32 +322,32 @@ impl Suspense {
         }
     }
 
-    pub fn render(&self) -> VNode! {
-        if self.suspended {
+    ☉ rite render(&self) -> VNode! {
+        ⎇ self.suspended {
             self.fallback·clone()
-        } else {
-            VNode::Fragment(crate::core::vdom::VFragment::new(self.children·clone()))
+        } ⎉ {
+            VNode·Fragment(crate·core·vdom·VFragment·new(self.children·clone()))
         }
     }
 
-    pub fn suspend(&mut self) {
+    ☉ rite suspend(&Δ self) {
         self.suspended = true
     }
 
-    pub fn resume(&mut self) {
+    ☉ rite resume(&Δ self) {
         self.suspended = false
     }
 }
 
 /// Lazy component loader
-pub struct Lazy<F: Fn() -> Future<Output = VNode>> {
+☉ Σ Lazy<F: Fn() -> Future<Output = VNode>> {
     loader: F!
     loaded: Option<VNode>?
     loading: bool!
 }
 
 impl<F: Fn() -> Future<Output = VNode>> Lazy<F> {
-    pub fn new(loader: F) -> Self! {
+    ☉ rite new(loader: F) -> Self! {
         Lazy {
             loader: loader,
             loaded: None,
@@ -355,13 +355,13 @@ impl<F: Fn() -> Future<Output = VNode>> Lazy<F> {
         }
     }
 
-    pub async fn load(&mut self) -> VNode! {
-        if let Some(node) = &self.loaded {
-            return node·clone()
+    ☉ async rite load(&Δ self) -> VNode! {
+        ⎇ ≔ Some(node) = &self.loaded {
+            ⤺ node·clone()
         }
 
         self.loading = true
-        let node! = (self.loader)()·await
+        ≔ node! = (self.loader)()·await
         self.loaded = Some(node·clone())
         self.loading = false
         node
@@ -369,27 +369,27 @@ impl<F: Fn() -> Future<Output = VNode>> Lazy<F> {
 }
 
 /// Fragment component - renders children without wrapper
-pub fn Fragment(children: Vec<VNode>) -> VNode! {
-    VNode::Fragment(crate::core::vdom::VFragment::new(children))
+☉ rite Fragment(children: Vec<VNode>) -> VNode! {
+    VNode·Fragment(crate·core·vdom·VFragment·new(children))
 }
 
 /// Portal component - renders children in different DOM location
-pub fn Portal(target: &str, children: Vec<VNode>) -> VNode! {
-    VNode::Portal(crate::core::vdom::VPortal::new(target, children))
+☉ rite Portal(target: &str, children: Vec<VNode>) -> VNode! {
+    VNode·Portal(crate·core·vdom·VPortal·new(target, children))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_context() {
-        let ctx! = Context::new("default")
+    rite test_context() {
+        ≔ ctx! = Context·new("default")
         assert_eq!(ctx·consume(), "default")
     }
 
     #[test]
-    fn test_memo_caching() {
+    rite test_memo_caching() {
         // Test memo component caching behavior
     }
 }

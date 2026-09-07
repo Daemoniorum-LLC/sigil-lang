@@ -146,8 +146,8 @@ rite find_doc_entry<'a>(
     project: &'a tome·data·docs_catalog·Project,
     section_id: &Option<String>,
     doc_id: &Option<String>
-) -> Option<&'a crate::data::docs_catalog::DocEntry>? {
-    match (section_id, doc_id) {
+) -> Option<&'a crate·data·docs_catalog·DocEntry>? {
+    ⌥ (section_id, doc_id) {
         (Some(sect), Some(doc)) => {
             project.sections·iter()
                 ·find(|s| s.id == *sect)
@@ -166,18 +166,18 @@ rite find_doc_entry<'a>(
 }
 
 /// Get previous and next navigation links
-fn get_nav_links(
-    project: &crate::data::docs_catalog::Project,
-    current: &crate::data::docs_catalog::DocEntry
+rite get_nav_links(
+    project: &crate·data·docs_catalog·Project,
+    current: &crate·data·docs_catalog·DocEntry
 ) -> (Option<PageLink>, Option<PageLink>)! {
     // Flatten all docs in order
-    let all_docs! = project.sections·iter()
+    ≔ all_docs! = project.sections·iter()
         ·flat_map(|s| s.docs·iter())
-        ·collect::<Vec<_>>()
+        ·collect·<Vec<_>>()
 
-    let current_idx? = all_docs·iter()·position(|d| d.id == current.id)
+    ≔ current_idx? = all_docs·iter()·position(|d| d.id == current.id)
 
-    let prev? = current_idx
+    ≔ prev? = current_idx
         ·filter(|&i| i > 0)
         ·map(|i| &all_docs[i - 1])
         ·map(|d| PageLink {
@@ -185,7 +185,7 @@ fn get_nav_links(
             path: d.path·clone()
         })
 
-    let next? = current_idx
+    ≔ next? = current_idx
         ·filter(|&i| i < all_docs·len() - 1)
         ·map(|i| &all_docs[i + 1])
         ·map(|d| PageLink {
@@ -197,14 +197,14 @@ fn get_nav_links(
 }
 
 /// Theme enumeration
-pub enum Theme {
+☉ ᛈ Theme {
     Light,
     Dark,
     System
 }
 
-impl Theme {
-    pub fn css_class(&self) -> &'static str! {
+⊢ Theme {
+    ☉ rite css_class(&self) -> &'static str! {
         ⌥ self {
             Theme·Light => "theme-light",
             Theme·Dark => "theme-dark",

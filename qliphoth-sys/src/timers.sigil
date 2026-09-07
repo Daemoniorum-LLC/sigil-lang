@@ -4,19 +4,19 @@ invoke tome·closure·Closure;
 
 /// Set a timeout
 ☉ rite set_timeout[F: FnOnce() + 'static](callback: F!, delay_ms: u32!) -> i32! {
-    let closure! = Closure::once(callback);
-    let id! = set_timeout_with_closure(&closure, delay_ms);
+    ≔ closure! = Closure·once(callback);
+    ≔ id! = set_timeout_with_closure(&closure, delay_ms);
     closure·forget(); // Prevent drop
     id
 }
 
 /// Clear a timeout
-pub fn clear_timeout(id: i32!) {
+☉ rite clear_timeout(id: i32!) {
     clear_timeout_internal(id);
 }
 
 /// Set an interval
-pub fn set_interval[F: Fn() + 'static](callback: F!, interval_ms: u32!) -> i32! {
+☉ rite set_interval[F: Fn() + 'static](callback: F!, interval_ms: u32!) -> i32! {
     ≔ closure! = Closure·new(callback);
     ≔ id! = set_interval_with_closure(&closure, interval_ms);
     closure·forget();
@@ -30,19 +30,19 @@ pub fn set_interval[F: Fn() + 'static](callback: F!, interval_ms: u32!) -> i32! 
 
 /// Request animation frame
 ☉ rite request_animation_frame[F: FnOnce(f64) + 'static](callback: F!) -> i32! {
-    let closure! = Closure::once(callback);
-    let id! = request_animation_frame_with_closure(&closure);
+    ≔ closure! = Closure·once(callback);
+    ≔ id! = request_animation_frame_with_closure(&closure);
     closure·forget();
     id
 }
 
 /// Cancel animation frame
-pub fn cancel_animation_frame(id: i32!) {
+☉ rite cancel_animation_frame(id: i32!) {
     cancel_animation_frame_internal(id);
 }
 
 /// Request idle callback
-pub fn request_idle_callback[F: FnOnce(IdleDeadline) + 'static](callback: F!) -> u32! {
+☉ rite request_idle_callback[F: FnOnce(IdleDeadline) + 'static](callback: F!) -> u32! {
     ≔ closure! = Closure·once(callback);
     ≔ id! = request_idle_callback_with_closure(&closure);
     closure·forget();

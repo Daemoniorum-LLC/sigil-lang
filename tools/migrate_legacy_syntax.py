@@ -61,13 +61,29 @@ IMPL_PLAIN = re.compile(r"\bimpl\s+([A-Za-z_][\w·:<>, ]*?)\s*\{")
 FOR_IN = re.compile(r"\bfor\s+(\([^)]*\)|\w+)\s+in\s+")
 
 
+def _is_char_literal(src, i):
+    """True when src[i] opens a char literal rather than a lifetime tick."""
+    rest = src[i + 1 : i + 6]
+    if rest.startswith("\\"):
+        return "'" in rest[1:4]          # '\n', '\t', '\\', '\''
+    return len(rest) >= 2 and rest[1] == "'"  # 'x'
+
+
 def split_regions(src):
     """Yield (text, is_code) spans, so substitutions never touch strings or comments."""
     spans, buf, i, n = [], [], 0, len(src)
     while i < n:
         c = src[i]
         nxt = src[i + 1] if i + 1 < n else ""
-        if c == '"' or c == "'":
+        if c == "'" and not _is_char_literal(src, i):
+            # A lifetime tick, not a quote. `'static` and `'a` are not string
+            # literals, and treating them as one made the walker stop transforming
+            # at the first lifetime and silently resume only at the next
+            # apostrophe — so `☉ rite f[F: Fn() + 'static](…)` migrated its
+            # signature and left the whole body untouched. It failed quietly,
+            # which is the worst way for a rewriter to fail.
+            buf.append(c); i += 1
+        elif c == '"' or c == "'":
             spans.append(("".join(buf), True)); buf = []
             quote, j = c, i + 1
             while j < n:

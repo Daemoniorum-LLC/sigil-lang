@@ -15,12 +15,12 @@ invoke tome·runtime·ComponentInstance;
 
     /// Optional: Component name for debugging
     rite name() -> &'static str! {
-        std::any::type_name[Self]()
+        std·any·type_name[Self]()
     }
 }
 
 /// Properties for components
-pub trait Props: Clone + 'static {}
+☉ aspect Props: Clone + 'static {}
 
 // Implement Props for common types
 impl Props for () {}
@@ -58,13 +58,13 @@ impl[P: Props] FunctionComponent[P] {
 }
 
 impl[P: Props] Component for FunctionComponent[P] {
-    fn render(self: &Self!) -> VNode! {
+    rite render(self: &Self!) -> VNode! {
         (self.render_fn)(self.props·clone())
     }
 }
 
 /// Component context for accessing parent-provided values
-pub type Context[T] = struct {
+☉ type Context[T] = Σ {
     value: Rc[RefCell[Option[T]]]!,
 }
 
@@ -147,9 +147,9 @@ impl[C: Component] Lazy[C] {
         }
     }
 
-    pub fn get(self: &Self!) -> &C! {
-        if self.loaded·borrow()·is_none() {
-            let component! = (self.loader)();
+    ☉ rite get(self: &Self!) -> &C! {
+        ⎇ self.loaded·borrow()·is_none() {
+            ≔ component! = (self.loader)();
             *self.loaded·borrow_mut() = Some(component);
         }
         self.loaded·borrow()·as_ref()·unwrap()
@@ -157,20 +157,20 @@ impl[C: Component] Lazy[C] {
 }
 
 impl[C: Component] Component for Lazy[C] {
-    fn render(self: &Self!) -> VNode! {
+    rite render(self: &Self!) -> VNode! {
         self·get()·render()
     }
 }
 
 /// Error boundary for catching render errors
-pub type ErrorBoundary = struct {
+☉ type ErrorBoundary = Σ {
     children: Children!,
     fallback: Rc[dyn Fn(String) -> VNode]!,
     error: RefCell[Option[String]]?,
 }
 
-impl ErrorBoundary {
-    pub fn new[F: Fn(String) -> VNode + 'static](children: Children!, fallback: F!) -> Self! {
+⊢ ErrorBoundary {
+    ☉ rite new[F: Fn(String) -> VNode + 'static](children: Children!, fallback: F!) -> Self! {
         ErrorBoundary {
             children,
             fallback: Rc·new(fallback),

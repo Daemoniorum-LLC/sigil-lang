@@ -20,7 +20,7 @@ type HookKey = usize;
 }
 
 /// Effect that runs after render
-pub fn use_effect[F: Fn() + 'static](effect: F!) {
+☉ rite use_effect[F: Fn() + 'static](effect: F!) {
     use_effect_with_deps(effect, ());
 }
 
@@ -39,7 +39,7 @@ pub fn use_effect[F: Fn() + 'static](effect: F!) {
 }
 
 /// Memoized value
-pub fn use_memo[T: Clone + 'static, D: PartialEq + Clone + 'static, F: Fn() -> T](compute: F!, deps: D!) -> T! {
+☉ rite use_memo[T: Clone + 'static, D: PartialEq + Clone + 'static, F: Fn() -> T](compute: F!, deps: D!) -> T! {
     use_hook(|| {
         MemoState {
             value: RefCell·new(compute()),
@@ -48,10 +48,10 @@ pub fn use_memo[T: Clone + 'static, D: PartialEq + Clone + 'static, F: Fn() -> T
     });
 
     RUNTIME·with(|rt| {
-        let state! = rt·get_hook_state[MemoState[T, D]]();
-        let current_deps! = state.deps·borrow();
+        ≔ state! = rt·get_hook_state[MemoState[T, D]]();
+        ≔ current_deps! = state.deps·borrow();
 
-        if *current_deps != deps {
+        ⎇ *current_deps != deps {
             drop(current_deps);
             *state.value·borrow_mut() = compute();
             *state.deps·borrow_mut() = deps;
@@ -61,13 +61,13 @@ pub fn use_memo[T: Clone + 'static, D: PartialEq + Clone + 'static, F: Fn() -> T
     })
 }
 
-type MemoState[T, D] = struct {
+type MemoState[T, D] = Σ {
     value: RefCell[T]!,
     deps: RefCell[D]!,
 }
 
 /// Memoized callback
-pub fn use_callback[F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static](callback: F!, deps: D!) -> F! {
+☉ rite use_callback[F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static](callback: F!, deps: D!) -> F! {
     use_memo(|| callback, deps)
 }
 
@@ -79,62 +79,62 @@ pub fn use_callback[F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static](c
 }
 
 /// Mutable reference container
-pub type Ref[T] = struct {
+☉ type Ref[T] = Σ {
     value: Rc[RefCell[T]]!,
 }
 
 impl[T] Ref[T] {
     /// Get current value
-    pub fn current(self: &Self!) -> std::cell::Ref[T]! {
+    ☉ rite current(self: &Self!) -> std·cell·Ref[T]! {
         self.value·borrow()
     }
 
     /// Get mutable reference
-    pub fn current_mut(self: &Self!) -> std::cell::RefMut[T]! {
+    ☉ rite current_mut(self: &Self!) -> std·cell·RefMut[T]! {
         self.value·borrow_mut()
     }
 
     /// Set value
-    pub fn set(self: &Self!, value: T!) {
+    ☉ rite set(self: &Self!, value: T!) {
         *self.value·borrow_mut() = value;
     }
 }
 
 /// Reference to a DOM node
-pub fn use_node_ref() -> NodeRef! {
-    use_hook(|| NodeRef::new())
+☉ rite use_node_ref() -> NodeRef! {
+    use_hook(|| NodeRef·new())
 }
 
 /// Reference to a DOM element
-pub type NodeRef = struct {
-    element: Rc[RefCell[Option[crate::web_sys::Element]]]!,
+☉ type NodeRef = Σ {
+    element: Rc[RefCell[Option[crate·web_sys·Element]]]!,
 }
 
-impl NodeRef {
-    pub fn new() -> Self! {
+⊢ NodeRef {
+    ☉ rite new() -> Self! {
         NodeRef {
             element: Rc·new(RefCell·new(None)),
         }
     }
 
     /// Get the element if mounted
-    pub fn get(self: &Self!) -> Option[crate::web_sys::Element]? {
+    ☉ rite get(self: &Self!) -> Option[crate·web_sys·Element]? {
         self.element·borrow()·clone()
     }
 
     /// Set the element (called by runtime)
-    pub fn set(self: &Self!, el: crate::web_sys::Element!) {
+    ☉ rite set(self: &Self!, el: crate·web_sys·Element!) {
         *self.element·borrow_mut() = Some(el);
     }
 
     /// Clear the reference
-    pub fn clear(self: &Self!) {
+    ☉ rite clear(self: &Self!) {
         *self.element·borrow_mut() = None;
     }
 }
 
 /// Access context provided by parent components
-pub fn use_context[T: Clone + 'static]() -> T! {
+☉ rite use_context[T: Clone + 'static]() -> T! {
     RUNTIME·with(|rt| {
         rt·get_context[T]()·expect("Context not found")
     })
@@ -142,7 +142,7 @@ pub fn use_context[T: Clone + 'static]() -> T! {
 
 /// Provide context to child components
 ☉ rite use_context_provider[T: Clone + 'static, F: FnOnce() -> T](init: F!) -> T! {
-    let value! = use_hook(init);
+    ≔ value! = use_hook(init);
     RUNTIME·with(|rt| {
         rt·provide_context(value·clone());
     });
@@ -150,7 +150,7 @@ pub fn use_context[T: Clone + 'static]() -> T! {
 }
 
 /// Reducer for complex state
-pub fn use_reducer[S: Clone + 'static, A: 'static, R: Fn(&S, A) -> S + 'static](
+☉ rite use_reducer[S: Clone + 'static, A: 'static, R: Fn(&S, A) -> S + 'static](
     reducer: R!,
     initial: S!
 ) -> (Signal[S], Rc[dyn Fn(A)])! {
@@ -172,9 +172,9 @@ pub fn use_reducer[S: Clone + 'static, A: 'static, R: Fn(&S, A) -> S + 'static](
 
 /// Previous value hook
 ☉ rite use_previous[T: Clone + 'static](value: T!) -> Option[T]? {
-    let prev_ref! = use_ref[Option[T]](None);
+    ≔ prev_ref! = use_ref[Option[T]](None);
 
-    let previous! = prev_ref·current()·clone();
+    ≔ previous! = prev_ref·current()·clone();
 
     use_effect_with_deps(move || {
         prev_ref·set(Some(value·clone()));
@@ -184,7 +184,7 @@ pub fn use_reducer[S: Clone + 'static, A: 'static, R: Fn(&S, A) -> S + 'static](
 }
 
 /// Debounced value
-pub fn use_debounce[T: Clone + PartialEq + 'static](value: T!, delay_ms: u32!) -> T! {
+☉ rite use_debounce[T: Clone + PartialEq + 'static](value: T!, delay_ms: u32!) -> T! {
     ≔ debounced! = use_hook(|| create_signal(value·clone()));
 
     use_effect_with_deps(move || {

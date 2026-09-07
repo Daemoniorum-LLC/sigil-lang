@@ -72,39 +72,39 @@ invoke HashMap;
 
 ⊢ DocCategory {
     ☉ rite display_name(&self) -> &'static str! {
-        match self {
-            DocCategory::Sigil => "Sigil Language",
-            DocCategory::SigilWeb => "Sigil Web",
-            DocCategory::Leviathan => "Leviathan",
-            DocCategory::Archon => "Archon",
-            DocCategory::Mammon => "Mammon",
-            DocCategory::Bael => "Bael",
-            DocCategory::Wraith => "Wraith",
-            DocCategory::Hydra => "Hydra",
-            DocCategory::Nyx => "Nyx",
-            DocCategory::Grimoire => "Grimoire",
-            DocCategory::Persona => "Persona Framework",
-            DocCategory::Aether => "Aether Engine",
-            DocCategory::Orpheus => "Orpheus",
-            DocCategory::Vulcan => "Vulcan",
-            DocCategory::Moloch => "Moloch",
-            DocCategory::Arcanum => "Arcanum",
-            DocCategory::Infernum => "Infernum",
-            DocCategory::Arachne => "Arachne",
-            DocCategory::Farming => "Farming",
-            DocCategory::Marbas => "Marbas",
-            DocCategory::Paimon => "Paimon",
-            DocCategory::Eidolon => "Eidolon",
-            DocCategory::VSCodeExtension => "VS Code Extension",
-            DocCategory::Architecture => "Architecture",
-            DocCategory::Developer => "Developer",
-            DocCategory::API => "API Reference",
-            DocCategory::Guides => "Guides",
-            DocCategory::Reference => "Reference"
+        ⌥ self {
+            DocCategory·Sigil => "Sigil Language",
+            DocCategory·SigilWeb => "Sigil Web",
+            DocCategory·Leviathan => "Leviathan",
+            DocCategory·Archon => "Archon",
+            DocCategory·Mammon => "Mammon",
+            DocCategory·Bael => "Bael",
+            DocCategory·Wraith => "Wraith",
+            DocCategory·Hydra => "Hydra",
+            DocCategory·Nyx => "Nyx",
+            DocCategory·Grimoire => "Grimoire",
+            DocCategory·Persona => "Persona Framework",
+            DocCategory·Aether => "Aether Engine",
+            DocCategory·Orpheus => "Orpheus",
+            DocCategory·Vulcan => "Vulcan",
+            DocCategory·Moloch => "Moloch",
+            DocCategory·Arcanum => "Arcanum",
+            DocCategory·Infernum => "Infernum",
+            DocCategory·Arachne => "Arachne",
+            DocCategory·Farming => "Farming",
+            DocCategory·Marbas => "Marbas",
+            DocCategory·Paimon => "Paimon",
+            DocCategory·Eidolon => "Eidolon",
+            DocCategory·VSCodeExtension => "VS Code Extension",
+            DocCategory·Architecture => "Architecture",
+            DocCategory·Developer => "Developer",
+            DocCategory·API => "API Reference",
+            DocCategory·Guides => "Guides",
+            DocCategory·Reference => "Reference"
         }
     }
 
-    pub fn icon(&self) -> &'static str! {
+    ☉ rite icon(&self) -> &'static str! {
         ⌥ self {
             DocCategory·Sigil => "code",
             DocCategory·SigilWeb => "globe",
@@ -170,18 +170,18 @@ invoke HashMap;
 
 ⊢ ProjectStatus {
     ☉ rite badge(&self) -> &'static str! {
-        match self {
-            ProjectStatus::Active => "stable",
-            ProjectStatus::Beta => "beta",
-            ProjectStatus::Alpha => "alpha",
-            ProjectStatus::Experimental => "experimental",
-            ProjectStatus::Deprecated => "deprecated"
+        ⌥ self {
+            ProjectStatus·Active => "stable",
+            ProjectStatus·Beta => "beta",
+            ProjectStatus·Alpha => "alpha",
+            ProjectStatus·Experimental => "experimental",
+            ProjectStatus·Deprecated => "deprecated"
         }
     }
 }
 
 /// Complete documentation catalog
-pub static DOCS_CATALOG: Vec<Project> = vec![
+☉ static DOCS_CATALOG: Vec<Project> = vec![
     // =========================================================================
     // LANGUAGES & CORE FRAMEWORKS
     // =========================================================================
@@ -192,9 +192,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "A systems programming language with evidentiality types, morpheme composition, and Rust-level performance.".to_string(),
         version: "0.1.0".to_string(),
         icon: "code".to_string(),
-        category: DocCategory::Sigil,
+        category: DocCategory·Sigil,
         repo_path: "sigil".to_string(),
-        status: ProjectStatus::Beta,
+        status: ProjectStatus·Beta,
         sections: vec![
             DocSection {
                 id: "getting-started".to_string(),
@@ -207,7 +207,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil".to_string(),
                         file_path: "sigil/README.md".to_string(),
                         description: "Sigil language overview".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -217,7 +217,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/getting-started".to_string(),
                         file_path: "sigil/docs/GETTING_STARTED.md".to_string(),
                         description: "Installation and first steps".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["tutorial".to_string(), "beginner".to_string()],
                         last_updated: None
                     },
@@ -227,7 +227,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/migration".to_string(),
                         file_path: "sigil/MIGRATION_ROADMAP.md".to_string(),
                         description: "6-phase migration plan".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["roadmap".to_string(), "migration".to_string()],
                         last_updated: None
                     }
@@ -244,7 +244,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/overview".to_string(),
                         file_path: "sigil/docs/specs/00-OVERVIEW.md".to_string(),
                         description: "Language overview".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string()],
                         last_updated: None
                     },
@@ -254,7 +254,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/lexical".to_string(),
                         file_path: "sigil/docs/specs/01-LEXICAL.md".to_string(),
                         description: "Tokenization and lexical rules".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string()],
                         last_updated: None
                     },
@@ -264,7 +264,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/syntax".to_string(),
                         file_path: "sigil/docs/specs/02-SYNTAX.md".to_string(),
                         description: "Grammar and syntax rules".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string()],
                         last_updated: None
                     },
@@ -274,7 +274,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/types".to_string(),
                         file_path: "sigil/docs/specs/03-TYPES.md".to_string(),
                         description: "Types and evidentiality".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "types".to_string()],
                         last_updated: None
                     },
@@ -284,7 +284,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/memory".to_string(),
                         file_path: "sigil/docs/specs/04-MEMORY.md".to_string(),
                         description: "Ownership and borrowing".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "memory".to_string()],
                         last_updated: None
                     },
@@ -294,7 +294,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/math".to_string(),
                         file_path: "sigil/docs/specs/05-MATHEMATICS.md".to_string(),
                         description: "Mathematical operations".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string()],
                         last_updated: None
                     },
@@ -304,7 +304,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/concurrency".to_string(),
                         file_path: "sigil/docs/specs/06-CONCURRENCY.md".to_string(),
                         description: "Actor model and async".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "concurrency".to_string()],
                         last_updated: None
                     },
@@ -314,7 +314,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/metaprogramming".to_string(),
                         file_path: "sigil/docs/specs/07-METAPROGRAMMING.md".to_string(),
                         description: "Macros and runes".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "macros".to_string()],
                         last_updated: None
                     },
@@ -324,7 +324,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/ffi".to_string(),
                         file_path: "sigil/docs/specs/08-FFI.md".to_string(),
                         description: "Foreign function interface".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "ffi".to_string()],
                         last_updated: None
                     },
@@ -334,7 +334,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/stdlib".to_string(),
                         file_path: "sigil/docs/specs/09-STDLIB.md".to_string(),
                         description: "Standard library reference".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "stdlib".to_string()],
                         last_updated: None
                     },
@@ -344,7 +344,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/spec/tooling".to_string(),
                         file_path: "sigil/docs/specs/10-TOOLING.md".to_string(),
                         description: "Development tools".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["spec".to_string(), "tooling".to_string()],
                         last_updated: None
                     }
@@ -361,7 +361,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil/tools/oracle".to_string(),
                         file_path: "sigil/tools/oracle/README.md".to_string(),
                         description: "Language server protocol".to_string(),
-                        category: DocCategory::Sigil,
+                        category: DocCategory·Sigil,
                         tags: vec!["tools".to_string(), "lsp".to_string()],
                         last_updated: None
                     }
@@ -377,9 +377,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Web application framework with evidentiality-driven state management.".to_string(),
         version: "0.1.0".to_string(),
         icon: "globe".to_string(),
-        category: DocCategory::SigilWeb,
+        category: DocCategory·SigilWeb,
         repo_path: "sigil-web".to_string(),
-        status: ProjectStatus::Alpha,
+        status: ProjectStatus·Alpha,
         sections: vec![
             DocSection {
                 id: "getting-started".to_string(),
@@ -392,7 +392,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil-web".to_string(),
                         file_path: "sigil-web/README.md".to_string(),
                         description: "Sigil Web overview".to_string(),
-                        category: DocCategory::SigilWeb,
+                        category: DocCategory·SigilWeb,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -402,7 +402,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/sigil-web/getting-started".to_string(),
                         file_path: "sigil-web/docs/guides/getting-started.md".to_string(),
                         description: "Create your first app".to_string(),
-                        category: DocCategory::SigilWeb,
+                        category: DocCategory·SigilWeb,
                         tags: vec!["tutorial".to_string(), "beginner".to_string()],
                         last_updated: None
                     }
@@ -421,9 +421,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Spring Boot-based backend with GraphQL, multi-tenancy, and authentication.".to_string(),
         version: "2.4.0".to_string(),
         icon: "server".to_string(),
-        category: DocCategory::Leviathan,
+        category: DocCategory·Leviathan,
         repo_path: "leviathan".to_string(),
-        status: ProjectStatus::Active,
+        status: ProjectStatus·Active,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -436,7 +436,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/leviathan".to_string(),
                         file_path: "leviathan/README.md".to_string(),
                         description: "Leviathan overview".to_string(),
-                        category: DocCategory::Leviathan,
+                        category: DocCategory·Leviathan,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -446,7 +446,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/leviathan/guide".to_string(),
                         file_path: "docs/leviathan/README.md".to_string(),
                         description: "Leviathan guide".to_string(),
-                        category: DocCategory::Leviathan,
+                        category: DocCategory·Leviathan,
                         tags: vec!["guide".to_string()],
                         last_updated: None
                     }
@@ -462,9 +462,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Core backend platform with authentication, payments, and CMS.".to_string(),
         version: "1.0.0".to_string(),
         icon: "database".to_string(),
-        category: DocCategory::Archon,
+        category: DocCategory·Archon,
         repo_path: "archon".to_string(),
-        status: ProjectStatus::Active,
+        status: ProjectStatus·Active,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -477,7 +477,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/archon".to_string(),
                         file_path: "archon/README.md".to_string(),
                         description: "Archon overview".to_string(),
-                        category: DocCategory::Archon,
+                        category: DocCategory·Archon,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -487,7 +487,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/archon/architecture".to_string(),
                         file_path: "archon/ARCHITECTURE.md".to_string(),
                         description: "System architecture".to_string(),
-                        category: DocCategory::Archon,
+                        category: DocCategory·Archon,
                         tags: vec!["architecture".to_string()],
                         last_updated: None
                     },
@@ -497,7 +497,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/archon/auth".to_string(),
                         file_path: "archon/AUTH.md".to_string(),
                         description: "Authentication system".to_string(),
-                        category: DocCategory::Archon,
+                        category: DocCategory·Archon,
                         tags: vec!["auth".to_string(), "security".to_string()],
                         last_updated: None
                     },
@@ -507,7 +507,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/archon/payments".to_string(),
                         file_path: "archon/PAYMENTS.md".to_string(),
                         description: "Payment integration".to_string(),
-                        category: DocCategory::Archon,
+                        category: DocCategory·Archon,
                         tags: vec!["payments".to_string()],
                         last_updated: None
                     }
@@ -524,7 +524,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/archon/testing".to_string(),
                         file_path: "archon/TESTING.md".to_string(),
                         description: "Testing procedures".to_string(),
-                        category: DocCategory::Archon,
+                        category: DocCategory·Archon,
                         tags: vec!["testing".to_string()],
                         last_updated: None
                     },
@@ -534,7 +534,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/archon/integration-tests".to_string(),
                         file_path: "archon/backend/INTEGRATION_TESTS.md".to_string(),
                         description: "Integration test specs".to_string(),
-                        category: DocCategory::Archon,
+                        category: DocCategory·Archon,
                         tags: vec!["testing".to_string()],
                         last_updated: None
                     }
@@ -553,9 +553,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Modern admin interface with Fluent UI, real-time updates, and GraphQL.".to_string(),
         version: "1.5.0".to_string(),
         icon: "layout".to_string(),
-        category: DocCategory::Bael,
+        category: DocCategory·Bael,
         repo_path: "bael".to_string(),
-        status: ProjectStatus::Active,
+        status: ProjectStatus·Active,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -568,7 +568,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/bael".to_string(),
                         file_path: "bael/README.md".to_string(),
                         description: "Bael overview".to_string(),
-                        category: DocCategory::Bael,
+                        category: DocCategory·Bael,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -578,7 +578,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/bael/quickstart".to_string(),
                         file_path: "bael/docs/QUICKSTART.md".to_string(),
                         description: "Quick start guide".to_string(),
-                        category: DocCategory::Bael,
+                        category: DocCategory·Bael,
                         tags: vec!["tutorial".to_string()],
                         last_updated: None
                     }
@@ -595,7 +595,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/bael/migration".to_string(),
                         file_path: "bael/MIGRATION_STATUS.md".to_string(),
                         description: "Current migration status".to_string(),
-                        category: DocCategory::Bael,
+                        category: DocCategory·Bael,
                         tags: vec!["migration".to_string()],
                         last_updated: None
                     },
@@ -605,7 +605,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/bael/fluent-ui".to_string(),
                         file_path: "bael/FLUENT_UI_MIGRATION.md".to_string(),
                         description: "Fluent UI migration guide".to_string(),
-                        category: DocCategory::Bael,
+                        category: DocCategory·Bael,
                         tags: vec!["migration".to_string(), "fluent-ui".to_string()],
                         last_updated: None
                     }
@@ -622,7 +622,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/bael/testing".to_string(),
                         file_path: "bael/docs/TESTING-GUIDE.md".to_string(),
                         description: "Testing procedures".to_string(),
-                        category: DocCategory::Bael,
+                        category: DocCategory·Bael,
                         tags: vec!["testing".to_string()],
                         last_updated: None
                     },
@@ -632,7 +632,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/bael/storybook".to_string(),
                         file_path: "bael/STORYBOOK_INTEGRATION.md".to_string(),
                         description: "Storybook integration".to_string(),
-                        category: DocCategory::Bael,
+                        category: DocCategory·Bael,
                         tags: vec!["storybook".to_string(), "testing".to_string()],
                         last_updated: None
                     }
@@ -648,9 +648,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Reusable UI component library for Bael applications.".to_string(),
         version: "0.5.0".to_string(),
         icon: "component".to_string(),
-        category: DocCategory::Wraith,
+        category: DocCategory·Wraith,
         repo_path: "wraith".to_string(),
-        status: ProjectStatus::Beta,
+        status: ProjectStatus·Beta,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -663,7 +663,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/wraith".to_string(),
                         file_path: "wraith/README.md".to_string(),
                         description: "Wraith overview".to_string(),
-                        category: DocCategory::Wraith,
+                        category: DocCategory·Wraith,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -673,7 +673,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/wraith/migration".to_string(),
                         file_path: "wraith/MIGRATION_STATUS.md".to_string(),
                         description: "Migration status".to_string(),
-                        category: DocCategory::Wraith,
+                        category: DocCategory·Wraith,
                         tags: vec!["migration".to_string()],
                         last_updated: None
                     }
@@ -692,9 +692,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Autonomous AI agent framework with guardrails, memory, and multi-agent coordination.".to_string(),
         version: "1.2.0".to_string(),
         icon: "brain".to_string(),
-        category: DocCategory::Nyx,
+        category: DocCategory·Nyx,
         repo_path: "nyx".to_string(),
-        status: ProjectStatus::Beta,
+        status: ProjectStatus·Beta,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -707,7 +707,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/nyx".to_string(),
                         file_path: "nyx/README.md".to_string(),
                         description: "Nyx overview".to_string(),
-                        category: DocCategory::Nyx,
+                        category: DocCategory·Nyx,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     }
@@ -724,7 +724,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/nyx/wsl2".to_string(),
                         file_path: "nyx/kernel/docs/WSL2_SETUP.md".to_string(),
                         description: "WSL2 development setup".to_string(),
-                        category: DocCategory::Nyx,
+                        category: DocCategory·Nyx,
                         tags: vec!["setup".to_string(), "wsl2".to_string()],
                         last_updated: None
                     }
@@ -740,9 +740,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Library of AI personas for various domains and specializations.".to_string(),
         version: "1.0.0".to_string(),
         icon: "book".to_string(),
-        category: DocCategory::Grimoire,
+        category: DocCategory·Grimoire,
         repo_path: "grimoire".to_string(),
-        status: ProjectStatus::Active,
+        status: ProjectStatus·Active,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -755,7 +755,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/grimoire".to_string(),
                         file_path: "grimoire/README.md".to_string(),
                         description: "Grimoire overview".to_string(),
-                        category: DocCategory::Grimoire,
+                        category: DocCategory·Grimoire,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     }
@@ -774,9 +774,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Modern game engine with ECS, GPU-accelerated rendering, and cross-platform support.".to_string(),
         version: "0.8.0".to_string(),
         icon: "gamepad".to_string(),
-        category: DocCategory::Aether,
+        category: DocCategory·Aether,
         repo_path: "aether-engine".to_string(),
-        status: ProjectStatus::Alpha,
+        status: ProjectStatus·Alpha,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -789,7 +789,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether".to_string(),
                         file_path: "aether-engine/README.md".to_string(),
                         description: "Aether Engine overview".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -799,7 +799,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether/roadmap".to_string(),
                         file_path: "aether-engine/docs/DEVELOPMENT_ROADMAP.md".to_string(),
                         description: "Development roadmap".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["roadmap".to_string()],
                         last_updated: None
                     },
@@ -809,7 +809,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether/competitive-analysis".to_string(),
                         file_path: "aether-engine/docs/COMPETITIVE_ANALYSIS.md".to_string(),
                         description: "Market analysis".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["analysis".to_string()],
                         last_updated: None
                     }
@@ -826,7 +826,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether/modules/core".to_string(),
                         file_path: "aether-engine/engine/aether-core/README.md".to_string(),
                         description: "Core engine module".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["module".to_string()],
                         last_updated: None
                     },
@@ -836,7 +836,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether/modules/graphics".to_string(),
                         file_path: "aether-engine/engine/aether-graphics/README.md".to_string(),
                         description: "Graphics rendering".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["module".to_string(), "graphics".to_string()],
                         last_updated: None
                     },
@@ -846,7 +846,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether/modules/physics".to_string(),
                         file_path: "aether-engine/engine/aether-physics/README.md".to_string(),
                         description: "Physics simulation".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["module".to_string(), "physics".to_string()],
                         last_updated: None
                     },
@@ -856,7 +856,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/aether/modules/math".to_string(),
                         file_path: "aether-engine/engine/aether-math/README.md".to_string(),
                         description: "Mathematics library".to_string(),
-                        category: DocCategory::Aether,
+                        category: DocCategory·Aether,
                         tags: vec!["module".to_string(), "math".to_string()],
                         last_updated: None
                     }
@@ -875,9 +875,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Professional music production suite with DAW, notation, and AI assistance.".to_string(),
         version: "0.5.0".to_string(),
         icon: "music".to_string(),
-        category: DocCategory::Orpheus,
+        category: DocCategory·Orpheus,
         repo_path: "orpheus-standalone".to_string(),
-        status: ProjectStatus::Alpha,
+        status: ProjectStatus·Alpha,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -890,7 +890,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/orpheus".to_string(),
                         file_path: "orpheus-standalone/README.md".to_string(),
                         description: "Orpheus overview".to_string(),
-                        category: DocCategory::Orpheus,
+                        category: DocCategory·Orpheus,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -900,7 +900,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/orpheus/user-guide".to_string(),
                         file_path: "orpheus-standalone/USER_GUIDE.md".to_string(),
                         description: "User documentation".to_string(),
-                        category: DocCategory::Orpheus,
+                        category: DocCategory·Orpheus,
                         tags: vec!["guide".to_string(), "user".to_string()],
                         last_updated: None
                     },
@@ -910,7 +910,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/orpheus/backend".to_string(),
                         file_path: "orpheus-standalone/BACKEND_ARCHITECTURE.md".to_string(),
                         description: "Backend design".to_string(),
-                        category: DocCategory::Orpheus,
+                        category: DocCategory·Orpheus,
                         tags: vec!["architecture".to_string()],
                         last_updated: None
                     }
@@ -927,7 +927,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/orpheus/audio-engine".to_string(),
                         file_path: "orpheus-standalone/docs/audio-engine-specification.md".to_string(),
                         description: "Audio engine spec".to_string(),
-                        category: DocCategory::Orpheus,
+                        category: DocCategory·Orpheus,
                         tags: vec!["audio".to_string(), "spec".to_string()],
                         last_updated: None
                     },
@@ -937,7 +937,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/orpheus/api".to_string(),
                         file_path: "orpheus-standalone/docs/api-contracts.md".to_string(),
                         description: "API specifications".to_string(),
-                        category: DocCategory::Orpheus,
+                        category: DocCategory·Orpheus,
                         tags: vec!["api".to_string()],
                         last_updated: None
                     }
@@ -956,9 +956,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Architecture, API, and developer documentation for the entire platform.".to_string(),
         version: "1.0.0".to_string(),
         icon: "book-open".to_string(),
-        category: DocCategory::Architecture,
+        category: DocCategory·Architecture,
         repo_path: "docs".to_string(),
-        status: ProjectStatus::Active,
+        status: ProjectStatus·Active,
         sections: vec![
             DocSection {
                 id: "architecture".to_string(),
@@ -971,7 +971,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/platform/audit".to_string(),
                         file_path: "docs/ARCHITECTURAL_AUDIT_REPORT.md".to_string(),
                         description: "Architecture audit report".to_string(),
-                        category: DocCategory::Architecture,
+                        category: DocCategory·Architecture,
                         tags: vec!["architecture".to_string(), "audit".to_string()],
                         last_updated: None
                     },
@@ -981,7 +981,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/platform/doc-architecture".to_string(),
                         file_path: "docs/DOCUMENTATION-ARCHITECTURE.md".to_string(),
                         description: "Documentation structure".to_string(),
-                        category: DocCategory::Architecture,
+                        category: DocCategory·Architecture,
                         tags: vec!["architecture".to_string()],
                         last_updated: None
                     }
@@ -998,7 +998,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/developer".to_string(),
                         file_path: "docs/developer/INDEX.md".to_string(),
                         description: "Developer documentation index".to_string(),
-                        category: DocCategory::Developer,
+                        category: DocCategory·Developer,
                         tags: vec!["developer".to_string()],
                         last_updated: None
                     },
@@ -1008,7 +1008,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/developer/aws-sso".to_string(),
                         file_path: "docs/developer/AWS_SSO_SETUP.md".to_string(),
                         description: "AWS SSO configuration".to_string(),
-                        category: DocCategory::Developer,
+                        category: DocCategory·Developer,
                         tags: vec!["aws".to_string(), "setup".to_string()],
                         last_updated: None
                     },
@@ -1018,7 +1018,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/developer/agent-tools".to_string(),
                         file_path: "docs/developer/AGENT-TOOLS-INVENTORY.md".to_string(),
                         description: "Complete tool inventory".to_string(),
-                        category: DocCategory::Developer,
+                        category: DocCategory·Developer,
                         tags: vec!["tools".to_string(), "agents".to_string()],
                         last_updated: None
                     }
@@ -1035,7 +1035,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/api/usage".to_string(),
                         file_path: "docs/API_USAGE_GUIDE.md".to_string(),
                         description: "API usage examples".to_string(),
-                        category: DocCategory::API,
+                        category: DocCategory·API,
                         tags: vec!["api".to_string()],
                         last_updated: None
                     },
@@ -1045,7 +1045,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/api/arachne".to_string(),
                         file_path: "docs/arachne/API-SURFACE.md".to_string(),
                         description: "Arachne API surface".to_string(),
-                        category: DocCategory::API,
+                        category: DocCategory·API,
                         tags: vec!["api".to_string(), "arachne".to_string()],
                         last_updated: None
                     },
@@ -1055,7 +1055,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/api/agent-tools".to_string(),
                         file_path: "docs/reference/AGENT-TOOLS-API-REFERENCE.md".to_string(),
                         description: "Agent tools API reference".to_string(),
-                        category: DocCategory::API,
+                        category: DocCategory·API,
                         tags: vec!["api".to_string(), "agents".to_string()],
                         last_updated: None
                     }
@@ -1072,7 +1072,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/guides/google-sso".to_string(),
                         file_path: "docs/GOOGLE_SSO_IMPLEMENTATION.md".to_string(),
                         description: "Google SSO implementation".to_string(),
-                        category: DocCategory::Guides,
+                        category: DocCategory·Guides,
                         tags: vec!["auth".to_string(), "sso".to_string()],
                         last_updated: None
                     },
@@ -1082,7 +1082,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/guides/testing".to_string(),
                         file_path: "docs/TESTING_IMPLEMENTATION_GUIDE.md".to_string(),
                         description: "Testing implementation guide".to_string(),
-                        category: DocCategory::Guides,
+                        category: DocCategory·Guides,
                         tags: vec!["testing".to_string()],
                         last_updated: None
                     },
@@ -1092,7 +1092,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/guides/contributing".to_string(),
                         file_path: "docs/CONTRIBUTING.md".to_string(),
                         description: "Contributing guidelines".to_string(),
-                        category: DocCategory::Guides,
+                        category: DocCategory·Guides,
                         tags: vec!["contributing".to_string()],
                         last_updated: None
                     }
@@ -1111,9 +1111,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Platform for fashion design, pattern making, and textile management.".to_string(),
         version: "0.3.0".to_string(),
         icon: "scissors".to_string(),
-        category: DocCategory::Arachne,
+        category: DocCategory·Arachne,
         repo_path: "arachne-web".to_string(),
-        status: ProjectStatus::Alpha,
+        status: ProjectStatus·Alpha,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -1126,7 +1126,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/arachne/api".to_string(),
                         file_path: "docs/arachne/API-SURFACE.md".to_string(),
                         description: "Complete API documentation".to_string(),
-                        category: DocCategory::Arachne,
+                        category: DocCategory·Arachne,
                         tags: vec!["api".to_string()],
                         last_updated: None
                     },
@@ -1136,7 +1136,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/arachne/data-model".to_string(),
                         file_path: "docs/arachne/DATA-MODEL.md".to_string(),
                         description: "Data model specification".to_string(),
-                        category: DocCategory::Arachne,
+                        category: DocCategory·Arachne,
                         tags: vec!["data".to_string(), "schema".to_string()],
                         last_updated: None
                     },
@@ -1146,7 +1146,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/arachne/design".to_string(),
                         file_path: "docs/arachne/DESIGN.md".to_string(),
                         description: "Design patterns".to_string(),
-                        category: DocCategory::Arachne,
+                        category: DocCategory·Arachne,
                         tags: vec!["design".to_string()],
                         last_updated: None
                     }
@@ -1162,9 +1162,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Manufacturing execution system with job tracking, scheduling, and quality control.".to_string(),
         version: "0.4.0".to_string(),
         icon: "settings".to_string(),
-        category: DocCategory::Vulcan,
+        category: DocCategory·Vulcan,
         repo_path: "vulcan-app".to_string(),
-        status: ProjectStatus::Beta,
+        status: ProjectStatus·Beta,
         sections: vec![
             DocSection {
                 id: "services".to_string(),
@@ -1177,7 +1177,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/vulcan".to_string(),
                         file_path: "vulcan-app/README.md".to_string(),
                         description: "Main application".to_string(),
-                        category: DocCategory::Vulcan,
+                        category: DocCategory·Vulcan,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -1187,7 +1187,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/vulcan/shop-floor".to_string(),
                         file_path: "vulcan-shop-floor-service/README.md".to_string(),
                         description: "Shop floor management".to_string(),
-                        category: DocCategory::Vulcan,
+                        category: DocCategory·Vulcan,
                         tags: vec!["service".to_string()],
                         last_updated: None
                     },
@@ -1197,7 +1197,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/vulcan/jobs".to_string(),
                         file_path: "vulcan-job-service/README.md".to_string(),
                         description: "Job management".to_string(),
-                        category: DocCategory::Vulcan,
+                        category: DocCategory·Vulcan,
                         tags: vec!["service".to_string()],
                         last_updated: None
                     },
@@ -1207,7 +1207,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/vulcan/quality".to_string(),
                         file_path: "vulcan-quality-service/README.md".to_string(),
                         description: "Quality control".to_string(),
-                        category: DocCategory::Vulcan,
+                        category: DocCategory·Vulcan,
                         tags: vec!["service".to_string()],
                         last_updated: None
                     },
@@ -1217,7 +1217,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/vulcan/schedule".to_string(),
                         file_path: "vulcan-schedule-service/README.md".to_string(),
                         description: "Scheduling system".to_string(),
-                        category: DocCategory::Vulcan,
+                        category: DocCategory·Vulcan,
                         tags: vec!["service".to_string()],
                         last_updated: None
                     }
@@ -1236,9 +1236,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "Integrated development environment for the Daemoniorum platform.".to_string(),
         version: "0.2.0".to_string(),
         icon: "monitor".to_string(),
-        category: DocCategory::Eidolon,
+        category: DocCategory·Eidolon,
         repo_path: "docs/eidolon".to_string(),
-        status: ProjectStatus::Alpha,
+        status: ProjectStatus·Alpha,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -1251,7 +1251,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/eidolon".to_string(),
                         file_path: "docs/eidolon/README.md".to_string(),
                         description: "Eidolon overview".to_string(),
-                        category: DocCategory::Eidolon,
+                        category: DocCategory·Eidolon,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -1261,7 +1261,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/eidolon/architecture".to_string(),
                         file_path: "docs/eidolon/ARCHITECTURE.md".to_string(),
                         description: "IDE architecture".to_string(),
-                        category: DocCategory::Eidolon,
+                        category: DocCategory·Eidolon,
                         tags: vec!["architecture".to_string()],
                         last_updated: None
                     }
@@ -1277,9 +1277,9 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
         description: "IntelliJ IDEA plugin for Daemoniorum development.".to_string(),
         version: "0.3.0".to_string(),
         icon: "package".to_string(),
-        category: DocCategory::Paimon,
+        category: DocCategory·Paimon,
         repo_path: "paimon".to_string(),
-        status: ProjectStatus::Beta,
+        status: ProjectStatus·Beta,
         sections: vec![
             DocSection {
                 id: "overview".to_string(),
@@ -1292,7 +1292,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/paimon".to_string(),
                         file_path: "paimon/README.md".to_string(),
                         description: "Paimon overview".to_string(),
-                        category: DocCategory::Paimon,
+                        category: DocCategory·Paimon,
                         tags: vec!["overview".to_string()],
                         last_updated: None
                     },
@@ -1302,7 +1302,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
                         path: "/docs/paimon/design".to_string(),
                         file_path: "docs/paimon/DESIGN.md".to_string(),
                         description: "Plugin design".to_string(),
-                        category: DocCategory::Paimon,
+                        category: DocCategory·Paimon,
                         tags: vec!["design".to_string()],
                         last_updated: None
                     }
@@ -1313,7 +1313,7 @@ pub static DOCS_CATALOG: Vec<Project> = vec![
 ]
 
 /// Get all projects grouped by category
-pub fn get_projects_by_category() -> HashMap<DocCategory, Vec<&'static Project>>! {
+☉ rite get_projects_by_category() -> HashMap<DocCategory, Vec<&'static Project>>! {
     ≔ vary grouped! = HashMap·new()
     ∀ project ∈ &DOCS_CATALOG {
         grouped·entry(project.category·clone())·or_default()·push(project)
@@ -1323,7 +1323,7 @@ pub fn get_projects_by_category() -> HashMap<DocCategory, Vec<&'static Project>>
 
 /// Search documentation
 ☉ rite search_docs(query: &str) -> Vec<&'static DocEntry>! {
-    let query_lower! = query·to_lowercase()
+    ≔ query_lower! = query·to_lowercase()
 
     DOCS_CATALOG·iter()
         ·flat_map(|p| p.sections·iter()·flat_map(|s| s.docs·iter()))
@@ -1336,7 +1336,7 @@ pub fn get_projects_by_category() -> HashMap<DocCategory, Vec<&'static Project>>
 }
 
 /// Get all documentation entries
-pub fn get_all_docs() -> Vec<&'static DocEntry>! {
+☉ rite get_all_docs() -> Vec<&'static DocEntry>! {
     DOCS_CATALOG·iter()
         ·flat_map(|p| p.sections·iter()·flat_map(|s| s.docs·iter()))
         ·collect()

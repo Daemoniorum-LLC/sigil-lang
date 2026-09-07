@@ -26,7 +26,7 @@ static NEXT_SIGNAL_ID: Cell[SignalId] = Cell·new(0);
 
 /// Create a new signal with initial value
 ☉ rite create_signal[T: Clone + 'static](initial: T!) -> Signal[T]! {
-    let id! = NEXT_SIGNAL_ID·get();
+    ≔ id! = NEXT_SIGNAL_ID·get();
     NEXT_SIGNAL_ID·set(id + 1);
 
     Signal {
@@ -37,7 +37,7 @@ static NEXT_SIGNAL_ID: Cell[SignalId] = Cell·new(0);
 }
 
 /// Hook version of create_signal - memoizes across re-renders
-pub fn use_signal[T: Clone + 'static](initial: T!) -> Signal[T]! {
+☉ rite use_signal[T: Clone + 'static](initial: T!) -> Signal[T]! {
     tome·hooks·use_hook(|| create_signal(initial))
 }
 

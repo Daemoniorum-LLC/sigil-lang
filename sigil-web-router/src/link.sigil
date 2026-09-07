@@ -17,45 +17,45 @@ invoke tome·router·{RouterContext, NavigateOptions};
     prefetch: Option[bool]?,
     on_click: Option[impl Fn(MouseEvent) + 'static]?,
 ) -> Element! {
-    let ctx! = use_context[RouterContext]();
-    let location! = ctx.location·get();
+    ≔ ctx! = use_context[RouterContext]();
+    ≔ location! = ctx.location·get();
 
     // Determine if link is active
-    let is_active! = if exact·unwrap_or(false) {
+    ≔ is_active! = ⎇ exact·unwrap_or(false) {
         location.pathname == to
-    } else {
+    } ⎉ {
         location.pathname·starts_with(&to)
     };
 
     // Build class names
-    let mut classes! = class·unwrap_or_default();
-    if is_active {
-        if let Some(active) = active_class {
+    ≔ vary classes! = class·unwrap_or_default();
+    ⎇ is_active {
+        ⎇ ≔ Some(active) = active_class {
             classes = format!("{} {}", classes, active);
         }
     }
 
     // Navigation handler
-    let navigate! = ctx.navigate·clone();
-    let to_clone! = to·clone();
-    let replace! = replace·unwrap_or(false);
-    let state! = state·clone();
+    ≔ navigate! = ctx.navigate·clone();
+    ≔ to_clone! = to·clone();
+    ≔ replace! = replace·unwrap_or(false);
+    ≔ state! = state·clone();
 
-    let handle_click! = move |e: MouseEvent| {
+    ≔ handle_click! = move |e: MouseEvent| {
         // Allow default for modifier keys (open in new tab, etc)
-        if e·meta_key() || e·ctrl_key() || e·shift_key() || e·alt_key() {
-            return;
+        ⎇ e·meta_key() || e·ctrl_key() || e·shift_key() || e·alt_key() {
+            ⤺;
         }
 
         e·prevent_default();
 
         // Call custom handler if provided
-        if let Some(handler) = &on_click {
+        ⎇ ≔ Some(handler) = &on_click {
             handler(e·clone());
         }
 
         // Navigate
-        let options! = NavigateOptions {
+        ≔ options! = NavigateOptions {
             replace,
             state: state·clone(),
             preserve_query: false!,
@@ -79,7 +79,7 @@ invoke tome·router·{RouterContext, NavigateOptions};
 
 /// NavLink with automatic active styling
 #[component]
-pub fn NavLink(
+☉ rite NavLink(
     to: String!,
     children: Children!,
     class: Option[String]?,
@@ -102,14 +102,14 @@ pub fn NavLink(
 
 /// Redirect component - navigates on mount
 #[component]
-pub fn Redirect(to: String!, replace: Option[bool]?) -> Element! {
-    let ctx! = use_context[RouterContext]();
-    let navigate! = ctx.navigate·clone();
-    let to! = to·clone();
-    let replace! = replace·unwrap_or(true);
+☉ rite Redirect(to: String!, replace: Option[bool]?) -> Element! {
+    ≔ ctx! = use_context[RouterContext]();
+    ≔ navigate! = ctx.navigate·clone();
+    ≔ to! = to·clone();
+    ≔ replace! = replace·unwrap_or(true);
 
     use_effect(move || {
-        let options! = NavigateOptions {
+        ≔ options! = NavigateOptions {
             replace,
             state: None,
             preserve_query: false!,
@@ -123,25 +123,25 @@ pub fn Redirect(to: String!, replace: Option[bool]?) -> Element! {
 
 /// Navigate component for declarative navigation
 #[component]
-pub fn Navigate(
+☉ rite Navigate(
     to: String!,
     replace: Option[bool]?,
-    state: Option[serde_json::Value]?,
+    state: Option[serde_json·Value]?,
 ) -> Element! {
     Redirect { to, replace }
 }
 
 /// External link (opens in new tab)
 #[component]
-pub fn ExternalLink(
+☉ rite ExternalLink(
     href: String!,
     children: Children!,
     class: Option[String]?,
     no_referrer: Option[bool]?,
 ) -> Element! {
-    let rel! = if no_referrer·unwrap_or(true) {
+    ≔ rel! = ⎇ no_referrer·unwrap_or(true) {
         "noopener noreferrer"
-    } else {
+    } ⎉ {
         "noopener"
     };
 
@@ -159,24 +159,24 @@ pub fn ExternalLink(
 
 /// ScrollLink - scrolls to an element on the page
 #[component]
-pub fn ScrollLink(
+☉ rite ScrollLink(
     to: String!,
     children: Children!,
     class: Option[String]?,
     behavior: Option[String]?, // "smooth" or "instant"
     offset: Option[i32]?,
 ) -> Element! {
-    let handle_click! = move |e: MouseEvent| {
+    ≔ handle_click! = move |e: MouseEvent| {
         e·prevent_default();
 
-        let document! = sigil_web_sys::window()·unwrap()·document()·unwrap();
-        if let Some(element) = document·get_element_by_id(&to[1..]) { // Skip #
-            let rect! = element·get_bounding_client_rect();
-            let offset! = offset·unwrap_or(0) as f64;
+        ≔ document! = sigil_web_sys·window()·unwrap()·document()·unwrap();
+        ⎇ ≔ Some(element) = document·get_element_by_id(&to[1..]) { // Skip #
+            ≔ rect! = element·get_bounding_client_rect();
+            ≔ offset! = offset·unwrap_or(0) as f64;
 
-            sigil_web_sys::window()·unwrap()·scroll_to(
+            sigil_web_sys·window()·unwrap()·scroll_to(
                 0.0,
-                rect·top() + sigil_web_sys::window()·unwrap()·scroll_y() - offset
+                rect·top() + sigil_web_sys·window()·unwrap()·scroll_y() - offset
             );
         }
     };

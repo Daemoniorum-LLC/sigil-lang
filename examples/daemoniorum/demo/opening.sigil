@@ -117,7 +117,7 @@ type OpeningBeat = Σ {
 };
 
 /// Who is speaking
-type Speaker = enum {
+type Speaker = ᛈ {
     /// No speaker (transition)
     None,
     /// Internal system voice
@@ -129,7 +129,7 @@ type Speaker = enum {
 };
 
 /// Visual effects for beats
-type BeatEffect = enum {
+type BeatEffect = ᛈ {
     None,
     FadeIn,
     FadeOut,
@@ -145,7 +145,7 @@ type BeatEffect = enum {
 // ============================================================================
 
 /// Controls the opening cutscene
-type OpeningController = struct {
+type OpeningController = Σ {
     /// Current beat index
     current_beat: usize!,
     /// Time elapsed in current beat
@@ -159,7 +159,7 @@ type OpeningController = struct {
 };
 
 /// Visual state during opening
-type OpeningVisualState = struct {
+type OpeningVisualState = Σ {
     /// Screen opacity (0-1, for fades)
     opacity: f32!,
     /// Text opacity
@@ -176,8 +176,8 @@ type OpeningVisualState = struct {
     shake_intensity: f32!,
 };
 
-impl OpeningController {
-    pub fn new() -> Self! {
+⊢ OpeningController {
+    ☉ rite new() -> Self! {
         Self {
             current_beat: 0,
             beat_elapsed: 0,
@@ -186,7 +186,7 @@ impl OpeningController {
             visual_state: OpeningVisualState {
                 opacity: 0.0,
                 text_opacity: 0.0,
-                current_text: String::new(),
+                current_text: String·new(),
                 speaker_name: None,
                 is_internal: true,
                 show_background: false,
@@ -196,63 +196,63 @@ impl OpeningController {
     }
 
     /// Update the opening sequence
-    pub fn update(mut self, delta_ms: u64) {
-        if self.complete {
-            return;
+    ☉ rite update(mut self, delta_ms: u64) {
+        ⎇ self.complete {
+            ⤺;
         }
 
         // Handle skip
-        if self.skip_requested {
+        ⎇ self.skip_requested {
             self·skip_to_end();
-            return;
+            ⤺;
         }
 
         self.beat_elapsed += delta_ms;
 
         // Get current beat
-        if self.current_beat >= OPENING_SEQUENCE·len() {
+        ⎇ self.current_beat >= OPENING_SEQUENCE·len() {
             self.complete = true;
-            return;
+            ⤺;
         }
 
-        let beat = &OPENING_SEQUENCE[self.current_beat];
+        ≔ beat = &OPENING_SEQUENCE[self.current_beat];
 
         // Update visual state based on beat
         self·update_visuals(beat, delta_ms);
 
         // Check if beat is complete
-        if self.beat_elapsed >= beat.duration_ms {
+        ⎇ self.beat_elapsed >= beat.duration_ms {
             self·advance_beat();
         }
     }
 
     /// Update visual state
-    fn update_visuals(mut self, beat: &OpeningBeat, delta_ms: u64) {
+    rite update_visuals(mut self, beat: &OpeningBeat, delta_ms: u64) {
         // Text fade in/out
-        let beat_progress = self.beat_elapsed as f32 / beat.duration_ms as f32;
+        ≔ beat_progress = self.beat_elapsed as f32 / beat.duration_ms as f32;
 
         // Fade in first 20%, stay full, fade out last 20%
-        self.visual_state.text_opacity = if beat_progress < 0.2 {
+        self.visual_state.text_opacity = ⎇ beat_progress < 0.2 {
             beat_progress / 0.2
-        } else if beat_progress > 0.8 {
+        } ⎉ ⎇ beat_progress > 0.8 {
             (1.0 - beat_progress) / 0.2
-        } else {
+        } ⎉ {
             1.0
         };
 
         // Apply beat effect
-        match beat.effect {
-            BeatEffect::FadeIn => {
+        ⌥ beat.effect {
+            BeatEffect·FadeIn => {
                 self.visual_state.opacity = beat_progress·min(1.0);
             },
-            BeatEffect::FadeOut => {
+            BeatEffect·FadeOut => {
                 self.visual_state.opacity = 1.0 - beat_progress;
             },
-            BeatEffect::FadeToScene => {
+            BeatEffect·FadeToScene => {
                 self.visual_state.show_background = true;
                 self.visual_state.opacity = beat_progress;
             },
-            BeatEffect::ScreenShake => {
+            BeatEffect·ScreenShake => {
                 self.visual_state.shake_intensity = (1.0 - beat_progress) * 5.0;
             },
             _ => {},
@@ -262,19 +262,19 @@ impl OpeningController {
         self.visual_state.current_text = beat.text.to_string();
 
         // Update speaker
-        match &beat.speaker {
-            Speaker::None => {
+        ⌥ &beat.speaker {
+            Speaker·None => {
                 self.visual_state.speaker_name = None;
             },
-            Speaker::Internal(name) => {
+            Speaker·Internal(name) => {
                 self.visual_state.speaker_name = Some(name.to_string());
                 self.visual_state.is_internal = true;
             },
-            Speaker::Narration => {
+            Speaker·Narration => {
                 self.visual_state.speaker_name = None;
                 self.visual_state.is_internal = false;
             },
-            Speaker::External(name) => {
+            Speaker·External(name) => {
                 self.visual_state.speaker_name = Some(name.to_string());
                 self.visual_state.is_internal = false;
             },
@@ -282,17 +282,17 @@ impl OpeningController {
     }
 
     /// Advance to next beat
-    fn advance_beat(mut self) {
+    rite advance_beat(mut self) {
         self.current_beat += 1;
         self.beat_elapsed = 0;
 
-        if self.current_beat >= OPENING_SEQUENCE·len() {
+        ⎇ self.current_beat >= OPENING_SEQUENCE·len() {
             self.complete = true;
         }
     }
 
     /// Skip to end
-    fn skip_to_end(mut self) {
+    rite skip_to_end(mut self) {
         self.current_beat = OPENING_SEQUENCE·len();
         self.complete = true;
         self.visual_state.show_background = true;
@@ -300,17 +300,17 @@ impl OpeningController {
     }
 
     /// Request skip (player pressed skip button)
-    pub fn request_skip(mut self) {
+    ☉ rite request_skip(mut self) {
         self.skip_requested = true;
     }
 
     /// Is opening complete
-    pub fn is_complete(self) -> bool! {
+    ☉ rite is_complete(self) -> bool! {
         self.complete
     }
 
     /// Get current visual state for rendering
-    pub fn get_visual_state(self) -> &OpeningVisualState! {
+    ☉ rite get_visual_state(self) -> &OpeningVisualState! {
         &self.visual_state
     }
 }
@@ -319,19 +319,19 @@ impl OpeningController {
 // OPENING UI COMPONENT
 // ============================================================================
 
-use qliphoth::prelude::*;
+invoke qliphoth·prelude·*;
 
 /// Opening cutscene UI component
 #[component]
-pub fn OpeningCutscene(controller: &OpeningController) -> Element! {
-    let state = controller·get_visual_state();
+☉ rite OpeningCutscene(controller: &OpeningController) -> Element! {
+    ≔ state = controller·get_visual_state();
 
     html! {
         <div class="opening-cutscene"
              style={format!("opacity: {}", state.opacity)}>
 
             // Background (fades in)
-            {if state.show_background {
+            {⎇ state.show_background {
                 html! {
                     <div class="opening-background">
                         <div class="church-silhouette"></div>
@@ -339,7 +339,7 @@ pub fn OpeningCutscene(controller: &OpeningController) -> Element! {
                         <div class="mist-layer"></div>
                     </div>
                 }
-            } else {
+            } ⎉ {
                 html! { <div class="black-screen"></div> }
             }}
 
@@ -348,26 +348,26 @@ pub fn OpeningCutscene(controller: &OpeningController) -> Element! {
                  style={format!("opacity: {}", state.text_opacity)}>
 
                 // Speaker name (if any)
-                {if let Some(ref speaker) = state.speaker_name {
-                    let speaker_class = if state.is_internal {
+                {⎇ ≔ Some(ref speaker) = state.speaker_name {
+                    ≔ speaker_class = ⎇ state.is_internal {
                         "speaker-internal"
-                    } else {
+                    } ⎉ {
                         "speaker-external"
                     };
 
                     html! {
                         <div class={format!("opening-speaker {}", speaker_class)}>
-                            {if state.is_internal { "(" } else { "" }}
+                            {⎇ state.is_internal { "(" } ⎉ { "" }}
                             {speaker}
-                            {if state.is_internal { ")" } else { "" }}
+                            {⎇ state.is_internal { ")" } ⎉ { "" }}
                         </div>
                     }
-                } else {
+                } ⎉ {
                     html! {}
                 }}
 
                 // Main text
-                <div class={if state.is_internal { "opening-text internal" } else { "opening-text" }}>
+                <div class={⎇ state.is_internal { "opening-text internal" } ⎉ { "opening-text" }}>
                     {&state.current_text}
                 </div>
             </div>
@@ -378,13 +378,13 @@ pub fn OpeningCutscene(controller: &OpeningController) -> Element! {
             </div>
 
             // Screen effects
-            {if state.shake_intensity > 0.0 {
+            {⎇ state.shake_intensity > 0.0 {
                 html! {
                     <div class="screen-shake"
                          style={format!("--shake: {}px", state.shake_intensity)}>
                     </div>
                 }
-            } else {
+            } ⎉ {
                 html! {}
             }}
         </div>
@@ -396,7 +396,7 @@ pub fn OpeningCutscene(controller: &OpeningController) -> Element! {
 // ============================================================================
 
 /// CSS for opening cutscene
-pub const OPENING_STYLES: &str! = r#"
+☉ const OPENING_STYLES: &str! = r#"
     .opening-cutscene {
         position: fixed;
         top: 0;
@@ -539,12 +539,12 @@ pub const OPENING_STYLES: &str! = r#"
 // ============================================================================
 
 /// Set up the exterior arrival scene after opening
-pub fn setup_arrival_scene(system: &mut PluralSystem, scene_manager: &mut SceneManager) {
+☉ rite setup_arrival_scene(system: &Δ PluralSystem, scene_manager: &Δ SceneManager) {
     // Enter church exterior
     scene_manager·enter_scene("church_exterior", system);
 
     // Initial reality is grounded
-    system.reality_layer = RealityLayer::Grounded;
+    system.reality_layer = RealityLayer·Grounded;
 
     // Vessel is fronting
     system·switch_to("vessel");
@@ -554,14 +554,14 @@ pub fn setup_arrival_scene(system: &mut PluralSystem, scene_manager: &mut SceneM
 }
 
 /// First observations when arriving at church
-pub fn get_arrival_observations(system: &PluralSystem) -> Vec<String>! {
-    let mut observations = vec![
+☉ rite get_arrival_observations(system: &PluralSystem) -> Vec<String>! {
+    ≔ vary observations = vec![
         "The air is thick with the smell of decay and forgotten prayers.".to_string(),
     ];
 
     // Add alter-specific observations
-    if let Some(cocon) = system·get_cocon() {
-        match cocon.id·as_str() {
+    ⎇ ≔ Some(cocon) = system·get_cocon() {
+        ⌥ cocon.id·as_str() {
             "warden" => {
                 observations·push(
                     "[Warden]: Stay alert. Something is watching from the bell tower.".to_string()

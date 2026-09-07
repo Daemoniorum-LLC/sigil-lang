@@ -34,29 +34,29 @@ invoke tome·router·RouterContext;
     fallback: Option[impl Fn() -> Element + 'static]?,
     loading: Option[impl Fn() -> Element + 'static]?,
 ) -> Element! {
-    let result! = guard·can_activate();
+    ≔ result! = guard·can_activate();
 
-    match result {
-        GuardResult::Allow => {
+    ⌥ result {
+        GuardResult·Allow => {
             html! { <>{children·render()}</> }
         }
 
-        GuardResult::Deny => {
-            if let Some(fb) = fallback {
+        GuardResult·Deny => {
+            ⎇ ≔ Some(fb) = fallback {
                 html! { <>{fb()}</> }
-            } else {
+            } ⎉ {
                 html! { <></> }
             }
         }
 
-        GuardResult::Redirect(path) => {
+        GuardResult·Redirect(path) => {
             html! { <Redirect to={path} /> }
         }
 
-        GuardResult::Loading => {
-            if let Some(load) = loading {
+        GuardResult·Loading => {
+            ⎇ ≔ Some(load) = loading {
                 html! { <>{load()}</> }
-            } else {
+            } ⎉ {
                 html! { <div class="loading">"Loading..."</div> }
             }
         }
@@ -64,13 +64,13 @@ invoke tome·router·RouterContext;
 }
 
 /// Authentication guard
-pub type AuthGuard = struct {
+☉ type AuthGuard = Σ {
     is_authenticated: Rc[dyn Fn() -> bool]!,
     login_path: String!,
 }
 
-impl AuthGuard {
-    pub fn new(is_authenticated: impl Fn() -> bool + 'static!, login_path: &str!) -> Self! {
+⊢ AuthGuard {
+    ☉ rite new(is_authenticated: impl Fn() -> bool + 'static!, login_path: &str!) -> Self! {
         AuthGuard {
             is_authenticated: Rc·new(is_authenticated),
             login_path: login_path·to_string(),
@@ -108,7 +108,7 @@ impl AuthGuard {
         }
     }
 
-    pub fn any_of(roles: Vec[String]!, get_user_roles: impl Fn() -> Vec[String] + 'static!) -> Self! {
+    ☉ rite any_of(roles: Vec[String]!, get_user_roles: impl Fn() -> Vec[String] + 'static!) -> Self! {
         RoleGuard·new(roles, get_user_roles, "/unauthorized")
     }
 }

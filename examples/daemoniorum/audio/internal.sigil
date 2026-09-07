@@ -519,9 +519,9 @@ type PresenceState = Σ {
 
     /// Select appropriate interjection for alter
     rite select_interjection(self, alter_id: &str, alter: &Alter) -> Option<&'static str>? {
-        let emotion = alter.anima.get_dominant_emotion();
+        ≔ emotion = alter.anima.get_dominant_emotion();
 
-        match (alter_id, emotion·as_deref()) {
+        ⌥ (alter_id, emotion·as_deref()) {
             ("abaddon", Some("anger")) => Some("interject_abaddon_anger"),
             ("abaddon", Some("excitement")) => Some("interject_abaddon_eager"),
             ("abaddon", _) => Some("interject_abaddon_eager"),
@@ -544,7 +544,7 @@ type PresenceState = Σ {
     }
 
     /// Called when an alter switch happens
-    pub fn on_alter_switch(mut self, new_alter_id: &str) {
+    ☉ rite on_alter_switch(mut self, new_alter_id: &str) {
         // Play the new alter's presence signature prominently
         self.requests·push(VoiceRequest·PlayAlterPresence(new_alter_id.to_string()));
     }
