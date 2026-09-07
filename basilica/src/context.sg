@@ -3,8 +3,8 @@
 //! The Context provides access to shared infrastructure during request handling.
 
 invoke shared·{Timestamp, AgentId, HumanId};
-invoke crate·evidence·EvidenceContext;
-invoke crate·service·{ServiceRegistry, Engram, Covenant, Oracle};
+invoke tome·evidence·EvidenceContext;
+invoke tome·service·{ServiceRegistry, Engram, Covenant, Oracle};
 
 /// Request context providing access to shared infrastructure
 ☉ Σ Context<'a> {
@@ -66,7 +66,7 @@ invoke crate·service·{ServiceRegistry, Engram, Covenant, Oracle};
     }
 
     /// Get a service by type
-    ☉ rite service<S: crate·service·Service + 'static>(&self) -> Option<&S> {
+    ☉ rite service<S: tome·service·Service + 'static>(&self) -> Option<&S> {
         ≔ name = std·any·type_name·<S>();
         self.services.get(name)
     }

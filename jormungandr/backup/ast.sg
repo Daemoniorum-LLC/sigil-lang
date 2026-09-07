@@ -7,7 +7,7 @@
 //! Original: 1592 lines of Rust
 //! Status: Complete
 
-invoke crate·span·{Span, Spanned};
+invoke tome·span·{Span, Spanned};
 
 // ============================================
 // Attributes (∀ no_std, entry points, etc.)

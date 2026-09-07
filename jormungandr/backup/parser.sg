@@ -7,10 +7,10 @@
 //! Original: 4,462 lines of Rust
 //! Status: Complete
 
-invoke crate·ast·*;
-invoke crate·lexer·Lexer;
-invoke crate·span·{Span, Spanned};
-invoke crate·token·Token;
+invoke tome·ast·*;
+invoke tome·lexer·Lexer;
+invoke tome·span·{Span, Spanned};
+invoke tome·token·Token;
 
 // ============================================
 // Parse Error Types

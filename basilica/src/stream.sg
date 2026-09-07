@@ -23,8 +23,8 @@
 //! ```
 
 invoke shared·{Timestamp, Duration, Confidence};
-invoke crate·evidence·{EvidenceLevel, HttpEvidence, Evidenced};
-invoke crate·response·{StatusCode, Headers};
+invoke tome·evidence·{EvidenceLevel, HttpEvidence, Evidenced};
+invoke tome·response·{StatusCode, Headers};
 
 // ============================================================================
 // SSE Event

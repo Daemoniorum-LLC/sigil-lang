@@ -26,15 +26,15 @@
 //! diff sigil2.c sigil3.c  # Should be identical (fixed point!)
 //! ```
 
-invoke crate·lexer·Lexer;
-invoke crate·parser·{Parser, ParseError};
-invoke crate·typeck·{TypeChecker, TypeError};
-invoke crate·lower·{lower_file, LowerError};
-invoke crate·ir·IrModule;
-invoke crate·interp·{Interpreter, RuntimeError};
-invoke crate·codegen·CodeGen;
-invoke crate·span·Span;
-invoke crate·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
+invoke tome·lexer·Lexer;
+invoke tome·parser·{Parser, ParseError};
+invoke tome·typeck·{TypeChecker, TypeError};
+invoke tome·lower·{lower_file, LowerError};
+invoke tome·ir·IrModule;
+invoke tome·interp·{Interpreter, RuntimeError};
+invoke tome·codegen·CodeGen;
+invoke tome·span·Span;
+invoke tome·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
 
 // ============================================================================
 // Compiler Configuration
@@ -141,7 +141,7 @@ invoke crate·ast·{SourceFile, UseTree, UseDecl, Ident, Item, Module};
             } ⎉ ⎇ s == "-h" || s == "--help" {
                 ⤺ Result·Err(Self·help_text());
             } ⎉ ⎇ s == "--version" {
-                ⤺ Result·Err(format!("Sigil Compiler {}", crate·VERSION));
+                ⤺ Result·Err(format!("Sigil Compiler {}", tome·VERSION));
             } ⎉ ⎇ s.starts_with("-") {
                 ⤺ Result·Err(format!("unknown option: {}", s));
             } ⎉ {

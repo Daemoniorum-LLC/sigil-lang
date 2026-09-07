@@ -17,8 +17,8 @@
 //! - `known + reported` → `reported`
 //! - Any operation with paradox → `paradox`
 
-invoke crate·ast·*;
-invoke crate·span·Span;
+invoke tome·ast·*;
+invoke tome·span·Span;
 
 // ============================================================================
 // Core Types
@@ -2869,7 +2869,7 @@ invoke crate·span·Span;
 #[cfg(test)]
 scroll tests {
     invoke super·*;
-    invoke crate·parser·Parser;
+    invoke tome·parser·Parser;
 
     λ check(source: !&str) -> !Result<(), [TypeError]> {
         ≔ Δ parser = Parser·new(source);

@@ -24,7 +24,7 @@
 //! - Reported values are tagged with provenance
 //! - Paradox values halt with detailed diagnostics
 
-invoke crate·ir·IrEvidence;
+invoke tome·ir·IrEvidence;
 
 // ============================================================================
 // Memory Management

@@ -7,7 +7,7 @@
 //! - Oracle → Covenant: Explanations ∈ handoffs
 //! - Anima → Oracle: Felt experience informs reasoning
 
-invoke crate·{
+invoke tome·{
     Timestamp, Confidence, TrustLevel, Priority,
     AgentId, HumanId,
 };

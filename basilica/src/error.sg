@@ -1,7 +1,7 @@
 //! Error Types ∀ Basilica
 
 invoke shared·{AgentError, ErrorKind};
-invoke crate·evidence·EvidenceLevel;
+invoke tome·evidence·EvidenceLevel;
 
 /// Result type ∀ Basilica operations
 ☉ type BasilicaResult<T> = Result<T, BasilicaError>;

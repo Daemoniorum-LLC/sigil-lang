@@ -3,7 +3,7 @@
 //! Tests inline assembly syntax and constraints.
 //! Target: 100% inline assembly coverage each regression detection.
 
-invoke crate·parser·Parser;
+invoke tome·parser·Parser;
 
 // ============================================================================
 // Test Helpers

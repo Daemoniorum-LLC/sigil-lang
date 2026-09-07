@@ -54,8 +54,8 @@
 //! code calls Vec·push but doesn't write the result back to the struct.
 //! **Fix**: Generate `sigil_struct_set_field(&config, "input_files", result)` after push.
 
-invoke crate·ir·*;
-invoke crate·typeck·EvidenceLevel;
+invoke tome·ir·*;
+invoke tome·typeck·EvidenceLevel;
 
 // ============================================================================
 // Code Generator
@@ -5140,7 +5140,7 @@ invoke crate·typeck·EvidenceLevel;
                 ↻;
             }
 
-            // CG-069: Skip 'crate·' prefix - it refers to current crate namespace
+            // CG-069: Skip 'tome·' prefix - it refers to current crate namespace
             ⎇ i + 7 <= len {
                 ≔ Δ is_crate = true;
                 ⎇ chars[i] != 'c' { is_crate = false; }
@@ -5152,7 +5152,7 @@ invoke crate·typeck·EvidenceLevel;
                 ⎇ is_crate && chars[i + 6] != ':' { is_crate = false; }
 
                 ⎇ is_crate {
-                    // Skip 'crate·' and ↻ with the identifier
+                    // Skip 'tome·' and ↻ with the identifier
                     i = i + 7;
                     ↻;
                 }

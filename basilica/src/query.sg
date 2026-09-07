@@ -15,7 +15,7 @@
 //! ```
 
 invoke shared·{Timestamp, Duration, Value};
-invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
+invoke tome·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
 
 // ============================================================================
 // Query Types

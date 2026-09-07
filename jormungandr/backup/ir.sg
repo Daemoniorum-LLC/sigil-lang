@@ -17,8 +17,8 @@
 //! 3. **Pipeline-Native**: First-class representation of morpheme chains
 //! 4. **Protocol-Aware**: Network operations are explicit with trust boundaries
 
-invoke crate·span·Span;
-invoke crate·typeck·EvidenceLevel;
+invoke tome·span·Span;
+invoke tome·typeck·EvidenceLevel;
 
 // ============================================================================
 // Version

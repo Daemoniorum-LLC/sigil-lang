@@ -23,12 +23,12 @@
 //! ```
 
 invoke shared·{Timestamp, Duration, TrustLevel};
-invoke crate·middleware·{Middleware, MiddlewareResult};
-invoke crate·request·Request;
-invoke crate·response·{Response, StatusCode};
-invoke crate·context·Context;
-invoke crate·evidence·{HttpEvidence, EvidenceLevel};
-invoke crate·error·BasilicaError;
+invoke tome·middleware·{Middleware, MiddlewareResult};
+invoke tome·request·Request;
+invoke tome·response·{Response, StatusCode};
+invoke tome·context·Context;
+invoke tome·evidence·{HttpEvidence, EvidenceLevel};
+invoke tome·error·BasilicaError;
 
 // ============================================================================
 // Authentication Types

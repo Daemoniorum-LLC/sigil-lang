@@ -4,13 +4,13 @@
 //! In Basilica framework, it orchestrates routes, middleware, services, and memory.
 
 invoke shared·{Timestamp, Duration};
-invoke crate·route·{Route, RouteRegistry};
-invoke crate·middleware·{Middleware, MiddlewareChain};
-invoke crate·service·{Service, ServiceRegistry, ServiceConfig};
-invoke crate·context·Context;
-invoke crate·request·Request;
-invoke crate·response·Response;
-invoke crate·error·{BasilicaError, BasilicaResult};
+invoke tome·route·{Route, RouteRegistry};
+invoke tome·middleware·{Middleware, MiddlewareChain};
+invoke tome·service·{Service, ServiceRegistry, ServiceConfig};
+invoke tome·context·Context;
+invoke tome·request·Request;
+invoke tome·response·Response;
+invoke tome·error·{BasilicaError, BasilicaResult};
 
 // Re-exports
 ☉ invoke engram·{Engram, EngramConfig};

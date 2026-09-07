@@ -7,8 +7,8 @@
 //! - Oracle - explainability
 
 invoke shared·{Timestamp, Duration, Confidence, TrustLevel, AgentId, Priority};
-invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced};
-invoke crate·error·{BasilicaError, BasilicaResult};
+invoke tome·evidence·{HttpEvidence, EvidenceLevel, Evidenced};
+invoke tome·error·{BasilicaError, BasilicaResult};
 
 // Re-export daemon types
 ☉ invoke daemon·{

@@ -5,7 +5,7 @@ invoke std·collections·{HashMap, HashSet, VecDeque};
 invoke std·sync·atomic·{AtomicBool, Ordering};
 invoke std·sync·Arc;
 
-invoke crate·types·*;
+invoke tome·types·*;
 
 // ============================================================================
 // Identity and Authentication

@@ -20,8 +20,8 @@
 //! - Reported (~) values are tagged ∀ provenance tracking
 //! - Paradox (‽) values halt execution with an error
 
-invoke crate·ir·*;
-invoke crate·typeck·EvidenceLevel;
+invoke tome·ir·*;
+invoke tome·typeck·EvidenceLevel;
 
 // ============================================================================
 // Runtime Values

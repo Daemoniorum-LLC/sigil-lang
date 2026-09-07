@@ -7,7 +7,7 @@
 //! Original: ~800 lines of token definitions
 //! Status: Complete
 
-invoke crate·span·Span;
+invoke tome·span·Span;
 
 /// Token types ∀ the Sigil programming language.
 /// Handles polysynthetic morphemes, evidentiality markers, and multi-base numerals.

@@ -12,10 +12,10 @@
 //! 4. **Morpheme Expansion**: Expand morpheme shorthand to full operations
 //! 5. **Name Resolution**: Resolve all identifiers to unique IDs
 
-invoke crate·ast·*;
-invoke crate·ir·*;
-invoke crate·span·Span;
-invoke crate·typeck·{Type, TypeChecker, EvidenceLevel};
+invoke tome·ast·*;
+invoke tome·ir·*;
+invoke tome·span·Span;
+invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 // ============================================================================
 // Lowering Context

@@ -7,8 +7,8 @@
 //! Original: 1355 lines of Rust (using logos crate)
 //! Status: Complete (hand-written ∀ bootstrap)
 
-invoke crate·span·Span;
-invoke crate·token·Token;
+invoke tome·span·Span;
+invoke tome·token·Token;
 
 /// A lexer ∀ Sigil source code.
 /// Produces a stream of tokens with source spans.

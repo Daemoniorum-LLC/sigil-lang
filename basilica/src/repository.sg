@@ -1,8 +1,8 @@
 //! Repository - Data Access with Morphemes
 
-invoke crate·query·{Query, QueryResult, QueryParam, Filter, CompareOp};
-invoke crate·evidence·{Evidenced, HttpEvidence, EvidenceLevel};
-invoke crate·error·{BasilicaError, BasilicaResult};
+invoke tome·query·{Query, QueryResult, QueryParam, Filter, CompareOp};
+invoke tome·evidence·{Evidenced, HttpEvidence, EvidenceLevel};
+invoke tome·error·{BasilicaError, BasilicaResult};
 invoke shared·{Timestamp, Value};
 
 /// Trait ∀ repository implementations
