@@ -119,6 +119,43 @@ the strength of its name.
 
 ---
 
+## S5 — parser rejects `·`-qualified paths in type positions
+
+**Severity: high for anyone writing Qliphoth or library code.** Probably a small fix.
+
+`sigil check` across all 39 Qliphoth sources: **23 pass, 16 fail** — every failure the
+same parse error.
+
+```sigil
+≔ m = std·collections·HashMap·new();                      // ✅ expression position
+rite f(x: &std·collections·HashMap<String, String>) {}    // ❌ E0002 expected RParen
+☉ Σ S { ☉ state: Option[serde_json·Value]? }              // ❌ E0002 expected RBracket
+☉ rite g[T: serde·de·DeserializeOwned]() {}               // ❌ E0002 expected RBracket
+```
+
+The **expression** parser handles `·` paths. The **type** parser does not. Every failure
+is a type position — parameter type, type argument, or generic bound.
+
+**What it takes out:** the entire `qliphoth-router` package, plus `qliphoth-sys`'s
+`storage`, `timers`, `websocket`, `closure` and `history`. Real instances:
+
+| File | Line | Source |
+|---|---|---|
+| `qliphoth-sys/src/storage.sigil` | 32 | `☉ rite get_json[T: serde·de·DeserializeOwned](...)` |
+| `qliphoth-router/src/router.sigil` | 40 | `☉ state: Option[serde_json·Value]?` |
+| `qliphoth/src/core/mod.sigil` | 136 | `rite render_attrs(attrs: &std·collections·HashMap<String, String>)` |
+
+**Beyond Qliphoth:** `·` is presented as *the* native path separator, so this hits any
+code using qualified types in signatures — most non-trivial code. The 23 files that pass
+do so by keeping qualified paths out of type positions.
+
+It may also explain why `apps/wraith` has a `src.old/` sitting beside its current `src/`.
+
+**Suggested fix:** give the type parser the qualified-path production the expression
+parser already has. Full reproduction: `./S5-middledot-type-position.md`.
+
+---
+
 ## Test suite status
 
 Run 2026-09-07, minimal build: **713 pass, 11 fail**, then a hard hang on `P1_065_pty`
@@ -160,13 +197,15 @@ exist are invisible to inspection.
 ## Suggested priority
 
 1. **S1** — unblocks the whole server story.
-2. **S2** — unblocks terminals, and stops the suite hanging.
-3. **Sweep for other stubs — arguably the highest-value item here.** S1 and S4 both show
+2. **S5** — likely the smallest fix here, and it unblocks 16 Qliphoth files including all
+   routing. Best effort-to-impact ratio of the five.
+3. **S2** — unblocks terminals, and stops the suite hanging.
+4. **Sweep for other stubs.** S1 and S4 both show
    a symbol that exists, exports, reports success and does not do the work. Two is a
    pattern. A behavioural smoke test per stdlib module would be cheap and would likely
    find more. `HttpClient` first: nothing has run it, and it is widely assumed to work.
 
 5. **Add a per-test timeout to `run_tests_rust.sh`.** Independent of S2, and it restores
    the suite's ability to report a total.
-4. **S3** — may be acceptable as documented behaviour rather than a fix, but it should be
+6. **S3** — may be acceptable as documented behaviour rather than a fix, but it should be
    written down either way; today it is discovered by surprise.
