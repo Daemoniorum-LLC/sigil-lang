@@ -1,5 +1,5 @@
 // Math functions from stdlib
-fn main() {
+rite main() {
     // Basic math
     println("sqrt(16):");
     println(sqrt(16.0));
