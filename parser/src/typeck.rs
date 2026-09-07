@@ -2528,12 +2528,47 @@ impl TypeChecker {
                     "keys" | "values" | "values_mut" | "into_keys"
                     | "into_values" | "entry" | "drain" => self.fresh_var(),
 
-                    // Methods returning Option<T>
+                    // Methods returning Option<Element>, where Element comes from the
+                    // receiver. Previously every one of these returned Option<fresh var>,
+                    // so `map.get(k)` on a fully-annotated Map<String, u32> yielded
+                    // Option<?N> and an if-let binding of it never resolved to u32.
                     "first" | "last" | "get" | "get_mut" | "pop" | "pop_front"
-                    | "pop_back" | "find" | "find_map" | "position" | "rposition"
-                    | "next" | "next_back" | "peek" | "nth" | "last_mut"
-                    | "binary_search" | "parent" | "file_name" | "file_stem"
-                    | "extension" => Type::Named {
+                    | "pop_back" | "find" | "next" | "next_back" | "peek" | "nth"
+                    | "last_mut" => {
+                        let effective_recv = if let Type::Named { .. } = &recv_inner {
+                            &recv_inner
+                        } else {
+                            &recv_derefed
+                        };
+                        let elem = match effective_recv {
+                            Type::Named { name, generics } if !generics.is_empty() => {
+                                // A map's `get` yields its VALUE type; a sequence's
+                                // yields its element type.
+                                let is_map = matches!(
+                                    name.as_str(),
+                                    "Map" | "HashMap" | "BTreeMap" | "IndexMap"
+                                );
+                                if is_map && generics.len() >= 2 {
+                                    generics[1].clone()
+                                } else {
+                                    generics[0].clone()
+                                }
+                            }
+                            // Unparameterised receivers (iterators, Path, ...) keep the
+                            // previous behaviour.
+                            _ => self.fresh_var(),
+                        };
+                        Type::Named {
+                            name: "Option".to_string(),
+                            generics: vec![elem],
+                        }
+                    }
+
+                    // Option-returning methods whose payload is NOT the receiver's
+                    // element type: positions are usize, find_map is the closure's
+                    // output, and the Path methods are unrelated to any generic.
+                    "find_map" | "position" | "rposition" | "binary_search"
+                    | "parent" | "file_name" | "file_stem" | "extension" => Type::Named {
                         name: "Option".to_string(),
                         generics: vec![self.fresh_var()],
                     },
