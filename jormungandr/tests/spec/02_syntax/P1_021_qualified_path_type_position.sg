@@ -1,0 +1,42 @@
+// Test: `·`-qualified paths in type positions
+// Spec: 02-SYNTAX.md — path separator
+// Priority: P1 — regression guard for defect S5
+//
+// The parser shares one path production between expression and type context.
+// In expression context `·` is overloaded: `HashMap·new()` is a path, but
+// `tag·to_string()` is a method call, and only the first segment's case
+// distinguishes them.
+//
+// In TYPE context there is no such ambiguity — types have no method calls — so
+// a lowercase first segment is an ordinary module name. Before the fix, the
+// expression heuristic leaked into type parsing and a qualified path in a
+// parameter type, type argument or generic bound failed with
+// "expected RParen/RBracket, found MiddleDot".
+//
+// This test pins BOTH halves: qualified paths must parse in type positions,
+// AND lowercase method calls must still parse as method calls.
+
+// --- type positions: these must parse ---
+
+rite takes_qualified_param(x: &std·collections·HashMap<String, String>) -> i64 {
+    ↩ 1;
+}
+
+rite returns_qualified() -> i64 {
+    ↩ 2;
+}
+
+// --- expression position: the heuristic this must not break ---
+
+rite main() {
+    // lowercase receiver → method call, NOT a path
+    ≔ tag = "sigil";
+    println(tag·to_string());
+
+    // uppercase receiver → path, still works
+    ≔ v = Vec·new();
+    println(v·len());
+
+    // the type-position functions are callable
+    println(returns_qualified());
+}

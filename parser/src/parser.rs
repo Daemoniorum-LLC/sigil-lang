@@ -2867,7 +2867,7 @@ impl<'a> Parser<'a> {
         use crate::ast::{MacroDelimiter, MacroInvocation};
 
         // Parse the path (macro name, potentially with ::)
-        let path = self.parse_type_path()?;
+        let path = self.parse_type_path(false)?;
 
         // Expect !
         self.expect(Token::Bang)?;
@@ -3851,7 +3851,7 @@ impl<'a> Parser<'a> {
 
                 // Check for "as Trait" clause
                 let trait_path = if self.consume_if(&Token::As) {
-                    Some(self.parse_type_path()?)
+                    Some(self.parse_type_path(true)?)
                 } else {
                     None
                 };
@@ -4130,13 +4130,31 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::Path(TypePath { segments }))
             }
             _ => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(true)?;
                 Ok(TypeExpr::Path(path))
             }
         }
     }
 
-    fn parse_type_path(&mut self) -> ParseResult<TypePath> {
+    /// Parse a `·`-separated path.
+    ///
+    /// `in_type_context` distinguishes the two grammars that share this function:
+    ///
+    /// * **Type context** (`true`) — a parameter type, type argument, generic bound.
+    ///   `·` is unambiguously a path separator here, because types have no method
+    ///   calls. A lowercase first segment is an ordinary module name
+    ///   (`std·collections·HashMap`, `serde·de·DeserializeOwned`), so the
+    ///   uppercase heuristic below must not apply.
+    ///
+    /// * **Expression context** (`false`) — `·` is overloaded: `HashMap·new()` is a
+    ///   path, but `tag·to_string()` is a method call on a variable, which
+    ///   `parse_postfix_expr` must handle. The uppercase-first-segment heuristic
+    ///   separates them and is preserved unchanged.
+    ///
+    /// Passing `false` in a type position is the S5 defect: parsing stopped at the
+    /// first `·` and the caller then reported `expected RParen/RBracket, found
+    /// MiddleDot`, taking out 16 of 39 Qliphoth source files.
+    fn parse_type_path(&mut self, in_type_context: bool) -> ParseResult<TypePath> {
         let mut segments = Vec::new();
         segments.push(self.parse_path_segment()?);
 
@@ -4157,7 +4175,10 @@ impl<'a> Parser<'a> {
             // Only allow · as a path separator for type paths (uppercase first letter).
             // For lowercase identifiers (variables), · is a method-call operator and
             // must be left for postfix expression parsing (parse_postfix_expr MiddleDot arm).
-            let is_path_sep = first_segment_is_type && self.consume_if(&Token::MiddleDot);
+            // In a type position `·` is always a separator; elsewhere fall back to the
+            // uppercase heuristic that keeps method calls out of path parsing.
+            let is_path_sep =
+                (in_type_context || first_segment_is_type) && self.consume_if(&Token::MiddleDot);
             if !is_path_sep {
                 break;
             }
@@ -4848,7 +4869,7 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(lit))
             }
             Some(Token::Ident(_)) => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(false)?;
                 Ok(Expr::Path(path))
             }
             Some(Token::Underscore) => {
@@ -6115,7 +6136,7 @@ impl<'a> Parser<'a> {
                 } else {
                     // Treat as identifier/function call: no_grad(...)
                     // Parse as path expression; postfix parsing handles the call `(...)`
-                    let path = self.parse_type_path()?;
+                    let path = self.parse_type_path(false)?;
                     Ok(Expr::Path(path))
                 }
             }
@@ -6409,7 +6430,7 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(Token::Ident(_)) => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(false)?;
 
                 // Check for struct literal: Name { ... }
                 // Note: Name! { ... } is treated as a macro invocation, handled in parse_postfix_expr
@@ -6483,7 +6504,7 @@ impl<'a> Parser<'a> {
             }
             // Handle contextual keywords as identifiers in expressions
             Some(ref token) if Self::keyword_as_ident(token).is_some() => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(false)?;
                 // Check for struct literal: Name { ... }
                 // Note: Don't consume ! here - macro invocations (Name!(...)) are handled in parse_postfix_expr
                 if self.check(&Token::LBrace) && !self.is_in_condition() {

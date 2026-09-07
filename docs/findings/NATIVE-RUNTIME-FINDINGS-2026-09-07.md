@@ -119,9 +119,9 @@ the strength of its name.
 
 ---
 
-## S5 — parser rejects `·`-qualified paths in type positions
+## S5 — parser rejects `·`-qualified paths in type positions ✅ FIXED
 
-**Severity: high for anyone writing Qliphoth or library code.** Probably a small fix.
+**Fixed 2026-09-07** in `parser/src/parser.rs`. Details at the end of this section.
 
 `sigil check` across all 39 Qliphoth sources: **23 pass, 16 fail** — every failure the
 same parse error.
@@ -151,8 +151,56 @@ do so by keeping qualified paths out of type positions.
 
 It may also explain why `apps/wraith` has a `src.old/` sitting beside its current `src/`.
 
-**Suggested fix:** give the type parser the qualified-path production the expression
-parser already has. Full reproduction: `./S5-middledot-type-position.md`.
+### The fix
+
+`parse_type_path` was shared between two grammars with only a heuristic to separate them:
+
+```rust
+let first_segment_is_type = segments.first()
+    .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
+```
+
+That heuristic is **correct for expressions** — `HashMap·new()` is a path, `tag·to_string()`
+is a method call for `parse_postfix_expr`, and case is the only distinguishing signal. It is
+**wrong for types**, where `·` is unambiguous because types have no method calls. So
+`std·collections·HashMap` stopped parsing at `std`.
+
+Fixed by passing context rather than guessing:
+
+```rust
+let is_path_sep =
+    (in_type_context || first_segment_is_type) && self.consume_if(&Token::MiddleDot);
+```
+
+Seven call sites updated: the two in `parse_type_base` pass `true`; the five in
+`parse_primary_expr` / `parse_const_expr_primary` / `parse_macro_invocation` pass `false`,
+preserving expression behaviour exactly. 30 insertions, 9 deletions, one file.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| The three S5 reproductions | all now parse ✅ |
+| `tag·to_string()` still a method call | ✅ parses and executes |
+| `Vec·new()` / `HashMap·new()` paths | ✅ unchanged |
+| Qualified return types | ✅ |
+| Qliphoth sweep | **23 → 31 passing**, 16 → 8 failing |
+| Full test suite | **713 pass / 11 fail — identical to baseline, no regressions** |
+
+Regression test added: `jormungandr/tests/spec/02_syntax/P1_021_qualified_path_type_position.sg`,
+pinning both halves — qualified paths in type positions *and* lowercase method calls.
+
+### What remains (separate defects, not S5)
+
+8 Qliphoth files still fail. They are different bugs:
+
+- **E0003 evidence mismatch** (`storage`, `route`, `guards`) — e.g. *"return type of 'len':
+  expected known (!), found uncertain (?)"*. These now **parse** and fail in the type
+  checker, which is forward progress.
+- **E0002 parse error** in `src/platform/native.sigil` and athame — `expected RParen, found
+  Ident("child_id")`, an unrelated syntax issue.
+
+Full reproduction of the original defect: `./S5-middledot-type-position.md`.
 
 ---
 
