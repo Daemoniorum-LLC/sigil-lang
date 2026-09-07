@@ -1,7 +1,7 @@
 // Hooks System
 // React-inspired hooks with Sigil's evidentiality tracking
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·core·vdom·VNode;
 invoke tome·state·{Store, Action, Selector};
 
@@ -14,34 +14,34 @@ invoke tome·state·{Store, Action, Selector};
     /// Effect cleanup functions
     cleanups: Vec<Option<rite()>>!
     /// Ref values
-    refs: Vec<RefCell<Box<dyn std·any·Any>>>!
+    refs: Vec<RefCell<Box<dyn Any>>>!
 }
 
 ᛈ HookValue {
-    State(Box<dyn std·any·Any>!),
-    Reducer(Box<dyn std·any·Any>!),
+    State(Box<dyn Any>!),
+    Reducer(Box<dyn Any>!),
     Effect(EffectState!),
     Memo(MemoState!),
     Callback(CallbackState!),
     Ref(usize!),
     Context(u64!),
-    Custom(Box<dyn std·any·Any>!)
+    Custom(Box<dyn Any>!)
 }
 
 Σ EffectState {
-    deps: Option<Vec<Box<dyn std·any·Any>>>?
+    deps: Option<Vec<Box<dyn Any>>>?
     cleanup: Option<rite()>?
     pending: bool!
 }
 
 Σ MemoState {
-    value: Box<dyn std·any·Any>!
-    deps: Vec<Box<dyn std·any·Any>>!
+    value: Box<dyn Any>!
+    deps: Vec<Box<dyn Any>>!
 }
 
 Σ CallbackState {
     callback: Box<dyn Fn()>!
-    deps: Vec<Box<dyn std·any·Any>>!
+    deps: Vec<Box<dyn Any>>!
 }
 
 ⊢ HookState {
@@ -225,7 +225,7 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
 
     ≔ should_run! = ⎇ idx >= hooks.states·len() {
         hooks.states·push(HookValue·Effect(EffectState {
-            deps: Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect()),
+            deps: Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn Any>)·collect()),
             cleanup: None,
             pending: true
         }))
@@ -243,7 +243,7 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
                     }
                 }
                 ⎇ changed {
-                    state.deps = Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect())
+                    state.deps = Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn Any>)·collect())
                     state.pending = true
                 }
                 changed

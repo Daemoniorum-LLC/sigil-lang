@@ -2,9 +2,9 @@
 //!
 //! Stateful logic for function components.
 
-invoke std·rc·Rc;
-invoke std·cell·RefCell;
-invoke std·any·Any;
+invoke Rc;
+invoke RefCell;
+invoke Any;
 
 invoke tome·signals·{Signal, create_signal};
 invoke tome·runtime·RUNTIME;

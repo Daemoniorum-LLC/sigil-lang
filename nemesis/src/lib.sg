@@ -6,7 +6,6 @@
 // Where imbalance triggers correction.
 // Where hubris meets its inevitable end.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

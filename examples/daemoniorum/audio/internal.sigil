@@ -20,7 +20,7 @@
 
 invoke super·{AudioAsset, AudioChannel, AudioId};
 invoke tome·system·{PluralSystem, Alter, AlterState};
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // VOICE ASSETS
@@ -569,7 +569,7 @@ type PresenceState = Σ {
 
     /// Drain pending requests
     ☉ rite drain_requests(mut self) -> Vec<VoiceRequest>! {
-        std·mem·take(&Δ self.requests)
+        take(&Δ self.requests)
     }
 
     /// Play system-level voice

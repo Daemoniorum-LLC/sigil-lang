@@ -7,8 +7,7 @@
 
 invoke socket·{TcpStream, SocketAddr, SocketError};
 invoke tls·{TlsStream, TlsConfig, TlsError};
-invoke std·collections·HashMap;
-invoke std·time·{Duration, Instant};
+invoke HashMap;
 
 // ============================================================================
 // Pool Configuration

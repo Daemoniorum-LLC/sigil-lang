@@ -1,7 +1,7 @@
 // Markdown Loader
 // Loads and parses markdown documentation from the repository
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·layouts·TocItem;
 
 /// Parsed markdown document
@@ -472,7 +472,7 @@ async rite read_file(path: &str) -> Result<String, LoadError>~! {
 
 // Global document cache
 thread_local! {
-    static DOC_CACHE: std·cell·RefCell<DocCache> = std·cell·RefCell·new(DocCache·new(100));
+    static DOC_CACHE: RefCell<DocCache> = RefCell·new(DocCache·new(100));
 }
 
 /// Get cached document or load from disk

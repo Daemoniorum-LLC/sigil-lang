@@ -1,7 +1,7 @@
 // Virtual DOM Implementation
 // Efficient tree diffing and patching with evidentiality-aware updates
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·core·events·{EventHandler, EventType};
 
 /// Unique identifier for virtual nodes

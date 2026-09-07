@@ -14,8 +14,7 @@
 //! input.bind(KeyCode::Space, InputAction::Interact);
 //! ```
 
-invoke std·collections·{HashMap, HashSet};
-invoke std·time·Instant;
+invoke Instant;
 
 // ============================================================================
 // KEY CODES

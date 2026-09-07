@@ -7,8 +7,8 @@
 //! Written in Sigil - the AI-native language with first-class
 //! evidentiality, affective markers, and plurality support.
 
-invoke std·time·Duration
-invoke std·collections·HashMap
+invoke Duration
+invoke HashMap
 invoke concurrency·market·{Actor, Address}
 
 // Import game modules

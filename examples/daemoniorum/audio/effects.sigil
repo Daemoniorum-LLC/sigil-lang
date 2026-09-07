@@ -20,7 +20,7 @@
 //! Shattered: Heavy distortion, granular, reversed snippets
 //! ```
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke super·AudioError;
 
 // ============================================================================

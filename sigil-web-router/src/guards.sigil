@@ -1,6 +1,6 @@
 //! Route guards for authentication and authorization
 
-invoke std·rc·Rc;
+invoke Rc;
 
 invoke sigil_web·prelude·*;
 
@@ -131,7 +131,7 @@ impl AuthGuard {
 
 /// Async guard for loading data
 ☉ type AsyncGuard[T] = Σ {
-    loader: Rc[dyn Fn() -> std·future·Future[Output = Result[T, String]]]!,
+    loader: Rc[dyn Fn() -> Future[Output = Result[T, String]]]!,
     on_load: Rc[dyn Fn(T)]!,
     error_path: String!,
 }

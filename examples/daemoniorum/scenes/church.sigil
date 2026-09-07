@@ -5,7 +5,7 @@
 
 invoke super·scene·*
 invoke super·super·system·*
-invoke std·collections·HashMap
+invoke HashMap
 
 // ============================================================================
 // CHURCH EXTERIOR

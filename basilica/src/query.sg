@@ -48,7 +48,7 @@ invoke tome·evidence·{EvidenceLevel, Evidenced, HttpEvidence};
     params: Vec<QueryParam>,
 
     /// Phantom type ∀ result
-    _marker: std·marker·PhantomData<T>,
+    _marker: PhantomData<T>,
 }
 
 /// A filter condition (WHERE clause)

@@ -1,7 +1,7 @@
 //! Test file for advanced Sigil syntax
 //! Tests @[] attributes and optional semicolons
 
-invoke std·collections·HashMap
+invoke HashMap
 
 @[derive(Debug, Clone)]
 Σ Point {

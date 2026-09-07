@@ -1,7 +1,7 @@
 //! Route definition and matching
 
-invoke std·rc·Rc;
-invoke std·collections·HashMap;
+invoke Rc;
+invoke HashMap;
 
 invoke qliphoth·prelude·*;
 

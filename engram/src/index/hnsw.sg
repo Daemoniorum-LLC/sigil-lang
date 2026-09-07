@@ -464,7 +464,7 @@
                 ⎇ node.neighbors[level].len() > m {
                     // Keep closest m neighbors
                     ≔ query = &node.vector.clone();
-                    ≔ neighbors = std·mem·take(&Δ node.neighbors[level]);
+                    ≔ neighbors = take(&Δ node.neighbors[level]);
                     node.neighbors[level] = self.select_neighbors(query, neighbors, m);
                 }
             }

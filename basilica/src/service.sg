@@ -424,13 +424,13 @@ invoke tome·error·{BasilicaError, BasilicaResult};
 
 /// Registry of active services
 ☉ Σ ServiceRegistry {
-    services: std·collections·HashMap<String, Box<dyn std·any·Any>>,
+    services: HashMap<String, Box<dyn Any>>,
 }
 
 ⊢ ServiceRegistry {
     ☉ rite new() -> Self {
         Self {
-            services: std·collections·HashMap·new(),
+            services: HashMap·new(),
         }
     }
 

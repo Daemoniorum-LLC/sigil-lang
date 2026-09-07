@@ -8,7 +8,6 @@
 //! - Local storage for saves
 //! - Fullscreen handling
 
-invoke std·time·{Duration, Instant};
 
 invoke tome·runtime·input·{InputManager, InputEvent, KeyCode, MouseButton};
 invoke tome·runtime·state·{GameStateManager, GameStateSignals};
@@ -360,7 +359,7 @@ type WebRuntime = Σ {
         {
             // Use requestAnimationFrame for web
             ≔ runtime = self·clone();
-            ≔ f = std·rc·Rc·new(std·cell·RefCell·new(None));
+            ≔ f = Rc·new(RefCell·new(None));
             ≔ g = f·clone();
 
             *g·borrow_mut() = Some(Closure·wrap(Box·new(move || {
@@ -385,7 +384,7 @@ type WebRuntime = Σ {
 
                 ≔ elapsed = Instant·now() - start;
                 ⎇ elapsed < frame_duration {
-                    std·thread·sleep(frame_duration - elapsed);
+                    sleep(frame_duration - elapsed);
                 }
             }
         }

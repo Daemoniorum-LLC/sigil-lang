@@ -12,7 +12,6 @@
 // The third rule is that there is no acceptance. Only carrying.
 // The fourth rule is that nothing leaves unchanged. Most things don't leave.
 
-invoke std·collections·{HashMap, VecDeque};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId, TrustLevel,
     Evidentiality, Priority,
@@ -802,7 +801,7 @@ invoke covenant·{Covenant, TrustEvent};
 /// The main Hades system - ruler of the dead, keeper of transitions
 ☉ Σ Hades {
     /// Active crossings
-    crossings: HashMap<CrossingId, Crossing<Box<dyn std·any·Any>>>!,
+    crossings: HashMap<CrossingId, Crossing<Box<dyn Any>>>!,
 
     /// Registered rites
     rites: HashMap<RiteId, Rite>!,

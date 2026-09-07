@@ -4,8 +4,8 @@
 //! Uses Sigil's evidentiality for damage calculation uncertainty
 //! and morpheme operators for effect processing.
 
-invoke std·collections·HashMap
-invoke std·time·Duration
+invoke HashMap
+invoke Duration
 invoke super·super·system·*
 
 // ============================================================================

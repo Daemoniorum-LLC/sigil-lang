@@ -3,8 +3,7 @@
 //! The core plurality mechanics using Sigil's first-class
 //! plurality support with evidentiality-aware state tracking.
 
-invoke std·collections·{HashMap, HashSet}
-invoke std·time·Duration
+invoke Duration
 
 // ============================================================================
 // ANIMA STATE - PAD Emotional Model

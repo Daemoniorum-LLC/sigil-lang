@@ -3,9 +3,8 @@
 /// A simple static file server written in Sigil.
 /// Serves files from the current directory.
 
-invoke std·net·TcpListener;
-invoke std·net·TcpStream;
-invoke std·fs;
+invoke TcpListener;
+invoke TcpStream;
 
 /// MIME types for common file extensions
 rite get_mime_type(path: str) -> str {

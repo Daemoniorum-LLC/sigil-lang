@@ -2,10 +2,7 @@
 //!
 //! Core runtime for mounting, rendering, and updating components.
 
-invoke std·rc·Rc;
-invoke std·cell·{RefCell, Cell};
-invoke std·collections·{HashMap, HashSet, VecDeque};
-invoke std·any·{Any, TypeId};
+invoke Rc;
 
 invoke tome·vdom·{VNode, Patch, diff};
 invoke tome·signals·SubscriberId;
@@ -107,7 +104,7 @@ thread_local! {
 
         // Process all pending updates
         ⟳ !self.pending_updates·borrow()·is_empty() {
-            ≔ updates! = std·mem·take(&Δ *self.pending_updates·borrow_mut());
+            ≔ updates! = take(&Δ *self.pending_updates·borrow_mut());
 
             ∀ subscriber_id ∈ updates {
                 self·update_subscriber(subscriber_id);
@@ -115,7 +112,7 @@ thread_local! {
         }
 
         // Run layout effects synchronously
-        ≔ layout_effects! = std·mem·take(&Δ *self.pending_layout_effects·borrow_mut());
+        ≔ layout_effects! = take(&Δ *self.pending_layout_effects·borrow_mut());
         ∀ effect ∈ layout_effects {
             effect();
         }
@@ -123,7 +120,7 @@ thread_local! {
         self.is_rendering·set(false);
 
         // Schedule regular effects
-        ≔ effects! = std·mem·take(&Δ *self.pending_effects·borrow_mut());
+        ≔ effects! = take(&Δ *self.pending_effects·borrow_mut());
         ⎇ !effects·is_empty() {
             web_sys·request_animation_frame(move || {
                 ∀ effect ∈ effects {

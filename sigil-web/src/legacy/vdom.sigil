@@ -2,9 +2,9 @@
 //!
 //! Efficient tree diffing and patching for web applications.
 
-invoke std·collections·HashMap;
-invoke std·rc·Rc;
-invoke std·cell·RefCell;
+invoke HashMap;
+invoke Rc;
+invoke RefCell;
 
 invoke tome·web_sys;
 invoke tome·events·EventHandler;
@@ -297,7 +297,7 @@ rite diff_attrs(old: &VElement!, new: &VElement!, patches: &Δ Vec[Patch]!, inde
 
 /// Diff children arrays
 rite diff_children(old: &Vec[VNode]!, new: &Vec[VNode]!, patches: &Δ Vec[Patch]!, parent: usize!) {
-    ≔ max_len! = std·cmp·max(old·len(), new·len());
+    ≔ max_len! = max(old·len(), new·len());
 
     ∀ i ∈ 0..max_len {
         ⌥ (old·get(i), new·get(i)) {

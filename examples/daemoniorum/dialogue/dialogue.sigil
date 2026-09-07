@@ -5,7 +5,7 @@
 //! Uses Sigil's native evidentiality types and morpheme operators.
 
 invoke super·super·system·*
-invoke std·collections·HashMap
+invoke HashMap
 
 // ============================================================================
 // DIALOGUE TONE - How alters speak

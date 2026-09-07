@@ -1,7 +1,7 @@
 // Component System
 // React-inspired component model with Sigil's evidentiality and actor patterns
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·core·vdom·{VNode, VElement, VComponent, PropValue};
 invoke tome·hooks·{HookState, use_hook_context};
 

@@ -2,9 +2,8 @@
 //!
 //! Function components with hooks and lifecycle management.
 
-invoke std·any·{Any, TypeId};
-invoke std·rc·Rc;
-invoke std·cell·RefCell;
+invoke Rc;
+invoke RefCell;
 
 invoke tome·vdom·VNode;
 invoke tome·runtime·ComponentInstance;

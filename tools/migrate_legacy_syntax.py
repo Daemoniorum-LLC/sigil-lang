@@ -129,3 +129,44 @@ def main(argv):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
+
+
+# ---------------------------------------------------------------------------
+# Rust standard-library paths
+# ---------------------------------------------------------------------------
+# `std·collections·HashMap·new()` PARSES — it is just a path — and then dies at
+# run time with "undefined variable: `std`". Because `sigil check` does not
+# resolve names (S23), files carrying these check clean and crash on first use.
+#
+# Sigil spells these unqualified. Only names verified to resolve as a path root
+# are rewritten; anything else is left exactly as it was, because swapping one
+# undefined name for another is not a fix.
+STD_LEAVES_THAT_RESOLVE = {
+    "Add", "Any", "Arc", "AtomicBool", "AtomicU8", "AtomicU64", "AtomicUsize",
+    "BTreeMap", "Debug", "Display", "Duration", "Formatter", "FromStr", "Future",
+    "Hash", "HashMap", "HashSet", "Hasher", "Instant", "Ordering", "PhantomData",
+    "Rc", "Read", "RefCell", "Result", "Start", "String", "TcpListener",
+    "TcpStream", "UnexpectedEof", "VecDeque", "args", "max", "sleep", "take",
+}
+
+STD_PATH = re.compile(r"\bstd·(?:[a-z_]+·)+([A-Za-z_]\w*)")
+
+# `invoke std·collections·HashMap;` imports a builtin that needs no import.
+#
+# Anchored to a SINGLE line, deliberately. A first version used `[^;]*;`, and
+# because many of these invokes carry no semicolon at all, it ran past the end of
+# its line and swallowed the next declaration whole — it ate an entire
+# `☉ Θ StorageBackend` trait out of engram/src/storage/mod.sg. `[^\n;]*` cannot
+# cross a newline.
+STD_INVOKE = re.compile(r"^[ \t]*(?:☉ )?invoke\s+std·[^\n;]*;?[ \t]*\n", re.M)
+
+
+def migrate_std_paths(src):
+    """Rewrite resolvable std· paths to their Sigil spelling. String/comment safe."""
+    def one(text):
+        return STD_PATH.sub(
+            lambda m: m.group(1) if m.group(1) in STD_LEAVES_THAT_RESOLVE else m.group(0),
+            text,
+        )
+    out = "".join(one(t) if is_code else t for t, is_code in split_regions(src))
+    return STD_INVOKE.sub("", out)

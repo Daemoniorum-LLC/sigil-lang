@@ -14,7 +14,7 @@
 
 // EC₁: Standard library path in type position
 rite use_hashmap() {
-    ≔ Δ map: std·collections·HashMap<String, i32> = std·collections·HashMap·new();
+    ≔ Δ map: HashMap<String, i32> = HashMap·new();
     map.insert("key".to_string(), 42);
 }
 

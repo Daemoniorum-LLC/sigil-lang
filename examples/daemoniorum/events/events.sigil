@@ -7,7 +7,7 @@ invoke super·super·system·*
 invoke super·super·combat·*
 invoke super·super·dialogue·*
 invoke super·super·scenes·*
-invoke std·collections·HashMap
+invoke HashMap
 
 // ============================================================================
 // EVENT TYPES

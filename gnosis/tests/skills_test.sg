@@ -2,7 +2,7 @@
 //!
 //! Verifies SkillSystem, SkillProfile, SkillLevel, Exercise, and skill mechanics.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types

@@ -2,7 +2,7 @@
 // All documentation from the persona-framework repository
 
 invoke tome·layouts·TocItem;
-invoke std·collections·HashMap;
+invoke HashMap;
 
 /// Documentation entry representing a single document
 ☉ Σ DocEntry {

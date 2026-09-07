@@ -18,7 +18,7 @@
 
 // --- type positions: these must parse ---
 
-rite takes_qualified_param(x: &std·collections·HashMap<String, String>) -> i64 {
+rite takes_qualified_param(x: &HashMap<String, String>) -> i64 {
     ↩ 1;
 }
 

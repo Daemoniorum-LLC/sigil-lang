@@ -124,7 +124,6 @@ type RuntimeConfig = Σ {
 
 /// Frame timing utilities
 ☉ scroll timing {
-    invoke std·time·{Duration, Instant};
 
     /// Frame time accumulator for fixed timestep
     type FrameAccumulator = Σ {

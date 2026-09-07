@@ -2,7 +2,7 @@
 // Demonstrates CRUD operations, lists, and form handling
 
 invoke sigil_web·prelude·*
-invoke std·collections·HashMap;
+invoke HashMap;
 
 /// Todo item structure
 Σ Todo {

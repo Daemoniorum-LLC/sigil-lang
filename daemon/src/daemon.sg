@@ -3,7 +3,6 @@
 
 invoke tome·types·*;
 invoke engram·{Engram, Query, Event};
-invoke std·time·{Duration, Timestamp};
 
 // ============================================================================
 // Daemon Struct
@@ -305,7 +304,7 @@ invoke std·time·{Duration, Timestamp};
                 self.execute_goal_action(goal_action)
             }
             Action·Wait(duration) => {
-                std·thread·sleep(*duration);
+                sleep(*duration);
                 Ok(ActionResult {
                     action_id: action_id.clone(),
                     success: true,
@@ -771,7 +770,7 @@ invoke std·time·{Duration, Timestamp};
     rite wait_for_next(&self) {
         ≔ elapsed = self.last_beat.elapsed();
         ⎇ elapsed < self.interval {
-            std·thread·sleep(self.interval - elapsed);
+            sleep(self.interval - elapsed);
         }
     }
 }

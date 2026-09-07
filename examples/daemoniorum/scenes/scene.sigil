@@ -4,7 +4,7 @@
 //! alter-specific perception, and environmental storytelling.
 
 invoke super·super·system·*
-invoke std·collections·HashMap
+invoke HashMap
 
 // ============================================================================
 // SCENE TYPES

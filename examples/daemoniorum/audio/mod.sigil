@@ -49,8 +49,8 @@
 ☉ scroll effects;
 ☉ scroll internal;
 
-invoke std·collections·HashMap;
-invoke std·time·Duration;
+invoke HashMap;
+invoke Duration;
 
 invoke tome·system·{PluralSystem, Alter, RealityLayer};
 invoke tome·events·events·GameEvent;

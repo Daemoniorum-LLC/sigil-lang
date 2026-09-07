@@ -30,7 +30,7 @@
 
 invoke super·{AudioAsset, AudioChannel, AudioId};
 invoke tome·system·PluralSystem;
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // MUSIC STEM DEFINITIONS
@@ -708,7 +708,7 @@ type StemState = Σ {
 
     /// Drain pending requests
     ☉ rite drain_requests(mut self) -> Vec<MusicRequest>! {
-        std·mem·take(&Δ self.requests)
+        take(&Δ self.requests)
     }
 
     /// Silence all music

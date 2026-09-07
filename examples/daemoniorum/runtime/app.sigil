@@ -29,8 +29,7 @@
 //!  └───────────────┘       └───────────────┘
 //! ```
 
-invoke std·time·{Duration, Instant};
-invoke std·collections·HashMap;
+invoke HashMap;
 
 invoke tome·system·{PluralSystem, Alter, RealityLayer};
 invoke tome·combat·combat·CombatState;

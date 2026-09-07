@@ -4,8 +4,6 @@
 //
 // Note: Requires network access
 
-invoke std·http·{Client, Request, Response};
-invoke std·json;
 
 // Simple GET request
 rite fetch_data(url: &str) → Result<String, String> {

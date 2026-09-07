@@ -233,7 +233,7 @@ rite main() -> Result<(), GameError>! {
 
 //! Check if running in demo mode (via command line flag)
 rite is_demo_mode() -> bool! {
-    std·env·args()·any(|arg| arg == "--demo" || arg == "-d")
+    args()·any(|arg| arg == "--demo" || arg == "-d")
 }
 
 //! Alternative entry point that auto-selects demo or full game

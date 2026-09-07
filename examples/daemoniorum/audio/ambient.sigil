@@ -19,7 +19,7 @@
 
 invoke super·{AudioAsset, AudioChannel, AudioId};
 invoke tome·system·RealityLayer;
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // AMBIENT LOOP DEFINITIONS
@@ -553,7 +553,7 @@ type AmbientState = Σ {
 
     /// Drain pending requests
     ☉ rite drain_requests(mut self) -> Vec<AmbientRequest>! {
-        std·mem·take(&Δ self.requests)
+        take(&Δ self.requests)
     }
 
     /// Start base ambient

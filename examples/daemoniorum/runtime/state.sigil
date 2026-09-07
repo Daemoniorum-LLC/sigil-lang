@@ -15,9 +15,7 @@
 //!
 //! Each signal can be subscribed to independently for fine-grained reactivity.
 
-invoke std·collections·HashMap;
-invoke std·sync·{Arc, RwLock};
-invoke std·time·{Duration, Instant};
+invoke HashMap;
 
 invoke tome·system·{
     PluralSystem, Alter, AlterPresenceState, RealityLayer,

@@ -6,7 +6,6 @@
 // Where creativity requires destruction.
 // Where the rules suspend.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

@@ -59,7 +59,7 @@ invoke tome·error·BasilicaError;
     ☉ expires_at: Timestamp,
 
     /// Custom claims
-    ☉ claims: std·collections·HashMap<String, String>,
+    ☉ claims: HashMap<String, String>,
 }
 
 ⊢ AuthenticatedUser {
@@ -475,7 +475,7 @@ invoke tome·error·BasilicaError;
             trust_level: self.config.default_trust,
             issued_at: Timestamp·now(),
             expires_at: Timestamp·now().add(Duration·from_secs(3600)),
-            claims: std·collections·HashMap·new(),
+            claims: HashMap·new(),
         })
     }
 }
@@ -572,8 +572,8 @@ invoke tome·error·BasilicaError;
     InsufficientPermissions,
 }
 
-⊢ std·fmt·Display ∀ AuthError {
-    rite fmt(&self, f: &Δ std·fmt·Formatter<'_>) -> std·fmt·Result {
+⊢ Display ∀ AuthError {
+    rite fmt(&self, f: &Δ Formatter<'_>) -> std·fmt·Result {
         ⌥ self {
             AuthError·NotConfigured => write!(f, "Authentication not configured"),
             AuthError·NoToken => write!(f, "No authentication token provided"),

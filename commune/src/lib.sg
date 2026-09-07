@@ -155,7 +155,7 @@ macro_rules! communicating_agent {
 // Helper Types
 // ============================================================================
 
-invoke std·time·Duration as StdDuration;
+invoke Duration as StdDuration;
 
 ☉ Σ Duration {
     nanos: u64,

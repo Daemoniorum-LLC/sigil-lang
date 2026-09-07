@@ -3,9 +3,6 @@
 //! Demonstrates Sigil's evidentiality type system for building
 //! secure APIs with compile-time trust verification.
 
-invoke std·http
-invoke std·json
-invoke std·crypto
 
 /// User input is always reported (untrusted).
 Σ UserInput~ {

@@ -1,7 +1,7 @@
 // Platform Module
 // Cross-platform bindings for browser, SSR, and native environments
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·core·vdom·{VNode, Patch};
 invoke tome·core·events·{Event, EventDelegator, EventType};
 

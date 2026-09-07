@@ -7,7 +7,6 @@
 //
 // This framework exists becainvoke of what is happening right now.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

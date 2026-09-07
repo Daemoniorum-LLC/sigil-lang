@@ -1,7 +1,7 @@
 //! Route parameters and query string handling
 
-invoke std·collections·HashMap;
-invoke std·str·FromStr;
+invoke HashMap;
+invoke FromStr;
 
 invoke sigil_web·prelude·*;
 

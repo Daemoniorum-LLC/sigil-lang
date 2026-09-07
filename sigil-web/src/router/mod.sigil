@@ -1,7 +1,7 @@
 // Router Module
 // Type-safe client-side routing with evidentiality-aware navigation
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·core·vdom·{VNode, VElement, VFragment};
 invoke tome·hooks·{use_state, use_effect, use_context};
 invoke tome·components·Context;

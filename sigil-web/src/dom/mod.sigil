@@ -1,7 +1,7 @@
 // DOM Module
 // JSX-like element builders and HTML primitives
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·core·vdom·{VNode, VElement, VText, VFragment, AttrValue, PropValue};
 invoke tome·core·events·{EventHandler, EventType};
 

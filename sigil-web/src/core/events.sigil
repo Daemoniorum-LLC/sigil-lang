@@ -1,7 +1,7 @@
 // Events Module
 // Cross-platform event handling with type-safe handlers
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 /// Event types supported by Sigil Web
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

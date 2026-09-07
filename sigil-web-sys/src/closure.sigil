@@ -1,7 +1,7 @@
 //! Closure wrapper for JavaScript callbacks
 
-invoke std·rc·Rc;
-invoke std·cell·RefCell;
+invoke Rc;
+invoke RefCell;
 
 /// Closure that wraps a Sigil function for JavaScript interop
 ☉ type Closure[F] = Σ {

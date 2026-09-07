@@ -7,8 +7,7 @@
 ☉ scroll plan;
 ☉ scroll causal;
 
-invoke std·collections·HashMap;
-invoke std·time·{Duration, Timestamp};
+invoke HashMap;
 invoke engram·{Engram, Query};
 
 // ============================================================================
@@ -1058,7 +1057,7 @@ invoke engram·{Engram, Query};
     ☉ rite now() -> Self { Self { nanos: 0 } }
 }
 
-⊢ std·ops·Add<Duration> ∀ Timestamp {
+⊢ Add<Duration> ∀ Timestamp {
     type Output = Self;
     rite add(self, _d: Duration) -> Self { self }
 }

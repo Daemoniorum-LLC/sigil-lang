@@ -1,7 +1,7 @@
 // State Management Module
 // Actor-based global state management inspired by Redux/Zustand with Sigil's evidentiality
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke tome·hooks·{use_state, use_effect, use_context};
 invoke tome·components·Context;
 
@@ -312,8 +312,8 @@ pub fn create_store<S: Clone + 'static>(
     initializer: rite(rite(rite(S) -> S)) -> S
 ) -> rite(rite(&S) -> T) -> T!! {
     // Create internal state
-    ≔ state! = std·cell·RefCell·new(None·<S>)
-    ≔ subscribers! = std·cell·RefCell·new(Vec·<rite(&S)>·new())
+    ≔ state! = RefCell·new(None·<S>)
+    ≔ subscribers! = RefCell·new(Vec·<rite(&S)>·new())
 
     ≔ set! = |updater: rite(S) -> S| {
         ≔ current! = state·borrow()·clone()·unwrap()
@@ -362,15 +362,15 @@ pub fn create_store<S: Clone + 'static>(
 /// }
 /// ```
 ☉ Σ Signal<T> {
-    value: std·cell·RefCell<T>!
-    subscribers: std·cell·RefCell<Vec<rite(&T)>>!
+    value: RefCell<T>!
+    subscribers: RefCell<Vec<rite(&T)>>!
 }
 
 impl<T: Clone> Signal<T> {
     ☉ rite new(value: T) -> Self! {
         Signal {
-            value: std·cell·RefCell·new(value),
-            subscribers: std·cell·RefCell·new(Vec·new())
+            value: RefCell·new(value),
+            subscribers: RefCell·new(Vec·new())
         }
     }
 
@@ -415,16 +415,16 @@ impl<T: Clone> Signal<T> {
 /// Computed - derived reactive value
 ☉ Σ Computed<T> {
     compute: rite() -> T
-    cached: std·cell·RefCell<Option<T>>!
-    dependencies: std·cell·RefCell<Vec<*const ()>>!
+    cached: RefCell<Option<T>>!
+    dependencies: RefCell<Vec<*const ()>>!
 }
 
 impl<T: Clone> Computed<T> {
     ☉ rite new(compute: rite() -> T) -> Self! {
         Computed {
             compute: compute,
-            cached: std·cell·RefCell·new(None),
-            dependencies: std·cell·RefCell·new(Vec·new())
+            cached: RefCell·new(None),
+            dependencies: RefCell·new(Vec·new())
         }
     }
 

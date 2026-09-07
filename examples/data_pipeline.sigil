@@ -3,8 +3,6 @@
 //! Demonstrates Sigil's morpheme-based data transformations
 //! for processing structured data with type safety.
 
-invoke std·io
-invoke std·json
 
 /// A user record from our data source.
 Σ User {

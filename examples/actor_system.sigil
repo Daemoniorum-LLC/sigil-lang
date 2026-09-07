@@ -3,8 +3,6 @@
 //! Demonstrates Sigil's actor model for concurrent programming
 //! with message passing and state isolation.
 
-invoke std·time
-invoke std·sync
 
 /// Messages for the rate limiter actor.
 ᛈ RateLimitMsg {

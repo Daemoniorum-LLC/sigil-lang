@@ -1,9 +1,7 @@
 // Aegis - Security Infrastructure Implementation
 // Core security components ∀ AI agents
 
-invoke std·collections·{HashMap, HashSet, VecDeque};
-invoke std·sync·atomic·{AtomicBool, Ordering};
-invoke std·sync·Arc;
+invoke Arc;
 
 invoke tome·types·*;
 

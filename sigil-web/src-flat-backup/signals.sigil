@@ -3,9 +3,8 @@
 //! Fine-grained reactivity for Sigil web applications.
 //! Signals automatically track dependencies and trigger re-renders.
 
-invoke std·rc·Rc;
-invoke std·cell·{RefCell, Cell};
-invoke std·collections·HashSet;
+invoke Rc;
+invoke HashSet;
 
 invoke tome·runtime·RUNTIME;
 

@@ -2,7 +2,7 @@
 //!
 //! Type-safe event handlers and synthetic events.
 
-invoke std·rc·Rc;
+invoke Rc;
 
 /// Event handler function type
 ☉ type EventHandler = Rc[dyn Fn(Event)];
