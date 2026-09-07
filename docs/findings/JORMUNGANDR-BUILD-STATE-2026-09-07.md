@@ -3,8 +3,8 @@
 **Question asked:** the Rust compiler at `parser/` had five parser/lexer defects fixed
 (S5, S7, S9, S10). Does the self-hosted compiler share them, and can it be fixed too?
 
-**Answer:** it shares two of them, is *more* correct than the Rust parser on a third — and
-it **cannot currently be built**, so no fix to it can be verified.
+**Answer:** it shares two of them, is *more* correct than the Rust parser on a third, and
+it could not be built at all — **now fixed. It builds and runs.** See §5.
 
 ---
 
@@ -114,3 +114,77 @@ Recommended order:
 
 The unbuildability is a larger finding than any individual parser defect: a self-hosted
 compiler that cannot be built is not currently self-hosting.
+
+
+---
+
+## 5. RESOLVED — it builds
+
+`jormungandr/build/build.sh` produces a working 3.8 MB compiler binary.
+
+### What the blocker actually was
+
+Not a missing library, and not the 46 symbols being unimplemented. `bootstrap_fixed4.c`
+contains a builtin-runtime block at its tail, but that block came from an **older codegen
+and was ~245 lines short** — it omitted 45 of the 46 stdlib definitions that the rest of
+the file declares and calls. So the bootstrap could compile and could never link.
+
+The definitions were recoverable from the file itself: the compiled body of
+`CodeGen::emit_builtin_impls` is 1061 straight-line `line()` calls with **zero control
+flow**, so extracting its string literals in order reproduces exactly what a running
+jormungandr would emit.
+
+`bootstrap_completion.c` (14 KB) is that recovery. It supplies:
+
+| | |
+|---|---|
+| 45 stdlib definitions | extracted verbatim from `emit_builtin_impls` |
+| `sigil_any` | **written by hand** — codegen emits a declaration and call sites for `.any(pred)` but never a definition, so nothing ever provided it. Written as the exact dual of `sigil_all`, matching its closure convention. |
+| `TAG_STRINGBUILDER 17`, `TAG_MAP 18` | values verbatim from `codegen.sg`; the older prelude predates them |
+| `StringBuilder`, `SigilStringBuilder` and helpers | two distinct builder types the newer builtins need |
+
+### A second corruption instance
+
+`sb_new`, `sb_ensure_cap`, `sb_to_string` had to be written by hand rather than extracted,
+because `codegen.sg` now emits them as:
+
+```
+typedef Σ StringBuilder {     ⤺ sb;     ⎇ (sb->len + needed >= sb->cap) {
+```
+
+`Σ`, `⤺`, `⎇` are Sigil's `struct`, `return`, `if` — emitted into **C**. This is the same
+keyword-migration corruption of string literals recorded in §3, and it means the current
+`codegen.sg` cannot generate a working compiler even once it can run. Counted in
+`emit_builtin_impls` alone: **249 `⤺`, 165 `⎇`, 13 `⎉`, 10 `⟳`**, plus `Σ` in the prelude
+emitter. That is the next thing to fix.
+
+### Verified
+
+```
+$ ./build.sh
+==> built ./jormungandr
+$ ./jormungandr
+no input files specified
+$ ./jormungandr compile hello.sg -o hello.c     # emits 91 KB of C
+```
+
+### Still broken, and worth knowing
+
+The compiler **runs but does not yet compile user code correctly**. Given
+
+```sigil
+rite main() { println("hello"); }
+```
+
+it exits 0, emits 91 KB of C — and that C contains only the runtime builtins. No
+`sigil_main`, no translation of the input, no diagnostic. `fn main()` is correctly
+*rejected* with a real `CompileError`, so the parser is not simply ignoring everything;
+`rite` and `λ` forms parse and are then silently dropped before codegen.
+
+So this closes the *bootstrap* gap — the thing that made jormungandr unbuildable — and
+exposes the next one. That failure has the same shape as `S1`, `S10` and `S12`: exit 0,
+plausible output, nothing actually done.
+
+Also noted: `CLAUDE.md`'s build line references `../src/main.sg`, which does not exist
+either, and `jormungandr/src/` carries `.bak`, `.new` and `.broke` copies of `ast.sg` and
+`codegen.sg`.

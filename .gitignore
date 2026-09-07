@@ -119,3 +119,7 @@ moloch/target/
 jormungandr/build/sigil
 jormungandr/build/sigil_debug
 jormungandr/build/c/
+
+# jormungandr build outputs
+jormungandr/build/jormungandr
+jormungandr/build/.jormungandr_full.c
