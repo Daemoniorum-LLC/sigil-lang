@@ -88,11 +88,11 @@ invoke tome·codegen·CodeGen;
 
                 // Check ⎇ pattern matches and assign, ⎉ execute else_branch
                 ≔ cond = this.emit_pattern_condition(pattern.clone(), temp_name.clone());
-                this.line_open(format!("⎇ ({})", cond));
+                this.line_open(format!("if ({})", cond));
                 this.indent_push();
                 this.emit_pattern_assignments(pattern, temp_name);
                 this.indent_pop();
-                this.line("} ⎉ {");
+                this.line("} else {");
                 this.indent_push();
                 this.emit_operation(*else_branch);
                 this.indent_pop();
@@ -117,13 +117,13 @@ invoke tome·codegen·CodeGen;
                         // Emit: result = left; ⎇ (truthy(result)) { result = right; }
                         this.line(format!("SigilValue {} = {};", result_temp, l_code));
                         this.line(format!("SigilValue {} = sigil_bool(nay);", r_temp));
-                        this.line(format!("⎇ (sigil_truthy({})) {{", result_temp));
+                        this.line(format!("if (sigil_truthy({})) {{", result_temp));
                         this.indent_push();
                         ≔ r_code = this.emit_operation(*right);
                         this.line(format!("{} = {};", r_temp, r_code));
                         this.indent_pop();
                         this.line("}");
-                        ≔ expr = format!("sigil_bool(sigil_truthy({}) ∧ sigil_truthy({}))", result_temp, r_temp);
+                        ≔ expr = format!("sigil_bool(sigil_truthy({}) && sigil_truthy({}))", result_temp, r_temp);
                         ⤺ this.with_evidence(expr, evidence);
                     },
                     BinaryOp·Or => {
@@ -134,13 +134,13 @@ invoke tome·codegen·CodeGen;
                         // Emit: result = left; ⎇ (!truthy(result)) { r_temp = right; }
                         this.line(format!("SigilValue {} = {};", result_temp, l_code));
                         this.line(format!("SigilValue {} = sigil_bool(yea);", r_temp));
-                        this.line(format!("⎇ (!sigil_truthy({})) {{", result_temp));
+                        this.line(format!("if (!sigil_truthy({})) {{", result_temp));
                         this.indent_push();
                         ≔ r_code = this.emit_operation(*right);
                         this.line(format!("{} = {};", r_temp, r_code));
                         this.indent_pop();
                         this.line("}");
-                        ≔ expr = format!("sigil_bool(sigil_truthy({}) ∨ sigil_truthy({}))", result_temp, r_temp);
+                        ≔ expr = format!("sigil_bool(sigil_truthy({}) || sigil_truthy({}))", result_temp, r_temp);
                         ⤺ this.with_evidence(expr, evidence);
                     },
                     _ => {},
@@ -224,7 +224,7 @@ invoke tome·codegen·CodeGen;
                         // CG-FIX: Safe dereference - check TAG_REF before dereferencing pointer
                         ≔ temp = this.fresh_temp();
                         this.line(format!("SigilValue {} = {};", temp, op_code));
-                        this.line(format!("⎇ ({}.tag == TAG_REF ∧ {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", temp, temp, temp, temp));
+                        this.line(format!("if ({}.tag == TAG_REF && {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", temp, temp, temp, temp));
                         temp
                     },
                 };
@@ -418,14 +418,14 @@ invoke tome·codegen·CodeGen;
                         this.line(format!("SigilValue {} = {};", value_var, value_code));
                         // Emit the pattern condition
                         ≔ cond = this.emit_pattern_condition(pattern.clone(), value_var.clone());
-                        this.line_open(format!("⎇ ({})", cond));
+                        this.line_open(format!("if ({})", cond));
                         this.indent_push();
                         // Emit pattern bindings ∀ the then-branch
                         this.emit_pattern_binding(pattern, value_var);
                     },
                     _ => {
                         ≔ cond = this.emit_operation(*condition);
-                        this.line_open(format!("⎇ (sigil_truthy({}))", cond));
+                        this.line_open(format!("if (sigil_truthy({}))", cond));
                         this.indent_push();
                     },
                 }
@@ -437,7 +437,7 @@ invoke tome·codegen·CodeGen;
 
                 ⌥ else_branch {
                     ?else_op => {
-                        this.line("} ⎉ {");
+                        this.line("} else {");
                         this.indent_push();
 
                         ≔ else_result = this.emit_operation(*else_op);
@@ -447,7 +447,7 @@ invoke tome·codegen·CodeGen;
                         this.line("}");
                     },
                     null | Option·None => {
-                        this.line("} ⎉ {");
+                        this.line("} else {");
                         this.indent_push();
                         this.line(format!("{} = sigil_unit();", result_var));
                         this.indent_pop();
@@ -489,10 +489,10 @@ invoke tome·codegen·CodeGen;
                 ⌥ value {
                     ?v => {
                         ≔ result = this.emit_operation(*v);
-                        this.line(format!("⤺ {};", result));
+                        this.line(format!("return {};", result));
                     },
                     null | Option·None => {
-                        this.line("⤺ sigil_unit();");
+                        this.line("return sigil_unit();");
                     },
                 }
                 "sigil_unit()" // Unreachable
@@ -538,7 +538,7 @@ invoke tome·codegen·CodeGen;
                 this.line(format!("SigilValue {} = sigil_array({});", arr_var, idx_var));
 
                 // Fill with repeated value
-                this.line(format!("∀ (int64_t _i = 0; _i < {}; _i++) {}.v.arr.data[_i] = {};", idx_var, arr_var, val_var));
+                this.line(format!("for (int64_t _i = 0; _i < {}; _i++) {}.v.arr.data[_i] = {};", idx_var, arr_var, val_var));
 
                 this.with_evidence(arr_var, evidence)
             },
@@ -564,7 +564,7 @@ invoke tome·codegen·CodeGen;
 
                 ⌥ variant {
                     LoopVariant·Infinite => {
-                        this.line("⟳ (1) {");
+                        this.line("while (1) {");
                         this.indent_push();
                         this.line("tick(__func__);");  // Prevent infinite loops
                         ≔ body_result = this.emit_operation(*body);
@@ -575,7 +575,7 @@ invoke tome·codegen·CodeGen;
                     LoopVariant·While => {
                         // CG-013 FIX: Evaluate condition at START of each iteration
                         // This ensures ↻ doesn't skip condition re-evaluation
-                        this.line("⟳ (1) {");
+                        this.line("while (1) {");
                         this.indent_push();
                         this.line("tick(__func__);");  // Prevent infinite loops
                         ≔ cond = ⌥ condition {
@@ -584,7 +584,7 @@ invoke tome·codegen·CodeGen;
                         };
                         ≔ cond_var = this.fresh_temp();
                         this.line(format!("SigilValue {} = {};", cond_var, cond));
-                        this.line(format!("⎇ (!sigil_truthy({})) ⊲;", cond_var));
+                        this.line(format!("if (!sigil_truthy({})) break;", cond_var));
                         ≔ body_result = this.emit_operation(*body);
                         this.line(format!("{} = {};", result_var, body_result));
                         this.indent_pop();
@@ -609,7 +609,7 @@ invoke tome·codegen·CodeGen;
                                     };
                                     ≔ i_var = this.fresh_temp();
                                     ≔ compare_op = ⎇ inclusive { "<=" } ⎉ { "<" };
-                                    this.line_open(format!("∀ (int64_t {} = {}.v.i; {} {} {}.v.i; {}++)", i_var, start_code, i_var, compare_op, end_code, i_var));
+                                    this.line_open(format!("for (int64_t {} = {}.v.i; {} {} {}.v.i; {}++)", i_var, start_code, i_var, compare_op, end_code, i_var));
                                     this.indent_push();
                                     this.line("tick(__func__);");  // Prevent infinite loops
                                     // Bind pattern to current loop index as SigilValue
@@ -626,7 +626,7 @@ invoke tome·codegen·CodeGen;
                                     ≔ iter_cache = this.fresh_temp();
                                     this.line(format!("SigilValue {} = {};", iter_cache, iterable_code));
                                     ≔ i_var = this.fresh_temp();
-                                    this.line_open(format!("∀ (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, iter_cache, i_var));
+                                    this.line_open(format!("for (size_t {} = 0; {} < {}.v.arr.len; {}++)", i_var, i_var, iter_cache, i_var));
                                     this.indent_push();
                                     this.line("tick(__func__);");  // Prevent infinite loops
                                     // Bind pattern to current element
@@ -653,12 +653,12 @@ invoke tome·codegen·CodeGen;
                     },
                     null | Option·None => {},
                 }
-                this.line("⊲;");
+                this.line("break;");
                 "sigil_unit()"
             },
 
             IrOperation·Continue { .. } => {
-                this.line("⊳;");
+                this.line("continue;");
                 "sigil_unit()"
             },
 
@@ -709,7 +709,7 @@ invoke tome·codegen·CodeGen;
                 }
 
                 ≔ body_result = this.emit_operation(*body);
-                this.line(format!("⤺ {};", body_result));
+                this.line(format!("return {};", body_result));
                 ≔ body_code = this.output.clone();
 
                 // Restore output
@@ -899,7 +899,7 @@ invoke tome·codegen·CodeGen;
 
                 // Emit field names array
                 ≔ names_init = CodeGen·struct_init(field_names_str);
-                this.line(format!("static ◆ char* {}__names[{}] = {};",
+                this.line(format!("static const char* {}__names[{}] = {};",
                     temp, n, names_init));
 
                 // Create sigil value with sigil_Σ helper
@@ -1779,7 +1779,7 @@ invoke tome·codegen·CodeGen;
 
                 ⎇ !has_evidential {
                     // Only unwrap ∀ non-evidential matches (ᛈ variant destructuring)
-                    this.line(format!("⎇ ({}.tag == TAG_REF ∧ {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", scrutinee_var, scrutinee_var, scrutinee_var, scrutinee_var));
+                    this.line(format!("if ({}.tag == TAG_REF && {}.v.ptr) {} = *((SigilValue*){}.v.ptr);", scrutinee_var, scrutinee_var, scrutinee_var, scrutinee_var));
                 }
                 this.line(format!("SigilValue {};", result_var));
 
@@ -1793,7 +1793,7 @@ invoke tome·codegen·CodeGen;
                     ≔ cond = this.emit_pattern_condition(arm.pattern.clone(), scrutinee_var.clone());
 
                     // Each arm is an independent if, guarded by !_matched
-                    this.line_open(format!("⎇ (!{} ∧ ({}))", matched_var, cond));
+                    this.line_open(format!("if (!{} && ({}))", matched_var, cond));
                     this.indent_push();
 
                     // Bind pattern variables
@@ -1803,7 +1803,7 @@ invoke tome·codegen·CodeGen;
                     ⌥ arm.guard {
                         ?guard => {
                             ≔ guard_code = this.emit_operation(guard);
-                            this.line_open(format!("⎇ (sigil_truthy({}))", guard_code));
+                            this.line_open(format!("if (sigil_truthy({}))", guard_code));
                             this.indent_push();
                             ≔ body_result = this.emit_operation(arm.body.clone());
                             this.line(format!("{} = {};", result_var, body_result));
@@ -1824,7 +1824,7 @@ invoke tome·codegen·CodeGen;
                 }
 
                 // Default case ⎇ no arm matched
-                this.line_open(format!("⎇ (!{})", matched_var));
+                this.line_open(format!("if (!{})", matched_var));
                 this.indent_push();
                 this.line(format!("{} = sigil_unit();", result_var));
                 this.indent_pop();
@@ -1842,9 +1842,9 @@ invoke tome·codegen·CodeGen;
                 ≔ temp = this.fresh_temp();
 
                 this.line(format!("SigilValue {} = {};", temp, inner_code));
-                this.line(format!("⎇ ({}.tag == TAG_RESULT_ERR) {{", temp));
+                this.line(format!("if ({}.tag == TAG_RESULT_ERR) {{", temp));
                 this.indent_push();
-                this.line(format!("⤺ {};", temp));
+                this.line(format!("return {};", temp));
                 this.indent_pop();
                 this.line("}");
 

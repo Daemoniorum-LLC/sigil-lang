@@ -852,7 +852,7 @@ invoke tome·span·Span;
             true
         } ⎉ {
             ≔ Δ err = TypeError·new(format!(
-                "evidence mis⌥ {}: expected {} ({}), found {} ({})",
+                "evidence mismatch {}: expected {} ({}), found {} ({})",
                 context,
                 expected.name(),
                 expected.symbol(),
@@ -1099,7 +1099,7 @@ invoke tome·span·Span;
                 ≔ inferred = self.infer_expr(c.value);
                 ⎇ !self.unify(declared, inferred) {
                     self.error(TypeError·new(format!(
-                        "type mis⌥ ∈ const '{}': expected {}, found {}",
+                        "type mismatch in const '{}': expected {}, found {}",
                         c.name.name, declared.to_string(), inferred.to_string()
                     )).with_span(c.name.span));
                 }
@@ -1109,7 +1109,7 @@ invoke tome·span·Span;
                 ≔ inferred = self.infer_expr(s.value);
                 ⎇ !self.unify(declared, inferred) {
                     self.error(TypeError·new(format!(
-                        "type mis⌥ ∈ static '{}': expected {}, found {}",
+                        "type mismatch in static '{}': expected {}, found {}",
                         s.name.name, declared.to_string(), inferred.to_string()
                     )).with_span(s.name.span));
                 }
@@ -1149,7 +1149,7 @@ invoke tome·span·Span;
             // Check structural type compatibility
             ⎇ !self.unify(expected_return, body_type) {
                 self.error(TypeError·new(format!(
-                    "⤺ type mis⌥ ∈ '{}': expected {}, found {}",
+                    "return type mismatch in '{}': expected {}, found {}",
                     func.name.name, expected_return.to_string(), body_type.to_string()
                 )).with_span(func.name.span));
             }
@@ -1163,7 +1163,7 @@ invoke tome·span·Span;
                 self.check_evidence(
                     expected_evidence,
                     actual_evidence,
-                    format!("in ⤺ type of '{}'", func.name.name)
+                    format!("in return type of '{}'", func.name.name)
                 );
             } ⎉ {
                 // For public functions, warn about missing evidence annotation
@@ -1176,7 +1176,7 @@ invoke tome·span·Span;
                         actual_evidence.symbol()
                     ))
                     .with_span(func.name.span)
-                    .with_note("help: add explicit evidence annotation to the ⤺ type")
+                    .with_note("help: add explicit evidence annotation to the return type")
                     .with_note(format!(
                         "example: λ {}(...) -> {}{} {{ ... }}",
                         func.name.name,
@@ -1245,7 +1245,7 @@ invoke tome·span·Span;
                     (?d, ?i) => {
                         ⎇ !self.unify(d, i) {
                             self.error(TypeError·new(format!(
-                                "type mis⌥ ∈ ≔ binding: expected {}, found {}",
+                                "type mismatch in ≔ binding: expected {}, found {}",
                                 d.to_string(), i.to_string()
                             )));
                         }
@@ -1283,7 +1283,7 @@ invoke tome·span·Span;
                     (?d, ?i) => {
                         ⎇ !self.unify(d, i) {
                             self.error(TypeError·new(format!(
-                                "type mis⌥ ∈ let-⎉ binding: expected {}, found {}",
+                                "type mismatch in let-else binding: expected {}, found {}",
                                 d.to_string(), i.to_string()
                             )));
                         }
@@ -1480,7 +1480,7 @@ invoke tome·span·Span;
             Expr·If { condition, then_branch, else_branch } => {
                 ≔ cond_ty = self.infer_expr(*condition);
                 ⎇ !self.unify(Type·Bool, cond_ty) {
-                    self.error(TypeError·new("⎇ condition must be bool"));
+                    self.error(TypeError·new("if condition must be bool"));
                 }
 
                 ≔ then_ty = self.check_block(then_branch);
@@ -1493,7 +1493,7 @@ invoke tome·span·Span;
                         };
 
                         ⎇ !self.unify(then_ty, else_ty) {
-                            self.error(TypeError·new("⎇ branches must have same type"));
+                            self.error(TypeError·new("if branches must have same type"));
                         }
 
                         // Join evidence from both branches
@@ -1520,7 +1520,7 @@ invoke tome·span·Span;
                 ≔ body = expr.body;
                 ≔ cond_ty = self.infer_expr(*condition);
                 ⎇ !self.unify(Type·Bool, cond_ty) {
-                    self.error(TypeError·new("⟳ condition must be bool"));
+                    self.error(TypeError·new("while condition must be bool"));
                 }
                 self.check_block(body);
                 Type·Unit
@@ -1542,7 +1542,7 @@ invoke tome·span·Span;
                 ≔ value_ty = self.infer_expr(*value);
                 ⎇ !self.unify(target_ty, value_ty) {
                     self.error(TypeError·new(format!(
-                        "type mis⌥ ∈ assignment: expected {}, found {}",
+                        "type mismatch in assignment: expected {}, found {}",
                         target_ty.to_string(), value_ty.to_string()
                     )));
                 }
@@ -1630,7 +1630,7 @@ invoke tome·span·Span;
                     ⎇ ≔ ?guard = arm.guard {
                         ≔ guard_ty = self.infer_expr(guard);
                         ⎇ !self.unify(Type·Bool, guard_ty) {
-                            self.error(TypeError·new("⌥ guard must be bool"));
+                            self.error(TypeError·new("match guard must be bool"));
                         }
                     }
 
@@ -1649,7 +1649,7 @@ invoke tome·span·Span;
                 ∀ (i, ty) ∈ arm_types.iter().enumerate().skip(1) {
                     ⎇ !self.unify(first_ty, ty) {
                         self.error(TypeError·new(format!(
-                            "⌥ arm {} has incompatible type", i + 1
+                            "match arm {} has incompatible type", i + 1
                         )));
                     }
                 }
@@ -2231,7 +2231,7 @@ invoke tome·span·Span;
             // Match morpheme
             PipeOp·Match(arms) => {
                 ⎇ arms.is_empty() {
-                    self.error(TypeError·new("⌥ expression has no arms"));
+                    self.error(TypeError·new("match expression has no arms"));
                     Type·Error
                 } ⎉ {
                     ≔ result_type = self.infer_expr(arms[0].body);
