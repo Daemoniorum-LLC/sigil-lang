@@ -168,6 +168,21 @@ no input files specified
 $ ./jormungandr compile hello.sg -o hello.c     # emits 91 KB of C
 ```
 
+### Follow-up: the C templates are fixed too
+
+The keyword corruption described in §3 has been repaired: 552 lines across
+`codegen.sg` and `codegen_operation.sg`, with mappings taken from
+`parser/src/lexer.rs` rather than guessed (`⤺`→`return`, `∀`→`for`, `Σ`→`struct`,
+`λ`→`fn`, `⊗`/`⊲`→`break`, `↻`/`⊳`→`continue`, and so on). `·` was deliberately left
+alone — it is legitimate in identifiers like `Lexer·advance`. Verified that code
+outside string literals is byte-identical on every touched line.
+
+`typeck.sg`'s diagnostics were corrupted the same way and are now readable English
+again (`"⎇ condition must be bool"` → `"if condition must be bool"`).
+
+So a regenerated compiler would now emit valid C. Whether it can *be* regenerated is
+the next section.
+
 ### Still broken, and worth knowing
 
 The compiler **runs but does not yet compile user code correctly**. Given
@@ -184,6 +199,42 @@ it exits 0, emits 91 KB of C — and that C contains only the runtime builtins. 
 So this closes the *bootstrap* gap — the thing that made jormungandr unbuildable — and
 exposes the next one. That failure has the same shape as `S1`, `S10` and `S12`: exit 0,
 plausible output, nothing actually done.
+
+#### Diagnosis of the next gap — two distinct bugs
+
+`dump-tokens` and `dump-ast` narrow it precisely.
+
+**The lexer is fine.** `dump-tokens` on `rite zzdistinctive() { … }` produces correct
+spans (`0..4`, `5..18`, …).
+
+**The parser stops after the first item.** `dump-ast` item counts:
+
+| input | items reported |
+|---|---|
+| empty file | **0** |
+| one struct | 1 |
+| two structs | **1** |
+| three functions | **1** |
+
+Zero for empty and one for everything else, regardless of content. So parsing halts
+after the first item rather than looping.
+
+**Lowering separately drops functions.** Even a single-function file emits no
+`sigil_main` and no function body, and `codegen.sg`'s generate loop iterates
+`module.functions` while `dump-ast` iterates `ast.items` — different collections. So the
+one item that does parse is not reaching `module.functions` either.
+
+Two bugs, not one, and both must be fixed before jormungandr can compile anything.
+
+**A red herring worth recording.** `dump-ast` labels every item `enum`. That is not a
+misparse: it calls `item.node.kind_name()`, which reports the *runtime value tag*, and AST
+items are enum values. The label is uninformative by construction, and it briefly looked
+like the smoking gun.
+
+**Also note the lexer's keyword set is stale.** It knows `fn` and `λ` but not `rite`, which
+the Rust compiler accepts and which the ecosystem's `.sg` files use throughout. `fn` is
+rejected too, with a diagnostic that prints `expected <value>, found <value>` — the token
+display is broken as well.
 
 Also noted: `CLAUDE.md`'s build line references `../src/main.sg`, which does not exist
 either, and `jormungandr/src/` carries `.bak`, `.new` and `.broke` copies of `ast.sg` and
