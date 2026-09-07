@@ -38760,6 +38760,7 @@ fn register_sys(interp: &mut Interpreter) {
                         // Read from the peer's write buffer
                         let peer = pipe.peer_fd;
                         drop(m);
+                        drain_bg_output_blocking(peer);
                         FAKE_PIPE_STATE.with(|map2| {
                             let mut m2 = map2.borrow_mut();
                             if let Some(peer_pipe) = m2.get_mut(&peer) {
@@ -40093,6 +40094,7 @@ fn register_sys(interp: &mut Interpreter) {
                     if let Some(pipe) = m.get(&fd) {
                         let peer = pipe.peer_fd;
                         drop(m);
+                        drain_bg_output_blocking(peer);
                         FAKE_PIPE_STATE.with(|map2| {
                             let mut m2 = map2.borrow_mut();
                             if let Some(peer_pipe) = m2.get_mut(&peer) {
@@ -40153,6 +40155,7 @@ fn register_sys(interp: &mut Interpreter) {
                         if let Some(pipe) = m.get(&fd) {
                             let peer = pipe.peer_fd;
                             drop(m);
+                            drain_bg_output_blocking(peer);
                             FAKE_PIPE_STATE.with(|map2| {
                                 let mut m2 = map2.borrow_mut();
                                 if let Some(peer_pipe) = m2.get_mut(&peer) {
@@ -40202,48 +40205,20 @@ fn register_sys(interp: &mut Interpreter) {
             }
         }
 
-        // Check fake pipes — data available in peer's buffer
-        let pipe_ready = FAKE_PIPE_STATE.with(|map| {
-            let m = map.borrow();
-            if let Some(pipe) = m.get(&fd) {
-                let peer = pipe.peer_fd;
-                drop(m);
-                FAKE_PIPE_STATE.with(|map2| {
-                    let m2 = map2.borrow();
-                    if let Some(peer_pipe) = m2.get(&peer) {
-                        Some(!peer_pipe.buffer.is_empty())
-                    } else {
-                        Some(false)
-                    }
-                })
-            } else {
-                None
+        // Fake pipes and PTYs — wait up to the timeout for the peer's buffer to fill.
+        //
+        // This used to be a bare snapshot: poll_fd returned instantly no matter what
+        // timeout the caller passed, so the one primitive whose whole job is to WAIT
+        // for readiness never waited. A background child's first bytes are always a
+        // moment away, which made every poll-then-read on a spawn_bg pipe come back
+        // empty.
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_millis(_timeout_ms.max(0) as u64);
+        while let Some(ready) = fake_fd_poll(fd) {
+            if ready || std::time::Instant::now() >= deadline {
+                return Ok(Value::Bool(ready));
             }
-        });
-        if let Some(ready) = pipe_ready {
-            return Ok(Value::Bool(ready));
-        }
-
-        // Check fake PTYs — data available in peer's buffer
-        let pty_ready = FAKE_PTY_STATE.with(|map| {
-            let m = map.borrow();
-            if let Some(pty) = m.get(&fd) {
-                let peer = pty.peer_fd;
-                drop(m);
-                FAKE_PTY_BUFFER.with(|bufs| {
-                    let b = bufs.borrow();
-                    if let Some(buf) = b.get(&peer) {
-                        Some(!buf.is_empty())
-                    } else {
-                        Some(false)
-                    }
-                })
-            } else {
-                None
-            }
-        });
-        if let Some(ready) = pty_ready {
-            return Ok(Value::Bool(ready));
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
 
         // Native fallback: use libc::poll() for other real fds
@@ -40374,23 +40349,33 @@ fn register_sys(interp: &mut Interpreter) {
             Ok(mut child) => {
                 let real_pid = child.id() as i64;
 
-                // Read stdout in a thread-safe way: capture output and put in pipe buffer
-                // For short-lived commands, wait and capture output
-                let output = child.wait_with_output();
-                if let Ok(out) = output {
-                    let stdout_data = out.stdout;
-                    let stderr_data = out.stderr;
-                    // Put output into the fake pipe buffers
-                    FAKE_PIPE_STATE.with(|map| {
-                        let mut m = map.borrow_mut();
-                        if let Some(pipe) = m.get_mut(&stdout_write) {
-                            pipe.buffer.extend_from_slice(&stdout_data);
-                        }
-                        if let Some(pipe) = m.get_mut(&stderr_write) {
-                            pipe.buffer.extend_from_slice(&stderr_data);
-                        }
-                    });
+                // Do NOT wait here. wait_with_output() blocked until the child
+                // exited, which made spawn_bg synchronous — indistinguishable from
+                // Sys·spawn, and unusable for the long-lived children it exists to
+                // start. `spawn_bg("/bin/sleep", ["10"])` blocked the interpreter for
+                // ten seconds; the suite's own P1_073 hung on it. Worse,
+                // wait_with_output() reaps, so by the time the pid was returned the
+                // process was already gone and every later kill/waitpid was
+                // addressing a corpse.
+                //
+                // Instead, pump stdout and stderr on their own threads into a shared
+                // buffer that reads drain from, and keep the Child alive so its
+                // stdin pipe stays open and nothing reaps behind Sys·waitpid's back
+                // (Rust's Child does not wait on drop).
+                // Mark the streams open HERE, not inside the thread: the interpreter
+                // can reach a read before the thread is scheduled, and would then see
+                // a stream that looks already closed and return empty.
+                if let Some(mut out) = child.stdout.take() {
+                    set_bg_stream_open(stdout_write, true);
+                    std::thread::spawn(move || pump_bg_stream(&mut out, stdout_write));
                 }
+                if let Some(mut err) = child.stderr.take() {
+                    set_bg_stream_open(stderr_write, true);
+                    std::thread::spawn(move || pump_bg_stream(&mut err, stderr_write));
+                }
+                BG_CHILDREN.with(|m| {
+                    m.borrow_mut().insert(real_pid, child);
+                });
 
                 real_pid
             }
@@ -40667,6 +40652,102 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "WNOHANG", Some(0), |_, _| Ok(Value::Int(1)));
 }
 
+/// Output collected from live `Sys·spawn_bg` children, keyed by the fake pipe fd
+/// a reader thread is filling. Global rather than thread-local: the reader threads
+/// are not the interpreter's thread, so they cannot reach FAKE_PIPE_STATE.
+fn bg_output() -> &'static std::sync::Mutex<HashMap<i64, Vec<u8>>> {
+    static BG_OUTPUT: std::sync::OnceLock<std::sync::Mutex<HashMap<i64, Vec<u8>>>> =
+        std::sync::OnceLock::new();
+    BG_OUTPUT.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Which background-child streams are still open, keyed by the same fake pipe fd.
+/// A read on a pipe whose writer is alive has to block for it — dropping straight
+/// through to "no data" would make every read of a child's output a race the
+/// caller loses.
+fn bg_stream_open() -> &'static std::sync::Mutex<HashMap<i64, bool>> {
+    static OPEN: std::sync::OnceLock<std::sync::Mutex<HashMap<i64, bool>>> =
+        std::sync::OnceLock::new();
+    OPEN.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn set_bg_stream_open(fd: i64, open: bool) {
+    let mut map = match bg_stream_open().lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    map.insert(fd, open);
+}
+
+fn is_bg_stream_open(fd: i64) -> bool {
+    let map = match bg_stream_open().lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    map.get(&fd).copied().unwrap_or(false)
+}
+
+/// Read one of a background child's streams to EOF, accumulating into bg_output().
+fn pump_bg_stream<R: std::io::Read>(stream: &mut R, fd: i64) {
+    let mut buf = [0u8; 4096];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let mut map = match bg_output().lock() {
+                    Ok(g) => g,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                map.entry(fd).or_default().extend_from_slice(&buf[..n]);
+            }
+        }
+    }
+    set_bg_stream_open(fd, false);
+}
+
+/// Drain, but wait for a live writer first — pipe read semantics. Returns as soon
+/// as any data arrives, or once the child closes the stream. `poll_fd` uses the
+/// non-blocking `drain_bg_output` instead, since it carries its own timeout.
+fn drain_bg_output_blocking(fd: i64) {
+    loop {
+        drain_bg_output(fd);
+        let has_data = FAKE_PIPE_STATE.with(|map| {
+            map.borrow().get(&fd).map(|p| !p.buffer.is_empty()).unwrap_or(false)
+        });
+        if has_data || !is_bg_stream_open(fd) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Move whatever the reader threads have collected for `fd` into its fake pipe
+/// buffer. Called before every read and readiness check so a caller sees a live
+/// child's output without anyone having to block on the child.
+fn drain_bg_output(fd: i64) {
+    let data = {
+        let mut map = match bg_output().lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match map.get_mut(&fd) {
+            Some(buf) if !buf.is_empty() => std::mem::take(buf),
+            _ => return,
+        }
+    };
+    FAKE_PIPE_STATE.with(|map| {
+        if let Some(pipe) = map.borrow_mut().get_mut(&fd) {
+            pipe.buffer.extend_from_slice(&data);
+        }
+    });
+}
+
+/// Live children started by `Sys·spawn_bg`, held so their stdin pipes stay open
+/// and so nothing reaps them out from under `Sys·waitpid`.
+thread_local! {
+    static BG_CHILDREN: RefCell<HashMap<i64, std::process::Child>> = RefCell::new(HashMap::new());
+}
+
 // Thread-local storage for fake mmap allocations
 thread_local! {
     static FAKE_MMAP_MAP: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
@@ -40698,6 +40779,42 @@ static NATIVE_SIGNAL_FLAGS: [std::sync::atomic::AtomicBool; 32] = {
     [INIT; 32]
 };
 
+/// Readiness of a fake fd, as a tri-state: Some(ready) when the fd is one of ours,
+/// None when it is not and the caller should fall through to the real poll(2).
+fn fake_fd_poll(fd: i64) -> Option<bool> {
+    let pipe_ready = FAKE_PIPE_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pipe) = m.get(&fd) {
+            let peer = pipe.peer_fd;
+            drop(m);
+            drain_bg_output(peer);
+            FAKE_PIPE_STATE.with(|map2| {
+                let m2 = map2.borrow();
+                Some(m2.get(&peer).map(|pp| !pp.buffer.is_empty()).unwrap_or(false))
+            })
+        } else {
+            None
+        }
+    });
+    if pipe_ready.is_some() {
+        return pipe_ready;
+    }
+
+    FAKE_PTY_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pty) = m.get(&fd) {
+            let peer = pty.peer_fd;
+            drop(m);
+            FAKE_PTY_BUFFER.with(|bufs| {
+                let b = bufs.borrow();
+                Some(b.get(&peer).map(|buf| !buf.is_empty()).unwrap_or(false))
+            })
+        } else {
+            None
+        }
+    })
+}
+
 /// Check whether a fake fd (pipe or PTY) has data ready to read.
 /// Returns true if data is available, false if not or unknown.
 fn check_fake_fd_ready(fd: i64) -> bool {
@@ -40707,6 +40824,7 @@ fn check_fake_fd_ready(fd: i64) -> bool {
         if let Some(pipe) = m.get(&fd) {
             let peer = pipe.peer_fd;
             drop(m);
+            drain_bg_output(peer);
             FAKE_PIPE_STATE.with(|map2| {
                 let m2 = map2.borrow();
                 m2.get(&peer).map(|pp| !pp.buffer.is_empty()).unwrap_or(false)

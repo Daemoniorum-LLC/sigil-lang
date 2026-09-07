@@ -9,7 +9,20 @@ TEST_DIR="."
 PASS=0
 FAIL=0
 SKIP=0
+TIMEOUT=0
 TEMP_DIR="/tmp/sigil_tests_$$"
+
+# Per-test wall-clock limit. Without one a single blocking read hangs the whole
+# run: a test that waits on a PTY or a pipe that will never fill simply never
+# returns, and the suite sits there forever with no summary and no exit code.
+# Anything legitimately slower than this is a bug worth seeing.
+TEST_TIMEOUT="${TEST_TIMEOUT:-30}"
+
+# Run the compiler under that limit. Exit 124 is the timeout itself; every other
+# code is passed through so callers keep their existing pass/fail logic.
+run_sigil() {
+    timeout --foreground -k 2 "$TEST_TIMEOUT" "$SIGIL_COMPILER" "$@"
+}
 
 # Command-line options
 FILTER_SPEC=""
@@ -112,7 +125,7 @@ run_test() {
     # NEGATIVE TEST: Check if this is a test that should FAIL to compile/run
     if [ -f "$error_expected" ]; then
         # Run test and expect failure
-        if "$SIGIL_COMPILER" run "$test_file" > "$test_out" 2>"$test_err"; then
+        if run_sigil run "$test_file" > "$test_out" 2>"$test_err"; then
             # Test ran successfully when it should have failed!
             echo -e "${RED}❌ FAIL${NC}: Should have errored but succeeded"
             echo "    Expected error containing:"
@@ -141,7 +154,14 @@ run_test() {
     # POSITIVE TEST: Run test with Rust compiler (interpreter mode)
     if [ -f "$expected" ]; then
         # Test has expected output - check it
-        if ! "$SIGIL_COMPILER" run "$test_file" > "$test_out" 2>"$test_err"; then
+        run_sigil run "$test_file" > "$test_out" 2>"$test_err"
+        rc=$?
+        if [ $rc -eq 124 ]; then
+            echo -e "${RED}❌ TIMEOUT${NC}: killed after ${TEST_TIMEOUT}s"
+            ((FAIL++)); ((TIMEOUT++))
+            return 1
+        fi
+        if [ $rc -ne 0 ]; then
             echo -e "${RED}❌ FAIL${NC}: Runtime error"
             if [ -s "$test_err" ]; then
                 sed 's/^/    /' "$test_err" | head -10
@@ -165,10 +185,16 @@ run_test() {
         fi
     else
         # No expected output - just check if it runs
-        if "$SIGIL_COMPILER" run "$test_file" > "$test_out" 2>&1; then
+        run_sigil run "$test_file" > "$test_out" 2>&1
+        rc=$?
+        if [ $rc -eq 0 ]; then
             echo -e "${GREEN}✅ PASS${NC} (no output check)"
             ((PASS++))
             return 0
+        elif [ $rc -eq 124 ]; then
+            echo -e "${RED}❌ TIMEOUT${NC}: killed after ${TEST_TIMEOUT}s"
+            ((FAIL++)); ((TIMEOUT++))
+            return 1
         else
             echo -e "${RED}❌ FAIL${NC}: Runtime error"
             if [ -s "$test_out" ]; then
@@ -219,6 +245,9 @@ echo -e "${BLUE}═════════════════════�
 echo -e "${GREEN}✅ Passed: $PASS${NC}"
 echo -e "${RED}❌ Failed: $FAIL${NC}"
 echo -e "${YELLOW}⏭  Skipped: $SKIP${NC}"
+if [ $TIMEOUT -gt 0 ]; then
+    echo -e "${RED}⏱  Timed out: $TIMEOUT (of the failures above, at ${TEST_TIMEOUT}s each)${NC}"
+fi
 echo -e "${BLUE}───────────────────────────────────────────────${NC}"
 
 TOTAL=$((PASS + FAIL))

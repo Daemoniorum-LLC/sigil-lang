@@ -36,6 +36,12 @@ rite main() {
 
     // Test 3: Poll PTY with data — should return true
     ≔ pty = Pty·open();
+    // A PTY starts in canonical mode, where the line discipline holds input until
+    // it sees a newline — so a read or poll of the slave after writing text with no
+    // terminator waits forever for a line that never arrives. That is what hung this
+    // test (and the whole suite: there was no per-test timeout). Raw mode is what a
+    // terminal-driving program wants anyway, and what these assertions assume.
+    term_set_raw_mode(pty.slave_fd);
     Sys·write(pty.master_fd, "pty", 3);
     ≔ pty_data = Sys·poll_fd(pty.slave_fd, 0);
     ⎇ pty_data == true {
