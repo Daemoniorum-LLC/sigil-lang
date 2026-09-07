@@ -248,9 +248,41 @@ impl<'a> QliphothGenerator<'a> {
                     }
                 }
 
-                // If no body parts, add TODO comment
+                // If no body parts, say what the React code actually did rather than
+                // leaving an anonymous TODO. Most of these are a child telling its
+                // parent something — `onClick={() => onOpenSession(id)}` has no local
+                // state to change, and a bare "TODO: implement" hides that.
                 let body = if body_parts.is_empty() {
-                    "        // TODO: implement".to_string()
+                    let mut lines = Vec::new();
+                    if !msg.from_handler.is_empty() {
+                        // A Sigil comment ends at the newline, and an inline handler
+                        // is frequently a multi-line arrow body — pasting it raw
+                        // spilled JS into the actor and broke nine files. Collapse to
+                        // one line and cap it; this is a signpost, not the source.
+                        let mut src: String =
+                            msg.from_handler.split_whitespace().collect::<Vec<_>>().join(" ");
+                        if src.chars().count() > 100 {
+                            src = src.chars().take(97).collect::<String>() + "...";
+                        }
+                        lines.push(format!("        // React: {}", src));
+                    }
+                    let callback = crate::migrate::react::spec::derive_invoked_callback(
+                        &msg.from_handler,
+                    );
+                    let is_prop_callback = callback.as_ref().is_some_and(|c| {
+                        c.strip_prefix("on")
+                            .and_then(|r| r.chars().next())
+                            .is_some_and(|c| c.is_uppercase())
+                    });
+                    if is_prop_callback {
+                        lines.push(format!(
+                            "        // `{}` was a prop callback — forward this to the parent actor.",
+                            callback.unwrap_or_default()
+                        ));
+                    } else {
+                        lines.push("        // TODO: implement".to_string());
+                    }
+                    lines.join("\n")
                 } else {
                     body_parts.join("\n")
                 };

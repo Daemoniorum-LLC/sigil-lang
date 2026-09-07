@@ -1741,8 +1741,49 @@ impl<'a> Extractor<'a> {
             "useMemo" => self.extract_use_memo(call),
             "useContext" => self.extract_use_context(pattern, call),
             "useReducer" => self.extract_use_reducer(pattern, call),
-            _ => None, // Custom hook - could be extracted differently
+            // A custom hook destructured as `[value, setValue]` is state-shaped.
+            // usePersistentState, useLocalStorage and friends all keep useState's
+            // contract, so treating them as opaque left the field out of the actor
+            // entirely and gave every handler that set it an empty body.
+            _ => self.extract_custom_state_hook(pattern, call),
         }
+    }
+
+    /// `[value, setValue] = useAnything(...)` — the useState shape under another name.
+    fn extract_custom_state_hook(&self, pattern: &Pat, call: &CallExpr) -> Option<HookUsage> {
+        let arr = match pattern {
+            Pat::Array(a) if a.elems.len() >= 2 => a,
+            _ => return None,
+        };
+        let setter = arr
+            .elems
+            .get(1)
+            .and_then(|e| e.as_ref())
+            .and_then(|p| self.get_ident_from_pattern(p))?;
+        let mut chars = setter.chars();
+        let state_shaped = chars.next() == Some('s')
+            && chars.next() == Some('e')
+            && chars.next() == Some('t')
+            && chars.next().is_some_and(|c| c.is_uppercase());
+        if !state_shaped {
+            return None;
+        }
+
+        let mut hook = self.extract_use_state(pattern, call)?;
+
+        // The initial value is not necessarily arg 0. The ecosystem convention for a
+        // keyed state hook is `(key, initial, opts?)`, so a single argument is the
+        // initial value and otherwise the second one is — unless it is an options
+        // object, in which case we would rather say nothing than say something wrong.
+        hook.initial_value = match call.args.len() {
+            0 => None,
+            1 => call.args.first().map(|a| self.expr_to_string(&a.expr)),
+            _ => match call.args.get(1).map(|a| a.expr.as_ref()) {
+                Some(Expr::Object(_)) | None => None,
+                Some(e) => Some(self.expr_to_string(e)),
+            },
+        };
+        Some(hook)
     }
 
     fn try_extract_standalone_hook(&self, call: &CallExpr) -> Option<HookUsage> {

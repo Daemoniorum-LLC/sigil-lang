@@ -570,10 +570,14 @@ impl<'a> SpecGenerator<'a> {
                     // Common patterns: setCount -> Increment/Decrement, setVisible -> Toggle/Show/Hide
                     let msg_name = derive_message_name(state_name, setter_name);
 
+                    // The body this generates is `self.<field> = msg.0`, so the
+                    // variant has to declare the value it is reading. It used to be
+                    // payload-less, which made every setter handler in the UI read a
+                    // field off a message that had none.
                     messages.push(MessageRecommendation {
                         name: msg_name.clone(),
                         from_handler: setter_name.clone(),
-                        payload: None,
+                        payload: Some("(Any)".to_string()),
                         state_changes: vec![format!("self.{} = /* new value */", state_name)],
                         side_effects: vec![],
                         service_calls: vec![],
@@ -616,22 +620,48 @@ impl<'a> SpecGenerator<'a> {
             // `onExpand(slot.id)` declares `Expand(Any)` rather than throwing the
             // id away and leaving the actor unable to tell which row was clicked.
             let args = derive_event_message_payload(&code);
-            let payload = if args.is_empty() {
+
+            // An inline handler that calls a useState setter is a state change, and
+            // we know exactly which field: `onClick={() => setOpen(true)}` should
+            // write `self.open = msg.0`, not leave a TODO next to a live message.
+            let callback = derive_invoked_callback(&code);
+            let state_changes = callback
+                .as_ref()
+                .and_then(|cb| state_fields.iter().find(|(setter, _)| setter == cb))
+                .map(|(_, field)| vec![format!("self.{} = /* new value */", field)])
+                .unwrap_or_default();
+
+            // A body reading msg.0 needs a payload even when the call site had no
+            // argument we could safely reproduce.
+            let arity = if state_changes.is_empty() {
+                args.len()
+            } else {
+                args.len().max(1)
+            };
+            let payload = if arity == 0 {
                 None
             } else {
-                Some(format!(
-                    "({})",
-                    vec!["Any"; args.len()].join(", ")
-                ))
+                Some(format!("({})", vec!["Any"; arity].join(", ")))
             };
             messages.push(MessageRecommendation {
                 name: msg_name,
                 from_handler: code,
                 payload,
-                state_changes: vec![],
+                state_changes,
                 side_effects: vec![],
                 service_calls: vec![],
             });
+        }
+
+        // Invariant: a handler body that reads `msg.0` must belong to a variant that
+        // declares one. The generator substitutes `/* new value */` with `msg.0`, so
+        // that placeholder is the marker.
+        for msg in messages.iter_mut() {
+            if msg.payload.is_none()
+                && msg.state_changes.iter().any(|c| c.contains("/* new value */"))
+            {
+                msg.payload = Some("(Any)".to_string());
+            }
         }
 
         messages
@@ -1682,19 +1712,13 @@ fn infer_type_from_name(name: &str) -> String {
     "Any".to_string()
 }
 
-/// Derive a message name for an inline JSX event handler.
+/// The callback an inline event handler actually invokes.
 ///
-/// `onChange={e => onChange(e.target.checked)}` should not become the same message
-/// as every other onChange in the file. The meaningful name is the callback the
-/// handler actually invokes, so this looks past any arrow to the first call:
-///
-///   `e => onChange(e.target.checked)` -> Change
-///   `() => onExpand(slot.id)`         -> Expand
-///   `() => setOpen(true)`             -> UpdateOpen
-///   `handleSubmit`                    -> HandleSubmit
-///
-/// Falls back to the event name when nothing better can be found.
-pub fn derive_event_message_name(handler_code: &str, event_name: &str) -> String {
+/// `() => onExpand(slot.id)` invokes `onExpand`; `onClick={handleSubmit}` invokes
+/// `handleSubmit`. Shared by the message name, the message payload and the
+/// handler body, so all three read the same call and cannot disagree about
+/// which one the handler was for.
+pub fn derive_invoked_callback(handler_code: &str) -> Option<String> {
     let body = match handler_code.find("=>") {
         Some(i) => &handler_code[i + 2..],
         None => handler_code,
@@ -1726,18 +1750,15 @@ pub fn derive_event_message_name(handler_code: &str, event_name: &str) -> String
         }
     }
 
-    let name = match found {
-        Some(n) => n,
-        None => return to_pascal_case(event_name.trim_start_matches("on")),
-    };
+    let name = found?;
 
     // `e => { e.preventDefault(); onSubmit(x) }` names the message after the real
     // action, not the event plumbing that happens to come first.
-    let name = if matches!(
+    if matches!(
         name.as_str(),
         "preventDefault" | "stopPropagation" | "stopImmediatePropagation"
     ) {
-        match body.find(");").and_then(|i| {
+        return body.find(");").and_then(|i| {
             let rest = &body[i + 1..];
             let mut ident = String::new();
             let mut found2 = None;
@@ -1753,12 +1774,28 @@ pub fn derive_event_message_name(handler_code: &str, event_name: &str) -> String
                 }
             }
             found2
-        }) {
-            Some(next) => next,
-            None => return to_pascal_case(event_name.trim_start_matches("on")),
-        }
-    } else {
-        name
+        });
+    }
+
+    Some(name)
+}
+
+/// Derive a message name for an inline JSX event handler.
+///
+/// `onChange={e => onChange(e.target.checked)}` should not become the same message
+/// as every other onChange in the file. The meaningful name is the callback the
+/// handler actually invokes, so this looks past any arrow to the first call:
+///
+///   `e => onChange(e.target.checked)` -> Change
+///   `() => onExpand(slot.id)`         -> Expand
+///   `() => setOpen(true)`             -> UpdateOpen
+///   `handleSubmit`                    -> HandleSubmit
+///
+/// Falls back to the event name when nothing better can be found.
+pub fn derive_event_message_name(handler_code: &str, event_name: &str) -> String {
+    let name = match derive_invoked_callback(handler_code) {
+        Some(n) => n,
+        None => return to_pascal_case(event_name.trim_start_matches("on")),
     };
 
     if let Some(rest) = name.strip_prefix("set") {
