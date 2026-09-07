@@ -202,12 +202,59 @@ from the actual cause.
 
 | ID | Defect | Reproduction | Error |
 |---|---|---|---|
-| `S6` | `☉ tome <name>;` — public module declaration | `☉ tome tokenizer;` | `expected item, found Crate` |
-| `S7` | `super·` in an `invoke` path | `invoke super·editor·{A, B};` | `found AspectPerfective` |
-| `S8` | Multi-hash raw strings `r##"…"##` | see repro | `expected LBracket, found Hash` |
-| `S9` | Qualified struct literal **as a call argument** | `go("/x", crate·router·Opts { … })` | `expected RParen, found LBrace` |
-| `S10` | `≠` in condition position | `⎇ a ≠ 2 { }` | `expected LBrace, found IntLit` |
-| `S11` | Evidentiality not narrowed through `unwrap_or` | `len() -> usize!` ending `·unwrap_or(0)` | `[E0003] expected known (!), found uncertain (?)` |
+| `S6` | ~~`☉ tome <name>;`~~ | — | **NOT A COMPILER BUG.** `tome` is *crate*; *mod* is `scroll`. `☉ scroll tokenizer;` checks clean. Athame's to fix. |
+| `S7` | ✅ **FIXED** — `·ed`/`·ing` swallowed path-segment heads | `invoke super·editor·{A, B};` | Was far broader than `super·`: any segment starting "ed"/"ing" — `·editor`, `·edit`, `·ingest`, `·index`. |
+| `S8` | Multi-hash raw strings `r##"…"##` | see repro | Open. `expected LBracket, found Hash` |
+| `S9` | ✅ **FIXED** — keyword path roots parsed as variables | `crate·router·Opts { … }` | Was misdiagnosed: it failed in *every* position, not just as a call argument. See below. |
+| `S10` | ✅ **FIXED** — `≠` `≤` `≥` absent from the lexer | `⎇ a ≠ 2 { }` | Was far worse than a parse error. See below. |
+| `S11` | Evidentiality not narrowed through `unwrap_or` | `len() -> usize!` ending `·unwrap_or(0)` | Open. Needs an owner's judgment. |
+| `S12` | Unknown characters are silently discarded | a file of `≤ § ⌘` | Open. `sigil check` reports **no errors**. Root cause of S10's silence. |
+| `S13` | Lowercase module roots are treated as variables | `std·collections·HashMap·new()` | Open. Runtime: *undefined variable: `std`*. Same root as S9, but unfixable by enumerating keywords. |
+
+### S10 was silent, not loud
+
+`≠` produced **no token at all**. `Lexer::read_next` skips anything logos rejects:
+
+```rust
+Some(Err(_)) => { /* Skip invalid tokens and try next */ self.read_next() }
+```
+
+So `a ≠ 2` lexed as `a 2` and evaluated to `a` — `1 ≠ 2` and `1 ≠ 1` both printed `1`.
+The condition-position parse error was a downstream symptom, which is why the first
+diagnosis ("fails in conditions, works in assignments") was wrong in the more dangerous
+direction: the assignment case was silently computing the wrong answer.
+
+`S12` is that skip, generalised: **any** unrecognised character vanishes without a
+diagnostic, so a typo in a symbol silently changes program meaning. Left open deliberately
+— making it fatal is the right call but is a behavioural change that belongs to whoever
+owns the language.
+
+### S9 was misdiagnosed, and S13 is what remains
+
+`crate·router·Opts { … }` was reported as "works in an assignment, fails as a call
+argument". It never worked: `sigil check` passed and the runtime then said *undefined
+variable: `crate`*. `parse_type_path` infers path-vs-method from the first segment's
+**case**, and `crate` is lowercase.
+
+Fixed for `tome`/`crate`/`super`, which are keywords and can never be values. `self` is
+excluded on purpose — `self·field` is a real field access.
+
+But the general case remains: `std·collections·HashMap·new()` still fails, because any
+module name may be lowercase and the case heuristic cannot distinguish
+`module·path` from `variable·method`. That is `S13`, and enumerating keywords will not
+close it — it needs resolution against known modules, or a syntactic distinction.
+
+### Verification of all three fixes
+
+| Check | Result |
+|---|---|
+| Full suite | **714 pass / 11 fail** vs 713/11 baseline; failure set identical. The +1 is the S5 test. |
+| Qliphoth sweep | 31/39 → **32/39** |
+| `params.sigil`, `native.sigil` | now fail *later* — evidentiality, and deprecated `&mut` — not at S9/S10 |
+| `self·field`, `Vec·new()`, lowercase method calls | unchanged |
+
+Tests added: `P1_022_native_comparison_symbols` (pins ≠ ≤ ≥ *semantics*, not just
+parsing) and `P1_023_aspect_marker_path_boundary` (pins `·edit`/`·ingest`/`·index`).
 
 **Each of S9 and S10 works in a neighbouring position and fails in one specific context:**
 
@@ -277,12 +324,13 @@ exist are invisible to inspection.
 
 ## Suggested priority
 
-1. **S1** — unblocks the whole server story.
-2. ~~**S5**~~ ✅ done. Qliphoth 23/39 → 31/39.
-3. **S6, S7, S9, S10** — four small parser fixes that between them are most of what still
-   blocks Qliphoth. `S10` first: `≠` failing in conditions will hit every writer.
+1. **S1** — unblocks the whole server story. Still the top item.
+2. **S12** — silent character-dropping. Cheap to fix, and it is the reason S10 went
+   unnoticed. Every future symbol gap will be silent until this is closed.
+3. **S13** — lowercase module roots. Needs a design decision, not a patch.
 4. **S2** — unblocks terminals, and stops the suite hanging.
-5. **S11** — needs a decision on whether the checker or the annotation is wrong.
+5. **S8**, **S11** — smaller; S11 needs an owner's judgment first.
+6. ~~S5, S7, S9, S10~~ ✅ fixed. Qliphoth 23/39 → 32/39.
 4. **Sweep for other stubs.** S1 and S4 both show
    a symbol that exists, exports, reports success and does not do the work. Two is a
    pattern. A behavioural smoke test per stdlib module would be cheap and would likely
