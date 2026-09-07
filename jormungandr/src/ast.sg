@@ -333,7 +333,7 @@ invoke tome·span·{Span, Spanned};
 
 ⊢ Ident {
     /// Create a simple identifier without markers.
-    ☉ λ new(name: !String, span: !Span) -> !Self {
+    ☉ rite new(name: !String, span: !Span) -> !Self {
         Self {
             name,
             evidentiality: null,
@@ -343,7 +343,7 @@ invoke tome·span·{Span, Spanned};
     }
 
     /// Create an identifier with evidentiality.
-    ☉ λ with_evidence(name: !String, evidence: !Evidentiality, span: !Span) -> !Self {
+    ☉ rite with_evidence(name: !String, evidence: !Evidentiality, span: !Span) -> !Self {
         Self {
             name,
             evidentiality: evidence,
@@ -365,7 +365,7 @@ invoke tome·span·{Span, Spanned};
 
 ⊢ Evidentiality {
     /// Get the symbol ∀ this evidentiality level.
-    ☉ λ symbol(self) -> !char {
+    ☉ rite symbol(self) -> !char {
         ⌥ self {
             Evidentiality·Known => '!',
             Evidentiality·Uncertain => '?',
@@ -376,7 +376,7 @@ invoke tome·span·{Span, Spanned};
     }
 
     /// Lattice join (pessimistic - max uncertainty).
-    ☉ λ join(self, other: !Evidentiality) -> !Evidentiality {
+    ☉ rite join(self, other: !Evidentiality) -> !Evidentiality {
         ⌥ (self, other) {
             (Evidentiality·Paradox, _) | (_, Evidentiality·Paradox) => Evidentiality·Paradox,
             (Evidentiality·Prediction, _) | (_, Evidentiality·Prediction) => Evidentiality·Prediction,
@@ -387,7 +387,7 @@ invoke tome·span·{Span, Spanned};
     }
 
     /// Lattice meet (optimistic - min uncertainty).
-    ☉ λ meet(self, other: !Evidentiality) -> !Evidentiality {
+    ☉ rite meet(self, other: !Evidentiality) -> !Evidentiality {
         ⌥ (self, other) {
             (Evidentiality·Known, _) | (_, Evidentiality·Known) => Evidentiality·Known,
             (Evidentiality·Uncertain, _) | (_, Evidentiality·Uncertain) => Evidentiality·Uncertain,
@@ -410,7 +410,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 ⊢ Affect {
-    ☉ λ is_empty(self) -> !bool {
+    ☉ rite is_empty(self) -> !bool {
         self.sentiment == null &&
         !self.sarcasm &&
         self.intensity == null &&
@@ -563,7 +563,7 @@ invoke tome·span·{Span, Spanned};
 
 ⊢ TypePath {
     /// Create a simple type path from a single name.
-    ☉ λ simple(name: !String, span: !Span) -> !Self {
+    ☉ rite simple(name: !String, span: !Span) -> !Self {
         Self {
             segments: [PathSegment {
                 ident: Ident·new(name, span),
@@ -1288,7 +1288,7 @@ invoke tome·span·{Span, Spanned};
 // ============================================
 
 #[test]
-λ test_evidentiality_join() {
+rite test_evidentiality_join() {
     // Pessimistic join: max uncertainty
     assert_eq!(
         Evidentiality·Known.join(Evidentiality·Known),
@@ -1309,7 +1309,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[test]
-λ test_evidentiality_meet() {
+rite test_evidentiality_meet() {
     // Optimistic meet: min uncertainty
     assert_eq!(
         Evidentiality·Paradox.meet(Evidentiality·Paradox),
@@ -1326,7 +1326,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[test]
-λ test_ident_creation() {
+rite test_ident_creation() {
     ≔ span = Span·new(0, 3);
     ≔ ident = Ident·new("foo", span);
     assert_eq!(ident.name, "foo");
@@ -1334,7 +1334,7 @@ invoke tome·span·{Span, Spanned};
 }
 
 #[test]
-λ test_type_path_simple() {
+rite test_type_path_simple() {
     ≔ span = Span·new(0, 3);
     ≔ path = TypePath·simple("i32", span);
     assert_eq!(path.segments.len(), 1);

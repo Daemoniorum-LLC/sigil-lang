@@ -100,32 +100,32 @@ invoke tome·span·Span;
 
 ⊢ Type {
     /// Create a unit type
-    ☉ λ unit() -> !Type {
+    ☉ rite unit() -> !Type {
         Type·Unit
     }
 
     /// Create a bool type
-    ☉ λ bool_type() -> !Type {
+    ☉ rite bool_type() -> !Type {
         Type·Bool
     }
 
     /// Create a string type
-    ☉ λ str_type() -> !Type {
+    ☉ rite str_type() -> !Type {
         Type·Str
     }
 
     /// Create a never type
-    ☉ λ never() -> !Type {
+    ☉ rite never() -> !Type {
         Type·Never
     }
 
     /// Create an error type
-    ☉ λ error() -> !Type {
+    ☉ rite error() -> !Type {
         Type·Error
     }
 
     /// Check ⎇ this is an error type
-    ☉ λ is_error(self) -> !bool {
+    ☉ rite is_error(self) -> !bool {
         ⌥ self {
             Type·Error => true,
             _ => false,
@@ -133,7 +133,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this is a never type
-    ☉ λ is_never(self) -> !bool {
+    ☉ rite is_never(self) -> !bool {
         ⌥ self {
             Type·Never => true,
             _ => false,
@@ -141,7 +141,7 @@ invoke tome·span·Span;
     }
 
     /// Display the type as a string
-    ☉ λ to_string(self) -> !String {
+    ☉ rite to_string(self) -> !String {
         ⌥ self {
             Type·Unit => "()",
             Type·Bool => "bool",
@@ -232,7 +232,7 @@ invoke tome·span·Span;
 }
 
 ⊢ IntWidth {
-    ☉ λ to_string(self) -> !&str {
+    ☉ rite to_string(self) -> !&str {
         ⌥ self {
             IntWidth·I8 => "i8",
             IntWidth·I16 => "i16",
@@ -257,7 +257,7 @@ invoke tome·span·Span;
 }
 
 ⊢ FloatWidth {
-    ☉ λ to_string(self) -> !&str {
+    ☉ rite to_string(self) -> !&str {
         ⌥ self {
             FloatWidth·F32 => "f32",
             FloatWidth·F64 => "f64",
@@ -294,7 +294,7 @@ invoke tome·span·Span;
 
 ⊢ EvidenceLevel {
     /// Get numeric rank ∀ comparison (lower = more certain)
-    λ rank(self) -> !i32 {
+    rite rank(self) -> !i32 {
         ⌥ self {
             EvidenceLevel·Known => 0,
             EvidenceLevel·Uncertain => 1,
@@ -305,7 +305,7 @@ invoke tome·span·Span;
 
     /// Join two evidence levels (least upper bound ∈ lattice).
     /// Returns the least certain of the two.
-    ☉ λ join(self, other: !EvidenceLevel) -> !EvidenceLevel {
+    ☉ rite join(self, other: !EvidenceLevel) -> !EvidenceLevel {
         ⎇ self.rank() >= other.rank() {
             self
         } ⎉ {
@@ -315,7 +315,7 @@ invoke tome·span·Span;
 
     /// Meet two evidence levels (greatest lower bound).
     /// Returns the most certain of the two.
-    ☉ λ meet(self, other: !EvidenceLevel) -> !EvidenceLevel {
+    ☉ rite meet(self, other: !EvidenceLevel) -> !EvidenceLevel {
         ⎇ self.rank() <= other.rank() {
             self
         } ⎉ {
@@ -324,7 +324,7 @@ invoke tome·span·Span;
     }
 
     /// Convert from AST representation
-    ☉ λ from_ast(e: !Evidentiality) -> !EvidenceLevel {
+    ☉ rite from_ast(e: !Evidentiality) -> !EvidenceLevel {
         ⌥ e {
             Evidentiality·Known => EvidenceLevel·Known,
             Evidentiality·Uncertain => EvidenceLevel·Uncertain,
@@ -336,7 +336,7 @@ invoke tome·span·Span;
     }
 
     /// Symbol representation
-    ☉ λ symbol(self) -> !&str {
+    ☉ rite symbol(self) -> !&str {
         ⌥ self {
             EvidenceLevel·Known => "!",
             EvidenceLevel·Uncertain => "?",
@@ -346,7 +346,7 @@ invoke tome·span·Span;
     }
 
     /// Human-readable name
-    ☉ λ name(self) -> !&str {
+    ☉ rite name(self) -> !&str {
         ⌥ self {
             EvidenceLevel·Known => "known",
             EvidenceLevel·Uncertain => "uncertain",
@@ -362,13 +362,13 @@ invoke tome·span·Span;
     /// Reported (~) can only satisfy Reported or Paradox requirements.
     ///
     /// Returns true ⎇ `self` (actual) can be used where `required` is expected.
-    ☉ λ satisfies(self, required: !EvidenceLevel) -> !bool {
+    ☉ rite satisfies(self, required: !EvidenceLevel) -> !bool {
         // More certain evidence (lower ∈ lattice) can satisfy less certain requirements
         self.rank() <= required.rank()
     }
 
     /// Compare ∀ ordering
-    ☉ λ cmp(self, other: !EvidenceLevel) -> !Ordering {
+    ☉ rite cmp(self, other: !EvidenceLevel) -> !Ordering {
         ≔ a = self.rank();
         ≔ b = other.rank();
         ⎇ a < b { Ordering·Less }
@@ -394,7 +394,7 @@ invoke tome·span·Span;
 }
 
 ⊢ TypeVar {
-    ☉ λ new(id: !u32) -> !TypeVar {
+    ☉ rite new(id: !u32) -> !TypeVar {
         TypeVar { id }
     }
 }
@@ -412,7 +412,7 @@ invoke tome·span·Span;
 
 ⊢ TypeError {
     /// Create a new type error
-    ☉ λ new(message: !String) -> !TypeError {
+    ☉ rite new(message: !String) -> !TypeError {
         TypeError {
             message,
             span: null,
@@ -421,19 +421,19 @@ invoke tome·span·Span;
     }
 
     /// Add a span to the error
-    ☉ λ with_span(Δ self, span: !Span) -> !TypeError {
+    ☉ rite with_span(Δ self, span: !Span) -> !TypeError {
         self.span = ?span;
         self
     }
 
     /// Add a note to the error
-    ☉ λ with_note(Δ self, note: !String) -> !TypeError {
+    ☉ rite with_note(Δ self, note: !String) -> !TypeError {
         self.notes.push(note);
         self
     }
 
     /// Format the error as a string
-    ☉ λ to_string(self) -> !String {
+    ☉ rite to_string(self) -> !String {
         ≔ Δ result = self.message.clone();
 
         ⎇ ≔ ?span = self.span {
@@ -462,7 +462,7 @@ invoke tome·span·Span;
 
 ⊢ TypeEnv {
     /// Create a new empty environment
-    ☉ λ new() -> !TypeEnv {
+    ☉ rite new() -> !TypeEnv {
         TypeEnv {
             bindings: Map·new(),
             parent: null,
@@ -470,7 +470,7 @@ invoke tome·span·Span;
     }
 
     /// Create a child environment with this as parent
-    ☉ λ with_parent(parent: !TypeEnv) -> !TypeEnv {
+    ☉ rite with_parent(parent: !TypeEnv) -> !TypeEnv {
         TypeEnv {
             bindings: Map·new(),
             parent: ?Box·new(parent),
@@ -478,12 +478,12 @@ invoke tome·span·Span;
     }
 
     /// Define a new binding
-    ☉ λ define(Δ self, name: !String, ty: !Type, evidence: !EvidenceLevel) {
+    ☉ rite define(Δ self, name: !String, ty: !Type, evidence: !EvidenceLevel) {
         self.bindings.insert(name, (ty, evidence));
     }
 
     /// Look up a binding (searches parent scopes)
-    ☉ λ lookup(self, name: !&str) -> ?(Type, EvidenceLevel) {
+    ☉ rite lookup(self, name: !&str) -> ?(Type, EvidenceLevel) {
         ⎇ ≔ ?binding = self.bindings.get(name) {
             ⤺ ?binding;
         }
@@ -496,7 +496,7 @@ invoke tome·span·Span;
     }
 
     /// Clone this environment (∀ multi-file compilation)
-    ☉ λ clone(self) -> !TypeEnv {
+    ☉ rite clone(self) -> !TypeEnv {
         TypeEnv {
             bindings: self.bindings.clone(),
             parent: ⌥ self.parent {
@@ -557,7 +557,7 @@ invoke tome·span·Span;
 
 ⊢ TypeChecker {
     /// Create a new type checker with built-in types and functions
-    ☉ λ new() -> !TypeChecker {
+    ☉ rite new() -> !TypeChecker {
         ≔ Δ checker = TypeChecker {
             env: TypeEnv·new(),
             types: Map·new(),
@@ -574,7 +574,7 @@ invoke tome·span·Span;
     }
 
     /// Clone this type checker (shallow copy ∀ multi-file compilation)
-    ☉ λ clone(self) -> !TypeChecker {
+    ☉ rite clone(self) -> !TypeChecker {
         TypeChecker {
             env: self.env.clone(),
             types: self.types.clone(),
@@ -587,7 +587,7 @@ invoke tome·span·Span;
     }
 
     /// Register built-in functions and types
-    λ register_builtins(Δ self) {
+    rite register_builtins(Δ self) {
         // Helper to create a function type (as a closure)
         ≔ func = |params: ![Type], ret: !Type| {
             Type·Function {
@@ -753,7 +753,7 @@ invoke tome·span·Span;
     }
 
     /// Generate a fresh type variable
-    λ fresh_var(Δ self) -> !Type {
+    rite fresh_var(Δ self) -> !Type {
         ≔ var = TypeVar·new(self.next_var);
         self.next_var += 1;
         Type·Var(var)
@@ -761,12 +761,12 @@ invoke tome·span·Span;
 
     /// Freshen a type by replacing all type variables with fresh ones
     /// This is used ∀ polymorphic built-in functions
-    λ freshen(Δ self, ty: !Type) -> !Type {
+    rite freshen(Δ self, ty: !Type) -> !Type {
         ≔ Δ mapping: !Map<u32, Type> = Map·new();
         self.freshen_inner(ty, mapping)
     }
 
-    λ freshen_inner(Δ self, ty: !Type, Δ mapping: !Map<u32, Type>) -> !Type {
+    rite freshen_inner(Δ self, ty: !Type, Δ mapping: !Map<u32, Type>) -> !Type {
         ⌥ ty {
             Type·Var(v) => {
                 ⎇ ≔ ?fresh = mapping.get(v.id) {
@@ -829,25 +829,25 @@ invoke tome·span·Span;
     }
 
     /// Push a new scope
-    λ push_scope(Δ self) {
+    rite push_scope(Δ self) {
         ≔ new_env = TypeEnv·with_parent(self.env);
         self.env = new_env;
     }
 
     /// Pop current scope
-    λ pop_scope(Δ self) {
+    rite pop_scope(Δ self) {
         ⎇ ≔ ?parent = self.env.parent {
             self.env = *parent;
         }
     }
 
     /// Record an error
-    λ error(Δ self, err: !TypeError) {
+    rite error(Δ self, err: !TypeError) {
         self.errors.push(err);
     }
 
     /// Check ⎇ actual evidence can satisfy expected evidence requirement.
-    λ check_evidence(Δ self, expected: !EvidenceLevel, actual: !EvidenceLevel, context: !&str) -> !bool {
+    rite check_evidence(Δ self, expected: !EvidenceLevel, actual: !EvidenceLevel, context: !&str) -> !bool {
         ⎇ actual.satisfies(expected) {
             true
         } ⎉ {
@@ -885,7 +885,7 @@ invoke tome·span·Span;
     }
 
     /// Extract evidence level from a type, defaulting to Known
-    λ get_evidence(self, ty: !Type) -> !EvidenceLevel {
+    rite get_evidence(self, ty: !Type) -> !EvidenceLevel {
         ⌥ ty {
             Type·Evidential { evidence, .. } => evidence,
             _ => EvidenceLevel·Known,
@@ -897,7 +897,7 @@ invoke tome·span·Span;
     // ========================================================================
 
     /// Check a source file
-    ☉ λ check_file(Δ self, file: !SourceFile) -> !Result<(), [TypeError]> {
+    ☉ rite check_file(Δ self, file: !SourceFile) -> !Result<(), [TypeError]> {
         // First pass: collect type definitions
         ∀ item ∈ file.items {
             self.collect_type_def(item.node);
@@ -927,7 +927,7 @@ invoke tome·span·Span;
     /// Collect type definitions from an item (first pass of type checking).
     /// This is public to support multi-file compilation where we need to
     /// collect types from all files before checking any file.
-    ☉ λ collect_type_def(Δ self, item: !Item) {
+    ☉ rite collect_type_def(Δ self, item: !Item) {
         ⌥ item {
             Item·Struct(s) => {
                 ≔ generics = ⌥ s.generics {
@@ -999,7 +999,7 @@ invoke tome·span·Span;
 
     /// Collect function signatures from an item (second pass of type checking).
     /// This is public to support multi-file compilation.
-    ☉ λ collect_fn_sig(Δ self, item: !Item) {
+    ☉ rite collect_fn_sig(Δ self, item: !Item) {
         ⌥ item {
             Item·Function(f) => {
                 ≔ params = f.params|τ{p => self.convert_type(p.ty)}|collect();
@@ -1065,7 +1065,7 @@ invoke tome·span·Span;
     /// Check an item (third pass of type checking).
     /// This is public to support multi-file compilation where all types
     /// and functions are collected before checking item bodies.
-    ☉ λ check_item(Δ self, item: !Item) {
+    ☉ rite check_item(Δ self, item: !Item) {
         ⌥ item {
             Item·Function(f) => self.check_function(f),
             Item·Impl(impl_block) => {
@@ -1119,7 +1119,7 @@ invoke tome·span·Span;
     }
 
     /// Check a function body
-    λ check_function(Δ self, func: !Function) {
+    rite check_function(Δ self, func: !Function) {
         self.push_scope();
 
         // Bind parameters with evidence inference
@@ -1191,7 +1191,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ a type expression has an explicit evidence annotation
-    λ type_has_explicit_evidence(self, ty: ?TypeExpr) -> !bool {
+    rite type_has_explicit_evidence(self, ty: ?TypeExpr) -> !bool {
         ⌥ ty {
             ?TypeExpr·Evidential { .. } => true,
             ?TypeExpr·Reference { inner, .. }
@@ -1208,7 +1208,7 @@ invoke tome·span·Span;
     }
 
     /// Check a block and ⤺ its type
-    λ check_block(Δ self, block: !Block) -> !Type {
+    rite check_block(Δ self, block: !Block) -> !Type {
         self.push_scope();
 
         ≔ Δ diverges = false;
@@ -1229,7 +1229,7 @@ invoke tome·span·Span;
     }
 
     /// Check a statement and ⤺ its type
-    λ check_stmt(Δ self, stmt: !Stmt) -> !Type {
+    rite check_stmt(Δ self, stmt: !Stmt) -> !Type {
         ⌥ stmt {
             Stmt·Let { pattern, ty, init } => {
                 ≔ declared_ty = ⌥ ty {
@@ -1324,7 +1324,7 @@ invoke tome·span·Span;
     // ========================================================================
 
     /// Infer the type of an expression
-    ☉ λ infer_expr(Δ self, expr: !Expr) -> !Type {
+    ☉ rite infer_expr(Δ self, expr: !Expr) -> !Type {
         ⌥ expr {
             Expr·Literal(lit) => self.infer_literal(lit),
 
@@ -1998,7 +1998,7 @@ invoke tome·span·Span;
     }
 
     /// Infer type from literal
-    λ infer_literal(self, lit: !Literal) -> !Type {
+    rite infer_literal(self, lit: !Literal) -> !Type {
         ⌥ lit {
             Literal·Int { .. } => Type·Int(IntWidth·I64),
             Literal·Float { .. } => Type·Float(FloatWidth·F64),
@@ -2023,7 +2023,7 @@ invoke tome·span·Span;
     }
 
     /// Infer type of binary operation
-    λ infer_binary_op(Δ self, op: !BinOp, left: !Type, right: !Type) -> !Type {
+    rite infer_binary_op(Δ self, op: !BinOp, left: !Type, right: !Type) -> !Type {
         ≔ (left_inner, left_ev) = self.strip_evidence(left);
         ≔ (right_inner, right_ev) = self.strip_evidence(right);
 
@@ -2088,7 +2088,7 @@ invoke tome·span·Span;
     }
 
     /// Infer type of unary operation
-    λ infer_unary_op(Δ self, op: !UnaryOp, inner: !Type) -> !Type {
+    rite infer_unary_op(Δ self, op: !UnaryOp, inner: !Type) -> !Type {
         ≔ (inner_ty, evidence) = self.strip_evidence(inner);
 
         ≔ result = ⌥ op {
@@ -2129,7 +2129,7 @@ invoke tome·span·Span;
     }
 
     /// Infer type of pipe operation
-    λ infer_pipe_op(Δ self, op: !PipeOp, input: !Type) -> !Type {
+    rite infer_pipe_op(Δ self, op: !PipeOp, input: !Type) -> !Type {
         ≔ (inner, evidence) = self.strip_evidence(input);
 
         ≔ result = ⌥ op {
@@ -2426,7 +2426,7 @@ invoke tome·span·Span;
     }
 
     /// Strip evidence wrapper, returning (inner_type, evidence_level)
-    λ strip_evidence(self, ty: !Type) -> !(Type, EvidenceLevel) {
+    rite strip_evidence(self, ty: !Type) -> !(Type, EvidenceLevel) {
         ⌥ ty {
             Type·Evidential { .. } => {
                 ≔ inner = ty.inner;
@@ -2438,7 +2438,7 @@ invoke tome·span·Span;
     }
 
     /// Bind pattern variables with the given type and evidence level
-    λ bind_pattern(Δ self, pattern: !Pattern, ty: !Type, evidence: !EvidenceLevel) {
+    rite bind_pattern(Δ self, pattern: !Pattern, ty: !Type, evidence: !EvidenceLevel) {
         ≔ (inner_ty, ty_ev) = self.strip_evidence(ty);
         ≔ final_ev = evidence.join(ty_ev);
 
@@ -2519,7 +2519,7 @@ invoke tome·span·Span;
 
     /// Fully resolve a type by following substitution chains
     /// Detects cycles and returns the last variable ∈ the chain ⎇ a cycle is found
-    λ resolve_type(self, ty: !Type) -> !Type {
+    rite resolve_type(self, ty: !Type) -> !Type {
         ⌥ ty {
             Type·Var(v) => {
                 ≔ Δ seen = Vec·new();
@@ -2555,7 +2555,7 @@ invoke tome·span·Span;
     }
 
     /// Attempt to unify two types
-    λ unify(Δ self, a: !Type, b: !Type) -> !bool {
+    rite unify(Δ self, a: !Type, b: !Type) -> !bool {
         ⌥ (a, b) {
             // Same primitive types
             (Type·Unit, Type·Unit) => true,
@@ -2676,7 +2676,7 @@ invoke tome·span·Span;
     }
 
     /// Convert AST type to internal type
-    λ convert_type(self, ty: !TypeExpr) -> !Type {
+    rite convert_type(self, ty: !TypeExpr) -> !Type {
         ⌥ ty {
             // Handle null TypeExpr gracefully
             null => Type·Var(TypeVar·new(0)),
@@ -2826,7 +2826,7 @@ invoke tome·span·Span;
     }
 
     /// Convert a type expression to a name string
-    λ type_to_name(self, ty: !TypeExpr) -> !String {
+    rite type_to_name(self, ty: !TypeExpr) -> !String {
         ⌥ ty {
             TypeExpr·Path(path) => path.segments|τ{s => s.ident.name}|join("·"),
             _ => "_".to_string(),
@@ -2834,7 +2834,7 @@ invoke tome·span·Span;
     }
 
     /// Get collected errors
-    ☉ λ errors(self) -> ![TypeError] {
+    ☉ rite errors(self) -> ![TypeError] {
         self.errors.clone()
     }
 }
@@ -2846,7 +2846,7 @@ invoke tome·span·Span;
 /// Extension methods ∀ Pattern
 ⊢ Pattern {
     /// Get the evidentiality annotation ⎇ present
-    ☉ λ evidentiality(self) -> ?Evidentiality {
+    ☉ rite evidentiality(self) -> ?Evidentiality {
         ⌥ self {
             Pattern·Ident { evidentiality, .. } => evidentiality,
             _ => null,
@@ -2854,7 +2854,7 @@ invoke tome·span·Span;
     }
 
     /// Get the binding name ⎇ this is an identifier pattern
-    ☉ λ binding_name(self) -> ?String {
+    ☉ rite binding_name(self) -> ?String {
         ⌥ self {
             Pattern·Ident { name, .. } => ?name.name,
             _ => null,
@@ -2871,7 +2871,7 @@ scroll tests {
     invoke super·*;
     invoke tome·parser·Parser;
 
-    λ check(source: !&str) -> !Result<(), [TypeError]> {
+    rite check(source: !&str) -> !Result<(), [TypeError]> {
         ≔ Δ parser = Parser·new(source);
         ≔ file = parser.parse_file().expect("parse failed");
         ≔ Δ checker = TypeChecker·new();
@@ -2879,7 +2879,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_basic_types() {
+    rite test_basic_types() {
         assert!(check("λ main() { ≔ x: i64 = 42; }").is_ok());
         assert!(check("λ main() { ≔ x: bool = true; }").is_ok());
         assert!(check("λ main() { ≔ x: f64 = 3.14; }").is_ok());
@@ -2891,10 +2891,10 @@ scroll tests {
     }
 
     #[test]
-    λ test_evidence_propagation() {
+    rite test_evidence_propagation() {
         // Evidence should propagate through operations
         assert!(check(r#"
-            λ main() {
+            rite main() {
                 ≔ known: i64! = 42;
                 ≔ uncertain: i64? = 10;
                 ≔ result = known + uncertain;
@@ -2903,7 +2903,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_evidence_lattice() {
+    rite test_evidence_lattice() {
         // Test lattice operations
         ≔ known = EvidenceLevel·Known;
         ≔ uncertain = EvidenceLevel·Uncertain;
@@ -2928,19 +2928,19 @@ scroll tests {
     #[test]
     λ test_function_⤺() {
         assert!(check(r#"
-            λ add(a: i64, b: i64) -> i64 {
+            rite add(a: i64, b: i64) -> i64 {
                 ⤺ a + b;
             }
-            λ main() {
+            rite main() {
                 ≔ x = add(1, 2);
             }
         "#).is_ok());
     }
 
     #[test]
-    λ test_array_types() {
+    rite test_array_types() {
         assert!(check(r#"
-            λ main() {
+            rite main() {
                 ≔ arr = [1, 2, 3];
                 ≔ x = arr[0];
             }
@@ -2948,9 +2948,9 @@ scroll tests {
     }
 
     #[test]
-    λ test_evidence_inference_from_initializer() {
+    rite test_evidence_inference_from_initializer() {
         assert!(check(r#"
-            λ main() {
+            rite main() {
                 ≔ reported_val: i64~ = 42;
                 ≔ x = reported_val + 1;
             }
@@ -2958,9 +2958,9 @@ scroll tests {
     }
 
     #[test]
-    λ test_if_else_evidence_join() {
+    rite test_if_else_evidence_join() {
         assert!(check(r#"
-            λ main() {
+            rite main() {
                 ≔ known_val: i64! = 1;
                 ≔ reported_val: i64~ = 2;
                 ≔ cond: bool = true;
@@ -2970,9 +2970,9 @@ scroll tests {
     }
 
     #[test]
-    λ test_binary_op_evidence_propagation() {
+    rite test_binary_op_evidence_propagation() {
         assert!(check(r#"
-            λ main() {
+            rite main() {
                 ≔ known: i64! = 1;
                 ≔ reported: i64~ = 2;
                 ≔ result = known + reported;
