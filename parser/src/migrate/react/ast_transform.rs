@@ -470,7 +470,8 @@ impl<'a> ExprTransformer<'a> {
         let arg = self.transform_expr(&unary.arg);
 
         match unary.op {
-            UnaryOp::Bang => format!("¬{}", arg),
+            // JS `!x` is truthiness-negation over any value; Sigil's ¬ wants a bool.
+            UnaryOp::Bang => format!("¬{}", Self::boolify(&unary.arg, arg)),
             UnaryOp::Minus => format!("-{}", arg),
             UnaryOp::Plus => arg, // Unary + is a no-op
             UnaryOp::Tilde => format!("~{}", arg),

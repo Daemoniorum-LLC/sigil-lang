@@ -2900,6 +2900,16 @@ impl<'a> Extractor<'a> {
         match pat {
             // Destructuring: ({ name, value, onChange })
             Pat::Object(obj) => {
+                // The destructuring pattern carries the props type inline:
+                //     ({ checked, label }: { checked: boolean; label?: string })
+                // Previously this was dropped and every prop became `Any`. Parse the
+                // annotation once so each prop can pick up its declared type.
+                let declared_types = obj
+                    .type_ann
+                    .as_ref()
+                    .map(|ann| parse_inline_object_members(&self.span_to_source(ann.span)))
+                    .unwrap_or_default();
+
                 for prop in &obj.props {
                     match prop {
                         ObjectPatProp::KeyValue(kv) => {
@@ -2909,10 +2919,15 @@ impl<'a> Extractor<'a> {
                                     name.chars().nth(2).map_or(false, |c| c.is_uppercase());
                                 let is_children = name == "children";
 
+                                let declared = declared_types.get(&name).cloned();
+                                let required = declared
+                                    .as_ref()
+                                    .map(|d| !d.optional)
+                                    .unwrap_or(true);
                                 props.push(PropExtraction {
                                     name,
-                                    type_annotation: None, // Would need type info from context
-                                    required: true,
+                                    type_annotation: declared.map(|d| d.ty),
+                                    required,
                                     default_value: None,
                                     is_callback,
                                     is_children,
@@ -2927,9 +2942,10 @@ impl<'a> Extractor<'a> {
                                 name.chars().nth(2).map_or(false, |c| c.is_uppercase());
                             let is_children = name == "children";
 
+                            let declared = declared_types.get(&name).cloned();
                             props.push(PropExtraction {
                                 name,
-                                type_annotation: None,
+                                type_annotation: declared.map(|d| d.ty),
                                 required: default_value.is_none(),
                                 default_value,
                                 is_callback,
@@ -3927,4 +3943,84 @@ fn capitalize_first(s: &str) -> String {
         None => String::new(),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+/// One member of an inline TypeScript object type.
+#[derive(Debug, Clone)]
+pub struct DeclaredMember {
+    pub ty: String,
+    pub optional: bool,
+}
+
+/// Parse the members of an inline TypeScript object type annotation.
+///
+/// Given the source text of `: { checked: boolean; onChange: (c: boolean) => void
+/// label?: string }` this yields checked→boolean, onChange→(c: boolean) => void,
+/// label→string (optional).
+///
+/// Splitting is depth-aware: the colon inside `(c: boolean) => void` and the commas
+/// inside `Map<string, number>` must not be treated as member separators, which a
+/// naive split on ':' or ',' would get wrong.
+pub fn parse_inline_object_members(src: &str) -> std::collections::HashMap<String, DeclaredMember> {
+    let mut out = std::collections::HashMap::new();
+    let t = src.trim().trim_start_matches(':').trim();
+    let inner = match (t.find('{'), t.rfind('}')) {
+        (Some(a), Some(b)) if b > a => &t[a + 1..b],
+        _ => return out,
+    };
+
+    // Split top-level members on ';', ',' or newline.
+    //
+    // `>` is only a closer when it matches an earlier `<`. The arrow in
+    // `(c: boolean) => void` would otherwise drive the depth negative, after which
+    // nothing splits correctly and every member past the first callback is lost.
+    let mut members: Vec<String> = Vec::new();
+    let mut depth = 0i32;
+    let mut angle = 0i32;
+    let mut prev = ' ';
+    let mut cur = String::new();
+    for c in inner.chars() {
+        match c {
+            '{' | '(' | '[' => { depth += 1; cur.push(c); }
+            '}' | ')' | ']' => { depth -= 1; cur.push(c); }
+            '<' => { angle += 1; cur.push(c); }
+            '>' if prev != '=' && angle > 0 => { angle -= 1; cur.push(c); }
+            ';' | ',' | '\n' if depth == 0 && angle == 0 => {
+                if !cur.trim().is_empty() { members.push(cur.trim().to_string()); }
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+        prev = c;
+    }
+    if !cur.trim().is_empty() { members.push(cur.trim().to_string()); }
+
+    for m in members {
+        // name[?]: type — find the first top-level colon
+        let mut depth = 0i32;
+        let mut angle = 0i32;
+        let mut prev = ' ';
+        let mut split_at = None;
+        for (i, c) in m.char_indices() {
+            match c {
+                '{' | '(' | '[' => depth += 1,
+                '}' | ')' | ']' => depth -= 1,
+                '<' => angle += 1,
+                '>' if prev != '=' && angle > 0 => angle -= 1,
+                ':' if depth == 0 && angle == 0 => { split_at = Some(i); break; }
+                _ => {}
+            }
+            prev = c;
+        }
+        let Some(i) = split_at else { continue };
+        let raw_name = m[..i].trim();
+        let ty = m[i + 1..].trim().to_string();
+        let optional = raw_name.ends_with('?');
+        let name = raw_name.trim_end_matches('?').trim().to_string();
+        if name.is_empty() || ty.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            continue;
+        }
+        out.insert(name, DeclaredMember { ty, optional });
+    }
+    out
 }

@@ -1222,19 +1222,75 @@ fn infer_type_from_value(value: &str) -> (String, String) {
 }
 
 fn map_ts_type_to_sigil(ts_type: &str) -> String {
-    match ts_type {
-        "number" => "f64".to_string(),
-        "string" => "String".to_string(),
-        "boolean" => "bool".to_string(),
-        "void" => "()".to_string(),
-        "null" | "undefined" => "∅".to_string(),
-        "any" | "unknown" => "Any".to_string(),
-        "HTMLInputElement" | "HTMLElement" | "Element" => "Element".to_string(),
-        t if t.starts_with("Array<") => {
-            let inner = &t[6..t.len()-1];
-            format!("Vec<{}>", map_ts_type_to_sigil(inner))
+    // Strip TypeScript modifiers that have no Sigil equivalent. `readonly Foo[]`
+    // otherwise became `Vec<readonly Foo>`, which does not parse.
+    let t = ts_type
+        .trim()
+        .trim_start_matches("readonly ")
+        .trim_start_matches("const ")
+        .trim();
+    match t {
+        "number" => return "f64".to_string(),
+        "string" => return "String".to_string(),
+        "boolean" => return "bool".to_string(),
+        "void" => return "()".to_string(),
+        "null" | "undefined" => return "∅".to_string(),
+        "any" | "unknown" => return "Any".to_string(),
+        "HTMLInputElement" | "HTMLElement" | "Element" => return "Element".to_string(),
+        _ => {}
+    }
+
+    // A function type — `(c: boolean) => void`, `() => void`. Callbacks become
+    // messages in Qliphoth, so the prop itself is opaque.
+    if t.contains("=>") {
+        return "Any".to_string();
+    }
+
+    // A union. `T | null` and `T | undefined` are optionality, which Sigil spells
+    // Option<T>. Any other union has no Sigil equivalent, so it degrades to Any
+    // rather than emitting `A | B`, which does not parse.
+    if t.contains('|') {
+        let parts: Vec<&str> = t.split('|').map(|p| p.trim()).collect();
+        let non_null: Vec<&str> = parts
+            .iter()
+            .copied()
+            .filter(|p| *p != "null" && *p != "undefined")
+            .collect();
+        if non_null.len() == 1 && non_null.len() < parts.len() {
+            return format!("Option<{}>", map_ts_type_to_sigil(non_null[0]));
         }
-        t => t.to_string(), // Keep as-is for custom types
+        return "Any".to_string();
+    }
+
+    // `T[]` array shorthand.
+    if let Some(inner) = t.strip_suffix("[]") {
+        return format!("Vec<{}>", map_ts_type_to_sigil(inner));
+    }
+
+    if let Some(inner) = t.strip_prefix("Array<").and_then(|x| x.strip_suffix('>')) {
+        return format!("Vec<{}>", map_ts_type_to_sigil(inner));
+    }
+
+    // An inline object type has no name to refer to; keep it opaque rather than
+    // emitting TypeScript into a Sigil signature.
+    if t.starts_with('{') {
+        return "Any".to_string();
+    }
+
+    // Custom named types pass through — but only if they are actually spellable in
+    // Sigil. Anything still carrying TypeScript syntax (a colon, an arrow, a union
+    // bar, a brace or paren, a leftover modifier) would be emitted verbatim into a
+    // signature and fail to parse, so it degrades to Any instead. Being wrong in the
+    // direction of Any costs type information; being wrong the other way costs a
+    // file that will not compile at all.
+    let spellable = t
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '<' | '>' | ',' | ' '))
+        && !t.contains("=>");
+    if spellable && !t.is_empty() {
+        t.to_string()
+    } else {
+        "Any".to_string()
     }
 }
 
