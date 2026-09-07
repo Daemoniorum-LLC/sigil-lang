@@ -1,0 +1,5 @@
+☉ Σ Opts { ☉ replace: bool! }
+rite go(p: &str!, o: Opts!) { }
+rite main() {
+    go("/x", crate·router·Opts { replace: true });
+}

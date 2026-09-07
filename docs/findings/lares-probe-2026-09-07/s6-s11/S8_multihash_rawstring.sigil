@@ -1,0 +1,4 @@
+rite main() {
+    ≔ s = r##"App·mount("#target", X);"##;
+    print(s);
+}

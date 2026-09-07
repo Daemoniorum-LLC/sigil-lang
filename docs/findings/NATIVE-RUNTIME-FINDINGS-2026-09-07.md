@@ -190,15 +190,48 @@ preserving expression behaviour exactly. 30 insertions, 9 deletions, one file.
 Regression test added: `jormungandr/tests/spec/02_syntax/P1_021_qualified_path_type_position.sg`,
 pinning both halves — qualified paths in type positions *and* lowercase method calls.
 
-### What remains (separate defects, not S5)
+### What remains — S6 to S11
 
-8 Qliphoth files still fail. They are different bugs:
+The S5 fix let 8 more files reach parsing, revealing **six further defects**. Each is
+reduced to a minimal reproduction in `./lares-probe-2026-09-07/s6-s11/`.
 
-- **E0003 evidence mismatch** (`storage`, `route`, `guards`) — e.g. *"return type of 'len':
-  expected known (!), found uncertain (?)"*. These now **parse** and fail in the type
-  checker, which is forward progress.
-- **E0002 parse error** in `src/platform/native.sigil` and athame — `expected RParen, found
-  Ident("child_id")`, an unrelated syntax issue.
+Three of my first hypotheses about these were **wrong** — glob imports, basic raw strings
+and qualified struct literals all turned out to work fine, and the real causes were
+narrower. Worth stating because the error messages consistently pointed one level away
+from the actual cause.
+
+| ID | Defect | Reproduction | Error |
+|---|---|---|---|
+| `S6` | `☉ tome <name>;` — public module declaration | `☉ tome tokenizer;` | `expected item, found Crate` |
+| `S7` | `super·` in an `invoke` path | `invoke super·editor·{A, B};` | `found AspectPerfective` |
+| `S8` | Multi-hash raw strings `r##"…"##` | see repro | `expected LBracket, found Hash` |
+| `S9` | Qualified struct literal **as a call argument** | `go("/x", crate·router·Opts { … })` | `expected RParen, found LBrace` |
+| `S10` | `≠` in condition position | `⎇ a ≠ 2 { }` | `expected LBrace, found IntLit` |
+| `S11` | Evidentiality not narrowed through `unwrap_or` | `len() -> usize!` ending `·unwrap_or(0)` | `[E0003] expected known (!), found uncertain (?)` |
+
+**Each of S9 and S10 works in a neighbouring position and fails in one specific context:**
+
+```sigil
+≔ b = a ≠ 2;                               // ✅   ⎇ a ≠ 2 { }                    // ❌ S10
+⎇ a != 2 { }                               // ✅   (ASCII form is fine)
+≔ o = crate·router·Opts { replace: true }; // ✅   go("/x", crate·router·Opts{…}) // ❌ S9
+```
+
+So both fixes should be scoped to the failing context, not the construct.
+
+**S6, S7 and S10 are all native vocabulary** — `tome`, `super·`, `≠` — which the language
+presents as first-class. `S10` is the sharpest: `≠` parses in an assignment but not in an
+`⎇` condition, which is exactly where a writer reaches for it.
+
+**S8 note:** Qliphoth's `playground.sigil` embeds sample code containing
+`"#preview-target"`. The `"#` correctly closes a `r#"…"#` literal early; the proper fix is
+`r##"…"##`, which the lexer does not support. The Qliphoth code is *unwritable*, not
+merely wrong.
+
+**S11 needs an owner's judgment,** not a bug report from me. `unwrap_or` turns an uncertain
+value plus a default into a definite one, so `usize!` reads as correct and the checker
+looks like it is not narrowing `?` → `!` through it. But that is intent-reading, not
+demonstration. `route.sigil` and `guards.sigil` fail in the same family.
 
 Full reproduction of the original defect: `./S5-middledot-type-position.md`.
 
@@ -245,9 +278,11 @@ exist are invisible to inspection.
 ## Suggested priority
 
 1. **S1** — unblocks the whole server story.
-2. **S5** — likely the smallest fix here, and it unblocks 16 Qliphoth files including all
-   routing. Best effort-to-impact ratio of the five.
-3. **S2** — unblocks terminals, and stops the suite hanging.
+2. ~~**S5**~~ ✅ done. Qliphoth 23/39 → 31/39.
+3. **S6, S7, S9, S10** — four small parser fixes that between them are most of what still
+   blocks Qliphoth. `S10` first: `≠` failing in conditions will hit every writer.
+4. **S2** — unblocks terminals, and stops the suite hanging.
+5. **S11** — needs a decision on whether the checker or the annotation is wrong.
 4. **Sweep for other stubs.** S1 and S4 both show
    a symbol that exists, exports, reports success and does not do the work. Two is a
    pattern. A behavioural smoke test per stdlib module would be cheap and would likely
