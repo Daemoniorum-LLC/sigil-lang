@@ -224,7 +224,20 @@ after the first item rather than looping.
 `module.functions` while `dump-ast` iterates `ast.items` — different collections. So the
 one item that does parse is not reaching `module.functions` either.
 
-Two bugs, not one, and both must be fixed before jormungandr can compile anything.
+**Correction — neither is a source bug.** Both live in the stale bootstrap binary, not in
+`parser.sg`. The source's item loop is correct (`while !is_eof { items.push(parse_item()) }`)
+and its `parse_item` handles `Async`, `At`, `Fn`, `Hash`, `Ident`. The **compiled**
+`parse_item` in `bootstrap_fixed4.c` handles only `At` and `Hash`. The binary is materially
+older than the source.
+
+So these cannot be fixed by editing source — the bootstrap must be **regenerated**, which
+requires the canonical compiler to read jormungandr's source. That is the real critical
+path, and §6 is progress on it.
+
+**A second red herring, recorded because it cost time.** The "parser stops after one item"
+measurement was taken with test files using `λ name() { }`. The canonical compiler *rejects*
+that — `λ` is a closure expression, not a declaration — so those inputs were invalid Sigil
+and jormungandr was accepting garbage. The item counts proved nothing about the loop.
 
 **A red herring worth recording.** `dump-ast` labels every item `enum`. That is not a
 misparse: it calls `item.node.kind_name()`, which reports the *runtime value tag*, and AST
@@ -239,3 +252,49 @@ display is broken as well.
 Also noted: `CLAUDE.md`'s build line references `../src/main.sg`, which does not exist
 either, and `jormungandr/src/` carries `.bak`, `.new` and `.broke` copies of `ast.sg` and
 `codegen.sg`.
+
+
+---
+
+## 6. Progress toward regenerating the bootstrap
+
+Regenerating requires the canonical Rust compiler to read `jormungandr/src`. It read 13 of
+28 files.
+
+**11 of the 15 failures had one cause.** jormungandr declares every function and method as
+`λ name(...)`. That is not canonical Sigil — the Rust lexer defines `λ` as `LambdaExpr`, a
+closure *expression*, and rejects it in item position:
+
+```sigil
+⊢ T { ☉ λ get(self) -> i64! { … } }      // found LambdaExpr
+⊢ T { ☉ rite get(self) -> i64! { … } }   // no errors
+```
+
+659 declarations were migrated across 12 files, matching only `λ` followed by an identifier
+and `(` or `<` at line start. The 5 genuine uses are untouched — `λ(A, B) -> C` function
+types in doc comments and the generic bound `F: λ(T) -> U`. jormungandr's own lexer knew
+`fn` but not `rite`, so `rite` was added there too; otherwise it could not lex its own
+migrated source.
+
+**Result: 13/28 → 18/28 checking clean.**
+
+### The remaining 10 are not one more cheap fix
+
+| Kind | Files |
+|---|---|
+| Evidence / type mismatches (need semantic judgment) | `interp_eval`, `lexer`, `lexer_string`, `runtime` |
+| `Trait` used as an identifier / pattern | `ast`, `parser` |
+| `use` in item position | `wasm_bridge` |
+| `Eq` where `LBrace` expected | `lower`, `typeck` |
+| Generics followed by `LParen` | `span` |
+
+Each needs its own investigation. Some may be further dialect drift like the `λ` case;
+others (the E0003s) may be genuine type errors in jormungandr.
+
+### Order of work from here
+
+1. Close the remaining 10, so the canonical compiler can read all of `jormungandr/src`.
+2. Regenerate `bootstrap_fixed4.c` from current source. That alone fixes the parser and
+   lowering failures in §5, since the source is already correct.
+3. Rebuild via `build.sh` and re-test — at which point `bootstrap_completion.c` may become
+   unnecessary, because a current codegen emits the full builtin block.
