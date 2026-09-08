@@ -906,9 +906,14 @@ mod tests {
 
     #[test]
     fn test_logical_operators() {
-        assert_eq!(transform("a && b"), "a ∧ b");
-        assert_eq!(transform("a || b"), "a ∨ b");
-        assert_eq!(transform("!a"), "¬a");
+        // Sigil's ∧/∨ take booleans; JavaScript's &&/|| take anything and lean on
+        // truthiness. `·to_bool()` is that coercion made explicit, so an operand
+        // that is not already a comparison carries it.
+        assert_eq!(transform("a && b"), "a·to_bool() ∧ b·to_bool()");
+        // `||` is not ∨: JavaScript's yields the left operand when it is truthy,
+        // not `true`, and it is overwhelmingly used as a default-value operator.
+        assert_eq!(transform("a || b"), "⎇ a·to_bool() { a } ⎉ { b }");
+        assert_eq!(transform("!a"), "¬a·to_bool()");
     }
 
     #[test]
@@ -923,9 +928,11 @@ mod tests {
 
     #[test]
     fn test_ternary() {
+        // The test — `a` alone — needs `·to_bool()`; `x > 0` below is already a
+        // boolean and does not.
         assert_eq!(
             transform("a ? b : c"),
-            "⎇ a { b } ⎉ { c }"
+            "⎇ a·to_bool() { b } ⎉ { c }"
         );
         assert_eq!(
             transform("x > 0 ? \"positive\" : \"non-positive\""),
@@ -938,16 +945,17 @@ mod tests {
         // React pattern: condition && "string" should become conditional
         assert_eq!(
             transform("isActive && \"active\""),
-            "⎇ is_active { \"active\" } ⎉ { \"\" }"
+            "⎇ is_active·to_bool() { \"active\" } ⎉ { \"\" }"
         );
         assert_eq!(
             transform("x > 0 && \"positive\""),
             "⎇ x > 0 { \"positive\" } ⎉ { \"\" }"
         );
-        // Pure boolean && should stay as ∧
+        // Pure boolean && stays as ∧ (over coerced operands — see
+        // test_logical_operators) rather than becoming a conditional.
         assert_eq!(
             transform("a && b"),
-            "a ∧ b"
+            "a·to_bool() ∧ b·to_bool()"
         );
     }
 

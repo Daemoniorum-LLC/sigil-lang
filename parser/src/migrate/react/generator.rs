@@ -131,7 +131,7 @@ impl<'a> QliphothGenerator<'a> {
         }
 
         format!(
-            "ᛈ {} {{\n{}\n}}",
+            "☉ ᛈ {} {{\n{}\n}}",
             name,
             variants.join("\n")
         )
@@ -171,7 +171,7 @@ impl<'a> QliphothGenerator<'a> {
         sections.push(self.generate_view_method());
 
         format!(
-            "actor {} {{\n{}\n}}",
+            "☉ actor {} {{\n{}\n}}",
             self.spec.name,
             sections.join("\n\n")
         )
@@ -524,7 +524,7 @@ impl<'a> QliphothGenerator<'a> {
         };
 
         format!(
-            "rite {}({}) -> VNode! {{\n{}{}\n}}",
+            "☉ rite {}({}) -> VNode! {{\n{}{}\n}}",
             to_snake_case(&self.spec.name),
             params,
             locals,
@@ -751,7 +751,7 @@ impl<'a> ServiceActorGenerator<'a> {
             })
             .collect();
 
-        format!("ᛈ {} {{\n{}\n}}", name, variants.join("\n"))
+        format!("☉ ᛈ {} {{\n{}\n}}", name, variants.join("\n"))
     }
 
     fn generate_actor(&self) -> String {
@@ -802,7 +802,7 @@ impl<'a> ServiceActorGenerator<'a> {
         }
 
         format!(
-            "actor {} {{\n{}\n}}",
+            "☉ actor {} {{\n{}\n}}",
             self.actor.name,
             sections.join("\n\n")
         )

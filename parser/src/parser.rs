@@ -10502,11 +10502,14 @@ mod tests {
 
     #[test]
     fn test_parse_actor() {
-        // Simplified actor without compound assignment
+        // Simplified actor without compound assignment.
+        // `state` introduces a NAMED field — `state count: i64 = 0`. This test
+        // wrote `state: i64 = 0`, treating `state` as the field name, which the
+        // parser has never accepted.
         let source = r#"
             actor Counter {
-                state: i64 = 0
-                on Increment(n: i64) { ⤺ self.state + n; }
+                state count: i64 = 0
+                on Increment(n: i64) { ⤺ self.count + n; }
             }
         "#;
         let mut parser = Parser::new(source);
