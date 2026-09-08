@@ -3839,6 +3839,26 @@ impl TypeChecker {
     }
 
     /// Attempt to unify two types
+    /// Whether one side names a C integer alias and the other is an integer.
+    fn is_c_int_alias_pair(&self, a: &Type, b: &Type) -> bool {
+        const C_INT_ALIASES: &[&str] = &[
+            "c_char", "c_schar", "c_uchar", "c_short", "c_ushort", "c_int", "c_uint",
+            "c_long", "c_ulong", "c_longlong", "c_ulonglong", "size_t", "ssize_t",
+            "c_size_t", "c_ssize_t", "intptr_t", "uintptr_t", "off_t", "pid_t",
+            "mode_t", "time_t", "socklen_t", "c_bool",
+        ];
+        let is_alias = |t: &Type| {
+            let (t, _) = self.strip_evidence(t);
+            matches!(&t, Type::Named { name, generics }
+                if generics.is_empty() && C_INT_ALIASES.contains(&name.as_str()))
+        };
+        let is_int = |t: &Type| {
+            let (t, _) = self.strip_evidence(t);
+            matches!(t, Type::Int(_))
+        };
+        (is_alias(a) && is_int(b)) || (is_int(a) && is_alias(b))
+    }
+
     /// Whether one side is a C string pointer and the other a string.
     fn is_cstr_ptr_pair(&self, a: &Type, b: &Type) -> bool {
         let is_char_ptr = |t: &Type| match t {
@@ -3881,6 +3901,24 @@ impl TypeChecker {
             // Evidence has to be stripped on both sides: the declaration is written
             // `*const !u8`, so the pointee is Evidential(U8), not U8.
             _ if self.is_cstr_ptr_pair(&a, &b) => true,
+
+            // C integer aliases are integers. `extern "C" { rite abs(x: c_int) → c_int; }`
+            // called as `abs(-42)` is the whole point of an FFI declaration, and until
+            // extern signatures were collected nothing checked these calls at all — so
+            // collecting them turned every one into a type error. c_int and friends are
+            // spelled as opaque named types with no definition; they are i32/i64/usize
+            // wearing C's names.
+            _ if self.is_c_int_alias_pair(&a, &b) => true,
+
+            // An extern function-pointer typedef against a function value. `type
+            // GCallback = rite(*void)` names a C callback type that has no Sigil
+            // definition; a `fn` is exactly what a caller passes for one.
+            (Type::Named { name, generics }, Type::Function { .. })
+            | (Type::Function { .. }, Type::Named { name, generics })
+                if generics.is_empty() && !self.types.contains_key(name) =>
+            {
+                true
+            }
 
             // Type variables - check these FIRST before other patterns
             (Type::Var(v), t) => {
