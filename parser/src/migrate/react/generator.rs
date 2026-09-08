@@ -66,9 +66,16 @@ impl<'a> QliphothGenerator<'a> {
         code.push('\n');
 
         // Module-scope constants from the same file
-        let constants = self.generate_module_constants();
+        let (constants, emitted_constants) = self.generate_module_constants();
         if !constants.is_empty() {
             code.push_str(&constants);
+            code.push('\n');
+        }
+
+        // Helper functions from this file and the modules it imports
+        let helpers = self.generate_helper_functions(&emitted_constants);
+        if !helpers.is_empty() {
+            code.push_str(&helpers);
             code.push('\n');
         }
 
@@ -163,7 +170,7 @@ impl<'a> QliphothGenerator<'a> {
     /// nowhere in the generated file — the unknown-identifier rule used to turn
     /// them into `self.default_sort`, a field no actor has, and putting them in
     /// scope only moved the problem from a wrong field to an undefined name.
-    fn generate_module_constants(&self) -> String {
+    fn generate_module_constants(&self) -> (String, std::collections::HashSet<String>) {
         let mut lines = Vec::new();
         let mut scope = VNodeScope::default();
         scope.locals.extend(self.spec.source.module_scope.iter().cloned());
@@ -174,6 +181,8 @@ impl<'a> QliphothGenerator<'a> {
         // alone rejected `[DEFAULT_NEW_STATUS, DEFAULT_DONE_STATUS, …]` even
         // once both of those were emitted two lines above it.
         let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut known: std::collections::HashSet<String> =
+            HOST_FUNCTIONS.iter().map(|s| s.to_string()).collect();
 
         for c in &self.spec.source.module_constants {
             let name = to_snake_case(&c.name);
@@ -204,6 +213,7 @@ impl<'a> QliphothGenerator<'a> {
 
             if is_constant_expression(&value) {
                 lines.push(format!("≔ {} = {};", name, value));
+                known.insert(name.clone());
                 emitted.insert(name);
                 continue;
             }
@@ -228,6 +238,7 @@ impl<'a> QliphothGenerator<'a> {
                      \u{2609} rite {}(key: Any) -> Any! {{\n    \u{2325} key {{\n{}\n        _ => \u{2205},\n    }}\n}}",
                     c.name, name, arms.join("\n")
                 ));
+                known.insert(name.clone());
                 emitted.insert(name);
                 continue;
             }
@@ -241,12 +252,13 @@ impl<'a> QliphothGenerator<'a> {
             // dependency: `const WATCHTOWER_ROWS = [{ storageKey: keys.x }]`
             // brought `keys` with it, and cost two compiling files and seven
             // strict-clean ones the first time this was tried.
-            if is_literal_only(&value) || references_only(&value, &emitted) {
+            if is_literal_only(&value) || free_identifiers_known(&value, &known) {
                 lines.push(format!(
                     "// React: `const {}` — not a constant expression, so a function.\n\
                      \u{2609} rite {}() -> Any! {{\n    {}\n}}",
                     c.name, name, value
                 ));
+                known.insert(name.clone());
                 emitted.insert(name);
             } else {
                 lines.push(format!(
@@ -256,10 +268,145 @@ impl<'a> QliphothGenerator<'a> {
             }
         }
 
-        if lines.is_empty() {
+        let code = if lines.is_empty() {
             String::new()
         } else {
             format!("{}\n", lines.join("\n"))
+        };
+        (code, emitted)
+    }
+
+    /// Emit the helper functions this component reaches.
+    ///
+    /// A helper whose whole body is `return <expr>` translates in full. Anything
+    /// else gets a declared signature and an untranslated body: the name
+    /// resolves, the shape is right, and the React source sits above it in a
+    /// comment so what is missing is visible rather than inferred from a
+    /// compile error three files away.
+    fn generate_helper_functions(
+        &self,
+        emitted_constants: &std::collections::HashSet<String>,
+    ) -> String {
+        // Only the constants that were actually EMITTED. Seeding this from
+        // every extracted constant let a helper body name one that had been
+        // dropped for a comment — `terminal·contains_key(s)` where `terminal`
+        // is `new Set([…])`, which no module binding can hold.
+        let mut known: std::collections::HashSet<String> =
+            HOST_FUNCTIONS.iter().map(|s| s.to_string()).collect();
+        known.extend(emitted_constants.iter().cloned());
+        known.insert(to_snake_case(&self.spec.name));
+
+        let taken: std::collections::HashSet<String> = std::iter::once(to_snake_case(&self.spec.name))
+            .chain(
+                self.spec
+                    .source
+                    .module_constants
+                    .iter()
+                    .map(|c| to_snake_case(&c.name)),
+            )
+            .collect();
+
+        let mut scope = VNodeScope::default();
+        scope.locals.extend(self.spec.source.module_scope.iter().cloned());
+
+        // Translate what can be translated, in dependency order: a helper whose
+        // body calls another helper can only be emitted once that one is.
+        // Repeat until a pass adds nothing.
+        //
+        // The gate is the same one the module constants needed, and for the
+        // same reason: emitting a body that names something undeclared trades a
+        // missing function for a missing dependency, and the first attempt at
+        // this cost 27 compiling files. A helper that does not pass it is
+        // declared with an untranslated body — that resolves the name, which is
+        // the whole point, and adds no dependency of its own.
+        let mut pending: Vec<&HelperFunctionExtraction> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for h in &self.spec.source.helpers {
+            let name = to_snake_case(&h.name);
+            if taken.contains(&name) || !seen.insert(name) {
+                continue;
+            }
+            pending.push(h);
+        }
+
+        let mut emitted: Vec<String> = Vec::new();
+        let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
+        loop {
+            let mut progress = false;
+            for h in &pending {
+                let name = to_snake_case(&h.name);
+                if done.contains(&name) {
+                    continue;
+                }
+                let Some(expr) = h.returns_expression.as_ref() else {
+                    continue;
+                };
+                let mut inner = scope.clone();
+                let mut params: Vec<String> = Vec::new();
+                let mut local_known = known.clone();
+                for p in &h.parameters {
+                    let pn = to_snake_case(&p.name);
+                    // A parameter with a default is optional at the call site,
+                    // and Sigil has no defaults — declaring it made every call
+                    // "expected 2 arguments, found 1". It stays in scope for the
+                    // body; it just is not in the signature.
+                    if p.default_value.is_none() && !p.optional {
+                        params.push(format!("{}: Any", pn));
+                    }
+                    inner.locals.push(p.name.clone());
+                    local_known.insert(pn);
+                }
+                let body = self.transform_expression_free(expr, &inner);
+                if !free_identifiers_known(&body, &local_known) {
+                    continue;
+                }
+                emitted.push(format!(
+                    "☉ rite {}({}) -> Any! {{\n    {}\n}}",
+                    name,
+                    params.join(", "),
+                    body
+                ));
+                known.insert(name.clone());
+                done.insert(name);
+                progress = true;
+            }
+            if !progress {
+                break;
+            }
+        }
+
+        // Everything else: a declared signature over an untranslated body.
+        for h in &pending {
+            let name = to_snake_case(&h.name);
+            if done.contains(&name) {
+                continue;
+            }
+            let params: Vec<String> = h
+                .parameters
+                .iter()
+                .filter(|p| p.default_value.is_none() && !p.optional)
+                .map(|p| format!("{}: Any", to_snake_case(&p.name)))
+                .collect();
+            let src: String = h
+                .source
+                .lines()
+                .take(6)
+                .map(|l| format!("//   {}", sanitize_comment(l)))
+                .collect::<Vec<_>>()
+                .join("\n");
+            emitted.push(format!(
+                "// TODO: body not translated — needs a statement transform. React:\n{}\n☉ rite {}({}) -> Any! {{\n    ∅\n}}",
+                src,
+                name,
+                params.join(", ")
+            ));
+            done.insert(name);
+        }
+
+        if emitted.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", emitted.join("\n"))
         }
     }
 
@@ -1211,7 +1358,25 @@ impl<'a> QliphothGenerator<'a> {
     }
 
     /// Transform with scope awareness (don't prefix iterator variables with self.)
+    /// As `transform_expression_scoped`, but never prefixing `self.`.
+    ///
+    /// A helper function is a free `rite`: it has no receiver, so the
+    /// unknown-identifier rule's `self.<name>` guess is not merely unhelpful
+    /// there, it cannot compile.
+    fn transform_expression_free(&self, code: &str, scope: &VNodeScope) -> String {
+        self.transform_expression_with(code, scope, false)
+    }
+
     fn transform_expression_scoped(&self, code: &str, scope: &VNodeScope) -> String {
+        self.transform_expression_with(code, scope, self.is_actor)
+    }
+
+    fn transform_expression_with(
+        &self,
+        code: &str,
+        scope: &VNodeScope,
+        prefix_self: bool,
+    ) -> String {
         // Handle placeholder/invalid expressions
         if code.contains("/*") || code.is_empty() {
             return "None".to_string();
@@ -1239,7 +1404,7 @@ impl<'a> QliphothGenerator<'a> {
         locals.extend(self.spec.source.module_scope.iter().cloned());
 
         let config = TransformConfig {
-            prefix_self: self.is_actor,
+            prefix_self,
             state_fields,
             locals,
             props: self.param_names.clone(),
@@ -1564,22 +1729,43 @@ fn is_literal_only(value: &str) -> bool {
         .all(|c| !(c.is_alphabetic() || c == '_' || c == '\u{00B7}'))
 }
 
-/// Does this value reference nothing but the names already declared?
+/// Free-standing functions the WASM backend resolves, which a helper body may
+/// therefore name without the file declaring anything.
+const HOST_FUNCTIONS: &[&str] = &[
+    "to_bool", "to_fixed", "to_string", "is_array", "is_finite", "is_nan", "is_integer",
+    "object_values", "object_keys", "object_entries", "json_parse", "json_stringify",
+    "json_pretty", "json_get", "json_set", "timing_now", "timing_parse", "math_random",
+    "None", "true", "false", "Some", "Ok", "Err", "This", "Self", "VNode", "VElement",
+    "HashMap", "HashSet", "Vec", "String",
+];
+
+/// Strip characters a Sigil comment cannot carry.
 ///
-/// The companion to `is_literal_only`, which admits values that mention no name
-/// at all. Once a constant's dependencies are themselves emitted — the
-/// cross-module resolver puts imports first — a body that names only those is
-/// just as safe, and refusing it dropped whole tables (`TASK_WORKFLOW_STATUSES`
-/// is a list of four constants and two object literals).
-fn references_only(value: &str, known: &std::collections::HashSet<String>) -> bool {
-    let mut mentioned = false;
-    let bytes: Vec<char> = value.chars().collect();
+/// React source goes into a comment verbatim, and one of the Lares helpers
+/// separates map keys with a literal NUL inside a template string — which made
+/// the generated file binary, and `grep` skip it.
+fn sanitize_comment(line: &str) -> String {
+    line.trim_end()
+        .chars()
+        .map(|c| if (c as u32) < 0x20 || c == '\u{007f}' { '\u{fffd}' } else { c })
+        .collect()
+}
+
+/// Does this transformed expression name only things that are in scope?
+///
+/// Bare identifiers only: a word after `·` or `.` is a member or a method, and
+/// a word before `:` is an object-literal key. Neither reads a binding.
+fn free_identifiers_known(
+    value: &str,
+    known: &std::collections::HashSet<String>,
+) -> bool {
+    let chars: Vec<char> = value.chars().collect();
     let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
     let mut i = 0;
     let mut in_str = false;
     let mut escaped = false;
-    while i < bytes.len() {
-        let c = bytes[i];
+    while i < chars.len() {
+        let c = chars[i];
         if in_str {
             if escaped {
                 escaped = false;
@@ -1598,33 +1784,27 @@ fn references_only(value: &str, known: &std::collections::HashSet<String>) -> bo
         }
         if is_word(c) && !c.is_ascii_digit() {
             let start = i;
-            while i < bytes.len() && is_word(bytes[i]) {
+            while i < chars.len() && is_word(chars[i]) {
                 i += 1;
             }
-            let word: String = bytes[start..i].iter().collect();
-            // An object-literal key names a field, not a binding.
+            let word: String = chars[start..i].iter().collect();
+            let after_sep = start > 0 && matches!(chars[start - 1], '\u{00B7}' | '.');
             let mut j = i;
-            while j < bytes.len() && bytes[j].is_whitespace() {
+            while j < chars.len() && chars[j].is_whitespace() {
                 j += 1;
             }
-            if bytes.get(j) == Some(&':') && bytes.get(j + 1) != Some(&':') {
-                continue;
-            }
-            if matches!(word.as_str(), "true" | "false" | "None") {
+            let is_key = chars.get(j) == Some(&':') && chars.get(j + 1) != Some(&':');
+            if after_sep || is_key {
                 continue;
             }
             if !known.contains(&word) {
                 return false;
             }
-            mentioned = true;
             continue;
         }
         i += 1;
     }
-    if in_str {
-        return false;
-    }
-    mentioned
+    !in_str
 }
 
 /// Blank out `ident:` sequences — object-literal keys, which name a field

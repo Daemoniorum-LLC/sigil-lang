@@ -655,9 +655,30 @@ impl TypeChecker {
         self.functions
             .insert("is_integer".to_string(), func(vec![any.clone()], Type::Bool));
         self.functions
-            .insert("timing_parse".to_string(), func(vec![Type::Str], Type::Int(IntSize::I64)));
+            // Any, not Str: the runtime accepts a timestamp string or a number
+            // that is already millis, and the migrator cannot always tell which
+            // — `new Date(updatedAt)` where `updatedAt: number | null`.
+            .insert("timing_parse".to_string(), func(vec![any.clone()], Type::Int(IntSize::I64)));
         self.functions
             .insert("timing_now".to_string(), func(vec![], Type::Int(IntSize::I64)));
+        // The migrator lowers `Math.random()` to this; the WASM backend has had
+        // the import all along and the checker had never heard of it.
+        self.functions
+            .insert("math_random".to_string(), func(vec![], Type::Float(FloatSize::F64)));
+        let f64t = Type::Float(FloatSize::F64);
+        for name in ["math_round", "math_floor", "math_ceil", "math_abs", "math_sqrt"] {
+            self.functions
+                .insert(name.to_string(), func(vec![f64t.clone()], f64t.clone()));
+        }
+        for name in ["math_min", "math_max", "math_pow"] {
+            self.functions.insert(
+                name.to_string(),
+                func(vec![f64t.clone(), f64t.clone()], f64t.clone()),
+            );
+        }
+        // `typeof x` — the host knows what a value is; the program does not.
+        self.functions
+            .insert("type_of".to_string(), func(vec![any.clone()], Type::Str));
         self.functions
             .insert("is_array".to_string(), func(vec![any.clone()], Type::Bool));
         self.functions.insert(
@@ -1271,6 +1292,18 @@ impl TypeChecker {
             self.collect_fn_sig(&item.node);
         }
 
+        // Module-scope bindings, before any body is checked.
+        //
+        // `≔ prefix = "…";` at the top of a file compiles — the WASM backend
+        // evaluates it at compile time — but nothing ever entered it into the
+        // type environment, so every function that read one reported "cannot
+        // find `prefix` in this scope" under `--strict`. Declaration order does
+        // not matter at module scope, so this is its own pass rather than part
+        // of the third.
+        for item in &file.items {
+            self.collect_module_binding(&item.node);
+        }
+
         // Third pass: check function bodies
         for item in &file.items {
             self.current_item_span = item.span;
@@ -1530,6 +1563,36 @@ impl TypeChecker {
                     .join("::")
             }
             _ => "Unknown".to_string(),
+        }
+    }
+
+    /// Enter a module-scope `const`/`static` into the type environment.
+    fn collect_module_binding(&mut self, item: &Item) {
+        match item {
+            Item::Const(c) => {
+                let ty = c
+                    .ty
+                    .as_ref()
+                    .map(|t| self.convert_type(t))
+                    .unwrap_or_else(|| self.infer_expr(&c.value));
+                self.env
+                    .borrow_mut()
+                    .define(c.name.name.clone(), ty, EvidenceLevel::Known);
+            }
+            Item::Static(st) => {
+                let ty = self.convert_type(&st.ty);
+                self.env
+                    .borrow_mut()
+                    .define(st.name.name.clone(), ty, EvidenceLevel::Known);
+            }
+            Item::Module(m) => {
+                if let Some(items) = &m.items {
+                    for it in items {
+                        self.collect_module_binding(&it.node);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

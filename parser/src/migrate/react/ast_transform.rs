@@ -168,6 +168,16 @@ fn js_static_call(obj: &str, method: &str) -> Option<&'static str> {
         ("json", "stringify") => "json_stringify",
         ("json", "parse") => "json_parse",
         ("math", "random") => "math_random",
+        // `Math.round(x)` was `math·round(x)`, a lowercase path root that
+        // resolves to nothing; the imports have been there since the start.
+        ("math", "round") => "math_round",
+        ("math", "floor") => "math_floor",
+        ("math", "ceil") => "math_ceil",
+        ("math", "abs") => "math_abs",
+        ("math", "min") => "math_min",
+        ("math", "max") => "math_max",
+        ("math", "sqrt") => "math_sqrt",
+        ("math", "pow") => "math_pow",
         // `Object.values(x)` was becoming `object·values(x)`, which resolves to
         // a `values` free function that does not exist. Same for the other two.
         ("object", "values") => "object_values",
@@ -329,6 +339,17 @@ impl<'a> ExprTransformer<'a> {
                 // and `map·new(…)`, which resolve to nothing — and under S34 a
                 // lowercase unresolved call compiles to a constant 0, so the
                 // collection silently became a number.
+                // A Sigil program's only representation of a date is epoch
+                // millis, so `new Date(s)` IS `timing_parse(s)` — `date·new(s)`
+                // named nothing, and `date·new(s)·to_string()` named nothing
+                // twice.
+                if callee == "date" {
+                    return if args.trim().is_empty() {
+                        "timing_now()".to_string()
+                    } else {
+                        format!("timing_parse({})", args)
+                    };
+                }
                 let collection = match callee.as_str() {
                     "set" => Some("HashSet"),
                     "map" => Some("HashMap"),
@@ -588,7 +609,9 @@ impl<'a> ExprTransformer<'a> {
             UnaryOp::Minus => format!("-{}", arg),
             UnaryOp::Plus => arg, // Unary + is a no-op
             UnaryOp::Tilde => format!("~{}", arg),
-            UnaryOp::TypeOf => format!("typeof({})", arg),
+            // `typeof x` — a host call, because the answer depends on what the
+            // host knows about the value. `typeof(…)` named nothing at all.
+            UnaryOp::TypeOf => format!("type_of({})", arg),
             UnaryOp::Void => "None".to_string(),
             UnaryOp::Delete => {
                 self.warn("delete operator");
@@ -711,22 +734,12 @@ impl<'a> ExprTransformer<'a> {
                             return format!("{}({})", replacement, args);
                         }
 
-                        // `new Date(s).getTime()` is a date parse, and
-                        // `new Date().getTime()` is the clock. Neither is a
-                        // method on anything Sigil has — the transform for
-                        // `new` had already produced `date·new(s)`, and
-                        // `·get_time()` on it resolved to nothing.
-                        if method == "getTime" || method == "valueOf" {
-                            if let Some(inner) = obj
-                                .strip_prefix("date·new(")
-                                .and_then(|r| r.strip_suffix(')'))
-                            {
-                                return if inner.trim().is_empty() {
-                                    "timing_now()".to_string()
-                                } else {
-                                    format!("timing_parse({})", inner)
-                                };
-                            }
+                        // `new Date(s)` is already epoch millis (see the `New`
+                        // arm), so `.getTime()` on it is the identity.
+                        if (method == "getTime" || method == "valueOf")
+                            && (obj.starts_with("timing_parse(") || obj == "timing_now()")
+                        {
+                            return obj;
                         }
 
                         // Transform common JS methods to Sigil equivalents

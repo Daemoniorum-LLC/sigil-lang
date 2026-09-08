@@ -105,6 +105,16 @@ pub struct ComponentSource {
     /// own casing, in a declaration.
     #[serde(default)]
     pub module_functions: Vec<String>,
+    /// The helper functions this component can reach, from its own file and
+    /// from the modules it imports.
+    ///
+    /// The generator emitted components and module constants and no helper
+    /// functions at all, so `renderFileEntryDetail` — defined twenty lines
+    /// above its only call site — was an undefined name, and fifteen of the
+    /// seventeen files that failed `--strict` stopped on a helper from a
+    /// sibling module.
+    #[serde(default)]
+    pub helpers: Vec<HelperFunctionExtraction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -570,6 +580,19 @@ impl<'a> SpecGenerator<'a> {
                             .filter(|i| !i.is_type_only)
                             .flat_map(|i| i.specifiers.iter().map(|s| s.local.clone())),
                     )
+                    // Sibling COMPONENTS are module scope too. A component
+                    // that returns JSX is generated as its own top-level
+                    // `rite`, but its name was in neither the helper list nor
+                    // the constant list, so a call to one from the same file —
+                    // `renderFileEntryDetail(entry, …)` — came out
+                    // `self.render_file_entry_detail(…)`, a method no actor
+                    // could ever have.
+                    .chain(
+                        self.extraction
+                            .components
+                            .iter()
+                            .map(|c| c.name.clone()),
+                    )
                     .chain(JS_GLOBALS.iter().map(|g| g.to_string()))
                     .collect(),
                 module_constants: self.extraction.module_constants.clone(),
@@ -579,6 +602,7 @@ impl<'a> SpecGenerator<'a> {
                     .iter()
                     .map(|h| h.name.clone())
                     .collect(),
+                helpers: self.extraction.helper_functions.clone(),
             },
             target: TargetInfo {
                 suggested_path: format!("src/components/{}.sigil", to_snake_case(&comp.name)),

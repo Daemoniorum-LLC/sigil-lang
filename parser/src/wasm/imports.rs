@@ -360,6 +360,8 @@ impl ImportRegistry {
         // `Array.isArray(x)` — only the host can tell an array handle from any
         // other i64.
         self.add_import_with_alias("value", "is_array", "is_array", vec![I64], vec![I64]);
+        // `typeof x` — "string", "number", "object", … Only the host can say.
+        self.add_import_with_alias("value", "type_of", "type_of", vec![I64], vec![I64]);
     }
 
     fn register_math_imports(&mut self) {

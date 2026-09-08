@@ -119,6 +119,10 @@ pub struct MigrationSession {
     /// every `.ts` in the tree, so the definitions are in hand — they just were
     /// not carried across the file boundary.
     exported_constants: HashMap<String, ModuleConstantExtraction>,
+
+    /// Every exported helper function seen anywhere in the project, by name.
+    /// The companion to `exported_constants`, and resolved the same way.
+    exported_helpers: HashMap<String, HelperFunctionExtraction>,
 }
 
 impl MigrationSession {
@@ -153,6 +157,7 @@ impl MigrationSession {
             completed: HashMap::new(),
             resolved_ambiguities: HashMap::new(),
             exported_constants: HashMap::new(),
+            exported_helpers: HashMap::new(),
         })
     }
 
@@ -175,6 +180,7 @@ impl MigrationSession {
             completed: HashMap::new(),
             resolved_ambiguities: HashMap::new(),
             exported_constants: HashMap::new(),
+            exported_helpers: HashMap::new(),
         }
     }
 
@@ -195,6 +201,13 @@ impl MigrationSession {
                 self.exported_constants
                     .entry(c.name.clone())
                     .or_insert_with(|| c.clone());
+            }
+        }
+        for h in &extraction.helper_functions {
+            if h.exported {
+                self.exported_helpers
+                    .entry(h.name.clone())
+                    .or_insert_with(|| h.clone());
             }
         }
 
@@ -232,6 +245,7 @@ impl MigrationSession {
     /// emitting the first without the second just moves the undefined name.
     pub fn resolve_cross_module_imports(&mut self) {
         let table = self.exported_constants.clone();
+        let helpers = self.exported_helpers.clone();
         for comp in &mut self.spec.components {
             let mut have: std::collections::HashSet<String> = comp
                 .source
@@ -283,6 +297,40 @@ impl MigrationSession {
             let mut merged = added;
             merged.append(&mut comp.source.module_constants);
             comp.source.module_constants = merged;
+
+            // Helpers, the same way. A helper's own body may call another
+            // helper, so this walks transitively too.
+            let mut have_h: std::collections::HashSet<String> =
+                comp.source.helpers.iter().map(|h| h.name.clone()).collect();
+            let mut hq: Vec<String> = comp.source.module_scope.clone();
+            let mut added_h: Vec<HelperFunctionExtraction> = Vec::new();
+            let mut guard = 0;
+            while let Some(name) = hq.pop() {
+                guard += 1;
+                if guard > 512 {
+                    break;
+                }
+                if have_h.contains(&name) {
+                    continue;
+                }
+                let Some(h) = helpers.get(&name) else { continue };
+                have_h.insert(name.clone());
+                for called in &h.calls {
+                    if helpers.contains_key(called) {
+                        hq.push(called.clone());
+                    }
+                }
+                added_h.push(h.clone());
+            }
+            for h in &added_h {
+                if !comp.source.module_scope.contains(&h.name) {
+                    comp.source.module_scope.push(h.name.clone());
+                }
+                if !comp.source.module_functions.contains(&h.name) {
+                    comp.source.module_functions.push(h.name.clone());
+                }
+            }
+            comp.source.helpers.extend(added_h);
         }
     }
 
@@ -652,6 +700,7 @@ impl MigrationSession {
             // added to this table, and the specs it would have fed already
             // carry their resolved constants.
             exported_constants: HashMap::new(),
+            exported_helpers: HashMap::new(),
         })
     }
 }

@@ -499,6 +499,16 @@ pub struct HelperFunctionExtraction {
     pub used_by: Vec<String>,
     /// Full source code
     pub source: String,
+    /// The single expression this function returns, as source, when that is
+    /// all its body does.
+    ///
+    /// The generator has an expression transform and no statement transform, so
+    /// this is the subset it can translate in full. 140 of the Lares client's
+    /// 346 helpers are this shape — `return path.split("/").pop() ?? path` —
+    /// and the rest get a declared signature with an untranslated body, which
+    /// at least resolves the name.
+    #[serde(default)]
+    pub returns_expression: Option<String>,
 }
 
 /// Function parameter with type information
@@ -1820,9 +1830,20 @@ impl<'a> Extractor<'a> {
                 _ => continue,
             };
             for decl in &var_decl.decls {
-                let init = match &decl.init {
-                    Some(i) => i,
-                    None => continue,
+                let Some(init) = decl.init.as_ref() else {
+                    // `let text: string` with the value assigned in branches
+                    // below is an ordinary React shape, and skipping it left
+                    // `text` bound nowhere — the view read a name the file does
+                    // not declare. The branch assignments are still lost to the
+                    // control-flow flattening in S30; the binding is not.
+                    if let Pat::Ident(id) = &decl.name {
+                        out.push(LocalBinding {
+                            name: id.id.sym.to_string(),
+                            init: "∅".to_string(),
+                            opaque: true,
+                        });
+                    }
+                    continue;
                 };
                 // Hooks are state, not locals — with two exceptions.
                 //
@@ -3801,6 +3822,12 @@ impl<'a> Extractor<'a> {
                     calls,
                     used_by: Vec::new(), // Would need cross-file analysis
                     source: self.span_to_source(arrow.span),
+                    returns_expression: match &*arrow.body {
+                        BlockStmtOrExpr::Expr(e) => {
+                            Some(self.span_to_source(self.expr_span(e)))
+                        }
+                        BlockStmtOrExpr::BlockStmt(block) => self.sole_returned_expr(block),
+                    },
                 })
             }
             Expr::Fn(fn_expr) => {
@@ -3836,7 +3863,29 @@ impl<'a> Extractor<'a> {
             calls,
             used_by: Vec::new(),
             source: self.span_to_source(func.span),
+            returns_expression: func
+                .body
+                .as_ref()
+                .and_then(|b| self.sole_returned_expr(b)),
         })
+    }
+
+    /// The expression a block returns, when returning it is all the block does.
+    ///
+    /// One statement, and that statement a `return` with an argument. Anything
+    /// else — a local, a loop, an early return — needs a statement transform
+    /// that does not exist.
+    fn sole_returned_expr(&self, block: &BlockStmt) -> Option<String> {
+        if block.stmts.len() != 1 {
+            return None;
+        }
+        match &block.stmts[0] {
+            Stmt::Return(ret) => ret
+                .arg
+                .as_ref()
+                .map(|e| self.span_to_source(self.expr_span(e))),
+            _ => None,
+        }
     }
 
     /// Check if a block returns JSX (used to distinguish components from helpers)
