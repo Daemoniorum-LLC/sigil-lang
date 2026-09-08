@@ -14,10 +14,10 @@ invoke dns·DnsResolver;
 // ============================================================================
 
 ☉ ᛈ WsMessage {
-    Text(String)!,
-    Binary(Vec<u8>)!,
-    Ping(Vec<u8>)!,
-    Pong(Vec<u8>)!,
+    Text(String),
+    Binary(Vec<u8>),
+    Ping(Vec<u8>),
+    Pong(Vec<u8>),
     Close { code: u16?, reason: String? }!,
 }
 
@@ -71,8 +71,8 @@ invoke dns·DnsResolver;
 
 /// Internal connection type (TCP or TLS)
 ᛈ WsConnection {
-    Tcp(TcpStream)!,
-    Tls(TlsStream)!,
+    Tcp(TcpStream),
+    Tls(TlsStream),
 }
 
 /// WebSocket client connection

@@ -24,7 +24,7 @@ invoke security·*;
     CertificateError { message: String }!,
     ProtocolError { message: String }!,
     IoError { inner: SocketError }!,
-    NotConnected!,
+    NotConnected,
     LibraryError { code: i32, message: String }!,
 }
 

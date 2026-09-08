@@ -221,6 +221,21 @@ def migrate_std_paths(src):
 # [T: Into<String>] already parse.
 
 ASM_IN = re.compile(r"(?<![\w·])in\(")
+# Rust's `lateout` says "written only at the end"; Sigil's asm has out, ∈, inout,
+# clobber and options, and `out` is the operand it means.
+ASM_LATEOUT = re.compile(r"(?<![\w·])lateout\(")
+
+# An evidence marker on an ENUM VARIANT DECLARATION — `Tcp(TcpStream)!,`,
+# `Unknown(i32)!,`, `A!,`. Evidence belongs to a value, not to the shape of a
+# variant, and Sigil's parser rejects it. Dropping the marker is the only reading
+# that keeps the declaration.
+VARIANT_MARKER = re.compile(r"^(\s*[A-Z]\w*(?:\([^)]*\))?)[!?~◊](\s*,)", re.M)
+
+# `aspect` is Sigil's `trait` keyword, so it cannot also be an identifier. Sources
+# predating that keyword use it as a field name, a parameter and a local.
+ASPECT_IDENT = re.compile(
+    r"(?<![\w·])aspect(?=\s*[:,)=]|\s*$)|(?<=[(,]\s)aspect(?=\s*:)", re.M
+)
 BARE_VARY = re.compile(r"^([ \t]*)vary\s+(\w+\s*:)", re.M)
 IMPL_ARG = re.compile(r"(?<![\w·])impl\s+(?=[A-Z])")
 
@@ -230,6 +245,8 @@ def migrate_constructs(src, in_asm_only=True):
     def one(text):
         text = BARE_VARY.sub(lambda m: f"{m.group(1)}≔ vary {m.group(2)}", text)
         text = IMPL_ARG.sub("⊢ ", text)
+        text = VARIANT_MARKER.sub(lambda m: m.group(1) + m.group(2), text)
+        text = ASPECT_IDENT.sub("aspect_", text)
         return text
 
     out = "".join(one(t) if is_code else t for t, is_code in split_regions(src))
@@ -250,7 +267,8 @@ def migrate_constructs(src, in_asm_only=True):
                         break
                 j += 1
             pieces.append(out[idx:start])
-            pieces.append(ASM_IN.sub("∈(", out[start : j + 1]))
+            asm_body = ASM_IN.sub("∈(", out[start : j + 1])
+            pieces.append(ASM_LATEOUT.sub("out(", asm_body))
             idx = j + 1
         pieces.append(out[idx:])
         out = "".join(pieces)

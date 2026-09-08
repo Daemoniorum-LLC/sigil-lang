@@ -42,7 +42,7 @@ rite syscall0(nr: i64) -> isize! {
         asm!(
             "svc #0",
             ∈("x8") nr,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }
@@ -56,7 +56,7 @@ rite syscall1(nr: i64, a1: i64) -> isize! {
             "svc #0",
             ∈("x8") nr,
             ∈("x0") a1,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }
@@ -71,7 +71,7 @@ rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
             ∈("x8") nr,
             ∈("x0") a1,
             ∈("x1") a2,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }
@@ -87,7 +87,7 @@ rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
             ∈("x0") a1,
             ∈("x1") a2,
             ∈("x2") a3,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }
@@ -104,7 +104,7 @@ rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
             ∈("x1") a2,
             ∈("x2") a3,
             ∈("x3") a4,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }
@@ -122,7 +122,7 @@ rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
             ∈("x2") a3,
             ∈("x3") a4,
             ∈("x4") a5,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }
@@ -141,7 +141,7 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
             ∈("x3") a4,
             ∈("x4") a5,
             ∈("x5") a6,
-            lateout("x0") result,
+            out("x0") result,
             options(nostack)
         );
     }

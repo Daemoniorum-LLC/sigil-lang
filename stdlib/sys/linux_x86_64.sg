@@ -94,7 +94,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
         asm!(
             "syscall",
             ∈("rax") nr,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -111,7 +111,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
             "syscall",
             ∈("rax") nr,
             ∈("rdi") a1,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -129,7 +129,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
             ∈("rax") nr,
             ∈("rdi") a1,
             ∈("rsi") a2,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -148,7 +148,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
             ∈("rdi") a1,
             ∈("rsi") a2,
             ∈("rdx") a3,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -168,7 +168,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
             ∈("rsi") a2,
             ∈("rdx") a3,
             ∈("r10") a4,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -189,7 +189,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
             ∈("rdx") a3,
             ∈("r10") a4,
             ∈("r8") a5,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -211,7 +211,7 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
             ∈("r10") a4,
             ∈("r8") a5,
             ∈("r9") a6,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)

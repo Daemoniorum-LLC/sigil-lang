@@ -58,7 +58,7 @@ invoke shared·{
     ☉ subject: EntityId!,
 
     /// What aspect is being witnessed
-    ☉ aspect: Aspect!,
+    ☉ aspect_: Aspect!,
 
     /// The vulnerability of being seen
     ☉ vulnerability: Vulnerability!,
@@ -665,7 +665,7 @@ scroll tests {
 
         ≔ witnessed = Witnessed {
             subject,
-            aspect: Aspect·Existence,
+            aspect_: Aspect·Existence,
             vulnerability: Vulnerability·High,
         };
 

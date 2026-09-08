@@ -141,13 +141,13 @@ invoke dns·{DnsResolver, DnsError};
 // ============================================================================
 
 ☉ ᛈ HttpMethod {
-    GET!,
-    POST!,
-    PUT!,
-    DELETE!,
-    PATCH!,
-    HEAD!,
-    OPTIONS!,
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+    HEAD,
+    OPTIONS,
 }
 
 ☉ ⊢ Display ∀ HttpMethod {
@@ -216,10 +216,10 @@ invoke dns·{DnsResolver, DnsError};
     DnsResolutionFailed { hostname: String }!,
     ConnectionFailed { inner: SocketError }!,
     TlsFailed { inner: TlsError }!,
-    RequestTimedOut!,
-    TooManyRedirects!,
+    RequestTimedOut,
+    TooManyRedirects,
     InvalidResponse { message: String }!,
-    ChunkedEncodingError!,
+    ChunkedEncodingError,
     IoError { message: String }!,
 }
 

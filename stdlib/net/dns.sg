@@ -38,12 +38,12 @@ invoke sys·*;
 // ============================================================================
 
 ☉ ᛈ DnsError {
-    NoServersConfigured!,
-    QueryTimedOut!,
+    NoServersConfigured,
+    QueryTimedOut,
     ServerError { rcode: u8 }!,
-    NameNotFound!,
-    MalformedResponse!,
-    TruncatedResponse!,
+    NameNotFound,
+    MalformedResponse,
+    TruncatedResponse,
     NetworkError { inner: SocketError }!,
 }
 

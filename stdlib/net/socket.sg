@@ -13,8 +13,8 @@ invoke sys·*;
 
 /// IP address (IPv4 or IPv6)
 ☉ ᛈ IpAddr {
-    V4([u8; 4])!,
-    V6([u8; 16])!,
+    V4([u8; 4]),
+    V6([u8; 16]),
 }
 
 ☉ ⊢ IpAddr {
@@ -224,18 +224,18 @@ invoke sys·*;
 // ============================================================================
 
 ☉ ᛈ SocketError {
-    ConnectionRefused!,
-    ConnectionReset!,
-    ConnectionTimedOut!,
-    HostUnreachable!,
-    NetworkUnreachable!,
-    AddressInUse!,
-    AddressNotAvailable!,
-    InvalidAddress!,
-    NotConnected!,
-    BrokenPipe!,
-    WouldBlock!,
-    UnexpectedEof!,
+    ConnectionRefused,
+    ConnectionReset,
+    ConnectionTimedOut,
+    HostUnreachable,
+    NetworkUnreachable,
+    AddressInUse,
+    AddressNotAvailable,
+    InvalidAddress,
+    NotConnected,
+    BrokenPipe,
+    WouldBlock,
+    UnexpectedEof,
     Syscall { errno: i32, message: String }!,
 }
 

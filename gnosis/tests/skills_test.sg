@@ -242,7 +242,7 @@ invoke HashMap;
         }
     }
 
-    ☉ rite with_aspect(Δ self, aspect: &str) -> Self {
+    ☉ rite with_aspect(Δ self, aspect_: &str) -> Self {
         self.aspects.push(aspect.to_string());
         self
     }

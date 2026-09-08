@@ -45,7 +45,7 @@ rite syscall0(nr: i64) -> isize! {
         asm!(
             "syscall",
             ∈("rax") nr,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -62,7 +62,7 @@ rite syscall1(nr: i64, a1: i64) -> isize! {
             "syscall",
             ∈("rax") nr,
             ∈("rdi") a1,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -80,7 +80,7 @@ rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
             ∈("rax") nr,
             ∈("rdi") a1,
             ∈("rsi") a2,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -99,7 +99,7 @@ rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
             ∈("rdi") a1,
             ∈("rsi") a2,
             ∈("rdx") a3,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -119,7 +119,7 @@ rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
             ∈("rsi") a2,
             ∈("rdx") a3,
             ∈("r10") a4,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -140,7 +140,7 @@ rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
             ∈("rdx") a3,
             ∈("r10") a4,
             ∈("r8") a5,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -162,7 +162,7 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
             ∈("r10") a4,
             ∈("r8") a5,
             ∈("r9") a6,
-            lateout("rax") result,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)

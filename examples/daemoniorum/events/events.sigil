@@ -58,7 +58,7 @@ invoke HashMap
     Scene(String),               // Scene interaction
     Player,                      // Direct player action
     Trigger(String),             // Emotional trigger
-    Unknown?,                    // Uncertain source
+    Unknown,                    // Uncertain source
 }
 
 //! Event payload data

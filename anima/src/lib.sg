@@ -815,7 +815,7 @@ invoke shared·{
 
 #[derive(Clone)]
 ☉ Σ RelationalEffect {
-    ☉ aspect: String,
+    ☉ aspect_: String,
     ☉ change: String,
 }
 
