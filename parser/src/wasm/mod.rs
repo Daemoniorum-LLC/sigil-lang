@@ -31,6 +31,7 @@
 pub mod async_sm;
 pub mod async_sm_ir;
 pub mod closures;
+pub mod coerce;
 pub mod constants;
 pub mod control_flow;
 pub mod deps;
@@ -1103,6 +1104,69 @@ impl WasmCompiler {
                 Elements::Functions(std::borrow::Cow::Borrowed(&self.table_elements)),
             );
             module.section(&elements);
+        }
+
+        // Every call agrees with its callee before anything is encoded. See
+        // `coerce`: the backend has 66 hand-rolled import call sites and no
+        // shared coercion, so validity used to be decided per site.
+        {
+            let import_count = self.imports.import_count();
+            let import_sigs: Vec<Option<(Vec<ValType>, Vec<ValType>)>> = (0..import_count)
+                .map(|i| {
+                    self.imports
+                        .get_func_type(i)
+                        .and_then(|t| self.imports.types().get(t as usize).cloned())
+                })
+                .collect();
+            let local_sigs: Vec<(Vec<ValType>, Vec<ValType>)> = self
+                .functions
+                .iter()
+                .map(|f| {
+                    (
+                        f.params.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+                        f.results.clone(),
+                    )
+                })
+                .collect();
+            let global_types: Vec<ValType> = self.globals.iter().map(|(t, _, _)| *t).collect();
+
+            let call_sig = move |idx: u32| -> Option<(Vec<ValType>, Vec<ValType>)> {
+                if (idx as usize) < import_sigs.len() {
+                    import_sigs[idx as usize].clone()
+                } else {
+                    local_sigs.get(idx as usize - import_sigs.len()).cloned()
+                }
+            };
+            let global_ty = move |idx: u32| -> Option<ValType> {
+                global_types.get(idx as usize).copied()
+            };
+            let all_types: Vec<(Vec<ValType>, Vec<ValType>)> = self.imports.types().to_vec();
+            let type_sig = move |idx: u32| -> Option<(Vec<ValType>, Vec<ValType>)> {
+                all_types.get(idx as usize).cloned()
+            };
+
+            for func in &mut self.functions {
+                let params: Vec<ValType> = func.params.iter().map(|(_, t)| *t).collect();
+                let locals = func.local_types.clone();
+                let nparams = params.len();
+                let local_ty = move |idx: u32| -> Option<ValType> {
+                    let i = idx as usize;
+                    if i < nparams {
+                        params.get(i).copied()
+                    } else {
+                        locals.get(i - nparams).copied()
+                    }
+                };
+                let results = func.results.clone();
+                coerce::repair_operand_types(
+                    &mut func.instructions,
+                    &results,
+                    &call_sig,
+                    &type_sig,
+                    &local_ty,
+                    &global_ty,
+                );
+            }
         }
 
         // Code section
