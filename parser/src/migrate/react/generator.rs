@@ -186,9 +186,13 @@ impl<'a> QliphothGenerator<'a> {
                     other if other.contains("/*") => "None".to_string(),
                     other => other.to_string(),
                 };
+                // The field name has to match every reference to it. The view is
+                // generated through the expression transform, which snake-cases
+                // and keyword-escapes, so a declaration left in React's camelCase
+                // named something no `self.<x>` in the file ever reached.
                 format!(
                     "    state {}: {}{} = {},",
-                    field.to_field,
+                    to_snake_case(&field.to_field),
                     field.field_type,
                     field.evidentiality,
                     initial
@@ -232,11 +236,82 @@ impl<'a> QliphothGenerator<'a> {
                     body_parts.push(format!("        {} ! {}{};", call.service, call.method, args));
                 }
 
-                // Add state changes
+                // Add state changes. The structured form carries the value as
+                // React wrote it, so it goes through the same expression transform
+                // as the view — `setCollapsed(c => !c)` becomes `self.collapsed =
+                // ¬self.collapsed` instead of a JavaScript arrow pasted into an
+                // actor. `state_changes` is the pre-transform fallback, used for
+                // the setter messages whose value is the payload itself.
+                if !msg.state_assignments.is_empty() {
+                    for a in &msg.state_assignments {
+                        // The handler's own parameters are in scope for its body;
+                        // without them every `setName(tmuxName)` transformed to
+                        // `self.tmux_name`, a field that does not exist, instead of
+                        // the value just bound from the payload.
+                        let mut scope = VNodeScope::default();
+                        for p in &msg.param_bindings {
+                            scope.locals.push(to_snake_case(p));
+                        }
+                        // A trailing comma from a multi-line call survives the span.
+                        let src = a.value.trim().trim_end_matches(',').trim();
+                        let value = match &a.updater_param {
+                            Some(param) => {
+                                // The updater's parameter IS the current value.
+                                let p = to_snake_case(param);
+                                scope.locals.push(p.clone());
+                                let body = self.transform_expression_scoped(src, &scope);
+                                replace_ident(&body, &p, &format!("self.{}", a.field))
+                            }
+                            None => self.transform_expression_scoped(src, &scope),
+                        };
+                        // Some values carry JavaScript the transform has no Sigil
+                        // spelling for — optional chaining, nullish coalescing,
+                        // spread, a nested arrow, `instanceof`. `generate_locals`
+                        // binds those to ∅; a state field already holds a value, so
+                        // overwriting it with ∅ would be worse than not writing it.
+                        // Record what React did and leave the field alone.
+                        // A value that is still an arrow is a functional updater
+                        // `split_updater` declined — a block body, or more than
+                        // one parameter. The transform renders it as a perfectly
+                        // valid Sigil closure, so the parse probe below waves it
+                        // through, and the field ends up holding a function.
+                        let unread_updater = a.updater_param.is_none() && src.contains("=>");
+                        // JS spread. The parse probe cannot catch this one: `...`
+                        // is valid Sigil, it just means something else there, so
+                        // `[...cur, tag]` compiled and did the wrong thing.
+                        let spread = value.contains("...");
+                        if unread_updater || spread || !parses_as_expression(&value) {
+                            let one_line: String =
+                                src.split_whitespace().collect::<Vec<_>>().join(" ");
+                            let one_line = if one_line.chars().count() > 100 {
+                                one_line.chars().take(97).collect::<String>() + "..."
+                            } else {
+                                one_line
+                            };
+                            body_parts.push(format!(
+                                "        // TODO: self.{} = {}",
+                                a.field, one_line
+                            ));
+                        } else {
+                            body_parts.push(format!("        self.{} = {};", a.field, value));
+                        }
+                    }
+                }
+
+                // Add state changes. When the structured form covered them, only
+                // the `// React:` notes for mutations it could not structure are
+                // still wanted — the assignments themselves would be duplicates.
+                let structured = !msg.state_assignments.is_empty();
                 for change in &msg.state_changes {
                     // Transform placeholder to valid expression
                     let change = change.replace("/* new value */", "msg.0");
-                    body_parts.push(format!("        {};", change));
+                    // An untranslatable mutation comes through as a `// React:`
+                    // note; a statement terminator after it is noise.
+                    if change.trim_start().starts_with("//") {
+                        body_parts.push(format!("        {}", change));
+                    } else if !structured {
+                        body_parts.push(format!("        {};", change));
+                    }
                 }
 
                 // Include inlined effects if any
@@ -252,6 +327,30 @@ impl<'a> QliphothGenerator<'a> {
                 // leaving an anonymous TODO. Most of these are a child telling its
                 // parent something — `onClick={() => onOpenSession(id)}` has no local
                 // state to change, and a bare "TODO: implement" hides that.
+                // The handler's parameters, bound to the payload it was declared
+                // with. Its state changes are written in React's terms — a
+                // handler `(next) => setView(next)` becomes `self.view = next`,
+                // and `next` is nothing here until it is bound. Prepended only
+                // when there is a body to bind them for; alone they would suppress
+                // the `// React:` signpost below without saying anything.
+                if !body_parts.is_empty() && msg.flattened_control_flow {
+                    body_parts.insert(
+                        0,
+                        "        // NOTE: the React handler branched; these assignments \
+                         are flattened.".to_string(),
+                    );
+                }
+
+                if !body_parts.is_empty() {
+                    let bindings: Vec<String> = msg
+                        .param_bindings
+                        .iter()
+                        .enumerate()
+                        .map(|(i, p)| format!("        ≔ {} = msg.{};", to_snake_case(p), i))
+                        .collect();
+                    body_parts.splice(0..0, bindings);
+                }
+
                 let body = if body_parts.is_empty() {
                     let mut lines = Vec::new();
                     if !msg.from_handler.is_empty() {
@@ -955,20 +1054,53 @@ fn is_simple_identifier(s: &str) -> bool {
     s.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(c.to_lowercase().next().unwrap());
+/// Does this actually parse as a Sigil expression?
+///
+/// The expression transform is a source-to-source heuristic over JavaScript it
+/// only partly understands, so some of what it emits is not Sigil at all. The
+/// alternative is a hand-maintained list of forbidden substrings, and that list
+/// grew by one entry every time the generator learned to emit more — `?.`, then
+/// `??`, then `...`, then `=>`, then `instanceof`. Ask the parser instead: it is
+/// the same one that will read the generated file.
+fn parses_as_expression(expr: &str) -> bool {
+    let probe = format!("rite __probe() {{\n    \u{2254} __v = {};\n}}\n", expr);
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::parser::Parser::new(&probe).parse_file().is_ok()
+    }))
+    .unwrap_or(false);
+    std::panic::set_hook(prev);
+    ok
+}
+
+/// Replace whole-word occurrences of `from` with `to`. Used to substitute a
+/// functional updater's parameter for the field it stands for; a plain
+/// `str::replace` would rewrite `prevented` and `x.prev` too.
+fn replace_ident(src: &str, from: &str, to: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let chars: Vec<char> = src.chars().collect();
+    let target: Vec<char> = from.chars().collect();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut i = 0;
+    while i < chars.len() {
+        let matches = i + target.len() <= chars.len()
+            && chars[i..i + target.len()] == target[..]
+            && (i == 0 || !(is_word(chars[i - 1]) || chars[i - 1] == '.'))
+            && (i + target.len() == chars.len() || !is_word(chars[i + target.len()]));
+        if matches {
+            out.push_str(to);
+            i += target.len();
         } else {
-            result.push(c);
+            out.push(chars[i]);
+            i += 1;
         }
     }
-    // A prop named `ref` or `type` is a parse error, not a type error.
-    crate::migrate::react::spec::escape_sigil_keyword(&result)
+    out
+}
+
+fn to_snake_case(s: &str) -> String {
+    crate::migrate::react::spec::to_snake_case(s)
 }
 
 fn to_pascal_case(s: &str) -> String {

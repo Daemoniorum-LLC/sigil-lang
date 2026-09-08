@@ -150,19 +150,7 @@ fn is_simple_identifier(s: &str) -> bool {
 
 /// Convert camelCase to snake_case
 fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(c.to_lowercase().next().unwrap());
-        } else {
-            result.push(c);
-        }
-    }
-    // A prop named `ref` or `type` is a parse error, not a type error.
-    crate::migrate::react::spec::escape_sigil_keyword(&result)
+    crate::migrate::react::spec::to_snake_case(s)
 }
 
 /// Convert snake_case to PascalCase

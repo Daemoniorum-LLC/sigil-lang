@@ -132,6 +132,40 @@ pub struct MessageRecommendation {
     /// Calls to service actor methods (from hook-returned functions)
     #[serde(default)]
     pub service_calls: Vec<ServiceCall>,
+    /// The originating handler's parameter names, in order, for as many as the
+    /// payload carries. The body's state changes are written in terms of these
+    /// (`self.view = next`), so the generator has to bind them to `msg.N` first
+    /// or the names resolve to nothing.
+    #[serde(default)]
+    pub param_bindings: Vec<String>,
+    /// `state_changes` in structured form: the field written and the *untranslated*
+    /// JavaScript that produces the value. `state_changes` holds the same thing
+    /// flattened for the JSON spec, but flattening it meant the value never went
+    /// through the expression transform — `setCollapsed(c => !c)` was emitted as
+    /// a JavaScript arrow inside a Sigil actor, and seven files stopped parsing
+    /// the moment plain-named handlers began contributing bodies.
+    #[serde(default)]
+    pub state_assignments: Vec<StateAssignment>,
+    /// The React handler this came from had branches or an early return, and the
+    /// mutation walker collects mutations from every branch into one flat list.
+    /// The generated body therefore runs assignments unconditionally that React
+    /// ran under a condition — a real semantic difference, and one a reader would
+    /// otherwise have to diff against the TSX to notice.
+    #[serde(default)]
+    pub flattened_control_flow: bool,
+}
+
+/// A single `self.<field> = <value>` a message handler performs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateAssignment {
+    /// Sigil field name (already snake-cased and keyword-escaped).
+    pub field: String,
+    /// The value as React wrote it. Transformed by the generator, not here.
+    pub value: String,
+    /// Set when React used the functional updater form, `setX(prev => ...)`:
+    /// the parameter name, which stands for the field's current value.
+    #[serde(default)]
+    pub updater_param: Option<String>,
 }
 
 /// A call to a service actor method
@@ -578,41 +612,107 @@ impl<'a> SpecGenerator<'a> {
                         name: msg_name.clone(),
                         from_handler: setter_name.clone(),
                         payload: Some("(Any)".to_string()),
-                        state_changes: vec![format!("self.{} = /* new value */", state_name)],
+                        state_changes: vec![format!(
+                            "self.{} = /* new value */",
+                            to_snake_case(state_name)
+                        )],
                         side_effects: vec![],
                         service_calls: vec![],
+                        param_bindings: vec![],
+                        state_assignments: vec![],
+                        flattened_control_flow: false,
                     });
                 }
             }
         }
 
+        // Every JSX event in the component, with the message name the generator
+        // will dispatch for it. Handlers are matched against this: a function
+        // bound to an event is a handler, one that is not is a local helper.
+        let jsx_events = collect_jsx_event_messages(&comp.jsx);
+        let jsx_by_callback: Vec<(String, String, String)> = jsx_events
+            .iter()
+            .filter_map(|(msg, code)| {
+                derive_invoked_callback(code).map(|cb| (cb, msg.clone(), code.clone()))
+            })
+            .collect();
+
         // Generate messages from event handlers
         for handler in &comp.handlers {
-            let msg_name = to_pascal_case(&handler.name.replace("handle", ""));
+            // `comp.handlers` now holds every function-valued binding in the
+            // component body, not only `handle*`/`on*` ones — that convention was
+            // costing us the 66 plain-named handlers (`save`, `startNew`,
+            // `copyBody`) that the Lares UI actually uses. Decide here which are
+            // handlers: bound to a JSX event, or conventionally named. Anything
+            // else is a helper the view calls directly and must not become a
+            // message, or the enum fills with variants nothing dispatches.
+            let jsx_hit = jsx_by_callback.iter().find(|(cb, _, _)| *cb == handler.name);
+            let (msg_name, payload) = match jsx_hit {
+                Some((_, msg, code)) => {
+                    // Arity comes from the call site, exactly as the inline path
+                    // below derives it, so declaration and dispatch agree.
+                    let arity = derive_event_message_payload(code).len();
+                    let payload = if arity == 0 {
+                        None
+                    } else {
+                        Some(format!("({})", vec!["Any"; arity].join(", ")))
+                    };
+                    (msg.clone(), payload)
+                }
+                None if handler.name.starts_with("handle") || handler.name.starts_with("on") => {
+                    (to_pascal_case(&handler.name.replace("handle", "")), None)
+                }
+                None => continue,
+            };
+
+            if messages.iter().any(|m| m.name == msg_name) {
+                continue;
+            }
 
             // Transform React state mutations to Sigil syntax
             let transformed_state_changes = transform_state_mutations_to_sigil(
                 &handler.state_mutations,
                 &state_fields,
             );
+            let state_assignments =
+                extract_state_assignments(&handler.state_mutations, &state_fields);
+            let flattened_control_flow = !state_assignments.is_empty()
+                && (handler.has_conditionals || handler.has_early_return);
 
             // Extract service calls from handler.calls (hook-returned functions)
             let service_calls = extract_service_calls(&handler.calls);
 
+            // Only as many parameters as the payload actually carries; the rest
+            // would bind `msg.N` for an N the variant does not have.
+            let arity = payload
+                .as_deref()
+                .filter(|p| p.starts_with('('))
+                .map(|p| p.trim_start_matches('(').trim_end_matches(')').split(',').count())
+                .unwrap_or(0);
+            let param_bindings: Vec<String> = handler
+                .parameters
+                .iter()
+                .take(arity)
+                .map(|p| p.name.clone())
+                .collect();
+
             messages.push(MessageRecommendation {
                 name: msg_name,
                 from_handler: handler.name.clone(),
-                payload: None,
+                payload,
                 state_changes: transformed_state_changes,
                 side_effects: handler.api_calls.clone(),
                 service_calls,
+                param_bindings,
+                state_assignments,
+                flattened_control_flow,
             });
         }
 
         // Inline JSX handlers (`onClick={() => onExpand(id)}`) are not in
         // comp.handlers, which only holds named handler functions. Without these the
         // generated view dispatched messages that the actor's enum never declared.
-        for (msg_name, code) in collect_jsx_event_messages(&comp.jsx) {
+        for (msg_name, code) in jsx_events {
             if messages.iter().any(|m| m.name == msg_name) {
                 continue;
             }
@@ -628,7 +728,9 @@ impl<'a> SpecGenerator<'a> {
             let state_changes = callback
                 .as_ref()
                 .and_then(|cb| state_fields.iter().find(|(setter, _)| setter == cb))
-                .map(|(_, field)| vec![format!("self.{} = /* new value */", field)])
+                .map(|(_, field)| {
+                    vec![format!("self.{} = /* new value */", to_snake_case(field))]
+                })
                 .unwrap_or_default();
 
             // A body reading msg.0 needs a payload even when the call site had no
@@ -650,6 +752,9 @@ impl<'a> SpecGenerator<'a> {
                 state_changes,
                 side_effects: vec![],
                 service_calls: vec![],
+                param_bindings: vec![],
+                state_assignments: vec![],
+                flattened_control_flow: false,
             });
         }
 
@@ -1164,16 +1269,32 @@ pub fn chrono_now() -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hours, minutes, seconds)
 }
 
-fn to_snake_case(s: &str) -> String {
+/// The one definition. `generator.rs` and `ast_transform.rs` delegate here;
+/// they used to carry byte-identical copies, which is how a fix to one of them
+/// could leave the other two mangling the same names.
+pub(crate) fn to_snake_case(s: &str) -> String {
+    // Acronym-aware: a run of capitals is one word. Underscoring before every
+    // capital turned `DEFAULT_SORT` into `d_e_f_a_u_l_t__s_o_r_t`, which is what
+    // 16 module-level constants were referred to as across the generated client.
+    let chars: Vec<char> = s.chars().collect();
     let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
+    for (i, c) in chars.iter().enumerate() {
         if c.is_uppercase() {
-            if i > 0 {
+            let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+            let next = chars.get(i + 1).copied();
+            let boundary = match prev {
+                None => false,
+                Some(p) if p.is_lowercase() || p.is_numeric() => true,
+                // `URLPath` -> `url_path`: the last capital of a run starts a word.
+                Some(p) if p.is_uppercase() => next.is_some_and(|n| n.is_lowercase()),
+                _ => false,
+            };
+            if boundary {
                 result.push('_');
             }
             result.push(c.to_lowercase().next().unwrap());
         } else {
-            result.push(c);
+            result.push(*c);
         }
     }
     // A prop named `ref` or `type` is a parse error, not a type error.
@@ -1607,6 +1728,62 @@ fn transform_state_mutations_to_sigil(
         .collect()
 }
 
+/// The same mutations, structured, with the value left as JavaScript so the
+/// generator can run it through the expression transform.
+fn extract_state_assignments(
+    mutations: &[String],
+    state_fields: &[(String, String)],
+) -> Vec<StateAssignment> {
+    mutations
+        .iter()
+        .filter_map(|mutation| {
+            let mutation = mutation.trim();
+            let (setter, field) = state_fields
+                .iter()
+                .find(|(setter, _)| mutation.starts_with(setter.as_str()))?;
+            let _ = setter;
+            let start = mutation.find('(')?;
+            let end = find_matching_paren(mutation, start)?;
+            let value = mutation[start + 1..end].trim();
+            if value.is_empty() {
+                return None;
+            }
+            // `setOpen(prev => !prev)` — the parameter stands for the current
+            // value of the field, so the generator binds it before the body.
+            let (value, updater_param) = match split_updater(value) {
+                Some((param, body)) => (body, Some(param)),
+                None => (value.to_string(), None),
+            };
+            Some(StateAssignment {
+                field: to_snake_case(field),
+                value,
+                updater_param,
+            })
+        })
+        .collect()
+}
+
+/// Split a functional-updater argument `prev => body` / `(prev) => body` into its
+/// parameter and body. Returns None for anything else, including multi-parameter
+/// arrows, which are not updaters.
+fn split_updater(value: &str) -> Option<(String, String)> {
+    let arrow = value.find("=>")?;
+    let param = value[..arrow].trim().trim_start_matches('(').trim_end_matches(')').trim();
+    if param.is_empty()
+        || !param.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        || param.chars().next().is_some_and(|c| c.is_numeric())
+    {
+        return None;
+    }
+    let body = value[arrow + 2..].trim();
+    // A block body is a statement sequence, not an expression; the generator has
+    // no spelling for it and would emit the braces verbatim.
+    if body.starts_with('{') {
+        return None;
+    }
+    Some((param.to_string(), body.to_string()))
+}
+
 /// Transform a single React state mutation to Sigil.
 fn transform_single_mutation(
     mutation: &str,
@@ -1626,13 +1803,25 @@ fn transform_single_mutation(
                 // Transform state references in the value
                 let transformed_value = transform_state_references(value, state_fields);
 
-                return Some(format!("self.{} = {}", field, transformed_value));
+                return Some(format!("self.{} = {}", to_snake_case(field), transformed_value));
             }
         }
     }
 
-    // Not a recognized state setter - return as-is with self prefix attempt
-    Some(transform_state_references(mutation, state_fields))
+    // Not a recognized state setter. This used to fall through to
+    // `transform_state_references`, which returns the JavaScript unchanged when
+    // it recognises nothing — so a call to a prop setter or an imported helper
+    // was emitted verbatim into the actor body. Harmless while only `handle*`
+    // functions were extracted; once every function-valued binding became a
+    // handler candidate it put raw JS in generated Sigil. Record what the React
+    // did instead, on one line, and leave the translation to a human.
+    let one_line: String = mutation.split_whitespace().collect::<Vec<_>>().join(" ");
+    let one_line = if one_line.chars().count() > 100 {
+        one_line.chars().take(97).collect::<String>() + "..."
+    } else {
+        one_line
+    };
+    Some(format!("// React: {}", one_line))
 }
 
 /// Find the matching closing parenthesis.
@@ -1672,7 +1861,7 @@ fn transform_state_references(value: &str, state_fields: &[(String, String)]) ->
         let pattern = format!(r"\b{}\b", regex::escape(field));
         if let Ok(re) = regex::Regex::new(&pattern) {
             // Only replace if not already prefixed with self.
-            let replacement = format!("self.{}", field);
+            let replacement = format!("self.{}", to_snake_case(field));
 
             // Avoid replacing self.field with self.self.field
             let mut new_result = String::new();

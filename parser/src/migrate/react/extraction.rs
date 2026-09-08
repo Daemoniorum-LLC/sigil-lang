@@ -2532,17 +2532,23 @@ impl<'a> Extractor<'a> {
             // Look for: const handleX = () => { ... }
             // or: const handleX = function() { ... }
             // or: function handleX() { ... }
+            //
+            // This used to require the name to start with "handle" or "on". Real
+            // components do not honour that convention — `save`, `startNew`,
+            // `copyBody` and `applyView` are all bound to JSX events in the Lares
+            // UI — so only 6 of 93 components contributed any handler at all, and
+            // every one of those messages generated an empty "TODO: implement"
+            // body. Extract every function-valued binding here; deciding which of
+            // them is actually a handler needs the JSX, which this pass does not
+            // have, so that filter lives in `recommend_messages`.
             match stmt {
                 Stmt::Decl(Decl::Var(var_decl)) => {
                     for decl in &var_decl.decls {
                         if let Pat::Ident(ident) = &decl.name {
                             let name = ident.id.sym.to_string();
-                            // Convention: handlers start with "handle" or are event-like
-                            if name.starts_with("handle") || name.starts_with("on") {
-                                if let Some(init) = &decl.init {
-                                    if let Some(handler) = self.extract_handler_from_expr(&name, init) {
-                                        handlers.push(handler);
-                                    }
+                            if let Some(init) = &decl.init {
+                                if let Some(handler) = self.extract_handler_from_expr(&name, init) {
+                                    handlers.push(handler);
                                 }
                             }
                         }
@@ -2550,9 +2556,7 @@ impl<'a> Extractor<'a> {
                 }
                 Stmt::Decl(Decl::Fn(fn_decl)) => {
                     let name = fn_decl.ident.sym.to_string();
-                    if name.starts_with("handle") || name.starts_with("on") {
-                        handlers.push(self.extract_handler_from_function(&name, &fn_decl.function));
-                    }
+                    handlers.push(self.extract_handler_from_function(&name, &fn_decl.function));
                 }
                 _ => {}
             }
@@ -2649,7 +2653,19 @@ impl<'a> Extractor<'a> {
         }
     }
 
+    /// Walk a statement for `setX(...)` calls and API calls.
+    ///
+    /// This used to look inside expression statements, returns, and the *then*
+    /// branch of an `if` — nothing else. An async handler that does its work in a
+    /// `try`, a loop, or an `else` therefore reported no mutations at all, and
+    /// generated an empty handler body. `save`, the most common shape in the Lares
+    /// UI, is exactly that: `try { … setSpecs(next) } catch { setError(e) }`.
     fn find_mutations_and_calls_in_stmt(&self, stmt: &Stmt, state_mutations: &mut Vec<String>, api_calls: &mut Vec<String>) {
+        let mut walk_block = |block: &BlockStmt, sm: &mut Vec<String>, ac: &mut Vec<String>| {
+            for s in &block.stmts {
+                self.find_mutations_and_calls_in_stmt(s, sm, ac);
+            }
+        };
         match stmt {
             Stmt::Expr(expr_stmt) => {
                 self.find_mutations_and_calls_in_expr(&expr_stmt.expr, state_mutations, api_calls);
@@ -2659,10 +2675,39 @@ impl<'a> Extractor<'a> {
                     self.find_mutations_and_calls_in_expr(arg, state_mutations, api_calls);
                 }
             }
+            Stmt::Decl(Decl::Var(var_decl)) => {
+                for decl in &var_decl.decls {
+                    if let Some(init) = &decl.init {
+                        self.find_mutations_and_calls_in_expr(init, state_mutations, api_calls);
+                    }
+                }
+            }
+            Stmt::Block(block) => walk_block(block, state_mutations, api_calls),
             Stmt::If(if_stmt) => {
                 self.find_mutations_and_calls_in_expr(&if_stmt.test, state_mutations, api_calls);
-                if let Stmt::Block(block) = &*if_stmt.cons {
-                    for s in &block.stmts {
+                self.find_mutations_and_calls_in_stmt(&if_stmt.cons, state_mutations, api_calls);
+                if let Some(alt) = &if_stmt.alt {
+                    self.find_mutations_and_calls_in_stmt(alt, state_mutations, api_calls);
+                }
+            }
+            Stmt::Try(try_stmt) => {
+                walk_block(&try_stmt.block, state_mutations, api_calls);
+                if let Some(handler) = &try_stmt.handler {
+                    walk_block(&handler.body, state_mutations, api_calls);
+                }
+                if let Some(finalizer) = &try_stmt.finalizer {
+                    walk_block(finalizer, state_mutations, api_calls);
+                }
+            }
+            Stmt::For(f) => self.find_mutations_and_calls_in_stmt(&f.body, state_mutations, api_calls),
+            Stmt::ForIn(f) => self.find_mutations_and_calls_in_stmt(&f.body, state_mutations, api_calls),
+            Stmt::ForOf(f) => self.find_mutations_and_calls_in_stmt(&f.body, state_mutations, api_calls),
+            Stmt::While(w) => self.find_mutations_and_calls_in_stmt(&w.body, state_mutations, api_calls),
+            Stmt::DoWhile(w) => self.find_mutations_and_calls_in_stmt(&w.body, state_mutations, api_calls),
+            Stmt::Labeled(l) => self.find_mutations_and_calls_in_stmt(&l.body, state_mutations, api_calls),
+            Stmt::Switch(sw) => {
+                for case in &sw.cases {
+                    for s in &case.cons {
                         self.find_mutations_and_calls_in_stmt(s, state_mutations, api_calls);
                     }
                 }
@@ -2675,8 +2720,19 @@ impl<'a> Extractor<'a> {
         match expr {
             Expr::Call(call) => {
                 if let Some(name) = self.get_callee_name(&call.callee) {
-                    // Check for setState calls
-                    if name.starts_with("set") && name.len() > 3 && name.chars().nth(3).map_or(false, |c| c.is_uppercase()) {
+                    // Check for setState calls. `setTimeout`/`setInterval` match
+                    // the set-plus-capital shape exactly and are not state at all;
+                    // once handler extraction stopped requiring a `handle*` name
+                    // they turned up in nearly every body, and the mutation
+                    // transform has no field to bind them to.
+                    if name.starts_with("set")
+                        && name.len() > 3
+                        && name.chars().nth(3).map_or(false, |c| c.is_uppercase())
+                        && !matches!(
+                            name.as_str(),
+                            "setTimeout" | "setInterval" | "setImmediate"
+                        )
+                    {
                         state_mutations.push(self.span_to_source(call.span));
                     }
                     // Check for API calls
