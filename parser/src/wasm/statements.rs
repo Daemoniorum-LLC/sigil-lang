@@ -2,7 +2,7 @@
 //!
 //! Compiles Sigil functions, structs, enums, and other top-level items to WASM.
 
-use wasm_encoder::{Instruction, ValType};
+use wasm_encoder::{BlockType, Instruction, ValType};
 
 use std::path::PathBuf;
 
@@ -578,6 +578,12 @@ impl WasmCompiler {
                     self.register_handler_sig(&handler_name, handler)?;
                 }
 
+                // …and one dispatcher per actor, so a host that only knows a
+                // message id can deliver a message without knowing handler names.
+                if !actor.handlers.is_empty() {
+                    self.register_actor_dispatcher_sig(&actor_name)?;
+                }
+
                 // Register methods as ActorName::method_name
                 for method in &actor.methods {
                     // A `self` receiver is a real WASM parameter (a placeholder —
@@ -898,9 +904,14 @@ impl WasmCompiler {
             return Ok(());
         }
 
-        // Handler has implicit self parameter + explicit params
-        // For WASM, we pass actor state as globals, so params are just the message params
-        let param_types: Vec<ValType> = handler.params.iter().map(|_| ValType::I64).collect();
+        // Actor state is in globals, so there is no `self` to pass; what a
+        // handler does need is its payload. A generated handler declares no
+        // parameters and reads `msg.0`, so every handler takes one implicit
+        // `msg` value ahead of any declared parameters.
+        let param_types: Vec<ValType> =
+            std::iter::once(ValType::I64)
+                .chain(handler.params.iter().map(|_| ValType::I64))
+                .collect();
 
         // Result type
         let result_types = if handler.return_type.is_some() {
@@ -923,23 +934,142 @@ impl WasmCompiler {
         }
 
         // Create function placeholder
-        let params_with_names: Vec<(String, ValType)> = handler
-            .params
-            .iter()
-            .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64))
+        let params_with_names: Vec<(String, ValType)> = std::iter::once(("msg".to_string(), ValType::I64))
+            .chain(
+                handler
+                    .params
+                    .iter()
+                    .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64)),
+            )
             .collect();
 
+        // A message handler used to compile to a function nothing could ever
+        // call: not exported, no mailbox in the backend, no dispatcher in the JS
+        // runtime, and `Actor ! Message` is not a construct the parser has. Every
+        // actor in a Qliphoth component was unreachable code. Export it under
+        // `<Actor>_on_<Message>` so a host can deliver a message at all.
+        let export_name = match self.module_path.last() {
+            Some(actor_name) => format!("{}_{}", actor_name, handler_name),
+            None => handler_name.to_string(),
+        };
+
         let compiled_func = CompiledFunction::new(
-            handler_name.to_string(),
+            export_name,
             type_idx,
             func_idx,
             params_with_names,
             result_types,
-            false, // Handlers are not exported directly
+            true,
         );
 
         self.functions.push(compiled_func);
 
+        Ok(())
+    }
+
+    /// Register `<Actor>_dispatch(msg_id, payload) -> i64`.
+    ///
+    /// The DOM knows a message by its id — `VNode·on_click(message_id: u64)` is
+    /// Qliphoth's own signature — not by a handler's name. Without a dispatcher
+    /// there was no way from an event back into an actor at all.
+    fn register_actor_dispatcher_sig(&mut self, actor_name: &str) -> WasmResult<()> {
+        let name = format!("{}_dispatch", actor_name);
+        if self.func_map.contains_key(&name) {
+            return Ok(());
+        }
+        let param_types = vec![ValType::I64, ValType::I64];
+        let result_types = vec![ValType::I64];
+        let type_idx = self.get_or_create_type(param_types, result_types.clone());
+        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        self.func_map.insert(name.clone(), func_idx);
+
+        self.functions.push(CompiledFunction::new(
+            name,
+            type_idx,
+            func_idx,
+            vec![
+                ("__msg_id".to_string(), ValType::I64),
+                ("__payload".to_string(), ValType::I64),
+            ],
+            result_types,
+            true,
+        ));
+        Ok(())
+    }
+
+    /// The message id for one of an actor's handlers.
+    ///
+    /// Prefer the actor's own `<Actor>Msg` enum — that is what the React
+    /// migrator emits and what a `·on_click(…)` call site carries — then any
+    /// enum declaring a variant of that name, and only then declaration order.
+    fn actor_message_tag(&self, actor_name: &str, message: &str, fallback: u32) -> u32 {
+        if let Some(layout) = self.enum_layouts.get(&format!("{}Msg", actor_name)) {
+            if let Some(tag) = layout.variant_tag(message) {
+                return tag;
+            }
+        }
+        for layout in self.enum_layouts.values() {
+            if let Some(tag) = layout.variant_tag(message) {
+                return tag;
+            }
+        }
+        fallback
+    }
+
+    /// Emit the dispatcher body: compare the id against each handler's message
+    /// tag and call the first that matches.
+    fn compile_actor_dispatcher(&mut self, actor: &crate::ast::ActorDef) -> WasmResult<()> {
+        let actor_name = actor.name.name.clone();
+        let name = format!("{}_dispatch", actor_name);
+        let func_idx = match self.func_map.get(&name) {
+            Some(&idx) => idx,
+            None => return Ok(()),
+        };
+        let fn_list_idx = (func_idx - self.imports.import_count()) as usize;
+        self.current_fn_idx = Some(fn_list_idx);
+
+        for (i, handler) in actor.handlers.iter().enumerate() {
+            let tag = self.actor_message_tag(&actor_name, &handler.message.name, i as u32);
+            let handler_idx = match self
+                .func_map
+                .get(&format!("{}::on_{}", actor_name, handler.message.name))
+            {
+                Some(&idx) => idx,
+                None => continue,
+            };
+            // One implicit `msg` parameter, then any declared ones.
+            let arity = 1 + handler.params.len();
+            let returns_value = handler.return_type.is_some();
+
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::LocalGet(0)); // msg_id
+            func.push(Instruction::I64Const(tag as i64));
+            func.push(Instruction::I64Eq);
+            func.push(Instruction::If(BlockType::Empty));
+            // The payload fills the first parameter; anything beyond it is a
+            // message shape this dispatcher cannot express, and gets zero.
+            for p in 0..arity {
+                if p == 0 {
+                    func.push(Instruction::LocalGet(1));
+                } else {
+                    func.push(Instruction::I64Const(0));
+                }
+            }
+            func.push(Instruction::Call(handler_idx));
+            if returns_value {
+                func.push(Instruction::Drop);
+            }
+            func.push(Instruction::End);
+        }
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::End);
+        self.current_fn_idx = None;
         Ok(())
     }
 
@@ -1355,6 +1485,11 @@ impl WasmCompiler {
         // 4. Compile methods
         for method in &actor.methods {
             self.compile_actor_method(&actor_name, method)?;
+        }
+
+        // 5. The dispatcher, which needs every handler's index to exist first.
+        if !actor.handlers.is_empty() {
+            self.compile_actor_dispatcher(actor)?;
         }
 
         // Restore previous actor context

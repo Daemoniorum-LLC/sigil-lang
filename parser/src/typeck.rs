@@ -596,6 +596,31 @@ impl TypeChecker {
         );
 
         // ===================
+        // JSON
+        // ===================
+        // Registered on the interpreter as `json_*` and on the WASM backend as
+        // the `json` host import group, but never here — so `--strict` reported
+        // "cannot find `json_stringify` in this scope" for Sigil's own JSON.
+        self.functions.insert(
+            "json_parse".to_string(),
+            func(vec![Type::Str], any.clone()),
+        );
+        self.functions.insert(
+            "json_stringify".to_string(),
+            func(vec![any.clone()], Type::Str),
+        );
+        self.functions
+            .insert("json_pretty".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions.insert(
+            "json_get".to_string(),
+            func(vec![any.clone(), Type::Str], any.clone()),
+        );
+        self.functions.insert(
+            "json_set".to_string(),
+            func(vec![any.clone(), Type::Str, any.clone()], any.clone()),
+        );
+
+        // ===================
         // String functions
         // ===================
         self.functions

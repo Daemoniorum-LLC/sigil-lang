@@ -136,6 +136,7 @@ impl ImportRegistry {
         self.register_signal_imports();
         self.register_async_imports();
         self.register_browser_imports();
+        self.register_json_imports();
     }
 
     fn register_browser_imports(&mut self) {
@@ -300,6 +301,27 @@ impl ImportRegistry {
         self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
         // Vec::join - concatenate elements with separator
         self.add_import_with_alias("morpheme", "vec_join", "vec_join", vec![I32, I32], vec![I32]);
+    }
+
+    /// JSON, which the WASM backend had none of.
+    ///
+    /// Sigil's JSON lives on the interpreter as `json_parse` / `json_stringify`
+    /// / `json_get` / `json_set` / `json_pretty`. Compiled to WASM those names
+    /// resolved to nothing and, under the unresolved-call stub, quietly became
+    /// `0` — so a web target could not read or write JSON at all, and would not
+    /// say so. Qliphoth worked around it by calling `serde_json·`, a Rust crate
+    /// Sigil does not have, in its storage, websocket, router-guard and history
+    /// modules.
+    ///
+    /// Values are opaque host handles, like vnodes and arrays. Strings are i64
+    /// pointers to length-prefixed data, matching the vdom convention.
+    fn register_json_imports(&mut self) {
+        use ValType::*;
+        self.add_import_with_alias("json", "parse", "json_parse", vec![I64], vec![I64]);
+        self.add_import_with_alias("json", "stringify", "json_stringify", vec![I64], vec![I64]);
+        self.add_import_with_alias("json", "pretty", "json_pretty", vec![I64], vec![I64]);
+        self.add_import_with_alias("json", "get", "json_get", vec![I64, I64], vec![I64]);
+        self.add_import_with_alias("json", "set", "json_set", vec![I64, I64, I64], vec![I64]);
     }
 
     fn register_math_imports(&mut self) {

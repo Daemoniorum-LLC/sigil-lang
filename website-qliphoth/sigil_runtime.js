@@ -16,6 +16,47 @@ let heapPtr = 1024 * 64; // Start heap after 64KB stack
 function setWasmExports(exports) {
     wasmExports = exports;
     wasmMemory = exports.memory;
+    // An actor compiles to a `<Actor>_dispatch(msg_id, payload)` export. Their
+    // presence is what tells this runtime that an `on*` prop carries a message
+    // id rather than an indirect-function-table index — a module with no actors
+    // has no dispatcher and keeps the older behaviour exactly.
+    messageDispatchers = Object.entries(exports)
+        .filter(([name, fn]) => name.endsWith('_dispatch') && typeof fn === 'function')
+        .map(([name, fn]) => [name.slice(0, -'_dispatch'.length), fn]);
+}
+
+// Actor dispatchers, as [actorName, fn] pairs.
+let messageDispatchers = [];
+// Optional page hook, run after a message is delivered — where a re-render goes.
+let afterMessage = null;
+
+/// Register a callback to run after each dispatched message.
+///
+/// An actor handler mutates state in WASM globals; nothing re-renders on its
+/// own. This is where a page puts its `render()` call.
+export function onMessageDispatched(fn) {
+    afterMessage = fn;
+}
+
+/// Deliver a message id (and optional payload) to every actor in the module.
+///
+/// Returns false when the module has no actors, so the caller can fall back to
+/// the function-pointer convention.
+export function dispatchMessage(msgId, payload = 0) {
+    if (messageDispatchers.length === 0) {
+        return false;
+    }
+    for (const [name, fn] of messageDispatchers) {
+        try {
+            fn(BigInt(msgId), BigInt(payload));
+        } catch (e) {
+            console.error(`[dispatch] ${name} failed for message ${msgId}:`, e);
+        }
+    }
+    if (afterMessage) {
+        afterMessage(Number(msgId), Number(payload));
+    }
+    return true;
 }
 
 function getMemory() {
@@ -81,6 +122,110 @@ const pendingEffects = new Set();
 
 // Effect registry
 const effects = new Map();          // effectId -> { run, deps, cleanup }
+// =============================================================================
+// JSON
+// =============================================================================
+//
+// Sigil's JSON is `json_parse` / `json_stringify` / `json_get` / `json_set` /
+// `json_pretty`, and the WASM backend had no binding for any of them — under the
+// unresolved-call stub they compiled to a constant 0, so a web target could not
+// read or write JSON and would not say so. Values are opaque handles here, the
+// same way vnodes and arrays are; strings are length-prefixed pointers.
+
+const jsonValues = new Map();
+
+// Everything in WASM is a uniform i64, so a JSON argument arrives as a bare
+// number and could be a value handle, a pointer to a length-prefixed string, or
+// an actual number. Handles are issued from a range no string pointer and no
+// plausible integer can reach, and string data starts at HEAP_START (0x4000) —
+// so the three are told apart by magnitude, then confirmed.
+const JSON_HANDLE_BASE = 0x7000_0000;
+const WASM_DATA_START = 0x4000;
+let nextJsonId = JSON_HANDLE_BASE;
+
+function jsonHandle(value) {
+    const id = nextJsonId++;
+    jsonValues.set(id, value);
+    return BigInt(id);
+}
+
+/// Is this plausibly a pointer to a length-prefixed UTF-8 string?
+function looksLikeStringPointer(n) {
+    if (!Number.isInteger(n) || n < WASM_DATA_START) return false;
+    const mem = getMemory();
+    if (n + 4 > mem.byteLength) return false;
+    const len = new DataView(wasmMemory.buffer).getUint32(n, true);
+    return len <= 1 << 20 && n + 4 + len <= mem.byteLength;
+}
+
+/// Resolve an argument to a JS value: a handle we issued, a string we can read,
+/// or the number itself.
+function jsonResolve(ref) {
+    const n = Number(ref);
+    if (jsonValues.has(n)) {
+        return jsonValues.get(n);
+    }
+    if (looksLikeStringPointer(n)) {
+        try {
+            return readLengthPrefixedString(n);
+        } catch {
+            return n;
+        }
+    }
+    return n;
+}
+
+function jsonParse(strRef) {
+    const text = readLengthPrefixedString(strRef);
+    try {
+        return jsonHandle(JSON.parse(text));
+    } catch (e) {
+        console.error('[json.parse]', e.message);
+        return jsonHandle(null);
+    }
+}
+
+function jsonStringify(ref) {
+    return BigInt(writeLengthPrefixedString(JSON.stringify(jsonResolve(ref)) ?? 'null'));
+}
+
+function jsonPretty(ref) {
+    return BigInt(writeLengthPrefixedString(JSON.stringify(jsonResolve(ref), null, 2) ?? 'null'));
+}
+
+/// Dotted path lookup, matching the interpreter's `json_get`: each segment is an
+/// object key, or an array index when the segment parses as a number.
+function jsonGet(ref, pathRef) {
+    const path = readLengthPrefixedString(pathRef);
+    let current = jsonResolve(ref);
+    for (const key of path.split('.')) {
+        if (current == null) break;
+        if (Array.isArray(current)) {
+            const i = Number.parseInt(key, 10);
+            current = Number.isNaN(i) ? null : (current[i] ?? null);
+        } else if (typeof current === 'object') {
+            current = current[key] ?? null;
+        } else {
+            current = null;
+        }
+    }
+    return jsonHandle(current ?? null);
+}
+
+function jsonSet(ref, pathRef, valueRef) {
+    const path = readLengthPrefixedString(pathRef).split('.');
+    const root = structuredClone(jsonResolve(ref) ?? {});
+    let current = root;
+    for (const key of path.slice(0, -1)) {
+        if (current[key] == null || typeof current[key] !== 'object') {
+            current[key] = {};
+        }
+        current = current[key];
+    }
+    current[path[path.length - 1]] = jsonResolve(valueRef);
+    return jsonHandle(root);
+}
+
 
 function signalCreate(initialValue) {
     const id = nextSignalId++;
@@ -273,6 +418,23 @@ function consoleLogF64(value) {
 
 function consoleLogStr(ptr, len) {
     console.log('[sigil]', readString(ptr, len));
+}
+
+// console.log / warn / error take a single length-prefixed string pointer, not
+// the (ptr, len) pair `log_str` takes. The compiler has emitted all three since
+// the string macros landed; this runtime implemented none of them, and a WASM
+// module that imports a function the runtime does not provide does not degrade
+// — `WebAssembly.instantiate` throws and nothing runs at all.
+function consoleLog(strRef) {
+    console.log('[sigil]', readLengthPrefixedString(strRef));
+}
+
+function consoleWarn(strRef) {
+    console.warn('[sigil]', readLengthPrefixedString(strRef));
+}
+
+function consoleError(strRef) {
+    console.error('[sigil]', readLengthPrefixedString(strRef));
 }
 
 function consolePrint(value) {
@@ -925,6 +1087,27 @@ function arrayLen(arrId) {
     return arr ? arr.length : 0;
 }
 
+// Vec::join(separator). The compiler wraps both pointers to i32 before the
+// call and extends the result back to i64.
+function vecJoin(arrId, sepStrRef) {
+    const arr = arrays.get(Number(arrId));
+    const sep = readLengthPrefixedString(sepStrRef);
+    if (!arr) {
+        return writeLengthPrefixedString('');
+    }
+    // Elements are either string handles or numbers; a handle points at a
+    // length-prefixed string inside the same linear memory.
+    const parts = arr.map((v) => {
+        const n = Number(v);
+        try {
+            return readLengthPrefixedString(n);
+        } catch {
+            return String(n);
+        }
+    });
+    return writeLengthPrefixedString(parts.join(sep));
+}
+
 function arrayMap(arrId, fnPtr) {
     // Simplified
     return Number(arrId);
@@ -1056,6 +1239,18 @@ function vdomSetVnodeStrProp(vnodeId, nameStrRef, valueStrRef) {
     }
 }
 
+function vdomSetVnodeStyle(vnodeId, propStrRef, valueStrRef) {
+    const id = Number(vnodeId);
+    const vnode = vnodes.get(id);
+    if (vnode && !vnode.isText) {
+        const prop = readLengthPrefixedString(propStrRef);
+        const value = readLengthPrefixedString(valueStrRef);
+        vnode.style ??= {};
+        vnode.style[prop] = value;
+        console.log(`[vdom.set_style] id=${id} ${prop}=${JSON.stringify(value)}`);
+    }
+}
+
 function vdomAppendVnodeChild(parentId, childId) {
     const pId = Number(parentId);
     const cId = Number(childId);
@@ -1092,16 +1287,29 @@ function renderVnodeToDom(vnodeId) {
 
     // Set properties/attributes
     for (const [name, value] of Object.entries(vnode.props || {})) {
+        if (name.endsWith('_payload')) {
+            continue; // read by the event handler above, never an attribute
+        }
         if (name.startsWith('on')) {
-            // Event handler - value is a function pointer
+            // Event handler. In an actor module the value is a message id, which
+            // is what `VNode·on_click(message_id: u64)` is declared to take; in a
+            // flat FFI module it is an indirect-function-table index. Try the
+            // dispatcher first — it reports false when there are no actors.
             const eventName = name.slice(2).toLowerCase();
+            // A message id alone cannot say *which* row was clicked, and
+            // `VNode·on_click(message_id: u64)` has no slot for it. A sibling
+            // `<event>_payload` prop carries the argument.
+            const payload = vnode.props?.[`${name}_payload`] ?? 0;
             el.addEventListener(eventName, () => {
-                // Call WASM function if it's a function index
-                if (typeof value === 'bigint' || typeof value === 'number') {
-                    const table = wasmExports?.__indirect_function_table;
-                    if (table) {
-                        try { table.get(Number(value))(); } catch (e) { console.error(e); }
-                    }
+                if (typeof value !== 'bigint' && typeof value !== 'number') {
+                    return;
+                }
+                if (dispatchMessage(value, payload)) {
+                    return;
+                }
+                const table = wasmExports?.__indirect_function_table;
+                if (table) {
+                    try { table.get(Number(value))(); } catch (e) { console.error(e); }
                 }
             });
         } else if (name === 'style' && typeof value === 'string') {
@@ -1353,6 +1561,9 @@ export function createImports() {
             println_f64: consoleLogF64,
             println_str: consoleLogStr,
             println: consolePrint,
+            log: consoleLog,
+            warn: consoleWarn,
+            error: consoleError,
         }, 'console'),
         string: wrapImports({
             concat: stringConcat,
@@ -1445,6 +1656,7 @@ export function createImports() {
         math: mathImports,
         morpheme: {
             array_new: arrayNew,
+            vec_join: vecJoin,
             array_push: arrayPush,
             array_get: arrayGet,
             array_set: arraySet,
@@ -1473,10 +1685,18 @@ export function createImports() {
             create_fragment: vdomCreateFragment,
             set_vnode_prop: vdomSetVnodeProp,
             set_vnode_str_prop: vdomSetVnodeStrProp,
+            set_vnode_style: vdomSetVnodeStyle,
             append_vnode_child: vdomAppendVnodeChild,
             diff_and_patch: vdomDiffAndPatch,
             mount_vnode: vdomMountVnode,
             dispose: vdomDispose,
+        },
+        json: {
+            parse: jsonParse,
+            stringify: jsonStringify,
+            pretty: jsonPretty,
+            get: jsonGet,
+            set: jsonSet,
         },
         signal: {
             create: signalCreate,

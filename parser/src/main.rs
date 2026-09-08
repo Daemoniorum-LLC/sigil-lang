@@ -224,9 +224,22 @@ fn main() -> ExitCode {
         }
         #[cfg(feature = "wasm")]
         "wasm" => {
+            // The host import surface, as the compiler defines it. A JS runtime
+            // that is missing one of these does not degrade: a WASM module
+            // importing a function the host does not provide makes
+            // `WebAssembly.instantiate` throw, and nothing runs at all. Both
+            // shipped copies of `sigil_runtime.js` were short by five, and
+            // nothing could have told them so.
+            if args.iter().any(|a| a == "--list-imports") {
+                for import in WasmCompiler::new().host_imports() {
+                    println!("{}", import);
+                }
+                return ExitCode::SUCCESS;
+            }
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
                 eprintln!("Usage: sigil wasm <file.sigil> [-o output.wasm]");
+                eprintln!("       sigil wasm --list-imports");
                 return ExitCode::from(1);
             }
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {

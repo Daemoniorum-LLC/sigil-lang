@@ -1278,6 +1278,35 @@ impl WasmCompiler {
             }
         }
 
+        // A method the user declared on this exact type wins over the builtin of
+        // the same name.
+        //
+        // `get`, `set`, `push`, `first` and `len` are builtin method names AND
+        // perfectly ordinary method names. Builtin dispatch ran first and
+        // unconditionally, so a user's `get` was compiled as `morpheme_array_get`
+        // — which takes an i32 receiver — and a `Json·get(path)` call produced a
+        // module that fails WebAssembly validation while the compiler reported
+        // success. Only fires when the receiver's type is known and that type
+        // really declares the method, so it cannot shadow a builtin by accident.
+        if let Some(receiver_type) = self.infer_receiver_type(receiver) {
+            let qualified = format!("{}::{}", receiver_type, method);
+            if let Some(&func_idx) = self.func_map.get(&qualified) {
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let returns_void = self.func_returns_void(func_idx);
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(func_idx));
+                if returns_void {
+                    func.push(Instruction::I64Const(0));
+                }
+                return Ok(());
+            }
+        }
+
         // Try builtin method dispatch first (to_string, clone, unwrap, etc.)
         if self.try_compile_builtin_method(receiver, method, args)? {
             return Ok(());
@@ -1377,7 +1406,7 @@ impl WasmCompiler {
 
     /// Infer the type of a receiver expression for method resolution.
     /// Used to resolve method chains like VNode::div().child() -> VNode::child
-    fn infer_receiver_type(&self, expr: &Expr) -> Option<String> {
+    pub(crate) fn infer_receiver_type(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::Path(path) => {
                 // Check if the path is a known type (struct or enum)
@@ -1385,7 +1414,8 @@ impl WasmCompiler {
                 if self.struct_layouts.contains_key(name) || self.enum_layouts.contains_key(name) {
                     return Some(name.to_string());
                 }
-                None
+                // Otherwise it may be a local whose type we recorded at its `let`.
+                self.var_types.get(name).cloned()
             }
             Expr::Call { func, .. } => {
                 // For a call like VNode::div(), infer the return type
@@ -3645,6 +3675,32 @@ impl WasmCompiler {
                             return Ok(());
                         }
                     }
+                }
+            }
+        }
+
+        // A message handler's payload: `msg.0`.
+        //
+        // A generated handler declares no parameters and reads its payload as
+        // `msg.0` — the shape the React migrator emits for every setter message.
+        // `msg` was bound nowhere, so those bodies failed to compile with
+        // "undefined variable: msg". Handlers now carry an implicit `msg`
+        // parameter; `msg.0` is that value. Higher indices are a multi-field
+        // payload, which the uniform i64 model has no representation for, so they
+        // read as 0 rather than silently returning the whole payload.
+        if let Expr::Path(path) = expr {
+            if path.segments.len() == 1 && path.segments[0].ident.name == "msg" {
+                if let Some(local) = self.current_function().and_then(|f| f.get_local("msg")) {
+                    let index = local.index;
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    if field == "0" {
+                        func.push(Instruction::LocalGet(index));
+                    } else {
+                        func.push(Instruction::I64Const(0));
+                    }
+                    return Ok(());
                 }
             }
         }

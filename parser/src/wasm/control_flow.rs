@@ -1151,7 +1151,12 @@ impl WasmCompiler {
                             // Struct initialization: PlatformApp { ... } -> "PlatformApp"
                             path.segments.last().map(|s| s.ident.name.clone())
                         }
-                        _ => None,
+                        // A static method call — `Json·parse(…)`, `VNode·div()` —
+                        // names its own type. Without this, a local bound from a
+                        // constructor had no recorded type, so a method call on it
+                        // could not be resolved to the type's own method and fell
+                        // through to a same-named builtin.
+                        other => self.infer_receiver_type(other),
                     }
                 });
 

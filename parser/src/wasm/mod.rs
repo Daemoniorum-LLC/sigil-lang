@@ -260,6 +260,26 @@ impl WasmCompiler {
         &self.stubbed_calls
     }
 
+    /// Every host function the compiler can import, as `module.name`, sorted.
+    ///
+    /// This is the contract a JS runtime has to satisfy. It is not a subset
+    /// question: a module importing a function the host does not provide fails
+    /// at `WebAssembly.instantiate`, so one missing name takes the whole page
+    /// down. Exposed through `sigil wasm --list-imports` so a runtime can be
+    /// checked against the compiler that will target it, rather than against a
+    /// grep of this file.
+    pub fn host_imports(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .imports
+            .imports()
+            .iter()
+            .map(|i| format!("{}.{}", i.module, i.name))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
     /// Compile source code to WASM bytes.
     pub fn compile(&mut self, source: &str) -> WasmResult<Vec<u8>> {
         // Initialize source map builder if debug info is enabled
@@ -1308,6 +1328,71 @@ mod validation_tests {
     /// which is how anything outside the actor calls it. The `self` receiver is
     /// part of the method's WASM signature, and only the `self·method()` path
     /// pushed it, so these calls were one argument short.
+    /// A message handler used to compile to a function nothing could call: not
+    /// exported, no dispatcher, no mailbox, and `Actor ! Message` is not a
+    /// construct the parser has (it lexes as `Actor` marked known, then `Message`
+    /// — two statements). Handlers are now exported as `<Actor>_on_<Message>`
+    /// and reachable by message id through `<Actor>_dispatch`.
+    #[test]
+    fn test_actor_handlers_are_reachable() {
+        let src = r#"
+            ☉ ᛈ CounterMsg { Increment, Decrement, SetTo(i64), }
+            ☉ actor Counter {
+                state count: i64! = 0,
+                on Increment { self.count = self.count + 1; }
+                on Decrement { self.count = self.count - 1; }
+                on SetTo { self.count = msg.0; }
+                ☉ rite value(self) -> i64! { self.count }
+            }
+            ☉ rite main() -> i64! { 0 }
+        "#;
+        let mut compiler = WasmCompiler::new();
+        let bytes = compiler.compile(src).expect("compilation failed");
+        assert!(validate_wasm(&bytes).is_ok(), "{:?}", validate_wasm(&bytes));
+
+        let exports = exported_names(&bytes);
+        for expected in [
+            "Counter_on_Increment",
+            "Counter_on_Decrement",
+            "Counter_on_SetTo",
+            "Counter_dispatch",
+        ] {
+            assert!(
+                exports.contains(&expected.to_string()),
+                "missing export {expected}; have {exports:?}"
+            );
+        }
+    }
+
+    /// `msg.0` is how every handler the React migrator generates reads its
+    /// payload, and `msg` was bound nowhere — those bodies failed to compile
+    /// with "undefined variable: msg".
+    #[test]
+    fn test_handler_payload_binding_compiles() {
+        let mut compiler = WasmCompiler::new();
+        let bytes = compiler
+            .compile(
+                r#"☉ ᛈ M { SetTo(i64), }
+                   ☉ actor A { state c: i64! = 0, on SetTo { self.c = msg.0; } }
+                   ☉ rite main() -> i64! { 0 }"#,
+            )
+            .expect("compilation failed");
+        assert!(validate_wasm(&bytes).is_ok(), "{:?}", validate_wasm(&bytes));
+    }
+
+    fn exported_names(bytes: &[u8]) -> Vec<String> {
+        use wasmparser::{Parser, Payload};
+        let mut out = Vec::new();
+        for payload in Parser::new(0).parse_all(bytes).flatten() {
+            if let Payload::ExportSection(reader) = payload {
+                for export in reader.into_iter().flatten() {
+                    out.push(export.name.to_string());
+                }
+            }
+        }
+        out
+    }
+
     #[test]
     fn test_validate_actor_method_call_through_type_name() {
         for src in [
