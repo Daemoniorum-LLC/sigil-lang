@@ -184,6 +184,9 @@ fn to_pascal_case(s: &str) -> String {
 
 struct ExprTransformer<'a> {
     config: &'a TransformConfig,
+    /// Names bound by enclosing closures. Separate from `config.locals`, which is
+    /// the caller's fixed scope; this one is pushed and popped as arrows nest.
+    scope_locals: Vec<String>,
     warnings: Vec<String>,
 }
 
@@ -191,6 +194,7 @@ impl<'a> ExprTransformer<'a> {
     fn new(config: &'a TransformConfig) -> Self {
         Self {
             config,
+            scope_locals: vec![],
             warnings: vec![],
         }
     }
@@ -334,14 +338,22 @@ impl<'a> ExprTransformer<'a> {
             return "None".to_string();
         }
 
-        // Check if it's a local variable (shouldn't be prefixed)
-        if self.config.locals.contains(&name) {
-            return to_snake_case(&name);
+        // Check if it's a local variable (shouldn't be prefixed).
+        //
+        // Compared snake-cased on both sides. Locals are registered under their
+        // emitted Sigil name (`current_sprint`) while the AST still carries the
+        // JS one (`currentSprint`), so an exact match never fired and every local
+        // was rewritten to `self.current_sprint` — a field that does not exist.
+        let snake = to_snake_case(&name);
+        if self.config.locals.iter().any(|l| to_snake_case(l) == snake)
+            || self.scope_locals.iter().any(|l| to_snake_case(l) == snake)
+        {
+            return snake;
         }
 
         // Check if it's a prop (for pure function components)
-        if self.config.props.contains(&name) {
-            return to_snake_case(&name);
+        if self.config.props.iter().any(|p| to_snake_case(p) == snake) {
+            return snake;
         }
 
         // Check if we should prefix with self (actor state)
@@ -671,6 +683,15 @@ impl<'a> ExprTransformer<'a> {
 
         let params_str = params.join(", ");
 
+        // The parameters are locals inside the body. Without registering them, the
+        // actor's unknown-identifier rule rewrote every closure parameter to a state
+        // field: `|a| a.fault` became `|a| self.a.fault`, referring to a field named
+        // `a` that no actor has.
+        let saved_locals = self.scope_locals.len();
+        for p in &params {
+            self.scope_locals.push(p.trim_start_matches("...").to_string());
+        }
+
         // Transform body
         let body = match &*arrow.body {
             BlockStmtOrExpr::Expr(expr) => self.transform_expr(expr),
@@ -681,6 +702,8 @@ impl<'a> ExprTransformer<'a> {
                 "{ /* block */ }".to_string()
             }
         };
+
+        self.scope_locals.truncate(saved_locals);
 
         format!("|{}| {}", params_str, body)
     }

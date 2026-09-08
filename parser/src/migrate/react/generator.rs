@@ -312,9 +312,75 @@ impl<'a> QliphothGenerator<'a> {
         handlers.join("\n\n")
     }
 
+    /// The component body's `const` bindings, rendered as Sigil `≔` statements.
+    ///
+    /// React destructures props into locals and derives values from them; those
+    /// statements used to be dropped, so the view referred to names nothing bound.
+    /// `repo` alone appeared 80 times across the generated Lares client, resolving
+    /// to nothing — invisible to `sigil check`, which does not resolve names, and
+    /// caught by `--strict`.
+    fn generate_locals(&self, indent: &str, scope: &mut VNodeScope) -> String {
+        let locals = self.spec.source.extraction.locals.clone();
+        if locals.is_empty() {
+            return String::new();
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut lines = Vec::new();
+        for local in &locals {
+            let name = to_snake_case(&local.name);
+            // A prop of the same name already binds it; re-binding would shadow the
+            // parameter with itself.
+            if self
+                .spec
+                .recommendations
+                .props_handling
+                .fields
+                .iter()
+                .any(|f| f.name == name)
+                || !seen.insert(name.clone())
+            {
+                continue;
+            }
+            // Transform against the scope BEFORE adding this name, so a local may
+            // refer to earlier locals but not to itself. Without accumulating them,
+            // every reference to a local from a later local or from the view body
+            // was rewritten to `self.<name>` by the unknown-identifier rule, which
+            // is how `self.current_sprint` and `self.summarize(…)` appeared for
+            // things that are not fields at all.
+            let init = self.transform_expression_scoped(&local.init, scope);
+            scope.locals.push(name.clone());
+
+            // Some initialisers survive the transform carrying JS that Sigil has no
+            // spelling for — optional chaining (`a?.b`) and spread (`...x`). Emitting
+            // those verbatim breaks the file. Bind the name to ∅ instead and keep the
+            // original beside it: the name still resolves, which is the point, and
+            // the value is visibly missing rather than silently wrong.
+            let untranslatable = init.contains("?.") || init.contains("...");
+            if untranslatable {
+                let one_line: String = local.init.split_whitespace().collect::<Vec<_>>().join(" ");
+                let capped = if one_line.chars().count() > 90 {
+                    one_line.chars().take(87).collect::<String>() + "..."
+                } else {
+                    one_line
+                };
+                lines.push(format!("{}≔ {} = ∅;  // React: {}", indent, name, capped));
+            } else {
+                lines.push(format!("{}≔ {} = {};", indent, name, init));
+            }
+        }
+        if lines.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", lines.join("\n"))
+        }
+    }
+
     fn generate_view_method(&self) -> String {
         let jsx = &self.spec.source.extraction.jsx;
-        let scope = VNodeScope::default();
+        let mut scope = VNodeScope::default();
+
+        // Locals first: they extend the scope the body is generated against.
+        let locals = self.generate_locals("        ", &mut scope);
 
         let body = if let Some(root) = &jsx.root {
             self.generate_vnode(root, 2, &scope)
@@ -322,10 +388,7 @@ impl<'a> QliphothGenerator<'a> {
             "        VNode·div()".to_string()
         };
 
-        format!(
-            "    rite view(self) -> VNode! {{\n{}\n    }}",
-            body
-        )
+        format!("    rite view(self) -> VNode! {{\n{}{}\n    }}", locals, body)
     }
 
     // =========================================================================
@@ -353,7 +416,8 @@ impl<'a> QliphothGenerator<'a> {
         };
 
         let jsx = &self.spec.source.extraction.jsx;
-        let scope = VNodeScope::default();
+        let mut scope = VNodeScope::default();
+        let locals = self.generate_locals("    ", &mut scope);
         let body = if let Some(root) = &jsx.root {
             self.generate_vnode(root, 1, &scope)
         } else {
@@ -361,9 +425,10 @@ impl<'a> QliphothGenerator<'a> {
         };
 
         format!(
-            "rite {}({}) -> VNode! {{\n{}\n}}",
+            "rite {}({}) -> VNode! {{\n{}{}\n}}",
             to_snake_case(&self.spec.name),
             params,
+            locals,
             body
         )
     }

@@ -76,12 +76,31 @@ pub struct ComponentExtraction {
     // Event handlers
     pub handlers: Vec<HandlerExtraction>,
 
+    /// `const` bindings in the component body that are not hooks.
+    ///
+    /// React destructures props into locals — `const { repo, session, active } =
+    /// slot` — and derives values from them. Dropping those statements left every
+    /// such name referenced by the view and bound by nothing: `repo` alone appeared
+    /// 80 times across the generated Lares client, resolving to nothing. `sigil
+    /// check` could not see it, because it does not resolve names; `--strict` could.
+    #[serde(default)]
+    pub locals: Vec<LocalBinding>,
+
     // Dependencies
     pub child_components: Vec<String>,
 
     /// Architecture recommendations (Phase 6.5)
     #[serde(default)]
     pub architecture: ArchitectureRecommendation,
+}
+
+/// One `const` binding from a component body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalBinding {
+    /// The bound name, as written in the source.
+    pub name: String,
+    /// The initialiser expression, as source text.
+    pub init: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1137,6 +1156,7 @@ impl<'a> Extractor<'a> {
             class_info: None,
             jsx: jsx.clone(),
             handlers,
+            locals: self.extract_locals_from_body(&function.body),
             child_components: self.extract_child_components_from_jsx(&jsx),
             architecture,
         })
@@ -1178,6 +1198,10 @@ impl<'a> Extractor<'a> {
             class_info: None,
             jsx: jsx.clone(),
             handlers,
+            locals: match arrow.body.as_ref() {
+                BlockStmtOrExpr::BlockStmt(block) => self.extract_locals_from_body(&Some(block.clone())),
+                BlockStmtOrExpr::Expr(_) => Vec::new(),
+            },
             child_components: self.extract_child_components_from_jsx(&jsx),
             architecture,
         })
@@ -1252,6 +1276,7 @@ impl<'a> Extractor<'a> {
             }),
             jsx: jsx.clone(),
             handlers: Vec::new(),
+            locals: Vec::new(),
             child_components: self.extract_child_components_from_jsx(&jsx),
             architecture,
         })
@@ -1664,6 +1689,82 @@ impl<'a> Extractor<'a> {
                 format!("{}.{}", self.jsx_object_to_string(&member.obj), member.prop.sym)
             }
         }
+    }
+
+    /// Collect the component body's non-hook `const` bindings, in source order.
+    ///
+    /// Destructuring is expanded one name at a time: `const { repo, session } = slot`
+    /// becomes `repo = slot.repo` and `session = slot.session`, which is what the
+    /// view actually refers to. Hook calls are skipped — they are already extracted
+    /// as state, and re-emitting them would bind the same name twice.
+    fn extract_locals_from_body(&self, body: &Option<BlockStmt>) -> Vec<LocalBinding> {
+        let body = match body {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+        let mut out = Vec::new();
+        for stmt in &body.stmts {
+            let var_decl = match stmt {
+                Stmt::Decl(Decl::Var(v)) => v,
+                _ => continue,
+            };
+            for decl in &var_decl.decls {
+                let init = match &decl.init {
+                    Some(i) => i,
+                    None => continue,
+                };
+                // Hooks are state, not locals.
+                if let Expr::Call(call) = init.as_ref() {
+                    if self
+                        .get_callee_name(&call.callee)
+                        .is_some_and(|n| n.starts_with("use"))
+                    {
+                        continue;
+                    }
+                }
+                // The real source text, not expr_to_string — that is a stub which
+                // returns the literal "None" for anything past an ident or literal,
+                // so every member access, call, ternary and comparison collapsed to
+                // the same wrong value. span_to_source gives the expression as
+                // written, which transform_expression then translates properly.
+                let init_src = self.span_to_source(self.expr_span(init));
+                match &decl.name {
+                    Pat::Ident(ident) => out.push(LocalBinding {
+                        name: ident.id.sym.to_string(),
+                        init: init_src,
+                    }),
+                    Pat::Object(obj) => {
+                        for prop in &obj.props {
+                            match prop {
+                                ObjectPatProp::Assign(a) => {
+                                    let field = a.key.sym.to_string();
+                                    out.push(LocalBinding {
+                                        name: field.clone(),
+                                        init: format!("{}.{}", init_src, field),
+                                    });
+                                }
+                                ObjectPatProp::KeyValue(kv) => {
+                                    if let Pat::Ident(bound) = kv.value.as_ref() {
+                                        let field = match &kv.key {
+                                            PropName::Ident(i) => i.sym.to_string(),
+                                            PropName::Str(sn) => format!("{:?}", sn.value).trim_matches('"').to_string(),
+                                            _ => continue,
+                                        };
+                                        out.push(LocalBinding {
+                                            name: bound.id.sym.to_string(),
+                                            init: format!("{}.{}", init_src, field),
+                                        });
+                                    }
+                                }
+                                ObjectPatProp::Rest(_) => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        out
     }
 
     fn extract_hooks_from_body(&self, body: &Option<BlockStmt>) -> Vec<HookUsage> {
