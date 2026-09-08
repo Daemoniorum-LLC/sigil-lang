@@ -38,7 +38,7 @@ type Signal<T> = Σ {
     subscribers: Arc<RwLock<Vec<rite(&T)>>>!,
 };
 
-impl<T: Clone> Signal<T> {
+⊢<T: Clone> Signal<T> {
     /// Create a new signal with initial value
     ☉ rite new(initial: T) -> Self! {
         Self {

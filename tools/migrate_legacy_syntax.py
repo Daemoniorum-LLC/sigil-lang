@@ -53,8 +53,23 @@ WORD_SUBS = [
 LAMBDA_FN = re.compile(r"λ\s+([A-Za-z_]\w*)\s*\(")
 
 # `impl Foo {` and `impl Trait for Foo {` — the second form binds the trait.
-IMPL_FOR = re.compile(r"\bimpl\s+([A-Za-z_][\w·:<>, ]*?)\s+for\s+([A-Za-z_][\w·:<>, ]*?)\s*\{")
-IMPL_PLAIN = re.compile(r"\bimpl\s+([A-Za-z_][\w·:<>, ]*?)\s*\{")
+# `impl` may carry its own generics — `impl<T> Vec<T>`, `impl[F: FnOnce() + 'static]
+# Closure[F]` — which the first version did not match, so those items kept the word
+# `impl` and never parsed. The generic list is preserved on the ⊢.
+IMPL_GENERICS = r"(?:<[^>]*>|\[[^\]]*\])?"
+IMPL_FOR = re.compile(
+    r"\bimpl(" + IMPL_GENERICS + r")\s+([A-Za-z_][\w·:<>\[\], &']*?)\s+for\s+"
+    r"([A-Za-z_][\w·:<>\[\], &']*?)\s*\{"
+)
+IMPL_PLAIN = re.compile(
+    r"\bimpl(" + IMPL_GENERICS + r")\s+([A-Za-z_][\w·:<>\[\], &']*?)\s*\{"
+)
+# `impl` already rewritten to ⊢ by an earlier pass, but `for` left behind — Sigil
+# spells `impl Trait for Type` as `⊢ Trait ∀ Type`.
+IMPL_FOR_LEFTOVER = re.compile(
+    r"⊢(" + IMPL_GENERICS + r")\s+([A-Za-z_][\w·:<>\[\], &']*?)\s+for\s+"
+    r"([A-Za-z_][\w·:<>\[\], &']*?)\s*\{"
+)
 # `for x in xs {` — must run before the bare `in` of other constructs.
 # `for x in xs` and `for (a, b) in xs` — the tuple pattern form is common in
 # iteration over maps and has to be matched too.
@@ -110,8 +125,9 @@ def split_regions(src):
 
 
 def migrate_code(code):
-    code = IMPL_FOR.sub(lambda m: f"⊢ {m.group(1)} ∀ {m.group(2)} {{", code)
-    code = IMPL_PLAIN.sub(lambda m: f"⊢ {m.group(1)} {{", code)
+    code = IMPL_FOR_LEFTOVER.sub(lambda m: f"⊢{m.group(1)} {m.group(2)} ∀ {m.group(3)} {{", code)
+    code = IMPL_FOR.sub(lambda m: f"⊢{m.group(1)} {m.group(2)} ∀ {m.group(3)} {{", code)
+    code = IMPL_PLAIN.sub(lambda m: f"⊢{m.group(1)} {m.group(2)} {{", code)
     code = FOR_IN.sub(lambda m: f"∀ {m.group(1)} ∈ ", code)
     code = LAMBDA_FN.sub(lambda m: f"rite {m.group(1)}(", code)
     for pat, rep in WORD_SUBS:

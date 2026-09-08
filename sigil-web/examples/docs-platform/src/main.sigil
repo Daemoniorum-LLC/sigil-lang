@@ -146,7 +146,7 @@ rite find_doc_entry<'a>(
     project: &'a tome·data·docs_catalog·Project,
     section_id: &Option<String>,
     doc_id: &Option<String>
-) -> Option<&'a crate·data·docs_catalog·DocEntry>? {
+) -> Option<&'a tome·data·docs_catalog·DocEntry>? {
     ⌥ (section_id, doc_id) {
         (Some(sect), Some(doc)) => {
             project.sections·iter()
@@ -167,8 +167,8 @@ rite find_doc_entry<'a>(
 
 /// Get previous and next navigation links
 rite get_nav_links(
-    project: &crate·data·docs_catalog·Project,
-    current: &crate·data·docs_catalog·DocEntry
+    project: &tome·data·docs_catalog·Project,
+    current: &tome·data·docs_catalog·DocEntry
 ) -> (Option<PageLink>, Option<PageLink>)! {
     // Flatten all docs in order
     ≔ all_docs! = project.sections·iter()

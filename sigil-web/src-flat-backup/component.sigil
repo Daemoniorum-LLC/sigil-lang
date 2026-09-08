@@ -48,7 +48,7 @@ invoke tome·runtime·ComponentInstance;
     props: P!,
 }
 
-impl[P: Props] FunctionComponent[P] {
+⊢[P: Props] FunctionComponent[P] {
     ☉ rite new[F: Fn(P) -> VNode + 'static](f: F!, props: P!) -> Self! {
         FunctionComponent {
             render_fn: Rc·new(f),
@@ -57,7 +57,7 @@ impl[P: Props] FunctionComponent[P] {
     }
 }
 
-impl[P: Props] Component for FunctionComponent[P] {
+⊢[P: Props] Component ∀ FunctionComponent[P] {
     rite render(self: &Self!) -> VNode! {
         (self.render_fn)(self.props·clone())
     }
@@ -68,7 +68,7 @@ impl[P: Props] Component for FunctionComponent[P] {
     value: Rc[RefCell[Option[T]]]!,
 }
 
-impl[T: Clone + 'static] Context[T] {
+⊢[T: Clone + 'static] Context[T] {
     /// Create a new context
     ☉ rite new() -> Self! {
         Context {
@@ -139,7 +139,7 @@ impl[T: Clone + 'static] Context[T] {
     loaded: RefCell[Option[C]]?,
 }
 
-impl[C: Component] Lazy[C] {
+⊢[C: Component] Lazy[C] {
     ☉ rite new[F: Fn() -> C + 'static](loader: F!) -> Self! {
         Lazy {
             loader: Rc·new(loader),
@@ -156,7 +156,7 @@ impl[C: Component] Lazy[C] {
     }
 }
 
-impl[C: Component] Component for Lazy[C] {
+⊢[C: Component] Component ∀ Lazy[C] {
     rite render(self: &Self!) -> VNode! {
         self·get()·render()
     }

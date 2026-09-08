@@ -903,8 +903,8 @@ scroll clipboard {
 }
 
 scroll window {
-    ☉ rite add_event_listener(event: &str, handler: rite(crate·core·events·KeyboardEventData)) {}
-    ☉ rite remove_event_listener(event: &str, handler: rite(crate·core·events·KeyboardEventData)) {}
+    ☉ rite add_event_listener(event: &str, handler: rite(tome·core·events·KeyboardEventData)) {}
+    ☉ rite remove_event_listener(event: &str, handler: rite(tome·core·events·KeyboardEventData)) {}
 }
 
 rite set_timeout(ms: u64, callback: rite()) {}

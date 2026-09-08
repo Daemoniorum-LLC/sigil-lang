@@ -80,7 +80,7 @@ macro_rules! fn_component {
     Deferred
 }
 
-impl<S: Default, P> StatefulComponent<S, P> {
+⊢<S: Default, P> StatefulComponent<S, P> {
     /// Create a new stateful component
     ☉ rite new(props: P) -> Self! {
         StatefulComponent {
@@ -173,7 +173,7 @@ impl<S: Default, P> StatefulComponent<S, P> {
     error: Option<ComponentError>?
 }
 
-impl<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
+⊢<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
     ☉ rite new(fallback: F, children: Vec<VNode>) -> Self! {
         ErrorBoundary {
             fallback: fallback,
@@ -185,7 +185,7 @@ impl<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
     ☉ rite render(&self) -> VNode! {
         ⌥ &self.error {
             Some(err) => (self.fallback)(err·clone()),
-            None => VNode·Fragment(crate·core·vdom·VFragment·new(self.children·clone()))
+            None => VNode·Fragment(tome·core·vdom·VFragment·new(self.children·clone()))
         }
     }
 
@@ -206,7 +206,7 @@ impl<F: Fn(ComponentError~) -> VNode> ErrorBoundary<F> {
     id: u64!
 }
 
-impl<T: Clone> Context<T> {
+⊢<T: Clone> Context<T> {
     /// Create a new context with default value
     ☉ rite new(default: T) -> Self! {
         Context {
@@ -220,7 +220,7 @@ impl<T: Clone> Context<T> {
         // Store value in context registry
         CONTEXT_REGISTRY·set(self.id, value)
 
-        VNode·Fragment(crate·core·vdom·VFragment·new(children))
+        VNode·Fragment(tome·core·vdom·VFragment·new(children))
     }
 
     /// Consume the context value
@@ -262,7 +262,7 @@ thread_local! {
     cached_render: Option<VNode>?
 }
 
-impl<C: Component> Memo<C> {
+⊢<C: Component> Memo<C> {
     ☉ rite new(component: C) -> Self! {
         Memo {
             component: component,
@@ -326,7 +326,7 @@ rite props_equal(a: &HashMap<String, PropValue>, b: &HashMap<String, PropValue>)
         ⎇ self.suspended {
             self.fallback·clone()
         } ⎉ {
-            VNode·Fragment(crate·core·vdom·VFragment·new(self.children·clone()))
+            VNode·Fragment(tome·core·vdom·VFragment·new(self.children·clone()))
         }
     }
 
@@ -370,12 +370,12 @@ impl<F: Fn() -> Future<Output = VNode>> Lazy<F> {
 
 /// Fragment component - renders children without wrapper
 ☉ rite Fragment(children: Vec<VNode>) -> VNode! {
-    VNode·Fragment(crate·core·vdom·VFragment·new(children))
+    VNode·Fragment(tome·core·vdom·VFragment·new(children))
 }
 
 /// Portal component - renders children in different DOM location
 ☉ rite Portal(target: &str, children: Vec<VNode>) -> VNode! {
-    VNode·Portal(crate·core·vdom·VPortal·new(target, children))
+    VNode·Portal(tome·core·vdom·VPortal·new(target, children))
 }
 
 #[cfg(test)]

@@ -350,7 +350,7 @@ rite current_hooks() -> &Δ HookState! {
     index: usize!
 }
 
-impl<T: 'static> Ref<T> {
+⊢<T: 'static> Ref<T> {
     ☉ rite current(&self) -> Option<&T>? {
         ≔ hooks! = current_hooks()
         hooks.refs·get(self.index)
@@ -395,7 +395,7 @@ impl<T: 'static> Ref<T> {
     Error(String~)
 }
 
-impl<T> AsyncState<T> {
+⊢<T> AsyncState<T> {
     ☉ rite is_loading(&self) -> bool! {
         matches!(self, AsyncState·Loading)
     }

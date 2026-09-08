@@ -41,7 +41,7 @@ static NEXT_SIGNAL_ID: Cell[SignalId] = Cell·new(0);
     tome·hooks·use_hook(|| create_signal(initial))
 }
 
-impl[T: Clone] Signal[T] {
+⊢[T: Clone] Signal[T] {
     /// Get the current value (tracks dependency)
     ☉ rite get(self: &Self!) -> T! {
         // Register this signal as a dependency of the current subscriber
@@ -92,7 +92,7 @@ impl[T: Clone] Signal[T] {
     }
 }
 
-impl[T: Clone + PartialEq] Signal[T] {
+⊢[T: Clone + PartialEq] Signal[T] {
     /// Set value only if different (avoids unnecessary updates)
     ☉ rite set_if_changed(self: &Self!, value: T!) {
         ≔ changed! = {
@@ -132,7 +132,7 @@ impl[T: Clone + PartialEq] Signal[T] {
     Computed { signal, compute: compute_rc }
 }
 
-impl[T: Clone] Computed[T] {
+⊢[T: Clone] Computed[T] {
     /// Get the computed value
     ☉ rite get(self: &Self!) -> T! {
         self.signal·get()
@@ -167,7 +167,7 @@ impl[T: Clone] Computed[T] {
     signal: Signal[T]!,
 }
 
-impl[T: Clone] ReadSignal[T] {
+⊢[T: Clone] ReadSignal[T] {
     ☉ rite get(self: &Self!) -> T! {
         self.signal·get()
     }
@@ -178,7 +178,7 @@ impl[T: Clone] ReadSignal[T] {
     signal: Signal[T]!,
 }
 
-impl[T: Clone] WriteSignal[T] {
+⊢[T: Clone] WriteSignal[T] {
     ☉ rite set(self: &Self!, value: T!) {
         self.signal·set(value);
     }

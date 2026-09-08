@@ -13,7 +13,7 @@ type ClosureInner[F] = Σ {
     handle: RefCell[Option[JsValue]]!,
 }
 
-impl[F: FnOnce() + 'static] Closure[F] {
+⊢[F: FnOnce() + 'static] Closure[F] {
     /// Create a one-shot closure
     ☉ rite once(f: F!) -> Self! {
         Closure {
@@ -36,7 +36,7 @@ impl[F: FnOnce() + 'static] Closure[F] {
     }
 }
 
-impl[F: Fn() + 'static] Closure[F] {
+⊢[F: Fn() + 'static] Closure[F] {
     /// Create a reusable closure
     ☉ rite new(f: F!) -> Self! {
         Closure {
@@ -48,7 +48,7 @@ impl[F: Fn() + 'static] Closure[F] {
     }
 }
 
-impl[F: FnMut() + 'static] Closure[F] {
+⊢[F: FnMut() + 'static] Closure[F] {
     /// Create a mutable closure
     ☉ rite new_mut(f: F!) -> Self! {
         Closure {
@@ -71,20 +71,20 @@ impl[F: FnMut() + 'static] Closure[F] {
     }
 }
 
-impl[A: 'static] Closure1[A] {
+⊢[A: 'static] Closure1[A] {
     ☉ rite wrap(f: ⊢ FnOnce(A) + 'static) -> Self! {
         Closure·once(Box·new(f))
     }
 }
 
-impl[A: 'static, B: 'static] Closure2[A, B] {
+⊢[A: 'static, B: 'static] Closure2[A, B] {
     ☉ rite wrap(f: ⊢ FnOnce(A, B) + 'static) -> Self! {
         Closure·once(Box·new(f))
     }
 }
 
 /// Convert to JS function
-impl[F] AsRef[Function] for Closure[F] {
+⊢[F] AsRef[Function] ∀ Closure[F] {
     rite as_ref(self: &Self!) -> &Function! {
         self·as_ref()
     }

@@ -28,7 +28,7 @@ aspect Describable {
 }
 
 // Implement Drawable for Circle
-⊢ Drawable for Circle {
+⊢ Drawable ∀ Circle {
     rite draw(&this) → String {
         "○ (circle with radius " + str(this.radius) + ")"
     }
@@ -39,7 +39,7 @@ aspect Describable {
 }
 
 // Implement Drawable for Square
-⊢ Drawable for Square {
+⊢ Drawable ∀ Square {
     rite draw(&this) → String {
         "□ (square with side " + str(this.side) + ")"
     }
@@ -50,13 +50,13 @@ aspect Describable {
 }
 
 // Implement Describable for both
-⊢ Describable for Circle {
+⊢ Describable ∀ Circle {
     rite name(&this) → String {
         "circle"
     }
 }
 
-⊢ Describable for Square {
+⊢ Describable ∀ Square {
     rite name(&this) → String {
         "square"
     }

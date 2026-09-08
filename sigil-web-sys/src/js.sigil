@@ -315,7 +315,7 @@ extern "js" {
 }
 
 // Into implementations
-⊢ Into[JsValue] for String {
+⊢ Into[JsValue] ∀ String {
     rite into(self: Self!) -> JsValue! {
         sigil_string_to_js(&self)
     }
@@ -327,25 +327,25 @@ extern "js" {
     }
 }
 
-⊢ Into[JsValue] for bool {
+⊢ Into[JsValue] ∀ bool {
     rite into(self: Self!) -> JsValue! {
         sigil_bool_to_js(self)
     }
 }
 
-⊢ Into[JsValue] for f64 {
+⊢ Into[JsValue] ∀ f64 {
     rite into(self: Self!) -> JsValue! {
         sigil_f64_to_js(self)
     }
 }
 
-⊢ Into[JsValue] for i32 {
+⊢ Into[JsValue] ∀ i32 {
     rite into(self: Self!) -> JsValue! {
         sigil_i32_to_js(self)
     }
 }
 
-⊢ Into[JsValue] for u32 {
+⊢ Into[JsValue] ∀ u32 {
     rite into(self: Self!) -> JsValue! {
         sigil_u32_to_js(self)
     }

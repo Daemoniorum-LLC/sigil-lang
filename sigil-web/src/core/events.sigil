@@ -566,9 +566,9 @@ invoke HashMap;
     }
 }
 
-invoke crate·dom·KeyEvent;
+invoke tome·dom·KeyEvent;
 
-⊢ From<&KeyboardEventData> for KeyEvent {
+⊢ From<&KeyboardEventData> ∀ KeyEvent {
     rite from(data: &KeyboardEventData) -> Self! {
         KeyEvent {
             key: data.key·clone(),

@@ -83,7 +83,7 @@ type MemoState[T, D] = Σ {
     value: Rc[RefCell[T]]!,
 }
 
-impl[T] Ref[T] {
+⊢[T] Ref[T] {
     /// Get current value
     ☉ rite current(self: &Self!) -> std·cell·Ref[T]! {
         self.value·borrow()
@@ -107,7 +107,7 @@ impl[T] Ref[T] {
 
 /// Reference to a DOM element
 ☉ type NodeRef = Σ {
-    element: Rc[RefCell[Option[crate·web_sys·Element]]]!,
+    element: Rc[RefCell[Option[tome·web_sys·Element]]]!,
 }
 
 ⊢ NodeRef {
@@ -118,12 +118,12 @@ impl[T] Ref[T] {
     }
 
     /// Get the element if mounted
-    ☉ rite get(self: &Self!) -> Option[crate·web_sys·Element]? {
+    ☉ rite get(self: &Self!) -> Option[tome·web_sys·Element]? {
         self.element·borrow()·clone()
     }
 
     /// Set the element (called by runtime)
-    ☉ rite set(self: &Self!, el: crate·web_sys·Element!) {
+    ☉ rite set(self: &Self!, el: tome·web_sys·Element!) {
         *self.element·borrow_mut() = Some(el);
     }
 

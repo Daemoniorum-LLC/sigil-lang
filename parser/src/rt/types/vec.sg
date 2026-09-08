@@ -25,7 +25,7 @@ invoke tome·rt·alloc·{sigil_alloc, sigil_free, sigil_realloc};
     elem_size: u64,
 }
 
-impl<T> Vec<T> {
+⊢<T> Vec<T> {
     // ========================================================================
     // Construction
     // ========================================================================
@@ -235,7 +235,7 @@ impl<T> Vec<T> {
 // Trait Implementations
 // ============================================================================
 
-impl<T> Drop for Vec<T> {
+⊢<T> Drop ∀ Vec<T> {
     /// Free all memory when Vec goes out of scope
     rite drop(&Δ self) {
         // First clear elements
@@ -248,7 +248,7 @@ impl<T> Drop for Vec<T> {
     }
 }
 
-impl<T> Index<u64> for Vec<T> {
+⊢<T> Index<u64> ∀ Vec<T> {
     type Output = T;
 
     /// Index operator - panics if out of bounds
@@ -263,7 +263,7 @@ impl<T> Index<u64> for Vec<T> {
     }
 }
 
-impl<T> IndexMut<u64> for Vec<T> {
+⊢<T> IndexMut<u64> ∀ Vec<T> {
     /// Mutable index operator
     rite index_mut(&Δ self, idx: u64) -> &Δ T! {
         ⎇ idx >= self.len {

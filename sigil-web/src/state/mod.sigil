@@ -142,7 +142,7 @@ actor Store<S: Clone, A: Action> {
 /// Logger middleware
 ☉ Σ LoggerMiddleware {}
 
-impl<S: std·fmt·Debug, A: Action + std·fmt·Debug> Middleware<S, A> for LoggerMiddleware {
+⊢<S: std·fmt·Debug, A: Action + std·fmt·Debug> Middleware<S, A> ∀ LoggerMiddleware {
     rite process(&self, state: &S, action: A) -> A! {
         println!("[Store] Action: {:?}", action)
         println!("[Store] State: {:?}", state)
@@ -253,7 +253,7 @@ impl<S: std·fmt·Debug, A: Action + std·fmt·Debug> Middleware<S, A> for Logge
     actions: HashMap<String, rite(S) -> A>!
 }
 
-impl<S: Clone, A: Action> Slice<S, A> {
+⊢<S: Clone, A: Action> Slice<S, A> {
     ☉ rite new(name: &str, initial: S, reducer: rite(S, A) -> S) -> Self! {
         Slice {
             name: name.to_string(),
@@ -366,7 +366,7 @@ impl<S: Clone, A: Action> Slice<S, A> {
     subscribers: RefCell<Vec<rite(&T)>>!
 }
 
-impl<T: Clone> Signal<T> {
+⊢<T: Clone> Signal<T> {
     ☉ rite new(value: T) -> Self! {
         Signal {
             value: RefCell·new(value),
@@ -419,7 +419,7 @@ impl<T: Clone> Signal<T> {
     dependencies: RefCell<Vec<*const ()>>!
 }
 
-impl<T: Clone> Computed<T> {
+⊢<T: Clone> Computed<T> {
     ☉ rite new(compute: rite() -> T) -> Self! {
         Computed {
             compute: compute,
@@ -468,7 +468,7 @@ rite track_dependency<T>(signal: &Signal<T>) {
     default: T!
 }
 
-impl<T: Clone + 'static> Atom<T> {
+⊢<T: Clone + 'static> Atom<T> {
     ☉ rite new(key: &str, default: T) -> Self! {
         Atom {
             key: key.to_string(),

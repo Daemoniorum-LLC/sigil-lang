@@ -131,7 +131,7 @@ invoke tome·events·EventHandler;
     }
 }
 
-⊢ Into[VNode] for Element {
+⊢ Into[VNode] ∀ Element {
     rite into(self: Self!) -> VNode! {
         self·build()
     }
@@ -143,25 +143,25 @@ invoke tome·events·EventHandler;
     }
 }
 
-⊢ Into[AttrValue] for String {
+⊢ Into[AttrValue] ∀ String {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·String(self)
     }
 }
 
-⊢ Into[AttrValue] for bool {
+⊢ Into[AttrValue] ∀ bool {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·Bool(self)
     }
 }
 
-⊢ Into[AttrValue] for i64 {
+⊢ Into[AttrValue] ∀ i64 {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·Number(self as f64)
     }
 }
 
-⊢ Into[AttrValue] for f64 {
+⊢ Into[AttrValue] ∀ f64 {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·Number(self)
     }

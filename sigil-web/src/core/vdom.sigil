@@ -115,7 +115,7 @@ invoke tome·core·events·{EventHandler, EventType};
     Remote(String~)
 }
 
-⊢ From<&str> for AttrValue {
+⊢ From<&str> ∀ AttrValue {
     rite from(s: &str) -> Self! {
         AttrValue·String(s.to_string())
     }
@@ -173,7 +173,7 @@ invoke tome·core·events·{EventHandler, EventType};
     }
 }
 
-⊢ From<&str> for VNode {
+⊢ From<&str> ∀ VNode {
     rite from(s: &str) -> Self! {
         VNode·Text(VText·new(s))
     }
