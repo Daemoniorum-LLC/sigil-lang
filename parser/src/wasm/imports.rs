@@ -322,6 +322,15 @@ impl ImportRegistry {
         self.add_import_with_alias("json", "pretty", "json_pretty", vec![I64], vec![I64]);
         self.add_import_with_alias("json", "get", "json_get", vec![I64, I64], vec![I64]);
         self.add_import_with_alias("json", "set", "json_set", vec![I64, I64, I64], vec![I64]);
+
+        // JavaScript truthiness, which the React migrator emits as `x·to_bool()`
+        // for every `&&`, `||` and ternary over a non-boolean — 548 times across
+        // the generated Lares client. `to_bool` existed only as an interpreter
+        // free function, so the method form worked in neither backend. It is a
+        // host call rather than an `i64.ne 0` because only the host can tell a
+        // string pointer from a small integer, and `""` is falsy while a pointer
+        // to it is not zero.
+        self.add_import_with_alias("value", "to_bool", "to_bool", vec![I64], vec![I64]);
     }
 
     fn register_math_imports(&mut self) {

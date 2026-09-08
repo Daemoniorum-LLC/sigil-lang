@@ -1460,6 +1460,20 @@ impl WasmCompiler {
                 Ok(true)
             }
 
+            // to_bool() - JavaScript truthiness. See the `value` import group.
+            "to_bool" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                let idx = self
+                    .imports
+                    .get_func("to_bool")
+                    .ok_or_else(|| WasmError::internal("to_bool import missing"))?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
             // clone() - for primitives, just evaluate (Copy semantics)
             "clone" => {
                 self.compile_expr(receiver)?;
@@ -1744,6 +1758,25 @@ impl WasmCompiler {
             }
 
             // Numeric methods
+            // `a·min(b)` / `a·max(b)` on integers. `math.min_int` and
+            // `math.max_int` were imported but reachable only as free functions,
+            // so `old_len·min(new_len)` — in Qliphoth's own vdom diff — stopped
+            // the WASM build of the framework with "undefined function: min".
+            "min" | "max" if args.len() == 1 => {
+                let import = if method == "min" { "math_min_int" } else { "math_max_int" };
+                let idx = match self.imports.get_func(import) {
+                    Some(idx) => idx,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
             "abs" => {
                 self.compile_expr(receiver)?;
                 // Use integer abs by default (most common case)

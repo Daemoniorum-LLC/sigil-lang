@@ -65,6 +65,13 @@ impl<'a> QliphothGenerator<'a> {
         code.push_str(&self.generate_imports());
         code.push('\n');
 
+        // Module-scope constants from the same file
+        let constants = self.generate_module_constants();
+        if !constants.is_empty() {
+            code.push_str(&constants);
+            code.push('\n');
+        }
+
         // Generate message enum if needed
         if !self.spec.recommendations.messages.is_empty() {
             code.push_str(&self.generate_message_enum());
@@ -109,6 +116,48 @@ impl<'a> QliphothGenerator<'a> {
         // Note: Router detection can be added when router hooks are extracted
 
         imports.join("\n")
+    }
+
+    /// Module-scope `const`s from the component's own file.
+    ///
+    /// `DEFAULT_SORT` and its siblings are read by the view but declared
+    /// nowhere in the generated file — the unknown-identifier rule used to turn
+    /// them into `self.default_sort`, a field no actor has, and putting them in
+    /// scope only moved the problem from a wrong field to an undefined name.
+    fn generate_module_constants(&self) -> String {
+        let mut lines = Vec::new();
+        let mut scope = VNodeScope::default();
+        scope.locals.extend(self.spec.source.module_scope.iter().cloned());
+
+        for c in &self.spec.source.module_constants {
+            let name = to_snake_case(&c.name);
+            let value = self.transform_expression_scoped(&c.init, &scope);
+            let one_line: String = c.init.split_whitespace().collect::<Vec<_>>().join(" ");
+            let one_line = if one_line.chars().count() > 100 {
+                one_line.chars().take(97).collect::<String>() + "..."
+            } else {
+                one_line
+            };
+            // A module-scope binding has to be a CONSTANT expression, and most of
+            // these are not — an object literal, a call, a lookup. Emitting them
+            // anyway cost seven files ("expression is not constant") and ten
+            // strict-clean ones, so only literal-shaped values are emitted and
+            // the rest are recorded next to the name they would have bound.
+            if is_constant_expression(&value) {
+                lines.push(format!("≔ {} = {};", name, value));
+            } else {
+                lines.push(format!(
+                    "// {} — not a constant expression. React: {}",
+                    name, one_line
+                ));
+            }
+        }
+
+        if lines.is_empty() {
+            String::new()
+        } else {
+            format!("{}\n", lines.join("\n"))
+        }
     }
 
     // =========================================================================
@@ -200,6 +249,36 @@ impl<'a> QliphothGenerator<'a> {
             })
             .collect();
 
+        // Props are fields too. `rite new(…)` assigns every prop to `self.<name>`
+        // and the view reads them back, but only `useState` fields were ever
+        // declared — so 204 references across the client resolved to nothing, and
+        // the constructor's own assignments were the first of them. Invisible to
+        // `sigil check`, which does not resolve names (S23); the WASM backend
+        // reports them as "undefined variable: self".
+        let declared: std::collections::HashSet<String> = self
+            .spec
+            .recommendations
+            .state_fields
+            .iter()
+            .map(|f| to_snake_case(&f.to_field))
+            .collect();
+        let prop_fields: Vec<String> = self
+            .spec
+            .recommendations
+            .props_handling
+            .fields
+            .iter()
+            .filter(|f| !declared.contains(&to_snake_case(&f.name)))
+            .map(|f| {
+                format!(
+                    "    state {}: {}~ = ∅,",
+                    to_snake_case(&f.name),
+                    normalize_prop_type(&f.field_type)
+                )
+            })
+            .collect();
+
+        let fields: Vec<String> = fields.into_iter().chain(prop_fields).collect();
         fields.join("\n")
     }
 
@@ -211,7 +290,7 @@ impl<'a> QliphothGenerator<'a> {
             .collect();
 
         let assignments: Vec<String> = props.fields.iter()
-            .map(|f| format!("        self.{} = {};", f.name, f.name))
+            .map(|f| format!("        self.{} = {};", to_snake_case(&f.name), f.name))
             .collect();
 
         format!(
@@ -843,10 +922,16 @@ impl<'a> QliphothGenerator<'a> {
             .map(|f| f.to_field.clone())
             .collect();
 
+        // Module-scope names are in scope for the whole file and are emitted as
+        // top-level items, so a reference to one must be left alone rather than
+        // swept into `self.`.
+        let mut locals = scope.locals.clone();
+        locals.extend(self.spec.source.module_scope.iter().cloned());
+
         let config = TransformConfig {
             prefix_self: self.is_actor,
             state_fields,
-            locals: scope.locals.clone(),
+            locals,
             props: self.param_names.clone(),
         };
 
@@ -980,33 +1065,39 @@ impl<'a> QliphothGenerator<'a> {
                     .map(|p| p.trim_start_matches('(').trim_end_matches(')').split(',').count())
                     .unwrap_or(0);
 
-                if declared_arity == 0 {
-                    format!("·on_{}({})", event_name.to_lowercase(), msg_name)
-                } else {
-                    let raw = crate::migrate::react::spec::derive_event_message_payload(code);
-                    let mut args: Vec<String> = raw
-                        .iter()
-                        .take(declared_arity)
-                        .map(|a| self.transform_expression_scoped(a, scope))
-                        .collect();
-                    while args.len() < declared_arity {
-                        args.push("∅".to_string());
-                    }
-                    format!(
-                        "·on_{}({}({}))",
-                        event_name.to_lowercase(),
-                        msg_name,
-                        args.join(", ")
-                    )
-                }
+                // Qliphoth's event methods take a message ID, not a message
+                // value: `VNode·on_click(Δ self, message_id: u64)`. A qualified
+                // unit variant IS that id — the compiler evaluates
+                // `<Enum>·<Variant>` to the variant's tag, which is the same
+                // number `<Actor>_dispatch` switches on. Constructing the message
+                // instead (`Click(id)`) type-checked, because `sigil check` does
+                // not resolve names, and failed the moment the file was compiled
+                // against the real prelude with "undefined function: Click".
+                //
+                // The call site's argument is dropped: `on_click(u64)` has no
+                // second parameter, so a message that needs to say WHICH row was
+                // clicked cannot. The variant still declares its payload in the
+                // enum above, and the expression is in the migration spec, so
+                // the gap is visible without a trailing comment here — one of
+                // those took out `app.sigil`, because a dispatch is frequently
+                // mid-expression and a Sigil comment runs to end of line.
+                let enum_name = format!("{}Msg", self.spec.name);
+                let _ = declared_arity;
+                format!("·on_{}({}·{})", event_name.to_lowercase(), enum_name, msg_name)
             }
             "disabled" | "checked" | "selected" | "readonly" => {
                 // Boolean attributes
                 match &attr.value {
                     JsxAttributeValue::True => format!("·attr(\"{}\", \"true\")", attr.name),
                     JsxAttributeValue::Expression { code } => {
+                        // `·when(cond, |n| n·attr(…))` — a closure — is not a form
+                        // Qliphoth's builder has: "No DSL, no function types, no
+                        // callbacks" is the first thing `core/vdom.sigil` says.
+                        // `when` takes a VNode child, so 66 of these compiled
+                        // against a signature that does not exist. `attr_when` is
+                        // the same idea without the closure.
                         let transformed = self.transform_expression_scoped(code, scope);
-                        format!("·when({}, |n| n·attr(\"{}\", \"true\"))", transformed, attr.name)
+                        format!("·attr_when({}, \"{}\", \"true\")", transformed, attr.name)
                     }
                     _ => String::new(),
                 }
@@ -1072,6 +1163,31 @@ fn parses_as_expression(expr: &str) -> bool {
     .unwrap_or(false);
     std::panic::set_hook(prev);
     ok
+}
+
+/// Is this a value a module-scope binding can hold?
+///
+/// Sigil evaluates a top-level `≔` at compile time, so anything with a call, a
+/// field access or an object literal in it is rejected outright — and a rejected
+/// one takes the whole file with it, which is worse than the undefined name it
+/// was meant to fix. Literals and arrays of literals only.
+fn is_constant_expression(value: &str) -> bool {
+    fn atom(v: &str) -> bool {
+        let v = v.trim();
+        if v.is_empty() {
+            return false;
+        }
+        matches!(v, "true" | "false" | "None" | "∅")
+            || (v.starts_with('"') && v.ends_with('"') && v.len() >= 2)
+            || v.trim_start_matches('-')
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+    }
+
+    // An array literal is not a constant expression to this backend either,
+    // measured rather than assumed: `≔ k = ["a","b"];` compiles under `check` and
+    // fails under `wasm`.
+    atom(value)
 }
 
 /// Replace whole-word occurrences of `from` with `to`. Used to substitute a

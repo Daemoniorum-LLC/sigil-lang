@@ -1657,6 +1657,7 @@ fn test_mcp_list_migrations_empty() {
         exports: vec![],
         types: vec![],
         helper_functions: vec![],
+        module_constants: vec![],
     };
     let spec = generate_spec(&extraction, "");
     let session = MigrationSession::from_spec(spec, "/tmp/output");

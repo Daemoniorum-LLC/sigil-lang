@@ -3753,7 +3753,7 @@ fn register_iter(interp: &mut Interpreter) {
     });
 }
 
-fn is_truthy(val: &Value) -> bool {
+pub fn is_truthy(val: &Value) -> bool {
     match val {
         Value::Null | Value::Empty => false,
         Value::Bool(b) => *b,

@@ -26,6 +26,24 @@ pub struct ReactExtraction {
     /// Helper functions at module scope (Phase 6.2)
     #[serde(default)]
     pub helper_functions: Vec<HelperFunctionExtraction>,
+    /// Module-scope `const` bindings that are not functions.
+    ///
+    /// These were never extracted, so a component referring to `DEFAULT_SORT`
+    /// hit the unknown-identifier rule and became `self.default_sort` — a field
+    /// no actor declares. 58 of them across the generated Lares client.
+    #[serde(default)]
+    pub module_constants: Vec<ModuleConstantExtraction>,
+}
+
+/// A module-scope `const` that is not a function.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleConstantExtraction {
+    pub name: String,
+    pub exported: bool,
+    /// Type annotation, if written.
+    pub type_annotation: Option<String>,
+    /// The initialiser, as source.
+    pub init: String,
 }
 
 /// File metadata.
@@ -874,14 +892,21 @@ impl<'a> Extractor<'a> {
         let mut imports = Vec::new();
         let mut exports = Vec::new();
         let mut helper_functions = Vec::new();
+        let mut module_constants = Vec::new();
 
         for item in &module.body {
             match item {
                 ModuleItem::ModuleDecl(decl) => {
                     self.process_module_decl(decl, &mut components, &mut types, &mut imports, &mut exports, &mut helper_functions);
+                    if let ModuleDecl::ExportDecl(export) = decl {
+                        self.collect_module_constants(&export.decl, true, &mut module_constants);
+                    }
                 }
                 ModuleItem::Stmt(stmt) => {
                     self.process_stmt(stmt, &mut components, &mut custom_hooks, &mut types, &mut helper_functions);
+                    if let Stmt::Decl(decl) = stmt {
+                        self.collect_module_constants(decl, false, &mut module_constants);
+                    }
                 }
             }
         }
@@ -899,7 +924,48 @@ impl<'a> Extractor<'a> {
             imports,
             exports,
             helper_functions,
+            module_constants,
         })
+    }
+
+    /// Collect module-scope `const`s that are not functions or components.
+    ///
+    /// A component referring to `DEFAULT_SORT` used to hit the
+    /// unknown-identifier rule and come out as `self.default_sort`, a field no
+    /// actor declares. The name has to be known for the reference to survive.
+    fn collect_module_constants(
+        &self,
+        decl: &Decl,
+        exported: bool,
+        out: &mut Vec<ModuleConstantExtraction>,
+    ) {
+        let var_decl = match decl {
+            Decl::Var(v) => v,
+            _ => return,
+        };
+        for d in &var_decl.decls {
+            let ident = match &d.name {
+                Pat::Ident(i) => i,
+                _ => continue,
+            };
+            let init = match &d.init {
+                Some(i) => i,
+                None => continue,
+            };
+            // Functions are helper_functions; components are components.
+            if matches!(init.as_ref(), Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_)) {
+                continue;
+            }
+            out.push(ModuleConstantExtraction {
+                name: ident.id.sym.to_string(),
+                exported,
+                type_annotation: ident
+                    .type_ann
+                    .as_ref()
+                    .map(|t| self.span_to_source(t.span)),
+                init: self.span_to_source(self.expr_span(init)),
+            });
+        }
     }
 
     fn process_module_decl(

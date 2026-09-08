@@ -620,6 +620,11 @@ impl TypeChecker {
             func(vec![any.clone(), Type::Str, any.clone()], any.clone()),
         );
 
+        self.functions.insert(
+            "to_bool".to_string(),
+            func(vec![any.clone()], Type::Bool),
+        );
+
         // ===================
         // String functions
         // ===================

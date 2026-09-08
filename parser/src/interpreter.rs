@@ -18944,6 +18944,19 @@ impl Interpreter {
                 let mut borrowed = map.borrow_mut();
                 Ok(borrowed.remove(&key).unwrap_or(Value::Null))
             }
+            // `x·to_bool()` — JavaScript truthiness, spelled as a method.
+            //
+            // `to_bool` existed only as a free function, and the React migrator
+            // emits the method form 548 times across the generated Lares client
+            // (every `&&`, `||` and ternary over a non-boolean). Neither backend
+            // had it: the interpreter answered "no method 'to_bool'", and the
+            // WASM backend had no `to_bool` at all.
+            (_, "to_bool") => {
+                if !arg_values.is_empty() {
+                    return Err(RuntimeError::new("to_bool() takes no arguments"));
+                }
+                Ok(Value::Bool(crate::stdlib::is_truthy(&recv)))
+            }
             _ => {
                 // Debug: what type is failing method lookup
                 let recv_type = match &recv {

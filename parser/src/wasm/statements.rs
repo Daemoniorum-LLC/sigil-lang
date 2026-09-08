@@ -1645,6 +1645,15 @@ impl WasmCompiler {
             Expr::Path(path) => {
                 // Look up const
                 let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                // `None` is a path, not a literal, so it never reached the
+                // `Literal::Null | Literal::Empty` arm above — `≔ x = None;` at
+                // module scope passed `sigil check` and failed to compile with
+                // "expression is not constant", while `∅` in the same position
+                // worked. It is the absent value; in the uniform i64 model that
+                // is 0, the same as `∅`.
+                if name == "None" && path.segments.len() == 1 {
+                    return Ok(0);
+                }
                 if let Some(&idx) = self.global_map.get(name) {
                     Ok(self.globals[idx as usize].2)
                 } else {

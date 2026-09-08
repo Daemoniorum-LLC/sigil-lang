@@ -63,11 +63,38 @@ pub struct ComponentMigrationSpec {
     pub status: MigrationStatus,
 }
 
+/// JavaScript globals a component may name. They are not fields of anything, so
+/// the unknown-identifier rule turned `Math.round(x)` into `self.math.round(x)`.
+/// Listing them keeps the reference intact for a human to finish; Sigil has its
+/// own spellings for most of these and none of them are `self.`.
+const JS_GLOBALS: &[&str] = &[
+    "Math", "JSON", "Object", "Array", "String", "Number", "Boolean", "Date",
+    "RegExp", "Promise", "Map", "Set", "Error", "console", "window", "document",
+    "navigator", "localStorage", "sessionStorage", "fetch", "URL",
+    "URLSearchParams", "Intl", "parseInt", "parseFloat", "isNaN", "encodeURIComponent",
+    "decodeURIComponent", "structuredClone", "queueMicrotask",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentSource {
     pub path: String,
     pub code: String,
     pub extraction: ComponentExtraction,
+    /// Names declared at module scope in the same file — helper functions and
+    /// non-function `const`s.
+    ///
+    /// The generator needs these to leave a reference alone. Without them the
+    /// unknown-identifier rule turned `fmtDate(x)` into `self.fmt_date(x)` and
+    /// `DEFAULT_SORT` into `self.default_sort`, neither of which any actor
+    /// declares — 108 references across the generated Lares client.
+    #[serde(default)]
+    pub module_scope: Vec<String>,
+    /// Module-scope `const`s from the same file, so the generator can emit them.
+    ///
+    /// Knowing the name is not enough: `DEFAULT_SORT` stopped being rewritten to
+    /// `self.default_sort` once it was in scope, but nothing declared it either.
+    #[serde(default)]
+    pub module_constants: Vec<ModuleConstantExtraction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -511,6 +538,31 @@ impl<'a> SpecGenerator<'a> {
                 path: self.extraction.file.path.to_string_lossy().to_string(),
                 code: self.source_code.to_string(),
                 extraction: comp.clone(),
+                module_scope: self
+                    .extraction
+                    .helper_functions
+                    .iter()
+                    .map(|h| h.name.clone())
+                    .chain(
+                        self.extraction
+                            .module_constants
+                            .iter()
+                            .map(|c| c.name.clone()),
+                    )
+                    // Imported names are module scope too, and most of the
+                    // helpers a component actually uses come from a sibling
+                    // module — `kbToGB` lives in `../format`, not in the file
+                    // that calls it, and became `self.kb_to_gb`.
+                    .chain(
+                        self.extraction
+                            .imports
+                            .iter()
+                            .filter(|i| !i.is_type_only)
+                            .flat_map(|i| i.specifiers.iter().map(|s| s.local.clone())),
+                    )
+                    .chain(JS_GLOBALS.iter().map(|g| g.to_string()))
+                    .collect(),
+                module_constants: self.extraction.module_constants.clone(),
             },
             target: TargetInfo {
                 suggested_path: format!("src/components/{}.sigil", to_snake_case(&comp.name)),

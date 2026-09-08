@@ -175,6 +175,20 @@ function jsonResolve(ref) {
     return n;
 }
 
+// JavaScript truthiness. The compiler emits `x·to_bool()` wherever React relied
+// on `&&`, `||` or a ternary over a non-boolean. It is a host call because only
+// the host can tell a string pointer from a small integer — `""` is falsy, and a
+// pointer to it is not zero.
+function valueToBool(ref) {
+    const v = jsonResolve(ref);
+    if (typeof v === 'string') return BigInt(v.length > 0 ? 1 : 0);
+    if (Array.isArray(v)) return BigInt(v.length > 0 ? 1 : 0);
+    if (v === null || v === undefined) return 0n;
+    if (typeof v === 'number') return BigInt(v !== 0 ? 1 : 0);
+    if (typeof v === 'boolean') return BigInt(v ? 1 : 0);
+    return 1n;
+}
+
 function jsonParse(strRef) {
     const text = readLengthPrefixedString(strRef);
     try {
@@ -1690,6 +1704,9 @@ export function createImports() {
             diff_and_patch: vdomDiffAndPatch,
             mount_vnode: vdomMountVnode,
             dispose: vdomDispose,
+        },
+        value: {
+            to_bool: valueToBool,
         },
         json: {
             parse: jsonParse,

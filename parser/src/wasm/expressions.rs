@@ -427,6 +427,21 @@ impl WasmCompiler {
             }
         }
 
+        // `Self` / `This` inside an actor.
+        //
+        // A generated constructor is `rite new(…) -> This! { …; This }`, the
+        // ordinary Sigil builder shape. Actor state lives in globals, so there is
+        // no instance value to return — the receiver is a placeholder everywhere
+        // else in this backend, and it is one here too. Without this, 29 of the
+        // 93 generated components failed with "undefined variable: Self".
+        if (name == "Self" || name == "This") && self.current_actor.is_some() {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(0));
+            return Ok(());
+        }
+
         Err(WasmError::undefined_variable(name))
     }
 
