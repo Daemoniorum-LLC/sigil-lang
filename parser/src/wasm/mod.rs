@@ -178,6 +178,11 @@ pub struct WasmCompiler {
     /// constant `0` instead. See `stubbed_calls()` — this is silent wrong
     /// behaviour, not a compile error, and callers must be able to see it.
     pub(crate) stubbed_calls: std::collections::BTreeSet<String>,
+
+    /// Actor methods declared with a `self` receiver, by `Actor::method`. Actor
+    /// state lives in globals, so the receiver is a placeholder — but it is part
+    /// of the WASM signature, and a call through the actor's name has to push it.
+    pub(crate) actor_self_methods: std::collections::HashSet<String>,
 }
 
 impl WasmCompiler {
@@ -220,6 +225,7 @@ impl WasmCompiler {
             start_function_idx: None,
             current_actor: None,
             stubbed_calls: std::collections::BTreeSet::new(),
+            actor_self_methods: std::collections::HashSet::new(),
         };
 
         // Add heap pointer global
@@ -1285,6 +1291,38 @@ mod validation_tests {
             r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { } }"#,
             // Returning handler WITH a trailing expression: exactly one value.
             r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { self.c } }"#,
+        ] {
+            let mut compiler = WasmCompiler::new();
+            let bytes = compiler
+                .compile(src)
+                .unwrap_or_else(|e| panic!("compilation failed for {src}: {e:?}"));
+            let validation = validate_wasm(&bytes);
+            assert!(
+                validation.is_ok(),
+                "validation failed for {src}: {validation:?}"
+            );
+        }
+    }
+
+    /// An actor method reached through the actor's name — `Counter·value()`,
+    /// which is how anything outside the actor calls it. The `self` receiver is
+    /// part of the method's WASM signature, and only the `self·method()` path
+    /// pushed it, so these calls were one argument short.
+    #[test]
+    fn test_validate_actor_method_call_through_type_name() {
+        for src in [
+            r#"☉ actor Counter { state c: i64! = 7, ☉ rite value(self) -> i64! { self.c } }
+               ☉ rite main() -> i64! { Counter·value() }"#,
+            // Nested as an argument, which is where it first showed up.
+            r#"☉ actor Counter { state c: i64! = 7, ☉ rite value(self) -> i64! { self.c } }
+               rite twice(a: i64, b: i64) -> i64! { a + b }
+               ☉ rite main() -> i64! { twice(1, Counter·value()) }"#,
+            // A method that also takes explicit arguments.
+            r#"☉ actor Counter { state c: i64! = 0, ☉ rite add(self, n: i64) -> i64! { self.c + n } }
+               ☉ rite main() -> i64! { Counter·add(5) }"#,
+            // A void method: the call site pushes a unit value for consistency.
+            r#"☉ actor Counter { state c: i64! = 0, ☉ rite reset(self) { self.c = 0; } }
+               ☉ rite main() -> i64! { Counter·reset(); 0 }"#,
         ] {
             let mut compiler = WasmCompiler::new();
             let bytes = compiler

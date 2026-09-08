@@ -580,6 +580,19 @@ impl WasmCompiler {
 
                 // Register methods as ActorName::method_name
                 for method in &actor.methods {
+                    // A `self` receiver is a real WASM parameter (a placeholder —
+                    // the state is in globals), so a caller reaching the method
+                    // through the actor's name has to push it. Record which
+                    // methods have one; `compile_call` cannot tell from the index.
+                    if method
+                        .params
+                        .first()
+                        .and_then(|p| p.pattern_name())
+                        .is_some_and(|n| n == "self")
+                    {
+                        self.actor_self_methods
+                            .insert(format!("{}::{}", actor_name, method.name.name));
+                    }
                     self.register_function_sig(method)?;
                 }
 

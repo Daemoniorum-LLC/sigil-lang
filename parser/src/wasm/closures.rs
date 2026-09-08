@@ -820,6 +820,40 @@ impl WasmCompiler {
                     }
                 }
 
+                // An actor method reached through the actor's name: `Counter·value()`.
+                //
+                // The `self` receiver is part of the method's WASM signature — a
+                // placeholder, since actor state lives in globals — and the
+                // `self·method()` path above already pushes one. Through the type
+                // name nothing pushed it, so every such call was one argument
+                // short. With an ordinary actor name that is a module which fails
+                // WebAssembly validation while `sigil wasm` reports success; where
+                // it happened to validate anyway, `Counter·value()` returned 0 for
+                // a field holding 7.
+                if resolved_segments.len() == 2 {
+                    let qualified = format!("{}::{}", resolved_segments[0], resolved_segments[1]);
+                    if self.actor_self_methods.contains(&qualified) {
+                        if let Some(&func_idx) = self.func_map.get(&qualified) {
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::I64Const(0)); // placeholder self
+                            for arg in args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+
                 // Compile arguments for non-import calls
                 for arg in args {
                     self.compile_expr(arg)?;
