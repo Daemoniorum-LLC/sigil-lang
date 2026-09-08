@@ -204,31 +204,6 @@ impl<'a> QliphothGenerator<'a> {
             } else {
                 one_line
             };
-            // A module-scope binding has to be a CONSTANT expression, and most of
-            // these are not — an object literal, a call, a lookup. Emitting them
-            // anyway cost seven files ("expression is not constant") and ten
-            // strict-clean ones, so only literal-shaped values are emitted.
-            // `≔ x = None;` at module scope passes `check` and fails to
-            // compile (§8.2.9) — and `None` is what the transform yields for
-            // anything it could not read, so this arm was turning an
-            // unreadable initialiser into a file that would not build. A
-            // constant nobody can express is a comment.
-            if value.trim() == "None" || value.trim() == "∅" {
-                // Not emitted: nothing may depend on it.
-                lines.push(format!(
-                    "// {} — initialiser did not survive transformation. React: {}",
-                    name, one_line
-                ));
-                continue;
-            }
-
-            if is_constant_expression(&value) {
-                lines.push(format!("≔ {} = {};", name, value));
-                known.insert(name.clone());
-                emitted.insert(name);
-                continue;
-            }
-
             // An object literal is a LOOKUP TABLE — `DEFAULT_SORT[view]`,
             // `refusalText[reason]`. It cannot be a module binding, but it can be
             // a function, and the reference site becomes a call (see
@@ -249,6 +224,31 @@ impl<'a> QliphothGenerator<'a> {
                      \u{2609} rite {}(key: Any) -> Any! {{\n    \u{2325} key {{\n{}\n        _ => \u{2205},\n    }}\n}}",
                     c.name, name, arms.join("\n")
                 ));
+                known.insert(name.clone());
+                emitted.insert(name);
+                continue;
+            }
+
+            if value.trim() == "None" || value.trim() == "∅" {
+                // Not emitted: nothing may depend on it.
+                lines.push(format!(
+                    "// {} — initialiser did not survive transformation. React: {}",
+                    name, one_line
+                ));
+                continue;
+            }
+
+            // A module-scope binding has to be a CONSTANT expression, and most of
+            // these are not — an object literal, a call, a lookup. Emitting them
+            // anyway cost seven files ("expression is not constant") and ten
+            // strict-clean ones, so only literal-shaped values are emitted.
+            // `≔ x = None;` at module scope passes `check` and fails to
+            // compile (§8.2.9) — and `None` is what the transform yields for
+            // anything it could not read, so this arm was turning an
+            // unreadable initialiser into a file that would not build. A
+            // constant nobody can express is a comment.
+            if is_constant_expression(&value) {
+                lines.push(format!("≔ {} = {};", name, value));
                 known.insert(name.clone());
                 emitted.insert(name);
                 continue;
@@ -1407,7 +1407,18 @@ impl<'a> QliphothGenerator<'a> {
         prefix_self: bool,
     ) -> String {
         // Handle placeholder/invalid expressions
-        if code.contains("/*") || code.is_empty() {
+        // The placeholder markers the extractor emits when it could not read
+        // something — not any comment. Rejecting every `/*` threw away genuine
+        // source: `export const identity = { /** Display name */ name: "Lares",
+        // … }` is an ordinary documented object literal, and it came back
+        // unreadable because of its own doc comments.
+        if code.contains("/* expr */")
+            || code.contains("/* expression */")
+            || code.contains("/* block */")
+            || code.contains("/* pattern */")
+            || code.contains("/* method */")
+            || code.is_empty()
+        {
             return "None".to_string();
         }
 
@@ -1973,6 +1984,31 @@ fn strip_object_keys(src: &str) -> String {
     out
 }
 
+/// Is this exactly one double-quoted string literal, quotes at both ends and
+/// nothing outside them?
+fn is_single_string_literal(v: &str) -> bool {
+    let mut chars = v.chars();
+    if chars.next() != Some('"') {
+        return false;
+    }
+    let mut escaped = false;
+    let mut closed = false;
+    for c in chars {
+        if closed {
+            // Anything after the closing quote means this is an expression.
+            return false;
+        }
+        if escaped {
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == '"' {
+            closed = true;
+        }
+    }
+    closed
+}
+
 /// Is this a value a module-scope binding can hold?
 ///
 /// Sigil evaluates a top-level `≔` at compile time, so anything with a call, a
@@ -1986,7 +2022,11 @@ fn is_constant_expression(value: &str) -> bool {
             return false;
         }
         matches!(v, "true" | "false" | "None" | "∅")
-            || (v.starts_with('"') && v.ends_with('"') && v.len() >= 2)
+            // A STRING LITERAL, not merely something that begins and ends with a
+            // quote: `"[" + identity("name") + "]"` does both, and was emitted as
+            // a module binding — "expression is not constant", from the backend,
+            // for a concatenation with a call in the middle.
+            || is_single_string_literal(v)
             || v.trim_start_matches('-')
                 .chars()
                 .all(|c| c.is_ascii_digit() || c == '.' || c == '_')

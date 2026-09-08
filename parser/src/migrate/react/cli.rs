@@ -48,6 +48,16 @@ pub struct MigrateReactConfig {
 
     /// Generate Sigil code (not just specs)
     pub generate_code: bool,
+
+    /// Extra directories to parse for cross-module resolution.
+    ///
+    /// A bundler alias is configuration the migrator has no bundler to read:
+    /// the Lares client imports `@shared/identity`, which Vite maps onto a
+    /// sibling directory outside the source root. Six components referenced
+    /// names that live there, so the roots have to be given explicitly.
+    /// Components found here are migrated too — these are ordinary source
+    /// directories, just ones no import path names relatively.
+    pub extra_source_dirs: Vec<PathBuf>,
 }
 
 impl Default for MigrateReactConfig {
@@ -72,6 +82,7 @@ impl Default for MigrateReactConfig {
             validate_file: None,
             show_status: false,
             generate_code: false,
+            extra_source_dirs: Vec::new(),
         }
     }
 }
@@ -103,6 +114,18 @@ pub fn parse_react_migrate_args(args: &[String]) -> Result<MigrateReactConfig, S
                     return Err("-o/--output requires a path argument".to_string());
                 }
                 config.output_dir = PathBuf::from(&args[i]);
+            }
+            "--include-source" => {
+                // The loop advances by one at the bottom; every other
+                // value-taking flag consumes its argument with a single `i += 1`
+                // and lets the tail do the rest. Advancing by two here ate the
+                // flag that followed — `--generate`, which is how the
+                // regeneration silently stopped generating.
+                i += 1;
+                if i >= args.len() {
+                    return Err("--include-source requires a directory argument".to_string());
+                }
+                config.extra_source_dirs.push(PathBuf::from(&args[i]));
             }
             "--include" => {
                 i += 1;
@@ -182,6 +205,22 @@ pub fn discover_react_files(config: &MigrateReactConfig) -> Result<Vec<PathBuf>,
 
     // Walk directory recursively
     discover_files_recursive(&config.source_dir, &config.include_patterns, &config.exclude_patterns, &mut files)?;
+
+    for extra in &config.extra_source_dirs {
+        if !extra.exists() {
+            return Err(format!("Source directory not found: {:?}", extra));
+        }
+        if extra.is_dir() {
+            discover_files_recursive(
+                extra,
+                &config.include_patterns,
+                &config.exclude_patterns,
+                &mut files,
+            )?;
+        } else {
+            files.push(extra.clone());
+        }
+    }
 
     Ok(files)
 }

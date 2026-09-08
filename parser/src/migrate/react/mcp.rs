@@ -123,6 +123,15 @@ pub struct MigrationSession {
     /// Every exported helper function seen anywhere in the project, by name.
     /// The companion to `exported_constants`, and resolved the same way.
     exported_helpers: HashMap<String, HelperFunctionExtraction>,
+
+    /// Every module constant seen anywhere, exported or not.
+    ///
+    /// Only reachable transitively: a name that is not exported cannot be an
+    /// import specifier, so nothing seeds the queue with it. But it can be what
+    /// an exported constant is made of — `export const DEFAULT_PROJECT =
+    /// PROJECT_KEY` beside a file-private `const PROJECT_KEY = …` — and pulling
+    /// the first without the second just moves the undefined name.
+    all_constants: HashMap<String, ModuleConstantExtraction>,
 }
 
 impl MigrationSession {
@@ -158,6 +167,7 @@ impl MigrationSession {
             resolved_ambiguities: HashMap::new(),
             exported_constants: HashMap::new(),
             exported_helpers: HashMap::new(),
+            all_constants: HashMap::new(),
         })
     }
 
@@ -181,6 +191,7 @@ impl MigrationSession {
             resolved_ambiguities: HashMap::new(),
             exported_constants: HashMap::new(),
             exported_helpers: HashMap::new(),
+            all_constants: HashMap::new(),
         }
     }
 
@@ -202,6 +213,9 @@ impl MigrationSession {
                     .entry(c.name.clone())
                     .or_insert_with(|| c.clone());
             }
+            self.all_constants
+                .entry(c.name.clone())
+                .or_insert_with(|| c.clone());
         }
         for h in &extraction.helper_functions {
             if h.exported {
@@ -245,6 +259,7 @@ impl MigrationSession {
     /// emitting the first without the second just moves the undefined name.
     pub fn resolve_cross_module_imports(&mut self) {
         let table = self.exported_constants.clone();
+        let deep = self.all_constants.clone();
         let helpers = self.exported_helpers.clone();
         for comp in &mut self.spec.components {
             let mut have: std::collections::HashSet<String> = comp
@@ -269,7 +284,13 @@ impl MigrationSession {
                 if have.contains(&name) {
                     continue;
                 }
-                let Some(c) = table.get(&name) else { continue };
+                // Seeded names must be exported (they came from an import
+                // specifier); anything reached from a constant's own body may
+                // be file-private.
+                let c = match table.get(&name).or_else(|| deep.get(&name)) {
+                    Some(c) => c,
+                    None => continue,
+                };
                 have.insert(name.clone());
                 // Whatever bare identifiers the initialiser mentions may
                 // themselves be exported constants from elsewhere.
@@ -277,15 +298,21 @@ impl MigrationSession {
                     .init
                     .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
                 {
-                    if !word.is_empty() && table.contains_key(word) {
+                    if !word.is_empty() && (table.contains_key(word) || deep.contains_key(word)) {
                         queue.push(word.to_string());
                     }
                 }
                 added.push(c.clone());
             }
 
-            // Dependencies before dependents: the queue popped the other way.
-            added.reverse();
+            // Dependencies before dependents. Reversing discovery order is not
+            // enough: a constant can be reached both directly (it is imported
+            // too) and as something another constant is made of, and then it is
+            // discovered first and reversing puts it last. `DEFAULT_PROJECT` is
+            // `PROJECT_KEY` is `identity.name`, and `identity` is imported by
+            // the same file — so the three came out in exactly the wrong order.
+            // Sort them by what they actually reference.
+            added = topo_sort_constants(added);
             for c in &added {
                 if !comp.source.module_scope.contains(&c.name) {
                     comp.source.module_scope.push(c.name.clone());
@@ -701,6 +728,7 @@ impl MigrationSession {
             // carry their resolved constants.
             exported_constants: HashMap::new(),
             exported_helpers: HashMap::new(),
+            all_constants: HashMap::new(),
         })
     }
 }
@@ -798,4 +826,49 @@ fn format_parse_error(error: &ParseError) -> (String, Option<String>) {
             (message, suggestion)
         }
     }
+}
+
+/// Order constants so each comes after everything it references.
+///
+/// A plain Kahn's algorithm over "names this initialiser mentions". Anything
+/// left over — a cycle, which JavaScript's module semantics permit and Sigil's
+/// module scope does not — keeps its original position rather than being
+/// dropped; the emission guard will refuse it and say so.
+fn topo_sort_constants(items: Vec<ModuleConstantExtraction>) -> Vec<ModuleConstantExtraction> {
+    use std::collections::HashSet;
+    let names: HashSet<String> = items.iter().map(|c| c.name.clone()).collect();
+    let deps: Vec<HashSet<String>> = items
+        .iter()
+        .map(|c| {
+            c.init
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                .filter(|w| !w.is_empty() && names.contains(*w) && *w != c.name)
+                .map(|w| w.to_string())
+                .collect()
+        })
+        .collect();
+
+    let mut placed: HashSet<String> = HashSet::new();
+    let mut out: Vec<ModuleConstantExtraction> = Vec::with_capacity(items.len());
+    let mut remaining: Vec<usize> = (0..items.len()).collect();
+
+    loop {
+        let ready: Vec<usize> = remaining
+            .iter()
+            .copied()
+            .filter(|&i| deps[i].iter().all(|d| placed.contains(d)))
+            .collect();
+        if ready.is_empty() {
+            break;
+        }
+        for i in ready {
+            placed.insert(items[i].name.clone());
+            out.push(items[i].clone());
+            remaining.retain(|&r| r != i);
+        }
+    }
+    for i in remaining {
+        out.push(items[i].clone());
+    }
+    out
 }

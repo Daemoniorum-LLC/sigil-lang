@@ -698,6 +698,19 @@ impl<'a> ExprTransformer<'a> {
             MemberProp::Ident(ident) => {
                 let prop = ident.sym.to_string();
 
+                // A lookup table the generator emitted as a function: a named
+                // member is a call too, not just an index. `identity.name` on
+                // `export const identity = { name: "Lares", … }` was a field
+                // access on a function.
+                if self
+                    .config
+                    .lookup_constants
+                    .iter()
+                    .any(|c| to_snake_case(c) == obj)
+                {
+                    return format!("{}({:?})", obj, prop);
+                }
+
                 // Transform common JS properties to Sigil equivalents
                 match prop.as_str() {
                     "length" => format!("{}.len()", obj),
@@ -793,6 +806,35 @@ impl<'a> ExprTransformer<'a> {
                         };
 
                         return format!("{}·{}({})", obj, to_snake_case_member(sigil_method), args);
+                    }
+                }
+
+                // A prop that holds a function, called.
+                //
+                // `onPatch({ links: … })` is a child telling its parent
+                // something. In an actor that name is a FIELD, and Sigil has no
+                // way to call a value — Qliphoth actors communicate by message,
+                // not by callback, which is the same gap as the dropped payload
+                // in §8.2.9. Emitting `self.on_patch(…)` produced a call that
+                // resolved to whatever free function shared the name. The value
+                // is ∅ and the call is recorded beside it.
+                if self.config.prefix_self {
+                    if let Expr::Ident(id) = expr.as_ref() {
+                        let name = id.sym.to_string();
+                        let snake = to_snake_case(&name);
+                        let is_prop = self
+                            .config
+                            .props
+                            .iter()
+                            .any(|p| to_snake_case(p) == snake);
+                        if is_prop {
+                            self.warn(&format!("callback prop called: {}", name));
+                            return format!(
+                                "/* callback prop `{}({})` — actors have no callbacks */ ∅",
+                                name,
+                                args.replace("*/", "* /")
+                            );
+                        }
                     }
                 }
 
