@@ -1428,11 +1428,26 @@ impl WasmCompiler {
             None
         };
 
-        // Also check simple function name
-        let simple_func = self.get_func(method);
+        // Also check the plain function name — the UFCS form, `x·f()` for a free
+        // `rite f(x)`. It is only that when the arity agrees: the receiver goes
+        // in as the first argument, so a free `f(a)` reached as `x·f(a)` is two
+        // operands for one parameter.
+        //
+        // Without that condition this resolved `self.on_patch(l)` — a call to a
+        // callback held in a state field, which Sigil has no mechanism for — to
+        // whatever free function shared the name, and pushed the field read as a
+        // receiver that nothing consumed. Inside a closure body that is a block
+        // one value too tall. Reporting the name as undefined is the honest
+        // answer, and the one the per-file build already gave.
+        let simple_func = self.get_func(method).filter(|idx| {
+            self.func_arity
+                .get(idx)
+                .is_none_or(|&declared| declared == args.len() + 1)
+        });
 
         let func_idx = qualified_func.or(simple_func)
             .ok_or_else(|| WasmError::undefined_function(method))?;
+        self.ensure_arity(func_idx, args.len() + 1, method)?;
 
         // Compile receiver as first argument
         // If we identified a local variable at the start, emit LocalGet directly
