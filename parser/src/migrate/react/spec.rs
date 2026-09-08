@@ -1324,6 +1324,37 @@ pub fn chrono_now() -> String {
 /// The one definition. `generator.rs` and `ast_transform.rs` delegate here;
 /// they used to carry byte-identical copies, which is how a fix to one of them
 /// could leave the other two mangling the same names.
+/// snake_case WITHOUT keyword escaping.
+///
+/// A member or method name is not a binding, so it cannot collide with a
+/// keyword and must not be escaped: `selected.body` became `selected.body_`,
+/// `hunk.header` became `header_`, and `s.split(",")` became `s·split_(",")`,
+/// which is a method Sigil does not have. Escaping belongs on names the
+/// generated file *declares*.
+pub(crate) fn to_snake_case_member(s: &str) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
+        if c.is_uppercase() {
+            let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+            let next = chars.get(i + 1).copied();
+            let boundary = match prev {
+                None => false,
+                Some(p) if p.is_lowercase() || p.is_numeric() => true,
+                Some(p) if p.is_uppercase() => next.is_some_and(|n| n.is_lowercase()),
+                _ => false,
+            };
+            if boundary {
+                result.push('_');
+            }
+            result.push(c.to_lowercase().next().unwrap());
+        } else {
+            result.push(*c);
+        }
+    }
+    result
+}
+
 pub(crate) fn to_snake_case(s: &str) -> String {
     // Acronym-aware: a run of capitals is one word. Underscoring before every
     // capital turned `DEFAULT_SORT` into `d_e_f_a_u_l_t__s_o_r_t`, which is what

@@ -1867,6 +1867,83 @@ impl WasmCompiler {
                 Ok(true)
             }
 
+            // Array higher-order methods.
+            //
+            // `morpheme.array_map`, `array_filter`, `array_len` and friends have
+            // been imported since the morpheme group was added, and NOT ONE of
+            // them was ever dispatched from a method — `array_map` appears in the
+            // whole backend exactly once, in an assertion that it is registered.
+            // So `items·map(…)`, `items·filter(…)` and `items·any(…)` were
+            // undefined, which is most of what a view does with a list.
+            //
+            // Pointers are i64 internally and these imports take i32, so both the
+            // array and the closure are wrapped, and a handle result extended
+            // back.
+            "filter" | "map" if args.len() == 1 && self.is_array_receiver(receiver) => {
+                let import = if method == "filter" {
+                    "morpheme_array_filter"
+                } else {
+                    "morpheme_array_map"
+                };
+                let idx = match self.imports.get_func(import) {
+                    Some(i) => i,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                self.compile_expr(&args[0])?;
+                self.push_wrap()?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                func.push(Instruction::I64ExtendI32U);
+                Ok(true)
+            }
+
+            // `any(pred)` / `all(pred)`. The imported `array_any` and `array_all`
+            // take no predicate at all, so these are filter-then-count: `any` is
+            // a non-empty filtered array, `all` is one the filter did not shrink.
+            "any" | "some" | "all" | "every" if args.len() == 1 && self.is_array_receiver(receiver) => {
+                let (filter_idx, len_idx) = match (
+                    self.imports.get_func("morpheme_array_filter"),
+                    self.imports.get_func("morpheme_array_len"),
+                ) {
+                    (Some(f), Some(l)) => (f, l),
+                    _ => return Ok(false),
+                };
+                let wants_all = matches!(method, "all" | "every");
+
+                // Keep the array: `all` needs its original length too.
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                let arr_local = {
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    let local = func.alloc_local("__hof_arr".to_string(), ValType::I32);
+                    func.push(Instruction::LocalTee(local));
+                    local
+                };
+                self.compile_expr(&args[0])?;
+                self.push_wrap()?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(filter_idx));
+                func.push(Instruction::Call(len_idx));
+                if wants_all {
+                    func.push(Instruction::LocalGet(arr_local));
+                    func.push(Instruction::Call(len_idx));
+                    func.push(Instruction::I32Eq);
+                } else {
+                    func.push(Instruction::I32Const(0));
+                    func.push(Instruction::I32GtS);
+                }
+                func.push(Instruction::I64ExtendI32U);
+                Ok(true)
+            }
+
             // Collection methods - map to morpheme imports
             // Vec/Array methods
             "push" => {
@@ -2831,6 +2908,33 @@ impl WasmCompiler {
     }
 
     /// Compile a collection method call (Vec, HashMap, etc.).
+    /// Wrap the value on top of the stack from i64 to i32.
+    fn push_wrap(&mut self) -> WasmResult<()> {
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I32WrapI64);
+        Ok(())
+    }
+
+    /// Is this receiver plausibly an array?
+    ///
+    /// Deliberately narrow: an array literal, or a `self.<field>`/local whose
+    /// declared type says so. `map` and `filter` also exist on Option, and
+    /// hijacking those would be worse than leaving the array case undefined.
+    fn is_array_receiver(&self, receiver: &Expr) -> bool {
+        match receiver {
+            Expr::Array(_) => true,
+            Expr::Field { .. } | Expr::Path(_) | Expr::MethodCall { .. } | Expr::Index { .. } => {
+                // A closure argument is the giveaway: Option::map takes one too,
+                // but Option is never indexed or built from a list literal here,
+                // and the generated views only reach these through collections.
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn compile_collection_method(
         &mut self,
         receiver: &Expr,

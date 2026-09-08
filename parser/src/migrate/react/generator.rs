@@ -1083,7 +1083,19 @@ impl<'a> QliphothGenerator<'a> {
                 // mid-expression and a Sigil comment runs to end of line.
                 let enum_name = format!("{}Msg", self.spec.name);
                 let _ = declared_arity;
-                format!("·on_{}({}·{})", event_name.to_lowercase(), enum_name, msg_name)
+                // Only a real DOM event gets a named method. Everything else is
+                // a CHILD COMPONENT'S callback prop — `onOpenSession`,
+                // `onLaunchClaude`, `onTicketsLoaded` — which is not an event on
+                // a DOM node at all; lowercasing those produced
+                // `·on_opensession(…)`, a method that could never exist, once per
+                // distinct prop name across the client.
+                match dom_event_method(event_name) {
+                    Some(method) => format!("·{}({}·{})", method, enum_name, msg_name),
+                    None => format!(
+                        "·on_event(\"{}\", {}·{})",
+                        name, enum_name, msg_name
+                    ),
+                }
             }
             "disabled" | "checked" | "selected" | "readonly" => {
                 // Boolean attributes
@@ -1163,6 +1175,28 @@ fn parses_as_expression(expr: &str) -> bool {
     .unwrap_or(false);
     std::panic::set_hook(prev);
     ok
+}
+
+/// The Qliphoth builder method for a React event name, if it is a DOM event.
+///
+/// `onClick` -> `on_click`. A name that is not in this list is a component's
+/// callback prop and goes through `on_event("<name>", id)` with its React
+/// spelling intact.
+fn dom_event_method(event_name: &str) -> Option<&'static str> {
+    Some(match event_name.to_lowercase().as_str() {
+        "click" => "on_click",
+        "input" => "on_input",
+        "submit" => "on_submit",
+        "change" => "on_change",
+        "keydown" => "on_keydown",
+        "keyup" => "on_keyup",
+        "mousedown" => "on_mousedown",
+        "mouseup" => "on_mouseup",
+        "focus" => "on_focus",
+        "blur" => "on_blur",
+        "doubleclick" | "dblclick" => "on_dblclick",
+        _ => return None,
+    })
 }
 
 /// Is this a value a module-scope binding can hold?

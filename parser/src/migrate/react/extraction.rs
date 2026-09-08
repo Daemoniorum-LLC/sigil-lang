@@ -1779,13 +1779,32 @@ impl<'a> Extractor<'a> {
                     Some(i) => i,
                     None => continue,
                 };
-                // Hooks are state, not locals.
+                // Hooks are state, not locals — with two exceptions.
+                //
+                // `useMemo(() => expr, [deps])` and `useCallback(fn, [deps])`
+                // bind a DERIVED local, not state; skipping them left `visible`,
+                // `counts`, `projectOptions` and 90-odd others bound nowhere, and
+                // the unknown-identifier rule then turned each into a `self.`
+                // field the actor does not have. What matters is the memo's
+                // body, so that is what becomes the initialiser.
+                let mut memo_init: Option<String> = None;
                 if let Expr::Call(call) = init.as_ref() {
-                    if self
-                        .get_callee_name(&call.callee)
-                        .is_some_and(|n| n.starts_with("use"))
-                    {
-                        continue;
+                    match self.get_callee_name(&call.callee).as_deref() {
+                        Some("useMemo") | Some("useCallback") => {
+                            if let Some(first) = call.args.first() {
+                                if let Expr::Arrow(arrow) = first.expr.as_ref() {
+                                    if let BlockStmtOrExpr::Expr(body) = arrow.body.as_ref() {
+                                        memo_init =
+                                            Some(self.span_to_source(self.expr_span(body)));
+                                    }
+                                }
+                            }
+                            if memo_init.is_none() {
+                                continue;
+                            }
+                        }
+                        Some(n) if n.starts_with("use") => continue,
+                        _ => {}
                     }
                 }
                 // The real source text, not expr_to_string — that is a stub which
@@ -1793,7 +1812,10 @@ impl<'a> Extractor<'a> {
                 // so every member access, call, ternary and comparison collapsed to
                 // the same wrong value. span_to_source gives the expression as
                 // written, which transform_expression then translates properly.
-                let init_src = self.span_to_source(self.expr_span(init));
+                let init_src = match memo_init {
+                    Some(src) => src,
+                    None => self.span_to_source(self.expr_span(init)),
+                };
                 match &decl.name {
                     Pat::Ident(ident) => out.push(LocalBinding {
                         name: ident.id.sym.to_string(),
@@ -3231,21 +3253,39 @@ impl<'a> Extractor<'a> {
                     }
                 }
             }
-            // Simple parameter: (props)
+            // Simple parameter: (props), or any other named parameter.
+            //
+            // This used to record the parameter ONLY when it was literally named
+            // `props` or `p`, so a component taking positional arguments —
+            // `renderFileEntryDetail(entry, kindLabel, commandLabel)` — reported
+            // no props at all, and every reference to `entry` in its body came
+            // out as an undefined name. Sixteen of the generated components are
+            // written that way.
             Pat::Ident(ident) => {
-                // If first param is named "props", we can't know individual props
-                // But we note it exists
                 let name = ident.id.sym.to_string();
-                if name == "props" || name == "p" {
-                    // This is a props object, not destructured
-                    props.push(PropExtraction {
-                        name: "props".to_string(),
-                        type_annotation: ident.type_ann.as_ref().map(|ann| self.span_to_source(ann.span)),
-                        required: true,
-                        default_value: None,
-                        is_callback: false,
-                        is_children: false,
-                    });
+                let is_callback = name.starts_with("on")
+                    && name.len() > 2
+                    && name.chars().nth(2).is_some_and(|c| c.is_uppercase());
+                props.push(PropExtraction {
+                    name: if name == "p" { "props".to_string() } else { name },
+                    type_annotation: ident
+                        .type_ann
+                        .as_ref()
+                        .map(|ann| self.span_to_source(ann.span)),
+                    required: true,
+                    default_value: None,
+                    is_callback,
+                    is_children: false,
+                });
+            }
+            // A parameter with a default: `(kind = "agents")`.
+            Pat::Assign(assign) => {
+                let default_value = Some(self.span_to_source(assign.right.span()));
+                let before = props.len();
+                self.extract_props_from_pattern(&assign.left, props);
+                for prop in props.iter_mut().skip(before) {
+                    prop.required = false;
+                    prop.default_value = default_value.clone();
                 }
             }
             _ => {}

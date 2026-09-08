@@ -335,10 +335,20 @@ impl WasmCompiler {
             return Ok(());
         }
 
-        // Check for function reference (for function pointers)
-        if let Some(_func_idx) = self.get_func(name) {
-            // Return function table index for indirect calls
-            return Err(WasmError::unsupported("function references"));
+        // A function named but not called — `onClick={handleSubmit}` in React, and
+        // any callback passed by name.
+        //
+        // `add_to_table` has always existed and this arm never used it, so naming
+        // a function was a hard "unsupported: function references". The value is
+        // the function's index in the indirect-call table, which is exactly what
+        // `sigil_runtime.js` looks up when a vnode prop holds a function pointer.
+        if let Some(func_idx) = self.get_func(name) {
+            let table_idx = self.add_to_table(func_idx);
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Const(table_idx as i64));
+            return Ok(());
         }
 
         // Handle multi-segment paths like typography·FONT_SANS or api·ConnectionState·Connected

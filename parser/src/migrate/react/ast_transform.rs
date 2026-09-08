@@ -153,6 +153,12 @@ fn to_snake_case(s: &str) -> String {
     crate::migrate::react::spec::to_snake_case(s)
 }
 
+/// snake_case for a member or method name — no keyword escaping. See
+/// `spec::to_snake_case_member`.
+fn to_snake_case_member(s: &str) -> String {
+    crate::migrate::react::spec::to_snake_case_member(s)
+}
+
 /// Convert snake_case to PascalCase
 fn to_pascal_case(s: &str) -> String {
     s.split('_')
@@ -339,9 +345,21 @@ impl<'a> ExprTransformer<'a> {
             return snake;
         }
 
-        // Check if it's a prop (for pure function components)
+        // Check if it's a prop.
+        //
+        // In a pure function component a prop is a parameter, so the bare name is
+        // right. In an ACTOR it is a field: `rite new(…)` assigns every prop to
+        // `self.<name>` and the state block declares it, so referring to it bare
+        // in the view resolves to nothing. This arm returned bare either way, so
+        // `hunk.header` in an actor whose state includes `hunk` came out as an
+        // undefined name — and `sigil check` does not resolve names, so nothing
+        // said so until the file was compiled.
         if self.config.props.iter().any(|p| to_snake_case(p) == snake) {
-            return snake;
+            return if self.config.prefix_self {
+                format!("self.{}", snake)
+            } else {
+                snake
+            };
         }
 
         // Check if we should prefix with self (actor state)
@@ -566,7 +584,7 @@ impl<'a> ExprTransformer<'a> {
                 // Transform common JS properties to Sigil equivalents
                 match prop.as_str() {
                     "length" => format!("{}.len()", obj),
-                    _ => format!("{}.{}", obj, to_snake_case(&prop)),
+                    _ => format!("{}.{}", obj, to_snake_case_member(&prop)),
                 }
             }
             MemberProp::Computed(computed) => {
@@ -623,7 +641,7 @@ impl<'a> ExprTransformer<'a> {
                             _ => &method,
                         };
 
-                        return format!("{}·{}({})", obj, to_snake_case(sigil_method), args);
+                        return format!("{}·{}({})", obj, to_snake_case_member(sigil_method), args);
                     }
                 }
 
@@ -843,7 +861,7 @@ impl<'a> ExprTransformer<'a> {
                 let obj = self.transform_expr(&member.obj);
                 match &member.prop {
                     MemberProp::Ident(ident) => {
-                        format!("{}?.{}", obj, to_snake_case(&ident.sym.to_string()))
+                        format!("{}?.{}", obj, to_snake_case_member(&ident.sym.to_string()))
                     }
                     MemberProp::Computed(computed) => {
                         let prop = self.transform_expr(&computed.expr);
@@ -858,7 +876,7 @@ impl<'a> ExprTransformer<'a> {
                 if let Expr::Member(member) = call.callee.as_ref() {
                     let obj = self.transform_expr(&member.obj);
                     if let MemberProp::Ident(ident) = &member.prop {
-                        format!("{}?.{}({})", obj, to_snake_case(&ident.sym.to_string()), args)
+                        format!("{}?.{}({})", obj, to_snake_case_member(&ident.sym.to_string()), args)
                     } else {
                         let callee = self.transform_expr(&call.callee);
                         format!("{}?({})", callee, args)
