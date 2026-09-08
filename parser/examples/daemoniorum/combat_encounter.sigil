@@ -24,8 +24,8 @@ enemy GuiltShade: Manifestation {
 
     // Stronger in deeper reality layers
     layer_modifiers: {
-        Fractured: { damage: 1.0, defense: 1.0 },
-        Shattered: { damage: 1.5, defense: 0.7 },
+        Fractured: Any,
+        Shattered: Any,
     },
 
     abilities: [

@@ -262,7 +262,7 @@ rite spawn_async<F: Future<Output = ()>>(future: F) {
 }
 
 /// Code block with syntax highlighting
-☉ rite HighlightedCodeBlock(props: { code: String, language: String, filename: Option<String>? }) -> VNode! {
+☉ rite HighlightedCodeBlock(props: Any) -> VNode! {
     ≔ (copied, set_copied) = use_state(false)
 
     ≔ copy_to_clipboard! = || {
@@ -315,7 +315,7 @@ rite spawn_async<F: Future<Output = ()>>(future: F) {
 rite set_timeout(ms: u64, callback: rite()) {}
 
 /// Inline code element
-☉ rite InlineCode(props: { code: String }) -> VNode! {
+☉ rite InlineCode(props: Any) -> VNode! {
     code()
         ·class("inline-code")
         ·text(&props.code)

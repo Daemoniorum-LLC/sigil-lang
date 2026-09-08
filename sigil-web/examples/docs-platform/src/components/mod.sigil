@@ -150,7 +150,7 @@ invoke tome·layouts·{SidebarItem, TocItem, PageLink}
     ☉ on_navigate: rite()
 }
 
-rite SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigate: rite() }) -> VNode! {
+rite SidebarNavItem(props: Any) -> VNode! {
     ≔ (expanded, set_expanded) = use_state(
         props.current_path·starts_with(&props.item.path)
     )
@@ -214,7 +214,7 @@ rite SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigat
 }
 
 /// Breadcrumb navigation
-☉ rite Breadcrumbs(props: { path: String }) -> VNode! {
+☉ rite Breadcrumbs(props: Any) -> VNode! {
     ≔ segments! = props.path·split('/')
         ·filter(|s| !s·is_empty())
         ·collect·<Vec<_>>()
@@ -274,7 +274,7 @@ rite SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigat
 }
 
 /// Table of contents
-☉ rite TableOfContents(props: { headings: Vec<TocItem> }) -> VNode! {
+☉ rite TableOfContents(props: Any) -> VNode! {
     ≔ (active_id, set_active_id) = use_state("")
 
     // Track scroll position to highlight current section
@@ -314,7 +314,7 @@ rite SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigat
         ·build()
 }
 
-rite TocLink(props: { item: TocItem, active_id: String }) -> VNode! {
+rite TocLink(props: Any) -> VNode! {
     ≔ is_active! = props.active_id == props.item.anchor
 
     li()
@@ -347,7 +347,7 @@ rite TocLink(props: { item: TocItem, active_id: String }) -> VNode! {
 }
 
 /// Previous/Next page navigation
-☉ rite PageNavigation(props: { prev: Option<PageLink>?, next: Option<PageLink>? }) -> VNode! {
+☉ rite PageNavigation(props: Any) -> VNode! {
     nav()
         ·class("page-nav")
         ·children(vec![
@@ -467,7 +467,7 @@ rite TocLink(props: { item: TocItem, active_id: String }) -> VNode! {
         ·build()
 }
 
-rite FooterColumn(props: { title: &str, links: Vec<(&str, &str)> }) -> VNode! {
+rite FooterColumn(props: Any) -> VNode! {
     div()
         ·class("footer-column")
         ·children(vec![
@@ -499,7 +499,7 @@ rite FooterColumn(props: { title: &str, links: Vec<(&str, &str)> }) -> VNode! {
         ·build()
 }
 
-rite SocialLink(props: { icon: &str, url: &str }) -> VNode! {
+rite SocialLink(props: Any) -> VNode! {
     a()
         ·attr("href", props.url)
         ·attr("target", "_blank")
@@ -758,7 +758,7 @@ component Tabs {
 }
 
 /// Search modal (⌘K)
-☉ rite SearchModal(props: { on_close: rite() }) -> VNode! {
+☉ rite SearchModal(props: Any) -> VNode! {
     ≔ (query, set_query) = use_state("")
     ≔ results~ = use_fetch·<Vec<SearchResult>>(&format!("/api/search?q={}", query))
 
@@ -843,7 +843,7 @@ component Tabs {
     ☉ score: f64!
 }
 
-rite SearchResultItem(props: { result: SearchResult, on_select: rite() }) -> VNode! {
+rite SearchResultItem(props: Any) -> VNode! {
     ≔ navigate! = use_navigate()
 
     li()
@@ -865,7 +865,7 @@ rite SearchResultItem(props: { result: SearchResult, on_select: rite() }) -> VNo
 // ============================================================================
 
 /// Icon component (using Lucide icons)
-☉ rite Icon(props: { name: &str }) -> VNode! {
+☉ rite Icon(props: Any) -> VNode! {
     svg()
         ·class(&format!("icon icon-{}", props.name))
         ·attr("aria-hidden", "true")
@@ -873,7 +873,7 @@ rite SearchResultItem(props: { result: SearchResult, on_select: rite() }) -> VNo
 }
 
 /// Badge component
-☉ rite Badge(props: { text: &str }) -> VNode! {
+☉ rite Badge(props: Any) -> VNode! {
     span()·class("badge")·text(props.text)·build()
 }
 
@@ -887,7 +887,7 @@ rite SearchResultItem(props: { result: SearchResult, on_select: rite() }) -> VNo
 }
 
 /// Version badge with link
-☉ rite VersionBadge(props: { version: &str, href: Option<&str>? }) -> VNode! {
+☉ rite VersionBadge(props: Any) -> VNode! {
     ≔ content! = span()·class("version-badge")·text(props.version)·build()
 
     ⎇ ≔ Some(href) = props.href {

@@ -233,6 +233,13 @@ VARIANT_MARKER = re.compile(r"^(\s*[A-Z]\w*(?:\([^)]*\))?)[!?~◊](\s*,)", re.M)
 
 # `aspect` is Sigil's `trait` keyword, so it cannot also be an identifier. Sources
 # predating that keyword use it as a field name, a parameter and a local.
+# Inline object types in a parameter — `props: { code: String, language: String }`.
+# Sigil has no anonymous struct type, so this degrades to Any. Type information is
+# lost, which is worse than a named struct would be; a named struct would also mean
+# rewriting every call site, and these are hand-written sources with callers
+# elsewhere. The React generator's normalize_prop_type makes the same trade.
+INLINE_OBJ_PARAM = re.compile(r"(:\s*)\{[^{}]*:[^{}]*\}(?=\s*[,)])")
+
 ASPECT_IDENT = re.compile(
     r"(?<![\w·])aspect(?=\s*[:,)=]|\s*$)|(?<=[(,]\s)aspect(?=\s*:)", re.M
 )
@@ -247,6 +254,7 @@ def migrate_constructs(src, in_asm_only=True):
         text = IMPL_ARG.sub("⊢ ", text)
         text = VARIANT_MARKER.sub(lambda m: m.group(1) + m.group(2), text)
         text = ASPECT_IDENT.sub("aspect_", text)
+        text = INLINE_OBJ_PARAM.sub(lambda m: m.group(1) + "Any", text)
         return text
 
     out = "".join(one(t) if is_code else t for t, is_code in split_regions(src))

@@ -210,7 +210,7 @@ invoke tome·main·{use_theme, Theme}
     ☉ items_count: u32!
 }
 
-rite ApiModuleLink(props: { module: ApiModuleInfo, current: Option<String>? }) -> VNode! {
+rite ApiModuleLink(props: Any) -> VNode! {
     ≔ is_current! = props.current·map(|c| c == props.module.name)·unwrap_or(false)
 
     NavLink(NavLinkProps {

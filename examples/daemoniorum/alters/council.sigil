@@ -16,13 +16,7 @@ alter Abaddon: Council {
     archetype: Goetia·Abaddon,
 
     //! Emotional baseline - high arousal, high dominance
-    anima: {
-        base_pleasure: 0.2,
-        base_arousal: 0.7,
-        base_dominance: 0.9,
-        expressiveness: 0.8,
-        stability: 0.6,
-    },
+    anima: Any,
 
     //! Preferred reality layer - sees through facades
     preferred_reality: RealityLayer·Fractured,
@@ -80,13 +74,7 @@ alter Abaddon: Council {
 alter Stolas: Council {
     archetype: Goetia·Stolas,
 
-    anima: {
-        base_pleasure: 0.3,
-        base_arousal: 0.2,
-        base_dominance: 0.4,
-        expressiveness: 0.5,
-        stability: 0.9,
-    },
+    anima: Any,
 
     preferred_reality: RealityLayer·Fractured,
 
@@ -136,13 +124,7 @@ alter Stolas: Council {
 alter Beleth: Council {
     archetype: Goetia·Beleth,
 
-    anima: {
-        base_pleasure: 0.5,
-        base_arousal: 0.4,
-        base_dominance: 0.3,
-        expressiveness: 0.9,
-        stability: 0.7,
-    },
+    anima: Any,
 
     preferred_reality: RealityLayer·Grounded,
 
@@ -164,13 +146,7 @@ alter Beleth: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: {
-        Dormant -> Stirring: on social_interaction,
-        Stirring -> CoConscious: on emotional_topic,
-        CoConscious -> Fronting: on relationship_situation,
-        Fronting -> CoConscious: on alone,
-        Triggered -> Fronting: on abandonment_trigger,
-    },
+    states: Any,
 
     dialogue: {
         tone: DialogueTone·Warm,
@@ -193,13 +169,7 @@ alter Beleth: Council {
 alter Paimon: Council {
     archetype: Goetia·Paimon,
 
-    anima: {
-        base_pleasure: 0.4,
-        base_arousal: 0.3,
-        base_dominance: 0.6,
-        expressiveness: 0.7,
-        stability: 0.8,
-    },
+    anima: Any,
 
     preferred_reality: RealityLayer·Fractured,
 
@@ -220,13 +190,7 @@ alter Paimon: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: {
-        Dormant -> Stirring: on navigation_needed,
-        Stirring -> CoConscious: always after 1000ms,
-        CoConscious -> Fronting: on decision_point,
-        Fronting -> CoConscious: on path_chosen,
-        CoConscious -> Dormant: after 45000ms ⎇ destination_reached,
-    },
+    states: Any,
 
     dialogue: {
         tone: DialogueTone·Guiding,
@@ -249,13 +213,7 @@ alter Paimon: Council {
 alter Vessel: Council {
     archetype: None,  // No demonic archetype, human origin
 
-    anima: {
-        base_pleasure: 0.0,
-        base_arousal: 0.0,
-        base_dominance: 0.0,
-        expressiveness: 0.5,
-        stability: 0.5,
-    },
+    anima: Any,
 
     preferred_reality: RealityLayer·Grounded,
 
@@ -275,13 +233,7 @@ alter Vessel: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: {
-        Dormant -> Stirring: on safety,
-        Stirring -> CoConscious: on stability > 0.5,
-        CoConscious -> Fronting: on no_threat && social_expectation,
-        Fronting -> CoConscious: on danger,
-        CoConscious -> Dormant: on high_stress,
-    },
+    states: Any,
 
     dialogue: {
         tone: DialogueTone·Neutral,
@@ -304,13 +256,7 @@ alter Vessel: Council {
 alter Warden: Protector {
     archetype: None,  // Internal protector
 
-    anima: {
-        base_pleasure: 0.1,
-        base_arousal: 0.5,
-        base_dominance: 0.7,
-        expressiveness: 0.4,
-        stability: 0.8,
-    },
+    anima: Any,
 
     preferred_reality: RealityLayer·Grounded,
 
@@ -404,10 +350,7 @@ cocon Analysis<Stolas, Paimon> {
     //! Analytical co-consciousness: Scholar + Guide
     name: "Investigation Configuration",
 
-    control_split: {
-        Stolas: 0.5,
-        Paimon: 0.5,
-    },
+    control_split: Any,
 
     shared_perception: true,
     internal_communication: true,

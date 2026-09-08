@@ -30,12 +30,7 @@ invoke daemoniorum·anima·{AnimaState, PAD};
         Trigger·system_endangered(0.9),
     ],
 
-    anima: {
-        base_arousal: 0.6,
-        base_dominance: 0.8,
-        expressiveness: 0.7,
-        susceptibility: 0.3,
-    },
+    anima: Any,
 
     states: {
         Dormant -> Stirring: on Trigger·threat_detected where threat > 0.5,
@@ -87,19 +82,9 @@ invoke daemoniorum·anima·{AnimaState, PAD};
         Trigger·pattern_detected(0.4),
     ],
 
-    anima: {
-        base_arousal: -0.2,
-        base_dominance: 0.3,
-        expressiveness: 0.4,
-        susceptibility: 0.5,
-    },
+    anima: Any,
 
-    states: {
-        Dormant -> Stirring: on Trigger·puzzle_encountered,
-        Stirring -> CoConscious: on system.needs_analysis,
-        CoConscious -> Fronting: on complex_problem && urgency > 0.5,
-        Fronting -> CoConscious: on problem.solved,
-    },
+    states: Any,
 
     /// Analyze an entity or object
     rite analyze(target: Analyzable) -> Analysis@! {
@@ -139,19 +124,9 @@ invoke daemoniorum·anima·{AnimaState, PAD};
         Trigger·deception_detected(0.6),
     ],
 
-    anima: {
-        base_arousal: 0.1,
-        base_dominance: 0.4,
-        expressiveness: 0.9,
-        susceptibility: 0.4,
-    },
+    anima: Any,
 
-    states: {
-        Dormant -> Stirring: on Trigger·social_interaction,
-        Stirring -> Fronting: on conversation.started,
-        Fronting -> CoConscious: on conversation.ended,
-        CoConscious -> Fronting: on Trigger·negotiation_needed,
-    },
+    states: Any,
 
     /// Read a person's emotional state and intentions
     rite read_person(target: Person) -> SocialReading@! {

@@ -150,7 +150,7 @@ fn main() {
     })
 }
 
-rite ProductCard(props: { product: Product }) -> VNode! {
+rite ProductCard(props: Any) -> VNode! {
     Card(CardProps {
         title: props.product.name·clone(),
         description: Some(props.product.description·clone()),
@@ -159,7 +159,7 @@ rite ProductCard(props: { product: Product }) -> VNode! {
     })
 }
 
-rite FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode! {
+rite FeatureCard(props: Any) -> VNode! {
     div()
         ·class("feature-card")
         ·children(vec![
@@ -222,7 +222,7 @@ rite FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode
 }
 
 /// Product documentation page
-☉ rite ProductDocs(props: { product_id: String }) -> VNode! {
+☉ rite ProductDocs(props: Any) -> VNode! {
     ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
     ≔ sidebar_items! = build_docs_sidebar()
 
@@ -315,7 +315,7 @@ rite FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode
 }
 
 /// Product section page
-☉ rite ProductSection(props: { product_id: String, section_id: String }) -> VNode! {
+☉ rite ProductSection(props: Any) -> VNode! {
     ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
     ≔ sidebar_items! = build_docs_sidebar()
 
@@ -388,7 +388,7 @@ rite FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode
 }
 
 /// Product API reference
-☉ rite ApiReference(props: { product_id: String }) -> VNode! {
+☉ rite ApiReference(props: Any) -> VNode! {
     ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
 
     ⌥ product? {
@@ -437,7 +437,7 @@ rite FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode
 }
 
 /// API module page
-☉ rite ApiModule(props: { product_id: String, module_id: String }) -> VNode! {
+☉ rite ApiModule(props: Any) -> VNode! {
     // Detailed API documentation for a specific module
     div()·text(&format!("API Module: {}/{}", props.product_id, props.module_id))·build()
 }
@@ -522,7 +522,7 @@ rite FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode
     })
 }
 
-rite GuideCard(props: { title: &str, description: &str, duration: &str, difficulty: &str, href: &str }) -> VNode! {
+rite GuideCard(props: Any) -> VNode! {
     Link(LinkProps {
         to: props.href.to_string(),
         replace: false,
@@ -542,7 +542,7 @@ rite GuideCard(props: { title: &str, description: &str, duration: &str, difficul
 }
 
 /// Individual guide page
-☉ rite Guide(props: { guide_id: String }) -> VNode! {
+☉ rite Guide(props: Any) -> VNode! {
     ≔ sidebar_items! = build_docs_sidebar()
 
     DocsLayout(DocsLayoutProps {
@@ -635,7 +635,7 @@ rite GuideCard(props: { title: &str, description: &str, duration: &str, difficul
         ·build()
 }
 
-rite ExampleCard(props: { title: &str, description: &str, tags: Vec<&str>, href: &str }) -> VNode! {
+rite ExampleCard(props: Any) -> VNode! {
     Link(LinkProps {
         to: props.href.to_string(),
         replace: false,
@@ -818,7 +818,7 @@ fn main() {
 }
 
 /// Release notes for specific version
-☉ rite ReleaseNotes(props: { version: String }) -> VNode! {
+☉ rite ReleaseNotes(props: Any) -> VNode! {
     div()
         ·class("release-notes-page")
         ·children(vec![
