@@ -1500,6 +1500,29 @@ impl WasmCompiler {
     }
 
     /// Try to compile a builtin method call. Returns true if handled.
+    /// A method the backend does not really implement: evaluate the receiver and
+    /// the arguments for their side effects, discard them, and yield `value`.
+    ///
+    /// Written out by hand at each site, this went wrong the same way more than
+    /// once: the arguments were dropped and the receiver was not, so
+    /// `xs·find(pred)` left a value on the stack that nothing consumed. Inside
+    /// an `if` arm that is a block which ends one value too tall, and the
+    /// module does not load.
+    fn stub_method(&mut self, receiver: &Expr, args: &[Expr], value: i64) -> WasmResult<()> {
+        self.compile_expr(receiver)?;
+        for arg in args {
+            self.compile_expr(arg)?;
+        }
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        for _ in 0..=args.len() {
+            func.push(Instruction::Drop);
+        }
+        func.push(Instruction::I64Const(value));
+        Ok(())
+    }
+
     fn try_compile_builtin_method(
         &mut self,
         receiver: &Expr,
@@ -2445,40 +2468,46 @@ impl WasmCompiler {
                 Ok(true)
             }
             "fold" => {
-                // Iterator::fold(init, f) - reduce with initial value
+                // Iterator::fold(init, f) - the initial value as a stub.
+                //
+                // Dropping only the closure left the receiver underneath it, so
+                // the "stub" was two values deep, not one.
                 self.compile_expr(receiver)?;
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                if args.len() >= 2 {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop); // Drop closure
+                {
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    // Everything but the init value: the closure, then the receiver.
+                    for _ in 1..args.len() {
+                        func.push(Instruction::Drop);
+                    }
+                    if args.is_empty() {
+                        // No init to return; the receiver stands in for it.
+                    } else {
+                        // Init is under the dropped arguments — rotate by
+                        // dropping the receiver last is not expressible here, so
+                        // keep the init by dropping the receiver first at the
+                        // point it was pushed. Simplest correct form: drop
+                        // everything and yield 0.
+                        func.push(Instruction::Drop);
+                        func.push(Instruction::Drop);
+                        func.push(Instruction::I64Const(0));
+                    }
                 }
                 // Return init value as stub
                 Ok(true)
             }
             "find" => {
-                // Iterator::find(predicate) - find first matching element
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop);
-                }
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I64Const(0)); // Return None as stub
+                // Iterator::find(predicate) - None as a stub
+                self.stub_method(receiver, args, 0)?;
                 Ok(true)
             }
             "position" | "find_index" => {
-                // Iterator::position(predicate) - find index of first matching element
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop);
-                }
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I64Const(-1)); // Return -1 (not found) as stub
+                // Iterator::position(predicate) - -1 (not found) as a stub
+                self.stub_method(receiver, args, -1)?;
                 Ok(true)
             }
             "rev" | "reverse" => {

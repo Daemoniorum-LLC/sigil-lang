@@ -22,7 +22,7 @@ use wasm_encoder::{Instruction, ValType};
 
 /// What one instruction does to the operand stack: how many values it consumes,
 /// and the type of the single value it produces (if any).
-fn effect(
+pub fn stack_effect(
     instr: &Instruction<'static>,
     call_sig: &dyn Fn(u32) -> Option<(Vec<ValType>, Vec<ValType>)>,
     type_sig: &dyn Fn(u32) -> Option<(Vec<ValType>, Vec<ValType>)>,
@@ -114,7 +114,7 @@ fn effect(
 
 /// The operand types an instruction requires, when they are fixed by the
 /// instruction itself. `None` means "not modelled" — those are left alone.
-fn demands(
+pub fn operand_types(
     instr: &Instruction<'static>,
     call_sig: &dyn Fn(u32) -> Option<(Vec<ValType>, Vec<ValType>)>,
     type_sig: &dyn Fn(u32) -> Option<(Vec<ValType>, Vec<ValType>)>,
@@ -166,6 +166,10 @@ fn demands(
 }
 
 /// The instruction that turns `from` into `to`, if one exists.
+pub fn conversion_for(from: ValType, to: ValType) -> Option<Instruction<'static>> {
+    conversion(from, to)
+}
+
 fn conversion(from: ValType, to: ValType) -> Option<Instruction<'static>> {
     use ValType::*;
     Some(match (from, to) {
@@ -226,7 +230,7 @@ pub fn normalise_call_results(
         // `PartialEq`, so compare what it does rather than what it is.
         let already = instructions
             .get(pos + 1)
-            .and_then(|next| effect(next, call_sig, &|_| None, &|_| None, &|_| None))
+            .and_then(|next| stack_effect(next, call_sig, &|_| None, &|_| None, &|_| None))
             .map(|(pops, pushed)| pops == 1 && pushed == Some(ValType::I64))
             .unwrap_or(false);
         if already {
@@ -257,7 +261,7 @@ pub fn repair_operand_types(
     let mut inserts: Vec<(usize, Instruction<'static>)> = Vec::new();
 
     for pos in 0..instructions.len() {
-        let Some(params) = demands(&instructions[pos], call_sig, type_sig, local_ty, global_ty) else {
+        let Some(params) = operand_types(&instructions[pos], call_sig, type_sig, local_ty, global_ty) else {
             continue;
         };
         if params.is_empty() {
@@ -286,7 +290,7 @@ pub fn repair_operand_types(
                 }
                 i -= 1;
                 let Some((pops, pushed)) =
-                    effect(&instructions[i], call_sig, type_sig, local_ty, global_ty)
+                    stack_effect(&instructions[i], call_sig, type_sig, local_ty, global_ty)
                 else {
                     ok = false;
                     break;
@@ -353,7 +357,7 @@ pub fn repair_operand_types(
         if at > 0 {
             let last = &instructions[at - 1];
             if !matches!(last, Instruction::Return | Instruction::Unreachable) {
-                if let Some((_, Some(got))) = effect(last, call_sig, type_sig, local_ty, global_ty)
+                if let Some((_, Some(got))) = stack_effect(last, call_sig, type_sig, local_ty, global_ty)
                 {
                     if got != want {
                         if let Some(conv) = conversion(got, want) {

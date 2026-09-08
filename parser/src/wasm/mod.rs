@@ -32,6 +32,7 @@ pub mod async_sm;
 pub mod async_sm_ir;
 pub mod closures;
 pub mod coerce;
+pub mod stackcheck;
 pub mod constants;
 pub mod control_flow;
 pub mod deps;
@@ -83,6 +84,9 @@ pub struct WasmCompiler {
     /// than the compiler. Too many arguments is the same defect the other way,
     /// and shows up as a fallthru with an extra value.
     pub(crate) func_arity: HashMap<u32, usize>,
+
+    /// Diagnostics from the stack checker, filled in as the module is encoded.
+    pub(crate) stack_reports: Vec<String>,
 
     /// Global variables: (type, mutable, initial_value)
     pub(crate) globals: Vec<(ValType, bool, i64)>,
@@ -205,6 +209,7 @@ impl WasmCompiler {
             functions: Vec::new(),
             func_map: HashMap::new(),
             func_arity: HashMap::new(),
+            stack_reports: Vec::new(),
             globals: Vec::new(),
             global_map: HashMap::new(),
             data_segments: Vec::new(),
@@ -451,6 +456,11 @@ impl WasmCompiler {
     /// Get or create a type index.
     pub fn get_or_create_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
         self.imports.get_or_create_type(params, results)
+    }
+
+    /// Instruction-level diagnostics for anything the stack checker found.
+    pub fn stack_reports(&self) -> &[String] {
+        &self.stack_reports
     }
 
     /// Look up a function by name.
@@ -1185,6 +1195,32 @@ impl WasmCompiler {
                     &local_ty,
                     &global_ty,
                 );
+            }
+
+            // Say what is wrong with the instructions we emitted, in terms of
+            // the instructions we emitted. `wasmparser` gives a byte offset into
+            // the encoded binary, which names nothing anyone can act on.
+            // The forward model repairs what the backward scan could not reach —
+            // an operand pushed on the far side of an `if`/`end`, which is where
+            // the remaining invalid modules were. Repeat until it settles: one
+            // conversion can expose the next.
+            self.stack_reports.clear();
+            for func in &mut self.functions {
+                let mut repairs: Vec<(usize, wasm_encoder::Instruction<'static>)> = Vec::new();
+                for _ in 0..8 {
+                    let report =
+                        stackcheck::check_function(func, &mut repairs, &call_sig, &type_sig, &global_ty);
+                    if repairs.is_empty() {
+                        if let Some(r) = report {
+                            self.stack_reports.push(r.render());
+                        }
+                        break;
+                    }
+                    repairs.sort_by(|a, b| b.0.cmp(&a.0));
+                    for (at, instr) in repairs.drain(..) {
+                        func.instructions.insert(at.min(func.instructions.len()), instr);
+                    }
+                }
             }
         }
 

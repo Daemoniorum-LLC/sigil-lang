@@ -2196,6 +2196,20 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
 
                 if let Err(e) = validate_wasm_module(&wasm_bytes, &path.display().to_string()) {
                     eprintln!("Compilation error: {}", e);
+                    // The validator reports a byte offset into the encoded
+                    // binary. The stack checker reports the instruction, in the
+                    // function that emitted it, with the operands around it.
+                    let reports = compiler.stack_reports();
+                    if reports.is_empty() {
+                        eprintln!(
+                            "  (the stack checker found nothing — the construct is outside \
+                             the subset it models)"
+                        );
+                    } else {
+                        for r in reports {
+                            eprint!("{}", r);
+                        }
+                    }
                     eprintln!(
                         "  The output was written to '{}' so it can be inspected, but it \
                          will not load.",
