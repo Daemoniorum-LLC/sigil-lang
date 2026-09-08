@@ -1514,8 +1514,36 @@ impl<'a> QliphothGenerator<'a> {
                 }
             }
             "style" => {
-                // Style needs special handling - simplified for now
-                format!("·style(∅)")
+                // React's `style={{ width: "8px", opacity: 0.5 }}` is one object;
+                // Qliphoth's `style` takes a property and a value, one call per
+                // declaration. Emitting `·style(∅)` was a call with one argument
+                // to a method that takes two, which `sigil check` passed and the
+                // WASM backend turned into an unloadable module.
+                match &attr.value {
+                    JsxAttributeValue::Expression { code } => {
+                        match style_entries(code) {
+                            Some(entries) if !entries.is_empty() => entries
+                                .into_iter()
+                                .map(|(prop, val)| {
+                                    format!(
+                                        "·style({:?}, {}·to_string())",
+                                        css_property(&prop),
+                                        self.transform_expression_scoped(&val, scope)
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n"),
+                            // A computed style object has no fixed set of
+                            // properties, and there is no call that means "these,
+                            // whatever they turn out to be".
+                            _ => format!(
+                                "// style: not a literal object, so no property/value pairs. React: {}",
+                                code.split_whitespace().collect::<Vec<_>>().join(" ")
+                            ),
+                        }
+                    }
+                    _ => String::new(),
+                }
             }
             name if attr.is_event_handler => {
                 // Event handler -> message dispatch.
@@ -1727,6 +1755,83 @@ fn is_literal_only(value: &str) -> bool {
     stripped
         .chars()
         .all(|c| !(c.is_alphabetic() || c == '_' || c == '\u{00B7}'))
+}
+
+/// `{ width: "8px", opacity: 0.5 }` -> the property/value pairs, when the style
+/// prop is a literal object. `None` for anything computed.
+fn style_entries(code: &str) -> Option<Vec<(String, String)>> {
+    let body = code.trim();
+    let body = body.strip_prefix('{')?.strip_suffix('}')?.trim();
+    if body.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut in_str: Option<char> = None;
+    let mut cur = String::new();
+    let mut parts: Vec<String> = Vec::new();
+    for c in body.chars() {
+        if let Some(q) = in_str {
+            cur.push(c);
+            if c == q {
+                in_str = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' | '`' => {
+                in_str = Some(c);
+                cur.push(c);
+            }
+            '{' | '[' | '(' => {
+                depth += 1;
+                cur.push(c);
+            }
+            '}' | ']' | ')' => {
+                depth -= 1;
+                cur.push(c);
+            }
+            ',' if depth == 0 => {
+                parts.push(std::mem::take(&mut cur));
+            }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.trim().is_empty() {
+        parts.push(cur);
+    }
+    for part in parts {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        // A spread carries properties this cannot name.
+        if part.starts_with("...") {
+            return None;
+        }
+        let (k, v) = part.split_once(':')?;
+        let key = k.trim().trim_matches('"').trim_matches('\'').to_string();
+        if key.is_empty() || !key.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$') {
+            return None;
+        }
+        out.push((key, v.trim().to_string()));
+    }
+    Some(out)
+}
+
+/// `marginTop` -> `margin-top`. CSS property names are what the DOM wants;
+/// React's camelCase is a JS-object accommodation.
+fn css_property(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for c in name.chars() {
+        if c.is_uppercase() {
+            out.push('-');
+            out.extend(c.to_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Free-standing functions the WASM backend resolves, which a helper body may

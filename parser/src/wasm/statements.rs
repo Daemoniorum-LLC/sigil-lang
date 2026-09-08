@@ -857,6 +857,7 @@ impl WasmCompiler {
         let func_idx = self.imports.import_count() + self.functions.len() as u32;
 
         // Record function index with both qualified and simple names
+        self.func_arity.insert(func_idx, param_types.len());
         self.func_map.insert(qualified_name.clone(), func_idx);
         // Also register simple name for backwards compatibility
         if !self.module_path.is_empty() {

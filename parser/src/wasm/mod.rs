@@ -72,6 +72,17 @@ pub struct WasmCompiler {
     /// Function name -> index mapping
     pub(crate) func_map: HashMap<String, u32>,
 
+    /// Declared parameter count per function index.
+    ///
+    /// Every user function takes i64 parameters, so arity is the only way a
+    /// call can disagree with its callee — and nothing checked it. `sigil
+    /// check` does not resolve names (S23), so `VNode·div()·child()` passed and
+    /// the backend emitted a `call` with one operand for a function that takes
+    /// two: "not enough arguments on the stack", reported by the browser rather
+    /// than the compiler. Too many arguments is the same defect the other way,
+    /// and shows up as a fallthru with an extra value.
+    pub(crate) func_arity: HashMap<u32, usize>,
+
     /// Global variables: (type, mutable, initial_value)
     pub(crate) globals: Vec<(ValType, bool, i64)>,
 
@@ -192,6 +203,7 @@ impl WasmCompiler {
             imports: ImportRegistry::new(),
             functions: Vec::new(),
             func_map: HashMap::new(),
+            func_arity: HashMap::new(),
             globals: Vec::new(),
             global_map: HashMap::new(),
             data_segments: Vec::new(),

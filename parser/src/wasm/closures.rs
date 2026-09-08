@@ -791,6 +791,7 @@ impl WasmCompiler {
                         };
 
                         if let Some(func_idx) = method_func_idx {
+                            self.ensure_arity(func_idx, args.len() + 1, method_name)?;
                             // Found the method! Emit receiver as first argument
                             let local_idx = self.current_function()
                                 .and_then(|f| f.get_local(potential_receiver))
@@ -834,6 +835,7 @@ impl WasmCompiler {
                     let qualified = format!("{}::{}", resolved_segments[0], resolved_segments[1]);
                     if self.actor_self_methods.contains(&qualified) {
                         if let Some(&func_idx) = self.func_map.get(&qualified) {
+                            self.ensure_arity(func_idx, args.len() + 1, &qualified)?;
                             let func = self
                                 .current_function_mut()
                                 .ok_or_else(|| WasmError::internal("not in function context"))?;
@@ -1156,14 +1158,26 @@ impl WasmCompiler {
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-                // Load current heap pointer
-                func.push(Instruction::GlobalGet(0)); // Assume global 0 is heap pointer
+                // Load current heap pointer.
+                //
+                // `__heap_ptr` is an **i32** global (memory addresses are i32),
+                // and this treated it as i64 on both sides: `local.tee` into an
+                // i64 local, then `global.set` of an i64. So **every enum
+                // construction carrying a payload emitted invalid WebAssembly**
+                // — every `Some(x)`, every `VNode·Element(el)`, every
+                // `Patch·Replace { … }` — while the compiler reported success.
+                // The pointer stays i64 in the local, because everything below
+                // (and every other expression on this stack) is i64 and wraps
+                // at the point of use.
+                func.push(Instruction::GlobalGet(0)); // global 0 is __heap_ptr
+                func.push(Instruction::I64ExtendI32U);
                 let ptr_local = func.alloc_local("__enum_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalTee(ptr_local));
 
                 // Bump heap pointer
                 func.push(Instruction::I64Const(total_size as i64));
                 func.push(Instruction::I64Add);
+                func.push(Instruction::I32WrapI64);
                 func.push(Instruction::GlobalSet(0));
 
                 // Store tag at offset 0
@@ -1207,6 +1221,23 @@ impl WasmCompiler {
     }
 
     /// Compile a method call.
+    /// Reject a call whose operand count cannot match its callee.
+    ///
+    /// Emitting it anyway produces a module the compiler calls a success and no
+    /// runtime will load. An unknown index (an import, or a function registered
+    /// without arity) is left alone.
+    fn ensure_arity(&self, func_idx: u32, provided: usize, name: &str) -> WasmResult<()> {
+        if let Some(&declared) = self.func_arity.get(&func_idx) {
+            if declared != provided {
+                return Err(WasmError::unsupported(&format!(
+                    "{} takes {} argument(s), called with {}",
+                    name, declared, provided
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub fn compile_method_call(
         &mut self,
         receiver: &Expr,
@@ -1241,6 +1272,7 @@ impl WasmCompiler {
                 if let Some(actor_name) = &self.current_actor.clone() {
                     let qualified = format!("{}::{}", actor_name, method);
                     if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        self.ensure_arity(func_idx, args.len() + 1, &qualified)?;
                         // Push dummy self reference (actor state is in globals, not passed)
                         let func = self
                             .current_function_mut()
@@ -1291,6 +1323,7 @@ impl WasmCompiler {
         if let Some(receiver_type) = self.infer_receiver_type(receiver) {
             let qualified = format!("{}::{}", receiver_type, method);
             if let Some(&func_idx) = self.func_map.get(&qualified) {
+                self.ensure_arity(func_idx, args.len() + 1, &qualified)?;
                 self.compile_expr(receiver)?;
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -3013,31 +3046,75 @@ impl WasmCompiler {
         import_name: &str,
         args: &[Expr],
     ) -> WasmResult<()> {
-        // Compile receiver (collection handle)
-        self.compile_expr(receiver)?;
-
-        // Compile arguments
-        for arg in args {
-            self.compile_expr(arg)?;
-        }
-
-        // Call the import function
-        if let Some(func_idx) = self.imports.get_func(import_name) {
+        // Coerce each operand to the type the import actually declares.
+        //
+        // Sigil values are i64 on the WASM stack; the morpheme collection
+        // imports take the collection handle as i32 (`array_push(i32, i64)`,
+        // `array_get(i32, i32)`, `array_len(i32)`). This pushed the receiver as
+        // i64 and called anyway, so **every collection method compiled through
+        // here emitted invalid WebAssembly** while the compiler reported
+        // success — `patches·push(…)` in Qliphoth's own `core/vdom.sigil`
+        // included, which is why not one of the 93 generated Lares components
+        // produced a module that would load. The `map`/`filter` arms wrap
+        // explicitly and were fine, which is what hid this.
+        let Some(func_idx) = self.imports.get_func(import_name) else {
+            // Fall back to a dummy result for a missing import (the collection
+            // is simulated).
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::Call(func_idx));
-            Ok(())
-        } else {
-            // Fall back to no-op for missing imports (collection is simulated)
-            // In production, these would be real WASM imports
-            let func = self
-                .current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            // Push a dummy result (0) for now
             func.push(Instruction::I64Const(0));
-            Ok(())
+            return Ok(());
+        };
+
+        let sig = self
+            .imports
+            .get_func_type(func_idx)
+            .and_then(|t| self.imports.types().get(t as usize).cloned());
+        let (params, results) = match sig {
+            Some((p, r)) => (p, r),
+            None => (Vec::new(), Vec::new()),
+        };
+
+        // An arity the import cannot accept would be invalid however the
+        // operands are typed, so say so rather than emit it.
+        if !params.is_empty() && params.len() != args.len() + 1 {
+            return Err(WasmError::unsupported(&format!(
+                "{} takes {} argument(s), called with {}",
+                import_name,
+                params.len().saturating_sub(1),
+                args.len()
+            )));
         }
+
+        self.compile_expr(receiver)?;
+        if params.first() == Some(&ValType::I32) {
+            self.push_wrap()?;
+        }
+
+        for (i, arg) in args.iter().enumerate() {
+            self.compile_expr(arg)?;
+            if params.get(i + 1) == Some(&ValType::I32) {
+                self.push_wrap()?;
+            }
+        }
+
+        let returns_i32 = results.first() == Some(&ValType::I32);
+        let returns_nothing = results.is_empty();
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::Call(func_idx));
+        if returns_i32 {
+            // Back to the i64 every other expression on this stack is.
+            func.push(Instruction::I64ExtendI32U);
+        } else if returns_nothing {
+            // `array_push` returns nothing, but every expression here leaves one
+            // i64 and the statement compiler drops it — so `xs·push(v)` as a
+            // statement emitted a `drop` with an empty stack. Unit is 0.
+            func.push(Instruction::I64Const(0));
+        }
+        Ok(())
     }
 
     /// Compile to_string() method call.

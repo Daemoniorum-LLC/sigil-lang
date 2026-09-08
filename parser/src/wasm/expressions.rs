@@ -660,26 +660,38 @@ impl WasmCompiler {
             }
         }
 
-        // Regular struct field assignment
-        // Get struct pointer
+        // Regular struct field assignment.
+        //
+        // The read path (`compile_field`) wraps the pointer to i32 and passes
+        // the field offset to the MemArg. This path did neither: it left an i64
+        // where `i64.store` requires an i32 address — **so every `self.x = v` in
+        // a struct method emitted invalid WebAssembly**, with the compiler
+        // reporting success — and it discarded the offset it had just computed,
+        // which would have written every field over the first one.
+        //
+        // `Δ self` builder methods are what Qliphoth's whole VNode API is made
+        // of, so this is why not one generated Lares component produced a module
+        // that would load.
         self.compile_expr(target)?;
 
-        // Get field offset (need type info)
-        // For now, use a simple offset calculation
-        let _offset = self.get_field_offset(field)?;
+        let offset = self.get_field_offset(field)?;
 
-        // Compile value
+        {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32WrapI64);
+        }
+
         self.compile_expr(value)?;
 
-        // Store to memory
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-        // Stack: [ptr, value] -> need to store value at ptr+offset
-        // This is simplified - real implementation needs type info
+        // Stack: [ptr(i32), value(i64)] -> store at ptr + offset
         func.push(Instruction::I64Store(wasm_encoder::MemArg {
-            offset: 0,
+            offset: offset as u64,
             align: 3, // 8-byte alignment
             memory_index: 0,
         }));
