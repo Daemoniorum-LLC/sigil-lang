@@ -1386,29 +1386,26 @@ impl WasmCompiler {
         // Parameters are already registered in register_handler_sig as params
         // They will be accessible via get_local by name
 
-        // Compile the handler body
+        // Compile the handler body.
+        //
+        // `compile_block` ALWAYS leaves exactly one value on the stack — the
+        // trailing expression, or `i64.const 0` standing for unit. This used to
+        // branch on `handler.body.expr`, which double-counted that convention in
+        // both directions: a void handler with no trailing expression dropped
+        // nothing and fell through with the unit value still on the stack, and a
+        // returning handler with no trailing expression pushed a *second* zero
+        // on top of it. Every `on Msg { … }` in a module therefore produced a
+        // function that fails WebAssembly validation — including an empty one —
+        // while `sigil wasm` reported success and wrote the file.
+        //
+        // `compile_function` has always had this right; this is the same rule.
         self.compile_block(&handler.body)?;
 
-        // Handle return value based on return type and trailing expression
-        if handler.return_type.is_none() {
-            // No return type - drop any trailing expression result
-            if handler.body.expr.is_some() {
-                let func = self.current_function_mut()
-                    .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Drop);
-            }
-            // No trailing expression = nothing to drop
-        } else if handler.body.expr.is_none() {
-            // Handler has return type but no trailing expression - push 0
-            let func = self.current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::I64Const(0));
-        }
-        // Handler has return type and trailing expression - value already on stack
-
-        // Add end instruction
         let func = self.current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        if handler.return_type.is_none() {
+            func.push(Instruction::Drop);
+        }
         func.push(Instruction::End);
 
         // Restore previous actor context

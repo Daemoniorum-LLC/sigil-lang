@@ -173,6 +173,11 @@ pub struct WasmCompiler {
 
     /// Current actor being compiled (for self.field resolution)
     pub(crate) current_actor: Option<String>,
+
+    /// Functions that were called but never resolved, and were compiled to a
+    /// constant `0` instead. See `stubbed_calls()` — this is silent wrong
+    /// behaviour, not a compile error, and callers must be able to see it.
+    pub(crate) stubbed_calls: std::collections::BTreeSet<String>,
 }
 
 impl WasmCompiler {
@@ -214,6 +219,7 @@ impl WasmCompiler {
             deferred_static_inits: Vec::new(),
             start_function_idx: None,
             current_actor: None,
+            stubbed_calls: std::collections::BTreeSet::new(),
         };
 
         // Add heap pointer global
@@ -234,6 +240,18 @@ impl WasmCompiler {
     pub fn with_debug_info(mut self) -> Self {
         self.debug_info = true;
         self
+    }
+
+    /// Names that were called but never resolved to a function or import.
+    ///
+    /// The call compiler stubs any unresolved lowercase name — which is every
+    /// Sigil function name — to `i64.const 0`, so `json_parse("…")` and
+    /// `totally_undefined_function_xyz(1)` both compile to a valid module that
+    /// returns 0 and calls nothing. That fallback is load-bearing for code with
+    /// un-hoisted local helpers, so it is not an error; but a build that silently
+    /// dropped calls has to be able to say which ones.
+    pub fn stubbed_calls(&self) -> &std::collections::BTreeSet<String> {
+        &self.stubbed_calls
     }
 
     /// Compile source code to WASM bytes.
@@ -1246,6 +1264,38 @@ mod validation_tests {
 
         let validation = validate_wasm(&bytes);
         assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    /// An actor message handler is the core construct of every Qliphoth
+    /// component, and none of the 21 validation tests above compiled one. Every
+    /// `on Msg { … }` produced a function that failed WebAssembly validation
+    /// while `sigil wasm` reported success and wrote the file — an empty handler
+    /// included, because `compile_block` always leaves one value on the stack and
+    /// `compile_handler` only dropped it when the body had a trailing expression.
+    #[test]
+    fn test_validate_actor_message_handler() {
+        // Void handler, empty body: the block's unit value must be dropped.
+        for src in [
+            r#"☉ actor A { on Bump { } }"#,
+            r#"☉ actor A { state c: i64! = 0, on Bump { self.c = 1; } }"#,
+            // Two handlers, so the second one's function index is also exercised.
+            r#"☉ actor A { state c: i64! = 0, on Bump { self.c = 1; } on Zap { } }"#,
+            // Returning handler with no trailing expression: the block already
+            // pushed the unit value, so a second push would leave two.
+            r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { } }"#,
+            // Returning handler WITH a trailing expression: exactly one value.
+            r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { self.c } }"#,
+        ] {
+            let mut compiler = WasmCompiler::new();
+            let bytes = compiler
+                .compile(src)
+                .unwrap_or_else(|e| panic!("compilation failed for {src}: {e:?}"));
+            let validation = validate_wasm(&bytes);
+            assert!(
+                validation.is_ok(),
+                "validation failed for {src}: {validation:?}"
+            );
+        }
     }
 
     #[test]

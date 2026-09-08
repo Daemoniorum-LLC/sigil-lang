@@ -2179,6 +2179,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                 let size = wasm_bytes.len();
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
+                report_stubbed_calls(&compiler);
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -2187,6 +2188,31 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
             }
         }
     }
+}
+
+/// Warn about calls the WASM backend silently compiled to a constant `0`.
+///
+/// The call compiler stubs any unresolved lowercase name, and every Sigil
+/// function name is lowercase, so a typo, a missing import and a stdlib function
+/// the WASM backend has no binding for all produce a module that compiles, passes
+/// WebAssembly validation, returns 0 and calls nothing. Printing the names does
+/// not fix that, but it is the difference between a wrong answer and a wrong
+/// answer nobody can see.
+#[cfg(feature = "wasm")]
+fn report_stubbed_calls(compiler: &WasmCompiler) {
+    let stubbed = compiler.stubbed_calls();
+    if stubbed.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: {} call{} did not resolve and compiled to a constant 0:",
+        stubbed.len(),
+        if stubbed.len() == 1 { "" } else { "s" }
+    );
+    for name in stubbed {
+        eprintln!("  {}()", name);
+    }
+    eprintln!("  These do nothing at run time. The module is valid WebAssembly regardless.");
 }
 
 /// Format file size for display.

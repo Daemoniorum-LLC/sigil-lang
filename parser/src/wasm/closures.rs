@@ -946,7 +946,14 @@ impl WasmCompiler {
                         // These are common patterns like `fn walk(...)` inside functions
                         // For now, stub them by returning a default value
                         if simple_name.chars().next().map_or(false, |c| c.is_ascii_lowercase()) {
-                            // Looks like a local helper function - compile args and return dummy
+                            // Looks like a local helper function - compile args and return dummy.
+                            //
+                            // Every Sigil function name is lowercase, so this arm
+                            // catches every unresolved call, not just un-hoisted
+                            // helpers: `json_parse("…")` compiles to `0` and calls
+                            // nothing, and so does a name that exists nowhere.
+                            // Record it so a build can report what it dropped.
+                            self.stubbed_calls.insert(simple_name.to_string());
                             let func = self.current_function_mut()
                                 .ok_or_else(|| WasmError::internal("not in function context"))?;
                             // Drop all args that were already compiled
