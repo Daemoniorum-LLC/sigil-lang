@@ -2167,6 +2167,11 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                     return ExitCode::from(1);
                 }
 
+                if let Err(e) = validate_wasm_module(&wasm_bytes, &project_dir.display().to_string()) {
+                    eprintln!("Compilation error: {}", e);
+                    return ExitCode::from(1);
+                }
+
                 let size = wasm_bytes.len();
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
@@ -2186,6 +2191,16 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
             Ok(wasm_bytes) => {
                 if let Err(e) = fs::write(output, &wasm_bytes) {
                     eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                if let Err(e) = validate_wasm_module(&wasm_bytes, &path.display().to_string()) {
+                    eprintln!("Compilation error: {}", e);
+                    eprintln!(
+                        "  The output was written to '{}' so it can be inspected, but it \
+                         will not load.",
+                        output
+                    );
                     return ExitCode::from(1);
                 }
 
@@ -2230,6 +2245,22 @@ fn report_stubbed_calls(compiler: &WasmCompiler) {
 
 /// Format file size for display.
 #[cfg(feature = "wasm")]
+/// Validate emitted WebAssembly before calling it a success.
+///
+/// The compiler could report "Successfully compiled" for a module no runtime
+/// would load, and did — for all 93 generated Lares components, and for
+/// Qliphoth's own `core/vdom.sigil` (S46). `wasmparser` was a dev-dependency,
+/// so the validator was reachable from 21 hand-written tests and from nothing
+/// that ran on real input. A module that does not validate is a compiler bug,
+/// and saying so at the point it is produced is the difference between one
+/// diagnostic and a browser console.
+fn validate_wasm_module(bytes: &[u8], source: &str) -> Result<(), String> {
+    wasmparser::Validator::new()
+        .validate_all(bytes)
+        .map(|_| ())
+        .map_err(|e| format!("emitted invalid WebAssembly for '{}': {}", source, e))
+}
+
 fn format_size(size: usize) -> String {
     if size < 1024 {
         format!("{} bytes", size)

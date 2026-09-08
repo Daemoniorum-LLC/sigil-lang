@@ -863,10 +863,30 @@ impl WasmCompiler {
 
                 // Check for direct function call (user-defined functions)
                 // Try qualified path first (handles tome:: and module::function calls)
-                let func_idx_opt = self.get_func_by_path(&resolved_segments)
-                    .or_else(|| self.get_func(simple_name))
+                //
+                // The bare-name fallback is for a SINGLE-segment path. Applying it
+                // to `Type·method()` binds the call to whatever function happens
+                // to share the method's name — and with `view`, which is what
+                // every generated Qliphoth component calls its render method,
+                // `ConnRow·view()` inside `rite view(self)` resolved to the
+                // enclosing function itself. That takes a `self` the call site
+                // never pushed, so the module underflowed its own stack.
+                let func_idx_opt = self
+                    .get_func_by_path_arity(&resolved_segments, Some(args.len()))
+                    .or_else(|| {
+                        if resolved_segments.len() == 1 {
+                            self.get_func(simple_name)
+                        } else {
+                            None
+                        }
+                    })
                     .or_else(|| self.get_func(&qualified_path));
                 if let Some(func_idx) = func_idx_opt {
+                    // An arity that cannot match is a defect wherever it comes
+                    // from; emitting the call anyway produces a module no runtime
+                    // will load.
+                    self.ensure_arity(func_idx, args.len(), simple_name)?;
+
                     // Check if function returns void
                     let returns_void = self.func_returns_void(func_idx);
 

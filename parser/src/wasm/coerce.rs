@@ -185,6 +185,62 @@ fn conversion(from: ValType, to: ValType) -> Option<Instruction<'static>> {
     })
 }
 
+
+/// Bring every host-call result back to the i64 the rest of the stack uses.
+///
+/// The imports are declared with real types — `math_min(f64, f64) -> f64`,
+/// `array_len(i32) -> i32` — and their results were left as they came. A
+/// `math_min(…)` in one arm of a `⎇` against an i64 in the other is a branch
+/// type mismatch the operand repair cannot see, because it does not cross
+/// control flow.
+///
+/// Safe to do unconditionally *because* `repair_operand_types` runs after it: a
+/// consumer that genuinely wants the original type gets a conversion back. The
+/// pair is the convention, not either half.
+pub fn normalise_call_results(
+    instructions: &mut Vec<Instruction<'static>>,
+    import_count: u32,
+    call_sig: &dyn Fn(u32) -> Option<(Vec<ValType>, Vec<ValType>)>,
+) -> usize {
+    let mut inserts: Vec<(usize, Instruction<'static>)> = Vec::new();
+    for pos in 0..instructions.len() {
+        let Instruction::Call(idx) = instructions[pos] else {
+            continue;
+        };
+        // Host imports only. A user function's result type is already whatever
+        // the backend chose for it.
+        if idx >= import_count {
+            continue;
+        }
+        let Some((_, results)) = call_sig(idx) else {
+            continue;
+        };
+        let [got] = results[..] else { continue };
+        if got == ValType::I64 {
+            continue;
+        }
+        let Some(conv) = conversion(got, ValType::I64) else {
+            continue;
+        };
+        // Already converted by the emitting site. `Instruction` has no
+        // `PartialEq`, so compare what it does rather than what it is.
+        let already = instructions
+            .get(pos + 1)
+            .and_then(|next| effect(next, call_sig, &|_| None, &|_| None, &|_| None))
+            .map(|(pops, pushed)| pops == 1 && pushed == Some(ValType::I64))
+            .unwrap_or(false);
+        if already {
+            continue;
+        }
+        inserts.push((pos + 1, conv));
+    }
+    let count = inserts.len();
+    for (at, instr) in inserts.into_iter().rev() {
+        instructions.insert(at, instr);
+    }
+    count
+}
+
 /// Insert operand conversions so every `call` agrees with its callee.
 ///
 /// Returns the number of conversions inserted.

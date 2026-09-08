@@ -922,19 +922,41 @@ impl<'a> QliphothGenerator<'a> {
     }
 
     fn generate_lifecycle_handlers(&self) -> String {
-        let mut handlers = Vec::new();
+        // One handler per lifecycle event. A component with several mount-time
+        // effects — `useEffect(…, [])` more than once, which is ordinary React —
+        // produced `on Mount` twice, and two handlers of the same name compile to
+        // a function with a second body appended to it: "operators remaining
+        // after end of function". Their reasons are merged instead.
+        let mut order: Vec<String> = Vec::new();
+        let mut reasons: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
 
         for effect in &self.spec.recommendations.effects {
             if effect.strategy == EffectStrategy::Lifecycle {
                 if let Some(event) = &effect.lifecycle_event {
-                    handlers.push(format!(
-                        "    on {} {{\n        // {}\n    }}",
-                        event,
-                        effect.reasoning
-                    ));
+                    if !reasons.contains_key(event) {
+                        order.push(event.clone());
+                    }
+                    reasons
+                        .entry(event.clone())
+                        .or_default()
+                        .push(effect.reasoning.clone());
                 }
             }
         }
+
+        let handlers: Vec<String> = order
+            .into_iter()
+            .map(|event| {
+                let body: Vec<String> = reasons
+                    .remove(&event)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|r| format!("        // {}", r))
+                    .collect();
+                format!("    on {} {{\n{}\n    }}", event, body.join("\n"))
+            })
+            .collect();
 
         handlers.join("\n\n")
     }

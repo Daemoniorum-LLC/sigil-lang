@@ -593,6 +593,12 @@ impl WasmCompiler {
     /// Look up a function by qualified path.
     /// Handles tome:: prefix and module-relative paths.
     pub fn get_func_by_path(&self, segments: &[String]) -> Option<u32> {
+        self.get_func_by_path_arity(segments, None)
+    }
+
+    /// As `get_func_by_path`, but a fallback that would bind a differently
+    /// shaped function is refused.
+    pub fn get_func_by_path_arity(&self, segments: &[String], argc: Option<usize>) -> Option<u32> {
         let resolved = self.resolve_path(segments);
 
         // If it's a single-segment path, check simple name first
@@ -615,10 +621,18 @@ impl WasmCompiler {
 
         // Try just the last segment (simple name) for module-qualified calls
         // e.g., components::nav_view -> try just "nav_view"
+        //
+        // Only when the arity agrees. `Type·method()` reaches here too, and the
+        // last segment of one type's method is very often the name of another's
+        // — `view` is what every generated Qliphoth component calls its render
+        // method, so `ConnRow·view()` bound to whichever `view` was in scope,
+        // usually the enclosing one, and the call went out a `self` short.
         if resolved.len() > 1 {
             let simple_name = resolved.last().unwrap();
-            if let Some(idx) = self.func_map.get(simple_name) {
-                return Some(*idx);
+            if let Some(&idx) = self.func_map.get(simple_name) {
+                if argc.is_none_or(|n| self.func_arity.get(&idx).is_none_or(|&a| a == n)) {
+                    return Some(idx);
+                }
             }
         }
 
@@ -1158,6 +1172,11 @@ impl WasmCompiler {
                     }
                 };
                 let results = func.results.clone();
+                coerce::normalise_call_results(
+                    &mut func.instructions,
+                    import_count,
+                    &call_sig,
+                );
                 coerce::repair_operand_types(
                     &mut func.instructions,
                     &results,
@@ -1166,6 +1185,15 @@ impl WasmCompiler {
                     &local_ty,
                     &global_ty,
                 );
+            }
+        }
+
+        // `WebAssembly.Module()` reports a failure as "Compiling function #N",
+        // and N counts imports first. SIGIL_WASM_FUNCS prints the map.
+        if std::env::var("SIGIL_WASM_FUNCS").is_ok() {
+            let base = self.imports.import_count();
+            for (i, f) in self.functions.iter().enumerate() {
+                eprintln!("func #{} = {}", base as usize + i, f.name);
             }
         }
 

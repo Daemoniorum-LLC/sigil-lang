@@ -61,6 +61,12 @@ react-migrate = ["swc_common", "swc_ecma_parser", "swc_ecma_ast"]
 cuda = ["dep:cudarc"]
 
 [dependencies]
+# Not a dev-dependency. The compiler validates what it emits: it was possible to
+# report "Successfully compiled" for a module no runtime would load, and that is
+# exactly what happened to all 93 generated Lares components (S46). The
+# validator existed the whole time — in the test harness, where 21 hand-written
+# cases passed while every real module was invalid.
+wasmparser = "0.219"
 thiserror = "1.0"
 unicode-xid = "0.2"
 logos = "0.14"
@@ -241,7 +247,6 @@ getrandom = { version = "0.2", features = ["js"] }
 [dev-dependencies]
 pretty_assertions = "1.4"
 proptest = "1.4"
-wasmparser = "0.219"  # WASM validation for tests
 
 [[bin]]
 name = "sigil"

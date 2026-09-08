@@ -925,6 +925,15 @@ impl WasmCompiler {
         let func_idx = self.imports.import_count() + self.functions.len() as u32;
 
         // Record function index with both qualified and simple names
+        // Two handlers of the same name compile into one function with a second
+        // body appended: "operators remaining after end of function", reported by
+        // the browser rather than the compiler.
+        if self.func_map.contains_key(&qualified_name) {
+            return Err(WasmError::unsupported(&format!(
+                "duplicate handler: {} is declared more than once",
+                qualified_name
+            )));
+        }
         self.func_map.insert(qualified_name.clone(), func_idx);
         self.func_map.insert(handler_name.to_string(), func_idx);
 
