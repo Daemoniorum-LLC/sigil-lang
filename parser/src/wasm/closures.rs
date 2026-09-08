@@ -1474,6 +1474,24 @@ impl WasmCompiler {
                 Ok(true)
             }
 
+            // to_fixed(n) - JavaScript's `Number.prototype.toFixed`, which
+            // returns a STRING with n decimal places. Sigil has `math.round` and
+            // nothing that formats, so `spentUsd.toFixed(2)` had no spelling at
+            // all; it is a host call for the same reason `to_bool` is.
+            "to_fixed" if args.len() == 1 => {
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                let idx = self
+                    .imports
+                    .get_func("to_fixed")
+                    .ok_or_else(|| WasmError::internal("to_fixed import missing"))?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
             // clone() - for primitives, just evaluate (Copy semantics)
             "clone" => {
                 self.compile_expr(receiver)?;
@@ -1748,6 +1766,52 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            // `s·slice(a, b)` — JavaScript's `String.prototype.slice`, which
+            // the migrator emits verbatim. `string_slice` has been imported all
+            // along and `char_at` below already calls it; the two-argument form
+            // that every `id.slice(0, 8)` in the client needs had no arm.
+            "slice" if args.len() == 2 => {
+                let idx = match self.imports.get_func("string_slice") {
+                    Some(i) => i,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
+            // `s·char_at(i)` — JavaScript's `charAt`. A one-character slice.
+            "char_at" if args.len() == 1 => {
+                let idx = match self.imports.get_func("string_slice") {
+                    Some(i) => i,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                // end = start + 1; the index is needed twice.
+                let start = {
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    let local = func.alloc_local("__char_at".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(local));
+                    local
+                };
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::LocalGet(start));
+                func.push(Instruction::I64Const(1));
+                func.push(Instruction::I64Add);
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
             "chars" => {
                 self.compile_expr(receiver)?;
                 if let Some(func_idx) = self.imports.get_func("string_chars") {
@@ -2925,7 +2989,15 @@ impl WasmCompiler {
     fn is_array_receiver(&self, receiver: &Expr) -> bool {
         match receiver {
             Expr::Array(_) => true,
-            Expr::Field { .. } | Expr::Path(_) | Expr::MethodCall { .. } | Expr::Index { .. } => {
+            Expr::Field { .. }
+            | Expr::Path(_)
+            | Expr::MethodCall { .. }
+            | Expr::Index { .. }
+            // A call result too: `object_values(self.section_states)·any(…)`.
+            // Leaving it out sent the whole chain to a free-function lookup and
+            // reported `any` undefined, which reads as a missing builtin rather
+            // than a receiver this predicate did not recognise.
+            | Expr::Call { .. } => {
                 // A closure argument is the giveaway: Option::map takes one too,
                 // but Option is never indexed or built from a list literal here,
                 // and the generated views only reach these through collections.

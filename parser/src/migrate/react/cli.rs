@@ -517,6 +517,10 @@ pub fn run_react_migrate(args: &[String]) -> Result<(), String> {
         }
     }
 
+    // Every file is in now, so a component's imports can be matched against the
+    // constants other files export.
+    session.resolve_cross_module_imports();
+
     println!();
     println!("Extracted {} total components.", total_components);
     println!();

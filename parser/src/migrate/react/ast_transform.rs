@@ -35,6 +35,15 @@ pub struct TransformConfig {
     pub locals: Vec<String>,
     /// Prop parameter names (for pure function components)
     pub props: Vec<String>,
+    /// Module constants the generator emitted as LOOKUP FUNCTIONS because their
+    /// value is an object literal, which a module-scope binding cannot hold.
+    /// `DEFAULT_SORT[view]` has to become `default_sort(view)` to match.
+    pub lookup_constants: Vec<String>,
+    /// Module constants the generator emitted as zero-argument functions, for
+    /// the same reason: an array or a computed value is not a constant
+    /// expression, but it is a perfectly good function body. A bare reference to
+    /// one has to become a call.
+    pub value_constants: Vec<String>,
 }
 
 /// Result of transforming a JS expression
@@ -146,6 +155,51 @@ fn is_simple_identifier(s: &str) -> bool {
     !s.is_empty()
         && s.chars().next().map(|c| c.is_alphabetic() || c == '_').unwrap_or(false)
         && s.chars().all(|c| c.is_alphanumeric() || c == '_')
+}
+
+/// A JavaScript static call with a Sigil host function behind it.
+///
+/// `Date.now()` is the one that matters — four of the generated components call
+/// it. The receiver arrives already transformed, so it is lower-cased here.
+fn js_static_call(obj: &str, method: &str) -> Option<&'static str> {
+    Some(match (obj, method) {
+        ("date", "now") => "timing_now",
+        ("date", "parse") => "timing_parse",
+        ("json", "stringify") => "json_stringify",
+        ("json", "parse") => "json_parse",
+        ("math", "random") => "math_random",
+        // `Object.values(x)` was becoming `object·values(x)`, which resolves to
+        // a `values` free function that does not exist. Same for the other two.
+        ("object", "values") => "object_values",
+        ("object", "keys") => "object_keys",
+        ("object", "entries") => "object_entries",
+        ("array", "isArray") => "is_array",
+        ("number", "isFinite") => "is_finite",
+        ("number", "isNaN") => "is_nan",
+        ("number", "isInteger") => "is_integer",
+        _ => return None,
+    })
+}
+
+/// Does a module-scope or local name refer to this identifier?
+///
+/// Comparing both sides snake-cased is right for the camelCase bindings this
+/// was written for — `currentSprint` is declared as `current_sprint` and read
+/// as `currentSprint`. It is wrong for anything capitalised: `Error` in the
+/// JS globals list snake-cases to `error`, so every component with a
+/// `const [error, setError] = useState(null)` had its own state field shadowed
+/// by the global and emitted a bare `error` no actor declares. `Set`/`set`,
+/// `Map`/`map` and `Date`/`date` are the same collision. A capitalised name
+/// matches only itself.
+fn scope_name_matches(candidate: &str, ident: &str) -> bool {
+    if candidate == ident {
+        return true;
+    }
+    let capitalised = |s: &str| s.chars().next().map(|c| c.is_uppercase()).unwrap_or(false);
+    if capitalised(candidate) || capitalised(ident) {
+        return false;
+    }
+    to_snake_case(candidate) == to_snake_case(ident)
 }
 
 /// Convert camelCase to snake_case
@@ -270,6 +324,23 @@ impl<'a> ExprTransformer<'a> {
                 let args = new_expr.args.as_ref()
                     .map(|args| self.transform_args(args))
                     .unwrap_or_default();
+                // `new Set(…)` and `new Map(…)` are Sigil's `HashSet` and
+                // `HashMap`. Lowercasing the constructor produced `set·new(…)`
+                // and `map·new(…)`, which resolve to nothing — and under S34 a
+                // lowercase unresolved call compiles to a constant 0, so the
+                // collection silently became a number.
+                let collection = match callee.as_str() {
+                    "set" => Some("HashSet"),
+                    "map" => Some("HashMap"),
+                    _ => None,
+                };
+                if let Some(ty) = collection {
+                    return if args.trim().is_empty() {
+                        format!("{}·new()", ty)
+                    } else {
+                        format!("{}·from({})", ty, args)
+                    };
+                }
                 format!("{}·new({})", callee, args)
             }
 
@@ -339,8 +410,21 @@ impl<'a> ExprTransformer<'a> {
         // JS one (`currentSprint`), so an exact match never fired and every local
         // was rewritten to `self.current_sprint` — a field that does not exist.
         let snake = to_snake_case(&name);
-        if self.config.locals.iter().any(|l| to_snake_case(l) == snake)
-            || self.scope_locals.iter().any(|l| to_snake_case(l) == snake)
+
+        // A module constant the generator emitted as a function — checked before
+        // anything else, because the name is also in `locals` (it is module
+        // scope) and would otherwise come back bare and unresolved.
+        if self
+            .config
+            .value_constants
+            .iter()
+            .any(|c| to_snake_case(c) == snake)
+        {
+            return format!("{}()", snake);
+        }
+
+        if self.config.locals.iter().any(|l| scope_name_matches(l, &name))
+            || self.scope_locals.iter().any(|l| scope_name_matches(l, &name))
         {
             return snake;
         }
@@ -589,6 +673,17 @@ impl<'a> ExprTransformer<'a> {
             }
             MemberProp::Computed(computed) => {
                 let prop = self.transform_expr(&computed.expr);
+                // A lookup table the generator emitted as a function: index
+                // becomes call. Matched on the emitted (snake-cased) name, which
+                // is what `obj` already holds.
+                if self
+                    .config
+                    .lookup_constants
+                    .iter()
+                    .any(|c| to_snake_case(c) == obj)
+                {
+                    return format!("{}({})", obj, prop);
+                }
                 format!("{}[{}]", obj, prop)
             }
             MemberProp::PrivateName(private) => {
@@ -609,8 +704,41 @@ impl<'a> ExprTransformer<'a> {
                     if let MemberProp::Ident(ident) = &member.prop {
                         let method = ident.sym.to_string();
 
+                        // A few JS statics have a Sigil host function rather than
+                        // a method. `Date.now()` was becoming `date·now()`, which
+                        // resolves to the non-existent `date_now` import.
+                        if let Some(replacement) = js_static_call(&obj, &method) {
+                            return format!("{}({})", replacement, args);
+                        }
+
+                        // `new Date(s).getTime()` is a date parse, and
+                        // `new Date().getTime()` is the clock. Neither is a
+                        // method on anything Sigil has — the transform for
+                        // `new` had already produced `date·new(s)`, and
+                        // `·get_time()` on it resolved to nothing.
+                        if method == "getTime" || method == "valueOf" {
+                            if let Some(inner) = obj
+                                .strip_prefix("date·new(")
+                                .and_then(|r| r.strip_suffix(')'))
+                            {
+                                return if inner.trim().is_empty() {
+                                    "timing_now()".to_string()
+                                } else {
+                                    format!("timing_parse({})", inner)
+                                };
+                            }
+                        }
+
                         // Transform common JS methods to Sigil equivalents
                         let sigil_method = match method.as_str() {
+                            // `toLocaleString` is a formatted `toString`; Sigil
+                            // has no locale layer, so the plain one is honest.
+                            "toLocaleString" | "toLocaleDateString"
+                            | "toLocaleTimeString" | "toISOString" => "to_string",
+                            "charAt" => "char_at",
+                            "has" => "contains_key",
+                            "hasOwnProperty" => "contains_key",
+                            "delete" => "remove",
                             "toString" => "to_string",
                             "trim" => "trim",
                             "toLowerCase" => "to_lowercase",
@@ -645,6 +773,23 @@ impl<'a> ExprTransformer<'a> {
                     }
                 }
 
+                // A `useState` setter is an assignment, not a call.
+                //
+                // `setTab("todo")` on a component whose state includes `tab`
+                // means `self.tab = "todo"`. The mutation walker rewrites these
+                // in handler bodies, but a setter reached from the view — a
+                // closure bound to a local, `≔ go_todo = || setTab("todo")` —
+                // went through here and came out `self.set_tab("todo")`, a
+                // method no actor has.
+                if let Expr::Ident(id) = expr.as_ref() {
+                    let name = id.sym.to_string();
+                    if let Some(field) = self.setter_target(&name) {
+                        if call.args.len() == 1 {
+                            return format!("{{ self.{} = {}; }}", field, args);
+                        }
+                    }
+                }
+
                 // Regular function call
                 let callee = self.transform_expr(expr);
                 format!("{}({})", callee, args)
@@ -655,6 +800,26 @@ impl<'a> ExprTransformer<'a> {
                 format!("/* import({}) */", args)
             }
         }
+    }
+
+    /// `setFoo` → the state field `foo`, when the actor declares one.
+    ///
+    /// Only for actors: in a plain function component the setter is a prop and
+    /// there is no field to assign.
+    fn setter_target(&self, name: &str) -> Option<String> {
+        if !self.config.prefix_self {
+            return None;
+        }
+        let rest = name.strip_prefix("set")?;
+        if !rest.chars().next()?.is_uppercase() {
+            return None;
+        }
+        let field = to_snake_case(rest);
+        self.config
+            .state_fields
+            .iter()
+            .find(|f| to_snake_case(f) == field)
+            .map(|_| field)
     }
 
     fn transform_args(&mut self, args: &[ExprOrSpread]) -> String {
@@ -788,8 +953,15 @@ impl<'a> ExprTransformer<'a> {
                             Some(format!("{}: {}", to_snake_case(&key), value))
                         }
                         Prop::Shorthand(id) => {
-                            let name = to_snake_case(&id.sym.to_string());
-                            Some(format!("{}: {}", name, name))
+                            // `{ aliveNames }` is `{ aliveNames: aliveNames }` —
+                            // the value half is an ordinary identifier reference
+                            // and needs the same treatment as one. Copying the
+                            // key into the value position skipped it, so a
+                            // shorthand over state or a prop emitted a bare
+                            // `alive_names` the actor has no binding for.
+                            let key = to_snake_case(&id.sym.to_string());
+                            let value = self.transform_ident(id);
+                            Some(format!("{}: {}", key, value))
                         }
                         Prop::Method(m) => {
                             let key = match &m.key {

@@ -625,6 +625,46 @@ impl TypeChecker {
             func(vec![any.clone()], Type::Bool),
         );
 
+        // JS statics the React migrator lowers to host calls. Registered here
+        // for the same reason the JSON ones are: `--strict` resolves names.
+        self.functions.insert(
+            "object_values".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Array { element: Box::new(any.clone()), size: None },
+            ),
+        );
+        self.functions.insert(
+            "object_keys".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Array { element: Box::new(Type::Str), size: None },
+            ),
+        );
+        self.functions.insert(
+            "object_entries".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Array { element: Box::new(any.clone()), size: None },
+            ),
+        );
+        self.functions
+            .insert("is_finite".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            .insert("is_nan".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            .insert("is_integer".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            .insert("timing_parse".to_string(), func(vec![Type::Str], Type::Int(IntSize::I64)));
+        self.functions
+            .insert("timing_now".to_string(), func(vec![], Type::Int(IntSize::I64)));
+        self.functions
+            .insert("is_array".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions.insert(
+            "to_fixed".to_string(),
+            func(vec![any.clone(), Type::Int(IntSize::I64)], Type::Str),
+        );
+
         // ===================
         // String functions
         // ===================
@@ -3915,12 +3955,32 @@ impl TypeChecker {
         (is_char_ptr(&a_s) && is_stringy(&b_s)) || (is_stringy(&a_s) && is_char_ptr(&b_s))
     }
 
+    /// The universal top type the migrator and hand-written Sigil both spell
+    /// `Any`. Deliberately name-based: there is no `Type::Any` variant, and
+    /// adding one would mean touching every match over `Type` in the checker.
+    fn is_any(t: &Type) -> bool {
+        matches!(t, Type::Named { name, generics } if name == "Any" && generics.is_empty())
+    }
+
     fn unify(&mut self, a: &Type, b: &Type) -> bool {
         // Resolve type aliases first
         let a = self.resolve_alias(a);
         let b = self.resolve_alias(b);
 
         match (&a, &b) {
+            // `Any` is the escape hatch, and it did not escape anything.
+            //
+            // It is not a built-in — it is an ordinary `Named` type with no
+            // definition, so it unified with primitives and with other
+            // undefined names by accident and failed against every type the
+            // program actually declares: `rite label(key: Any)` called with an
+            // `AnimaDimension` was "expected Any, found AnimaDimension". The
+            // React migrator writes `Any` wherever TypeScript's type does not
+            // survive translation, which is most signatures it emits, so this
+            // was a wall in front of the generated client. A top type accepts
+            // anything, in either position.
+            _ if Self::is_any(&a) || Self::is_any(&b) => true,
+
             // A string where a C pointer is declared. `extern "C" { rite write(…,
             // buf: *const u8, …) }` called as `write(1, "Hello", 5)` is the ordinary
             // way to reach a `const char*` parameter, and the FFI layer does exactly

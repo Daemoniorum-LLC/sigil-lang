@@ -107,6 +107,18 @@ pub struct MigrationSession {
 
     /// Resolved ambiguities
     resolved_ambiguities: HashMap<String, HashMap<String, usize>>,
+
+    /// Every `export const` seen anywhere in the project, by exported name.
+    ///
+    /// A component's module constants come from its own file, but React code
+    /// keeps shared tables in sibling modules — `INVENTORY_KINDS` in
+    /// `inventory-logic.ts`, `ANIMA_DIMENSIONS` in `types.ts`. Those names are
+    /// import specifiers, so they are module scope and never get a `self.`
+    /// prefix, and nothing then declares them: the generated component
+    /// referenced a binding that did not exist. The session already parses
+    /// every `.ts` in the tree, so the definitions are in hand — they just were
+    /// not carried across the file boundary.
+    exported_constants: HashMap<String, ModuleConstantExtraction>,
 }
 
 impl MigrationSession {
@@ -140,6 +152,7 @@ impl MigrationSession {
             status: HashMap::new(),
             completed: HashMap::new(),
             resolved_ambiguities: HashMap::new(),
+            exported_constants: HashMap::new(),
         })
     }
 
@@ -161,6 +174,7 @@ impl MigrationSession {
             status,
             completed: HashMap::new(),
             resolved_ambiguities: HashMap::new(),
+            exported_constants: HashMap::new(),
         }
     }
 
@@ -175,6 +189,14 @@ impl MigrationSession {
         // Extract the React file
         let extraction = extract_source(source, path, &relative_path)
             .map_err(|e| McpError::ExtractionError(format!("{:?}", e)))?;
+
+        for c in &extraction.module_constants {
+            if c.exported {
+                self.exported_constants
+                    .entry(c.name.clone())
+                    .or_insert_with(|| c.clone());
+            }
+        }
 
         // Generate spec for each component
         let component_specs = generate_spec(&extraction, source);
@@ -200,6 +222,68 @@ impl MigrationSession {
         self.update_state();
 
         Ok(())
+    }
+
+    /// Pull in every exported constant a component imports from another file.
+    ///
+    /// Run once, after all files are added — a component can import from a
+    /// module that had not been parsed yet when its own spec was generated.
+    /// Transitive: `DEFAULT_PROJECT = PROJECT_KEY` needs `PROJECT_KEY` too, and
+    /// emitting the first without the second just moves the undefined name.
+    pub fn resolve_cross_module_imports(&mut self) {
+        let table = self.exported_constants.clone();
+        for comp in &mut self.spec.components {
+            let mut have: std::collections::HashSet<String> = comp
+                .source
+                .module_constants
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+
+            // `module_scope` already carries every import specifier this
+            // component's file brings in, alongside its own helpers and
+            // constants — the latter two are in `have` and skip themselves.
+            let mut queue: Vec<String> = comp.source.module_scope.clone();
+
+            let mut added: Vec<ModuleConstantExtraction> = Vec::new();
+            let mut guard = 0;
+            while let Some(name) = queue.pop() {
+                guard += 1;
+                if guard > 512 {
+                    break;
+                }
+                if have.contains(&name) {
+                    continue;
+                }
+                let Some(c) = table.get(&name) else { continue };
+                have.insert(name.clone());
+                // Whatever bare identifiers the initialiser mentions may
+                // themselves be exported constants from elsewhere.
+                for word in c
+                    .init
+                    .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                {
+                    if !word.is_empty() && table.contains_key(word) {
+                        queue.push(word.to_string());
+                    }
+                }
+                added.push(c.clone());
+            }
+
+            // Dependencies before dependents: the queue popped the other way.
+            added.reverse();
+            for c in &added {
+                if !comp.source.module_scope.contains(&c.name) {
+                    comp.source.module_scope.push(c.name.clone());
+                }
+            }
+            // Imported constants go FIRST. A module-scope `≔` binding cannot be
+            // read before it is written, and the file's own constants are the
+            // ones that reference the imported ones, not the other way round.
+            let mut merged = added;
+            merged.append(&mut comp.source.module_constants);
+            comp.source.module_constants = merged;
+        }
     }
 
     /// Update the migration state counts.
@@ -564,6 +648,10 @@ impl MigrationSession {
             status: state.status,
             completed: state.completed,
             resolved_ambiguities: state.resolved_ambiguities,
+            // A restored session has no files left to parse; nothing can be
+            // added to this table, and the specs it would have fed already
+            // carry their resolved constants.
+            exported_constants: HashMap::new(),
         })
     }
 }

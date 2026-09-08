@@ -118,6 +118,45 @@ impl<'a> QliphothGenerator<'a> {
         imports.join("\n")
     }
 
+    /// Module constants that will be emitted as zero-argument functions.
+    ///
+    /// Must agree exactly with `generate_module_constants`, or a reference
+    /// becomes a call to something that was never emitted.
+    fn value_constant_names(&self) -> Vec<String> {
+        // Deliberately NOT through `transform_expression_scoped`: that builds a
+        // TransformConfig, which calls this, which calls it — a stack overflow
+        // the first time the migrator ran. The bucket a constant falls into does
+        // not depend on which other constants became functions, so an empty
+        // `value_constants` here is not just safe, it is correct.
+        let config = TransformConfig {
+            prefix_self: self.is_actor,
+            state_fields: self
+                .spec
+                .recommendations
+                .state_fields
+                .iter()
+                .map(|f| f.to_field.clone())
+                .collect(),
+            locals: self.spec.source.module_scope.clone(),
+            props: self.param_names.clone(),
+            lookup_constants: Vec::new(),
+            value_constants: Vec::new(),
+        };
+        self.spec
+            .source
+            .module_constants
+            .iter()
+            .filter(|c| {
+                if !c.entries.is_empty() {
+                    return false;
+                }
+                let value = ast_transform::transform_expression(&c.init, &config).code;
+                !is_constant_expression(&value) && is_literal_only(&value)
+            })
+            .map(|c| c.name.clone())
+            .collect()
+    }
+
     /// Module-scope `const`s from the component's own file.
     ///
     /// `DEFAULT_SORT` and its siblings are read by the view but declared
@@ -128,6 +167,13 @@ impl<'a> QliphothGenerator<'a> {
         let mut lines = Vec::new();
         let mut scope = VNodeScope::default();
         scope.locals.extend(self.spec.source.module_scope.iter().cloned());
+
+        // Names this file has already declared, in order. A constant body that
+        // names only these is self-contained *given what precedes it*, which is
+        // the property the emission guard actually wants — `is_literal_only`
+        // alone rejected `[DEFAULT_NEW_STATUS, DEFAULT_DONE_STATUS, …]` even
+        // once both of those were emitted two lines above it.
+        let mut emitted: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for c in &self.spec.source.module_constants {
             let name = to_snake_case(&c.name);
@@ -141,10 +187,67 @@ impl<'a> QliphothGenerator<'a> {
             // A module-scope binding has to be a CONSTANT expression, and most of
             // these are not — an object literal, a call, a lookup. Emitting them
             // anyway cost seven files ("expression is not constant") and ten
-            // strict-clean ones, so only literal-shaped values are emitted and
-            // the rest are recorded next to the name they would have bound.
+            // strict-clean ones, so only literal-shaped values are emitted.
+            // `≔ x = None;` at module scope passes `check` and fails to
+            // compile (§8.2.9) — and `None` is what the transform yields for
+            // anything it could not read, so this arm was turning an
+            // unreadable initialiser into a file that would not build. A
+            // constant nobody can express is a comment.
+            if value.trim() == "None" || value.trim() == "∅" {
+                // Not emitted: nothing may depend on it.
+                lines.push(format!(
+                    "// {} — initialiser did not survive transformation. React: {}",
+                    name, one_line
+                ));
+                continue;
+            }
+
             if is_constant_expression(&value) {
                 lines.push(format!("≔ {} = {};", name, value));
+                emitted.insert(name);
+                continue;
+            }
+
+            // An object literal is a LOOKUP TABLE — `DEFAULT_SORT[view]`,
+            // `refusalText[reason]`. It cannot be a module binding, but it can be
+            // a function, and the reference site becomes a call (see
+            // `TransformConfig::lookup_constants`). Eight of these across the
+            // client, each taking its file with it.
+            if !c.entries.is_empty() {
+                let arms: Vec<String> = c
+                    .entries
+                    .iter()
+                    .map(|(key, val)| {
+                        let v = self.transform_expression_scoped(val, &scope);
+                        format!("        {:?} => {},", key, v)
+                    })
+                    .collect();
+                lines.push(format!(
+                    "// React: `const {}` — an object literal, which a module-scope\n\
+                     // binding cannot hold, so a lookup function.\n\
+                     \u{2609} rite {}(key: Any) -> Any! {{\n    \u{2325} key {{\n{}\n        _ => \u{2205},\n    }}\n}}",
+                    c.name, name, arms.join("\n")
+                ));
+                emitted.insert(name);
+                continue;
+            }
+
+            // Not a constant and not a lookup table: an array literal, or a
+            // call. Still a perfectly good FUNCTION BODY, and a bare reference
+            // becomes a call (see `TransformConfig::value_constants`).
+            //
+            // Only when the body is SELF-CONTAINED, though. Emitting one that
+            // names anything else trades a missing constant for a missing
+            // dependency: `const WATCHTOWER_ROWS = [{ storageKey: keys.x }]`
+            // brought `keys` with it, and cost two compiling files and seven
+            // strict-clean ones the first time this was tried.
+            if is_literal_only(&value) || references_only(&value, &emitted) {
+                lines.push(format!(
+                    "// React: `const {}` — not a constant expression, so a function.\n\
+                     \u{2609} rite {}() -> Any! {{\n    {}\n}}",
+                    c.name, name, value
+                ));
+                emitted.insert(name);
             } else {
                 lines.push(format!(
                     "// {} — not a constant expression. React: {}",
@@ -193,31 +296,56 @@ impl<'a> QliphothGenerator<'a> {
     fn generate_actor(&self) -> String {
         let mut sections = Vec::new();
 
+        // Bodies first: they decide what the state block has to declare.
+        //
+        // The unknown-identifier rule turns any name an actor's body does not
+        // recognise into `self.<name>` — deliberately, on the grounds that it is
+        // "likely a state field we didn't detect". Nothing then declared it, so
+        // the guess produced an undefined field instead of an undefined
+        // variable: `self.branch_picker = { detail: self.detail, … }` where the
+        // React handler's `detail` was a local the mutation walker flattened
+        // away. Whatever the bodies reference through `self`, the actor
+        // declares.
+        let handlers = self.generate_message_handlers();
+        let lifecycle = self.generate_lifecycle_handlers();
+        let view = self.generate_view_method();
+        let constructor = if self.spec.recommendations.props_handling.fields.is_empty() {
+            String::new()
+        } else {
+            self.generate_constructor()
+        };
+
         // State fields
-        let state_fields = self.generate_state_fields();
+        let mut state_fields = self.generate_state_fields();
+        let inferred = self.infer_missing_state_fields(&[
+            handlers.as_str(),
+            lifecycle.as_str(),
+            view.as_str(),
+        ]);
+        if !inferred.is_empty() {
+            if !state_fields.is_empty() {
+                state_fields.push('\n');
+            }
+            state_fields.push_str(&inferred);
+        }
         if !state_fields.is_empty() {
             sections.push(state_fields);
         }
 
         // Constructor if props
-        if !self.spec.recommendations.props_handling.fields.is_empty() {
-            sections.push(self.generate_constructor());
+        if !constructor.is_empty() {
+            sections.push(constructor);
         }
 
-        // Message handlers
-        let handlers = self.generate_message_handlers();
         if !handlers.is_empty() {
             sections.push(handlers);
         }
 
-        // Lifecycle handlers (Mount/Unmount)
-        let lifecycle = self.generate_lifecycle_handlers();
         if !lifecycle.is_empty() {
             sections.push(lifecycle);
         }
 
-        // View method
-        sections.push(self.generate_view_method());
+        sections.push(view);
 
         format!(
             "☉ actor {} {{\n{}\n}}",
@@ -226,15 +354,143 @@ impl<'a> QliphothGenerator<'a> {
         )
     }
 
+    /// Declare every `self.<name>` the generated bodies read that the state
+    /// block does not already have.
+    ///
+    /// Method calls are excluded — `self.set_tab("todo")` names a method, not a
+    /// field — and so is anything the constructor or state block declares.
+    /// Everything left is a name the unknown-identifier rule guessed at, and a
+    /// guess that compiles is worth more than one that does not.
+    fn infer_missing_state_fields(&self, bodies: &[&str]) -> String {
+        let declared: std::collections::HashSet<String> =
+            self.field_inits().into_iter().map(|(n, _)| n).collect();
+
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut out: Vec<String> = Vec::new();
+        for body in bodies {
+            let chars: Vec<char> = body.chars().collect();
+            let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+            let mut i = 0;
+            while i + 5 <= chars.len() {
+                if chars[i..].starts_with(&['s', 'e', 'l', 'f', '.'])
+                    && (i == 0 || !is_word(chars[i - 1]))
+                {
+                    let start = i + 5;
+                    let mut j = start;
+                    while j < chars.len() && is_word(chars[j]) {
+                        j += 1;
+                    }
+                    let name: String = chars[start..j].iter().collect();
+                    // `self.foo(` is a method; `self.foo` is a field.
+                    let is_call = chars.get(j) == Some(&'(');
+                    if !name.is_empty()
+                        && !is_call
+                        && !declared.contains(&name)
+                        && seen.insert(name.clone())
+                    {
+                        out.push(format!(
+                            "    state {}: Any~ = ∅,  // inferred: referenced but never declared",
+                            name
+                        ));
+                    }
+                    i = j;
+                    continue;
+                }
+                i += 1;
+            }
+        }
+        out.join("\n")
+    }
+
+    /// A `useState` initialiser, as something Sigil can evaluate.
+    ///
+    /// The extractor hands this back as raw JS source. Most of it is a literal
+    /// and passes through; the cases that do not are a placeholder comment, a
+    /// lazy initialiser (`useState(storedView)` — a function reference React
+    /// calls for you), and a bare name from module scope. Anything left that
+    /// this cannot account for becomes `None` rather than an identifier no
+    /// binding in the file defines.
+    fn resolve_initial(&self, raw: &str) -> String {
+        let trimmed = raw.trim();
+        match trimmed {
+            "null" | "undefined" | "/* expr */" | "/* expression */" => return "None".to_string(),
+            other if other.contains("/*") => return "None".to_string(),
+            _ => {}
+        }
+
+        let is_bare_ident = !trimmed.is_empty()
+            && trimmed
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            && !trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(true);
+        if !is_bare_ident || matches!(trimmed, "true" | "false") {
+            return trimmed.to_string();
+        }
+
+        let snake = to_snake_case(trimmed);
+        if self
+            .spec
+            .source
+            .module_functions
+            .iter()
+            .any(|f| to_snake_case(f) == snake)
+        {
+            // Lazy initialiser: React calls it once, so Sigil calls it here.
+            return format!("{}()", snake);
+        }
+        if self.value_constant_names().iter().any(|c| *c == snake) {
+            return format!("{}()", snake);
+        }
+        if self
+            .spec
+            .source
+            .module_constants
+            .iter()
+            .any(|c| to_snake_case(&c.name) == snake)
+        {
+            return snake;
+        }
+        "None".to_string()
+    }
+
+    /// Every field the actor declares, paired with its initial value, in the
+    /// order they are emitted: `useState` fields first, then props.
+    ///
+    /// `generate_state_fields` and `generate_constructor` have to agree on this
+    /// list exactly — the constructor builds a struct literal, and a literal
+    /// that names a field the actor does not declare (or omits one it does) is
+    /// a different kind of broken than the `self.<x> = x` it replaced.
+    fn field_inits(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = self
+            .spec
+            .recommendations
+            .state_fields
+            .iter()
+            .map(|field| {
+                (
+                    to_snake_case(&field.to_field),
+                    self.resolve_initial(&field.initial_value),
+                )
+            })
+            .collect();
+        // A duplicated key is a malformed struct literal, and two `state`
+        // declarations of the same name are already wrong upstream.
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        out.retain(|(n, _)| seen.insert(n.clone()));
+        let declared = seen;
+        for f in &self.spec.recommendations.props_handling.fields {
+            let name = to_snake_case(&f.name);
+            if !declared.contains(&name) {
+                out.push((name, "∅".to_string()));
+            }
+        }
+        out
+    }
+
     fn generate_state_fields(&self) -> String {
         let fields: Vec<String> = self.spec.recommendations.state_fields.iter()
             .map(|field| {
-                // Convert JS null/undefined/placeholders to Sigil None
-                let initial = match field.initial_value.as_str() {
-                    "null" | "undefined" | "/* expr */" | "/* expression */" => "None".to_string(),
-                    other if other.contains("/*") => "None".to_string(),
-                    other => other.to_string(),
-                };
+                let initial = self.resolve_initial(&field.initial_value);
                 // The field name has to match every reference to it. The view is
                 // generated through the expression transform, which snake-cases
                 // and keyword-escapes, so a declaration left in React's camelCase
@@ -289,14 +545,41 @@ impl<'a> QliphothGenerator<'a> {
             .map(|f| format!("{}: {}", f.name, normalize_prop_type(&f.field_type)))
             .collect();
 
-        let assignments: Vec<String> = props.fields.iter()
-            .map(|f| format!("        self.{} = {};", to_snake_case(&f.name), f.name))
+        // A constructor is an associated function: it has no receiver, so its
+        // body cannot assign through `self`. Emitting `self.<prop> = <prop>;`
+        // here made `new` the single largest source of "undefined variable:
+        // self" in the generated client — seven files, none of which were
+        // wrong anywhere else. Build the value instead, the way every
+        // hand-written Sigil constructor does.
+        let prop_params: std::collections::HashSet<String> = props
+            .fields
+            .iter()
+            .map(|f| to_snake_case(&f.name))
+            .collect();
+        let inits: Vec<String> = self
+            .field_inits()
+            .into_iter()
+            .map(|(name, init)| {
+                let value = if prop_params.contains(&name) {
+                    // The parameter keeps React's spelling; the field is
+                    // snake_cased. Find the parameter this field came from.
+                    props
+                        .fields
+                        .iter()
+                        .find(|f| to_snake_case(&f.name) == name)
+                        .map(|f| f.name.clone())
+                        .unwrap_or_else(|| init.clone())
+                } else {
+                    init
+                };
+                format!("            {}: {},", name, value)
+            })
             .collect();
 
         format!(
-            "    rite new({}) -> This! {{\n{}\n        This\n    }}",
+            "    rite new({}) -> This! {{\n        This {{\n{}\n        }}\n    }}",
             params.join(", "),
-            assignments.join("\n")
+            inits.join("\n")
         )
     }
 
@@ -421,11 +704,30 @@ impl<'a> QliphothGenerator<'a> {
                 }
 
                 if !body_parts.is_empty() {
+                    // The payload fills the first N parameters; the rest of the
+                    // handler's signature has nowhere to come from — the event
+                    // site carries one value at most — so they bind ∅. Leaving
+                    // them out entirely is what made them `self.` fields.
+                    let arity = msg
+                        .payload
+                        .as_deref()
+                        .filter(|p| p.starts_with('('))
+                        .map(|p| p.trim_start_matches('(').trim_end_matches(')').split(',').count())
+                        .unwrap_or(0);
                     let bindings: Vec<String> = msg
                         .param_bindings
                         .iter()
                         .enumerate()
-                        .map(|(i, p)| format!("        ≔ {} = msg.{};", to_snake_case(p), i))
+                        .map(|(i, p)| {
+                            if i < arity {
+                                format!("        ≔ {} = msg.{};", to_snake_case(p), i)
+                            } else {
+                                format!(
+                                    "        ≔ {} = ∅;  // no payload slot for this parameter",
+                                    to_snake_case(p)
+                                )
+                            }
+                        })
                         .collect();
                     body_parts.splice(0..0, bindings);
                 }
@@ -533,7 +835,10 @@ impl<'a> QliphothGenerator<'a> {
             // those verbatim breaks the file. Bind the name to ∅ instead and keep the
             // original beside it: the name still resolves, which is the point, and
             // the value is visibly missing rather than silently wrong.
-            let untranslatable = init.contains("?.") || init.contains("...");
+            // A custom hook's return has nothing to translate — only a name to
+            // bind. Treated the same way as the JavaScript this transform has no
+            // spelling for: bound to ∅, with the React beside it.
+            let untranslatable = local.opaque || init.contains("?.") || init.contains("...");
             if untranslatable {
                 let one_line: String = local.init.split_whitespace().collect::<Vec<_>>().join(" ");
                 let capped = if one_line.chars().count() > 90 {
@@ -658,7 +963,12 @@ impl<'a> QliphothGenerator<'a> {
                     iter_src = iter_src.chars().take(77).collect::<String>() + "...";
                 }
                 format!(
-                    "{pad}// Map: ∀ {item} ∈ {iter}\n{pad}·children({iter_expr}.iter().map(|{item}| {body}).collect())",
+                    // `·map(…)` directly. `.iter()` and `.collect()` are Rust's
+                    // shape, not Sigil's: the backend dispatches `map` on the
+                    // array itself (morpheme.array_map), and `iter`/`collect`
+                    // are two more lowercase names for it to fail to resolve —
+                    // silently, under S34.
+                    "{pad}// Map: ∀ {item} ∈ {iter}\n{pad}·children({iter_expr}·map(|{item}| {body}))",
                     pad = pad,
                     item = item_name,
                     iter = iter_src,
@@ -933,6 +1243,15 @@ impl<'a> QliphothGenerator<'a> {
             state_fields,
             locals,
             props: self.param_names.clone(),
+            lookup_constants: self
+                .spec
+                .source
+                .module_constants
+                .iter()
+                .filter(|c| !c.entries.is_empty())
+                .map(|c| c.name.clone())
+                .collect(),
+            value_constants: self.value_constant_names(),
         };
 
         // Use AST-based transformation
@@ -1197,6 +1516,146 @@ fn dom_event_method(event_name: &str) -> Option<&'static str> {
         "doubleclick" | "dblclick" => "on_dblclick",
         _ => return None,
     })
+}
+
+/// Does this expression name nothing outside itself?
+///
+/// String contents are ignored; what is left must be literals, brackets and
+/// punctuation. A body that passes can be emitted as a function without
+/// dragging an unresolved name in with it.
+fn is_literal_only(value: &str) -> bool {
+    let mut bare = String::with_capacity(value.len());
+    let mut in_str = false;
+    let mut escaped = false;
+    for c in value.chars() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        if c == '"' {
+            in_str = true;
+        } else {
+            bare.push(c);
+        }
+    }
+    if in_str {
+        return false;
+    }
+    // An object literal's KEYS are field names, not references to anything, so
+    // they do not make the value depend on the surrounding scope. Without this,
+    // `const VIEWS = [{ key: "all", label: "All" }, …]` — a plain table of
+    // strings — was rejected for containing the letters in `key` and `label`,
+    // and the constant was dropped for a comment.
+    let bare = strip_object_keys(&bare);
+
+    let stripped = bare
+        .replace("true", " ")
+        .replace("false", " ")
+        .replace("None", " ")
+        .replace('\u{2205}', " ");
+    stripped
+        .chars()
+        .all(|c| !(c.is_alphabetic() || c == '_' || c == '\u{00B7}'))
+}
+
+/// Does this value reference nothing but the names already declared?
+///
+/// The companion to `is_literal_only`, which admits values that mention no name
+/// at all. Once a constant's dependencies are themselves emitted — the
+/// cross-module resolver puts imports first — a body that names only those is
+/// just as safe, and refusing it dropped whole tables (`TASK_WORKFLOW_STATUSES`
+/// is a list of four constants and two object literals).
+fn references_only(value: &str, known: &std::collections::HashSet<String>) -> bool {
+    let mut mentioned = false;
+    let bytes: Vec<char> = value.chars().collect();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut i = 0;
+    let mut in_str = false;
+    let mut escaped = false;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_str = true;
+            i += 1;
+            continue;
+        }
+        if is_word(c) && !c.is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && is_word(bytes[i]) {
+                i += 1;
+            }
+            let word: String = bytes[start..i].iter().collect();
+            // An object-literal key names a field, not a binding.
+            let mut j = i;
+            while j < bytes.len() && bytes[j].is_whitespace() {
+                j += 1;
+            }
+            if bytes.get(j) == Some(&':') && bytes.get(j + 1) != Some(&':') {
+                continue;
+            }
+            if matches!(word.as_str(), "true" | "false" | "None") {
+                continue;
+            }
+            if !known.contains(&word) {
+                return false;
+            }
+            mentioned = true;
+            continue;
+        }
+        i += 1;
+    }
+    if in_str {
+        return false;
+    }
+    mentioned
+}
+
+/// Blank out `ident:` sequences — object-literal keys, which name a field
+/// rather than read a binding.
+fn strip_object_keys(src: &str) -> String {
+    let chars: Vec<char> = src.chars().collect();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if is_word(chars[i]) && !chars[i].is_ascii_digit() {
+            let start = i;
+            while i < chars.len() && is_word(chars[i]) {
+                i += 1;
+            }
+            let mut j = i;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            // A key, not a reference — and not `::`, which is not a key either.
+            if j < chars.len() && chars[j] == ':' && chars.get(j + 1) != Some(&':') {
+                out.push(' ');
+                continue;
+            }
+            out.extend(&chars[start..i]);
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
 }
 
 /// Is this a value a module-scope binding can hold?

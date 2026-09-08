@@ -95,6 +95,16 @@ pub struct ComponentSource {
     /// `self.default_sort` once it was in scope, but nothing declared it either.
     #[serde(default)]
     pub module_constants: Vec<ModuleConstantExtraction>,
+    /// Module-scope function names from the same file.
+    ///
+    /// `module_scope` conflates functions with constants, and a `useState`
+    /// initialiser tells them apart by how it is written: `useState(storedView)`
+    /// passes the function lazily, so the field's initial value is
+    /// `stored_view()`, not the function itself. Emitting the bare name left
+    /// `state view: Any~ = storedView,` — an undefined identifier, in React's
+    /// own casing, in a declaration.
+    #[serde(default)]
+    pub module_functions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -563,6 +573,12 @@ impl<'a> SpecGenerator<'a> {
                     .chain(JS_GLOBALS.iter().map(|g| g.to_string()))
                     .collect(),
                 module_constants: self.extraction.module_constants.clone(),
+                module_functions: self
+                    .extraction
+                    .helper_functions
+                    .iter()
+                    .map(|h| h.name.clone())
+                    .collect(),
             },
             target: TargetInfo {
                 suggested_path: format!("src/components/{}.sigil", to_snake_case(&comp.name)),
@@ -734,19 +750,17 @@ impl<'a> SpecGenerator<'a> {
             // Extract service calls from handler.calls (hook-returned functions)
             let service_calls = extract_service_calls(&handler.calls);
 
-            // Only as many parameters as the payload actually carries; the rest
-            // would bind `msg.N` for an N the variant does not have.
-            let arity = payload
-                .as_deref()
-                .filter(|p| p.starts_with('('))
-                .map(|p| p.trim_start_matches('(').trim_end_matches(')').split(',').count())
-                .unwrap_or(0);
-            let param_bindings: Vec<String> = handler
-                .parameters
-                .iter()
-                .take(arity)
-                .map(|p| p.name.clone())
-                .collect();
+            // EVERY parameter, not only the ones the payload carries.
+            //
+            // A handler's body is written in terms of its parameters —
+            // `(branchName) => setBranchOverride(branchName)` — and a parameter
+            // the message has no room for is still a name the body uses. Capping
+            // this at the payload arity left those unbound, and the
+            // unknown-identifier rule turned each into a `self.` field the actor
+            // does not have. The generator binds what the payload supplies to
+            // `msg.N` and the remainder to ∅, which is visible rather than wrong.
+            let param_bindings: Vec<String> =
+                handler.parameters.iter().map(|p| p.name.clone()).collect();
 
             messages.push(MessageRecommendation {
                 name: msg_name,

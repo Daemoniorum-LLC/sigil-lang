@@ -44,6 +44,14 @@ pub struct ModuleConstantExtraction {
     pub type_annotation: Option<String>,
     /// The initialiser, as source.
     pub init: String,
+    /// When the initialiser is an object literal with literal keys, its entries
+    /// as (key, value-source) pairs.
+    ///
+    /// These are lookup tables — `DEFAULT_SORT[view]`, `refusalText[reason]` —
+    /// and a map literal is not a constant expression at module scope, so they
+    /// cannot be emitted as bindings. They can be emitted as functions.
+    #[serde(default)]
+    pub entries: Vec<(String, String)>,
 }
 
 /// File metadata.
@@ -119,6 +127,12 @@ pub struct LocalBinding {
     pub name: String,
     /// The initialiser expression, as source text.
     pub init: String,
+    /// The value comes from a custom hook, so there is nothing to translate —
+    /// only a name to bind. `const enabled = useCertificationEnabled()` has to
+    /// resolve, or the unknown-identifier rule turns `enabled` into a `self.`
+    /// field the actor does not have.
+    #[serde(default)]
+    pub opaque: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -952,10 +966,40 @@ impl<'a> Extractor<'a> {
                 Some(i) => i,
                 None => continue,
             };
+            // `export const KEYS = { … } as const` is a TsConstAssertion, not an
+            // object — so the object-literal arm below never fired for it, and a
+            // 200-key lookup table came out with no entries and an initialiser
+            // ending in ` as const`, which is not Sigil. Same for `satisfies`,
+            // which `ANIMA_DIMENSIONS` carries. The type-level wrappers say
+            // nothing a Sigil binding can use; the value underneath is the whole
+            // content.
+            let init = strip_ts_wrappers(init);
+
             // Functions are helper_functions; components are components.
-            if matches!(init.as_ref(), Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_)) {
+            if matches!(init, Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_)) {
                 continue;
             }
+            let entries = match init {
+                Expr::Object(obj) => obj
+                    .props
+                    .iter()
+                    .filter_map(|p| match p {
+                        PropOrSpread::Prop(prop) => match prop.as_ref() {
+                            Prop::KeyValue(kv) => {
+                                let key = match &kv.key {
+                                    PropName::Ident(i) => i.sym.to_string(),
+                                    PropName::Str(sn) => sn.value.as_str().unwrap_or("").to_string(),
+                                    _ => return None,
+                                };
+                                Some((key, self.span_to_source(self.expr_span(&kv.value))))
+                            }
+                            _ => None,
+                        },
+                        PropOrSpread::Spread(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
             out.push(ModuleConstantExtraction {
                 name: ident.id.sym.to_string(),
                 exported,
@@ -964,6 +1008,7 @@ impl<'a> Extractor<'a> {
                     .as_ref()
                     .map(|t| self.span_to_source(t.span)),
                 init: self.span_to_source(self.expr_span(init)),
+                entries,
             });
         }
     }
@@ -1788,22 +1833,33 @@ impl<'a> Extractor<'a> {
                 // field the actor does not have. What matters is the memo's
                 // body, so that is what becomes the initialiser.
                 let mut memo_init: Option<String> = None;
+                let mut opaque = false;
                 if let Expr::Call(call) = init.as_ref() {
                     match self.get_callee_name(&call.callee).as_deref() {
-                        Some("useMemo") | Some("useCallback") => {
-                            if let Some(first) = call.args.first() {
-                                if let Expr::Arrow(arrow) = first.expr.as_ref() {
-                                    if let BlockStmtOrExpr::Expr(body) = arrow.body.as_ref() {
-                                        memo_init =
-                                            Some(self.span_to_source(self.expr_span(body)));
+                        // These bind state, handled elsewhere.
+                        Some("useState") | Some("useRef") | Some("useReducer") => continue,
+                        Some(n) if n.starts_with("use") => {
+                            // `useMemo(() => expr, [deps])` binds a derived
+                            // local, and the memo's body is what matters.
+                            if matches!(n, "useMemo" | "useCallback") {
+                                if let Some(first) = call.args.first() {
+                                    if let Expr::Arrow(arrow) = first.expr.as_ref() {
+                                        if let BlockStmtOrExpr::Expr(body) = arrow.body.as_ref() {
+                                            memo_init =
+                                                Some(self.span_to_source(self.expr_span(body)));
+                                        }
                                     }
                                 }
                             }
+                            // Anything else a hook returns — a custom hook's
+                            // value, an object destructured out of one, a memo
+                            // with a block body — has nothing to translate. The
+                            // NAME still has to exist, or the unknown-identifier
+                            // rule makes it a `self.` field the actor lacks.
                             if memo_init.is_none() {
-                                continue;
+                                opaque = true;
                             }
                         }
-                        Some(n) if n.starts_with("use") => continue,
                         _ => {}
                     }
                 }
@@ -1820,6 +1876,7 @@ impl<'a> Extractor<'a> {
                     Pat::Ident(ident) => out.push(LocalBinding {
                         name: ident.id.sym.to_string(),
                         init: init_src,
+                        opaque,
                     }),
                     Pat::Object(obj) => {
                         for prop in &obj.props {
@@ -1829,6 +1886,7 @@ impl<'a> Extractor<'a> {
                                     out.push(LocalBinding {
                                         name: field.clone(),
                                         init: format!("{}.{}", init_src, field),
+                                        opaque,
                                     });
                                 }
                                 ObjectPatProp::KeyValue(kv) => {
@@ -1841,6 +1899,7 @@ impl<'a> Extractor<'a> {
                                         out.push(LocalBinding {
                                             name: bound.id.sym.to_string(),
                                             init: format!("{}.{}", init_src, field),
+                                            opaque,
                                         });
                                     }
                                 }
@@ -4327,4 +4386,25 @@ pub fn parse_inline_object_members(src: &str) -> std::collections::HashMap<Strin
         out.insert(name, DeclaredMember { ty, optional });
     }
     out
+}
+
+/// Peel TypeScript's value-level type annotations off an expression.
+///
+/// `x as const`, `x satisfies T`, `x as T`, `x!` and `(x)` all describe the same
+/// runtime value. The migrator cares only about that value: keeping the wrapper
+/// meant the recorded initialiser source ended in ` as const`, which no Sigil
+/// parse accepts, and meant an object literal did not match as one.
+fn strip_ts_wrappers(expr: &Expr) -> &Expr {
+    let mut cur = expr;
+    loop {
+        cur = match cur {
+            Expr::TsAs(e) => &e.expr,
+            Expr::TsConstAssertion(e) => &e.expr,
+            Expr::TsSatisfies(e) => &e.expr,
+            Expr::TsNonNull(e) => &e.expr,
+            Expr::TsInstantiation(e) => &e.expr,
+            Expr::Paren(e) => &e.expr,
+            other => return other,
+        };
+    }
 }

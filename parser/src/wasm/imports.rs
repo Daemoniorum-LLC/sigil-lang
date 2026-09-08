@@ -331,6 +331,35 @@ impl ImportRegistry {
         // string pointer from a small integer, and `""` is falsy while a pointer
         // to it is not zero.
         self.add_import_with_alias("value", "to_bool", "to_bool", vec![I64], vec![I64]);
+
+        // JS statics the React migrator emits that have no Sigil equivalent.
+        // Each one is a host call for the same reason `to_bool` is: only the
+        // host knows whether a value is a string, an array or an object.
+        self.add_import_with_alias("value", "object_values", "object_values", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "object_keys", "object_keys", vec![I64], vec![I64]);
+        self.add_import_with_alias(
+            "value",
+            "object_entries",
+            "object_entries",
+            vec![I64],
+            vec![I64],
+        );
+        self.add_import_with_alias("value", "is_finite", "is_finite", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "is_nan", "is_nan", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "is_integer", "is_integer", vec![I64], vec![I64]);
+
+        // `new Date(s).getTime()` — parsing a timestamp string to epoch millis.
+        // `timing.now` covers the clock; nothing covered the parse, so every
+        // `format_relative_time(new Date(x).getTime())` in the Lares client was
+        // an undefined call.
+        self.add_import_with_alias("timing", "parse", "timing_parse", vec![I64], vec![I64]);
+
+        // `x.toFixed(2)` — a formatted string, not a rounded number, so
+        // `math.round` is not it.
+        self.add_import_with_alias("value", "to_fixed", "to_fixed", vec![I64, I64], vec![I64]);
+        // `Array.isArray(x)` — only the host can tell an array handle from any
+        // other i64.
+        self.add_import_with_alias("value", "is_array", "is_array", vec![I64], vec![I64]);
     }
 
     fn register_math_imports(&mut self) {
