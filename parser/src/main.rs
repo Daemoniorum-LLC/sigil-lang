@@ -58,6 +58,13 @@ fn main() -> ExitCode {
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        // The wasm command exists but is feature-gated, and was missing from this
+        // list either way — so the one output format Qliphoth is built on was
+        // invisible to anyone reading --help.
+        #[cfg(feature = "wasm")]
+        eprintln!("  wasm <file>     Compile to WebAssembly (-o output.wasm)");
+        #[cfg(not(feature = "wasm"))]
+        eprintln!("  wasm <file>     Compile to WebAssembly (requires --features wasm)");
         eprintln!("  rust <file>     Transpile to Rust source code");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
