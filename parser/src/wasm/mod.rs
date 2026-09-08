@@ -85,6 +85,26 @@ pub struct WasmCompiler {
     /// and shows up as a fallthru with an extra value.
     pub(crate) func_arity: HashMap<u32, usize>,
 
+    /// `extern "js" { static NAME: T; }` — a value the host supplies, by the
+    /// index of the import that fetches it.
+    ///
+    /// These were dropped on the floor ("not yet supported"), so every
+    /// reference to one was an undefined variable — `WINDOW` in
+    /// `qliphoth-sys`, which is how that package reaches the browser's window
+    /// object at all. A host value has to be fetched rather than read, because
+    /// an imported global cannot be typed as the opaque handle these are.
+    pub(crate) extern_statics: HashMap<String, u32>,
+
+    /// Every function index a simple name could mean.
+    ///
+    /// `func_map` holds one index per name and is last-writer-wins, so an impl's
+    /// associated function registered under its simple name silently replaced an
+    /// `extern "js"` declaration of the same name — `⊢ LocalStorage { rite
+    /// clear() }` over `extern "js" { rite clear(this: &Storage) }`, which is
+    /// the one name that stopped the whole `qliphoth-sys` package compiling.
+    /// When a call cannot be resolved by type, the arity decides between these.
+    pub(crate) func_candidates: HashMap<String, Vec<u32>>,
+
     /// Diagnostics from the stack checker, filled in as the module is encoded.
     pub(crate) stack_reports: Vec<String>,
 
@@ -209,6 +229,8 @@ impl WasmCompiler {
             functions: Vec::new(),
             func_map: HashMap::new(),
             func_arity: HashMap::new(),
+            extern_statics: HashMap::new(),
+            func_candidates: HashMap::new(),
             stack_reports: Vec::new(),
             globals: Vec::new(),
             global_map: HashMap::new(),
@@ -465,6 +487,14 @@ impl WasmCompiler {
         self.imports.get_or_create_type(params, results)
     }
 
+    /// Record that `name` may mean `idx`, keeping any earlier meaning.
+    pub(crate) fn note_candidate(&mut self, name: &str, idx: u32) {
+        let slot = self.func_candidates.entry(name.to_string()).or_default();
+        if !slot.contains(&idx) {
+            slot.push(idx);
+        }
+    }
+
     /// Instruction-level diagnostics for anything the stack checker found.
     pub fn stack_reports(&self) -> &[String] {
         &self.stack_reports
@@ -599,12 +629,24 @@ impl WasmCompiler {
     /// Resolve a path that may start with "tome" (crate root).
     /// Returns the resolved path segments.
     pub fn resolve_path(&self, segments: &[String]) -> Vec<String> {
-        if segments.first().map(|s| s.as_str()) == Some("tome") {
+        let mut out = if segments.first().map(|s| s.as_str()) == Some("tome") {
             // tome:: means crate root - skip the "tome" prefix
             segments[1..].to_vec()
         } else {
             segments.to_vec()
+        };
+
+        // `Self·get(key)` inside `⊢ LocalStorage` names `LocalStorage::get`.
+        // The impl's type is on `module_path` while its methods compile, and
+        // nothing consulted it — so `Self` as a path qualifier was an undefined
+        // variable, which is most of how `qliphoth-sys`'s storage module calls
+        // its own associated functions.
+        if out.first().map(|s| s.as_str()) == Some("Self") {
+            if let Some(ty) = self.module_path.last() {
+                out[0] = ty.clone();
+            }
         }
+        out
     }
 
     /// Look up a function by qualified path.
@@ -618,22 +660,36 @@ impl WasmCompiler {
     pub fn get_func_by_path_arity(&self, segments: &[String], argc: Option<usize>) -> Option<u32> {
         let resolved = self.resolve_path(segments);
 
+        // Every lookup below has to fit the call. A name can mean several
+        // things — six `extern "js"` types in `qliphoth-sys` declare a `get`,
+        // and so does `⊢ Window`, with a different arity — and returning the
+        // first match made the caller reject a call that was resolvable.
+        let fits = |idx: u32| {
+            argc.is_none_or(|n| self.func_arity.get(&idx).is_none_or(|&a| a == n))
+        };
+
         // If it's a single-segment path, check simple name first
         if resolved.len() == 1 {
-            if let Some(idx) = self.func_map.get(&resolved[0]) {
-                return Some(*idx);
+            if let Some(&idx) = self.func_map.get(&resolved[0]) {
+                if fits(idx) {
+                    return Some(idx);
+                }
             }
         }
 
         // Try qualified lookup
         let qualified = resolved.join("::");
-        if let Some(idx) = self.func_map.get(&qualified) {
-            return Some(*idx);
+        if let Some(&idx) = self.func_map.get(&qualified) {
+            if fits(idx) {
+                return Some(idx);
+            }
         }
 
         // Check in qualified_items
         if let Some(QualifiedItem::Function(idx)) = self.qualified_items.get(&qualified) {
-            return Some(*idx);
+            if fits(*idx) {
+                return Some(*idx);
+            }
         }
 
         // Try just the last segment (simple name) for module-qualified calls
@@ -647,9 +703,18 @@ impl WasmCompiler {
         if resolved.len() > 1 {
             let simple_name = resolved.last().unwrap();
             if let Some(&idx) = self.func_map.get(simple_name) {
-                if argc.is_none_or(|n| self.func_arity.get(&idx).is_none_or(|&a| a == n)) {
+                if fits(idx) {
                     return Some(idx);
                 }
+            }
+            // `func_map` keeps one index per name; a name can mean several
+            // things. Ask the rest before giving up. See `func_candidates`.
+            if let Some(idx) = self
+                .func_candidates
+                .get(simple_name)
+                .and_then(|c| c.iter().copied().find(|i| fits(*i)))
+            {
+                return Some(idx);
             }
         }
 

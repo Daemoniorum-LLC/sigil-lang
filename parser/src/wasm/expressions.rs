@@ -452,6 +452,15 @@ impl WasmCompiler {
             return Ok(());
         }
 
+        // `extern "js" { static WINDOW: … }` — fetched from the host.
+        if let Some(&idx) = self.extern_statics.get(name) {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::Call(idx));
+            return Ok(());
+        }
+
         Err(WasmError::undefined_variable(name))
     }
 

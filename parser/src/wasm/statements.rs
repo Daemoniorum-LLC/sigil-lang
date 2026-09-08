@@ -630,8 +630,17 @@ impl WasmCompiler {
                     // They're typically used as handles (represented as i64)
                     self.extern_types.insert(ty.name.name.clone());
                 }
-                ExternItem::Static(_) => {
-                    // Extern statics could be global imports - not yet supported
+                ExternItem::Static(st) => {
+                    // A host-provided value, fetched by a nullary import. See
+                    // `extern_statics`.
+                    let name = st.name.name.clone();
+                    let idx = self.imports.add_import(
+                        module_name,
+                        &name,
+                        vec![],
+                        vec![wasm_encoder::ValType::I64],
+                    );
+                    self.extern_statics.insert(name, idx);
                 }
             }
         }
@@ -686,6 +695,8 @@ impl WasmCompiler {
         }
 
         // Register by simple name too
+        self.func_arity.insert(import_idx, func.params.len());
+        self.note_candidate(&func_name, import_idx);
         self.func_map.insert(func_name.clone(), import_idx);
 
         Ok(())
@@ -858,6 +869,7 @@ impl WasmCompiler {
 
         // Record function index with both qualified and simple names
         self.func_arity.insert(func_idx, param_types.len());
+        self.note_candidate(&func.name.name, func_idx);
         self.func_map.insert(qualified_name.clone(), func_idx);
         // Also register simple name for backwards compatibility
         if !self.module_path.is_empty() {

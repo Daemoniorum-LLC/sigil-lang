@@ -866,6 +866,10 @@ impl WasmCompiler {
                         .is_none()
                     && !self.struct_layouts.contains_key(&resolved_segments[0])
                     && !self.enum_layouts.contains_key(&resolved_segments[0])
+                    // An `extern "js" { type Window; }` is a TYPE, so
+                    // `Window·get()` is an associated function, not a method on
+                    // a value called `Window`.
+                    && !self.extern_types.contains(&resolved_segments[0])
                     && !self.actor_self_methods.iter().any(|m| {
                         m.starts_with(&format!("{}::", resolved_segments[0]))
                     })
@@ -894,16 +898,30 @@ impl WasmCompiler {
                 // `ConnRow·view()` inside `rite view(self)` resolved to the
                 // enclosing function itself. That takes a `self` the call site
                 // never pushed, so the module underflowed its own stack.
+                // Every candidate has to fit the call. `func_map` keeps one
+                // index per name and a name can mean several things — six
+                // `extern "js"` types in `qliphoth-sys` declare a `get`, and so
+                // does `⊢ Window`, with a different arity. Taking the first and
+                // then checking it turned a resolvable call into an error.
+                let argc = args.len();
+                let fits = |c: &Self, idx: u32| -> bool {
+                    c.func_arity.get(&idx).is_none_or(|&declared| declared == argc)
+                };
                 let func_idx_opt = self
-                    .get_func_by_path_arity(&resolved_segments, Some(args.len()))
+                    .get_func_by_path_arity(&resolved_segments, Some(argc))
                     .or_else(|| {
                         if resolved_segments.len() == 1 {
-                            self.get_func(simple_name)
+                            self.get_func(simple_name).filter(|i| fits(self, *i))
                         } else {
                             None
                         }
                     })
-                    .or_else(|| self.get_func(&qualified_path));
+                    .or_else(|| self.get_func(&qualified_path).filter(|i| fits(self, *i)))
+                    .or_else(|| {
+                        self.func_candidates
+                            .get(simple_name)
+                            .and_then(|c| c.iter().copied().find(|i| fits(self, *i)))
+                    });
                 if let Some(func_idx) = func_idx_opt {
                     // An arity that cannot match is a defect wherever it comes
                     // from; emitting the call anyway produces a module no runtime
@@ -1462,13 +1480,26 @@ impl WasmCompiler {
         // receiver that nothing consumed. Inside a closure body that is a block
         // one value too tall. Reporting the name as undefined is the honest
         // answer, and the one the per-file build already gave.
-        let simple_func = self.get_func(method).filter(|idx| {
-            self.func_arity
-                .get(idx)
-                .is_none_or(|&declared| declared == args.len() + 1)
-        });
+        let wanted = args.len() + 1;
+        let fits = |idx: &u32| -> bool {
+            self.func_arity.get(idx).is_none_or(|&declared| declared == wanted)
+        };
+        let simple_func = self.get_func(method).filter(fits);
 
-        let func_idx = qualified_func.or(simple_func)
+        // Every other function this name could mean, when the one `func_map`
+        // kept does not fit. A method registers under its simple name as well
+        // as its qualified one, so `⊢ LocalStorage { rite clear() }` — an
+        // associated function taking no receiver — replaced the `extern "js" {
+        // rite clear(this: &Storage) }` that the call actually wants. That one
+        // name stopped the whole `qliphoth-sys` package compiling.
+        let other = self
+            .func_candidates
+            .get(method)
+            .and_then(|c| c.iter().copied().find(|i| fits(i)));
+
+        let func_idx = qualified_func
+            .or(simple_func)
+            .or(other)
             .ok_or_else(|| WasmError::undefined_function(method))?;
         self.ensure_arity(func_idx, args.len() + 1, method)?;
 
