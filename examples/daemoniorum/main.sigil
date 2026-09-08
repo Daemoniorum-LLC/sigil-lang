@@ -24,7 +24,7 @@ scroll events·*
 // ============================================================================
 
 //! Game-wide constants with full evidentiality
-const CONFIG! = {
+const CONFIG = {
     title: "DAEMONIORUM"!,
     version: "0.1.0"!,
     target_fps: 60!,
@@ -250,14 +250,14 @@ actor Game {
         self.state.scene.trigger_zones
             |φ{zone => zone·contains(player_pos)}
             |for_each{zone => {
-                ≔ trigger = Trigger {
+                ≔ trigger_ = Trigger {
                     id: zone.trigger_id·clone(),
                     name: zone.name·clone(),
                     category: TriggerCategory·Environmental,
                     intensity: zone.intensity~,  // Reported - may vary
                     context: {}~,
                 };
-                self.state.system.active_triggers·push(trigger);
+                self.state.system.active_triggers·push(trigger_);
             }};
     }
 
@@ -320,8 +320,8 @@ actor Game {
         // Process triggers with affective awareness
         ≔ triggers~ = system.active_triggers·drain(..)·collect();
         triggers
-            |for_each{trigger => {
-                ≔ result = system·process_trigger(trigger);
+            |for_each{trigger_ => {
+                ≔ result = system·process_trigger(trigger_);
                 self·handle_trigger_result(result);
             }};
 
@@ -360,7 +360,7 @@ actor Game {
 
         // Drain perception triggers to system
         perception·drain_triggers()
-            |for_each{trigger => self.state.system.active_triggers·push(trigger)};
+            |for_each{trigger_ => self.state.system.active_triggers·push(trigger_)};
     }
 
     // ========================================================================
@@ -596,12 +596,12 @@ actor Game {
                 self.state.processed_traumas·insert(id);
                 self·check_story_progress();
             },
-            GameEvent·RealityShift(layer) => {
-                renderer·update_layer(layer);
+            GameEvent·RealityShift(layer_) => {
+                renderer·update_layer(layer_);
             },
             GameEvent·AlterCommentary(id, text) => {
                 // Show internal dialogue with affect
-                ≔ alter = self.state.system.alters·get(&id);
+                ≔ alter_ = self.state.system.alters·get(&id);
                 ui·show_internal_dialogue(id, text, alter·map(|a| a.anima·clone()));
             },
             _ => {},
@@ -669,10 +669,10 @@ actor Game {
         self.state.system.headspace.current_location
             |take_if{loc => loc·is_some()}
             |also{loc => {
-                ≔ location = loc·unwrap();
-                location.resident_alters
+                ≔ location_ = loc·unwrap();
+                location_.resident_alters
                     |φ{id => {
-                        ≔ alter = self.state.system.alters·get(id);
+                        ≔ alter_ = self.state.system.alters·get(id);
                         alter·map(|a| a.state == AlterPresenceState·Dormant)·unwrap_or(false)
                     }}
                     |for_each{id => {

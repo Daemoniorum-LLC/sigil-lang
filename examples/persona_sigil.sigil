@@ -47,13 +47,13 @@ rite enrich_with_geometry(proto: Proto!) -> EnrichedProto! {
 }
 
 // Convert to feature vector for ML
-rite sigil_to_features(sigil: Sigil!) -> FeatureVector! {
-    ≔ dims! = sigil.geometry
+rite sigil_to_features(sigil_: Sigil!) -> FeatureVector! {
+    ≔ dims! = sigil_.geometry
         |τ{_ / 1.618}
         |ρ{a + _};
 
     FeatureVector {
-        dimensions: [dims, sigil.frequency],
+        dimensions: [dims, sigil_.frequency],
         normalized: true,
     }
 }
@@ -72,9 +72,9 @@ rite build_persona_sigil(intent: PersonaIntent!) -> (Sigil!, FeatureVector!) {
         color: "violet",
     };
 
-    ≔ features! = sigil_to_features(sigil);
+    ≔ features! = sigil_to_features(sigil_);
 
-    (sigil, features)
+    (sigil_, features)
 }
 
 // Fetch external persona data (yields Reported evidence)
@@ -90,8 +90,8 @@ rite verify_persona(data: PersonaData~) -> PersonaData! {
 }
 
 // Example with uncertainty handling
-rite maybe_enhance(sigil: Sigil?) -> Sigil? {
-    ⌥ sigil {
+rite maybe_enhance(sigil_: Sigil?) -> Sigil? {
+    ⌥ sigil_ {
         Some(s) => {
             ≔ enhanced? = s.geometry|τ{_ * 1.1};
             Some(Sigil { geometry: enhanced, ..s })

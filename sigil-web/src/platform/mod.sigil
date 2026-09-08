@@ -96,7 +96,7 @@ invoke tome·core·events·{Event, EventDelegator, EventType};
         FetchOptions {
             method: "GET".to_string(),
             headers: HashMap·new(),
-            body: None,
+            body_: None,
             mode: FetchMode·Cors,
             credentials: FetchCredentials·SameOrigin,
             cache: FetchCache·Default,
@@ -108,18 +108,18 @@ invoke tome·core·events·{Event, EventDelegator, EventType};
         FetchOptions·default()
     }
 
-    ☉ rite post(body: &str) -> Self! {
+    ☉ rite post(body_: &str) -> Self! {
         FetchOptions {
             method: "POST".to_string(),
-            body: Some(body.to_string()),
+            body_: Some(body_.to_string()),
             ..FetchOptions·default()
         }
     }
 
-    ☉ rite json(body: impl serde·Serialize) -> Self! {
+    ☉ rite json(body_: impl serde·Serialize) -> Self! {
         ≔ vary opts! = FetchOptions {
             method: "POST".to_string(),
-            body: Some(serde_json·to_string(&body)·unwrap()),
+            body_: Some(serde_json·to_string(&body_)·unwrap()),
             ..FetchOptions·default()
         }
         opts.headers·insert("Content-Type".to_string(), "application/json".to_string())
@@ -160,7 +160,7 @@ invoke tome·core·events·{Event, EventDelegator, EventType};
     ☉ status: u16!
     ☉ status_text: String!
     ☉ headers: HashMap<String, String>!
-    body: Vec<u8>!
+    body_: Vec<u8>!
 }
 
 ⊢ FetchResponse {
@@ -367,7 +367,7 @@ invoke tome·core·events·{Event, EventDelegator, EventType};
     rite fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
         async {
             extern "js" {
-                async rite js_fetch(url: &str, method: &str, headers: &str, body: Option<&str>) -> (bool, u16, String, String, Vec<u8>);
+                async rite js_fetch(url: &str, method: &str, headers: &str, body_: Option<&str>) -> (bool, u16, String, String, Vec<u8>);
             }
 
             ≔ headers_json! = serde_json·to_string(&options.headers)·unwrap()
@@ -380,7 +380,7 @@ invoke tome·core·events·{Event, EventDelegator, EventType};
                 status: result.1,
                 status_text: result.2,
                 headers: serde_json·from_str(&result.3)·unwrap_or_default(),
-                body: result.4
+                body_: result.4
             }
         }
     }
@@ -491,7 +491,7 @@ invoke tome·core·events·{Event, EventDelegator, EventType};
                 status: 0,
                 status_text: "Not implemented".to_string(),
                 headers: HashMap·new(),
-                body: Vec·new()
+                body_: Vec·new()
             }
         }
     }

@@ -294,7 +294,7 @@ invoke sys·*;
 
 ☉ ⊢ TcpStream {
     /// Connect to a remote address
-    ☉ rite connect(addr: &SocketAddr) -> Result<TcpStream, SocketError>! {
+    ☉ rite connect_(addr: &SocketAddr) -> Result<TcpStream, SocketError>! {
         ≔ family = ⎇ addr.ip.is_v4() { AF_INET } ⎉ { AF_INET6 };
 
         // Create socket
@@ -345,7 +345,7 @@ invoke sys·*;
     /// Read exactly `buf.len()` bytes, blocking until complete
     ☉ rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), SocketError>! {
         ≔ vary total_read: usize = 0;
-        vary remaining = buf;
+        ≔ vary remaining = buf;
 
         ⟳ total_read < buf.len() {
             ⌥ self.read(remaining) {
@@ -384,7 +384,7 @@ invoke sys·*;
     }
 
     /// Close the connection
-    ☉ rite close(&vary self) -> Result<(), SocketError>! {
+    ☉ rite close_(&vary self) -> Result<(), SocketError>! {
         ⎇ self.connected {
             sys_close(self.fd).map_err(SocketError·from_syscall)?;
             self.connected = false;
@@ -501,13 +501,13 @@ invoke sys·*;
 
         ≔ peer_addr = SocketAddr·from_raw(&client_addr, addrlen)?;
 
-        ≔ stream = TcpStream {
+        ≔ stream_ = TcpStream {
             fd: client_fd,
             peer_addr: peer_addr.clone(),
             connected: true,
         };
 
-        Ok((stream, peer_addr))
+        Ok((stream_, peer_addr))
     }
 
     /// Get the local address
@@ -596,7 +596,7 @@ invoke sys·*;
     }
 
     /// Close the socket
-    ☉ rite close(&vary self) -> Result<(), SocketError>! {
+    ☉ rite close_(&vary self) -> Result<(), SocketError>! {
         sys_close(self.fd).map_err(SocketError·from_syscall)?;
         Ok(())
     }

@@ -172,7 +172,7 @@ invoke super·super·system·*
 
         self.log·push(CombatLogEntry {
             turn: self.turn,
-            actor: CombatActor·Player,
+            actor_: CombatActor·Player,
             action: f"{fronter_name} attacks {enemy.name} for {damage} damage"~,
             timestamp: now(),
         });
@@ -181,7 +181,7 @@ invoke super·super·system·*
         ⎇ enemy.current_hp <= 0 {
             self.log·push(CombatLogEntry {
                 turn: self.turn,
-                actor: CombatActor·Player,
+                actor_: CombatActor·Player,
                 action: f"{enemy.name} is defeated!"~,
                 timestamp: now(),
             });
@@ -196,7 +196,7 @@ invoke super·super·system·*
         ≔ fronter = system·get_fronter();
 
         ≔ multiplier~ = ⌥ fronter {
-            Some(alter) => {
+            Some(alter_) => {
                 // Arousal increases damage
                 ≔ arousal_mod = 1.0 + alter.anima.arousal * 0.3;
 
@@ -226,7 +226,7 @@ invoke super·super·system·*
 
         self.log·push(CombatLogEntry {
             turn: self.turn,
-            actor: CombatActor·Player,
+            actor_: CombatActor·Player,
             action: "Player takes a defensive stance"·to_string()~,
             timestamp: now(),
         });
@@ -247,7 +247,7 @@ invoke super·super·system·*
                 ⎇ !has_ability {
                     self.log·push(CombatLogEntry {
                         turn: self.turn,
-                        actor: CombatActor·Player,
+                        actor_: CombatActor·Player,
                         action: f"Current fronter cannot use {ability_id}"~,
                         timestamp: now(),
                     });
@@ -260,7 +260,7 @@ invoke super·super·system·*
             None? => {
                 self.log·push(CombatLogEntry {
                     turn: self.turn,
-                    actor: CombatActor·Player,
+                    actor_: CombatActor·Player,
                     action: f"Unknown ability: {ability_id}"~,
                     timestamp: now(),
                 });
@@ -274,7 +274,7 @@ invoke super·super·system·*
         ⎇ self.switch_cooldown > 0 {
             self.log·push(CombatLogEntry {
                 turn: self.turn,
-                actor: CombatActor·Player,
+                actor_: CombatActor·Player,
                 action: f"Cannot switch - {self.switch_cooldown} turns cooldown remaining"~,
                 timestamp: now(),
             });
@@ -296,7 +296,7 @@ invoke super·super·system·*
 
                 self.log·push(CombatLogEntry {
                     turn: self.turn,
-                    actor: CombatActor·Player,
+                    actor_: CombatActor·Player,
                     action: f"{fronter_name} takes the front!"~,
                     timestamp: now(),
                 });
@@ -304,7 +304,7 @@ invoke super·super·system·*
             SwitchResult·Resisted { resistance } => {
                 self.log·push(CombatLogEntry {
                     turn: self.turn,
-                    actor: CombatActor·Player,
+                    actor_: CombatActor·Player,
                     action: f"Switch resisted (resistance: {resistance:.0%})"~,
                     timestamp: now(),
                 });
@@ -312,7 +312,7 @@ invoke super·super·system·*
             SwitchResult·Failed(reason) => {
                 self.log·push(CombatLogEntry {
                     turn: self.turn,
-                    actor: CombatActor·Player,
+                    actor_: CombatActor·Player,
                     action: f"Switch failed: {reason}"~,
                     timestamp: now(),
                 });
@@ -338,14 +338,14 @@ invoke super·super·system·*
 
             self.log·push(CombatLogEntry {
                 turn: self.turn,
-                actor: CombatActor·Player,
+                actor_: CombatActor·Player,
                 action: "Successfully fled from combat!"·to_string()~,
                 timestamp: now(),
             });
         } ⎉ {
             self.log·push(CombatLogEntry {
                 turn: self.turn,
-                actor: CombatActor·Player,
+                actor_: CombatActor·Player,
                 action: "Failed to flee!"·to_string()~,
                 timestamp: now(),
             });
@@ -368,7 +368,7 @@ invoke super·super·system·*
         // Find next actor
         ≔ current_idx = self.turn_order
             |⍳  // Enumerate morpheme
-            |φ{(i, actor)| actor == &self.current_actor}
+            |φ{(i, actor_)| actor_ == &self.current_actor}
             |α  // First morpheme
             ·map(|(i, _)| i)
             ·unwrap_or(0);
@@ -417,7 +417,7 @@ invoke super·super·system·*
 
         self.log·push(CombatLogEntry {
             turn: self.turn,
-            actor: CombatActor·Enemy(enemy_idx),
+            actor_: CombatActor·Enemy(enemy_idx),
             action: f"{enemy.name} attacks for {final_damage} damage!"~,
             timestamp: now(),
         });
@@ -457,7 +457,7 @@ invoke super·super·system·*
 
                 self.log·push(CombatLogEntry {
                     turn: self.turn,
-                    actor: CombatActor·Player,
+                    actor_: CombatActor·Player,
                     action: f"{ability.name} deals {damage} damage to all enemies!"~,
                     timestamp: now(),
                 });
@@ -468,7 +468,7 @@ invoke super·super·system·*
 
                 self.log·push(CombatLogEntry {
                     turn: self.turn,
-                    actor: CombatActor·Player,
+                    actor_: CombatActor·Player,
                     action: f"{ability.name} heals for {amount} HP!"~,
                     timestamp: now(),
                 });
@@ -693,7 +693,7 @@ invoke super·super·system·*
 @[derive(Clone, Debug)]
 Σ CombatLogEntry {
     turn: usize!,
-    actor: CombatActor!,
+    actor_: CombatActor!,
     action: str~,
     timestamp: Instant!,
 }

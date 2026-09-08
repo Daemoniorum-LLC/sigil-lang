@@ -665,8 +665,8 @@ invoke HashMap
                     ·unwrap_or(false)
             },
 
-            DialogueCondition·RealityLayer(layer) => {
-                &system.reality_layer == layer
+            DialogueCondition·RealityLayer(layer_) => {
+                &system.reality_layer == layer_
             },
 
             DialogueCondition·StabilityAbove(threshold) => {
@@ -695,10 +695,10 @@ invoke HashMap
             },
 
             DialogueCondition·AnimaInRange { pleasure, arousal, dominance } => {
-                ≔ anima = &system.anima;
-                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
-                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
-                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
+                ≔ anima_ = &system.anima_;
+                anima_.pleasure >= pleasure.0 && anima_.pleasure <= pleasure.1 &&
+                anima_.arousal >= arousal.0 && anima_.arousal <= arousal.1 &&
+                anima_.dominance >= dominance.0 && anima_.dominance <= dominance.1
             },
 
             DialogueCondition·HasItem(_item_id) => true,  // Simplified
@@ -729,7 +729,7 @@ invoke HashMap
             None => ⤺ response.required_traits·is_empty(),
         };
 
-        ≔ alter = ⌥ system.alters·get(&fronter_id) {
+        ≔ alter_ = ⌥ system.alters·get(&fronter_id) {
             Some(a) => a,
             None => ⤺ response.required_traits·is_empty(),
         };
@@ -755,13 +755,13 @@ invoke HashMap
                 system.stability < *threshold
             },
             EmotionalCondition·HighArousal(threshold) => {
-                system.anima.arousal >= *threshold
+                system.anima_.arousal >= *threshold
             },
             EmotionalCondition·AnimaState { pleasure, arousal, dominance } => {
-                ≔ anima = &system.anima;
-                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
-                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
-                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
+                ≔ anima_ = &system.anima_;
+                anima_.pleasure >= pleasure.0 && anima_.pleasure <= pleasure.1 &&
+                anima_.arousal >= arousal.0 && anima_.arousal <= arousal.1 &&
+                anima_.dominance >= dominance.0 && anima_.dominance <= dominance.1
             },
             EmotionalCondition·RecentTrigger(trigger_id) => {
                 system.active_triggers |∃{t => &t.id == trigger_id}
@@ -998,8 +998,8 @@ invoke HashMap
         self
     }
 
-    rite layer_variation(mut self, layer: RealityLayer, text: &str) -> Self! {
-        self.layer_variations·insert(layer, text·to_string());
+    rite layer_variation(mut self, layer_: RealityLayer, text: &str) -> Self! {
+        self.layer_variations·insert(layer_, text·to_string());
         self
     }
 

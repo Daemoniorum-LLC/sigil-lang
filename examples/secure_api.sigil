@@ -5,40 +5,40 @@
 
 
 /// User input is always reported (untrusted).
-Σ UserInput~ {
+Σ UserInput {
     username: str,
     password: str,
     email: str,
     profile: ProfileData~,
 }
 
-Σ ProfileData~ {
+Σ ProfileData {
     display_name: str,
     bio: str,
     website: str,
 }
 
 /// Validated user data is known (trusted).
-Σ ValidatedUser! {
+Σ ValidatedUser {
     username: str!,
     password_hash: str!,
     email: str!,
     profile: ValidatedProfile!,
 }
 
-Σ ValidatedProfile! {
+Σ ValidatedProfile {
     display_name: str!,
     bio: str!,
     website: Option<Url!>,
 }
 
 /// SQL query - must be known to prevent injection.
-Σ SafeQuery! {
+Σ SafeQuery {
     query: str!,
     params: [SqlParam!],
 }
 
-ᛈ SqlParam! {
+ᛈ SqlParam {
     Int(i64!),
     Str(str!),
     Null,

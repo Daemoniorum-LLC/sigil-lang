@@ -424,7 +424,7 @@ type AudioManager = Σ {
     // ========================================================================
 
     /// Update reality layer (affects audio processing)
-    ☉ rite set_reality_layer(mut self, layer: RealityLayer) {
+    ☉ rite set_reality_layer(mut self, layer_: RealityLayer) {
         self.reality_layer = layer·clone();
 
         // Update distortion level based on layer
@@ -631,9 +631,9 @@ type AudioManager = Σ {
         ⌥ event {
             GameEvent·AlterSwitch { from, to } => {
                 self·play_sfx("switch_whoosh");
-                self.voice_system·on_alter_switch(to);
+                self.voice_system·on_alter_switch(to_);
             },
-            GameEvent·RealityShift { from, to } => {
+            GameEvent·RealityShift { from, to_ } => {
                 self·set_reality_layer(to·clone());
                 self·play_sfx("reality_tear");
             },

@@ -43,8 +43,8 @@ invoke Duration
     }
 
     //! Blend multiple anima states by weight
-    rite blend(states: &[(AnimaState, f32)]) -> Self~ {
-        ≔ total_weight! = states
+    rite blend(states_: &[(AnimaState, f32)]) -> Self~ {
+        ≔ total_weight! = states_
             |τ{(_, w)| *w}
             |ρ+;  // Sum reduction
 
@@ -298,7 +298,7 @@ invoke Duration
     fronting: FrontingState!,
 
     /// System-wide blended emotional state - REPORTED, estimation
-    anima: AnimaState~,
+    anima_: AnimaState~,
 
     /// Current reality perception layer
     reality_layer: RealityLayer!,
@@ -307,7 +307,7 @@ invoke Duration
     active_triggers: Vec<Trigger>~,
 
     /// Headspace state
-    headspace: HeadspaceState!,
+    headspace_: HeadspaceState!,
 
     /// System dissociation level (0-1)
     dissociation: f32!,
@@ -323,18 +323,18 @@ invoke Duration
             name,
             alters: {}!,
             fronting: FrontingState·None,
-            anima: AnimaState·default()~,
+            anima_: AnimaState·default()~,
             reality_layer: RealityLayer·Grounded,
             active_triggers: []~,
-            headspace: HeadspaceState·default(),
+            headspace_: HeadspaceState·default(),
             dissociation: 0.0,
             stability: 1.0,
         }
     }
 
     //! Add an alter to the system
-    rite add_alter(mut self, alter: Alter) {
-        self.alters·insert(alter.id·clone(), alter);
+    rite add_alter(mut self, alter_: Alter) {
+        self.alters·insert(alter_.id·clone(), alter_);
     }
 
     //! Get the currently fronting alter(s)
@@ -400,14 +400,14 @@ invoke Duration
         // Set current fronter to receding
         ⌥ &self.fronting {
             FrontingState·Single(id) => {
-                ⎇ ≔ Some(alter) = self.alters·get_mut(id) {
-                    alter.state = AlterPresenceState·Receding;
+                ⎇ ≔ Some(alter_) = self.alters·get_mut(id) {
+                    alter_.state = AlterPresenceState·Receding;
                 }
             },
             FrontingState·Blended(ids) => {
                 ids·iter()·for_each{id => {
-                    ⎇ ≔ Some(alter) = self.alters·get_mut(id) {
-                        alter.state = AlterPresenceState·Receding;
+                    ⎇ ≔ Some(alter_) = self.alters·get_mut(id) {
+                        alter_.state = AlterPresenceState·Receding;
                     }
                 }};
             },
@@ -424,7 +424,7 @@ invoke Duration
     }
 
     //! Process a trigger
-    rite process_trigger(mut self, trigger: Trigger) -> TriggerResult! {
+    rite process_trigger(mut self, trigger_: Trigger) -> TriggerResult! {
         // Find alters sensitive to this trigger
         ≔ affected~ = self.alters·values()
             |φ{alter => alter.triggers·iter()·any{t => t == &trigger.id}}
@@ -441,9 +441,9 @@ invoke Duration
                 |σ.anima.arousal  // Sort by arousal
                 |ω;  // Get last (highest)
 
-            ⎇ ≔ Some(alter) = most_affected {
-                alter.state = AlterPresenceState·Triggered;
-                ⤺ TriggerResult·ForcedSwitch(alter.id·clone());
+            ⎇ ≔ Some(alter_) = most_affected {
+                alter_.state = AlterPresenceState·Triggered;
+                ⤺ TriggerResult·ForcedSwitch(alter_.id·clone());
             }
         }
 
@@ -505,7 +505,7 @@ invoke Duration
     state: AlterPresenceState!,
 
     /// Individual anima state
-    anima: AnimaState!,
+    anima_: AnimaState!,
 
     /// Baseline arousal level
     base_arousal: f32!,
@@ -604,7 +604,7 @@ invoke Duration
 @[derive(Clone, Debug)]
 Σ PerceptionState {
     /// Current reality layer
-    layer: RealityLayer!,
+    layer_: RealityLayer!,
 
     /// Transitioning to another layer
     transitioning: bool!,
@@ -628,7 +628,7 @@ invoke Duration
 ⊢ PerceptionState {
     rite default() -> Self! {
         Self {
-            layer: RealityLayer·Grounded,
+            layer_: RealityLayer·Grounded,
             transitioning: false,
             target_layer: RealityLayer·Grounded,
             transition_progress: 0.0,
@@ -658,7 +658,7 @@ rite create_initial_system() -> PluralSystem! {
         name: "Vessel"·to_string(),
         category: AlterCategory·Council,
         state: AlterPresenceState·Fronting,
-        anima: AnimaState·new(0.0, 0.0, 0.0),
+        anima_: AnimaState·new(0.0, 0.0, 0.0),
         base_arousal: 0.0,
         base_dominance: 0.0,
         time_since_front: 0,
@@ -674,7 +674,7 @@ rite create_initial_system() -> PluralSystem! {
         name: "Warden"·to_string(),
         category: AlterCategory·Protector,
         state: AlterPresenceState·Dormant,
-        anima: AnimaState·new(0.0, 0.5, 0.8),
+        anima_: AnimaState·new(0.0, 0.5, 0.8),
         base_arousal: 0.5,
         base_dominance: 0.8,
         time_since_front: 10000,

@@ -145,7 +145,7 @@ sigil DnsHeader {
 ///
 /// "example.com" -> [7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0]
 rite encode_name(name: &str, buf: &vary [u8], offset: usize) -> usize! {
-    vary pos = offset;
+    ≔ vary pos = offset;
 
     ∀ label ∈ name.split('.') {
         ⎇ label.len() > 63 {
@@ -175,11 +175,11 @@ rite encode_name(name: &str, buf: &vary [u8], offset: usize) -> usize! {
 ///
 /// Handles compression pointers (0xC0 prefix)
 rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>! {
-    vary name = String·new();
-    vary pos = offset;
-    vary jumped = false;
-    vary max_jumps = 50;  // Prevent infinite loops
-    vary jumps = 0;
+    ≔ vary name = String·new();
+    ≔ vary pos = offset;
+    ≔ vary jumped = false;
+    ≔ vary max_jumps = 50;  // Prevent infinite loops
+    ≔ vary jumps = 0;
 
     loop {
         ⎇ pos >= buf.len() {
@@ -257,7 +257,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
     /// Reads /etc/resolv.conf on Unix systems
     ☉ rite system() -> Result<DnsResolver, DnsError>! {
         // Try to read /etc/resolv.conf
-        vary servers = Vec·new();
+        ≔ vary servers = Vec·new();
 
         // For now, fall back to well-known DNS servers
         // Full implementation would parse resolv.conf
@@ -289,7 +289,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
 
     /// Create resolver with custom DNS servers
     ☉ rite new(server_addrs: &[&str]) -> Result<DnsResolver, DnsError>! {
-        vary servers = Vec·new();
+        ≔ vary servers = Vec·new();
 
         ∀ addr_str ∈ server_addrs {
             // Append :53 ⎇ no port specified
@@ -356,8 +356,8 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
 
         // Build query packet
         ≔ vary query_buf: [u8; 512] = [0; 512];
-        ≔ header = DnsHeader·new_query(id);
-        vary pos = header.encode(&vary query_buf);
+        ≔ header_ = DnsHeader·new_query(id);
+        ≔ vary pos = header_.encode(&vary query_buf);
 
         // Encode question section
         pos = encode_name(hostname, &vary query_buf, pos);
@@ -419,7 +419,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
     /// Parse DNS response packet
     rite parse_response(&self, buf: &[u8], expected_id: u16, qtype: u16) -> Result<Vec<IpAddr>, DnsError>! {
         // Parse header
-        ≔ header = DnsHeader·decode(buf)?;
+        ≔ header_ = DnsHeader·decode(buf)?;
 
         // Verify response
         ⎇ header.id != expected_id {
@@ -450,7 +450,7 @@ rite decode_name(buf: &[u8], offset: usize) -> Result<(String, usize), DnsError>
         }
 
         // Parse answer section
-        vary addresses = Vec·new();
+        ≔ vary addresses = Vec·new();
 
         ∀ _ ∈ 0..header.ancount {
             // Skip name

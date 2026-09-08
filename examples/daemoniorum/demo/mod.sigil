@@ -156,9 +156,9 @@ type DemoStats = Σ {
     }
 
     /// Record reality layer seen
-    ☉ rite record_reality_layer(mut self, layer: RealityLayer) {
-        ⎇ !self.stats.reality_layers_seen·contains(&layer) {
-            self.stats.reality_layers_seen·push(layer);
+    ☉ rite record_reality_layer(mut self, layer_: RealityLayer) {
+        ⎇ !self.stats.reality_layers_seen·contains(&layer_) {
+            self.stats.reality_layers_seen·push(layer_);
         }
     }
 }
@@ -415,7 +415,7 @@ type DemoController = Σ {
             (RealityLayer·Fractured, 1) => RealityLayer·Shattered,
             (RealityLayer·Shattered, -1) => RealityLayer·Fractured,
             (RealityLayer·Fractured, -1) => RealityLayer·Grounded,
-            (layer, _) => layer,
+            (layer_, _) => layer_,
         };
 
         self.system.reality_layer = new_layer·clone();

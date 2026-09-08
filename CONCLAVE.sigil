@@ -38,7 +38,7 @@ acolyte : Reflecting {
         ]!,
         next_steps: []~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.7~, arousal: 0.4~, dominance: 0.6~,
         stability: 0.8~, expressiveness: 0.7~, susceptibility: 0.5~,
     },
@@ -88,7 +88,7 @@ acolyte : Reflecting {
             "Consider native f64 storage (currently still stores as i64 bits)",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.9~, arousal: 0.5~, dominance: 0.8~,
         stability: 0.9~, expressiveness: 0.7~, susceptibility: 0.4~,
     },
@@ -132,7 +132,7 @@ acolyte : Reflecting {
             "Consider native f64 storage (larger refactor)",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.85~, arousal: 0.5~, dominance: 0.8~,
         stability: 0.9~, expressiveness: 0.6~, susceptibility: 0.4~,
     },
@@ -187,7 +187,7 @@ acolyte : Reflecting {
             "LLVM optimization roadmap complete - all 4 phases implemented",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.9~, arousal: 0.5~, dominance: 0.85~,
         stability: 0.9~, expressiveness: 0.6~, susceptibility: 0.4~,
     },
@@ -234,7 +234,7 @@ acolyte : Reflecting {
             "Profile complex loops to find remaining vectorization opportunities",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.95~, arousal: 0.6~, dominance: 0.9~,
         stability: 0.9~, expressiveness: 0.8~, susceptibility: 0.4~,
     },
@@ -282,7 +282,7 @@ acolyte : Reflecting {
             "Full workspace testing once parser issues resolved",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.75~, arousal: 0.4~, dominance: 0.7~,
         stability: 0.85~, expressiveness: 0.6~, susceptibility: 0.4~,
     },
@@ -334,7 +334,7 @@ acolyte : Reflecting {
             "Test with real text data (not synthetic)",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.85~, arousal: 0.5~, dominance: 0.75~,
         stability: 0.85~, expressiveness: 0.7~, susceptibility: 0.5~,
     },
@@ -381,7 +381,7 @@ acolyte : Reflecting {
             "Check monomorphization of nested method calls",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.5~, arousal: 0.5~, dominance: 0.5~,
         stability: 0.6~, expressiveness: 0.7~, susceptibility: 0.5~,
     },
@@ -431,7 +431,7 @@ acolyte : Reflecting {
             "Then: Morgoth Phase E (AOT native binary)",
         ]~,
     },
-    anima: AnimaState {
+    anima_: AnimaState {
         pleasure: 0.9~, arousal: 0.5~, dominance: 0.8~,
         stability: 0.9~, expressiveness: 0.7~, susceptibility: 0.4~,
     },

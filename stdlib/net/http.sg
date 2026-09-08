@@ -28,16 +28,16 @@ invoke dns·{DnsResolver, DnsError};
 ☉ ⊢ Url {
     /// Parse a URL string
     ☉ rite parse(s: &str) -> Result<Url, HttpError>! {
-        vary scheme = "http".to_string();
-        vary host = String·new();
+        ≔ vary scheme = "http".to_string();
+        ≔ vary host = String·new();
         ≔ vary port: u16 = 80;
-        vary path = "/".to_string();
+        ≔ vary path = "/".to_string();
         ≔ vary query: String? = None;
         ≔ vary fragment: String? = None;
         ≔ vary username: String? = None;
         ≔ vary password: String? = None;
 
-        vary remaining = s;
+        ≔ vary remaining = s;
 
         // Extract scheme
         ⎇ ≔ Some(idx) = remaining.find("://") {
@@ -168,19 +168,19 @@ invoke dns·{DnsResolver, DnsError};
     method: HttpMethod!,
     url: Url!,
     headers: Vec<(String, String)>!,
-    body: Vec<u8>?,
+    body_: Vec<u8>?,
 }
 
 ☉ sigil HttpResponse {
     status: u16!,
     status_text: String!,
     headers: Vec<(String, String)>!,
-    body: Vec<u8>!,
+    body_: Vec<u8>!,
 }
 
 ☉ ⊢ HttpResponse {
     /// Get header value (case-insensitive)
-    ☉ rite header(&self, name: &str) -> Option<&str>? {
+    ☉ rite header_(&self, name: &str) -> Option<&str>? {
         ≔ lower_name = name.to_lowercase();
         ∀ (k, v) ∈ &self.headers {
             ⎇ k.to_lowercase() == lower_name {
@@ -279,19 +279,19 @@ invoke dns·{DnsResolver, DnsError};
             method: HttpMethod·GET,
             url: parsed_url,
             headers: Vec·new(),
-            body: None,
+            body_: None,
         };
         self.request(&request)
     }
 
     /// Simple POST request
-    ☉ rite post(&self, url: &str, body: &[u8]) -> Result<HttpResponse, HttpError>! {
+    ☉ rite post(&self, url: &str, body_: &[u8]) -> Result<HttpResponse, HttpError>! {
         ≔ parsed_url = Url·parse(url)?;
         ≔ request = HttpRequest {
             method: HttpMethod·POST,
             url: parsed_url,
             headers: Vec·new(),
-            body: Some(body.to_vec()),
+            body_: Some(body_.to_vec()),
         };
         self.request(&request)
     }
@@ -299,14 +299,14 @@ invoke dns·{DnsResolver, DnsError};
     /// POST with JSON content type
     ☉ rite post_json(&self, url: &str, json: &str) -> Result<HttpResponse, HttpError>! {
         ≔ parsed_url = Url·parse(url)?;
-        vary headers = Vec·new();
+        ≔ vary headers = Vec·new();
         headers.push(("Content-Type".to_string(), "application/json".to_string()));
 
         ≔ request = HttpRequest {
             method: HttpMethod·POST,
             url: parsed_url,
             headers,
-            body: Some(json.as_bytes().to_vec()),
+            body_: Some(json.as_bytes().to_vec()),
         };
         self.request(&request)
     }
@@ -323,7 +323,7 @@ invoke dns·{DnsResolver, DnsError};
         }
 
         // Resolve hostname
-        vary resolver = DnsResolver·system()
+        ≔ vary resolver = DnsResolver·system()
             .map_err(|e| HttpError·DnsResolutionFailed { hostname: req.url.host.clone() })?;
 
         ≔ ip = resolver.resolve(&req.url.host)
@@ -341,12 +341,12 @@ invoke dns·{DnsResolver, DnsError};
 
         // Handle redirects
         ⎇ response.is_redirect() {
-            ⎇ ≔ Some(location) = response.header("Location") {
+            ⎇ ≔ Some(location_) = response.header("Location") {
                 ≔ new_url = ⎇ location.starts_with("http") {
-                    Url·parse(location)?
+                    Url·parse(location_)?
                 } ⎉ {
                     // Relative URL
-                    vary new = req.url.clone();
+                    ≔ vary new = req.url.clone();
                     new.path = location.to_string();
                     new
                 };
@@ -355,7 +355,7 @@ invoke dns·{DnsResolver, DnsError};
                     method: HttpMethod·GET,  // Redirects are always GET
                     url: new_url,
                     headers: req.headers.clone(),
-                    body: None,
+                    body_: None,
                 };
 
                 ret self.request_with_redirects(&new_req, redirects + 1);
@@ -367,7 +367,7 @@ invoke dns·{DnsResolver, DnsError};
 
     /// HTTP request over plain TCP
     rite request_http(&self, req: &HttpRequest, addr: &SocketAddr) -> Result<HttpResponse, HttpError>! {
-        vary stream = TcpStream·connect(addr)
+        ≔ vary stream = TcpStream·connect(addr)
             .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
 
         // Build and send request
@@ -384,7 +384,7 @@ invoke dns·{DnsResolver, DnsError};
         ≔ tcp = TcpStream·connect(addr)
             .map_err(|e| HttpError·ConnectionFailed { inner: e })?;
 
-        vary tls = TlsStream·connect(tcp, &req.url.host)
+        ≔ vary tls = TlsStream·connect(tcp, &req.url.host)
             .map_err(|e| HttpError·TlsFailed { inner: e })?;
 
         // Build and send request
@@ -398,7 +398,7 @@ invoke dns·{DnsResolver, DnsError};
 
     /// Build HTTP request bytes
     rite build_request(&self, req: &HttpRequest) -> Vec<u8>! {
-        vary buf = String·new();
+        ≔ vary buf = String·new();
 
         // Request line
         buf.push_str(&format!("{} {} HTTP/1.1\r\n", req.method, req.url.full_path()));
@@ -415,7 +415,7 @@ invoke dns·{DnsResolver, DnsError};
         }
 
         // Content-Length ∀ body
-        ⎇ ≔ Some(body) = &req.body {
+        ⎇ ≔ Some(body_) = &req.body_ {
             buf.push_str(&format!("Content-Length: {}\r\n", body.len()));
         }
 
@@ -428,20 +428,20 @@ invoke dns·{DnsResolver, DnsError};
         // End of headers
         buf.push_str("\r\n");
 
-        vary bytes = buf.into_bytes();
+        ≔ vary bytes = buf.into_bytes();
 
         // Append body
-        ⎇ ≔ Some(body) = &req.body {
-            bytes.extend_from_slice(body);
+        ⎇ ≔ Some(body_) = &req.body_ {
+            bytes.extend_from_slice(body_);
         }
 
         bytes
     }
 
     /// Read HTTP response from TCP stream
-    rite read_response(&self, stream: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
+    rite read_response(&self, stream_: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
         ≔ vary buf: [u8; 8192] = [0; 8192];
-        vary data = Vec·new();
+        ≔ vary data = Vec·new();
 
         // Read until we have headers
         loop {
@@ -461,16 +461,16 @@ invoke dns·{DnsResolver, DnsError};
             }
         }
 
-        self.parse_response(&data, stream)
+        self.parse_response(&data, stream_)
     }
 
     /// Read HTTP response from TLS stream
-    rite read_response_tls(&self, stream: &vary TlsStream) -> Result<HttpResponse, HttpError>! {
+    rite read_response_tls(&self, stream_: &vary TlsStream) -> Result<HttpResponse, HttpError>! {
         ≔ vary buf: [u8; 8192] = [0; 8192];
-        vary data = Vec·new();
+        ≔ vary data = Vec·new();
 
         loop {
-            ⌥ stream.read(&vary buf) {
+            ⌥ stream_.read(&vary buf) {
                 Result·Ok(0) => break,
                 Result·Ok(n) => {
                     data.extend_from_slice(&buf[..n]);
@@ -528,7 +528,7 @@ invoke dns·{DnsResolver, DnsError};
         };
 
         // Parse headers
-        vary headers = Vec·new();
+        ≔ vary headers = Vec·new();
         ∀ line ∈ &lines[1..] {
             ⎇ ≔ Some(colon) = line.find(':') {
                 ≔ name = line[..colon].trim().to_string();
@@ -538,18 +538,18 @@ invoke dns·{DnsResolver, DnsError};
         }
 
         // Body is after header boundary + 4 bytes ∀ \r\n\r\n
-        ≔ body = data[header_end + 4..].to_vec();
+        ≔ body_ = data[header_end + 4..].to_vec();
 
         Ok(HttpResponse {
             status,
             status_text,
             headers,
-            body,
+            body_,
         })
     }
 
     /// Parse response with potential chunked encoding
-    rite parse_response(&self, data: &[u8], stream: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
+    rite parse_response(&self, data: &[u8], stream_: &vary TcpStream) -> Result<HttpResponse, HttpError>! {
         // Simplified ∀ now - invoke parse_response_simple
         self.parse_response_simple(data)
     }

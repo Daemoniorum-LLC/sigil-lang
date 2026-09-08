@@ -1137,8 +1137,8 @@ invoke tome·span·Span;
         }
 
         // Check body
-        ⎇ ≔ ?body = func.body {
-            ≔ body_type = self.check_block(body);
+        ⎇ ≔ ?body_ = func.body_ {
+            ≔ body_type = self.check_block(body_);
 
             // Check ⤺ type
             ≔ expected_⤺ = ⌥ func.return_type {
@@ -1517,21 +1517,21 @@ invoke tome·span·Span;
 
             Expr·While { .. } => {
                 ≔ condition = expr.condition;
-                ≔ body = expr.body;
+                ≔ body_ = expr.body_;
                 ≔ cond_ty = self.infer_expr(*condition);
                 ⎇ !self.unify(Type·Bool, cond_ty) {
                     self.error(TypeError·new("⟳ condition must be bool"));
                 }
-                self.check_block(body);
+                self.check_block(body_);
                 Type·Unit
             },
 
             Expr·For { .. } => {
                 ≔ iter = expr.iter;
-                ≔ body = expr.body;
+                ≔ body_ = expr.body_;
                 ≔ iter_ty = self.infer_expr(*iter);
                 // TODO: extract element type from iterator
-                self.check_block(body);
+                self.check_block(body_);
                 Type·Unit
             },
 
@@ -1890,7 +1890,7 @@ invoke tome·span·Span;
                 }
             },
 
-            Expr·Closure { params, body, .. } => {
+            Expr·Closure { params, body_, .. } => {
                 self.push_scope();
 
                 // Create param types
@@ -2262,7 +2262,7 @@ invoke tome·span·Span;
             },
 
             // Named operation
-            PipeOp·Named { prefix, body: _ } => {
+            PipeOp·Named { prefix, body_: _ } => {
                 ⎇ ≔ ?first = prefix.first() {
                     ⌥ first.name {
                         "sum" | "product" => {

@@ -565,7 +565,7 @@ invoke tome·token·Token;
         ≔ where_clainvoke = self.parse_where_clause_opt()?;
 
         // Parse body (or optional semicolon ∀ declarations)
-        ≔ body = ⎇ self.check(&Token·LBrace) {
+        ≔ body_ = ⎇ self.check(&Token·LBrace) {
             self.parse_block()?
         } ⎉ {
             // Semicolon is optional ∀ trait/⊢ method declarations
@@ -586,7 +586,7 @@ invoke tome·token·Token;
             params,
             return_type,
             where_clause,
-            body,
+            body_,
         }))
     }
 
@@ -1270,9 +1270,9 @@ invoke tome·token·Token;
             null
         };
 
-        ≔ body = self.parse_block()?;
+        ≔ body_ = self.parse_block()?;
 
-        Ok(MessageHandler { message, params, return_type, body })
+        Ok(MessageHandler { message, params, return_type, body_ })
     }
 
     /// Parse an extern block.
@@ -2837,21 +2837,21 @@ invoke tome·token·Token;
                         } ⎉ {
                             null
                         };
-                        ≔ body = self.parse_expr()?;
+                        ≔ body_ = self.parse_expr()?;
                         // Note: move is ignored ∀ now, captured vars treated same
                         Ok(Expr·Closure {
                             params,
                             return_type,
-                            body: Box·new(body),
+                            body_: Box·new(body_),
                         })
                     }
                     Token·OrOr => {
                         self.advance();
-                        ≔ body = self.parse_expr()?;
+                        ≔ body_ = self.parse_expr()?;
                         Ok(Expr·Closure {
                             params: Vec·new(),
                             return_type: null,
-                            body: Box·new(body),
+                            body_: Box·new(body_),
                         })
                     }
                     _ => Err(ParseError·unexpected("closure after move", self.current_token()!, self.current_span())),
@@ -2881,29 +2881,29 @@ invoke tome·token·Token;
                 } ⎉ {
                     null
                 };
-                ≔ body = self.parse_expr()?;
+                ≔ body_ = self.parse_expr()?;
                 Ok(Expr·Closure {
                     params,
                     return_type,
-                    body: Box·new(body),
+                    body_: Box·new(body_),
                 })
             }
             // Or pattern ∈ closures: || body (no params)
             Token·OrOr => {
                 self.advance();
-                ≔ body = self.parse_expr()?;
+                ≔ body_ = self.parse_expr()?;
                 Ok(Expr·Closure {
                     params: Vec·new(),
                     return_type: null,
-                    body: Box·new(body),
+                    body_: Box·new(body_),
                 })
             }
             Token·If => self.parse_if_expr(),
             Token·Match => self.parse_match_expr(),
             Token·Loop => {
                 self.advance();
-                ≔ body = self.parse_block()?;
-                Ok(Expr·Loop(body))
+                ≔ body_ = self.parse_block()?;
+                Ok(Expr·Loop(body_))
             }
             Token·While => {
                 self.advance();
@@ -2914,19 +2914,19 @@ invoke tome·token·Token;
                     self.in_condition = true;
                     ≔ scrutinee = self.parse_expr()?;
                     self.in_condition = false;
-                    ≔ body = self.parse_block()?;
+                    ≔ body_ = self.parse_block()?;
                     // Desugar ⟳ ≔ to loop + match
                     Ok(Expr·WhileLet {
                         pattern,
                         scrutinee: Box·new(scrutinee),
-                        body,
+                        body_,
                     })
                 } ⎉ {
                     self.in_condition = true;
                     ≔ condition = self.parse_expr()?;
                     self.in_condition = false;
-                    ≔ body = self.parse_block()?;
-                    Ok(Expr·While { condition: Box·new(condition), body })
+                    ≔ body_ = self.parse_block()?;
+                    Ok(Expr·While { condition: Box·new(condition), body_ })
                 }
             }
             Token·For => {
@@ -2936,11 +2936,11 @@ invoke tome·token·Token;
                 self.in_condition = true;
                 ≔ iter = self.parse_expr()?;
                 self.in_condition = false;
-                ≔ body = self.parse_block()?;
+                ≔ body_ = self.parse_block()?;
                 Ok(Expr·For {
                     pattern,
                     iter: Box·new(iter),
-                    body,
+                    body_,
                 })
             }
             Token·Return => {
@@ -3135,12 +3135,12 @@ invoke tome·token·Token;
             } ⎉ {
                 null
             };
-            ≔ body = self.parse_expr()?;
+            ≔ body_ = self.parse_expr()?;
             self.expect(Token·RBrace)?;
             ⤺ Ok(Expr·Closure {
                 params,
                 return_type,
-                body: Box·new(body),
+                body_: Box·new(body_),
             });
         }
 
@@ -3633,8 +3633,8 @@ invoke tome·token·Token;
                 null
             };
             self.expect(Token·FatArrow)?;
-            ≔ body = self.parse_expr()?;
-            arms.push(MatchArm { pattern, guard, body });
+            ≔ body_ = self.parse_expr()?;
+            arms.push(MatchArm { pattern, guard, body_ });
             // In Rust/Sigil, commas are optional after block-bodied ⌥ arms
             // So we try to consume a comma, but don't ⊗ ⎇ absent
             self.consume_if(&Token·Comma);
@@ -3663,12 +3663,12 @@ invoke tome·token·Token;
         self.advance();
 
         self.expect(Token·LBrace)?;
-        ≔ body = self.parse_expr()?;
+        ≔ body_ = self.parse_expr()?;
         self.expect(Token·RBrace)?;
 
         Ok(Expr·Morpheme {
             kind,
-            body: Box·new(body),
+            body_: Box·new(body_),
         })
     }
 
@@ -3769,7 +3769,7 @@ invoke tome·token·Token;
                 self.advance();
                 self.expect(Token·LBrace)?;
                 // Check ∀ closure syntax: {x => ...} or {(x)| ...}
-                ≔ body = ⎇ self.is_closure_start() {
+                ≔ body_ = ⎇ self.is_closure_start() {
                     ≔ params = self.parse_closure_params()?;
                     // Accept either => or | as closure arrow
                     ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3784,18 +3784,18 @@ invoke tome·token·Token;
                     // Parse body as block contents (handles both single expr and multi-stmt)
                     ≔ block = self.parse_block_contents()?;
                     ≔ expr = Expr·Block(block);
-                    Expr·Closure { params, return_type, body: Box·new(expr) }
+                    Expr·Closure { params, return_type, body_: Box·new(expr) }
                 } ⎉ {
                     self.parse_expr()?
                 };
                 self.expect(Token·RBrace)?;
-                Ok(PipeOp·Transform(Box·new(body)))
+                Ok(PipeOp·Transform(Box·new(body_)))
             }
             Token·Phi => {
                 self.advance();
                 self.expect(Token·LBrace)?;
                 // Check ∀ closure syntax: {x => ...} or {(x)| ...}
-                ≔ body = ⎇ self.is_closure_start() {
+                ≔ body_ = ⎇ self.is_closure_start() {
                     ≔ params = self.parse_closure_params()?;
                     // Accept either => or | as closure arrow
                     ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3810,12 +3810,12 @@ invoke tome·token·Token;
                     // Parse body as block contents (handles both single expr and multi-stmt)
                     ≔ block = self.parse_block_contents()?;
                     ≔ expr = Expr·Block(block);
-                    Expr·Closure { params, return_type, body: Box·new(expr) }
+                    Expr·Closure { params, return_type, body_: Box·new(expr) }
                 } ⎉ {
                     self.parse_expr()?
                 };
                 self.expect(Token·RBrace)?;
-                Ok(PipeOp·Filter(Box·new(body)))
+                Ok(PipeOp·Filter(Box·new(body_)))
             }
             Token·Sigma => {
                 self.advance();
@@ -3836,7 +3836,7 @@ invoke tome·token·Token;
                     Token·LBrace => {
                         self.advance();
                         // Check ∀ closure syntax: {x => ...} or {(acc, x) => ...}
-                        ≔ body = ⎇ self.is_closure_start() {
+                        ≔ body_ = ⎇ self.is_closure_start() {
                             ≔ params = self.parse_closure_params()?;
                             // Accept either => or | as closure arrow
                             ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3851,12 +3851,12 @@ invoke tome·token·Token;
                             // Parse body as block contents (handles both single expr and multi-stmt)
                             ≔ block = self.parse_block_contents()?;
                             ≔ expr = Expr·Block(block);
-                            Expr·Closure { params, return_type, body: Box·new(expr) }
+                            Expr·Closure { params, return_type, body_: Box·new(expr) }
                         } ⎉ {
                             self.parse_expr()?
                         };
                         self.expect(Token·RBrace)?;
-                        Ok(PipeOp·Reduce(Box·new(body)))
+                        Ok(PipeOp·Reduce(Box·new(body_)))
                     }
                     _ => Err(ParseError·custom("expected reduction variant after ρ")),
                 }
@@ -3956,7 +3956,7 @@ invoke tome·token·Token;
                 ⎇ self.check(&Token·LBrace) && !self.is_in_condition() {
                     self.advance();
                     // Check ∀ closure syntax: {x => ...} or {(x)| ...}
-                    ≔ body = ⎇ self.is_closure_start() {
+                    ≔ body_ = ⎇ self.is_closure_start() {
                         ≔ params = self.parse_closure_params()?;
                         // Accept either => or | as closure arrow
                         ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3971,7 +3971,7 @@ invoke tome·token·Token;
                         // Parse body as block contents (handles both single expr and multi-stmt)
                         ≔ block = self.parse_block_contents()?;
                         ≔ expr = Expr·Block(block);
-                        Expr·Closure { params, return_type, body: Box·new(expr) }
+                        Expr·Closure { params, return_type, body_: Box·new(expr) }
                     } ⎉ {
                         self.parse_expr()?
                     };
@@ -4057,8 +4057,8 @@ invoke tome·token·Token;
                         null
                     };
                     self.expect(Token·FatArrow)?;
-                    ≔ body = self.parse_expr()?;
-                    arms.push(MatchArm { pattern, guard, body });
+                    ≔ body_ = self.parse_expr()?;
+                    arms.push(MatchArm { pattern, guard, body_ });
                     self.consume_if(&Token·Comma);
                 }
                 self.expect(Token·RBrace)?;
@@ -4743,7 +4743,7 @@ invoke tome·token·Token;
             self.advance();
         }
 
-        self.expect(close)?;
+        self.expect(close_)?;
         Ok(tokens)
     }
 }

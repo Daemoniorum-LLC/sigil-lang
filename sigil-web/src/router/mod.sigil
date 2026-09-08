@@ -72,7 +72,7 @@ invoke tome·components·Context;
     /// Query parameters
     query: Query!
     /// Current location
-    location: Location!
+    location_: Location!
     /// Navigation functions
     navigate: Navigator!
 }
@@ -170,7 +170,7 @@ invoke tome·components·Context;
 /// Router context for accessing routing state
 ☉ Σ RouteContext {
     /// Current location
-    location: Location!
+    location_: Location!
     /// Current route match
     match_: Option<RouteMatch>?
     /// Navigator
@@ -181,7 +181,7 @@ invoke tome·components·Context;
 
 // Global router context
 static ROUTER_CONTEXT: Context<RouteContext> = Context·new(RouteContext {
-    location: Location·current(),
+    location_: Location·current(),
     match_: None,
     navigate: Navigator·new(),
     history: Vec·new()
@@ -201,7 +201,7 @@ static ROUTER_CONTEXT: Context<RouteContext> = Context·new(RouteContext {
 /// }
 /// ```
 ☉ rite Router(children: Vec<Route>) -> VNode! {
-    ≔ (location, set_location) = use_state(Location·current())
+    ≔ (location_, set_location) = use_state(Location·current())
     ≔ routes! = children
 
     // Listen for popstate events
@@ -215,10 +215,10 @@ static ROUTER_CONTEXT: Context<RouteContext> = Context·new(RouteContext {
     }, [])
 
     // Find matching route
-    ≔ match_result? = find_matching_route(&routes, &location.pathname)
+    ≔ match_result? = find_matching_route(&routes, &location_.pathname)
 
     ≔ context! = RouteContext {
-        location: location·clone(),
+        location_: location·clone(),
         match_: match_result·clone(),
         navigate: Navigator·new(),
         history: Vec·new()
@@ -231,7 +231,7 @@ static ROUTER_CONTEXT: Context<RouteContext> = Context·new(RouteContext {
                 ≔ props! = RouteProps {
                     params: matched.params·clone(),
                     query: location·parse_query(),
-                    location: location·clone(),
+                    location_: location·clone(),
                     navigate: Navigator·new()
                 }
                 (route.component)(props)
@@ -462,7 +462,7 @@ rite match_path(pattern: &str, pathname: &str) -> Option<Params>? {
 
 ☉ Σ LinkProps {
     /// Target path
-    to: String!
+    to_: String!
     /// Replace instead of push
     replace: bool! = false
     /// CSS class
@@ -474,7 +474,7 @@ rite match_path(pattern: &str, pathname: &str) -> Option<Params>? {
 /// NavLink - Link with active state styling
 ☉ rite NavLink(props: NavLinkProps, children: Vec<VNode>) -> VNode! {
     Link(LinkProps {
-        to: props.to,
+        to_: props.to_,
         replace: false,
         class: Some(props.class·unwrap_or("".to_string())),
         active_class: Some(props.active_class·unwrap_or("active".to_string()))
@@ -482,7 +482,7 @@ rite match_path(pattern: &str, pathname: &str) -> Option<Params>? {
 }
 
 ☉ Σ NavLinkProps {
-    to: String!
+    to_: String!
     class: Option<String>? = None
     active_class: Option<String>? = None
 }
@@ -493,9 +493,9 @@ rite match_path(pattern: &str, pathname: &str) -> Option<Params>? {
 
     use_effect(|| {
         ⎇ props.replace {
-            navigate·replace(&props.to)
+            navigate·replace(&props.to_)
         } ⎉ {
-            navigate·push(&props.to)
+            navigate·push(&props.to_)
         }
         None
     }, [props.to·clone()])
@@ -504,7 +504,7 @@ rite match_path(pattern: &str, pathname: &str) -> Option<Params>? {
 }
 
 ☉ Σ RedirectProps {
-    to: String!
+    to_: String!
     replace: bool! = false
 }
 
@@ -524,7 +524,7 @@ rite match_path(pattern: &str, pathname: &str) -> Option<Params>? {
         VNode·Fragment(VFragment·new(children))
     } ⎉ {
         Redirect(RedirectProps {
-            to: props.redirect_to·unwrap_or("/login".to_string()),
+            to_: props.redirect_to·unwrap_or("/login".to_string()),
             replace: true
         })
     }

@@ -204,7 +204,7 @@ rite get_nav_links(
 }
 
 ⊢ Theme {
-    ☉ rite css_class(&self) -> &'static str! {
+    ☉ rite css_class(&self) -> &'static str {
         ⌥ self {
             Theme·Light => "theme-light",
             Theme·Dark => "theme-dark",

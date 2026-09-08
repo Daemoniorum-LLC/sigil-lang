@@ -346,7 +346,7 @@ rite lower_function(ctx: &Δ LoweringContext, func: !Function) -> ?IrFunction {
     };
 
     // Lower body
-    ≔ body = ⌥ func.body {
+    ≔ body_ = ⌥ func.body_ {
         ?b => ?lower_block(ctx, b),
         null => null,
     };
@@ -366,7 +366,7 @@ rite lower_function(ctx: &Δ LoweringContext, func: !Function) -> ?IrFunction {
         generics,
         params,
         return_type,
-        body,
+        body_,
         attributes: [],
         is_async: func.is_async,
         span,
@@ -986,15 +986,15 @@ rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
 
         Expr·While { .. } => {
             ≔ condition = expr.condition;
-            ≔ body = expr.body;
+            ≔ body_ = expr.body_;
             ≔ ir_cond = lower_expr(ctx, *condition);
-            ≔ ir_body = lower_block(ctx, body);
+            ≔ ir_body = lower_block(ctx, body_);
 
             IrOperation·Loop {
                 variant: LoopVariant·While,
                 condition: ?Box·new(ir_cond),
                 iterator: null,
-                body: Box·new(ir_body),
+                body_: Box·new(ir_body),
                 ty: IrType·Unit,
                 evidence: IrEvidence·Known,
             }
@@ -1003,9 +1003,9 @@ rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
         Expr·For { .. } => {
             ≔ pattern = expr.pattern;
             ≔ iter = expr.iter;
-            ≔ body = expr.body;
+            ≔ body_ = expr.body_;
             ≔ ir_iter = lower_expr(ctx, *iter);
-            ≔ ir_body = lower_block(ctx, body);
+            ≔ ir_body = lower_block(ctx, body_);
             ≔ ir_pattern = lower_pattern(ctx, pattern);
 
             IrOperation·Loop {
@@ -1015,20 +1015,20 @@ rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
                     pattern: ir_pattern,
                     iterable: Box·new(ir_iter),
                 },
-                body: Box·new(ir_body),
+                body_: Box·new(ir_body),
                 ty: IrType·Unit,
                 evidence: IrEvidence·Known,
             }
         },
 
         // CG-011: Handle infinite loop expression
-        Expr·Loop(body) => {
-            ≔ ir_body = lower_block(ctx, body);
+        Expr·Loop(body_) => {
+            ≔ ir_body = lower_block(ctx, body_);
             IrOperation·Loop {
                 variant: LoopVariant·Infinite,
                 condition: null,
                 iterator: null,
-                body: Box·new(ir_body),
+                body_: Box·new(ir_body),
                 ty: IrType·Unit,
                 evidence: IrEvidence·Known,
             }
@@ -1136,7 +1136,7 @@ rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
             }
         },
 
-        Expr·Closure { params, body, .. } => {
+        Expr·Closure { params, body_, .. } => {
             // Collect parameter names to exclude from capture analysis
             ≔ Δ param_names: ![String] = [];
             ∀ p ∈ params.iter() {
@@ -1146,13 +1146,13 @@ rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
             }
 
             // Find free variables ∈ the closure body (captured from outer scope)
-            ≔ captures = find_free_variables(&*body, &param_names);
+            ≔ captures = find_free_variables(&*body_, &param_names);
             ≔ ir_params = params|τ{p => lower_param(ctx, p)}|collect();
-            ≔ ir_body = lower_expr(ctx, *body);
+            ≔ ir_body = lower_expr(ctx, *body_);
 
             IrOperation·Closure {
                 params: ir_params,
-                body: Box·new(ir_body),
+                body_: Box·new(ir_body),
                 captures,
                 ty: IrType·Infer,
                 evidence: IrEvidence·Known,
@@ -1701,7 +1701,7 @@ rite collect_free_vars(expr: &Expr, bound: &[String], free: ![String]) -> ![Stri
             }
         },
         // Closure within closure - extend bound with params, then recurse
-        Expr·Closure { params, body, .. } => {
+        Expr·Closure { params, body_, .. } => {
             ≔ Δ inner_bound: ![String] = [];
             ∀ b ∈ bound.iter() {
                 inner_bound.push(b.clone());
@@ -1709,24 +1709,24 @@ rite collect_free_vars(expr: &Expr, bound: &[String], free: ![String]) -> ![Stri
             ∀ p ∈ params.iter() {
                 inner_bound.push(p.name.clone());
             }
-            result = collect_free_vars(body, &inner_bound, result);
+            result = collect_free_vars(body_, &inner_bound, result);
         },
         // For/While loops
-        Expr·For { pattern, iter, body, .. } => {
+        Expr·For { pattern, iter, body_, .. } => {
             result = collect_free_vars(iter, bound, result);
             // Pattern bindings extend bound ∀ body
-            ∀ stmt ∈ body.stmts.iter() {
+            ∀ stmt ∈ body_.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
         },
-        Expr·While { condition, body, .. } => {
+        Expr·While { condition, body_, .. } => {
             result = collect_free_vars(condition, bound, result);
-            ∀ stmt ∈ body.stmts.iter() {
+            ∀ stmt ∈ body_.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
         },
-        Expr·Loop(body) => {
-            ∀ stmt ∈ body.stmts.iter() {
+        Expr·Loop(body_) => {
+            ∀ stmt ∈ body_.stmts.iter() {
                 result = collect_free_vars_stmt(stmt, bound, result);
             }
         },
@@ -2048,9 +2048,9 @@ rite lower_match_arm(ctx: &Δ LoweringContext, arm: !MatchArm) -> !IrMatchArm {
         ?g => ?lower_expr(ctx, g),
         null => null,
     };
-    ≔ body = lower_expr(ctx, arm.body);
+    ≔ body_ = lower_expr(ctx, arm.body_);
 
-    IrMatchArm { pattern, guard, body }
+    IrMatchArm { pattern, guard, body_ }
 }
 
 // ============================================================================
@@ -2073,48 +2073,48 @@ rite lower_pipeline(ctx: &Δ LoweringContext, input: !Expr, operations: ![PipeOp
 /// Lower a pipe operation
 rite lower_pipe_op(ctx: &Δ LoweringContext, op: !PipeOp) -> !IrPipelineStep {
     ⌥ op {
-        PipeOp·Transform(body) => IrPipelineStep·Morpheme {
+        PipeOp·Transform(body_) => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Transform,
             symbol: "τ",
-            body: ?Box·new(lower_expr(ctx, *body)),
+            body_: ?Box·new(lower_expr(ctx, *body_)),
         },
-        PipeOp·Filter(body) => IrPipelineStep·Morpheme {
+        PipeOp·Filter(body_) => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Filter,
             symbol: "φ",
-            body: ?Box·new(lower_expr(ctx, *body)),
+            body_: ?Box·new(lower_expr(ctx, *body_)),
         },
-        PipeOp·Sort(body) => IrPipelineStep·Morpheme {
+        PipeOp·Sort(body_) => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Sort,
             symbol: "σ",
-            body: ⌥ body {
+            body_: ⌥ body_ {
                 ?b => ?Box·new(lower_expr(ctx, *b)),
                 null => null,
             },
         },
-        PipeOp·Reduce(body) => IrPipelineStep·Morpheme {
+        PipeOp·Reduce(body_) => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Reduce,
             symbol: "ρ",
-            body: ?Box·new(lower_expr(ctx, *body)),
+            body_: ?Box·new(lower_expr(ctx, *body_)),
         },
         PipeOp·ReduceSum => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Sum,
             symbol: "Σ",
-            body: null,
+            body_: null,
         },
         PipeOp·ReduceProd => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Product,
             symbol: "Π",
-            body: null,
+            body_: null,
         },
         PipeOp·First => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·First,
             symbol: "α",
-            body: null,
+            body_: null,
         },
         PipeOp·Last => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Last,
             symbol: "ω",
-            body: null,
+            body_: null,
         },
         PipeOp·Method { name, args } => IrPipelineStep·Method {
             name: name.name,

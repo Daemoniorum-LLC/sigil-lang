@@ -19,7 +19,7 @@ invoke tome·layouts·{SidebarItem, TocItem, PageLink}
         ·children(vec![
             // Logo
             Link(LinkProps {
-                to: "/".to_string(),
+                to_: "/".to_string(),
                 replace: false,
                 class: Some("site-logo".to_string()),
                 active_class: None
@@ -33,31 +33,31 @@ invoke tome·layouts·{SidebarItem, TocItem, PageLink}
                 ·class("site-nav")
                 ·children(vec![
                     NavLink(NavLinkProps {
-                        to: "/docs".to_string(),
+                        to_: "/docs".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Documentation")]),
 
                     NavLink(NavLinkProps {
-                        to: "/api".to_string(),
+                        to_: "/api".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("API Reference")]),
 
                     NavLink(NavLinkProps {
-                        to: "/guides".to_string(),
+                        to_: "/guides".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Guides")]),
 
                     NavLink(NavLinkProps {
-                        to: "/examples".to_string(),
+                        to_: "/examples".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Examples")]),
 
                     NavLink(NavLinkProps {
-                        to: "/playground".to_string(),
+                        to_: "/playground".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Playground")])
@@ -179,7 +179,7 @@ rite SidebarNavItem(props: Any) -> VNode! {
                     ·build()
             } ⎉ {
                 Link(LinkProps {
-                    to: props.item.path·clone(),
+                    to_: props.item.path·clone(),
                     replace: false,
                     class: Some("sidebar-item-link".to_string()),
                     active_class: Some("sidebar-item-link--active".to_string())
@@ -230,7 +230,7 @@ rite SidebarNavItem(props: Any) -> VNode! {
                         li()
                             ·class("breadcrumb-item")
                             ·child(Link(LinkProps {
-                                to: "/".to_string(),
+                                to_: "/".to_string(),
                                 replace: false,
                                 class: Some("breadcrumb-link".to_string()),
                                 active_class: None
@@ -255,7 +255,7 @@ rite SidebarNavItem(props: Any) -> VNode! {
                                         span()·class("breadcrumb-current")·text(&title)·build()
                                     } ⎉ {
                                         Link(LinkProps {
-                                            to: path_acc·clone(),
+                                            to_: path_acc·clone(),
                                             replace: false,
                                             class: Some("breadcrumb-link".to_string()),
                                             active_class: None
@@ -354,7 +354,7 @@ rite TocLink(props: Any) -> VNode! {
             when(props.prev·is_some(), || {
                 ≔ prev! = props.prev·clone()·unwrap()
                 Link(LinkProps {
-                    to: prev.path,
+                    to_: prev.path,
                     replace: false,
                     class: Some("page-nav-link page-nav-prev".to_string()),
                     active_class: None
@@ -373,7 +373,7 @@ rite TocLink(props: Any) -> VNode! {
             when(props.next·is_some(), || {
                 ≔ next! = props.next·clone()·unwrap()
                 Link(LinkProps {
-                    to: next.path,
+                    to_: next.path,
                     replace: false,
                     class: Some("page-nav-link page-nav-next".to_string()),
                     active_class: None
@@ -483,7 +483,7 @@ rite FooterColumn(props: Any) -> VNode! {
                                         a()·attr("href", url)·attr("target", "_blank")·text(label)·build()
                                     } ⎉ {
                                         Link(LinkProps {
-                                            to: url.to_string(),
+                                            to_: url.to_string(),
                                             replace: false,
                                             class: None,
                                             active_class: None
@@ -623,7 +623,7 @@ rite SocialLink(props: Any) -> VNode! {
 }
 
 ⊢ CalloutVariant {
-    rite to_string(&self) -> &'static str! {
+    rite to_string(&self) -> &'static str {
         ⌥ self {
             CalloutVariant·Note => "note",
             CalloutVariant·Tip => "tip",
@@ -638,7 +638,7 @@ rite SocialLink(props: Any) -> VNode! {
 ☉ rite Card(props: CardProps) -> VNode! {
     ≔ wrapper! = ⎇ props.href·is_some() {
         Link(LinkProps {
-            to: props.href·clone()·unwrap(),
+            to_: props.href·clone()·unwrap(),
             replace: false,
             class: Some("card card--clickable".to_string()),
             active_class: None

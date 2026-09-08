@@ -441,8 +441,8 @@ type PresenceState = Σ {
 
     /// Update presence sounds for alters
     rite update_presence_sounds(mut self, system: &PluralSystem) {
-        ∀ (id, alter) ∈ &system.alters {
-            ≔ should_play = matches!(alter.state, AlterState·Stirring { .. } | AlterState·Triggered { .. });
+        ∀ (id, alter_) ∈ &system.alters {
+            ≔ should_play = matches!(alter_.state, AlterState·Stirring { .. } | AlterState·Triggered { .. });
 
             ≔ current = self.presence_states·get(id);
             ≔ is_active = current·map(|p| p.active)·unwrap_or(false);
@@ -487,7 +487,7 @@ type PresenceState = Σ {
 
         // Find alters that might interject
         ≔ candidates: Vec<_> = system.alters·iter()
-            ·filter(|(id, alter)| {
+            ·filter(|(id, alter_)| {
                 // Not fronting
                 system.fronting·as_ref() != Some(id) &&
                 // Not the last one to interject
@@ -503,10 +503,10 @@ type PresenceState = Σ {
         }
 
         // Pick random candidate
-        ≔ (alter_id, alter) = candidates[random·<usize>() % candidates·len()];
+        ≔ (alter_id, alter_) = candidates[random·<usize>() % candidates·len()];
 
         // Determine interjection type based on state
-        ≔ line_id = self·select_interjection(alter_id, alter);
+        ≔ line_id = self·select_interjection(alter_id, alter_);
 
         ⎇ ≔ Some(line) = line_id {
             self.requests·push(VoiceRequest·PlayAlterVoice(
@@ -518,8 +518,8 @@ type PresenceState = Σ {
     }
 
     /// Select appropriate interjection for alter
-    rite select_interjection(self, alter_id: &str, alter: &Alter) -> Option<&'static str>? {
-        ≔ emotion = alter.anima.get_dominant_emotion();
+    rite select_interjection(self, alter_id: &str, alter_: &Alter) -> Option<&'static str>? {
+        ≔ emotion = alter_.anima.get_dominant_emotion();
 
         ⌥ (alter_id, emotion·as_deref()) {
             ("abaddon", Some("anger")) => Some("interject_abaddon_anger"),

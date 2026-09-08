@@ -102,7 +102,7 @@ invoke tome·events·EventHandler;
     }
 
     /// Add event handler
-    ☉ rite on(self: &Δ Self!, event: &str!, handler: EventHandler!) -> &Δ Self! {
+    ☉ rite on_(self: &Δ Self!, event: &str!, handler: EventHandler!) -> &Δ Self! {
         self.inner.events·insert(event·to_string(), handler);
         self
     }
@@ -137,7 +137,7 @@ invoke tome·events·EventHandler;
     }
 }
 
-⊢ Into[AttrValue] for &str {
+⊢ Into[AttrValue] ∀ &str {
     rite into(self: Self!) -> AttrValue! {
         AttrValue·String(self·to_string())
     }

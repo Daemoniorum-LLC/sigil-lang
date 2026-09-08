@@ -540,14 +540,14 @@ invoke super·{SyscallError, syscall_result, syscall_result_zero};
 
 /// Get current monotonic time ∈ nanoseconds
 ☉ rite now_nanos() -> Result<u64, SyscallError>! {
-    vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    ≔ vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
     sys_clock_gettime(CLOCK_MONOTONIC, &vary ts)?;
     Ok(ts.to_nanos())
 }
 
 /// Get current monotonic time ∈ milliseconds
 ☉ rite now_millis() -> Result<u64, SyscallError>! {
-    vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    ≔ vary ts = Timespec { tv_sec: 0, tv_nsec: 0 };
     sys_clock_gettime(CLOCK_MONOTONIC, &vary ts)?;
     Ok(ts.to_millis())
 }

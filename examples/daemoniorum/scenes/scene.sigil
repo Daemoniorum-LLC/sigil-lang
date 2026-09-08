@@ -54,8 +54,8 @@ invoke HashMap
 
 ⊢ LayeredDescription {
     //! Get description for current reality layer
-    rite for_layer(self, layer: RealityLayer) -> String~ {
-        ⌥ layer {
+    rite for_layer(self, layer_: RealityLayer) -> String~ {
+        ⌥ layer_ {
             RealityLayer·Grounded => self.grounded·clone()~,
             RealityLayer·Fractured => self.fractured·clone()~,
             RealityLayer·Shattered => self.shattered·clone()~,
@@ -271,8 +271,8 @@ invoke HashMap
                     _ => false,
                 }
             },
-            DiscoveryCondition·RealityLayer(layer) => {
-                &system.reality_layer == layer
+            DiscoveryCondition·RealityLayer(layer_) => {
+                &system.reality_layer == layer_
             },
             DiscoveryCondition·FlagSet(_flag) => {
                 true  // Would check game flags
@@ -299,7 +299,7 @@ invoke HashMap
                     _ => false,
                 }
             },
-            LockCondition·RequiresReality(layer) => &system.reality_layer == layer,
+            LockCondition·RequiresReality(layer_) => &system.reality_layer == layer_,
             LockCondition·RequiresInsight(_level) => true,
             LockCondition·CombatCleared(_encounter) => false,  // Would check combat state
         }

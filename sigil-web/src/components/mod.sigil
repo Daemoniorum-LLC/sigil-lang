@@ -34,7 +34,7 @@ invoke tome·hooks·{HookState, use_hook_context};
     }
 
     /// Get display name for debugging
-    rite display_name() -> &'static str! {
+    rite display_name() -> &'static str {
         std·any·type_name·<Self>()
     }
 }

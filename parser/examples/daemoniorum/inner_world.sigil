@@ -58,7 +58,7 @@ invoke daemoniorum·anima·AnimaState;
         ],
 
         hazards: [
-            Hazard·forbidden_knowledge(trigger: "curiosity", damage: 0.1),
+            Hazard·forbidden_knowledge(trigger_: "curiosity", damage: 0.1),
         ],
 
         /// Search the library for specific knowledge
@@ -82,15 +82,15 @@ invoke daemoniorum·anima·AnimaState;
         ],
 
         /// Meditate to recover stability
-        rite meditate(alter: Alter, duration: Duration) -> RecoveryResult@! {
+        rite meditate(alter_: Alter, duration: Duration) -> RecoveryResult@! {
             ≔ base_recovery = duration.as_minutes() * 0.01;
-            ≔ bonus = ⎇ alter.preferred_reality == RealityLayer·Grounded {
+            ≔ bonus = ⎇ alter_.preferred_reality == RealityLayer·Grounded {
                 0.1
             } ⎉ {
                 0.0
             };
-            alter.stability += base_recovery + bonus;
-            RecoveryResult·Success(alter.stability)
+            alter_.stability += base_recovery + bonus;
+            RecoveryResult·Success(alter_.stability)
         }
     }
 
@@ -107,11 +107,11 @@ invoke daemoniorum·anima·AnimaState;
         ],
 
         /// Prepare for combat
-        rite arm(alter: Alter) -> CombatReadiness@! {
-            requires alter.category == AlterCategory·Council;
+        rite arm(alter_: Alter) -> CombatReadiness@! {
+            requires alter_.category == AlterCategory·Council;
 
-            ≔ weapons = self.select_weapons(alter);
-            ≔ armor = self.forge_armor(alter.anima);
+            ≔ weapons = self.select_weapons(alter_);
+            ≔ armor = self.forge_armor(alter_.anima);
 
             CombatReadiness·new(weapons, armor)
         }
@@ -172,13 +172,13 @@ invoke daemoniorum·anima·AnimaState;
         ],
 
         /// Only trauma holders should venture here
-        rite descend(alter: Alter) -> DescentResult@‽ {
-            requires alter.category == AlterCategory·TraumaHolder;
+        rite descend(alter_: Alter) -> DescentResult@‽ {
+            requires alter_.category == AlterCategory·TraumaHolder;
 
-            ≔ tether = system.create_tether(alter);
+            ≔ tether = system.create_tether(alter_);
             ≔ depth = self.measure_depth();
 
-            ⎇ depth > alter.capacity {
+            ⎇ depth > alter_.capacity {
                 ⤺ DescentResult·TooDeep;
             }
 
@@ -191,14 +191,14 @@ invoke daemoniorum·anima·AnimaState;
     // ========================================================================
 
     /// Navigate between locations
-    rite navigate(from: Location, to: Location) -> NavigationResult@? {
+    rite navigate(from_: Location, to_: Location) -> NavigationResult@? {
         // Check if path exists
-        ≔ path = self.find_path(from, to)?;
+        ≔ path = self.find_path(from_, to_)?;
 
         // Check if all streams are unlocked
-        ∀ stream ∈ path.streams() {
-            ⎇ stream.locked {
-                ⤺ NavigationResult·Blocked(stream);
+        ∀ stream_ ∈ path.streams() {
+            ⎇ stream_.locked {
+                ⤺ NavigationResult·Blocked(stream_);
             }
         }
 
@@ -209,12 +209,12 @@ invoke daemoniorum·anima·AnimaState;
         }
 
         // Perform navigation
-        ∀ location ∈ path.locations() {
-            self.enter(location);
-            location.on_enter(system.current_fronter())?;
+        ∀ location_ ∈ path.locations() {
+            self.enter(location_);
+            location_.on_enter(system.current_fronter())?;
         }
 
-        NavigationResult·Arrived(to)
+        NavigationResult·Arrived(to_)
     }
 
     /// Emergency evacuation to Citadel
@@ -225,8 +225,8 @@ invoke daemoniorum·anima·AnimaState;
         ≔ escape_path = self.find_emergency_exit(current, Citadel)?;
 
         // Force navigation, ignoring some hazards
-        ∀ location ∈ escape_path {
-            self.force_transit(location);
+        ∀ location_ ∈ escape_path {
+            self.force_transit(location_);
         }
 
         Citadel.lockdown();
@@ -254,9 +254,9 @@ location MemoryVault: Sanctuary {
         requires memory.processed;
 
         ≔ crystal = self.crystallize(memory);
-        ≔ location = self.find_slot(crystal.size);
+        ≔ location_ = self.find_slot(crystal.size);
 
-        location.place(crystal, protection);
+        location_.place(crystal, protection);
         StorageResult·Stored(crystal.id)
     }
 

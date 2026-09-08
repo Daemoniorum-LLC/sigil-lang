@@ -30,9 +30,9 @@ invoke daemoniorum·anima·{AnimaState, PAD};
         Trigger·system_endangered(0.9),
     ],
 
-    anima: Any,
+    anima_: Any,
 
-    states: {
+    states_: {
         Dormant -> Stirring: on Trigger·threat_detected where threat > 0.5,
         Stirring -> Emerging: on Trigger·combat_initiated,
         Emerging -> Fronting: on system.request_front(urgency: 0.8),
@@ -82,9 +82,9 @@ invoke daemoniorum·anima·{AnimaState, PAD};
         Trigger·pattern_detected(0.4),
     ],
 
-    anima: Any,
+    anima_: Any,
 
-    states: Any,
+    states_: Any,
 
     /// Analyze an entity or object
     rite analyze(target: Analyzable) -> Analysis@! {
@@ -124,9 +124,9 @@ invoke daemoniorum·anima·{AnimaState, PAD};
         Trigger·deception_detected(0.6),
     ],
 
-    anima: Any,
+    anima_: Any,
 
-    states: Any,
+    states_: Any,
 
     /// Read a person's emotional state and intentions
     rite read_person(target: Person) -> SocialReading@! {

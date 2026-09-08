@@ -21,7 +21,7 @@ invoke tome·system·{Alter, AlterRole, AlterStats, PADState, AlterAbility};
 
 ⊢ PADState {
     /// Get emotion label based on PAD values
-    ☉ rite emotion_label(self: &Self!) -> &'static str! {
+    ☉ rite emotion_label(self: &Self!) -> &'static str {
         ≔ p! = self·pleasure;
         ≔ a! = self·arousal;
         ≔ d! = self·dominance;
@@ -548,7 +548,7 @@ rite AbilityButton(
 // HELPERS
 // ============================================================================
 
-rite get_health_color(percent: f32!) -> &'static str! {
+rite get_health_color(percent: f32!) -> &'static str {
     ⎇ percent > 50.0 { colors·HEALTH_HIGH }
     ⎉ ⎇ percent > 25.0 { colors·HEALTH_MID }
     ⎉ { colors·HEALTH_LOW }

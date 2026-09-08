@@ -25,7 +25,7 @@ extern "js" {
 
 ⊢ JsValue {
     /// Create from Sigil value
-    ☉ rite from[T: Into[JsValue]](value: T!) -> Self! {
+    ☉ rite from_[T: Into[JsValue]](value: T!) -> Self! {
         value·into()
     }
 
@@ -208,10 +208,10 @@ extern "js" {
     ☉ rite is_array(value: &JsValue!) -> bool!;
 
     #[wasm_bindgen(static_method_of = Array)]
-    ☉ rite from(iterable: &JsValue!) -> Array!;
+    ☉ rite from_(iterable: &JsValue!) -> Array!;
 
     #[wasm_bindgen(static_method_of = Array)]
-    ☉ rite of(items: &[JsValue]!) -> Array!;
+    ☉ rite of_(items: &[JsValue]!) -> Array!;
 }
 
 /// JavaScript Object
@@ -321,7 +321,7 @@ extern "js" {
     }
 }
 
-⊢ Into[JsValue] for &str {
+⊢ Into[JsValue] ∀ &str {
     rite into(self: Self!) -> JsValue! {
         sigil_string_to_js(self)
     }

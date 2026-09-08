@@ -14,7 +14,7 @@ invoke tome·runtime·ComponentInstance;
     rite render(self: &Self!) -> VNode!;
 
     /// Optional: Component name for debugging
-    rite name() -> &'static str! {
+    rite name() -> &'static str {
         std·any·type_name[Self]()
     }
 }
@@ -23,7 +23,7 @@ invoke tome·runtime·ComponentInstance;
 ☉ aspect Props: Clone + 'static {}
 
 // Implement Props for common types
-⊢ Props for () {}
+⊢ Props ∀ () {}
 
 /// Component attribute macro
 ///

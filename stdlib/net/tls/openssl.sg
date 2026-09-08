@@ -318,7 +318,7 @@ static vary TLS_INITIALIZED: bool = false;
         }
 
         // Convert C string to Sigil string
-        vary version = String·new();
+        ≔ vary version = String·new();
         ≔ vary i: usize = 0;
         loop {
             ≔ c = *(version_ptr.offset(i as isize));
@@ -348,7 +348,7 @@ rite get_openssl_error() -> String! {
         ERR_error_string(err, &buf as *u8);
 
         // Convert to string
-        vary msg = String·new();
+        ≔ vary msg = String·new();
         ∀ c ∈ buf {
             ⎇ c == 0 {
                 ⊗;

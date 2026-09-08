@@ -183,7 +183,7 @@ reality event PerceptionShift {
     }
 
     /// Sudden snap to Shattered (trauma trigger)
-    rite trauma_flash(trigger: Trigger!) -> PerceptionChange! {
+    rite trauma_flash(trigger_: Trigger!) -> PerceptionChange! {
         perception.force_layer(RealityLayer·Shattered);
 
         // Brief flash of trauma memory
@@ -197,7 +197,7 @@ reality event PerceptionShift {
         );
 
         // Force alter response
-        system.process_trigger(trigger);
+        system.process_trigger(trigger_);
 
         PerceptionChange·Forced
     }

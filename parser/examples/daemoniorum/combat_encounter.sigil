@@ -23,10 +23,7 @@ enemy GuiltShade: Manifestation {
     visibility: [RealityLayer·Fractured, RealityLayer·Shattered],
 
     // Stronger in deeper reality layers
-    layer_modifiers: {
-        Fractured: Any,
-        Shattered: Any,
-    },
+    layer_modifiers: Any,
 
     abilities: [
         EnemyAbility {
@@ -62,12 +59,12 @@ enemy GuiltShade: Manifestation {
 
     trigger_behaviors: [
         TriggerBehavior {
-            trigger: "guilt",
+            trigger_: "guilt",
             condition: TriggerCondition·OnTurn,
             intensity: 0.4,
         },
         TriggerBehavior {
-            trigger: "self_blame",
+            trigger_: "self_blame",
             condition: TriggerCondition·HealthBelow(0.5),
             intensity: 0.6,
         },
@@ -111,7 +108,7 @@ enemy GuiltShade: Manifestation {
 
 /// The Church confrontation
 encounter ChurchBoss {
-    location: Church,
+    location_: Church,
     enemy: GuiltShade,
     required_layer: RealityLayer·Fractured,
 
@@ -165,8 +162,8 @@ encounter ChurchBoss {
                     ≔ result = enemy.execute(ability, combat.player);
 
                     // Enemy abilities may cause triggers
-                    ⎇ ≔ Some(trigger) = ability.trigger_effect {
-                        combat.player.process_combat_trigger(trigger);
+                    ⎇ ≔ Some(trigger_) = ability.trigger_effect {
+                        combat.player.process_combat_trigger(trigger_);
                     }
                 },
             }

@@ -68,7 +68,9 @@ IMPL_PLAIN = re.compile(
 # spells `impl Trait for Type` as `⊢ Trait ∀ Type`.
 IMPL_FOR_LEFTOVER = re.compile(
     r"⊢(" + IMPL_GENERICS + r")\s+([A-Za-z_][\w·:<>\[\], &']*?)\s+for\s+"
-    r"([A-Za-z_][\w·:<>\[\], &']*?)\s*\{"
+    # The implementing type is not always a bare name: `⊢ Props for () {}` and
+    # `⊢ Into[AttrValue] for &str {` are both real.
+    r"([A-Za-z_&(\[][\w·:<>\[\](), &']*?)\s*\{"
 )
 # `for x in xs {` — must run before the bare `in` of other constructs.
 # `for x in xs` and `for (a, b) in xs` — the tuple pattern form is common in
@@ -231,6 +233,13 @@ ASM_LATEOUT = re.compile(r"(?<![\w·])lateout\(")
 # that keeps the declaration.
 VARIANT_MARKER = re.compile(r"^(\s*[A-Z]\w*(?:\([^)]*\))?)[!?~◊](\s*,)", re.M)
 
+# The same thing on a DECLARATION NAME — `☉ const RUNTIME_CONFIG! = …`,
+# `Σ SafeQuery! {`, `ᛈ SqlParam! {`, `type InternalLine! = …`. Evidence describes a
+# value, not the name being introduced, and the parser rejects it here too.
+DECL_MARKER = re.compile(
+    r"\b(const|static|Σ|ᛈ|type|aspect|Θ)(\s+[A-Za-z_]\w*)[!?~◊](?=\s*[={<\[])"
+)
+
 # `aspect` is Sigil's `trait` keyword, so it cannot also be an identifier. Sources
 # predating that keyword use it as a field name, a parameter and a local.
 # Inline object types in a parameter — `props: { code: String, language: String }`.
@@ -240,10 +249,54 @@ VARIANT_MARKER = re.compile(r"^(\s*[A-Z]\w*(?:\([^)]*\))?)[!?~◊](\s*,)", re.M)
 # elsewhere. The React generator's normalize_prop_type makes the same trade.
 INLINE_OBJ_PARAM = re.compile(r"(:\s*)\{[^{}]*:[^{}]*\}(?=\s*[,)])")
 
-ASPECT_IDENT = re.compile(
-    r"(?<![\w·])aspect(?=\s*[:,)=]|\s*$)|(?<=[(,]\s)aspect(?=\s*:)", re.M
-)
-BARE_VARY = re.compile(r"^([ \t]*)vary\s+(\w+\s*:)", re.M)
+# A Sigil keyword used as an ordinary identifier.
+#
+# `aspect` is Sigil's `trait`; `alter` and `reality` belong to the plurality
+# extension; `of`, `on`, `to`, `from`, `layer`, `scope`, `location`, `body`,
+# `header`, `close`, `connect`, `send`, `recv`, `split`, `stream`, `state` are all
+# spoken words that predate their keyword status. Sources written before then use
+# them as parameters, fields and locals.
+#
+# Renaming is file-local and two-pass: find the names that appear in an
+# unambiguous BINDING position, then rename every occurrence of exactly those
+# names in that file's code. A keyword can never legitimately be an identifier, so
+# within one file the rename is total — but it cannot follow a name across a file
+# boundary, which is why only bindings drive it.
+# Python look-behind must be fixed width, so each context matches the delimiter
+# itself and the name is group 1.
+_BIND_CONTEXTS = [
+    r"[(,]\s*(%s)\s*:",       # parameter or field:  (alter: T   , of: T
+    r"^\s*(%s)\s*:",          # struct field on its own line
+    r"[(,]\s*(%s)\s*[,)]",    # tuple binder:        ∀ (id, alter) ∈ …
+    r"≔\s+(%s)\s*=",         # local binding
+    r"\brite\s+(%s)\s*[(\[]", # a function NAMED for a keyword
+]
+
+
+def _keyword_identifiers(code):
+    """Names bound in this file that collide with a Sigil keyword."""
+    found = set()
+    for kw in SIGIL_KEYWORDS:
+        for ctx in _BIND_CONTEXTS:
+            if re.search(ctx % re.escape(kw), code, re.M):
+                found.add(kw)
+                break
+    return found
+
+
+SIGIL_KEYWORDS = [
+    "actor", "affine", "alter", "amqp", "anima", "asm", "aspect", "atomic",
+    "body", "broadcast", "close", "cocon", "connect", "consensus", "distribute",
+    "each", "forever", "from", "gather", "gpu", "graphql", "grpc", "header",
+    "headspace", "http", "https", "interfere", "kafka", "layer", "legion_field",
+    "linear", "location", "naked", "nay", "no_grad", "of", "on", "packed",
+    "parallel", "reality", "recv", "ref", "relevant", "retry", "rune", "saga",
+    "scope", "send", "sigil", "simd", "split", "states", "stream", "switch",
+    "timeout", "to", "trigger", "vary", "yay", "yea",
+]
+# `vary` is a modifier on the ≔ binder, so a bare `vary x: T;` or `vary x = v;`
+# needs the binder in front. The first version only matched the annotated form.
+BARE_VARY = re.compile(r"^([ \t]*)vary\s+(\w+\s*[:=])", re.M)
 IMPL_ARG = re.compile(r"(?<![\w·])impl\s+(?=[A-Z])")
 
 
@@ -253,7 +306,9 @@ def migrate_constructs(src, in_asm_only=True):
         text = BARE_VARY.sub(lambda m: f"{m.group(1)}≔ vary {m.group(2)}", text)
         text = IMPL_ARG.sub("⊢ ", text)
         text = VARIANT_MARKER.sub(lambda m: m.group(1) + m.group(2), text)
-        text = ASPECT_IDENT.sub("aspect_", text)
+        text = DECL_MARKER.sub(lambda m: m.group(1) + m.group(2), text)
+        for kw in _keyword_identifiers(text):
+            text = re.sub(r"(?<![\w·])%s(?![\w·])" % re.escape(kw), kw + "_", text)
         text = INLINE_OBJ_PARAM.sub(lambda m: m.group(1) + "Any", text)
         return text
 

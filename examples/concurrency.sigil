@@ -62,7 +62,7 @@ rite weave_example() {
 
 rite channel_example() {
     // Create channel
-    ≔ (send, recv): (Sender<Message>, Receiver<Message>) = Channel·new(100)
+    ≔ (send_, recv_): (Sender<Message>, Receiver<Message>) = Channel·new(100)
 
     // Send message (speak to ancestors)
     send|voice(Message { data: 42 })

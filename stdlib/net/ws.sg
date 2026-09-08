@@ -86,7 +86,7 @@ invoke dns·DnsResolver;
 
 ☉ ⊢ WebSocket {
     /// Connect to WebSocket URL (ws:// or wss://)
-    ☉ rite connect(url: &str) -> Result<WebSocket, WsError>! {
+    ☉ rite connect_(url: &str) -> Result<WebSocket, WsError>! {
         Self·connect_with_headers(url, &[])
     }
 
@@ -101,7 +101,7 @@ invoke dns·DnsResolver;
         }
 
         // Resolve hostname
-        vary resolver = DnsResolver·system()
+        ≔ vary resolver = DnsResolver·system()
             .map_err(|_| WsError·ConnectionFailed {
                 inner: SocketError·InvalidAddress
             })?;
@@ -133,7 +133,7 @@ invoke dns·DnsResolver;
         // In production, invoke a proper CSPRNG
         ≔ mask_key: [u8; 4] = [0x12, 0x34, 0x56, 0x78];
 
-        vary ws = WebSocket {
+        ≔ vary ws = WebSocket {
             conn,
             connected: false,
             mask_key,
@@ -153,7 +153,7 @@ invoke dns·DnsResolver;
         ≔ key = "dGhlIHNhbXBsZSBub25jZQ==";  // Example from RFC
 
         // Build handshake request
-        vary request = format!(
+        ≔ vary request = format!(
             "GET {} HTTP/1.1\r\n\
              Host: {}\r\n\
              Upgrade: websocket\r\n\
@@ -214,7 +214,7 @@ invoke dns·DnsResolver;
     }
 
     /// Receive next message (blocks)
-    ☉ rite recv(&vary self) -> Result<WsMessage, WsError>! {
+    ☉ rite recv_(&vary self) -> Result<WsMessage, WsError>! {
         ⎇ !self.connected {
             ret Err(WsError·ConnectionClosed { code: None, reason: None });
         }
@@ -226,7 +226,7 @@ invoke dns·DnsResolver;
         ≔ fin = (header[0] & 0x80) != 0;
         ≔ opcode = header[0] & 0x0F;
         ≔ masked = (header[1] & 0x80) != 0;
-        vary payload_len = (header[1] & 0x7F) as usize;
+        ≔ vary payload_len = (header[1] & 0x7F) as usize;
 
         // Extended payload length
         ⎇ payload_len == 126 {
@@ -257,7 +257,7 @@ invoke dns·DnsResolver;
         }
 
         // Read payload
-        vary payload = vec![0u8; payload_len];
+        ≔ vary payload = vec![0u8; payload_len];
         self.read_exact(&vary payload)?;
 
         // Unmask ⎇ needed
@@ -313,13 +313,13 @@ invoke dns·DnsResolver;
     }
 
     /// Close connection gracefully
-    ☉ rite close(&vary self, code: u16, reason: &str) -> Result<(), WsError>! {
+    ☉ rite close_(&vary self, code: u16, reason: &str) -> Result<(), WsError>! {
         ⎇ !self.connected {
             ret Ok(());
         }
 
         // Build close frame payload
-        vary payload = Vec·new();
+        ≔ vary payload = Vec·new();
         payload.push((code >> 8) as u8);
         payload.push((code & 0xFF) as u8);
         payload.extend_from_slice(reason.as_bytes());
@@ -332,7 +332,7 @@ invoke dns·DnsResolver;
 
     /// Send WebSocket frame
     rite send_frame(&vary self, opcode: u8, data: &[u8], fin: bool) -> Result<(), WsError>! {
-        vary frame = Vec·new();
+        ≔ vary frame = Vec·new();
 
         // First byte: FIN + opcode
         ≔ first_byte = ⎇ fin { 0x80 | opcode } ⎉ { opcode };
@@ -398,7 +398,7 @@ invoke dns·DnsResolver;
 
     /// Internal: read exact bytes
     rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), WsError>! {
-        vary total = 0;
+        ≔ vary total = 0;
         ⟳ total < buf.len() {
             ≔ n = self.read(&vary buf[total..])?;
             ⎇ n == 0 {

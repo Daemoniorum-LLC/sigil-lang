@@ -317,9 +317,9 @@ type AlterPanelProps = Σ {
                                 alters={system_state.alters·clone()}
                                 fronting_alter_id={system_state.fronting_alter_id·clone()}
                                 cocon_alter_id={system_state.cocon_alter_id·clone()}
-                                on_switch={move |alter| {
+                                on_switch={move |alter_| {
                                     ⎇ ≔ Some(ref on_switch) = props.on_alter_switch {
-                                        on_switch(alter);
+                                        on_switch(alter_);
                                     }
                                     set_show_alter_panel(false);
                                 }}
@@ -441,8 +441,8 @@ type InteractionHintsProps = Σ {
         ≔ on_dismiss = props.on_dismiss·clone();
         ≔ duration = notification.duration;
         move || {
-            ≔ timeout = set_timeout(on_dismiss, duration);
-            move || clear_timeout(timeout)
+            ≔ timeout_ = set_timeout(on_dismiss, duration);
+            move || clear_timeout(timeout_)
         }
     });
 

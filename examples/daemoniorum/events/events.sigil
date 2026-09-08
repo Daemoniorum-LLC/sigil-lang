@@ -407,8 +407,8 @@ type EventHandler = rite(&GameEvent, &Δ GameContext) -> Vec<GameEvent>;
     }
 
     //! Register a trigger definition
-    rite register_trigger(mut self, trigger: TriggerDefinition) {
-        self.triggers·insert(trigger.id·clone(), trigger);
+    rite register_trigger(mut self, trigger_: TriggerDefinition) {
+        self.triggers·insert(trigger_.id·clone(), trigger_);
     }
 
     //! Queue an event for processing
@@ -560,8 +560,8 @@ type EventHandler = rite(&GameEvent, &Δ GameContext) -> Vec<GameEvent>;
                 true  // Would check scene NPCs
             },
 
-            TriggerCondition·RealityLayer(layer) => {
-                &context.system.reality_layer == layer
+            TriggerCondition·RealityLayer(layer_) => {
+                &context.system.reality_layer == layer_
             },
 
             TriggerCondition·StabilityBelow(threshold) => {
@@ -581,10 +581,10 @@ type EventHandler = rite(&GameEvent, &Δ GameContext) -> Vec<GameEvent>;
             },
 
             TriggerCondition·AnimaInRange { pleasure, arousal, dominance } => {
-                ≔ anima = &context.system.anima;
-                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
-                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
-                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
+                ≔ anima_ = &context.system.anima_;
+                anima_.pleasure >= pleasure.0 && anima_.pleasure <= pleasure.1 &&
+                anima_.arousal >= arousal.0 && anima_.arousal <= arousal.1 &&
+                anima_.dominance >= dominance.0 && anima_.dominance <= dominance.1
             },
 
             TriggerCondition·FlagSet(flag) => {

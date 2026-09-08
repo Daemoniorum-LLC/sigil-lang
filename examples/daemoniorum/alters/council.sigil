@@ -16,7 +16,7 @@ alter Abaddon: Council {
     archetype: Goetia·Abaddon,
 
     //! Emotional baseline - high arousal, high dominance
-    anima: Any,
+    anima_: Any,
 
     //! Preferred reality layer - sees through facades
     preferred_reality: RealityLayer·Fractured,
@@ -41,7 +41,7 @@ alter Abaddon: Council {
     memory_access: MemoryAccess·Full,
 
     //! State machine for presence transitions
-    states: {
+    states_: {
         Dormant -> Stirring: on trigger("threat_to_system"),
         Stirring -> Emerging: on arousal > 0.6,
         Emerging -> Fronting: on switch_approved,
@@ -74,7 +74,7 @@ alter Abaddon: Council {
 alter Stolas: Council {
     archetype: Goetia·Stolas,
 
-    anima: Any,
+    anima_: Any,
 
     preferred_reality: RealityLayer·Fractured,
 
@@ -95,7 +95,7 @@ alter Stolas: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: {
+    states_: {
         Dormant -> Stirring: on environment_contains("text") || environment_contains("puzzle"),
         Stirring -> CoConscious: on curiosity_activated,
         CoConscious -> Fronting: on analysis_needed,
@@ -124,7 +124,7 @@ alter Stolas: Council {
 alter Beleth: Council {
     archetype: Goetia·Beleth,
 
-    anima: Any,
+    anima_: Any,
 
     preferred_reality: RealityLayer·Grounded,
 
@@ -146,7 +146,7 @@ alter Beleth: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: Any,
+    states_: Any,
 
     dialogue: {
         tone: DialogueTone·Warm,
@@ -169,7 +169,7 @@ alter Beleth: Council {
 alter Paimon: Council {
     archetype: Goetia·Paimon,
 
-    anima: Any,
+    anima_: Any,
 
     preferred_reality: RealityLayer·Fractured,
 
@@ -190,7 +190,7 @@ alter Paimon: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: Any,
+    states_: Any,
 
     dialogue: {
         tone: DialogueTone·Guiding,
@@ -213,7 +213,7 @@ alter Paimon: Council {
 alter Vessel: Council {
     archetype: None,  // No demonic archetype, human origin
 
-    anima: Any,
+    anima_: Any,
 
     preferred_reality: RealityLayer·Grounded,
 
@@ -233,7 +233,7 @@ alter Vessel: Council {
 
     memory_access: MemoryAccess·Full,
 
-    states: Any,
+    states_: Any,
 
     dialogue: {
         tone: DialogueTone·Neutral,
@@ -256,7 +256,7 @@ alter Vessel: Council {
 alter Warden: Protector {
     archetype: None,  // Internal protector
 
-    anima: Any,
+    anima_: Any,
 
     preferred_reality: RealityLayer·Grounded,
 
@@ -277,7 +277,7 @@ alter Warden: Protector {
 
     memory_access: MemoryAccess·Full,
 
-    states: {
+    states_: {
         Dormant -> Stirring: on danger_detected,
         Stirring -> Fronting: on immediate_threat,  // Skip CoConscious
         Fronting -> CoConscious: on threat_passed,

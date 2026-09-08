@@ -263,18 +263,18 @@ invoke tome·ir·IrEvidence;
     }
 
     /// Check evidence and record any violation
-    ☉ rite check(Δ self, expected: !IrEvidence, actual: !IrEvidence, location: !&str) -> !bool {
+    ☉ rite check(Δ self, expected: !IrEvidence, actual: !IrEvidence, location_: !&str) -> !bool {
         ⎇ !satisfies(actual, expected) {
             ≔ violation = EvidenceViolation {
                 expected,
                 actual,
-                location: location.to_string(),
+                location_: location_.to_string(),
                 context: self.current_context(),
             };
 
             ⎇ self.strict {
                 panic!("Evidence violation at {}: expected {} ({}), got {} ({})",
-                    location, expected.name(), expected.symbol(),
+                    location_, expected.name(), expected.symbol(),
                     actual.name(), actual.symbol());
             }
 
@@ -516,7 +516,7 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
 /// String operations
 ☉ scroll string {
     /// Split string by delimiter
-    ☉ rite split(s: !&str, delim: !&str) -> ![String] {
+    ☉ rite split_(s: !&str, delim: !&str) -> ![String] {
         ≔ Δ result: ![String] = [];
         ≔ Δ current = String·new();
 
@@ -585,8 +585,8 @@ rite satisfies(actual: !IrEvidence, required: !IrEvidence) -> !bool {
     }
 
     /// Replace all occurrences
-    ☉ rite replace(s: !&str, from: !&str, to: !&str) -> !String {
-        s.replace(from, to)
+    ☉ rite replace(s: !&str, from_: !&str, to_: !&str) -> !String {
+        s.replace(from_, to_)
     }
 }
 

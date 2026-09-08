@@ -8,7 +8,7 @@ invoke tome·state·{Store, Action, Selector};
 /// Hook state storage for a component instance
 ☉ Σ HookState {
     /// State values indexed by hook position
-    states: Vec<HookValue>!
+    states_: Vec<HookValue>!
     /// Current hook index during render
     cursor: usize!
     /// Effect cleanup functions
@@ -47,7 +47,7 @@ invoke tome·state·{Store, Action, Selector};
 ⊢ HookState {
     ☉ rite new() -> Self! {
         HookState {
-            states: Vec·new(),
+            states_: Vec·new(),
             cursor: 0,
             cleanups: Vec·new(),
             refs: Vec·new()
@@ -443,9 +443,9 @@ rite current_hooks() -> &Δ HookState! {
 ☉ Σ FetchOptions {
     method: String! = "GET"
     headers: HashMap<String, String>! = HashMap·new()
-    body: Option<String>? = None
+    body_: Option<String>? = None
     cache: CachePolicy! = CachePolicy·Default
-    retry: RetryPolicy! = RetryPolicy·default()
+    retry_: RetryPolicy! = RetryPolicy·default()
 }
 
 ☉ ᛈ CachePolicy {

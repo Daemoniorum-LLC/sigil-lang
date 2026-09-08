@@ -80,7 +80,7 @@ type BeatDefinition = Σ {
 
 /// Internal system chatter
 type InternalLine = Σ {
-    alter: &'static str!,
+    alter_: &'static str!,
     text: &'static str!,
     delay_ms: u64!,
 };

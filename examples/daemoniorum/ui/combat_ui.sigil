@@ -60,7 +60,7 @@ type EnemyCardProps = Σ {
 
 /// Props for CurrentAlterDisplay
 type CurrentAlterDisplayProps = Σ {
-    alter: Alter!,
+    alter_: Alter!,
 }
 
 /// Props for CombatLog
@@ -380,10 +380,10 @@ rite get_threat_level_color(threat: ThreatLevel!) -> String! {
 
 #[component]
 ☉ rite CurrentAlterDisplay(props: CurrentAlterDisplayProps!) -> Element! {
-    ≔ alter! = &props.alter;
-    ≔ colors! = get_alter_color_scheme(alter);
-    ≔ health_percent! = (alter.stats.current_health as f32 / alter.stats.max_health as f32) * 100.0;
-    ≔ energy_percent! = (alter.stats.current_energy as f32 / alter.stats.max_energy as f32) * 100.0;
+    ≔ alter_! = &props.alter_;
+    ≔ colors! = get_alter_color_scheme(alter_);
+    ≔ health_percent! = (alter_.stats.current_health as f32 / alter_.stats.max_health as f32) * 100.0;
+    ≔ energy_percent! = (alter_.stats.current_energy as f32 / alter_.stats.max_energy as f32) * 100.0;
 
     ≔ health_color! = ⎇ health_percent > 50.0 { "#10b981" }
         ⎉ ⎇ health_percent > 25.0 { "#f59e0b" }
@@ -684,13 +684,13 @@ type ActionButtonProps = Σ {
                         </div>
                     }
                 } ⎉ {
-                    available_alters·iter()·|τ|alter| {
-                        ≔ colors = get_alter_color_scheme(alter);
-                        ≔ health_percent = (alter.stats.current_health as f32 / alter.stats.max_health as f32) * 100.0;
+                    available_alters·iter()·|τ|alter_| {
+                        ≔ colors = get_alter_color_scheme(alter_);
+                        ≔ health_percent = (alter_.stats.current_health as f32 / alter_.stats.max_health as f32) * 100.0;
 
                         html! {
                             <button
-                                onclick={move || (props.on_select)(alter.clone())}
+                                onclick={move || (props.on_select)(alter_.clone())}
                                 style={format!(
                                     "padding: 0.75rem; border-radius: 0.5rem; text-align: left; \
                                      background: {}; border: 1px solid {}; \
