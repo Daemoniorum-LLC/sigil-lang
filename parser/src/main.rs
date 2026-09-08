@@ -5325,6 +5325,105 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
 ///
 /// With output_dir, writes to that directory (converting .rs → .sg).
 /// Without output_dir, modifies files in-place.
+
+/// Split source into (text, is_code) spans so a rewriter never touches a string
+/// literal or a comment.
+///
+/// `sigil migrate` used to run `result.replace("::", "·")` and keyword
+/// substitutions over the whole file. On this input:
+///
+///     // A note about std::fmt and how we use it.
+///     let msg = "use std::io::Read for that; if you must, mut it";
+///     let sql = "SELECT a::text FROM t";
+///
+/// it produced `std·fmt` and "how we invoke it" in the comment, turned the
+/// English sentence into "invoke std·io·Read ∀ that; ⎇ you must, Δ it", and broke
+/// the SQL cast into `a·text`. That is what corrupted this repository's own Sigil
+/// sources: C templates, error messages and identifier interiors, all rewritten
+/// inside quotes.
+///
+/// A `'` opens a span only when it actually starts a char literal — `'a'`, `'\n'` —
+/// so a lifetime like `'static` stays code rather than swallowing everything up to
+/// the next apostrophe.
+fn split_code_spans(src: &str) -> Vec<(String, bool)> {
+    let chars: Vec<char> = src.chars().collect();
+    let mut spans: Vec<(String, bool)> = Vec::new();
+    let mut buf = String::new();
+    let mut i = 0;
+    let n = chars.len();
+
+    let is_char_literal = |chars: &[char], i: usize| -> bool {
+        // 'x'  or  '\n' / '\\' / '\''
+        if i + 2 < chars.len() && chars[i + 1] == '\\' {
+            return chars.get(i + 3) == Some(&'\'') || chars.get(i + 4) == Some(&'\'');
+        }
+        chars.get(i + 2) == Some(&'\'')
+    };
+
+    while i < n {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+
+        if c == '"' || c == '`' || (c == '\'' && is_char_literal(&chars, i)) {
+            spans.push((std::mem::take(&mut buf), true));
+            let quote = c;
+            let start = i;
+            i += 1;
+            while i < n {
+                if chars[i] == '\\' {
+                    i += 2;
+                    continue;
+                }
+                if chars[i] == quote {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            spans.push((chars[start..i.min(n)].iter().collect(), false));
+            continue;
+        }
+
+        if c == '/' && next == Some('/') {
+            spans.push((std::mem::take(&mut buf), true));
+            let start = i;
+            while i < n && chars[i] != '\n' {
+                i += 1;
+            }
+            spans.push((chars[start..i].iter().collect(), false));
+            continue;
+        }
+
+        if c == '/' && next == Some('*') {
+            spans.push((std::mem::take(&mut buf), true));
+            let start = i;
+            i += 2;
+            while i < n {
+                if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            spans.push((chars[start..i.min(n)].iter().collect(), false));
+            continue;
+        }
+
+        buf.push(c);
+        i += 1;
+    }
+    spans.push((buf, true));
+    spans
+}
+
+/// Apply `f` to the code spans of `src`, leaving strings and comments verbatim.
+fn map_code_spans<F: FnMut(&str) -> String>(src: &str, mut f: F) -> String {
+    split_code_spans(src)
+        .into_iter()
+        .map(|(text, is_code)| if is_code { f(&text) } else { text })
+        .collect()
+}
+
 fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -5382,13 +5481,15 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     let mut changes = 0;
     let mut ev_changes = 0;
 
-    // Apply simple replacements
+    // Apply simple replacements — CODE ONLY. `::` inside a doc comment or a SQL
+    // string is not a path separator.
     for (from, to) in &simple_replacements {
-        let count = result.matches(from).count();
-        if count > 0 {
-            changes += count;
-            result = result.replace(from, to);
-        }
+        let mut count = 0usize;
+        result = map_code_spans(&result, |code| {
+            count += code.matches(from).count();
+            code.replace(from, to)
+        });
+        changes += count;
     }
 
     // Convert Rust attributes #[...] and #![...] to Sigil rune comments //@ rune: ...
@@ -5514,42 +5615,51 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     changes += attr_changes;
 
     // Apply keyword replacements with word boundary check
+    // Keyword replacements — CODE ONLY, for the same reason. "if you must" in an
+    // English sentence is not a conditional.
     for (keyword, replacement, suffixes) in keyword_replacements {
         for suffix in *suffixes {
             let pattern = format!("{}{}", keyword, suffix);
             let replacement_str = format!("{}{}", replacement, suffix);
+            let mut count = 0usize;
 
-            // Only replace if preceded by word boundary (start, whitespace, newline, or certain punctuation)
-            let mut new_result = String::with_capacity(result.len());
-            let mut last_end = 0;
-
-            for (idx, _) in result.match_indices(&pattern) {
-                // Check if this is at a word boundary
-                let is_word_boundary = if idx == 0 {
-                    true
-                } else {
-                    let prev_char = result[..idx].chars().last().unwrap();
-                    !prev_char.is_alphanumeric() && prev_char != '_'
-                };
-
-                if is_word_boundary {
-                    new_result.push_str(&result[last_end..idx]);
-                    new_result.push_str(&replacement_str);
-                    last_end = idx + pattern.len();
-                    changes += 1;
+            result = map_code_spans(&result, |code| {
+                // Only replace if preceded by a word boundary (start, whitespace,
+                // newline, or certain punctuation).
+                let mut new_code = String::with_capacity(code.len());
+                let mut last_end = 0;
+                for (idx, _) in code.match_indices(&pattern) {
+                    if idx < last_end {
+                        continue;
+                    }
+                    let is_word_boundary = if idx == 0 {
+                        true
+                    } else {
+                        let prev_char = code[..idx].chars().last().unwrap();
+                        !prev_char.is_alphanumeric() && prev_char != '_'
+                    };
+                    if is_word_boundary {
+                        new_code.push_str(&code[last_end..idx]);
+                        new_code.push_str(&replacement_str);
+                        last_end = idx + pattern.len();
+                        count += 1;
+                    }
                 }
-            }
-            new_result.push_str(&result[last_end..]);
-            result = new_result;
+                new_code.push_str(&code[last_end..]);
+                new_code
+            });
+            changes += count;
         }
     }
 
-    // Special case: " in " -> " ∈ " (always safe, has spaces on both sides)
-    let in_count = result.matches(" in ").count();
-    if in_count > 0 {
-        changes += in_count;
-        result = result.replace(" in ", " ∈ ");
-    }
+    // Special case: " in " -> " ∈ ". Spaces on both sides make it safe in code —
+    // but "for that; if you must" is prose, so this is code-only too.
+    let mut in_count = 0usize;
+    result = map_code_spans(&result, |code| {
+        in_count += code.matches(" in ").count();
+        code.replace(" in ", " ∈ ")
+    });
+    changes += in_count;
 
     // Apply evidentiality markers if requested
     if evidentiality {
@@ -6436,5 +6546,56 @@ fn evaluate_input(interpreter: &mut Interpreter, input: &str, show_ast: bool) {
             }
         }
         Err(e) => eprintln!("{}Parse error: {}{}", colors::SPECIAL, e, colors::RESET),
+    }
+}
+
+#[cfg(test)]
+mod migrate_tests {
+    use super::{map_code_spans, split_code_spans};
+
+    /// `sigil migrate` rewrote strings and comments along with code, which is what
+    /// corrupted this repository's own Sigil sources — C templates, error messages
+    /// and identifier interiors, all rewritten inside quotes. These pin the spans so
+    /// it cannot come back.
+    #[test]
+    fn strings_and_comments_are_not_code() {
+        let src = r#"// use std::fmt here
+let msg = "use std::io::Read for that; if you must";
+/* let mut x = 1; */
+let sql = "SELECT a::text FROM t";
+"#;
+        let code: String = split_code_spans(src)
+            .into_iter()
+            .filter(|(_, is_code)| *is_code)
+            .map(|(t, _)| t)
+            .collect();
+        assert!(!code.contains("std::fmt"), "comment leaked into code: {code}");
+        assert!(!code.contains("SELECT"), "string leaked into code: {code}");
+        assert!(!code.contains("if you must"), "string leaked into code: {code}");
+        assert!(code.contains("let msg ="), "code was lost: {code}");
+        assert!(code.contains("let sql ="), "code was lost: {code}");
+    }
+
+    #[test]
+    fn a_lifetime_is_not_a_char_literal() {
+        // `'a` must not open a span and swallow the rest of the signature. A real
+        // char literal must.
+        let src = "fn run<'a>(x: &'a [u8]) { let c = 'x'; let e = '\\n'; }";
+        let code: String = split_code_spans(src)
+            .into_iter()
+            .filter(|(_, is_code)| *is_code)
+            .map(|(t, _)| t)
+            .collect();
+        assert!(code.contains("&'a [u8]"), "lifetime was eaten: {code}");
+        assert!(code.contains("let c ="), "code after a char literal was eaten: {code}");
+        assert!(!code.contains("'x'"), "char literal leaked into code: {code}");
+    }
+
+    #[test]
+    fn rejoining_spans_is_lossless() {
+        let src = "let a = \"x\"; // c\n/* b */ let d = 'e';\n";
+        let rejoined: String = split_code_spans(src).into_iter().map(|(t, _)| t).collect();
+        assert_eq!(rejoined, src);
+        assert_eq!(map_code_spans(src, |c| c.to_string()), src);
     }
 }
