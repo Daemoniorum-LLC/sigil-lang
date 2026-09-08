@@ -834,7 +834,7 @@ fn format_parse_error(error: &ParseError) -> (String, Option<String>) {
 /// left over — a cycle, which JavaScript's module semantics permit and Sigil's
 /// module scope does not — keeps its original position rather than being
 /// dropped; the emission guard will refuse it and say so.
-fn topo_sort_constants(items: Vec<ModuleConstantExtraction>) -> Vec<ModuleConstantExtraction> {
+pub fn topo_sort_constants(items: Vec<ModuleConstantExtraction>) -> Vec<ModuleConstantExtraction> {
     use std::collections::HashSet;
     let names: HashSet<String> = items.iter().map(|c| c.name.clone()).collect();
     let deps: Vec<HashSet<String>> = items

@@ -856,6 +856,29 @@ impl WasmCompiler {
                     }
                 }
 
+                // `None·to_string()` — a two-segment path whose head is a
+                // VALUE, not a type or a module, is a method call. It parses as
+                // a path call, so it never reached method dispatch, and the
+                // last segment was stubbed as an undefined free function.
+                if resolved_segments.len() == 2
+                    && self
+                        .get_func_by_path_arity(&resolved_segments, Some(args.len()))
+                        .is_none()
+                    && !self.struct_layouts.contains_key(&resolved_segments[0])
+                    && !self.enum_layouts.contains_key(&resolved_segments[0])
+                    && !self.actor_self_methods.iter().any(|m| {
+                        m.starts_with(&format!("{}::", resolved_segments[0]))
+                    })
+                {
+                    if let Expr::Path(p) = func_expr {
+                        let mut head = p.clone();
+                        head.segments.truncate(1);
+                        let receiver = Expr::Path(head);
+                        let method = resolved_segments[1].clone();
+                        return self.compile_method_call(&receiver, &method, args);
+                    }
+                }
+
                 // Compile arguments for non-import calls
                 for arg in args {
                     self.compile_expr(arg)?;

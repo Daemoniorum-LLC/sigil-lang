@@ -2160,7 +2160,8 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
         println!("Compiling project {} -> {} (WebAssembly with dependencies)",
                  project_dir.display(), output);
 
-        match WasmCompiler::compile_project(&project_dir) {
+        let mut compiler = WasmCompiler::new();
+        match compiler.compile_project_into(&project_dir) {
             Ok(wasm_bytes) => {
                 if let Err(e) = fs::write(output, &wasm_bytes) {
                     eprintln!("Error writing output file '{}': {}", output, e);
@@ -2175,6 +2176,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                 let size = wasm_bytes.len();
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
+                report_stubbed_calls(&compiler);
                 ExitCode::SUCCESS
             }
             Err(e) => {

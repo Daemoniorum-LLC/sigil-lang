@@ -180,8 +180,11 @@ impl ImportRegistry {
         self.add_import("string", "eq", vec![I32, I32], vec![I32]); // (str1, str2) -> bool
         self.add_import("string", "from_int", vec![I64], vec![I32]); // (int) -> str
         self.add_import("string", "from_float", vec![F64], vec![I32]); // (float) -> str
-        self.add_import("string", "parse_int", vec![I32], vec![I64]); // (str) -> int
-        self.add_import("string", "parse_float", vec![I32], vec![F64]); // (str) -> float
+        // Aliased so the bare names resolve: `Number(x)` lowers to
+        // `parse_float(x)`, and the qualified `string_parse_float` is not what
+        // anyone writes.
+        self.add_import_with_alias("string", "parse_int", "parse_int", vec![I32], vec![I64]);
+        self.add_import_with_alias("string", "parse_float", "parse_float", vec![I32], vec![F64]);
         // Additional string methods
         self.add_import("string", "lines", vec![I32], vec![I32]); // (str) -> array of strings
         self.add_import("string", "split_whitespace", vec![I32], vec![I32]); // (str) -> array of strings

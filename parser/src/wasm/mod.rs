@@ -375,13 +375,20 @@ impl WasmCompiler {
     /// This resolves all dependencies, compiles them in order, and bundles
     /// everything into a single WASM module.
     pub fn compile_project(project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
+        let mut compiler = Self::new();
+        compiler.compile_project_into(project_dir)
+    }
+
+    /// As `compile_project`, but on an existing compiler, so the caller keeps
+    /// it afterwards — `sigil wasm` reports the calls that did not resolve, and
+    /// the project path was silently dropping that report on the floor.
+    pub fn compile_project_into(&mut self, project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
         use deps::{DependencyGraph, ProjectManifest};
 
         // Build dependency graph
         let graph = DependencyGraph::from_project(project_dir)?;
 
-        // Create compiler instance
-        let mut compiler = Self::new();
+        let compiler = self;
 
         // Compile each dependency in order (dependencies first)
         for manifest in graph.iter_in_order() {

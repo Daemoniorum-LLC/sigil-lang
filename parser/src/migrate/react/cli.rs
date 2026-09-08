@@ -49,6 +49,19 @@ pub struct MigrateReactConfig {
     /// Generate Sigil code (not just specs)
     pub generate_code: bool,
 
+    /// Qliphoth source files to vendor into the generated project.
+    ///
+    /// The project needs the VNode builder its views are written against.
+    /// Depending on the whole `qliphoth` package does not work yet — its
+    /// `qliphoth-sys` is written against `web_sys` and does not compile — so
+    /// the modules that are needed are named and copied in.
+    pub vendor: Vec<PathBuf>,
+
+    /// Emit a Sigil project — shared module scope once, one module per
+    /// component, a `sigil.toml` and a `lib.sigil` — instead of 93
+    /// self-contained files.
+    pub project: bool,
+
     /// Extra directories to parse for cross-module resolution.
     ///
     /// A bundler alias is configuration the migrator has no bundler to read:
@@ -82,6 +95,8 @@ impl Default for MigrateReactConfig {
             validate_file: None,
             show_status: false,
             generate_code: false,
+            project: false,
+            vendor: Vec::new(),
             extra_source_dirs: Vec::new(),
         }
     }
@@ -114,6 +129,17 @@ pub fn parse_react_migrate_args(args: &[String]) -> Result<MigrateReactConfig, S
                     return Err("-o/--output requires a path argument".to_string());
                 }
                 config.output_dir = PathBuf::from(&args[i]);
+            }
+            "--vendor" => {
+                i += 1;
+                if i >= args.len() {
+                    return Err("--vendor requires a file path".to_string());
+                }
+                config.vendor.push(PathBuf::from(&args[i]));
+            }
+            "--project" => {
+                config.project = true;
+                config.generate_code = true;
             }
             "--include-source" => {
                 // The loop advances by one at the bottom; every other
@@ -316,6 +342,127 @@ pub struct MigrationOutput {
     pub output_paths: Vec<PathBuf>,
 }
 
+
+/// Emit a Sigil project: shared module scope once, one module per component.
+///
+/// The per-file output is deliberately self-contained — every component carries
+/// copies of the constants and helpers it references — which is what lets one
+/// be compiled on its own and what makes all of them impossible to compile
+/// together: concatenated they redefine `get_json` 84 times. This is the other
+/// arrangement. `sigil wasm <dir>` on the result links the whole thing, so a
+/// component calling a sibling component resolves instead of being stubbed.
+fn write_project(
+    components: &[&crate::migrate::react::spec::ComponentMigrationSpec],
+    root: &Path,
+    config: &MigrateReactConfig,
+) -> Result<(), String> {
+    use crate::migrate::react::generator::{component_prop_map, generate_component_only, generate_shared_module};
+    use crate::migrate::react::spec::to_snake_case;
+
+    let project_dir = root.join("project");
+    let src_dir = project_dir.join("src");
+    if config.dry_run {
+        println!("Dry run - would write project to {:?}", project_dir);
+        return Ok(());
+    }
+    fs::create_dir_all(&src_dir).map_err(|e| format!("Cannot create project src dir: {}", e))?;
+
+    println!();
+    println!("Generating Sigil project:");
+
+    fs::write(
+        project_dir.join("sigil.toml"),
+        "[tome]\nname = \"lares_client\"\nversion = \"0.1.0\"\n",
+    )
+    .map_err(|e| format!("Cannot write sigil.toml: {}", e))?;
+
+    // Vendored Qliphoth modules, in the order given.
+    let mut vendored: Vec<String> = Vec::new();
+    for v in &config.vendor {
+        let text = fs::read_to_string(v)
+            .map_err(|e| format!("Cannot read {:?}: {}", v, e))?;
+        let stem = v
+            .file_stem()
+            .map(|s| to_snake_case(&s.to_string_lossy()))
+            .unwrap_or_else(|| "vendored".to_string());
+        // Its own `invoke` lines name a package this project does not depend
+        // on; everything it needs is in this module tree.
+        let body: String = text
+            .lines()
+            .filter(|l| !l.starts_with("invoke "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(
+            src_dir.join(format!("{}.sigil", stem)),
+            format!("// Vendored from {}.\n\n{}", v.display(), body),
+        )
+        .map_err(|e| format!("Cannot write {}.sigil: {}", stem, e))?;
+        println!("  project/src/{}.sigil  (vendored)", stem);
+        vendored.push(stem);
+    }
+
+    let shared = generate_shared_module(components);
+    let mut shared_invokes = String::new();
+    for v in &vendored {
+        shared_invokes.push_str(&format!("invoke tome·{}·*;\n", v));
+    }
+    let shared = format!("{}\n{}", shared_invokes, shared);
+    fs::write(src_dir.join("shared.sigil"), &shared)
+        .map_err(|e| format!("Cannot write shared.sigil: {}", e))?;
+    println!("  project/src/shared.sigil");
+
+    // One module per component. Names are the module path, so they have to be
+    // valid identifiers — kebab-case file names are not.
+    let props = component_prop_map(components);
+    let mut modules: Vec<String> = Vec::new();
+    for comp in components {
+        let generated = generate_component_only(comp, props.clone());
+        let module = to_snake_case(&generated.component_name);
+        if modules.contains(&module) {
+            continue;
+        }
+        let mut invokes = String::from("invoke tome·shared·*;\n");
+        for v in &vendored {
+            invokes.push_str(&format!("invoke tome·{}·*;\n", v));
+        }
+        let body = format!(
+            "// Generated from {}.\n{}\n{}",
+            comp.source.path,
+            invokes,
+            generated.code.replace("invoke qliphoth·prelude·*;\n", "")
+        );
+        fs::write(src_dir.join(format!("{}.sigil", module)), body)
+            .map_err(|e| format!("Cannot write {}.sigil: {}", module, e))?;
+        modules.push(module);
+    }
+    println!("  project/src/*.sigil  ({} components)", modules.len());
+
+    let mut lib = String::from(
+        "// Every component and the module scope they share. `sigil wasm .` from\n         // this directory links them into one module.\n\n",
+    );
+    for v in &vendored {
+        lib.push_str(&format!("scroll {};\n", v));
+    }
+    lib.push_str("scroll shared;\n");
+    for m in &modules {
+        lib.push_str(&format!("scroll {};\n", m));
+    }
+    lib.push('\n');
+    for v in &vendored {
+        lib.push_str(&format!("invoke {}·*;\n", v));
+    }
+    lib.push_str("invoke shared·*;\n");
+    for m in &modules {
+        lib.push_str(&format!("invoke {}·*;\n", m));
+    }
+    fs::write(src_dir.join("lib.sigil"), lib)
+        .map_err(|e| format!("Cannot write lib.sigil: {}", e))?;
+    println!("  project/src/lib.sigil");
+    println!("  project/sigil.toml");
+
+    Ok(())
+}
+
 /// Write migration specs to disk.
 pub fn write_migration_output(
     session: &MigrationSession,
@@ -404,13 +551,23 @@ pub fn write_migration_output(
     println!("  patterns/library.json");
 
     // Generate Sigil code if requested
+    if config.project {
+        write_project(&spec.components.iter().collect::<Vec<_>>(), root, config)?;
+    }
+
     if config.generate_code {
         println!();
         println!("Generating Sigil code:");
 
         // Generate component actors
+        let all: Vec<&crate::migrate::react::spec::ComponentMigrationSpec> =
+            spec.components.iter().collect();
+        let props = crate::migrate::react::generator::component_prop_map(&all);
         for comp_spec in &spec.components {
-            let generated = generate_component(comp_spec);
+            let generated = crate::migrate::react::generator::generate_component_with(
+                comp_spec,
+                props.clone(),
+            );
             let filename = format!("{}.sigil", to_kebab_case(&generated.component_name));
             let sigil_path = output_dir.join(&filename);
 

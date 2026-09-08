@@ -32,6 +32,22 @@ pub struct QliphothGenerator<'a> {
     is_actor: bool,
     /// Parameter names for pure functions (used for expression interpolation)
     param_names: Vec<String>,
+    /// Every other component's props, by component name.
+    ///
+    /// A child component in JSX is a CALL to that component's function, and its
+    /// attributes are that function's parameters. Without this the generator
+    /// emitted `InventoryList·view()` and hung the attributes off it as if it
+    /// were a VNode — a method on a type that does not exist, on a value that
+    /// is not one.
+    component_props: std::collections::HashMap<String, ComponentCallShape>,
+}
+
+/// What a call site needs to know about a sibling component: whether it is a
+/// function it can call, and what that function's parameters are.
+#[derive(Clone, Debug)]
+pub struct ComponentCallShape {
+    pub is_actor: bool,
+    pub props: Vec<String>,
 }
 
 /// Scope for tracking local variables (like map iterators) that shouldn't get self. prefix
@@ -54,11 +70,36 @@ impl<'a> QliphothGenerator<'a> {
             indent: 0,
             is_actor,
             param_names,
+            component_props: std::collections::HashMap::new(),
         }
+    }
+
+    /// As `new`, but able to call sibling components.
+    pub fn with_components(
+        spec: &'a ComponentMigrationSpec,
+        component_props: std::collections::HashMap<String, ComponentCallShape>,
+    ) -> Self {
+        let mut g = Self::new(spec);
+        g.component_props = component_props;
+        g
     }
 
     /// Generate complete Sigil file for the component.
     pub fn generate(&self) -> GeneratedSigil {
+        self.generate_with(true)
+    }
+
+    /// The component alone — no module constants, no helper functions.
+    ///
+    /// For the project layout, where those are emitted once into a shared
+    /// module instead of copied into every file that references them. Copying
+    /// is what makes the per-file output self-contained and the project output
+    /// impossible: concatenated, the 93 files redefine `get_json` 84 times.
+    pub fn generate_component_only(&self) -> GeneratedSigil {
+        self.generate_with(false)
+    }
+
+    fn generate_with(&self, with_module_scope: bool) -> GeneratedSigil {
         let mut code = String::new();
 
         // Generate imports
@@ -67,14 +108,14 @@ impl<'a> QliphothGenerator<'a> {
 
         // Module-scope constants from the same file
         let (constants, emitted_constants) = self.generate_module_constants();
-        if !constants.is_empty() {
+        if with_module_scope && !constants.is_empty() {
             code.push_str(&constants);
             code.push('\n');
         }
 
         // Helper functions from this file and the modules it imports
         let helpers = self.generate_helper_functions(&emitted_constants);
-        if !helpers.is_empty() {
+        if with_module_scope && !helpers.is_empty() {
             code.push_str(&helpers);
             code.push('\n');
         }
@@ -1155,6 +1196,18 @@ impl<'a> QliphothGenerator<'a> {
         }
     }
 
+    /// The VALUE of a JSX attribute, with no `·attr(…)` wrapper — for passing
+    /// a child component's props as arguments.
+    fn generate_attribute_value(&self, attr: &JsxAttribute, scope: &VNodeScope) -> String {
+        match &attr.value {
+            JsxAttributeValue::String { value } => format!("{:?}", value),
+            JsxAttributeValue::Expression { code } => {
+                self.transform_expression_scoped(code, scope)
+            }
+            _ => "∅".to_string(),
+        }
+    }
+
     fn generate_element_vnode(
         &self,
         tag: &str,
@@ -1165,6 +1218,47 @@ impl<'a> QliphothGenerator<'a> {
         scope: &VNodeScope,
     ) -> String {
         let pad = "    ".repeat(indent);
+        if is_component {
+            if self.component_props.is_empty() {
+                // No sibling components known — the per-file layout, where a
+                // cross-file call could not resolve anyway.
+            } else if !self.component_props.contains_key(tag) {
+                // A component with no spec of its own: a React context
+                // provider, or something defined outside the walked tree. There
+                // is nothing to call.
+                return format!(
+                    "{}// `{}` has no generated component to call\n{}VNode·fragment()",
+                    pad, tag, pad
+                );
+            }
+            if let Some(shape) = self.component_props.get(tag) {
+                if shape.is_actor {
+                    // A child ACTOR is not a function call. Mounting one is a
+                    // Qliphoth runtime concern — the parent would send it
+                    // messages — and there is no expression for it here.
+                    return format!(
+                        "{}// child actor `{}` — mounting one is a runtime concern, not a call\n{}VNode·fragment()",
+                        pad, tag, pad
+                    );
+                }
+                let params = &shape.props;
+                // A call, with the JSX attributes matched onto the component's
+                // own parameters by name. Anything the call site does not
+                // supply is ∅ — Sigil has no default arguments.
+                let args: Vec<String> = params
+                    .iter()
+                    .map(|p| {
+                        attributes
+                            .iter()
+                            .find(|a| to_snake_case(&a.name) == to_snake_case(p))
+                            .map(|a| self.generate_attribute_value(a, scope))
+                            .unwrap_or_else(|| "∅".to_string())
+                    })
+                    .collect();
+                return format!("{}{}({})", pad, to_snake_case(tag), args.join(", "));
+            }
+        }
+
         let mut builder = if is_component {
             // Component reference
             format!("{}{}·view()", pad, tag)
@@ -1239,9 +1333,55 @@ impl<'a> QliphothGenerator<'a> {
 // =============================================================================
 
 /// Generate Sigil code from a component migration spec.
+/// The component alone, for the project layout — see `generate_component_only`.
+pub fn generate_component_only(
+    spec: &ComponentMigrationSpec,
+    component_props: std::collections::HashMap<String, ComponentCallShape>,
+) -> GeneratedSigil {
+    QliphothGenerator::with_components(spec, component_props).generate_component_only()
+}
+
 pub fn generate_component(spec: &ComponentMigrationSpec) -> GeneratedSigil {
     let generator = QliphothGenerator::new(spec);
     generator.generate()
+}
+
+/// As `generate_component`, but able to see the other components.
+///
+/// A child component in JSX is a call to that component's function — in the
+/// per-file layout the call cannot resolve, because the sibling is a different
+/// file, but a call to a name that is not there is an honest unresolved call.
+/// `X·view()` was a method on a type that does not exist.
+pub fn generate_component_with(
+    spec: &ComponentMigrationSpec,
+    component_props: std::collections::HashMap<String, ComponentCallShape>,
+) -> GeneratedSigil {
+    QliphothGenerator::with_components(spec, component_props).generate()
+}
+
+/// Every component's props, by component name — what a call site needs to pass
+/// a sibling component its arguments.
+pub fn component_prop_map(
+    specs: &[&ComponentMigrationSpec],
+) -> std::collections::HashMap<String, ComponentCallShape> {
+    specs
+        .iter()
+        .map(|s| {
+            (
+                s.name.clone(),
+                ComponentCallShape {
+                    is_actor: s.target.pattern == TargetPattern::Actor,
+                    props: s
+                        .recommendations
+                        .props_handling
+                        .fields
+                        .iter()
+                        .map(|f| f.name.clone())
+                        .collect(),
+                },
+            )
+        })
+        .collect()
 }
 
 /// Generate Sigil code for all components in a migration spec.
@@ -1872,6 +2012,68 @@ fn css_property(name: &str) -> String {
             out.push(c);
         }
     }
+    out
+}
+
+
+/// The module scope every component shares, emitted once.
+///
+/// Each generated component carries copies of the constants and helpers it
+/// references, which is what makes a single file compile on its own and what
+/// makes the 93 of them impossible to compile together. This collects the union
+/// — deduplicated by name, and ordered so a constant follows what it references
+/// — and hands it back as one module for the project layout.
+pub fn generate_shared_module(specs: &[&ComponentMigrationSpec]) -> String {
+    let Some(first) = specs.first() else {
+        return String::new();
+    };
+
+    let mut constants: Vec<ModuleConstantExtraction> = Vec::new();
+    let mut seen_c: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut helpers: Vec<HelperFunctionExtraction> = Vec::new();
+    let mut seen_h: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut scope: Vec<String> = Vec::new();
+    let mut seen_s: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for spec in specs {
+        for c in &spec.source.module_constants {
+            if seen_c.insert(c.name.clone()) {
+                constants.push(c.clone());
+            }
+        }
+        for h in &spec.source.helpers {
+            if seen_h.insert(h.name.clone()) {
+                helpers.push(h.clone());
+            }
+        }
+        for n in &spec.source.module_scope {
+            if seen_s.insert(n.clone()) {
+                scope.push(n.clone());
+            }
+        }
+    }
+
+    constants = super::mcp::topo_sort_constants(constants);
+
+    // A synthetic component whose module scope is the union and whose body is
+    // empty: the generator's own emission paths do the rest, so the shared
+    // module cannot drift from what the per-file output would have produced.
+    let mut synthetic = (*first).clone();
+    synthetic.source.module_constants = constants;
+    synthetic.source.helpers = helpers;
+    synthetic.source.module_scope = scope;
+    synthetic.target.pattern = TargetPattern::Function;
+
+    let gen = QliphothGenerator::new(&synthetic);
+    let (constants_code, emitted) = gen.generate_module_constants();
+    let helpers_code = gen.generate_helper_functions(&emitted);
+
+    let mut out = String::from("// Module scope shared by every generated component: the constants and\n                               // helper functions their React modules declared, emitted once.\n\n");
+    out.push_str(&constants_code);
+    if !constants_code.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&helpers_code);
     out
 }
 

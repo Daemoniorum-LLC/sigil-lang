@@ -809,6 +809,19 @@ impl<'a> ExprTransformer<'a> {
                     }
                 }
 
+                // `Number(x)` and `String(x)` are conversions, not calls to
+                // anything a Sigil program declares — they came out as
+                // `number(x)` and `string(x)`, two more lowercase names the
+                // backend stubbed to a constant 0.
+                if let Expr::Ident(id) = expr.as_ref() {
+                    match id.sym.to_string().as_str() {
+                        "Number" => return format!("parse_float({})", args),
+                        "String" => return format!("({})·to_string()", args),
+                        "Boolean" => return format!("({})·to_bool()", args),
+                        _ => {}
+                    }
+                }
+
                 // A prop that holds a function, called.
                 //
                 // `onPatch({ links: … })` is a child telling its parent
@@ -981,7 +994,11 @@ impl<'a> ExprTransformer<'a> {
             // Add the expression if there's one after this quasi
             if i < tpl.exprs.len() {
                 let expr = self.transform_expr(&tpl.exprs[i]);
-                parts.push(format!("{}.to_string()", expr));
+                // `·`, not `.`. A dot is field access, so `x.to_string()` parses
+                // as a field named `to_string` and then a call to nothing —
+                // which the backend stubs to a constant 0. The last Rustism in
+                // the emitted output, and it came from template literals.
+                parts.push(format!("({})·to_string()", expr));
             }
         }
 
@@ -1250,7 +1267,7 @@ mod tests {
         assert_eq!(transform("`hello`"), "\"hello\"");
         assert_eq!(
             transform("`hello ${name}`"),
-            "\"hello \" + name.to_string()"
+            "\"hello \" + (name)·to_string()"
         );
     }
 

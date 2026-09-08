@@ -681,6 +681,16 @@ impl TypeChecker {
             .insert("type_of".to_string(), func(vec![any.clone()], Type::Str));
         self.functions
             .insert("is_array".to_string(), func(vec![any.clone()], Type::Bool));
+        // `Number(x)` / `parseFloat(x)` — the string imports have carried these
+        // since the start; nothing named them.
+        self.functions.insert(
+            "parse_float".to_string(),
+            func(vec![any.clone()], Type::Float(FloatSize::F64)),
+        );
+        self.functions.insert(
+            "parse_int".to_string(),
+            func(vec![any.clone()], Type::Int(IntSize::I64)),
+        );
         self.functions.insert(
             "to_fixed".to_string(),
             func(vec![any.clone(), Type::Int(IntSize::I64)], Type::Str),
