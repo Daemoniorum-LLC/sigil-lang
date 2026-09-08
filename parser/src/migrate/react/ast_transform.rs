@@ -44,6 +44,16 @@ pub struct TransformConfig {
     /// expression, but it is a perfectly good function body. A bare reference to
     /// one has to become a call.
     pub value_constants: Vec<String>,
+    /// Declared parameter count of the helper functions in scope, by snake-cased
+    /// name.
+    ///
+    /// Sigil has no default parameters, so a helper written
+    /// `evidenceIdFromThread(texts, questionId = null)` declares two and every
+    /// call site has to pass two. Dropping the defaulted parameter from the
+    /// signature instead breaks the call sites that DO pass it — both shapes
+    /// occur in the same client. Declaring all of them and padding the short
+    /// calls with ∅ is the one rule that fits both.
+    pub fn_arity: std::collections::HashMap<String, usize>,
 }
 
 /// Result of transforming a JS expression
@@ -805,6 +815,22 @@ impl<'a> ExprTransformer<'a> {
 
                 // Regular function call
                 let callee = self.transform_expr(expr);
+                if let Expr::Ident(id) = expr.as_ref() {
+                    let snake = to_snake_case(&id.sym.to_string());
+                    if let Some(&declared) = self.config.fn_arity.get(&snake) {
+                        if call.args.len() < declared {
+                            let mut parts: Vec<String> = if args.trim().is_empty() {
+                                Vec::new()
+                            } else {
+                                vec![args.clone()]
+                            };
+                            for _ in call.args.len()..declared {
+                                parts.push("∅".to_string());
+                            }
+                            return format!("{}({})", callee, parts.join(", "));
+                        }
+                    }
+                }
                 format!("{}({})", callee, args)
             }
             Callee::Super(_) => format!("super({})", args),

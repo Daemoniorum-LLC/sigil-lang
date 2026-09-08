@@ -129,6 +129,16 @@ impl<'a> QliphothGenerator<'a> {
     ///
     /// Must agree exactly with `generate_module_constants`, or a reference
     /// becomes a call to something that was never emitted.
+    /// Declared parameter counts for the helpers this component can reach.
+    fn helper_arity(&self) -> std::collections::HashMap<String, usize> {
+        self.spec
+            .source
+            .helpers
+            .iter()
+            .map(|h| (to_snake_case(&h.name), h.parameters.len()))
+            .collect()
+    }
+
     fn value_constant_names(&self) -> Vec<String> {
         // Deliberately NOT through `transform_expression_scoped`: that builds a
         // TransformConfig, which calls this, which calls it — a stack overflow
@@ -148,6 +158,7 @@ impl<'a> QliphothGenerator<'a> {
             props: self.param_names.clone(),
             lookup_constants: Vec::new(),
             value_constants: Vec::new(),
+            fn_arity: std::collections::HashMap::new(),
         };
         self.spec
             .source
@@ -346,13 +357,10 @@ impl<'a> QliphothGenerator<'a> {
                 let mut local_known = known.clone();
                 for p in &h.parameters {
                     let pn = to_snake_case(&p.name);
-                    // A parameter with a default is optional at the call site,
-                    // and Sigil has no defaults — declaring it made every call
-                    // "expected 2 arguments, found 1". It stays in scope for the
-                    // body; it just is not in the signature.
-                    if p.default_value.is_none() && !p.optional {
-                        params.push(format!("{}: Any", pn));
-                    }
+                    // Every parameter, including the defaulted ones: Sigil has
+                    // no defaults, and the call sites are padded to match (see
+                    // `TransformConfig::fn_arity`).
+                    params.push(format!("{}: Any", pn));
                     inner.locals.push(p.name.clone());
                     local_known.insert(pn);
                 }
@@ -384,7 +392,6 @@ impl<'a> QliphothGenerator<'a> {
             let params: Vec<String> = h
                 .parameters
                 .iter()
-                .filter(|p| p.default_value.is_none() && !p.optional)
                 .map(|p| format!("{}: Any", to_snake_case(&p.name)))
                 .collect();
             let src: String = h
@@ -1439,6 +1446,7 @@ impl<'a> QliphothGenerator<'a> {
                 .map(|c| c.name.clone())
                 .collect(),
             value_constants: self.value_constant_names(),
+            fn_arity: self.helper_arity(),
         };
 
         // Use AST-based transformation

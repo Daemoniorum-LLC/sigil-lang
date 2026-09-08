@@ -914,7 +914,6 @@ impl WasmCompiler {
                                 let closure_ptr_idx = local.index;
                                 return self.compile_closure_call_with_env(
                                     closure_ptr_idx,
-                                    closure_info,
                                     args.len(),
                                 );
                             }
@@ -929,7 +928,6 @@ impl WasmCompiler {
 
                             return self.compile_closure_call_with_env(
                                 closure_ptr_idx,
-                                closure_info,
                                 args.len(),
                             );
                         }
@@ -955,48 +953,28 @@ impl WasmCompiler {
                     // This handles cases like calling a captured closure parameter: `compute()`
                     let local_info = self.current_function().and_then(|f| f.get_local(simple_name).cloned());
                     if let Some(local) = local_info {
-                        // Compile arguments first
-                        for arg in args {
-                            self.compile_expr(arg)?;
-                        }
+                        // The arguments are already on the stack: the shared
+                        // prologue above compiles them before any of these
+                        // branches. Compiling them again pushed each one twice
+                        // and consumed one — `f(x)` left a spare `x` behind, and
+                        // inside an `if` arm that is a block one value too tall.
 
                         // Load the closure pointer from local
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(local.index));
 
                         // Treat as indirect call through closure pointer
-                        // Closure representation: [table_idx, env_ptr]
+                        // Closure representation: [table_idx, env_ptr].
+                        //
+                        // This used to emit the operands itself, and got the
+                        // order wrong in a second way — table index before the
+                        // env pointer, both before the arguments. One sequence,
+                        // in the helper.
                         let temp_ptr = func.alloc_local("__call_local_closure".to_string(), ValType::I64);
                         func.push(Instruction::LocalSet(temp_ptr));
 
-                        // Get table index from closure (offset 0)
-                        func.push(Instruction::LocalGet(temp_ptr));
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-                        func.push(Instruction::I32WrapI64);
-
-                        // Get env pointer (offset 8)
-                        func.push(Instruction::LocalGet(temp_ptr));
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: 8,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-
-                        // Indirect call with env as first argument
-                        let mut param_types = vec![ValType::I64]; // env
-                        param_types.extend(std::iter::repeat(ValType::I64).take(args.len()));
-                        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
-
-                        let func = self.current_function_mut().unwrap();
-                        func.push(Instruction::CallIndirect { type_index: type_idx, table_index: 0 });
-
-                        Ok(())
+                        let arg_count = args.len();
+                        self.compile_closure_call_with_env(temp_ptr, arg_count)
                     } else {
                         // Fallback for nested/helper functions that weren't hoisted
                         // These are common patterns like `fn walk(...)` inside functions
@@ -1085,14 +1063,39 @@ impl WasmCompiler {
     fn compile_closure_call_with_env(
         &mut self,
         closure_ptr_idx: u32,
-        closure_info: ClosureInfo,
         arg_count: usize,
     ) -> WasmResult<()> {
-        // Load env pointer from closure object (offset 8)
+        // The arguments are already on the stack, in order, because the caller
+        // compiled them before reaching a closure. `call_indirect` wants
+        // `[env, args…, table_idx]` for a type of `(env, args…)`, and this
+        // emitted `[args…, env, table_idx]` — right only when there are no
+        // arguments, which is why it went unnoticed. Spill and replay rather
+        // than reorder the emission, so the arguments are still evaluated in
+        // source order.
+        let mut arg_locals: Vec<u32> = Vec::with_capacity(arg_count);
+        {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            for i in 0..arg_count {
+                let l = func.alloc_local(format!("__closure_arg_{}", i), ValType::I64);
+                func.push(Instruction::LocalSet(l));
+                arg_locals.push(l);
+            }
+            // Popped last-to-first; put them back in argument order.
+            arg_locals.reverse();
+        }
+
+        // Type includes env parameter
+        let mut param_types = vec![ValType::I64]; // env
+        param_types.extend(std::iter::repeat(ValType::I64).take(arg_count));
+        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
+
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
+        // env pointer (offset 8) — the first parameter
         func.push(Instruction::LocalGet(closure_ptr_idx));
         func.push(Instruction::I32WrapI64);
         func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1101,13 +1104,12 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-        // Type includes env parameter
-        let mut param_types = vec![ValType::I64]; // env
-        param_types.extend(std::iter::repeat(ValType::I64).take(arg_count));
-        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
+        // then the arguments
+        for l in arg_locals {
+            func.push(Instruction::LocalGet(l));
+        }
 
-        // Load table index from closure object (offset 0)
-        let func = self.current_function_mut().unwrap();
+        // table index (offset 0) — last, as `call_indirect` requires
         func.push(Instruction::LocalGet(closure_ptr_idx));
         func.push(Instruction::I32WrapI64);
         func.push(Instruction::I64Load(wasm_encoder::MemArg {
