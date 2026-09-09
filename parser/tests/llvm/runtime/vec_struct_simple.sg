@@ -1,0 +1,29 @@
+// G51: Vec iteration without nested field access
+
+Σ Item {
+    val: i64,
+}
+
+⊢ Item {
+    rite new(v: i64) → Self {
+        Self { val: v }
+    }
+
+    rite get_val(&this) → i64 {
+        this.val
+    }
+}
+
+rite main() {
+    println!("Creating vec...");
+    ≔ items = vec![Item·new(10), Item·new(20)];
+    println!("Vec created with {} items", items.len());
+
+    println!("About to iterate...");
+    ∀ item ∈ &items {
+        println!("  In loop body");
+        ≔ v = item.get_val();
+        println!("  val = {}", v);
+    }
+    println!("Done!");
+}

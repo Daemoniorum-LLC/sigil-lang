@@ -3040,6 +3040,7 @@ impl Linter {
             "?" => Some(crate::ast::Evidentiality::Uncertain),
             "~" => Some(crate::ast::Evidentiality::Reported),
             "◊" => Some(crate::ast::Evidentiality::Predicted),
+            "⁂" => Some(crate::ast::Evidentiality::Chaos),
             "‽" => Some(crate::ast::Evidentiality::Paradox),
             _ => None,
         }
@@ -3052,6 +3053,7 @@ impl Linter {
             crate::ast::Evidentiality::Uncertain => "?",
             crate::ast::Evidentiality::Reported => "~",
             crate::ast::Evidentiality::Predicted => "◊",
+            crate::ast::Evidentiality::Chaos => "⁂",
             crate::ast::Evidentiality::Paradox => "‽",
         }
     }
@@ -3063,6 +3065,7 @@ impl Linter {
             crate::ast::Evidentiality::Uncertain => "Uncertain/Unverified",
             crate::ast::Evidentiality::Reported => "Reported/External",
             crate::ast::Evidentiality::Predicted => "Predicted/Speculative",
+            crate::ast::Evidentiality::Chaos => "Chaos/Entropic",
             crate::ast::Evidentiality::Paradox => "Paradox/Contradiction",
         }
     }

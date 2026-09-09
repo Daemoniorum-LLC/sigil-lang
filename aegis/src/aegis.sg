@@ -1393,7 +1393,7 @@ rite path_matches(pattern: &str, path: &str) -> bool {
 }
 
 /// Audit context
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ AuditContext {
     /// Current goal (⎇ any)
     ☉ current_goal: Option<GoalId>,
@@ -1463,7 +1463,7 @@ rite path_matches(pattern: &str, path: &str) -> bool {
 }
 
 /// Audit level
-#[derive(Copy, Clone)]
+//@ rune: derive(Copy, Clone)
 ☉ ᛈ AuditLevel {
     /// Log everything
     Verbose,
@@ -1948,7 +1948,7 @@ rite path_matches(pattern: &str, path: &str) -> bool {
 }
 
 /// Sybil resistance configuration
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ SybilResistanceConfig {
     /// No resistance
     None,

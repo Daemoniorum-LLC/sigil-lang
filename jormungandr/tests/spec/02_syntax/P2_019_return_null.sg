@@ -1,0 +1,6 @@
+rite nothing() { ↩ null; }
+rite main() {
+    ≔ x = nothing();
+    ⎇ x == null { println("OK"); }
+    ⎉ { println("FAIL"); }
+}

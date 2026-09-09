@@ -1,0 +1,50 @@
+// Test: MiddleDot method dispatch on lowercase variable instances
+// Bug: parse_type_path unconditionally consumes MiddleDot for any identifier,
+//      causing `obj·method()` to parse as Call(Path("obj·method"), []) instead
+//      of MethodCall(Path("obj"), method).
+// Fix: Only allow · as a path separator when the first segment is uppercase (a type).
+//
+// Expected: all method calls via · on lowercase variables dispatch correctly.
+
+Σ Counter {
+    value: Int,
+}
+
+⊢ Counter {
+    rite new() {
+        ↩ Counter { value: 0 };
+    }
+    rite get(self) {
+        ↩ self.value;
+    }
+    rite increment(self) {
+        self.value = self.value + 1;
+        ↩ self;
+    }
+    rite add(self, n) {
+        self.value = self.value + n;
+        ↩ self;
+    }
+}
+
+rite main() {
+    // Constructor via uppercase type path — must continue to work
+    ≔ mut c = Counter·new();
+
+    // Method call via regular dot — reference baseline, must work
+    println(c.get());
+
+    // Method call via middledot on lowercase variable — THE BUG
+    println(c·get());
+
+    // Chained middledot method calls
+    c = c·increment();
+    c = c·increment();
+    println(c·get());
+
+    // Method with argument via middledot
+    c = c·add(10);
+    println(c·get());
+
+    println("PASS");
+}

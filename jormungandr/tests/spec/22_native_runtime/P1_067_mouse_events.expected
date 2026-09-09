@@ -1,0 +1,5 @@
+enable_mouse: OK
+disable_mouse: OK
+parse_press: OK
+parse_release: OK
+parse_scroll: OK

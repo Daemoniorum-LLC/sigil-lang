@@ -1,0 +1,50 @@
+// G52: Minimal BPE tokenizer reproduction
+
+Σ Entry {
+    id: i64,
+    bytes: Vec<u8>,
+}
+
+⊢ Entry {
+    rite from_byte(b: i64) → Self {
+        ≔ vary bytes = vec![];
+        bytes.push(b as u8);
+        Self { id: b, bytes: bytes }
+    }
+}
+
+Σ Tokenizer {
+    vocab: Vec<Entry>,
+}
+
+⊢ Tokenizer {
+    rite new() → Self {
+        ≔ vary vocab = vec![];
+        ∀ b ∈ 0..256 {
+            vocab.push(Entry·from_byte(b));
+        }
+        Self { vocab: vocab }
+    }
+
+    rite get_entry(&this, idx: i64) → &Entry {
+        &this.vocab[idx as usize]
+    }
+}
+
+rite main() {
+    println!("Creating tokenizer...");
+    ≔ tokenizer = Tokenizer·new();
+    println!("Created with {} entries", tokenizer.vocab.len());
+
+    println!("Getting entry 65 (ASCII 'A')...");
+    ≔ entry = tokenizer.get_entry(65);
+    println!("Entry id: {}", entry.id);
+    println!("Entry bytes len: {}", entry.bytes.len());
+
+    println!("Iterating over entry bytes...");
+    ∀ i ∈ 0..entry.bytes.len() {
+        println!("  byte[{}] = {}", i, entry.bytes[i] as i64);
+    }
+
+    println!("Done!");
+}

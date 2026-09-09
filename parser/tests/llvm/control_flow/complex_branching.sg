@@ -1,0 +1,51 @@
+// G46: Complex branching with variable defined in one path
+// Mimics f16_from_f32 pattern that causes domination error
+
+rite f16_pattern(bits: i64) → i64 {
+    ≔ sign = (bits >> 31) & 1;
+    ≔ vary exp = (bits >> 23) & 255;
+    ≔ vary mantissa = bits & 8388607;
+
+    ⎇ exp == 0 {
+        // Subnormal - normalize
+        ⎇ mantissa == 0 {
+            // Zero
+            sign << 15
+        } ⎉ {
+            // Normalize subnormal
+            ≔ vary m = mantissa << 1;
+            ≔ vary e = 0;
+
+            ⟳ (m & 8388608) == 0 {
+                m = m << 1;
+                e = e - 1;
+            }
+
+            // Variable defined after while, inside else
+            ≔ normalized_exp = 112 - e;
+
+            (sign << 15) | (normalized_exp << 10) | ((m & 1023) << 3)
+        }
+    } ⎉ {
+        ⎇ exp == 255 {
+            // Infinity or NaN
+            (sign << 15) | 31744 | (mantissa << 3)
+        } ⎉ {
+            // Normal number - THIS PATH MIGHT USE exp_after_while
+            ≔ biased = exp + 127 - 15;
+            (sign << 15) | (biased << 10) | (mantissa << 3)
+        }
+    }
+}
+
+rite main() {
+    println!("Testing complex branching...");
+
+    ≔ r1 = f16_pattern(0);
+    println!("f16_pattern(0) = {}", r1);
+
+    ≔ r2 = f16_pattern(1065353216);
+    println!("f16_pattern(1065353216) = {}", r2);
+
+    println!("Done!");
+}

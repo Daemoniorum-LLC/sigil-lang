@@ -127,6 +127,12 @@ void eprintln(const char* str) {
     fprintf(stderr, "%s\n", str);
 }
 
+/* Print just a newline */
+void sigil_print_newline(void) {
+    printf("\n");
+    fflush(stdout);
+}
+
 /* Get string length */
 int64_t sigil_strlen(const char* str) {
     if (str == NULL) return 0;
@@ -242,6 +248,38 @@ void sigil_vec_free(void* vec_ptr) {
     SigilVec* vec = (SigilVec*)vec_ptr;
     free(vec->data);
     free(vec);
+}
+
+/* G75: Get raw pointer to Vec data for slice conversion */
+void* sigil_vec_u8_as_ptr(void* vec_ptr) {
+    if (!vec_ptr) return NULL;
+    return (void*)((SigilVec*)vec_ptr)->data;
+}
+
+/* Clone a Vec (deep copy) */
+void* sigil_vec_clone(void* vec_ptr) {
+    if (!vec_ptr) return NULL;
+    SigilVec* src = (SigilVec*)vec_ptr;
+
+    // Create new Vec with same capacity as source length
+    SigilVec* dest = (SigilVec*)malloc(sizeof(SigilVec));
+    if (!dest) return NULL;
+
+    int64_t new_cap = src->len < 8 ? 8 : src->len;
+    dest->data = (int64_t*)malloc((size_t)new_cap * sizeof(int64_t));
+    if (!dest->data) {
+        free(dest);
+        return NULL;
+    }
+
+    // Copy elements
+    dest->len = src->len;
+    dest->capacity = new_cap;
+    for (int64_t i = 0; i < src->len; i++) {
+        dest->data[i] = src->data[i];
+    }
+
+    return dest;
 }
 
 
@@ -389,6 +427,85 @@ void sigil_string_print(void* str_ptr) {
 /* Free a String */
 void sigil_string_free(void* str_ptr) {
     if (str_ptr) free(str_ptr);
+}
+
+/* ============================================================================
+ * File I/O Functions
+ * ============================================================================ */
+
+/* Read entire file into a Sigil String (inline layout: [len, capacity, data...])
+ * Returns pointer to new String, or NULL on error
+ */
+void* sigil_fs_read(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: Could not open file: %s\n", path);
+        return NULL;
+    }
+
+    /* Get file size */
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    /* Allocate String: [len, capacity, data...] */
+    int64_t capacity = size + 16;  /* Extra space */
+    size_t alloc_size = 2 * sizeof(int64_t) + (size_t)capacity + 1;
+    int64_t* str = (int64_t*)malloc(alloc_size);
+    if (!str) {
+        fclose(f);
+        return NULL;
+    }
+
+    /* Read file */
+    char* data = (char*)(str + 2);
+    size_t read = fread(data, 1, size, f);
+    fclose(f);
+
+    data[read] = '\0';
+    str[0] = (int64_t)read;      /* len */
+    str[1] = capacity;            /* capacity */
+
+    return str;
+}
+
+/* Get bytes pointer from Sigil String (compatible with String layout)
+ * Returns pointer to the underlying byte data
+ */
+const char* sigil_rust_string_as_bytes(void* str_ptr) {
+    if (!str_ptr) return NULL;
+    /* String layout is [len, capacity, data...] */
+    return (const char*)((int64_t*)str_ptr + 2);
+}
+
+/* Create a substring from a Sigil String
+ * Returns a new String containing the slice [start, end)
+ */
+void* sigil_rust_string_slice(void* str_ptr, int64_t start, int64_t end) {
+    if (!str_ptr) return sigil_string_new(16);
+
+    int64_t* src = (int64_t*)str_ptr;
+    int64_t src_len = src[0];
+    const char* src_data = (const char*)(src + 2);
+
+    /* Clamp indices */
+    if (start < 0) start = 0;
+    if (end > src_len) end = src_len;
+    if (start > end) start = end;
+
+    int64_t slice_len = end - start;
+    int64_t capacity = slice_len + 16;
+    size_t alloc_size = 2 * sizeof(int64_t) + (size_t)capacity + 1;
+    int64_t* dest = (int64_t*)malloc(alloc_size);
+    if (!dest) return NULL;
+
+    char* dest_data = (char*)(dest + 2);
+    memcpy(dest_data, src_data + start, slice_len);
+    dest_data[slice_len] = '\0';
+    dest[0] = slice_len;      /* len */
+    dest[1] = capacity;       /* capacity */
+
+    return dest;
 }
 
 /* ============================================================================
@@ -838,6 +955,10 @@ float sigil_simd_dot_f32x16(const float* a, const float* b) {
  * CUDA Functions (using CUDA Driver API)
  * ============================================================================ */
 
+/* When linking with sigil_runtime_cuda.c, define SIGIL_CUDA_EXTERNAL to avoid
+ * duplicate definitions. sigil_runtime_cuda.c provides the full implementations. */
+#ifndef SIGIL_CUDA_EXTERNAL
+
 #ifdef SIGIL_CUDA_SUPPORT
 #include <cuda.h>
 #include <nvrtc.h>
@@ -1138,6 +1259,8 @@ int64_t sigil_cuda_compile_kernel(const char* src, const char* name) {
 }
 
 #endif /* SIGIL_CUDA_SUPPORT */
+
+#endif /* SIGIL_CUDA_EXTERNAL */
 
 /* ============================================================================
  * System Functions

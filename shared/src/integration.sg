@@ -18,7 +18,7 @@ invoke crate·{
 
 /// Emotional context that can accompany a Covenant handoff.
 /// Allows Anima's interiority to inform human-agent collaboration.
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ EmotionalContext {
     /// The agent's inner stance toward this handoff
     ☉ inner_stance: InnerStance,
@@ -107,7 +107,7 @@ invoke crate·{
 }
 
 /// Simplified inner stance ∀ integration
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ InnerStance {
     Eager,
     Willing,
@@ -117,7 +117,7 @@ invoke crate·{
 }
 
 /// Simplified relational impact ∀ integration
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ RelationalImpact {
     Strengthening,
     Neutral,
@@ -125,7 +125,7 @@ invoke crate·{
 }
 
 /// A handoff enriched with emotional context from Anima
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ EnrichedHandoff {
     /// The handoff content (what needs to be communicated)
     ☉ content: HandoffContent,
@@ -138,7 +138,7 @@ invoke crate·{
 }
 
 /// Content of a handoff
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ HandoffContent {
     Decision {
         question: String,
@@ -160,7 +160,7 @@ invoke crate·{
 }
 
 /// Significance level ∀ information handoffs
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ Significance {
     FYI,
     Important,
@@ -172,7 +172,7 @@ invoke crate·{
 // ============================================================================
 
 /// A learning event that can be transformed into Anima wisdom
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ LearningInsight {
     /// What was learned
     ☉ lesson: String,
@@ -254,7 +254,7 @@ invoke crate·{
 }
 
 /// Type of insight from learning
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ InsightType {
     EffectiveApproach,
     IneffectiveApproach,
@@ -263,7 +263,7 @@ invoke crate·{
 }
 
 /// A wisdom entry that can be stored ∈ Anima
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ WisdomEntry {
     ☉ description: String,
     ☉ source: String,
@@ -277,7 +277,7 @@ invoke crate·{
 // ============================================================================
 
 /// An explanation that can accompany a Covenant action
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ ActionExplanation {
     /// Summary of why this action is being taken
     ☉ summary: String,
@@ -360,7 +360,7 @@ invoke crate·{
 }
 
 /// A factor ∈ an explanation
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ ExplanationFactor {
     ☉ name: String,
     ☉ description: String,
@@ -368,7 +368,7 @@ invoke crate·{
 }
 
 /// Level of detail ∀ explanations
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ DetailLevel {
     Brief,
     Standard,
@@ -380,7 +380,7 @@ invoke crate·{
 // ============================================================================
 
 /// Felt experience that can inform Oracle's reasoning traces
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ FeltExperience {
     /// What triggered this experience
     ☉ trigger: String,
@@ -444,7 +444,7 @@ invoke crate·{
 }
 
 /// Simplified feeling qualities ∀ integration
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ FeelingQuality {
     Curiosity,
     Engagement,
@@ -456,7 +456,7 @@ invoke crate·{
 }
 
 /// How a felt experience impacts reasoning
-#[derive(Clone, Copy)]
+//@ rune: derive(Clone, Copy)
 ☉ ᛈ ReasoningImpact {
     Enhances(&'static str),
     Suggests(&'static str),
@@ -468,7 +468,7 @@ invoke crate·{
 // ============================================================================
 
 /// A trust event that can flow between modules
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ Σ TrustEvent {
     /// Who is involved
     ☉ entity: EntityReference,
@@ -523,7 +523,7 @@ invoke crate·{
 }
 
 /// Reference to an entity ∈ a trust relationship
-#[derive(Clone)]
+//@ rune: derive(Clone)
 ☉ ᛈ EntityReference {
     Human(HumanId),
     Agent(AgentId),
@@ -531,7 +531,7 @@ invoke crate·{
 }
 
 /// Type of trust event
-#[derive(Clone, Copy, PartialEq, Eq)]
+//@ rune: derive(Clone, Copy, PartialEq, Eq)
 ☉ ᛈ TrustEventType {
     PositiveInteraction,
     NegativeInteraction,
@@ -542,7 +542,7 @@ invoke crate·{
 }
 
 /// Impact on trust
-#[derive(Clone, Copy)]
+//@ rune: derive(Clone, Copy)
 ☉ ᛈ TrustImpact {
     Increase(f64),
     Decrease(f64),
@@ -640,11 +640,11 @@ invoke crate·{
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_emotional_context() {
         ≔ ctx = EmotionalContext·reluctant("This approach has risks")
             .with_concern("May impact system stability");
@@ -653,7 +653,7 @@ scroll tests {
         assert_eq!(ctx.concerns.len(), 2);
     }
 
-    #[test]
+    //@ rune: test
     rite test_learning_insight_to_wisdom() {
         ≔ insight = LearningInsight·relational(
             "Clear communication builds trust",
@@ -665,7 +665,7 @@ scroll tests {
         assert_eq!(wisdom.source, "relationship");
     }
 
-    #[test]
+    //@ rune: test
     rite test_trust_event_application() {
         ≔ Δ trust = TrustLevel·initial();
         ≔ event = TrustEvent·positive(
@@ -678,7 +678,7 @@ scroll tests {
         assert!(trust.value() > initial);
     }
 
-    #[test]
+    //@ rune: test
     rite test_action_explanation() {
         ≔ explanation = ActionExplanation·standard("Proceeding with refactoring")
             .with_factor("Code quality", "Improves maintainability", 0.8)
@@ -688,7 +688,7 @@ scroll tests {
         assert_eq!(explanation.alternatives_considered.len(), 1);
     }
 
-    #[test]
+    //@ rune: test
     rite test_integration_bus() {
         ≔ Δ bus = IntegrationBus·new();
 

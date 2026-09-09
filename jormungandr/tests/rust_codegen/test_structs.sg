@@ -1,0 +1,44 @@
+// Test: Struct and generic translation
+// Spec: RUST-CODEGEN-SPEC.md § 5.6, 9.2
+// Priority: P0 - Core
+//
+// Purpose: Validate struct declaration with generics
+//
+// Expected: Generates valid Rust struct with generics
+
+#[derive(Debug, Clone)]
+sigil Point<T> {
+    x: T,
+    y: T,
+}
+
+#[derive(Debug)]
+sigil Rectangle {
+    top_left: Point<f64>,
+    bottom_right: Point<f64>,
+}
+
+sigil Array<T, ◆ N: usize> {
+    data: [T; N],
+}
+
+⊢ Point<T> {
+    rite new(x: T, y: T) → Self {
+        Self { x, y }
+    }
+}
+
+⊢ Point<f64> {
+    rite distance(&this, other: &Point<f64>) → f64 {
+        ≔ dx = this·x - other·x;
+        ≔ dy = this·y - other·y;
+        (dx * dx + dy * dy)·sqrt()
+    }
+}
+
+rite main() {
+    ≔ p1 = Point·new(0.0, 0.0);
+    ≔ p2 = Point·new(3.0, 4.0);
+    ≔ d = p1·distance(&p2);
+    println(d);
+}

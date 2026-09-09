@@ -1,0 +1,5 @@
+read_string_pipe: OK
+read_string_pty: OK
+read_string_empty: OK
+read_string_invalid_fd: OK
+read_string_partial: OK

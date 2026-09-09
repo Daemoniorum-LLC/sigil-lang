@@ -1,0 +1,41 @@
+// G44: Enum with tuple variant (like NihilError::Shape(ShapeError))
+
+sigil ShapeError {
+    dim: i64,
+    msg: String,
+}
+
+ᛈ MyError {
+    Shape(ShapeError),
+    Device { message: String },
+    Internal { message: String },
+}
+
+⊢ MyError {
+    rite fmt(&this) → i64 {
+        ⌥ this {
+            This·Shape(e) => {
+                println!("Shape error");
+                0
+            }
+            This·Device { message } => {
+                println!("Device error");
+                1
+            }
+            This·Internal { message } => {
+                println!("Internal error");
+                2
+            }
+        }
+    }
+}
+
+rite main() {
+    println!("Testing tuple variant match...");
+
+    ≔ shape_err = ShapeError { dim: 3, msg: String·from("bad shape") };
+    ≔ e1 = MyError·Shape(shape_err);
+    e1.fmt();
+
+    println!("Done!");
+}

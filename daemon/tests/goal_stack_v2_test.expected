@@ -1,0 +1,10 @@
+Daemon v0.2 GoalStack tests
+PASS: next_pending_priority
+PASS: next_pending_empty
+PASS: activate_pane_id
+PASS: complete_outcome
+PASS: abandon_reason
+PASS: requeue_clears_pane_id
+PASS: count_abandoned
+PASS: push_normalizes
+Done

@@ -1,0 +1,31 @@
+// Test: find_index — index of first matching element
+// Spec: 09A-ARRAY-COMBINATORS.md § 3.2
+// Priority: P1
+
+rite main() {
+    // Found at index 0
+    ≔ i0 = find_index([10, 20, 30], |x| x == 10);
+    println(i0);                   // 0
+
+    // Found in middle
+    ≔ i1 = find_index([10, 20, 30], |x| x > 15);
+    println(i1);                   // 1
+
+    // Found at last position
+    ≔ i2 = find_index([1, 2, 3], |x| x == 3);
+    println(i2);                   // 2
+
+    // Not found → null
+    ≔ i3 = find_index([1, 2, 3], |x| x > 10);
+    println(type_of(i3));          // null
+
+    // Empty array → null
+    ≔ i4 = find_index([], |x| true);
+    println(type_of(i4));          // null
+
+    // Returns FIRST matching index, not last
+    ≔ i5 = find_index([5, 5, 5], |x| x == 5);
+    println(i5);                   // 0
+
+    println("PASS");
+}

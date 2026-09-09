@@ -1,0 +1,164 @@
+//! Test full print_int implementation using pure Sigil intrinsics
+
+// Intrinsic declarations
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+    rite __intrinsic_exit(code: i64);
+}
+
+// Constants
+rite STDOUT() -> i64 { 1 }
+rite VEC_INITIAL_CAPACITY() -> i64 { 8 }
+rite VEC_GROWTH_FACTOR() -> i64 { 2 }
+
+// RawVec - Low-level growable buffer for i64 values
+Σ RawVec {
+    ptr: i64,
+    len: i64,
+    cap: i64,
+}
+
+⊢ RawVec {
+    rite new() -> Self {
+        Self { ptr: 0, len: 0, cap: 0 }
+    }
+
+    rite len(&self) -> i64 {
+        self.len
+    }
+
+    rite grow(&vary self, min_cap: i64) {
+        ≔ vary new_cap = self.cap * VEC_GROWTH_FACTOR();
+        if new_cap < min_cap {
+            new_cap = min_cap;
+        }
+        if new_cap < VEC_INITIAL_CAPACITY() {
+            new_cap = VEC_INITIAL_CAPACITY();
+        }
+
+        ≔ new_size = new_cap * 8;
+        ≔ new_ptr = __intrinsic_malloc(new_size);
+
+        if new_ptr == 0 {
+            __intrinsic_exit(1);
+        }
+
+        // Copy old data to new buffer
+        if self.ptr != 0 {
+            ≔ vary i = 0;
+            loop {
+                if i >= self.len { break }
+                ≔ old_addr = self.ptr + i * 8;
+                ≔ new_addr = new_ptr + i * 8;
+                ≔ value = *(old_addr as *i64);
+                *(new_addr as *vary i64) = value;
+                i = i + 1;
+            }
+            __intrinsic_free(self.ptr);
+        }
+
+        self.ptr = new_ptr;
+        self.cap = new_cap;
+    }
+
+    rite push(&vary self, value: i64) {
+        if self.len >= self.cap {
+            self.grow(self.len + 1);
+        }
+
+        ≔ addr = self.ptr + self.len * 8;
+        *(addr as *vary i64) = value;
+        self.len = self.len + 1;
+    }
+
+    rite get(&self, index: i64) -> i64 {
+        if index < 0 {
+            return 0
+        }
+        if index >= self.len {
+            return 0
+        }
+
+        ≔ addr = self.ptr + index * 8;
+        *(addr as *i64)
+    }
+
+    rite drop(&vary self) {
+        if self.ptr != 0 {
+            __intrinsic_free(self.ptr);
+            self.ptr = 0;
+            self.len = 0;
+            self.cap = 0;
+        }
+    }
+}
+
+// Write a single byte to stdout
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(STDOUT(), buf, 1);
+    __intrinsic_free(buf);
+}
+
+// Print a newline
+rite print_newline() {
+    write_byte(10);
+}
+
+// Print an integer to stdout
+rite print_int(n: i64) {
+    if n == 0 {
+        write_byte(48);  // '0'
+        return
+    }
+
+    ≔ vary num = n;
+    ≔ vary negative = false;
+
+    if num < 0 {
+        negative = true;
+        num = 0 - num;
+    }
+
+    // Extract digits in reverse order
+    ≔ vary digits = RawVec::new();
+    loop {
+        if num == 0 { break }
+        ≔ digit = num % 10;
+        digits.push(digit + 48);  // '0' = 48
+        num = num / 10;
+    }
+
+    // Print negative sign if needed
+    if negative {
+        write_byte(45);  // '-'
+    }
+
+    // Print digits in reverse (correct order)
+    ≔ vary i = digits.len() - 1;
+    loop {
+        if i < 0 { break }
+        write_byte(digits.get(i));
+        i = i - 1;
+    }
+
+    digits.drop();
+}
+
+// Print integer followed by newline
+rite println_int(n: i64) {
+    print_int(n);
+    print_newline();
+}
+
+rite main() {
+    println_int(42);
+    println_int(0);
+    println_int(-123);
+    println_int(9876543210);
+    println_int(1);
+    println_int(-1);
+}

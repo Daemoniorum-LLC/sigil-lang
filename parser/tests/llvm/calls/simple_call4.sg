@@ -1,0 +1,10 @@
+// Test let binding with function call
+
+☉ rite get_42() → i64 {
+    42
+}
+
+☉ rite main() → i64 {
+    ≔ x = get_42();
+    x
+}
