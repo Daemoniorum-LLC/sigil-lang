@@ -5157,6 +5157,36 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
 ///
 /// With output_dir, writes to that directory (converting .rs → .sg).
 /// Without output_dir, modifies files in-place.
+/// Drop Rust's absolute-path prefix from `text`, returning the new text and
+/// how many prefixes were removed.
+///
+/// `::gltf::Error` and `::prost::Message` name a path from the crate root.
+/// Sigil has no equivalent, and translating the prefix to `·` yields a leading
+/// middle dot, which does not parse. A `::` that follows an identifier, `>`
+/// (as in `<T as Tr>::Assoc`) or `)` is a real separator and is left alone for
+/// the caller to translate.
+fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut dropped = 0;
+    for (idx, _) in text.match_indices("::") {
+        if idx < last {
+            continue;
+        }
+        let follows_path = text[..idx]
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '>' || c == ')');
+        if !follows_path {
+            out.push_str(&text[last..idx]);
+            last = idx + 2;
+            dropped += 1;
+        }
+    }
+    out.push_str(&text[last..]);
+    (out, dropped)
+}
+
 /// Split Rust source into code and non-code regions, applying `f` to the code
 /// only and copying comments and literals through untouched.
 ///
@@ -5478,7 +5508,10 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
                 }
 
                 // Convert the attribute content
-                // Replace :: with · in attribute names (e.g., tokio::test → tokio·test)
+                // Replace :: with · in attribute names (e.g., tokio::test → tokio·test),
+                // after dropping any absolute-path prefix: `#[derive(::prost::Message)]`
+                // must not render as `·prost·Message`.
+                let (attr_content, _) = drop_absolute_path_prefix(&attr_content);
                 let converted_attr = attr_content.replace("::", "·");
 
                 // Known Sigil rune attributes (convert to //@ rune:)
@@ -5545,6 +5578,10 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     // comments above are likewise protected, since they are comments by now.
     result = map_rust_code_spans(&result, |code| {
         let mut piece = code.to_string();
+
+        let (stripped, dropped) = drop_absolute_path_prefix(&piece);
+        piece = stripped;
+        changes += dropped;
 
         for (from, to) in &simple_replacements {
             let count = piece.matches(from).count();
@@ -6585,6 +6622,26 @@ mod migrate_span_tests {
             o2,
             "let m = \"this crate is not a tome\"; let y = tome::F;"
         );
+    }
+
+    #[test]
+    fn absolute_path_prefix_is_dropped_not_translated() {
+        // `::gltf::Error` must not keep its leading `::`, which would become a
+        // leading `·` and fail to parse. Inner separators survive.
+        assert_eq!(
+            super::drop_absolute_path_prefix("x(::gltf::Error)").0,
+            "x(gltf::Error)"
+        );
+        // A separator that follows an identifier, `>` or `)` is untouched.
+        assert_eq!(super::drop_absolute_path_prefix("a::b").0, "a::b");
+        assert_eq!(
+            super::drop_absolute_path_prefix("<T as Tr>::Assoc").0,
+            "<T as Tr>::Assoc"
+        );
+        // Every prefix in a list is dropped, and the count is reported.
+        let (out, n) = super::drop_absolute_path_prefix("d(::a::B, ::c::D)");
+        assert_eq!(out, "d(a::B, c::D)");
+        assert_eq!(n, 2);
     }
 
     #[test]
