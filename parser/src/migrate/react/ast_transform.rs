@@ -104,7 +104,7 @@ pub fn transform_expression(code: &str, config: &TransformConfig) -> TransformRe
     // Try to parse as expression
     match parse_expression(code) {
         Ok(expr) => {
-            let mut transformer = ExprTransformer::new(config);
+            let mut transformer = ExprTransformer::new(config, code);
             let result = transformer.transform_expr(&expr);
             TransformResult {
                 code: result,
@@ -167,12 +167,52 @@ fn is_simple_identifier(s: &str) -> bool {
         && s.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
+/// Methods an optional call may keep verbatim: Sigil spells them the same, so
+/// `a?.b()` coming out as `a\u{b7}b()` means it WAS recognised.
+const KNOWN_OPTIONAL_METHODS: &[&str] = &[
+    "trim", "to_string", "to_lowercase", "to_uppercase", "len", "push", "pop",
+    "join", "split", "map", "filter", "find", "contains", "starts_with",
+    "ends_with", "replace", "slice", "reverse", "sort", "insert", "remove",
+    "keys", "values", "entries", "clone", "get", "set", "for_each", "all",
+    "any", "fold", "flat_map", "char_at", "contains_key", "to_bool", "await",
+];
+
+/// A JavaScript global with a Sigil host function behind it — the timers and
+/// the three dialogs, which `prefix_self` otherwise turned into actor fields.
+fn js_timer_global(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "parseFloat" => "parse_float",
+        "confirm" => "browser_confirm",
+        "alert" => "browser_alert",
+        "prompt" => "browser_prompt",
+        "setTimeout" => "timing_set_timeout",
+        "clearTimeout" => "timing_clear_timeout",
+        "setInterval" => "timing_set_interval",
+        "clearInterval" => "timing_clear_interval",
+        "requestAnimationFrame" => "timing_request_animation_frame",
+        "cancelAnimationFrame" => "timing_clear_interval",
+        _ => return None,
+    })
+}
+
 /// A JavaScript static call with a Sigil host function behind it.
 ///
 /// `Date.now()` is the one that matters — four of the generated components call
 /// it. The receiver arrives already transformed, so it is lower-cased here.
 fn js_static_call(obj: &str, method: &str) -> Option<&'static str> {
     Some(match (obj, method) {
+        // `window.setTimeout(…)` — the host `timing` group has had these since
+        // the start, but nothing routed the browser spelling to them, so
+        // `window·clear_timeout(id)` reached the backend as an undefined
+        // function. The bare-global spelling is handled in `transform_call`.
+        ("window", "confirm") => "browser_confirm",
+        ("window", "alert") => "browser_alert",
+        ("window", "prompt") => "browser_prompt",
+        ("window", "setTimeout") => "timing_set_timeout",
+        ("window", "clearTimeout") => "timing_clear_timeout",
+        ("window", "setInterval") => "timing_set_interval",
+        ("window", "clearInterval") => "timing_clear_interval",
+        ("window", "requestAnimationFrame") => "timing_request_animation_frame",
         ("date", "now") => "timing_now",
         ("date", "parse") => "timing_parse",
         ("json", "stringify") => "json_stringify",
@@ -223,7 +263,7 @@ fn scope_name_matches(candidate: &str, ident: &str) -> bool {
 }
 
 /// Convert camelCase to snake_case
-fn to_snake_case(s: &str) -> String {
+pub(crate) fn to_snake_case(s: &str) -> String {
     crate::migrate::react::spec::to_snake_case(s)
 }
 
@@ -252,6 +292,9 @@ fn to_pascal_case(s: &str) -> String {
 
 struct ExprTransformer<'a> {
     config: &'a TransformConfig,
+    /// The expression's own source, so an arrow with a block body can be sliced
+    /// out and handed to the statement transform.
+    src: &'a str,
     /// Names bound by enclosing closures. Separate from `config.locals`, which is
     /// the caller's fixed scope; this one is pushed and popped as arrows nest.
     scope_locals: Vec<String>,
@@ -259,9 +302,10 @@ struct ExprTransformer<'a> {
 }
 
 impl<'a> ExprTransformer<'a> {
-    fn new(config: &'a TransformConfig) -> Self {
+    fn new(config: &'a TransformConfig, src: &'a str) -> Self {
         Self {
             config,
+            src,
             scope_locals: vec![],
             warnings: vec![],
         }
@@ -335,6 +379,11 @@ impl<'a> ExprTransformer<'a> {
             // Await expression
             Expr::Await(await_expr) => {
                 let inner = self.transform_expr(&await_expr.arg);
+                // `await p.then(cb)` — `then` already became a block that awaits
+                // inside it, so a second `.await` would await the block's value.
+                if inner.trim_start().starts_with('{') && inner.trim_end().ends_with('}') {
+                    return inner;
+                }
                 format!("{}.await", inner)
             }
 
@@ -359,6 +408,24 @@ impl<'a> ExprTransformer<'a> {
                     } else {
                         format!("timing_parse({})", args)
                     };
+                }
+                // `new Promise((resolve) => …)` has no Sigil analogue: Qliphoth
+                // actors communicate by message, and there is no value to hand a
+                // resolver to. It reached the backend as `promise·new(…)`, whose
+                // callback then called an undefined `resolve`.
+                if callee == "promise" {
+                    self.warn("new Promise — actors have no promises");
+                    let flat: String =
+                        args.split_whitespace().collect::<Vec<_>>().join(" ");
+                    let capped = if flat.chars().count() > 80 {
+                        flat.chars().take(77).collect::<String>() + "..."
+                    } else {
+                        flat
+                    };
+                    return format!(
+                        "/* new Promise({}) — Sigil has no promises */ \u{2205}",
+                        capped.replace("*/", "* /")
+                    );
                 }
                 let collection = match callee.as_str() {
                     "set" => Some("HashSet"),
@@ -432,6 +499,12 @@ impl<'a> ExprTransformer<'a> {
         }
         if name == "null" || name == "undefined" {
             return "None".to_string();
+        }
+
+        // `xs.filter(Boolean)` — the constructor used as a truthiness
+        // predicate. Passed through, it was an undefined variable.
+        if name == "Boolean" {
+            return "|__b| __b\u{b7}to_bool()".to_string();
         }
 
         // Check if it's a local variable (shouldn't be prefixed).
@@ -536,6 +609,21 @@ impl<'a> ExprTransformer<'a> {
         let left = self.transform_expr(&bin.left);
         let right = self.transform_expr(&bin.right);
 
+        // `k in obj` is a key test, and `x instanceof T` a type test — neither
+        // is an infix operator in Sigil, and both were emitted verbatim, which
+        // is a parse error in the generated file.
+        if matches!(bin.op, BinaryOp::In) {
+            return format!("{}\u{b7}contains_key({})", right, left);
+        }
+        if matches!(bin.op, BinaryOp::InstanceOf) {
+            self.warn("instanceof — Sigil has no runtime class test");
+            return format!(
+                "/* {} instanceof {} — Sigil has no runtime class test */ false",
+                left.replace("*/", "* /"),
+                right.replace("*/", "* /")
+            );
+        }
+
         let op = match bin.op {
             // Logical (pure boolean operations)
             BinaryOp::LogicalAnd => "∧",
@@ -623,10 +711,33 @@ impl<'a> ExprTransformer<'a> {
             // host knows about the value. `typeof(…)` named nothing at all.
             UnaryOp::TypeOf => format!("type_of({})", arg),
             UnaryOp::Void => "None".to_string(),
-            UnaryOp::Delete => {
-                self.warn("delete operator");
-                format!("/* delete {} */", arg)
-            }
+            // `delete obj[k]` is a map removal, and Sigil has one. This used
+            // to emit a bare `/* delete … */` — a comment with no value, which
+            // is a parse error wherever a statement needs an expression.
+            UnaryOp::Delete => match unary.arg.as_ref() {
+                Expr::Member(member) => {
+                    let obj = self.transform_expr(&member.obj);
+                    match &member.prop {
+                        MemberProp::Computed(c) => {
+                            let key = self.transform_expr(&c.expr);
+                            format!("{}\u{b7}remove({})", obj, key)
+                        }
+                        MemberProp::Ident(id) => format!(
+                            "{}\u{b7}remove(\"{}\")",
+                            obj,
+                            to_snake_case_member(&id.sym.to_string())
+                        ),
+                        _ => {
+                            self.warn("delete operator");
+                            format!("/* delete {} */ \u{2205}", arg)
+                        }
+                    }
+                }
+                _ => {
+                    self.warn("delete operator");
+                    format!("/* delete {} */ \u{2205}", arg)
+                }
+            },
         }
     }
 
@@ -738,13 +849,80 @@ impl<'a> ExprTransformer<'a> {
         }
     }
 
+    /// `p.then(|v| …)` as a Sigil block expression: bind the awaited value,
+    /// then the callback's own body.
+    ///
+    /// `None` when the callback is not an arrow — there is nothing to inline,
+    /// and the caller falls back to marking the call.
+    fn then_block(&mut self, receiver: &str, cb: &Expr) -> Option<String> {
+        let Expr::Arrow(arrow) = cb else { return None };
+        let param = match arrow.params.first() {
+            None => None,
+            Some(Pat::Ident(id)) => Some(to_snake_case(&id.id.sym)),
+            // A destructured parameter has no single name to bind.
+            Some(_) => return None,
+        };
+
+        let mut inner = self.config.clone();
+        inner.locals.extend(self.scope_locals.iter().cloned());
+        if let Some(p) = &param {
+            inner.locals.push(p.clone());
+        }
+
+        let bind = match &param {
+            Some(p) => format!("    \u{2254} {} = {}.await;\n", p, receiver),
+            None => format!("    {}.await;\n", receiver),
+        };
+
+        let body = match &*arrow.body {
+            BlockStmtOrExpr::Expr(e) => {
+                let src = super::stmt_transform::slice(self.src, e.span());
+                let r = super::stmt_transform::transform_statements(&src, &inner, "    ");
+                if !r.complete {
+                    self.warnings.extend(r.warnings);
+                }
+                r.code
+            }
+            BlockStmtOrExpr::BlockStmt(block) => {
+                let src = super::stmt_transform::slice(self.src, block.span);
+                let r = super::stmt_transform::transform_statements(&src, &inner, "");
+                if !r.complete {
+                    self.warnings.extend(r.warnings);
+                }
+                r.code
+                    .lines()
+                    .map(|l| format!("    {}", l))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        };
+        if body.trim().is_empty() {
+            return None;
+        }
+        Some(format!("{{\n{}{}\n}}", bind, body))
+    }
+
     fn transform_call(&mut self, call: &CallExpr) -> String {
         let args = self.transform_args(&call.args);
 
         match &call.callee {
-            Callee::Expr(expr) => {
+            Callee::Expr(callee_expr) => {
+                // `a.b?.c(x)` puts the optional member INSIDE the callee, so the
+                // member-call arms below never saw it and every such call took
+                // the generic path: `terminalRef.current?.sendInput(…)` came out
+                // as a plain call to an undefined `send_input`. Unwrapped here,
+                // once, so one set of arms handles both spellings.
+                let unwrapped: Option<Expr> = match callee_expr.as_ref() {
+                    Expr::OptChain(opt) => match &*opt.base {
+                        OptChainBase::Member(m) => Some(Expr::Member(m.clone())),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let expr: &Expr = unwrapped.as_ref().unwrap_or(callee_expr);
+
                 // Check for method calls: obj.method()
-                if let Expr::Member(member) = expr.as_ref() {
+                if let Expr::Member(member) = expr {
                     let obj = self.transform_expr(&member.obj);
 
                     if let MemberProp::Ident(ident) = &member.prop {
@@ -757,10 +935,140 @@ impl<'a> ExprTransformer<'a> {
                             return format!("{}({})", replacement, args);
                         }
 
+                        // `re.test(s)` / `re.exec(s)`. `test` and `exec` are
+                        // RegExp-only method names, and Sigil has no regex — the
+                        // literal is already marked, so the call on it named an
+                        // undefined function on an undefined receiver.
+                        if matches!(method.as_str(), "test" | "exec") {
+                            self.warn(&format!("regex .{}() — Sigil has no regex", method));
+                            return format!(
+                                "/* {}·{}({}) — Sigil has no regex */ \u{2205}",
+                                obj.replace("*/", "* /"),
+                                method,
+                                args.replace("*/", "* /")
+                            );
+                        }
+
+                        // `Number.parseInt(s, 10)` — the host `parse_int`
+                        // takes the string alone, so the radix made the call an
+                        // arity mismatch and it resolved to nothing. Base 10 is
+                        // the only one it implements; any other is reported.
+                        if (obj == "number" || obj == "string")
+                            && matches!(method.as_str(), "parseInt" | "parseFloat")
+                        {
+                            let first = call
+                                .args
+                                .first()
+                                .map(|a| self.transform_expr(&a.expr))
+                                .unwrap_or_else(|| "\u{2205}".to_string());
+                            if method == "parseInt" {
+                                if let Some(radix) = call.args.get(1) {
+                                    let r = self.transform_expr(&radix.expr);
+                                    if r.trim() != "10" {
+                                        self.warn(&format!(
+                                            "parseInt radix {} — only base 10 is implemented",
+                                            r.trim()
+                                        ));
+                                    }
+                                }
+                                return format!("parse_int({})", first);
+                            }
+                            return format!("parse_float({})", first);
+                        }
+
+                        // `Promise.resolve(x)` is `x` where nothing is
+                        // asynchronous; `reject` and `all` have no synchronous
+                        // meaning at all. Both reached the backend as calls to
+                        // an undefined `resolve` / `reject` / `all`.
+                        if obj == "promise" {
+                            match method.as_str() {
+                                "resolve" => return args,
+                                "reject" | "all" | "allSettled" | "race" => {
+                                    self.warn(&format!(
+                                        "Promise.{} — actors have no promises",
+                                        method
+                                    ));
+                                    return format!(
+                                        "/* Promise.{}({}) — Sigil has no promises */ \u{2205}",
+                                        method,
+                                        args.replace("*/", "* /")
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        // `onCommitRef.current(text)` — a callback prop parked
+                        // in a ref. `current` is the ref's FIELD, not a method,
+                        // and Sigil cannot call a value held in a field; the
+                        // member call reached the backend as an undefined
+                        // `current`. Same gap as a directly-called callback prop
+                        // (§8.2.9): actors communicate by message.
+                        // A method reached THROUGH a ref — `terminalRef.current
+                        // .sendInput(x)` — is the same imperative-handle gap:
+                        // the value in the ref is a JavaScript object with
+                        // function fields, and Sigil has neither.
+                        if obj.ends_with(".current") {
+                            self.warn(&format!("imperative ref method: .{}", method));
+                            return format!(
+                                "/* {}\u{b7}{}({}) — actors have no imperative handles */ \u{2205}",
+                                obj.replace("*/", "* /"),
+                                method,
+                                args.replace("*/", "* /")
+                            );
+                        }
+
+                        if method == "current" {
+                            self.warn(&format!("callback ref called: {}·current", obj));
+                            return format!(
+                                "/* callback ref `{}.current({})` — actors have no callbacks */ ∅",
+                                obj.replace("*/", "* /"),
+                                args.replace("*/", "* /")
+                            );
+                        }
+
+                        // `p.then(cb)` in expression position. Sigil awaits
+                        // rather than chaining, so this is `cb(p.await)` — as a
+                        // block expression, which binds the parameter without
+                        // needing an immediately-invoked closure. Emitting the
+                        // call left an undefined `then`; a chain in STATEMENT
+                        // position is unrolled in `stmt_transform`.
+                        if method == "then" && call.args.len() == 1 {
+                            if let Some(block) = self.then_block(&obj, &call.args[0].expr) {
+                                return block;
+                            }
+                        }
+
+                        // A promise `.catch(cb)` / `.finally(cb)` in
+                        // expression position — `await res.json().catch(() =>
+                        // ({}))`. Sigil has no exceptions, so the handler cannot
+                        // run and the receiver IS the value; emitting the call
+                        // produced an undefined `catch` in the WASM build. A
+                        // chain in STATEMENT position keeps its callback bodies
+                        // — see `promise_chain` in stmt_transform.
+                        if (method == "catch" || method == "finally") && call.args.len() == 1 {
+                            self.warnings.push(format!(
+                                "promise .{}() handler dropped — Sigil has no exceptions",
+                                method
+                            ));
+                            return obj;
+                        }
+
                         // `new Date(s)` is already epoch millis (see the `New`
                         // arm), so `.getTime()` on it is the identity.
-                        if (method == "getTime" || method == "valueOf")
-                            && (obj.starts_with("timing_parse(") || obj == "timing_now()")
+                        //
+                        // `getTime` exists on nothing but a Date, and the only
+                        // Dates this migration can produce are `timing_parse(..)`
+                        // and `timing_now()` — both already millis — so it is the
+                        // identity whatever the receiver's spelling. Matching the
+                        // call text alone missed `let d = new Date(iso)` followed
+                        // by `d.getTime()`, which reached the backend as an
+                        // undefined `get_time`. `valueOf` DOES exist on other
+                        // types, so it stays pinned to the two date forms.
+                        if method == "getTime"
+                            || (method == "valueOf"
+                                && (obj.starts_with("timing_parse(")
+                                    || obj == "timing_now()"))
                         {
                             return obj;
                         }
@@ -783,7 +1091,10 @@ impl<'a> ExprTransformer<'a> {
                             "indexOf" => "find",
                             "startsWith" => "starts_with",
                             "endsWith" => "ends_with",
-                            "push" => "append",
+                            // Sigil's Vec method is `push`; there is no `append`.
+                            // Nothing exercised this until statement bodies started
+                            // emitting the calls that were `{ /* block */ }` before.
+                            "push" => "push",
                             "pop" => "pop",
                             "shift" => "remove_first",
                             "join" => "join",
@@ -813,7 +1124,7 @@ impl<'a> ExprTransformer<'a> {
                 // anything a Sigil program declares — they came out as
                 // `number(x)` and `string(x)`, two more lowercase names the
                 // backend stubbed to a constant 0.
-                if let Expr::Ident(id) = expr.as_ref() {
+                if let Expr::Ident(id) = expr {
                     match id.sym.to_string().as_str() {
                         "Number" => return format!("parse_float({})", args),
                         "String" => return format!("({})·to_string()", args),
@@ -832,7 +1143,7 @@ impl<'a> ExprTransformer<'a> {
                 // resolved to whatever free function shared the name. The value
                 // is ∅ and the call is recorded beside it.
                 if self.config.prefix_self {
-                    if let Expr::Ident(id) = expr.as_ref() {
+                    if let Expr::Ident(id) = expr {
                         let name = id.sym.to_string();
                         let snake = to_snake_case(&name);
                         let is_prop = self
@@ -851,6 +1162,47 @@ impl<'a> ExprTransformer<'a> {
                     }
                 }
 
+                // `setTimeout(fn, ms)` and friends are globals, not fields.
+                // Under `prefix_self` they became `self.set_timeout(…)`, a
+                // method no actor has. The host `timing` group is the target.
+                //
+                // JavaScript's trailing arguments are passed on to the callback,
+                // which the host import has no room for; a wrapper closure says
+                // the same thing with the arity the import declares.
+                if let Expr::Ident(id) = expr {
+                    if id.sym.as_ref() == "parseInt" {
+                        let first = call
+                            .args
+                            .first()
+                            .map(|a| self.transform_expr(&a.expr))
+                            .unwrap_or_else(|| "\u{2205}".to_string());
+                        if let Some(radix) = call.args.get(1) {
+                            let r = self.transform_expr(&radix.expr);
+                            if r.trim() != "10" {
+                                self.warn(&format!(
+                                    "parseInt radix {} — only base 10 is implemented",
+                                    r.trim()
+                                ));
+                            }
+                        }
+                        return format!("parse_int({})", first);
+                    }
+                    if let Some(target) = js_timer_global(&id.sym) {
+                        let mut parts: Vec<String> = call
+                            .args
+                            .iter()
+                            .map(|a| self.transform_expr(&a.expr))
+                            .collect();
+                        if target == "timing_set_timeout" || target == "timing_set_interval" {
+                            if parts.len() > 2 {
+                                let extra = parts.split_off(2).join(", ");
+                                parts[0] = format!("|| {}({})", parts[0], extra);
+                            }
+                        }
+                        return format!("{}({})", target, parts.join(", "));
+                    }
+                }
+
                 // A `useState` setter is an assignment, not a call.
                 //
                 // `setTab("todo")` on a component whose state includes `tab`
@@ -859,7 +1211,7 @@ impl<'a> ExprTransformer<'a> {
                 // closure bound to a local, `≔ go_todo = || setTab("todo")` —
                 // went through here and came out `self.set_tab("todo")`, a
                 // method no actor has.
-                if let Expr::Ident(id) = expr.as_ref() {
+                if let Expr::Ident(id) = expr {
                     let name = id.sym.to_string();
                     if let Some(field) = self.setter_target(&name) {
                         if call.args.len() == 1 {
@@ -870,7 +1222,7 @@ impl<'a> ExprTransformer<'a> {
 
                 // Regular function call
                 let callee = self.transform_expr(expr);
-                if let Expr::Ident(id) = expr.as_ref() {
+                if let Expr::Ident(id) = expr {
                     let snake = to_snake_case(&id.sym.to_string());
                     if let Some(&declared) = self.config.fn_arity.get(&snake) {
                         if call.args.len() < declared {
@@ -961,10 +1313,34 @@ impl<'a> ExprTransformer<'a> {
         let body = match &*arrow.body {
             BlockStmtOrExpr::Expr(expr) => self.transform_expr(expr),
             BlockStmtOrExpr::BlockStmt(block) => {
-                // For block bodies, we'd need statement transformation
-                // For now, just indicate it's a block
-                self.warn("Arrow function with block body");
-                "{ /* block */ }".to_string()
+                // An arrow with a block body is statements, and there is a
+                // statement transform now. This used to emit `{ /* block */ }`
+                // — 441 of them across the Lares client, every one a callback
+                // that did nothing.
+                let mut inner = self.config.clone();
+                inner.locals.extend(self.scope_locals.iter().cloned());
+                let src = super::stmt_transform::slice(self.src, block.span);
+                let r = super::stmt_transform::transform_statements(&src, &inner, "");
+                if !r.complete {
+                    for w in r.warnings {
+                        self.warn(&w);
+                    }
+                }
+                if r.code.trim().is_empty() {
+                    "{ }".to_string()
+                } else {
+                    // Multi-line, not joined: a `// React:` comment runs to the
+                    // end of its line, so flattening a body onto one line makes
+                    // the comment swallow every statement after it. The caller
+                    // re-indents the whole expression, so indent relative to it.
+                    let indented = r
+                        .code
+                        .lines()
+                        .map(|l| format!("    {}", l))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!("{{\n{}\n}}", indented)
+                }
             }
         };
 
@@ -1013,6 +1389,24 @@ impl<'a> ExprTransformer<'a> {
     }
 
     fn transform_array(&mut self, arr: &ArrayLit) -> String {
+        // `...` is a valid Sigil token — a rest pattern — so a spread emitted
+        // verbatim compiles and means something else. `[...xs]` is a copy;
+        // anything else with a spread in it has no Sigil spelling.
+        let spreads = arr
+            .elems
+            .iter()
+            .filter(|e| matches!(e, Some(ExprOrSpread { spread: Some(_), .. })))
+            .count();
+        if spreads == 1 && arr.elems.len() == 1 {
+            if let Some(Some(ExprOrSpread { expr, .. })) = arr.elems.first() {
+                return format!("{}·clone()", self.transform_expr(expr));
+            }
+        }
+        if spreads > 0 {
+            self.warn("array spread has no Sigil form");
+            return "∅".to_string();
+        }
+
         let elements: Vec<String> = arr.elems.iter().map(|elem| {
             match elem {
                 Some(ExprOrSpread { spread: Some(_), expr }) => {
@@ -1079,6 +1473,21 @@ impl<'a> ExprTransformer<'a> {
             }
         }).collect();
 
+        // A Sigil struct literal's keys are identifiers. A JS key that is not
+        // one — `{ 'content-type': … }` — emitted unquoted parses as
+        // subtraction, and quoting it is not accepted either. Renaming the key
+        // would change what the object means, so say so instead.
+        let bad_key = props.iter().any(|p| {
+            let key = p.split(':').next().unwrap_or("").trim();
+            key.is_empty()
+                || !key.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
+        if bad_key {
+            self.warn("object key is not a Sigil identifier");
+            return "∅".to_string();
+        }
+
         format!("{{ {} }}", props.join(", "))
     }
 
@@ -1103,6 +1512,32 @@ impl<'a> ExprTransformer<'a> {
             }
         };
 
+        // `x ??= v`, `x ||= v`, `x &&= v` — Sigil has none of the three, and
+        // they were emitted verbatim (`port ??= …`), which the type checker
+        // rejects as an invalid assignment target. Written out as the
+        // conditional assignment each one abbreviates.
+        match assign.op {
+            AssignOp::NullishAssign => {
+                return format!(
+                    "\u{2387} \u{ac}{}\u{b7}to_bool() {{ {} = {}; }}",
+                    left, left, right
+                );
+            }
+            AssignOp::OrAssign => {
+                return format!(
+                    "\u{2387} \u{ac}{}\u{b7}to_bool() {{ {} = {}; }}",
+                    left, left, right
+                );
+            }
+            AssignOp::AndAssign => {
+                return format!(
+                    "\u{2387} {}\u{b7}to_bool() {{ {} = {}; }}",
+                    left, left, right
+                );
+            }
+            _ => {}
+        }
+
         let op = match assign.op {
             AssignOp::Assign => "=",
             AssignOp::AddAssign => "+=",
@@ -1125,36 +1560,74 @@ impl<'a> ExprTransformer<'a> {
         format!("{} {} {}", left, op, right)
     }
 
+    /// `a?.b` — plain access, because Sigil has no null-propagating one.
+    ///
+    /// This used to emit `?.` and `?[…]` verbatim, which is not Sigil syntax at
+    /// all: `cwd?.replace?(…)` reached the backend and produced a module with
+    /// an out-of-bounds table index. `a.b` is what the migration can actually
+    /// say. It is not the same thing — a missing `a` propagates in JavaScript
+    /// and does not here — so every one is reported.
     fn transform_opt_chain(&mut self, opt: &OptChainExpr) -> String {
+        self.warn("optional chaining — Sigil has no null-propagating access");
         match &*opt.base {
             OptChainBase::Member(member) => {
                 let obj = self.transform_expr(&member.obj);
                 match &member.prop {
                     MemberProp::Ident(ident) => {
-                        format!("{}?.{}", obj, to_snake_case_member(&ident.sym.to_string()))
+                        format!("{}.{}", obj, to_snake_case_member(&ident.sym.to_string()))
                     }
                     MemberProp::Computed(computed) => {
                         let prop = self.transform_expr(&computed.expr);
-                        format!("{}?[{}]", obj, prop)
+                        format!("{}[{}]", obj, prop)
                     }
-                    _ => format!("{}?", obj),
+                    _ => obj,
                 }
             }
             OptChainBase::Call(call) => {
-                let args = self.transform_args(&call.args);
-                // call.callee is Box<Expr>, not OptChainBase
-                if let Expr::Member(member) = call.callee.as_ref() {
-                    let obj = self.transform_expr(&member.obj);
+                // Rebuilt as a plain call and sent through the ordinary path,
+                // so a method that has a Sigil spelling still gets it:
+                // `res?.json()` has to become the fetch-body read, not a member
+                // call on an undefined `json`.
+                let plain = CallExpr {
+                    span: call.span,
+                    ctxt: Default::default(),
+                    callee: Callee::Expr(call.callee.clone()),
+                    args: call.args.clone(),
+                    type_args: call.type_args.clone(),
+                };
+                let out = self.transform_call(&plain);
+
+                // `a?.b()` means "call it if it is there". Sigil has neither
+                // that nor a callable field, so when nothing above recognised
+                // the method — the output still spells the JavaScript name —
+                // the call cannot be expressed and is marked instead of emitted
+                // as a function that does not exist. `handle?.stop()` on a
+                // `{ stop }` object is the shape this catches.
+                let callee_member: Option<MemberExpr> = match call.callee.as_ref() {
+                    Expr::Member(m) => Some(m.clone()),
+                    Expr::OptChain(o) => match &*o.base {
+                        OptChainBase::Member(m) => Some(m.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(member) = callee_member {
                     if let MemberProp::Ident(ident) = &member.prop {
-                        format!("{}?.{}({})", obj, to_snake_case_member(&ident.sym.to_string()), args)
-                    } else {
-                        let callee = self.transform_expr(&call.callee);
-                        format!("{}?({})", callee, args)
+                        let snake = to_snake_case(&ident.sym.to_string());
+                        let untouched = out.contains(&format!("\u{b7}{}(", snake));
+                        if untouched && !KNOWN_OPTIONAL_METHODS.contains(&snake.as_str()) {
+                            self.warn(&format!(
+                                "optional call .{}() — Sigil has no callable fields",
+                                ident.sym
+                            ));
+                            return format!(
+                                "/* {} — Sigil has no callable fields */ \u{2205}",
+                                out.replace("*/", "* /")
+                            );
+                        }
                     }
-                } else {
-                    let callee = self.transform_expr(&call.callee);
-                    format!("{}?({})", callee, args)
                 }
+                out
             }
         }
     }

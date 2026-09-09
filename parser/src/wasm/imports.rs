@@ -156,6 +156,12 @@ impl ImportRegistry {
         self.add_import("browser", "mql_matches", vec![I32], vec![I32]);
         self.add_import("browser", "mql_add_listener", vec![I32, I32], vec![I32]);
         self.add_import("browser", "mql_remove_listener", vec![I32, I32], vec![]);
+        // Dialogs. `confirm(msg)` guards every destructive action in the Lares
+        // client; with no import behind it the call was an undefined function
+        // and the whole module failed to build.
+        self.add_import("browser", "confirm", vec![I32], vec![I32]);
+        self.add_import("browser", "alert", vec![I32], vec![]);
+        self.add_import("browser", "prompt", vec![I32, I32], vec![I32]);
     }
 
     fn register_console_imports(&mut self) {
@@ -190,6 +196,22 @@ impl ImportRegistry {
         // anyone writes.
         self.add_import_with_alias("string", "parse_int", "parse_int", vec![I32], vec![I64]);
         self.add_import_with_alias("string", "parse_float", "parse_float", vec![I32], vec![F64]);
+        // `encodeURIComponent(s)` — every generated URL that carries a ticket
+        // key or a query builds one, and there was no import behind it.
+        self.add_import_with_alias(
+            "string",
+            "encode_uri_component",
+            "encode_uri_component",
+            vec![I32],
+            vec![I32],
+        );
+        self.add_import_with_alias(
+            "string",
+            "decode_uri_component",
+            "decode_uri_component",
+            vec![I32],
+            vec![I32],
+        );
         // Additional string methods
         self.add_import("string", "lines", vec![I32], vec![I32]); // (str) -> array of strings
         self.add_import("string", "split_whitespace", vec![I32], vec![I32]); // (str) -> array of strings
@@ -202,6 +224,9 @@ impl ImportRegistry {
         self.add_import("string", "contains", vec![I32, I32], vec![I32]); // (str, substr) -> bool
         self.add_import("string", "starts_with", vec![I32, I32], vec![I32]); // (str, prefix) -> bool
         self.add_import("string", "ends_with", vec![I32, I32], vec![I32]); // (str, suffix) -> bool
+        // `a·locale_compare(b)` — JavaScript's `localeCompare`, which every
+        // sort comparator in the migrated client uses. -1, 0 or 1.
+        self.add_import("string", "locale_compare", vec![I32, I32], vec![I64]);
         self.add_import("string", "replace", vec![I32, I32, I32], vec![I32]); // (str, from, to) -> new str
         self.add_import("string", "chars", vec![I32], vec![I32]); // (str) -> array of chars
     }
@@ -253,7 +278,10 @@ impl ImportRegistry {
         self.add_import("fetch", "start", vec![I32, I32, I32], vec![I32]);
         self.add_import("fetch", "poll", vec![I32], vec![I32]);
         self.add_import("fetch", "get_status", vec![I32], vec![I32]);
-        self.add_import("fetch", "get_body", vec![I32, I32], vec![I32]);
+        // One parameter: the request handle. The runtime's `fetchGetBody(id)`
+        // has always taken one, so the two-parameter declaration made every
+        // call a signature mismatch.
+        self.add_import("fetch", "get_body", vec![I32], vec![I32]);
         self.add_import("fetch", "abort", vec![I32], vec![]);
     }
 
@@ -299,6 +327,21 @@ impl ImportRegistry {
         self.add_import_with_alias("map", "entries", "map_entries", vec![I32], vec![I32]);
         // What `∀` iterates: a map becomes its entries, an array stays itself.
         self.add_import_with_alias("map", "iter_of", "iter_of", vec![I32], vec![I32]);
+        // `HashMap·from(entries)` — an array of two-element `[k, v]` arrays,
+        // which is what `Object.entries(x)` and `new Map(pairs)` both give.
+        self.add_import_with_alias("map", "from", "map_from", vec![I32], vec![I32]);
+
+        // HashSet. Its own group, not a map with dummy values: `∀ x ∈ set`
+        // must yield the elements, and a map yields `[k, v]` pairs. Before
+        // this, `HashSet·new()` produced a map and `set·add(x)` produced an
+        // undefined `add` — the whole set surface was unimplemented.
+        self.add_import_with_alias("set", "new", "set_new", vec![], vec![I32]);
+        self.add_import_with_alias("set", "from", "set_from", vec![I32], vec![I32]);
+        self.add_import_with_alias("set", "add", "set_add", vec![I32, I64], vec![]);
+        self.add_import_with_alias("set", "has", "set_has", vec![I32, I64], vec![I32]);
+        self.add_import_with_alias("set", "remove", "set_remove", vec![I32, I64], vec![]);
+        self.add_import_with_alias("set", "len", "set_len", vec![I32], vec![I32]);
+        self.add_import_with_alias("set", "values", "set_values", vec![I32], vec![I32]);
     }
 
     fn register_morpheme_imports(&mut self) {
@@ -317,6 +360,16 @@ impl ImportRegistry {
         self.add_import("morpheme", "array_parallel_reduce", vec![I32, I32, I64], vec![I64]);
         self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I32, I64], vec![I64]);
         self.add_import_with_alias("morpheme", "array_sort", "array_sort", vec![I32], vec![I32]);
+        // `xs·sort(|a, b| …)`. Sigil's own `sort` takes no comparator, so a
+        // comparator sort had nowhere to go — and dropping the comparator
+        // silently sorts by something else.
+        self.add_import_with_alias(
+            "morpheme",
+            "array_sort_by",
+            "array_sort_by",
+            vec![I32, I64],
+            vec![I32],
+        );
         self.add_import_with_alias("morpheme", "array_first", "array_first", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_last", "array_last", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_nth", "array_nth", vec![I32, I32], vec![I64]);

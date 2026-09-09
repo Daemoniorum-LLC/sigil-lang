@@ -1064,10 +1064,8 @@ impl WasmCompiler {
             func.push(Instruction::LocalGet(recv_idx));
             func.push(Instruction::Call(func_idx));
             Ok(())
-        } else if Self::stubbing_unresolved() {
-            self.stub_unresolved(&method_name)
         } else {
-            Err(WasmError::undefined_function(&method_name))
+            self.stub_unresolved(&method_name)
         }
     }
 

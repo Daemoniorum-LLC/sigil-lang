@@ -1865,7 +1865,19 @@ impl<'a> Extractor<'a> {
                             if matches!(n, "useMemo" | "useCallback") {
                                 if let Some(first) = call.args.first() {
                                     if let Expr::Arrow(arrow) = first.expr.as_ref() {
-                                        if let BlockStmtOrExpr::Expr(body) = arrow.body.as_ref() {
+                                        // `useCallback` binds a FUNCTION, so the
+                                        // arrow itself is the value. Taking only
+                                        // its body dropped the parameters:
+                                        // `useCallback((updater) => setFocus(…))`
+                                        // became `setFocus(…)`, and `updater`
+                                        // then read as an actor field.
+                                        if n == "useCallback" {
+                                            memo_init = Some(
+                                                self.span_to_source(arrow.span()),
+                                            );
+                                        } else if let BlockStmtOrExpr::Expr(body) =
+                                            arrow.body.as_ref()
+                                        {
                                             memo_init =
                                                 Some(self.span_to_source(self.expr_span(body)));
                                         }

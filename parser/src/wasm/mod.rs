@@ -476,6 +476,9 @@ impl WasmCompiler {
         // Fix control flow stack imbalance (spurious initial values)
         self.fix_control_flow_stack();
 
+        // Every name that resolved to nothing, in one report.
+        self.finish_unresolved()?;
+
         // Generate WASM module
         self.generate_module()
     }
@@ -541,6 +544,9 @@ impl WasmCompiler {
 
         // Fix control flow stack imbalance (spurious initial values)
         compiler.fix_control_flow_stack();
+
+        // Every name that resolved to nothing, in one report.
+        compiler.finish_unresolved()?;
 
         // Generate the final WASM module
         compiler.generate_module()
@@ -1263,6 +1269,37 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// Fail the build with every unresolved name, not the first one.
+    ///
+    /// Each unresolved name used to raise on the spot, so a port learned about
+    /// them one two-minute rebuild at a time. They are recorded as they are met
+    /// and reported together here — unless `SIGIL_WASM_STUB_UNRESOLVED` says
+    /// this is a survey build, which wants the module anyway.
+    #[cfg(test)]
+    pub(crate) fn finish_unresolved_for_test(&self) -> WasmResult<()> {
+        self.finish_unresolved()
+    }
+
+    fn finish_unresolved(&self) -> WasmResult<()> {
+        if self.unresolved.is_empty() || Self::stubbing_unresolved() {
+            return Ok(());
+        }
+        let mut lines = vec![format!(
+            "{} name(s) resolved to nothing (each compiles to a constant 0):",
+            self.unresolved.len()
+        )];
+        for name in &self.unresolved {
+            lines.push(format!("  {}", name));
+        }
+        lines.push(
+            "  Set SIGIL_WASM_STUB_UNRESOLVED=1 to build anyway and survey.".to_string(),
+        );
+        Err(WasmError::new(
+            crate::wasm::error::WasmErrorKind::Undefined,
+            lines.join("\n"),
+        ))
+    }
+
     fn generate_module(&mut self) -> WasmResult<Vec<u8>> {
         // Function indices were assigned from `FUNC_BASE` while the import count
         // was still moving. Settle them first: everything below — the encoder,
@@ -1305,8 +1342,15 @@ impl WasmCompiler {
         }
         module.section(&functions);
 
-        // Table section (for indirect calls)
-        if !self.table_elements.is_empty() {
+        // Table section (for indirect calls).
+        //
+        // Always emitted, even empty. A `call_indirect` can be reached with no
+        // closure ever added to the table — calling a local bound to `∅`, for
+        // one — and a module with a `call_indirect` and no table is invalid:
+        // "unknown table 0", which reads as a compiler bug rather than as the
+        // missing callback it is. An empty table traps at the call instead,
+        // which is the honest answer.
+        {
             let mut tables = TableSection::new();
             tables.table(TableType {
                 element_type: RefType::FUNCREF,

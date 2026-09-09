@@ -9,6 +9,7 @@
 //! See docs/specs/REACT-MIGRATION.md Section 7 for Qliphoth mapping.
 
 use super::ast_transform::{self, TransformConfig};
+use super::stmt_transform;
 use super::extraction::*;
 use super::spec::*;
 
@@ -313,10 +314,17 @@ impl<'a> QliphothGenerator<'a> {
                 known.insert(name.clone());
                 emitted.insert(name);
             } else {
+                // The body names something this module does not have, so it
+                // cannot be emitted — but the NAME still has to resolve, or
+                // every reference is an undefined variable and nothing that
+                // mentions it compiles. The value is visibly missing instead.
                 lines.push(format!(
-                    "// {} — not a constant expression. React: {}",
-                    name, one_line
+                    "// {} — not a constant expression, and its dependencies are \
+                     not available here. React: {}\n\u{2609} rite {}() -> Any! {{\n    \u{2205}\n}}",
+                    name, one_line, name
                 ));
+                known.insert(name.clone());
+                emitted.insert(name);
             }
         }
 
@@ -390,9 +398,6 @@ impl<'a> QliphothGenerator<'a> {
                 if done.contains(&name) {
                     continue;
                 }
-                let Some(expr) = h.returns_expression.as_ref() else {
-                    continue;
-                };
                 let mut inner = scope.clone();
                 let mut params: Vec<String> = Vec::new();
                 let mut local_known = known.clone();
@@ -405,12 +410,50 @@ impl<'a> QliphothGenerator<'a> {
                     inner.locals.push(p.name.clone());
                     local_known.insert(pn);
                 }
-                let body = self.transform_expression_free(expr, &inner);
+
+                // A body that is one `return` is an expression; anything else
+                // is statements. Both are translatable now — the statement
+                // transform is what 206 of 346 helpers were waiting for.
+                let body = match h.returns_expression.as_ref() {
+                    Some(expr) => self.transform_expression_free(expr, &inner),
+                    None => {
+                        let Some(src) = stmt_transform::body_of_function(&h.source) else {
+                            continue;
+                        };
+                        let config = self.statement_config(&inner);
+                        let r = stmt_transform::transform_statements(&src, &config, "    ");
+                        if r.code.trim().is_empty() {
+                            continue;
+                        }
+                        if r.complete {
+                            r.code
+                        } else {
+                            format!(
+                                "    // NOTE: parts of the React body are marked below, not translated.\n{}",
+                                r.code
+                            )
+                        }
+                    }
+                };
                 if !free_identifiers_known(&body, &local_known) {
                     continue;
                 }
+                let body = if body.starts_with("    ") {
+                    body
+                } else {
+                    format!("    {}", body)
+                };
+                // The function as it will be emitted has to type-check, not just
+                // parse. A body whose tail is uncertain — `w?.tickets` — under a
+                // `-> Any!` signature parses and then fails `sigil check` with an
+                // evidence mismatch. Both paths go through the same probe now;
+                // only the statement one had it.
+                let signature = format!("rite __probe({}) -> Any!", params.join(", "));
+                if !parses_as_statements(&signature, &body) {
+                    continue;
+                }
                 emitted.push(format!(
-                    "☉ rite {}({}) -> Any! {{\n    {}\n}}",
+                    "☉ rite {}({}) -> Any! {{\n{}\n}}",
                     name,
                     params.join(", "),
                     body
@@ -503,7 +546,29 @@ impl<'a> QliphothGenerator<'a> {
         // declares.
         let handlers = self.generate_message_handlers();
         let lifecycle = self.generate_lifecycle_handlers();
-        let view = self.generate_view_method();
+        // Which locals the handlers call through `self` — those are methods.
+        // Which locals are called through `self` — those are methods. To a
+        // fixed point: a method's own body calls other component functions
+        // (`reload` calls `onPollSuccess`), and a name first seen there has to
+        // become a method too, or the call is an undefined function.
+        let mut bodies_owned: Vec<String> =
+            vec![handlers.clone(), lifecycle.clone()];
+        let mut self_called = std::collections::HashSet::new();
+        let mut callbacks = String::new();
+        for _ in 0..4 {
+            let refs: Vec<&str> = bodies_owned.iter().map(|s| s.as_str()).collect();
+            let next = self_called_names(&refs);
+            let grown = !next.is_subset(&self_called);
+            self_called.extend(next);
+            callbacks = self.generate_callback_methods(&self_called, &refs);
+            if !grown {
+                break;
+            }
+            bodies_owned = vec![handlers.clone(), lifecycle.clone(), callbacks.clone()];
+        }
+        let bodies_owned = vec![handlers.clone(), lifecycle.clone(), callbacks.clone()];
+        let bodies: Vec<&str> = bodies_owned.iter().map(|s| s.as_str()).collect();
+        let view = self.generate_view_method(&self_called, &bodies);
         let constructor = if self.spec.recommendations.props_handling.fields.is_empty() {
             String::new()
         } else {
@@ -515,6 +580,7 @@ impl<'a> QliphothGenerator<'a> {
         let inferred = self.infer_missing_state_fields(&[
             handlers.as_str(),
             lifecycle.as_str(),
+            callbacks.as_str(),
             view.as_str(),
         ]);
         if !inferred.is_empty() {
@@ -538,6 +604,10 @@ impl<'a> QliphothGenerator<'a> {
 
         if !lifecycle.is_empty() {
             sections.push(lifecycle);
+        }
+
+        if !callbacks.is_empty() {
+            sections.push(callbacks);
         }
 
         sections.push(view);
@@ -778,10 +848,88 @@ impl<'a> QliphothGenerator<'a> {
         )
     }
 
+    /// A handler's body, translated whole, or `None` when any statement in it
+    /// could not be — in which case the caller falls back to the flat list and
+    /// marks it. Half a body is not better here: the assignments the statement
+    /// transform did emit would sit alongside the flat list's copies of the
+    /// same ones.
+    fn translate_handler_body(&self, msg: &MessageRecommendation) -> Option<String> {
+        let source = msg.body_source.as_ref()?;
+        if source.trim().is_empty() {
+            return None;
+        }
+        // A handler that calls into a service actor is not this transform's to
+        // write: `addMessage(…)` from `useChat()` is `ChatService ! AddMessage`,
+        // a message send, and the statement walk has no way to know that — it
+        // would emit `self.add_message(…)`, a method the actor does not have.
+        // The flat path below still emits the sends.
+        if !msg.service_calls.is_empty() {
+            return None;
+        }
+        let mut scope = VNodeScope::default();
+        scope.locals.extend(self.spec.source.module_scope.iter().cloned());
+        for p in &msg.param_bindings {
+            scope.locals.push(p.clone());
+        }
+        let mut config = self.build_transform_config(&scope, self.is_actor);
+        // The payload names the handler's parameters bind to.
+        config.locals.extend(msg.param_bindings.iter().map(|p| to_snake_case(p)));
+
+        // `body_summary` is the handler as React wrote it — `async () => { … }`
+        // for a `useCallback`, not its block. Handing the arrow to the statement
+        // transform made the whole handler one closure literal that nothing
+        // called.
+        let body = stmt_transform::body_of_function(source)
+            .unwrap_or_else(|| source.to_string());
+        let r = stmt_transform::transform_statements(&body, &config, "        ");
+        if r.code.trim().is_empty()
+            || !parses_as_statements("rite __probe()", &r.code)
+        {
+            return None;
+        }
+
+        // The payload bindings still have to be introduced, exactly as the
+        // flat path does.
+        let mut lines: Vec<String> = Vec::new();
+        for (i, p) in msg.param_bindings.iter().enumerate() {
+            let name = to_snake_case(p);
+            let value = if msg.payload.is_some() && i == 0 {
+                "msg.0".to_string()
+            } else {
+                "∅".to_string()
+            };
+            lines.push(format!("        ≔ {} = {};", name, value));
+        }
+        if !r.complete {
+            // What the transform could not translate is a `// React:` line in
+            // the body; say up front that there is one.
+            lines.insert(
+                0,
+                "        // NOTE: parts of the React handler are marked below, not translated."
+                    .to_string(),
+            );
+        }
+        lines.push(r.code);
+        Some(lines.join("\n"))
+    }
+
     fn generate_message_handlers(&self) -> String {
         let handlers: Vec<String> = self.spec.recommendations.messages.iter()
             .map(|msg| {
                 let mut body_parts: Vec<String> = Vec::new();
+
+                // S30: the handler's own body, statement by statement, when the
+                // whole of it translates. The alternative below reduces it to a
+                // flat list of state assignments, which loses the branches — a
+                // handler that wrote one field on success and another on failure
+                // emitted both, unconditionally, in source order.
+                if let Some(body) = self.translate_handler_body(msg) {
+                    return format!(
+                        "    on {} {{\n{}\n    }}",
+                        msg.name,
+                        body
+                    );
+                }
 
                 // Add service calls (hook-returned function calls -> actor messages)
                 for call in &msg.service_calls {
@@ -1016,7 +1164,72 @@ impl<'a> QliphothGenerator<'a> {
     /// `repo` alone appeared 80 times across the generated Lares client, resolving
     /// to nothing — invisible to `sigil check`, which does not resolve names, and
     /// caught by `--strict`.
-    fn generate_locals(&self, indent: &str, scope: &mut VNodeScope) -> String {
+    /// A `useCallback` / `useMemo` local as a real Sigil binding.
+    ///
+    /// `useCallback` becomes a closure — the callers spell it `name(args)`, so
+    /// a closure is exactly right. `useMemo` becomes its value, and only when
+    /// the callback is a concise arrow: a block body would need a block
+    /// expression whose tail is the `return`, and the statement transform emits
+    /// `⤺`, which is not a tail. Anything that does not translate whole returns
+    /// `None` so the caller's ∅-with-the-React-beside-it arm still applies —
+    /// half a body here would be worse than none.
+    fn translate_hook_local(
+        &self,
+        local: &crate::migrate::react::extraction::LocalBinding,
+        scope: &VNodeScope,
+        indent: &str,
+        name: &str,
+    ) -> Option<String> {
+        let is_memo = stmt_transform::hook_callback(&local.init, &["useMemo"]).is_some();
+        let hook = stmt_transform::hook_callback(&local.init, &["useCallback", "useMemo"])?;
+        if is_memo && hook.is_block {
+            return None;
+        }
+
+        let mut inner = self.build_transform_config(scope, self.is_actor);
+        inner.locals.extend(hook.params.iter().cloned());
+        let body_indent = format!("{}    ", indent);
+        let r = stmt_transform::transform_statements(&hook.body, &inner, &body_indent);
+        if r.code.trim().is_empty() {
+            return None;
+        }
+
+        if is_memo {
+            // A concise arrow: the body is the value.
+            let probe = format!("rite __probe() -> Any! {{\n{}\n}}", r.code);
+            if !parses_as_statements("rite __probe() -> Any!", &r.code) {
+                let _ = probe;
+                return None;
+            }
+            return Some(format!("{}≔ {} = {};", indent, name, r.code.trim()));
+        }
+
+        let params = if hook.params.is_empty() {
+            "||".to_string()
+        } else {
+            format!("|{}|", hook.params.join(", "))
+        };
+        let body = if hook.is_block {
+            format!("{{\n{}\n{}}}", r.code, indent)
+        } else {
+            format!("{{\n{}\n{}}}", r.code, indent)
+        };
+        let candidate = format!("{}≔ {} = {} {};", indent, name, params, body);
+        // The same parse-and-typecheck probe the helper paths use: a body whose
+        // tail is uncertain parses and then fails `sigil check`.
+        if !parses_as_statements("rite __probe()", candidate.trim()) {
+            return None;
+        }
+        Some(candidate)
+    }
+
+    fn generate_locals(
+        &self,
+        indent: &str,
+        scope: &mut VNodeScope,
+        self_called: &std::collections::HashSet<String>,
+        bodies: &[&str],
+    ) -> String {
         let locals = self.spec.source.extraction.locals.clone();
         if locals.is_empty() {
             return String::new();
@@ -1055,6 +1268,29 @@ impl<'a> QliphothGenerator<'a> {
             // A custom hook's return has nothing to translate — only a name to
             // bind. Treated the same way as the JavaScript this transform has no
             // spelling for: bound to ∅, with the React beside it.
+            // A component-level `useCallback` in an ACTOR is a method, not a
+            // view local: the handlers call it as `self.refresh()`, and they are
+            // not in the view's scope. Emitted by `generate_callback_methods`;
+            // skipped here, and deliberately NOT added to `scope.locals`, so a
+            // reference from the view becomes `self.refresh()` too.
+            if self.is_actor
+                && (self.callback_method(local, self_called).is_some()
+                    || self.callback_method_stub(local, self_called, bodies).is_some())
+            {
+                scope.locals.retain(|l| l != &name);
+                continue;
+            }
+
+            // `useCallback(fn, deps)` and `useMemo(() => expr, deps)` are the
+            // two React hooks whose value the migration can actually produce: a
+            // closure and an expression. They were reaching the ∅ arm below, so
+            // `refresh()` in a handler called a name bound to ∅ — an undefined
+            // function in the WASM build, and silently nothing before that.
+            if let Some(hook) = self.translate_hook_local(local, scope, indent, &name) {
+                lines.push(hook);
+                continue;
+            }
+
             let untranslatable = local.opaque || init.contains("?.") || init.contains("...");
             if untranslatable {
                 let one_line: String = local.init.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -1075,12 +1311,141 @@ impl<'a> QliphothGenerator<'a> {
         }
     }
 
-    fn generate_view_method(&self) -> String {
+    /// A component-level `useCallback`, as an actor method.
+    ///
+    /// React's `useCallback` at component scope is a method of the component:
+    /// handlers call it, the view calls it, and both spell it `self.<name>` in
+    /// an actor. Emitted as a view local instead, `self.refresh()` in a handler
+    /// named a method no actor had — an undefined function in the WASM build.
+    /// `useMemo` is a value, not a function, so it stays a local.
+    fn callback_method(
+        &self,
+        local: &crate::migrate::react::extraction::LocalBinding,
+        self_called: &std::collections::HashSet<String>,
+    ) -> Option<String> {
+        let name = to_snake_case(&local.name);
+        // Only a name the handlers actually call through `self` becomes a
+        // method. A local bound to a function is not always a method — a sort
+        // comparator is a value, and turning it into one would break the call
+        // that passes it — so the handlers decide.
+        if !self_called.contains(&name) {
+            return None;
+        }
+        let hook = stmt_transform::hook_callback(&local.init, &["useCallback"])
+            .or_else(|| stmt_transform::function_local(&local.init))?;
+
+        let mut scope = VNodeScope::default();
+        scope.locals.extend(self.spec.source.module_scope.iter().cloned());
+        let mut config = self.build_transform_config(&scope, true);
+        config.locals.extend(hook.params.iter().cloned());
+
+        let r = stmt_transform::transform_statements(&hook.body, &config, "        ");
+        if r.code.trim().is_empty() {
+            return None;
+        }
+
+        let mut params = vec!["self".to_string()];
+        params.extend(hook.params.iter().map(|p| format!("{}: Any", p)));
+        let signature = format!("    rite {}({}) -> Any!", name, params.join(", "));
+        let body = if hook.is_block {
+            r.code.clone()
+        } else {
+            format!("        ⤺ {};", r.code.trim())
+        };
+        // The same parse-and-typecheck probe the helper paths use, in the
+        // impl block a method actually lives in.
+        if !parses_as_method(signature.trim(), &body) {
+            return None;
+        }
+
+        let note = if r.complete {
+            String::new()
+        } else {
+            "        // NOTE: parts of the React callback are marked below, not translated.\n"
+                .to_string()
+        };
+        Some(format!("{} {{\n{}{}\n    }}", signature, note, body))
+    }
+
+    /// The method a handler calls, when its body would not compile.
+    ///
+    /// The handlers call component-level functions as `self.<name>(…)`. If the
+    /// body cannot be translated the method still has to EXIST — otherwise the
+    /// call is an undefined function and nothing in the actor compiles at all.
+    /// The React is kept beside it, so the missing body is visible.
+    fn callback_method_stub(
+        &self,
+        local: &crate::migrate::react::extraction::LocalBinding,
+        self_called: &std::collections::HashSet<String>,
+        bodies: &[&str],
+    ) -> Option<String> {
+        let name = to_snake_case(&local.name);
+        if !self_called.contains(&name) {
+            return None;
+        }
+        // The parameters, from the binding when it is a function, and from the
+        // call sites otherwise: `const { onPollSuccess } = usePollError()` is a
+        // callback out of a custom hook, opaque to the migration, and the
+        // handlers still call it.
+        let param_names: Vec<String> = match stmt_transform::hook_callback(&local.init, &["useCallback"])
+            .or_else(|| stmt_transform::function_local(&local.init))
+        {
+            Some(hook) => hook.params,
+            None => {
+                let argc = call_arity(bodies, &name)?;
+                (0..argc).map(|i| format!("__a{}", i)).collect()
+            }
+        };
+        let mut params = vec!["self".to_string()];
+        params.extend(param_names.iter().map(|p| format!("{}: Any", p)));
+        let one_line: String = local.init.split_whitespace().collect::<Vec<_>>().join(" ");
+        let capped = if one_line.chars().count() > 90 {
+            one_line.chars().take(87).collect::<String>() + "..."
+        } else {
+            one_line
+        };
+        Some(format!(
+            "    rite {}({}) -> Any! {{\n        // React: {}\n        \u{2205}\n    }}",
+            name,
+            params.join(", "),
+            capped.replace('\n', " ")
+        ))
+    }
+
+    fn generate_callback_methods(
+        &self,
+        self_called: &std::collections::HashSet<String>,
+        bodies: &[&str],
+    ) -> String {
+        if !self.is_actor {
+            return String::new();
+        }
+        let mut seen = std::collections::HashSet::new();
+        let methods: Vec<String> = self
+            .spec
+            .source
+            .extraction
+            .locals
+            .iter()
+            .filter(|l| seen.insert(to_snake_case(&l.name)))
+            .filter_map(|l| {
+                self.callback_method(l, self_called)
+                    .or_else(|| self.callback_method_stub(l, self_called, bodies))
+            })
+            .collect();
+        methods.join("\n\n")
+    }
+
+    fn generate_view_method(
+        &self,
+        self_called: &std::collections::HashSet<String>,
+        bodies: &[&str],
+    ) -> String {
         let jsx = &self.spec.source.extraction.jsx;
         let mut scope = VNodeScope::default();
 
         // Locals first: they extend the scope the body is generated against.
-        let locals = self.generate_locals("        ", &mut scope);
+        let locals = self.generate_locals("        ", &mut scope, self_called, bodies);
 
         let body = if let Some(root) = &jsx.root {
             self.generate_vnode(root, 2, &scope)
@@ -1120,7 +1485,12 @@ impl<'a> QliphothGenerator<'a> {
 
         let jsx = &self.spec.source.extraction.jsx;
         let mut scope = VNodeScope::default();
-        let locals = self.generate_locals("    ", &mut scope);
+        let locals = self.generate_locals(
+            "    ",
+            &mut scope,
+            &std::collections::HashSet::new(),
+            &[],
+        );
         let body = if let Some(root) = &jsx.root {
             self.generate_vnode(root, 1, &scope)
         } else {
@@ -1566,6 +1936,55 @@ impl<'a> QliphothGenerator<'a> {
         self.transform_expression_with(code, scope, self.is_actor)
     }
 
+    /// The same `TransformConfig` the expression path builds, for the statement
+    /// transform to reuse — one description of what is in scope, not two.
+    fn statement_config(&self, scope: &VNodeScope) -> TransformConfig {
+        self.build_transform_config(scope, false)
+    }
+
+    fn build_transform_config(&self, scope: &VNodeScope, prefix_self: bool) -> TransformConfig {
+        let state_fields: Vec<String> = self
+            .spec
+            .recommendations
+            .state_fields
+            .iter()
+            .map(|f| f.to_field.clone())
+            .collect();
+        let mut locals = scope.locals.clone();
+        locals.extend(self.spec.source.module_scope.iter().cloned());
+        TransformConfig {
+            prefix_self,
+            state_fields,
+            locals,
+            props: self.param_names.clone(),
+            lookup_constants: self
+                .spec
+                .source
+                .module_constants
+                .iter()
+                .filter(|c| !c.entries.is_empty())
+                .map(|c| c.name.clone())
+                .collect(),
+            value_constants: self.value_constant_names(),
+            fn_arity: {
+                // Component-level functions too, not only module helpers. Those
+                // become actor methods, and a JavaScript call site is free to
+                // omit trailing arguments — Sigil is not, so the call has to be
+                // padded or the module fails to build on the arity.
+                let mut a = self.helper_arity();
+                for local in &self.spec.source.extraction.locals {
+                    if let Some(hook) =
+                        stmt_transform::hook_callback(&local.init, &["useCallback"])
+                            .or_else(|| stmt_transform::function_local(&local.init))
+                    {
+                        a.insert(to_snake_case(&local.name), hook.params.len());
+                    }
+                }
+                a
+            },
+        }
+    }
+
     fn transform_expression_with(
         &self,
         code: &str,
@@ -1597,34 +2016,10 @@ impl<'a> QliphothGenerator<'a> {
             return "None".to_string();
         }
 
-        // Build transformation config
-        let state_fields: Vec<String> = self.spec.recommendations.state_fields
-            .iter()
-            .map(|f| f.to_field.clone())
-            .collect();
-
         // Module-scope names are in scope for the whole file and are emitted as
         // top-level items, so a reference to one must be left alone rather than
         // swept into `self.`.
-        let mut locals = scope.locals.clone();
-        locals.extend(self.spec.source.module_scope.iter().cloned());
-
-        let config = TransformConfig {
-            prefix_self,
-            state_fields,
-            locals,
-            props: self.param_names.clone(),
-            lookup_constants: self
-                .spec
-                .source
-                .module_constants
-                .iter()
-                .filter(|c| !c.entries.is_empty())
-                .map(|c| c.name.clone())
-                .collect(),
-            value_constants: self.value_constant_names(),
-            fn_arity: self.helper_arity(),
-        };
+        let config = self.build_transform_config(scope, prefix_self);
 
         // Use AST-based transformation
         let result = ast_transform::transform_expression(code, &config);
@@ -1882,6 +2277,123 @@ fn is_simple_identifier(s: &str) -> bool {
 /// grew by one entry every time the generator learned to emit more — `?.`, then
 /// `??`, then `...`, then `=>`, then `instanceof`. Ask the parser instead: it is
 /// the same one that will read the generated file.
+/// Whether a translated body parses as a sequence of Sigil statements.
+///
+/// The gate on a translated body used to be "no warnings", which threw away
+/// every body containing a `catch` or a `throw` — constructs Sigil does not
+/// have, which the transform marks with a `// React:` comment. A body with a
+/// visible gap still keeps its branches, and the alternative is the flat list
+/// of assignments that loses them. What actually has to hold is that the output
+/// parses.
+/// The same probe for a method, which needs a `self` to be valid at all.
+///
+/// A bare top-level `rite flush(self, …)` does not parse `self`, so every
+/// generated actor method failed the probe and stayed a view local — which is
+/// the shape that produced `undefined function: flush`.
+/// The names generated handler bodies call as `self.<name>(…)`.
+///
+/// A component-level function the handlers call is a method of the actor. One
+/// they merely pass around is a value, and making it a method would break the
+/// call that passes it — so the handlers, not the shape of the binding, decide.
+fn self_called_names(bodies: &[&str]) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    for body in bodies {
+        let mut rest = *body;
+        while let Some(at) = rest.find("self.") {
+            rest = &rest[at + "self.".len()..];
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && rest[name.len()..].starts_with('(') {
+                out.insert(name);
+            }
+        }
+    }
+    out
+}
+
+/// How many arguments the bodies pass to `self.<name>(…)`.
+///
+/// `None` when the name is not called, or when two call sites disagree — a stub
+/// with the wrong arity is a module no runtime will load, which is worse than
+/// the undefined function it replaces.
+fn call_arity(bodies: &[&str], name: &str) -> Option<usize> {
+    let needle = format!("self.{}(", name);
+    let mut found: Option<usize> = None;
+    for body in bodies {
+        let mut rest: &str = body;
+        while let Some(at) = rest.find(&needle) {
+            let after = &rest[at + needle.len()..];
+            rest = after;
+            let mut depth = 0usize;
+            let mut commas = 0usize;
+            let mut any = false;
+            let mut closed = false;
+            for c in after.chars() {
+                match c {
+                    '(' | '[' | '{' => depth += 1,
+                    ')' if depth == 0 => {
+                        closed = true;
+                        break;
+                    }
+                    ')' | ']' | '}' => depth = depth.saturating_sub(1),
+                    ',' if depth == 0 => commas += 1,
+                    c if !c.is_whitespace() => any = true,
+                    _ => {}
+                }
+            }
+            if !closed {
+                return None;
+            }
+            let argc = if any { commas + 1 } else { 0 };
+            match found {
+                None => found = Some(argc),
+                Some(prev) if prev == argc => {}
+                Some(_) => return None,
+            }
+        }
+    }
+    found
+}
+
+fn parses_as_method(signature: &str, body: &str) -> bool {
+    let probe = format!(
+        "\u{3a3} __Probe {{ __x: Any }}\n\u{22a2} __Probe {{\n{} {{\n{}\n}}\n}}\n",
+        signature, body
+    );
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        match crate::parser::Parser::new(&probe).parse_file() {
+            Ok(ast) => crate::typeck::TypeChecker::new().check_file(&ast).is_ok(),
+            Err(_) => false,
+        }
+    }))
+    .unwrap_or(false);
+    std::panic::set_hook(prev);
+    ok
+}
+
+fn parses_as_statements(signature: &str, body: &str) -> bool {
+    // The function as it will be emitted, parsed AND type-checked. Parsing
+    // alone is not enough: a body whose tail expression is uncertain under a
+    // `-> Any!` signature parses perfectly and fails `sigil check` with an
+    // evidence mismatch, which is how two files stopped compiling.
+    let probe = format!("{} {{\n{}\n}}\n", signature, body);
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        match crate::parser::Parser::new(&probe).parse_file() {
+            Ok(ast) => crate::typeck::TypeChecker::new().check_file(&ast).is_ok(),
+            Err(_) => false,
+        }
+    }))
+    .unwrap_or(false);
+    std::panic::set_hook(prev);
+    ok
+}
+
 fn parses_as_expression(expr: &str) -> bool {
     let probe = format!("rite __probe() {{\n    \u{2254} __v = {};\n}}\n", expr);
     let prev = std::panic::take_hook();
@@ -2127,10 +2639,76 @@ fn sanitize_comment(line: &str) -> String {
 ///
 /// Bare identifiers only: a word after `·` or `.` is a member or a method, and
 /// a word before `:` is an object-literal key. Neither reads a binding.
+/// Names a translated body binds: `≔ x = …`, `≔ Δ x = …`, `∀ x ∈ …`, and
+/// closure parameters `|a, b|`.
+fn names_bound_in(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix('\u{2254}') {
+            let rest = rest.trim_start();
+            let rest = rest.strip_prefix('\u{0394}').unwrap_or(rest).trim_start();
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                out.push(name);
+            }
+        }
+        if let Some(rest) = t.strip_prefix('\u{2200}') {
+            let name: String = rest
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                out.push(name);
+            }
+        }
+        // Closure parameters anywhere on the line.
+        let chars: Vec<char> = t.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            if chars[i] == '|' {
+                let start = i + 1;
+                let mut j = start;
+                while j < chars.len() && chars[j] != '|' && chars[j] != '\n' {
+                    j += 1;
+                }
+                if j < chars.len() && chars[j] == '|' {
+                    let inner: String = chars[start..j].iter().collect();
+                    if inner
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == ',' || c.is_whitespace())
+                    {
+                        for p in inner.split(',') {
+                            let p = p.trim();
+                            if !p.is_empty() {
+                                out.push(p.to_string());
+                            }
+                        }
+                    }
+                    i = j + 1;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+    }
+    out
+}
+
 fn free_identifiers_known(
     value: &str,
     known: &std::collections::HashSet<String>,
 ) -> bool {
+    // Names the body binds itself. Written for expressions, this gate saw every
+    // word as free — so a translated statement body failed on the first `≔` it
+    // declared, and on every word inside its own `// React:` comments.
+    let mut known = known.clone();
+    known.extend(names_bound_in(value));
+
     let chars: Vec<char> = value.chars().collect();
     let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
     let mut i = 0;
@@ -2138,6 +2716,13 @@ fn free_identifiers_known(
     let mut escaped = false;
     while i < chars.len() {
         let c = chars[i];
+        // A `//` comment carries React source, not Sigil bindings.
+        if !in_str && c == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
         if in_str {
             if escaped {
                 escaped = false;

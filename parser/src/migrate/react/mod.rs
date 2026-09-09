@@ -12,12 +12,13 @@
 //!
 //! See docs/specs/REACT-MIGRATION.md for full specification.
 
-mod ast_transform;
+pub(crate) mod ast_transform;
 mod cli;
-mod extraction;
+pub(crate) mod extraction;
 mod generator;
 mod mcp;
 mod spec;
+pub(crate) mod stmt_transform;
 #[cfg(test)]
 mod tests;
 

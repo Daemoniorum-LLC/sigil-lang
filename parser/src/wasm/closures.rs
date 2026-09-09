@@ -805,6 +805,26 @@ impl WasmCompiler {
                     // Single uppercase letter followed by underscore is typically a generic
                     || (name.len() >= 3 && name.chars().next().unwrap().is_ascii_uppercase()
                         && name.chars().nth(1) == Some('_'));
+                // `HashSet·from(xs)` — build a set from an array, another
+                // set, or a map's keys. Every migrated `new Set([...])` is this.
+                if args.len() == 1
+                    && resolved_segments.len() == 2
+                    && resolved_segments[1] == "from"
+                    && !declares_own(self, &resolved_segments)
+                {
+                    match resolved_segments[0].as_str() {
+                        "HashSet" | "BTreeSet" => {
+                            self.compile_expr(&args[0])?;
+                            return self.emit_set_from();
+                        }
+                        "HashMap" | "BTreeMap" => {
+                            self.compile_expr(&args[0])?;
+                            return self.emit_map_from();
+                        }
+                        _ => {}
+                    }
+                }
+
                 // `Vec·new()` / `HashMap·new()` and friends. These used to fall
                 // into the stub list below and compile to the constant `0`, so
                 // every empty collection was a null pointer. Host-side, per S57.
@@ -814,9 +834,11 @@ impl WasmCompiler {
                 {
                     match (resolved_segments[0].as_str(), resolved_segments[1].as_str()) {
                         ("Vec" | "VecDeque", "new") => return self.emit_array_new(),
-                        ("HashMap" | "BTreeMap" | "HashSet" | "BTreeSet", "new") => {
-                            return self.emit_map_new()
-                        }
+                        ("HashMap" | "BTreeMap", "new") => return self.emit_map_new(),
+                        // A set is its own host collection — see the `set`
+                        // import group. Aliasing it onto a map made `∀ x ∈ set`
+                        // yield `[k, v]` pairs.
+                        ("HashSet" | "BTreeSet", "new") => return self.emit_set_new(),
                         // `String·new()` is the empty string, not a stub.
                         ("String", "new") => {
                             let offset = self.add_string("");
@@ -1096,10 +1118,11 @@ impl WasmCompiler {
                                 args.len(),
                             );
                         }
-                        if Self::stubbing_unresolved() {
-                            return self.stub_unresolved(simple_name);
-                        }
-                        return Err(WasmError::undefined_variable(simple_name));
+                        // Recorded, not raised: the build reports every
+                        // unresolved name at once (see `finish_unresolved`).
+                        // Failing at the first one meant one name per rebuild,
+                        // and a rebuild here is two minutes.
+                        return self.stub_unresolved(simple_name);
                     } else {
                         // No captures - simple indirect call
                         self.compile_indirect_call(closure_info, args.len())
@@ -1166,14 +1189,11 @@ impl WasmCompiler {
                             func.push(Instruction::I64Const(0));
                             return Ok(());
                         }
-                        if Self::stubbing_unresolved() {
-                            for _ in 0..args.len() {
-                                let func = self.current_function_mut().unwrap();
-                                func.push(Instruction::Drop);
-                            }
-                            return self.stub_unresolved(name);
+                        for _ in 0..args.len() {
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::Drop);
                         }
-                        Err(WasmError::undefined_function(name))
+                        self.stub_unresolved(name)
                     }
                 }
             }
@@ -1212,6 +1232,80 @@ impl WasmCompiler {
 
     /// Compile a closure call when we have the closure pointer in a local.
     /// This extracts the env pointer from the closure object and calls with it.
+    /// `xs·for_each(cb)`: iterate the receiver and call `cb` per element.
+    ///
+    /// A two-parameter callback gets `(element, index)`, matching JavaScript's
+    /// `forEach`. The whole expression evaluates to `0` — `for_each` returns
+    /// nothing, and every expression here leaves one i64 behind.
+    fn compile_for_each(&mut self, receiver: &Expr, callback: &Expr) -> WasmResult<()> {
+        let wants_index = matches!(callback, Expr::Closure { params, .. } if params.len() >= 2);
+
+        // The iterable, as an array handle.
+        self.compile_expr(receiver)?;
+        self.emit_iterable()?;
+        let (arr, len, i, cb) = {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            let arr = func.alloc_local("__fe_arr".to_string(), ValType::I64);
+            func.push(Instruction::LocalSet(arr));
+            let len = func.alloc_local("__fe_len".to_string(), ValType::I64);
+            let i = func.alloc_local("__fe_i".to_string(), ValType::I64);
+            let cb = func.alloc_local("__fe_cb".to_string(), ValType::I64);
+            (arr, len, i, cb)
+        };
+
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(arr));
+        }
+        self.emit_array_len()?;
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalSet(len));
+        }
+
+        // The callback, once — a closure literal allocates, and allocating per
+        // iteration would leak one pair per element.
+        self.compile_expr(callback)?;
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalSet(cb));
+            func.push(Instruction::I64Const(0));
+            func.push(Instruction::LocalSet(i));
+
+            func.push(Instruction::Block(wasm_encoder::BlockType::Empty));
+            func.push(Instruction::Loop(wasm_encoder::BlockType::Empty));
+            // while i < len
+            func.push(Instruction::LocalGet(i));
+            func.push(Instruction::LocalGet(len));
+            func.push(Instruction::I64GeS);
+            func.push(Instruction::BrIf(1));
+            // element
+            func.push(Instruction::LocalGet(arr));
+            func.push(Instruction::LocalGet(i));
+        }
+        self.emit_array_get()?;
+        if wants_index {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(i));
+        }
+        self.compile_closure_call_with_env(cb, if wants_index { 2 } else { 1 })?;
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::Drop);
+            func.push(Instruction::LocalGet(i));
+            func.push(Instruction::I64Const(1));
+            func.push(Instruction::I64Add);
+            func.push(Instruction::LocalSet(i));
+            func.push(Instruction::Br(0));
+            func.push(Instruction::End); // loop
+            func.push(Instruction::End); // block
+            func.push(Instruction::I64Const(0));
+        }
+        Ok(())
+    }
+
     fn compile_closure_call_with_env(
         &mut self,
         closure_ptr_idx: u32,
@@ -1699,10 +1793,7 @@ impl WasmCompiler {
             .and_then(|c| c.iter().copied().find(|i| fits(i)));
 
         let Some(func_idx) = qualified_func.or(simple_func).or(other) else {
-            if Self::stubbing_unresolved() {
-                return self.stub_unresolved(method);
-            }
-            return Err(WasmError::undefined_function(method));
+            return self.stub_unresolved(method);
         };
         self.ensure_arity(func_idx, args.len() + 1, method)?;
 
@@ -2170,6 +2261,10 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            "locale_compare" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "string_locale_compare", args)?;
+                Ok(true)
+            }
             "starts_with" => {
                 self.compile_expr(receiver)?;
                 if !args.is_empty() {
@@ -2461,6 +2556,14 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            // `m·set(k, v)` — the JavaScript spelling of `HashMap·insert`.
+            // This arm emitted NOTHING for the two-argument form and still
+            // reported success, so the statement compiler's `drop` ran on an
+            // empty stack and the whole module failed to validate.
+            "set" if args.len() == 2 => {
+                self.compile_collection_method(receiver, "map_set", args)?;
+                Ok(true)
+            }
             "set" => {
                 if args.len() == 1 {
                     // Cell::set(value) - store value to receiver location and return value
@@ -2470,6 +2573,12 @@ impl WasmCompiler {
                     // For now, just return the value (proper field store needs receiver context)
                     // The receiver is typically a field access - we'd need to extract it
                     // TODO: Implement proper field store for Cell::set
+                } else {
+                    // Every expression on this stack leaves one i64.
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I64Const(0));
                 }
                 Ok(true)
             }
@@ -2523,6 +2632,19 @@ impl WasmCompiler {
                 Ok(true)
             }
 
+            // `xs·sort()` and `xs·sort(|a, b| …)`. Neither existed as a method:
+            // `sort` reached the generic fallback and reported an undefined
+            // function, so every comparator sort in the migrated client stopped
+            // the build.
+            "sort" if args.is_empty() => {
+                self.compile_collection_method(receiver, "array_sort", args)?;
+                Ok(true)
+            }
+            "sort" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "array_sort_by", args)?;
+                Ok(true)
+            }
+
             // HashMap methods. These named imports — `hashmap_insert`,
             // `hashmap_contains`, `hashmap_keys` — have never existed, so every
             // one of them took `compile_collection_method`'s missing-import
@@ -2530,6 +2652,47 @@ impl WasmCompiler {
             // Qliphoth's own `VNode·class()` did nothing at all.
             "insert" if args.len() == 2 => {
                 self.compile_collection_method(receiver, "map_set", args)?;
+                Ok(true)
+            }
+            // `res·json()` / `res·text()` on a fetch Response. The body is a
+            // string the host holds against the request handle; `json()` parses
+            // it. Neither was routed anywhere, so both were undefined.
+            "json" | "text" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                let body = self
+                    .imports
+                    .get_func("fetch_get_body")
+                    .ok_or_else(|| WasmError::internal("fetch_get_body import not found"))?;
+                let parse = if method == "json" {
+                    self.imports.get_func("json_parse")
+                } else {
+                    None
+                };
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::Call(body));
+                func.push(Instruction::I64ExtendI32U);
+                if let Some(parse) = parse {
+                    func.push(Instruction::Call(parse));
+                }
+                Ok(true)
+            }
+
+            // `xs·for_each(cb)` — a real loop, not a stub. The callback runs
+            // for its side effects (`next·add(id)`), so returning the receiver
+            // silently did nothing at all.
+            "for_each" if args.len() == 1 => {
+                self.compile_for_each(receiver, &args[0])?;
+                Ok(true)
+            }
+
+            // A one-argument `insert` is a set, not a map: `HashMap·insert`
+            // takes a key and a value. `add` is the same operation spelled the
+            // way JavaScript spells it.
+            "insert" | "add" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "set_add", args)?;
                 Ok(true)
             }
             "contains_key" => {

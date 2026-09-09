@@ -52,6 +52,41 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// A new empty set. Leaves its handle as i64.
+    pub(crate) fn emit_set_new(&mut self) -> WasmResult<()> {
+        let idx = self.collection_import("set_new")?;
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::Call(idx));
+        func.push(Instruction::I64ExtendI32U);
+        Ok(())
+    }
+
+    /// `HashSet·from(xs)`. Stack: `[… src]` → `[… set]`.
+    pub(crate) fn emit_set_from(&mut self) -> WasmResult<()> {
+        let idx = self.collection_import("set_from")?;
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::Call(idx));
+        func.push(Instruction::I64ExtendI32U);
+        Ok(())
+    }
+
+    /// `HashMap·from(entries)`. Stack: `[… src]` → `[… map]`.
+    pub(crate) fn emit_map_from(&mut self) -> WasmResult<()> {
+        let idx = self.collection_import("map_from")?;
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::Call(idx));
+        func.push(Instruction::I64ExtendI32U);
+        Ok(())
+    }
+
     /// Stack: `[… arr]` → `[… len]`.
     pub(crate) fn emit_array_len(&mut self) -> WasmResult<()> {
         let idx = self.collection_import("array_len")?;

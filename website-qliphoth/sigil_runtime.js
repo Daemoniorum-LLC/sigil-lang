@@ -539,15 +539,21 @@ function mapGet(mapId, k) {
     return v === undefined ? 0n : BigInt(v);
 }
 function mapHas(mapId, k) {
-    const m = maps.get(Number(mapId));
+    const n = Number(mapId);
+    if (sets.has(n)) return setHas(n, k);
+    const m = maps.get(n);
     return m && m.has(mapKey(k)) ? 1 : 0;
 }
 function mapRemove(mapId, k) {
-    const m = maps.get(Number(mapId));
+    const n = Number(mapId);
+    if (sets.has(n)) { setRemove(n, k); return; }
+    const m = maps.get(n);
     if (m) m.delete(mapKey(k));
 }
 function mapLen(mapId) {
-    const m = maps.get(Number(mapId));
+    const n = Number(mapId);
+    if (sets.has(n)) return setLen(n);
+    const m = maps.get(n);
     return m ? m.size : 0;
 }
 function mapIsEmpty(mapId) {
@@ -560,23 +566,68 @@ function arrayOf(values) {
     return id;
 }
 function mapKeys(mapId) {
-    const m = maps.get(Number(mapId));
+    const n = Number(mapId);
+    if (sets.has(n)) return setValues(n);
+    const m = maps.get(n);
     if (!m) return arrayOf([]);
     return arrayOf([...m.keys()].map((k) =>
         typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k)));
 }
 function mapValues(mapId) {
-    const m = maps.get(Number(mapId));
-    return arrayOf(m ? [...m.values()].map((v) => BigInt(v)) : []);
+    const n = Number(mapId);
+    if (sets.has(n)) return setValues(n);
+    const m = maps.get(n);
+    return arrayOf(m ? [...m.values()].map(toI64) : []);
 }
 function mapEntries(mapId) {
-    const m = maps.get(Number(mapId));
+    const n = Number(mapId);
+    if (sets.has(n)) return setValues(n);
+    const m = maps.get(n);
     if (!m) return arrayOf([]);
     // Each entry is a two-element array: [key, value].
     return arrayOf([...m.entries()].map(([k, v]) => BigInt(arrayOf([
         typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k),
         BigInt(v),
     ]))));
+}
+
+// `HashMap·from(entries)` — an array of two-element [k, v] arrays, which is
+// what `Object.entries(x)` and `new Map(pairs)` both hand over.
+function mapFrom(srcId) {
+    const id = mapNew();
+    const m = maps.get(id);
+    const arr = arrays.get(Number(srcId));
+    if (arr) {
+        for (const pair of arr) {
+            const entry = arrays.get(Number(pair));
+            if (entry && entry.length >= 2) m.set(mapKey(entry[0]), entry[1]);
+        }
+        return id;
+    }
+    const other = maps.get(Number(srcId));
+    if (other) for (const [k, v] of other) m.set(k, v);
+    return id;
+}
+
+function encodeUriComponent(ptr) {
+    return writeLengthPrefixedString(encodeURIComponent(readLengthPrefixedString(ptr)));
+}
+function decodeUriComponent(ptr) {
+    const s = readLengthPrefixedString(ptr);
+    try {
+        return writeLengthPrefixedString(decodeURIComponent(s));
+    } catch {
+        // A malformed escape is not a reason to trap the whole module.
+        return writeLengthPrefixedString(s);
+    }
+}
+
+// `a·locale_compare(b)` — JavaScript's `localeCompare`, which every migrated
+// sort comparator uses.
+function stringLocaleCompare(aRef, bRef) {
+    const a = readLengthPrefixedString(aRef);
+    const b = readLengthPrefixedString(bRef);
+    return BigInt(a.localeCompare(b));
 }
 
 function stringParseInt(ptr) {
@@ -638,6 +689,13 @@ function stringToLowercase(ptr) {
 }
 
 function stringContains(ptr, searchPtr) {
+    const n = Number(ptr);
+    if (sets.has(n)) return setHas(n, searchPtr) ? 1n : 0n;
+    const arr = arrays.get(n);
+    if (arr) {
+        const needle = mapKey(searchPtr);
+        return arr.some((v) => mapKey(v) === needle) ? 1n : 0n;
+    }
     const str = readLengthPrefixedString(ptr);
     const search = readLengthPrefixedString(searchPtr);
     return str.includes(search) ? 1n : 0n;
@@ -1156,6 +1214,66 @@ const mathImports = {
 
 const arrays = new Map();
 
+// ---------------------------------------------------------------------------
+// HashSet. A set is its own host collection, not a map with dummy values: `∀ x
+// ∈ set` has to yield the elements, and a map yields `[k, v]` pairs. Ids come
+// from the one shared counter, so every dispatcher below can tell the three
+// kinds apart by handle alone.
+// ---------------------------------------------------------------------------
+const sets = new Map();
+
+function materializeKey(k) {
+    return typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k);
+}
+
+function setNew() {
+    const id = nextCollectionId++;
+    sets.set(id, new Set());
+    return id;
+}
+function setAdd(setId, v) {
+    const s = sets.get(Number(setId));
+    if (s) s.add(mapKey(v));
+}
+function setHas(setId, v) {
+    const s = sets.get(Number(setId));
+    return s && s.has(mapKey(v)) ? 1 : 0;
+}
+function setRemove(setId, v) {
+    const s = sets.get(Number(setId));
+    if (s) s.delete(mapKey(v));
+}
+function setLen(setId) {
+    const s = sets.get(Number(setId));
+    return s ? s.size : 0;
+}
+function setValues(setId) {
+    const s = sets.get(Number(setId));
+    return arrayOf(s ? [...s].map(materializeKey) : []);
+}
+// `HashSet·from(xs)` — an array, another set, or a map's keys.
+function setFrom(srcId) {
+    const id = setNew();
+    const s = sets.get(id);
+    const n = Number(srcId);
+    const arr = arrays.get(n);
+    if (arr) {
+        for (const v of arr) s.add(mapKey(v));
+        return id;
+    }
+    const other = sets.get(n);
+    if (other) {
+        for (const k of other) s.add(k);
+        return id;
+    }
+    const m = maps.get(n);
+    if (m) {
+        for (const k of m.keys()) s.add(k);
+    }
+    return id;
+}
+
+
 function arrayNew() {
     const id = nextCollectionId++;
     arrays.set(id, []);
@@ -1169,7 +1287,21 @@ function arrayPush(arrId, value) {
 
 function arrayGet(arrId, index) {
     const arr = arrays.get(Number(arrId));
-    return arr ? (arr[Number(index)] ?? 0n) : 0n;
+    if (!arr) return 0n;
+    // The module declares an i64 result, so the value has to BE a BigInt.
+    // An element that arrived as a plain number — anything the host pushed
+    // itself — threw "Cannot convert N to a BigInt" at the call boundary,
+    // which reads as a compiler bug and is a host one.
+    return toI64(arr[Number(index)]);
+}
+
+/// Whatever a collection holds, as the i64 the module expects.
+function toI64(v) {
+    if (typeof v === 'bigint') return v;
+    if (typeof v === 'number') return BigInt(Math.trunc(v));
+    if (typeof v === 'boolean') return v ? 1n : 0n;
+    if (typeof v === 'string') return BigInt(writeLengthPrefixedString(v));
+    return 0n;
 }
 
 function arraySet(arrId, index, value) {
@@ -1184,7 +1316,9 @@ function arrayLen(arrId) {
     const arr = arrays.get(n);
     if (arr) return arr.length;
     const m = maps.get(n);
-    return m ? m.size : 0;
+    if (m) return m.size;
+    const st = sets.get(n);
+    return st ? st.size : 0;
 }
 
 // `∀` iterates this. A map becomes its entries — an array of two-element arrays
@@ -1195,6 +1329,7 @@ function iterOf(id) {
     const n = Number(id);
     if (arrays.has(n)) return n;
     if (maps.has(n)) return mapEntries(n);
+    if (sets.has(n)) return setValues(n);
     // Not a collection this runtime knows: iterate nothing rather than trap.
     return arrayNew();
 }
@@ -1231,6 +1366,24 @@ function arrayFilter(arrId, fnPtr) {
 
 function arrayReduce(arrId, fnPtr, initial) {
     return initial;
+}
+
+// `xs·sort(|a, b| …)`. The comparator is a Sigil closure — the pair
+// `[table_idx, env_ptr]` in linear memory — and the uniform calling convention
+// is `(env, args…)`, so the host can call it like any other.
+function arraySortBy(arrId, closurePtr) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) return Number(arrId);
+    const ptr = Number(closurePtr);
+    const table = wasmExports && wasmExports.__indirect_function_table;
+    if (!ptr || !table) return Number(arrId);
+    const view = new DataView(getMemory().buffer);
+    const tableIdx = Number(view.getBigInt64(ptr, true));
+    const env = view.getBigInt64(ptr + 8, true);
+    const fn = table.get(tableIdx);
+    if (typeof fn !== 'function') return Number(arrId);
+    arr.sort((a, b) => Number(fn(env, a, b)));
+    return Number(arrId);
 }
 
 function arraySort(arrId) {
@@ -1692,7 +1845,17 @@ export function createImports() {
             values: mapValues,
             entries: mapEntries,
             iter_of: iterOf,
+            from: mapFrom,
         }, 'map'),
+        set: wrapImports({
+            new: setNew,
+            from: setFrom,
+            add: setAdd,
+            has: setHas,
+            remove: setRemove,
+            len: setLen,
+            values: setValues,
+        }, 'set'),
         string: wrapImports({
             concat: stringConcat,
             length: stringLength,
@@ -1713,6 +1876,9 @@ export function createImports() {
             contains: stringContains,
             starts_with: stringStartsWith,
             ends_with: stringEndsWith,
+            locale_compare: stringLocaleCompare,
+            encode_uri_component: encodeUriComponent,
+            decode_uri_component: decodeUriComponent,
             replace: stringReplace,
             chars: stringChars,
         }, 'string'),
@@ -1793,6 +1959,7 @@ export function createImports() {
             array_filter: arrayFilter,
             array_reduce: arrayReduce,
             array_sort: arraySort,
+            array_sort_by: arraySortBy,
             array_first: arrayFirst,
             array_last: arrayLast,
             array_nth: arrayNth,
@@ -1884,6 +2051,25 @@ export function createImports() {
             mql_matches: (mql) => 0n,
             mql_add_listener: (mql, callback) => 0n,
             mql_remove_listener: (mql, listenerId) => {},
+            // Dialogs. Outside a browser they answer the way a dismissed
+            // dialog does, so a headless render does not trap.
+            confirm: (msgPtr) => {
+                const msg = readLengthPrefixedString(msgPtr);
+                if (typeof window === 'undefined' || !window.confirm) return 0;
+                return window.confirm(msg) ? 1 : 0;
+            },
+            alert: (msgPtr) => {
+                const msg = readLengthPrefixedString(msgPtr);
+                if (typeof window !== 'undefined' && window.alert) window.alert(msg);
+            },
+            prompt: (msgPtr, defPtr) => {
+                const msg = readLengthPrefixedString(msgPtr);
+                const def = defPtr ? readLengthPrefixedString(defPtr) : '';
+                if (typeof window === 'undefined' || !window.prompt) {
+                    return writeLengthPrefixedString('');
+                }
+                return writeLengthPrefixedString(window.prompt(msg, def) ?? '');
+            },
         },
     };
 }

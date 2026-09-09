@@ -476,10 +476,8 @@ impl WasmCompiler {
             return Ok(());
         }
 
-        if Self::stubbing_unresolved() {
-            return self.stub_unresolved(name);
-        }
-        Err(WasmError::undefined_variable(name))
+        // Recorded, not raised — see `finish_unresolved`.
+        self.stub_unresolved(name)
     }
 
     /// Short-circuit AND (&&): left && right
@@ -1283,8 +1281,18 @@ mod tests {
     fn test_compile_undefined_variable() {
         let mut compiler = create_test_compiler_with_function();
 
+        // An undefined name no longer raises where it is met: it is recorded
+        // and the whole set is reported once, at the end of the compile — one
+        // name per two-minute rebuild was the slow way to port a codebase.
+        // The expression still compiles to a constant 0 in its place.
         let result = compiler.compile_expr(&make_path("undefined_var"));
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        assert!(
+            compiler.unresolved().iter().any(|n| n.starts_with("undefined_var")),
+            "the name has to be recorded: {:?}",
+            compiler.unresolved()
+        );
+        assert!(compiler.finish_unresolved_for_test().is_err());
     }
 
     // Helper to create a compiler with full imports (for async tests)

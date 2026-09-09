@@ -200,6 +200,13 @@ pub struct MessageRecommendation {
     /// otherwise have to diff against the TSX to notice.
     #[serde(default)]
     pub flattened_control_flow: bool,
+    /// The handler's body as React wrote it. S30: reducing a body to a flat
+    /// list of mutations loses the branches, so a handler that wrote one field
+    /// on success and another on failure emitted both. The generator translates
+    /// this statement by statement when it can, and falls back to the flat list
+    /// with the flattening noted when it cannot.
+    #[serde(default)]
+    pub body_source: Option<String>,
 }
 
 /// A single `self.<field> = <value>` a message handler performs.
@@ -713,6 +720,7 @@ impl<'a> SpecGenerator<'a> {
                         param_bindings: vec![],
                         state_assignments: vec![],
                         flattened_control_flow: false,
+                        body_source: None,
                     });
                 }
             }
@@ -796,6 +804,7 @@ impl<'a> SpecGenerator<'a> {
                 param_bindings,
                 state_assignments,
                 flattened_control_flow,
+                body_source: Some(handler.body_summary.clone()),
             });
         }
 
@@ -845,6 +854,7 @@ impl<'a> SpecGenerator<'a> {
                 param_bindings: vec![],
                 state_assignments: vec![],
                 flattened_control_flow: false,
+                body_source: None,
             });
         }
 
