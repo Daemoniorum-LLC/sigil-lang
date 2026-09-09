@@ -392,6 +392,19 @@ impl WasmCompiler {
     /// Compile a function call expression.
     pub fn compile_call(&mut self, func_expr: &Expr, args: &[Expr]) -> WasmResult<()> {
         match func_expr {
+            // `x.method(args)`. Sigil's separator is `·`, but the interpreter
+            // has always accepted `.` here too, and this backend did not: it
+            // read a field named `method` and then called nothing, so
+            // `tag.to_string()` stored a zero. Qliphoth's own core does this 87
+            // times — `VElement·new("div")` never stored its tag. The two
+            // backends have to agree on what a program means.
+            //
+            // A field that really holds a callable is not a thing Sigil has, so
+            // there is nothing to disambiguate against: this is a method call.
+            Expr::Field { expr: receiver, field } => {
+                self.compile_method_call(receiver, &field.name, args)
+            }
+
             Expr::Path(path) => {
                 // Extract path segments
                 let segments: Vec<String> = path
@@ -435,7 +448,14 @@ impl WasmCompiler {
                     let type_name = &resolved_segments[resolved_segments.len() - 2];
                     let method_name = &resolved_segments[resolved_segments.len() - 1];
 
-                    if type_name == "VNode" {
+                    // The builtin `VNode·div()` builds a *host* vnode through
+                    // the `vdom_*` imports. A program that declares its own
+                    // `VNode` — Qliphoth does, and the generated client vendors
+                    // it — means its own enum, and its own `·attr()` resolves
+                    // to its own method. Intercepting the constructor and not
+                    // the builder left every chain half host and half Sigil:
+                    // valid WebAssembly that rendered nothing.
+                    if type_name == "VNode" && !self.declares_own_vnode() {
                         if let Some(result) = self.try_compile_vnode_constructor(method_name, args) {
                             return result;
                         }
@@ -739,7 +759,35 @@ impl WasmCompiler {
                     // Single uppercase letter followed by underscore is typically a generic
                     || (name.len() >= 3 && name.chars().next().unwrap().is_ascii_uppercase()
                         && name.chars().nth(1) == Some('_'));
-                if is_cross_module_stub {
+                // …but only when the program does not define the thing itself.
+                // This list fires on the underscore-joined path, so `VNode·div()`
+                // is `VNode_div` and was stubbed to a constant `0` before any
+                // user function was looked up — every call on a user-declared
+                // `VNode`, `Vec`, `HashMap`, `Option`, `Result`, `Rc`, `Cell` or
+                // `Patch` silently did nothing. Qliphoth declares `VNode`, so its
+                // whole builder API compiled to zero. Resolution first; the stub
+                // is the fallback it was documented to be, and it is reported.
+                // "Defines it itself" has to mean this exact type's own method,
+                // not any function that shares the name: the general lookup
+                // falls back to a bare last segment, so `HashMap·new()` would
+                // find `VFragment::new` and the two would call each other until
+                // the stack ran out.
+                let declares_it = |c: &Self| -> bool {
+                    if c.func_map.contains_key(&qualified_path) {
+                        return true;
+                    }
+                    if resolved_segments.len() < 2 {
+                        return false;
+                    }
+                    let ty = &resolved_segments[resolved_segments.len() - 2];
+                    let m = &resolved_segments[resolved_segments.len() - 1];
+                    c.func_map
+                        .get(&format!("{}::{}", ty, m))
+                        .is_some_and(|&i| c.arity_of(i) == Some(args.len()))
+                };
+                let resolves_locally = declares_it(self);
+                if is_cross_module_stub && !resolves_locally {
+                    self.stubbed_calls.insert(format!("{}()", resolved_segments.join("·")));
                     // Compile all arguments (for side effects), then leave
                     // exactly one i64 value on the stack as a dummy return.
                     for arg in args {
@@ -1395,6 +1443,39 @@ impl WasmCompiler {
                             .ok_or_else(|| WasmError::internal("not in function context"))?;
                         func.push(Instruction::Call(func_idx));
                         return Ok(());
+                    }
+                }
+            }
+        }
+
+        // `Type·method(args)` where the type declares `method` as an
+        // associated function — no `self`. `VElement·new("div")` resolved
+        // because `VElement` is a struct; `VNode·div()` did not, because an
+        // enum type in receiver position compiles to a placeholder `0` and the
+        // method route then pushed that as a receiver the callee never
+        // declared. An associated function is a plain call.
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let type_name = &path.segments[0].ident.name;
+                let known_type = self.enum_layouts.contains_key(type_name.as_str())
+                    || self.struct_layouts.contains_key(type_name.as_str());
+                if known_type {
+                    let qualified = format!("{}::{}", type_name, method);
+                    if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        if self.arity_of(func_idx) == Some(args.len()) {
+                            for arg in args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self.current_function_mut().ok_or_else(|| {
+                                WasmError::internal("not in function context")
+                            })?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -2898,12 +2979,21 @@ impl WasmCompiler {
 
     /// Try to compile a VNode builder method (·child, ·attr, ·style, etc.).
     /// Returns true if handled.
+    /// Whether this program defines its own `VNode`, in which case the builtin
+    /// host-vnode builders must stay out of the way.
+    pub(crate) fn declares_own_vnode(&self) -> bool {
+        self.enum_layouts.contains_key("VNode") || self.struct_layouts.contains_key("VNode")
+    }
+
     fn try_compile_vnode_builder_method(
         &mut self,
         receiver: &Expr,
         method: &str,
         args: &[Expr],
     ) -> WasmResult<bool> {
+        if self.declares_own_vnode() {
+            return Ok(false);
+        }
         // Check if receiver is VNode-typed
         if !self.is_vnode_expression(receiver) {
             return Ok(false);
@@ -3369,16 +3459,19 @@ impl WasmCompiler {
     /// Compile to_string() method call.
     /// Uses runtime type detection: strings pass through, numbers convert.
     fn compile_to_string(&mut self, receiver: &Expr) -> WasmResult<()> {
+        // A string is already a string. The comment this replaces said "strings
+        // are already string handles, so they'd need special handling, but the
+        // common case is numbers" — and the common case in a view is not: every
+        // `(x)·to_string()` on text returned the decimal of its address.
+        if self.is_string_expr(receiver) {
+            return self.compile_expr(receiver);
+        }
+
         // Compile the receiver expression
         self.compile_expr(receiver)?;
 
-        // For now, assume numeric type and call string_from_int
-        // A proper implementation would check the receiver type
-        // and dispatch to string_from_int or string_from_float accordingly.
-        //
-        // Since we use a uniform i64 representation, we call string_from_int.
-        // Strings are already string handles (i32), so they'd need special handling,
-        // but for sigil-web the common case is numbers.
+        // Uniform i64 representation: anything not known to be a string is
+        // converted as an integer.
         if let Some(func_idx) = self.imports.get_func("string_from_int") {
             let func = self
                 .current_function_mut()
@@ -4091,51 +4184,34 @@ impl WasmCompiler {
                 }
             }
 
-            // Not a builtin or import - compile as method call
-            // For the first iteration (i==1), use pre-computed local index if available
-            if i == 1 && first_local_idx.is_some() {
-                let func = self.current_function_mut()
-                    .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::LocalGet(first_local_idx.unwrap()));
-            } else {
-                // Compile the current expression as receiver
-                self.compile_expr(&current_expr)?;
-            }
+            // Everything else is an ordinary method call, and
+            // `compile_method_call` is where method resolution lives: arity
+            // filtering, associated functions, a user's method winning over a
+            // builtin of the same name. This used to be a second, weaker copy —
+            // push receiver and args, then look the name up bare with no arity
+            // check — so `VNode·div()`, an associated function taking no
+            // `self`, was handed a receiver it never declared, and a chain like
+            // `VNode·div()·class(…)·child(…)` came out half host vnode and half
+            // Sigil value. One resolver, one answer.
+            self.compile_method_call(&current_expr, method_name, &method_args)?;
 
-            for arg in &method_args {
-                self.compile_expr(arg)?;
-            }
-
-            // Look up the method as a registered function
-            if let Some(func_idx) = self.get_func(method_name) {
+            if !is_last {
                 let func = self
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Call(func_idx));
-
-                if !is_last {
-                    // Store for next iteration
-                    let temp_local = func.alloc_local(
-                        format!("__chain_{}", i),
-                        ValType::I64,
-                    );
-                    func.push(Instruction::LocalSet(temp_local));
-                    current_expr = Expr::Path(crate::ast::TypePath {
-                        segments: vec![crate::ast::PathSegment {
-                            ident: crate::ast::Ident {
-                                name: format!("__chain_{}", i),
-                                evidentiality: None,
-                                affect: None,
-                                span: crate::span::Span::new(0, 0),
-                            },
-                            generics: None,
-                        }],
-                    });
-                }
-            } else if Self::stubbing_unresolved() {
-                self.stub_unresolved(method_name)?;
-            } else {
-                return Err(WasmError::undefined_function(method_name));
+                let temp_local = func.alloc_local(format!("__chain_{}", i), ValType::I64);
+                func.push(Instruction::LocalSet(temp_local));
+                current_expr = Expr::Path(crate::ast::TypePath {
+                    segments: vec![crate::ast::PathSegment {
+                        ident: crate::ast::Ident {
+                            name: format!("__chain_{}", i),
+                            evidentiality: None,
+                            affect: None,
+                            span: crate::span::Span::new(0, 0),
+                        },
+                        generics: None,
+                    }],
+                });
             }
         }
 

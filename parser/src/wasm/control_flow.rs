@@ -1033,7 +1033,7 @@ impl WasmCompiler {
                 func.push(Instruction::Drop);
             }
 
-            Pattern::TupleStruct { fields, .. } => {
+            Pattern::TupleStruct { path, fields } => {
                 // Store pointer
                 let func = self
                     .current_function_mut()
@@ -1044,6 +1044,12 @@ impl WasmCompiler {
         
 
                 // Bind each field (skip tag at offset 0)
+                let payload_types = path
+                    .segments
+                    .last()
+                    .and_then(|s| self.enum_payload_types.get(&s.ident.name))
+                    .cloned()
+                    .unwrap_or_default();
                 for (i, pat) in fields.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalGet(ptr_idx));
@@ -1053,7 +1059,18 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
+
+                    // Give the binding the payload's declared type, so field
+                    // and method lookups on it resolve.
+                    if let (Some(name), Some(Some(ty))) = (
+                        super::statements::extract_pattern_name(pat),
+                        payload_types.get(i),
+                    ) {
+                        self.var_types.insert(name.clone(), ty.clone());
+                        if ty == "String" || ty == "str" {
+                            self.string_locals.insert(name);
+                        }
+                    }
 
                     self.bind_pattern(pat)?;
                 }
@@ -1164,6 +1181,29 @@ impl WasmCompiler {
                 if let Some(ref type_name) = init_type {
                     if let crate::ast::Pattern::Ident { name, .. } = pattern {
                         self.var_types.insert(name.name.clone(), type_name.clone());
+                    }
+                }
+
+                // …and whether it holds a string, which nothing tracked, so
+                // `format!("{}", s)` printed the pointer and `"a" + s` added
+                // two addresses. An explicit `String` annotation settles it;
+                // otherwise the initialiser does.
+                if let Some(bound) = super::statements::extract_pattern_name(pattern) {
+                    let annotated = match stmt {
+                        Stmt::Let { ty: Some(t), .. } => Some(super::strings::type_is_string(t)),
+                        _ => None,
+                    };
+                    match (annotated, init) {
+                        (Some(true), _) => {
+                            self.string_locals.insert(bound);
+                        }
+                        (Some(false), _) => {
+                            self.string_locals.remove(&bound);
+                        }
+                        (None, Some(val)) => self.note_string_local(&bound, val),
+                        (None, None) => {
+                            self.string_locals.remove(&bound);
+                        }
                     }
                 }
 

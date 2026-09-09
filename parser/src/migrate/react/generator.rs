@@ -1088,7 +1088,10 @@ impl<'a> QliphothGenerator<'a> {
             "        VNode·div()".to_string()
         };
 
-        format!("    rite view(self) -> VNode! {{\n{}{}\n    }}", locals, body)
+        // `☉`: a component's view is the one thing outside the module has to
+        // be able to call. Without it the actor compiled, exported its
+        // handlers and its dispatcher, and offered no way to render anything.
+        format!("    ☉ rite view(self) -> VNode! {{\n{}{}\n    }}", locals, body)
     }
 
     // =========================================================================

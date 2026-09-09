@@ -585,6 +585,12 @@ impl WasmCompiler {
                 }
 
                 // Register methods as ActorName::method_name
+                // Actor methods export under `<Actor>_<method>`, like handlers
+                // and the dispatcher. Ninety-three components each define
+                // `view`, and one export name per function meant they came out
+                // as `view`, `view_608`, `view_621` — a component's view was
+                // not addressable from the host at all.
+                self.registering_actor = Some(actor_name.clone());
                 for method in &actor.methods {
                     // A `self` receiver is a real WASM parameter (a placeholder —
                     // the state is in globals), so a caller reaching the method
@@ -601,6 +607,7 @@ impl WasmCompiler {
                     }
                     self.register_function_sig(method)?;
                 }
+                self.registering_actor = None;
 
                 self.module_path.pop();
             }
@@ -783,6 +790,14 @@ impl WasmCompiler {
             StructFields::Named(fields) => {
                 for field in fields {
                     layout.add_field(&field.name.name);
+                    // Which fields hold strings, so `self.title` in a `format!`
+                    // is interpolated rather than printed as its address.
+                    if super::strings::type_is_string(&field.ty) {
+                        self.string_fields
+                            .entry(def.name.name.clone())
+                            .or_default()
+                            .insert(field.name.name.clone());
+                    }
                 }
             }
             StructFields::Tuple(types) => {
@@ -827,6 +842,18 @@ impl WasmCompiler {
                         for (i, _) in types.iter().enumerate() {
                             payload.add_field(&format!("_{}", i));
                         }
+                        // The declared type of each payload slot. A match arm
+                        // binding — `⌥ node { Node·Element(el) => … }` — had no
+                        // recorded type at all, so `el.tag` could not be
+                        // resolved to `Elem`'s field and `el·method()` could
+                        // not be resolved to `Elem`'s method.
+                        self.enum_payload_types.insert(
+                            variant.name.name.clone(),
+                            types
+                                .iter()
+                                .map(|t| super::strings::named_type(t))
+                                .collect(),
+                        );
                     }
                     StructFields::Unit => {}
                 }
@@ -870,6 +897,16 @@ impl WasmCompiler {
 
         let func_idx = self.next_func_idx();
 
+        // Whether this function returns a string, so a call to it can be
+        // interpolated rather than printed as a number.
+        if func
+            .return_type
+            .as_ref()
+            .is_some_and(super::strings::type_is_string)
+        {
+            self.string_returning.insert(func.name.name.clone());
+        }
+
         // Record function index with both qualified and simple names
         self.func_arity.insert(func_idx, param_types.len());
         self.note_candidate(&func.name.name, func_idx);
@@ -907,6 +944,8 @@ impl WasmCompiler {
         let compiled_name = if duplicate {
             let n = self.def_slots.get(&qualified_name).map(|v| v.len()).unwrap_or(1) - 1;
             format!("{}#{}", func.name.name, n)
+        } else if let Some(actor) = &self.registering_actor {
+            format!("{}_{}", actor, func.name.name)
         } else {
             func.name.name.clone()
         };
@@ -1153,6 +1192,17 @@ impl WasmCompiler {
 
         // Set as current function
         self.current_fn_idx = Some(fn_list_idx);
+
+        // String tracking is per function: the parameters declared `&str` or
+        // `String` seed it, and nothing carries over from the last one.
+        self.string_locals.clear();
+        for param in &func.params {
+            if let Some(name) = param.pattern_name() {
+                if super::strings::type_is_string(&param.ty) {
+                    self.string_locals.insert(name);
+                }
+            }
+        }
 
         // Track function in source map (if debug info enabled)
         if let Some(ref mut source_map) = self.source_map {

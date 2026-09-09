@@ -36,6 +36,7 @@ pub mod stackcheck;
 pub mod constants;
 pub mod control_flow;
 pub mod deps;
+pub mod strings;
 pub mod error;
 pub mod expressions;
 pub mod imports;
@@ -107,6 +108,18 @@ pub struct WasmCompiler {
     /// Every function index registered under a qualified name, in the order
     /// the signature pass met them. Two impl blocks on the same type may
     /// define the same method name; each definition needs its own body.
+    /// Names that hold a string in the function being compiled. See
+    /// `wasm::strings` — the backend had no notion of this at all.
+    /// The actor whose methods are being registered, so they export under
+    /// `<Actor>_<method>` rather than colliding on a bare name.
+    pub(crate) registering_actor: Option<String>,
+    pub(crate) string_locals: std::collections::HashSet<String>,
+    /// Per enum variant, the declared type of each payload slot.
+    pub(crate) enum_payload_types: HashMap<String, Vec<Option<String>>>,
+    /// Functions whose declared return type is a string.
+    pub(crate) string_returning: std::collections::HashSet<String>,
+    /// Per struct, the fields declared as strings.
+    pub(crate) string_fields: HashMap<String, std::collections::HashSet<String>>,
     pub(crate) def_slots: HashMap<String, Vec<u32>>,
     /// How many definitions of a qualified name the body pass has consumed.
     /// The two passes walk the same items in the same order, so the Nth body
@@ -259,6 +272,11 @@ impl WasmCompiler {
             func_arity: HashMap::new(),
             extern_statics: HashMap::new(),
             func_candidates: HashMap::new(),
+            registering_actor: None,
+            string_locals: std::collections::HashSet::new(),
+            enum_payload_types: HashMap::new(),
+            string_returning: std::collections::HashSet::new(),
+            string_fields: HashMap::new(),
             def_slots: HashMap::new(),
             def_cursor: HashMap::new(),
             stack_reports: Vec::new(),
@@ -1273,6 +1291,19 @@ impl WasmCompiler {
 
         // Global section
         if !self.globals.is_empty() {
+            // The runtime heap must start ABOVE the string literals. Both
+            // used to start at `HEAP_START`, so the first allocation in a
+            // function overwrote the literals it was about to read:
+            // `format!("x={}", x)` inside a match arm allocated the enum, wrote
+            // a zero length over "x=", and produced "7". `outside` the arm, with
+            // nothing to allocate, the same `format!` was correct — which is
+            // why this survived every test that did not allocate first.
+            if let Some(heap_ptr) = self.global_map.get("__heap_ptr").copied() {
+                if let Some(slot) = self.globals.get_mut(heap_ptr as usize) {
+                    slot.2 = self.data_offset.max(memory::HEAP_START) as i64;
+                }
+            }
+
             let mut globals = GlobalSection::new();
             for (ty, mutable, init) in &self.globals {
                 globals.global(
@@ -1437,6 +1468,20 @@ impl WasmCompiler {
             let base = self.imports.import_count();
             for (i, f) in self.functions.iter().enumerate() {
                 eprintln!("func #{} = {}", base as usize + i, f.name);
+            }
+        }
+
+        // SIGIL_WASM_DUMP=<name> prints a function's final instruction list.
+        // The stack checker only speaks up when a module is invalid; a module
+        // that validates and computes the wrong thing had nothing to show.
+        if let Ok(want) = std::env::var("SIGIL_WASM_DUMP") {
+            for func in &self.functions {
+                if func.name == want {
+                    eprintln!("== {} ({} instructions) ==", func.name, func.instructions.len());
+                    for (i, instr) in func.instructions.iter().enumerate() {
+                        eprintln!("{:>5}  {:?}", i, instr);
+                    }
+                }
             }
         }
 

@@ -25,6 +25,17 @@ impl WasmCompiler {
                 match op {
                     BinOp::And => self.compile_short_circuit_and(left, right),
                     BinOp::Or => self.compile_short_circuit_or(left, right),
+                    // `+` on strings is concatenation, as it is in the
+                    // interpreter. It used to compile to `i64.add`, so
+                    // `"a" + "b"` was the sum of two addresses — a valid module
+                    // that returned a string nobody could read.
+                    BinOp::Add
+                        if self.is_string_expr(left) || self.is_string_expr(right) =>
+                    {
+                        self.compile_expr(left)?;
+                        self.compile_expr(right)?;
+                        self.emit_binop(BinOp::Concat)
+                    }
                     _ => {
                         // Standard binary: compile operands, then emit operator
                         self.compile_expr(left)?;

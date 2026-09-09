@@ -455,6 +455,13 @@ impl WasmCompiler {
 
         self.compile_expr(&expr)?;
 
+        // A string argument is already a string. This used to convert
+        // unconditionally, so `format!("<{}>", tag)` called `string.from_int`
+        // on a pointer and produced `<16384>`.
+        if self.is_string_expr(&expr) {
+            return Ok(());
+        }
+
         // Get string::from_int or string::from_float import index
         let from_int_idx = self.imports.get_func("string_from_int")
             .ok_or_else(|| WasmError::internal("string::from_int import not found"))?;
