@@ -774,48 +774,28 @@ impl WasmCompiler {
                         && name.chars().nth(1) == Some('_'));
                 // `Vec·new()` / `HashMap·new()` and friends. These used to fall
                 // into the stub list below and compile to the constant `0`, so
-                // every empty collection in the program was a null pointer that
-                // `∀ x ∈ xs` then dereferenced.
-                //
-                // They allocate the SAME shape an array literal does — a 4-byte
-                // length followed by 8-byte slots — because that is what `∀`
-                // and indexing read. The `morpheme` array imports are a second,
-                // host-side representation that `push`, `filter` and `map`
-                // already use, and the two are not interchangeable: that split
-                // is a language-level decision, not something to settle here.
-                // An empty memory array is at least consistent with what reads
-                // it.
+                // every empty collection was a null pointer. Host-side, per S57.
                 if args.is_empty()
                     && resolved_segments.len() == 2
-                    && matches!(
-                        (resolved_segments[0].as_str(), resolved_segments[1].as_str()),
-                        (
-                            "Vec" | "VecDeque" | "HashMap" | "BTreeMap" | "HashSet"
-                                | "BTreeSet",
-                            "new"
-                        )
-                    )
                     && !declares_own(self, &resolved_segments)
                 {
-                    let alloc_idx = self
-                        .get_func("heap_alloc")
-                        .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-                    let func = self
-                        .current_function_mut()
-                        .ok_or_else(|| WasmError::internal("not in function context"))?;
-                    func.push(Instruction::I64Const(4));
-                    func.push(Instruction::Call(alloc_idx));
-                    let arr = func.alloc_local("__empty_coll".to_string(), ValType::I64);
-                    func.push(Instruction::LocalTee(arr));
-                    func.push(Instruction::I32WrapI64);
-                    func.push(Instruction::I32Const(0));
-                    func.push(Instruction::I32Store(wasm_encoder::MemArg {
-                        offset: 0,
-                        align: 2,
-                        memory_index: 0,
-                    }));
-                    func.push(Instruction::LocalGet(arr));
-                    return Ok(());
+                    match (resolved_segments[0].as_str(), resolved_segments[1].as_str()) {
+                        ("Vec" | "VecDeque", "new") => return self.emit_array_new(),
+                        ("HashMap" | "BTreeMap" | "HashSet" | "BTreeSet", "new") => {
+                            return self.emit_map_new()
+                        }
+                        // `String·new()` is the empty string, not a stub.
+                        ("String", "new") => {
+                            let offset = self.add_string("");
+                            let func = self.current_function_mut().ok_or_else(|| {
+                                WasmError::internal("not in function context")
+                            })?;
+                            func.push(Instruction::I32Const(offset as i32));
+                            func.push(Instruction::I64ExtendI32U);
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
                 }
 
                 // …but only when the program does not define the thing itself.
@@ -1727,6 +1707,18 @@ impl WasmCompiler {
                 if self.struct_layouts.contains_key(name) || self.enum_layouts.contains_key(name) {
                     return Some(name.to_string());
                 }
+                // `self` is the type whose impl block we are inside. Without
+                // this it resolved to nothing, so `self·child(node)` inside
+                // `⊢ VNode` fell through to the arity-filtered candidate list
+                // and picked whichever `child` came first — `VFragment`'s, in
+                // Qliphoth, so `text_child` appended to the wrong node.
+                if name == "self" {
+                    return self
+                        .current_actor
+                        .clone()
+                        .or_else(|| self.var_types.get(name).cloned())
+                        .or_else(|| self.module_path.last().cloned());
+                }
                 // Otherwise it may be a local whose type we recorded at its `let`.
                 self.var_types.get(name).cloned()
             }
@@ -2488,17 +2480,33 @@ impl WasmCompiler {
                 Ok(true)
             }
 
-            // HashMap methods
-            "insert" => {
-                self.compile_collection_method(receiver, "hashmap_insert", args)?;
+            // HashMap methods. These named imports — `hashmap_insert`,
+            // `hashmap_contains`, `hashmap_keys` — have never existed, so every
+            // one of them took `compile_collection_method`'s missing-import
+            // fallback and returned a dummy. `el.attrs·insert("class", name)` in
+            // Qliphoth's own `VNode·class()` did nothing at all.
+            "insert" if args.len() == 2 => {
+                self.compile_collection_method(receiver, "map_set", args)?;
                 Ok(true)
             }
             "contains_key" => {
-                self.compile_collection_method(receiver, "hashmap_contains", args)?;
+                self.compile_collection_method(receiver, "map_has", args)?;
+                Ok(true)
+            }
+            "remove" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "map_remove", args)?;
                 Ok(true)
             }
             "keys" => {
-                self.compile_collection_method(receiver, "hashmap_keys", args)?;
+                self.compile_collection_method(receiver, "map_keys", args)?;
+                Ok(true)
+            }
+            "values" => {
+                self.compile_collection_method(receiver, "map_values", args)?;
+                Ok(true)
+            }
+            "entries" => {
+                self.compile_collection_method(receiver, "map_entries", args)?;
                 Ok(true)
             }
             "entry" => {
@@ -4266,7 +4274,7 @@ impl WasmCompiler {
     }
 
     /// Convert an incorporation segment back to an expression for the receiver.
-    fn segment_to_receiver(
+    pub(crate) fn segment_to_receiver(
         &self,
         segment: &crate::ast::IncorporationSegment,
     ) -> WasmResult<Expr> {
@@ -4371,11 +4379,12 @@ impl WasmCompiler {
         }
 
         // Regular struct field access
-        // Compile expression to get struct pointer
+        let owner = self.infer_receiver_type(expr);
         self.compile_expr(expr)?;
 
-        // Get field offset first (requires immutable borrow)
-        let offset = self.get_field_offset(field)?;
+        // Ask the receiver's own type where the field is, not the first struct
+        // in the program that happens to declare that name.
+        let offset = self.field_offset_of(owner.as_deref(), field)?;
 
         let func = self
             .current_function_mut()
@@ -4404,43 +4413,11 @@ impl WasmCompiler {
             return self.compile_slice(expr, start.as_deref(), end.as_deref(), *inclusive);
         }
 
-        // Single-element indexing
-        // Compile array pointer
+        // A host array read, per S57 — this used to compute `ptr + index * 8 + 4`
+        // into linear memory.
         self.compile_expr(expr)?;
-
-        let func = self
-            .current_function_mut()
-            .ok_or_else(|| WasmError::internal("not in function context"))?;
-
-        let arr_idx = func.alloc_local("__index_arr".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(arr_idx));
-
-        // Compile index
-        drop(func);
         self.compile_expr(index)?;
-
-        let func = self.current_function_mut().unwrap();
-
-        // Calculate offset: index * 8 + 4 (skip length)
-        func.push(Instruction::I64Const(8));
-        func.push(Instruction::I64Mul);
-        func.push(Instruction::I64Const(4));
-        func.push(Instruction::I64Add);
-        func.push(Instruction::I32WrapI64);
-
-        // Add base address
-        func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Add);
-
-        // Load value
-        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-            offset: 0,
-            align: 3,
-            memory_index: 0,
-        }));
-
-        Ok(())
+        self.emit_array_get()
     }
 
     /// Compile slice operation: `arr[start..end]` or `str[start..]`
@@ -4533,59 +4510,25 @@ impl WasmCompiler {
 
     /// Compile array literal.
     pub fn compile_array(&mut self, elements: &[Expr]) -> WasmResult<()> {
-        let len = elements.len();
-
+        // A host array, per S57. This used to allocate `[i32 len, i64 slots…]`
+        // in linear memory, which `push`, `filter`, `map` and `len` could not
+        // read — they have always used the host `morpheme` imports.
+        self.emit_array_new()?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let arr = func.alloc_local("__array".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(arr));
 
-        // Allocate: 4 bytes for length + 8 bytes per element
-        let size = 4 + (len * 8);
-        func.push(Instruction::I64Const(size as i64));
-
-        let alloc_idx = self
-            .get_func("heap_alloc")
-            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::Call(alloc_idx));
-
-        let arr_idx = func.alloc_local("__array".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(arr_idx));
-
-        // Write length
-        func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Const(len as i32));
-        func.push(Instruction::I32Store(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-
-
-
-        // Write elements
-        for (i, elem) in elements.iter().enumerate() {
+        for elem in elements {
             let func = self.current_function_mut().unwrap();
-            func.push(Instruction::LocalGet(arr_idx));
-            func.push(Instruction::I32WrapI64);
-    
-
+            func.push(Instruction::LocalGet(arr));
             self.compile_expr(elem)?;
-
-            let func = self.current_function_mut().unwrap();
-            func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                offset: (4 + i * 8) as u64,
-                align: 3,
-                memory_index: 0,
-            }));
+            self.emit_array_push()?;
         }
 
-        // Return array pointer
         let func = self.current_function_mut().unwrap();
-        func.push(Instruction::LocalGet(arr_idx));
-
+        func.push(Instruction::LocalGet(arr));
         Ok(())
     }
 
@@ -4605,101 +4548,46 @@ impl WasmCompiler {
             }
         };
 
+        self.emit_array_new()?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let arr = func.alloc_local("__array_repeat".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(arr));
 
-        // Allocate: 4 bytes for length + 8 bytes per element
-        let size = 4 + (len * 8);
-        func.push(Instruction::I64Const(size as i64));
-
-        let alloc_idx = self
-            .get_func("heap_alloc")
-            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::Call(alloc_idx));
-
-        let arr_idx = func.alloc_local("__array_repeat".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(arr_idx));
-
-        // Write length
-        func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Const(len as i32));
-        func.push(Instruction::I32Store(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-
-        // Write elements (same value repeated)
-        for i in 0..len {
+        for _ in 0..len {
             let func = self.current_function_mut().unwrap();
-            func.push(Instruction::LocalGet(arr_idx));
-            func.push(Instruction::I32WrapI64);
-
+            func.push(Instruction::LocalGet(arr));
             self.compile_expr(value)?;
-
-            let func = self.current_function_mut().unwrap();
-            func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                offset: (4 + i * 8) as u64,
-                align: 3,
-                memory_index: 0,
-            }));
+            self.emit_array_push()?;
         }
 
-        // Return array pointer
         let func = self.current_function_mut().unwrap();
-        func.push(Instruction::LocalGet(arr_idx));
-
+        func.push(Instruction::LocalGet(arr));
         Ok(())
     }
 
     /// Compile tuple literal.
     pub fn compile_tuple(&mut self, elements: &[Expr]) -> WasmResult<()> {
-        let len = elements.len();
-
+        // A tuple is a short host array, per S57. It used to be its own
+        // linear-memory layout, which meant `∀ (k, v) ∈ m` could not destructure
+        // what `map.entries` returns — the two were different kinds of pair.
+        self.emit_array_new()?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let tup = func.alloc_local("__tuple".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(tup));
 
-        // Allocate: 8 bytes per element
-        let size = len * 8;
-        func.push(Instruction::I64Const(size as i64));
-
-        let alloc_idx = self
-            .get_func("heap_alloc")
-            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::Call(alloc_idx));
-
-        let tuple_idx = func.alloc_local("__tuple".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(tuple_idx));
-
-
-
-        // Write elements
-        for (i, elem) in elements.iter().enumerate() {
+        for elem in elements {
             let func = self.current_function_mut().unwrap();
-            func.push(Instruction::LocalGet(tuple_idx));
-            func.push(Instruction::I32WrapI64);
-    
-
+            func.push(Instruction::LocalGet(tup));
             self.compile_expr(elem)?;
-
-            let func = self.current_function_mut().unwrap();
-            func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                offset: (i * 8) as u64,
-                align: 3,
-                memory_index: 0,
-            }));
+            self.emit_array_push()?;
         }
 
         let func = self.current_function_mut().unwrap();
-        func.push(Instruction::LocalGet(tuple_idx));
-
+        func.push(Instruction::LocalGet(tup));
         Ok(())
     }
 
@@ -5128,7 +5016,12 @@ mod tests {
 
     #[test]
     fn test_compile_index() {
+        // `xs[i]` is a host array read (S57). It used to compute
+        // `ptr + i * 8 + 4` into linear memory, which is not where a Vec lives
+        // — `push`, `filter` and `len` have always used the host imports — so
+        // this asserted the half of the split that nothing else agreed with.
         let mut compiler = create_test_compiler_with_function();
+        let want = compiler.imports.get_func("array_get").expect("array_get import");
 
         let index = Expr::Index {
             expr: Box::new(make_int(0x1000)),
@@ -5138,10 +5031,16 @@ mod tests {
         compiler.compile_expr(&index).unwrap();
 
         let func = compiler.current_function().unwrap();
-        assert!(func
-            .instructions
-            .iter()
-            .any(|i| matches!(i, Instruction::I64Load(_))));
+        assert!(
+            func.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Call(idx) if *idx == want)),
+            "indexing should call array_get"
+        );
+        assert!(
+            !func.instructions.iter().any(|i| matches!(i, Instruction::I64Load(_))),
+            "indexing should not read linear memory"
+        );
     }
 
     #[test]

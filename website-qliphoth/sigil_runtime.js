@@ -503,7 +503,12 @@ function stringFromFloat(value) {
 // are read to text — two equal strings at different addresses are one key.
 // ---------------------------------------------------------------------------
 const maps = new Map();
-let nextMapId = 1;
+
+// Arrays and maps share one id space. `xs·len()` and `∀ x ∈ xs` dispatch on the
+// handle alone — they cannot tell which kind it is — so two separate counters
+// meant array 1 and map 1 both existed and the array always won: a map with
+// entries in it reported a length of 0.
+let nextCollectionId = 1;
 
 function mapKey(k) {
     // A key is a string handle when it points at a readable length-prefixed
@@ -520,7 +525,7 @@ function mapKey(k) {
 }
 
 function mapNew() {
-    const id = nextMapId++;
+    const id = nextCollectionId++;
     maps.set(id, new Map());
     return id;
 }
@@ -1150,10 +1155,9 @@ const mathImports = {
 // =============================================================================
 
 const arrays = new Map();
-let nextArrayId = 1;
 
 function arrayNew() {
-    const id = nextArrayId++;
+    const id = nextCollectionId++;
     arrays.set(id, []);
     return id;
 }
@@ -1174,8 +1178,25 @@ function arraySet(arrId, index, value) {
 }
 
 function arrayLen(arrId) {
-    const arr = arrays.get(Number(arrId));
-    return arr ? arr.length : 0;
+    // `xs·len()` dispatches here for any collection, so a map has to answer
+    // too — otherwise `attrs·len()` was 0 for a map with entries in it.
+    const n = Number(arrId);
+    const arr = arrays.get(n);
+    if (arr) return arr.length;
+    const m = maps.get(n);
+    return m ? m.size : 0;
+}
+
+// `∀` iterates this. A map becomes its entries — an array of two-element arrays
+// — and an array is already itself, so `∀ x ∈ xs` and `∀ (k, v) ∈ m` are one
+// loop over different contents. See S57: before this the loop read a 4-byte
+// length out of linear memory, which is not where a Vec lives.
+function iterOf(id) {
+    const n = Number(id);
+    if (arrays.has(n)) return n;
+    if (maps.has(n)) return mapEntries(n);
+    // Not a collection this runtime knows: iterate nothing rather than trap.
+    return arrayNew();
 }
 
 // Vec::join(separator). The compiler wraps both pointers to i32 before the
@@ -1406,7 +1427,10 @@ function renderVnodeToDom(vnodeId) {
         } else if (name === 'style' && typeof value === 'string') {
             el.setAttribute('style', value);
         } else if (name === 'class' || name === 'className') {
-            el.className = String(value);
+            // `setAttribute`, not `className`: on an SVG element `className` is
+            // a read-only SVGAnimatedString, so assigning it threw and took the
+            // whole mount down. Qliphoth's `bell_glyph` is an `<svg>`.
+            el.setAttribute('class', String(value));
         } else if (name === 'id') {
             el.id = String(value);
         } else if (name === 'innerHTML') {
@@ -1667,6 +1691,7 @@ export function createImports() {
             keys: mapKeys,
             values: mapValues,
             entries: mapEntries,
+            iter_of: iterOf,
         }, 'map'),
         string: wrapImports({
             concat: stringConcat,

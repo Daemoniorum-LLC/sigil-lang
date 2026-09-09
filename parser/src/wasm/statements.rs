@@ -1196,11 +1196,13 @@ impl WasmCompiler {
         // String tracking is per function: the parameters declared `&str` or
         // `String` seed it, and nothing carries over from the last one.
         self.string_locals.clear();
+        self.decl_types.clear();
         for param in &func.params {
             if let Some(name) = param.pattern_name() {
                 if super::strings::type_is_string(&param.ty) {
-                    self.string_locals.insert(name);
+                    self.string_locals.insert(name.clone());
                 }
+                self.decl_types.insert(name, param.ty.clone());
             }
         }
 

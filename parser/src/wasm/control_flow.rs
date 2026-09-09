@@ -199,6 +199,9 @@ impl WasmCompiler {
         // Push new scope for loop variables
         self.scope_vars.push(std::collections::HashMap::new());
 
+        // What the bindings hold, where the iterable's declaration says.
+        self.note_loop_bindings(pattern, iter);
+
         // Compile iterator expression
         self.compile_expr(iter)?;
 
@@ -210,15 +213,20 @@ impl WasmCompiler {
         let arr_idx = func.alloc_local("__for_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-        // Get array length (assuming array format: [len: i32, ...elements])
+        // What to iterate. A map becomes its entries — an array of two-element
+        // arrays — so `∀ x ∈ xs` and `∀ (k, v) ∈ m` are the same loop over
+        // different contents. Before S57 this read a 4-byte length out of
+        // linear memory, which is not where a Vec lives.
         func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Load(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-        func.push(Instruction::I64ExtendI32U);
+        drop(func);
+        self.emit_iterable()?;
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::LocalSet(arr_idx));
+
+        func.push(Instruction::LocalGet(arr_idx));
+        drop(func);
+        self.emit_array_len()?;
+        let func = self.current_function_mut().unwrap();
 
         let len_idx = func.alloc_local("__for_len".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(len_idx));
@@ -254,19 +262,9 @@ impl WasmCompiler {
 
         // Get current element: arr[i]
         func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
         func.push(Instruction::LocalGet(idx_idx));
-        func.push(Instruction::I64Const(8));
-        func.push(Instruction::I64Mul);
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Add);
-        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-            offset: 4, // Skip length field
-            align: 3,
-            memory_index: 0,
-        }));
-
-
+        drop(func);
+        self.emit_array_get()?;
 
         // Bind pattern
         self.bind_pattern(pattern)?;
@@ -632,16 +630,14 @@ impl WasmCompiler {
                     func.push(Instruction::I64Const(1)); // Start with true
 
                     let mut indices = Vec::new();
+                    drop(func);
                     for (i, _) in patterns.iter().enumerate() {
-                        // Get tuple element
+                        let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(scrutinee_idx));
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: (i * 8) as u64,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-
+                        func.push(Instruction::I64Const(i as i64));
+                        drop(func);
+                        self.emit_array_get()?;
+                        let func = self.current_function_mut().unwrap();
                         let temp_idx = func.alloc_local(format!("__tuple_{}", i), ValType::I64);
                         func.push(Instruction::LocalSet(temp_idx));
                         indices.push(temp_idx);
@@ -967,18 +963,15 @@ impl WasmCompiler {
 
         
 
-                // Bind each element
+                // Bind each element. A tuple is a host array, per S57, so this
+                // is the same read `xs[i]` does — and the same read that a
+                // `map.entries` pair needs.
                 for (i, pat) in patterns.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalGet(ptr_idx));
-                    func.push(Instruction::I32WrapI64);
-                    func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                        offset: (i * 8) as u64,
-                        align: 3,
-                        memory_index: 0,
-                    }));
-            
-
+                    func.push(Instruction::I64Const(i as i64));
+                    drop(func);
+                    self.emit_array_get()?;
                     self.bind_pattern(pat)?;
                 }
             }
@@ -1193,6 +1186,9 @@ impl WasmCompiler {
                         Stmt::Let { ty: Some(t), .. } => Some(super::strings::type_is_string(t)),
                         _ => None,
                     };
+                    if let Stmt::Let { ty: Some(t), .. } = stmt {
+                        self.decl_types.insert(bound.clone(), t.clone());
+                    }
                     match (annotated, init) {
                         (Some(true), _) => {
                             self.string_locals.insert(bound);

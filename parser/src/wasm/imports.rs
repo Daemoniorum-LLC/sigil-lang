@@ -297,6 +297,8 @@ impl ImportRegistry {
         self.add_import_with_alias("map", "keys", "map_keys", vec![I32], vec![I32]);
         self.add_import_with_alias("map", "values", "map_values", vec![I32], vec![I32]);
         self.add_import_with_alias("map", "entries", "map_entries", vec![I32], vec![I32]);
+        // What `∀` iterates: a map becomes its entries, an array stays itself.
+        self.add_import_with_alias("map", "iter_of", "iter_of", vec![I32], vec![I32]);
     }
 
     fn register_morpheme_imports(&mut self) {

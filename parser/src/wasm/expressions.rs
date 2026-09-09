@@ -699,9 +699,10 @@ impl WasmCompiler {
         // `Δ self` builder methods are what Qliphoth's whole VNode API is made
         // of, so this is why not one generated Lares component produced a module
         // that would load.
+        let owner = self.infer_receiver_type(target);
         self.compile_expr(target)?;
 
-        let offset = self.get_field_offset(field)?;
+        let offset = self.field_offset_of(owner.as_deref(), field)?;
 
         {
             let func = self
@@ -731,40 +732,36 @@ impl WasmCompiler {
 
     /// Compile index assignment.
     fn compile_index_assign(&mut self, array: &Expr, index: &Expr, value: &Expr) -> WasmResult<()> {
-        // Get array pointer
+        // A host array write, per S57 — this used to store into
+        // `ptr + index * 8 + 4` in linear memory, which nothing else read.
         self.compile_expr(array)?;
-
-        // Get index
         self.compile_expr(index)?;
-
-        // Calculate offset: ptr + (index * 8)
+        self.compile_expr(value)?;
+        self.emit_array_set()?;
+        // An assignment is an expression here, and every expression leaves one
+        // i64.
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
-
-        func.push(Instruction::I64Const(8));
-        func.push(Instruction::I64Mul);
-        func.push(Instruction::I64Add);
-
-        // Convert to i32 for memory operations
-        func.push(Instruction::I32WrapI64);
-
-        // Compile value
-        self.compile_expr(value)?;
-
-        // Store
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::I64Store(wasm_encoder::MemArg {
-            offset: 8, // Skip length field
-            align: 3,
-            memory_index: 0,
-        }));
-
-        // Return the value
-        self.compile_expr(value)
+        func.push(Instruction::I64Const(0));
+        Ok(())
+    }
+    /// The byte offset of `field` on the type `owner` names, falling back to
+    /// whichever struct in the program happens to declare that field first.
+    ///
+    /// The fallback is a guess, and it was the only behaviour: `children` is a
+    /// field of `VElement` at offset 32 and of `VFragment` at offset 0, so
+    /// `el.children` on an element read the element's `tag`. Whenever the
+    /// receiver's type is known, ask that type.
+    pub fn field_offset_of(&self, owner: Option<&str>, field: &str) -> WasmResult<u32> {
+        if let Some(layout) = owner.and_then(|o| self.struct_layouts.get(o)) {
+            if let Some(offset) = layout.field_offset(field) {
+                return Ok(offset);
+            }
+        }
+        self.get_field_offset(field)
     }
 
-    /// Get field offset from struct layout.
     pub fn get_field_offset(&self, field: &str) -> WasmResult<u32> {
         // Check all struct layouts for this field
         for layout in self.struct_layouts.values() {

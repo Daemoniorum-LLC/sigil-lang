@@ -36,6 +36,7 @@ pub mod stackcheck;
 pub mod constants;
 pub mod control_flow;
 pub mod deps;
+pub mod collections;
 pub mod strings;
 pub mod error;
 pub mod expressions;
@@ -114,6 +115,9 @@ pub struct WasmCompiler {
     /// `<Actor>_<method>` rather than colliding on a bare name.
     pub(crate) registering_actor: Option<String>,
     pub(crate) string_locals: std::collections::HashSet<String>,
+    /// Declared types of the current function's parameters and annotated
+    /// locals, for the questions a bare name cannot answer.
+    pub(crate) decl_types: HashMap<String, crate::ast::TypeExpr>,
     /// Per enum variant, the declared type of each payload slot.
     pub(crate) enum_payload_types: HashMap<String, Vec<Option<String>>>,
     /// Functions whose declared return type is a string.
@@ -274,6 +278,7 @@ impl WasmCompiler {
             func_candidates: HashMap::new(),
             registering_actor: None,
             string_locals: std::collections::HashSet::new(),
+            decl_types: HashMap::new(),
             enum_payload_types: HashMap::new(),
             string_returning: std::collections::HashSet::new(),
             string_fields: HashMap::new(),
