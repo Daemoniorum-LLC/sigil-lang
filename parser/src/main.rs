@@ -5268,7 +5268,8 @@ fn map_rust_code_spans(src: &str, mut f: impl FnMut(&str) -> String) -> String {
         }
 
         // String literal, and byte string b".."
-        if b[i] == b'"' || (b[i] == b'b' && i + 1 < b.len() && b[i + 1] == b'"' && !prev_is_ident(i))
+        if b[i] == b'"'
+            || (b[i] == b'b' && i + 1 < b.len() && b[i + 1] == b'"' && !prev_is_ident(i))
         {
             if i > code_start {
                 out.push_str(&f(&src[code_start..i]));
@@ -5347,7 +5348,6 @@ fn map_rust_code_spans(src: &str, mut f: impl FnMut(&str) -> String) -> String {
     }
     out
 }
-
 fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -6490,18 +6490,30 @@ mod migrate_span_tests {
 
     #[test]
     fn line_comments_are_not_code() {
-        assert_eq!(mark("let x = 1; // keep for in me\n"), "LET X = 1; // keep for in me\n");
+        assert_eq!(
+            mark("let x = 1; // keep for in me\n"),
+            "LET X = 1; // keep for in me\n"
+        );
     }
 
     #[test]
     fn doc_comments_are_not_code() {
-        assert_eq!(mark("/// Axis for gizmo ops\nfn a"), "/// Axis for gizmo ops\nFN A");
-        assert_eq!(mark("//! Vectors for SIMD\nfn a"), "//! Vectors for SIMD\nFN A");
+        assert_eq!(
+            mark("/// Axis for gizmo ops\nfn a"),
+            "/// Axis for gizmo ops\nFN A"
+        );
+        assert_eq!(
+            mark("//! Vectors for SIMD\nfn a"),
+            "//! Vectors for SIMD\nFN A"
+        );
     }
 
     #[test]
     fn block_comments_nest() {
-        assert_eq!(mark("a /* one /* two */ still */ b"), "A /* one /* two */ still */ B");
+        assert_eq!(
+            mark("a /* one /* two */ still */ b"),
+            "A /* one /* two */ still */ B"
+        );
     }
 
     #[test]
@@ -6511,18 +6523,30 @@ mod migrate_span_tests {
 
     #[test]
     fn string_escapes_do_not_end_the_literal() {
-        assert_eq!(mark(r#"let s = "a\"for\" b"; c"#), r#"LET S = "a\"for\" b"; C"#);
+        assert_eq!(
+            mark(r#"let s = "a\"for\" b"; c"#),
+            r#"LET S = "a\"for\" b"; C"#
+        );
     }
 
     #[test]
     fn raw_strings_of_any_hash_depth_are_not_code() {
-        assert_eq!(mark(r##"let s = r#"for "in" let"#; x"##), r##"LET S = r#"for "in" let"#; X"##);
-        assert_eq!(mark(r###"let s = r##"a"# b"##; x"###), r###"LET S = r##"a"# b"##; X"###);
+        assert_eq!(
+            mark(r##"let s = r#"for "in" let"#; x"##),
+            r##"LET S = r#"for "in" let"#; X"##
+        );
+        assert_eq!(
+            mark(r###"let s = r##"a"# b"##; x"###),
+            r###"LET S = r##"a"# b"##; X"###
+        );
     }
 
     #[test]
     fn byte_and_byte_string_literals_are_not_code() {
-        assert_eq!(mark(r#"let s = b"for"; let c = b'f'; x"#), r#"LET S = b"for"; LET C = b'f'; X"#);
+        assert_eq!(
+            mark(r#"let s = b"for"; let c = b'f'; x"#),
+            r#"LET S = b"for"; LET C = b'f'; X"#
+        );
     }
 
     #[test]
