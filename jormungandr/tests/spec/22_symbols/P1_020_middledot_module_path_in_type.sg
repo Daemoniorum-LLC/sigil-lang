@@ -1,0 +1,34 @@
+// Test: Middledot module paths in type position
+// Spec: SIGIL_NATIVE_SYMBOLS_ROADMAP.md § path separator
+// Priority: P1
+//
+// Purpose:
+// Validates that `·` works as a path separator in a *type* position when the
+// path begins with a lowercase module name, as in `std·fmt·Formatter`.
+//
+// The parser tells a type path (`HashMap·new`) from a method call on a variable
+// (`tag·to_string`) by whether the first segment is uppercase. That heuristic
+// belongs to expression position only: a type contains no variables, so every
+// `·` in one is a path separator. Without the distinction a lowercase module
+// path in a type is rejected -- which accounted for every one of the nihil
+// tensor library's parse failures.
+//
+// Note the value is constructed through an import rather than through
+// `geometry·Point { .. }`: a middledot module path in *expression* position is
+// a separate, still-open gap, and this test is about the type position.
+//
+// Expected behavior:
+// Should compile and print 42
+
+☉ scroll geometry {
+    ☉ Σ Point {
+        ☉ x: !i32,
+    }
+}
+
+invoke geometry·Point;
+
+rite main() {
+    ≔ p: geometry·Point = Point { x: 42 };
+    println(p.x);
+}
