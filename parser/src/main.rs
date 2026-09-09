@@ -5187,6 +5187,64 @@ fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
     (out, dropped)
 }
 
+/// Report Rust identifiers in `source` that Sigil lexes as keywords.
+///
+/// Sigil reserves a number of ordinary English words — `aspect` for `Θ`, `of`
+/// for `∈`, and `body`, `location`, `layer`, `header` among others — so Rust
+/// code using them as field or binding names migrates into something that will
+/// not parse, and the eventual error names the token rather than the field.
+/// Reporting them at migration time turns that into a diagnostic the reader
+/// can act on, at the point where the name is still visible.
+///
+/// Classification uses the real lexer, so this list cannot drift from the
+/// language: a word is flagged when lexing it yields anything but the
+/// identical identifier.
+fn collect_keyword_collisions(source: &str) -> Vec<(String, usize)> {
+    let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+    // Code only. Prose ends sentences with a colon too — "Continue mobbing if:"
+    // and "Implementation based on:" both look like a field named after a
+    // reserved word if the scan reads comments.
+    map_rust_code_spans(source, |code| {
+        collect_in_code(code, &mut counts);
+        code.to_string()
+    });
+    counts.into_iter().collect()
+}
+
+/// Tally reserved-word names in one span of code.
+fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String, usize>) {
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if (bytes[i] as char).is_ascii_alphabetic() || bytes[i] == b'_' {
+            let start = i;
+            while i < bytes.len()
+                && ((bytes[i] as char).is_ascii_alphanumeric() || bytes[i] == b'_')
+            {
+                i += 1;
+            }
+            let word = &source[start..i];
+            // Only a word used as a name is a problem. `name:` covers struct
+            // fields and typed bindings; `::` excludes path segments, where a
+            // reserved word is fine.
+            let rest = source[i..].trim_start_matches([' ', '\t']);
+            if rest.starts_with(':') && !rest.starts_with("::") {
+                let mut lexer = sigil_parser::Lexer::new(word);
+                let is_keyword = match lexer.next_token() {
+                    Some((sigil_parser::Token::Ident(lexed), _)) => lexed != word,
+                    Some(_) => true,
+                    None => false,
+                };
+                if is_keyword {
+                    *counts.entry(word.to_string()).or_default() += 1;
+                }
+            }
+            continue;
+        }
+        i += 1;
+    }
+}
+
 /// Split Rust source into code and non-code regions, applying `f` to the code
 /// only and copying comments and literals through untouched.
 ///
@@ -5386,6 +5444,8 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
             return ExitCode::from(1);
         }
     };
+
+    let keyword_collisions = collect_keyword_collisions(&source);
 
     // Compute output path
     let output_path = if let Some(out_dir) = output_dir {
@@ -5815,6 +5875,21 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         println!("  ~ (Reported) - HTTP, File I/O, Database, Time");
         println!("  ? (Uncertain) - User input, Environment, Random, Parsing");
         println!("  ◊ (Predicted) - ML models, LLM completions");
+    }
+
+    if !keyword_collisions.is_empty() {
+        let total: usize = keyword_collisions.iter().map(|(_, n)| n).sum();
+        eprintln!();
+        eprintln!(
+            "warning: {} name{} in this file {} reserved in Sigil and will not parse:",
+            total,
+            if total == 1 { "" } else { "s" },
+            if total == 1 { "is" } else { "are" },
+        );
+        for (word, count) in &keyword_collisions {
+            eprintln!("    {:<16} {} use{}", word, count, if *count == 1 { "" } else { "s" });
+        }
+        eprintln!("  Rename them in the Rust source, or in the migrated output.");
     }
 
     ExitCode::SUCCESS
@@ -6642,6 +6717,32 @@ mod migrate_span_tests {
         let (out, n) = super::drop_absolute_path_prefix("d(::a::B, ::c::D)");
         assert_eq!(out, "d(a::B, c::D)");
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn keyword_collisions_are_reported_from_code_only() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // A reserved word used as a field name is the case worth reporting:
+        // `aspect` is Sigil's prose spelling of `Θ`, so this will not parse.
+        assert_eq!(f("pub struct C { pub aspect: f32 }"), vec![("aspect".into(), 1)]);
+        // Counted per use, and a parameter counts as much as a field —
+        // both positions declare a name.
+        assert_eq!(
+            f("struct C { aspect: f32, other: u8 }\nfn g(aspect: f32) {}"),
+            vec![("aspect".into(), 2)]
+        );
+
+        // Prose ends sentences with colons too. Neither of these is a field,
+        // and both appear verbatim in the corpus this was built against.
+        assert!(f("// Continue mobbing if:\nlet x = 1;").is_empty());
+        assert!(f("//! Implementation based on:\nlet y = 2;").is_empty());
+        assert!(f("let s = \"named location:\"; let z = 3;").is_empty());
+
+        // A path segment is not a name being declared.
+        assert!(f("let v = std::from::x;").is_empty());
+        // An ordinary identifier is not reserved.
+        assert!(f("struct C { velocity: f32 }").is_empty());
     }
 
     #[test]
