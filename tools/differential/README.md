@@ -9,6 +9,26 @@ success — `xs·map(f)` returned `xs` for the entire life of the WASM backend,
 and the only symptom was a list with the wrong things in it. Nothing in the
 test suite compared the two backends, so nothing said so.
 
+## Known disagreements
+
+Two probes fail on purpose. They are findings, recorded rather than fixed, and
+the sweep's job is to keep them visible:
+
+- **`division/t_float_divide`** — `10.0 / 4.0` is `2.5` in the interpreter and
+  `1` in WASM. The WASM value model is uniformly i64 and has no float division.
+- **`option/t_none_to_string`** — `(None)·to_string()` is `"None"` in the
+  interpreter and `""` in WASM. React renders `{null}` as nothing, and
+  generated code emits `(x)·to_string()` wherever React had one, so the WASM
+  answer is what the migration needs and the interpreter's is what a Sigil
+  programmer would expect. Reconciling them is a language decision, not a bug
+  fix.
+
+`cases/option.sigil` also lists, in its header, what the interpreter REFUSES to
+evaluate at all: `==` is strictly typed there and untyped in WASM, so
+`∅ == None`, `false == None` and `0 == None` are runtime type errors under one
+backend and comparisons under the other. A migrated component is made of
+`x == None` where `x` is `Any`.
+
 ## Running
 
     ./run.sh              # every case
