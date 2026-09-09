@@ -180,6 +180,10 @@ impl ImportRegistry {
         self.add_import("string", "eq", vec![I32, I32], vec![I32]); // (str1, str2) -> bool
         self.add_import("string", "from_int", vec![I64], vec![I32]); // (int) -> str
         self.add_import("string", "from_float", vec![F64], vec![I32]); // (float) -> str
+        // `String·from_utf8(bytes)`. A Sigil `Vec[u8]` is a host array handle,
+        // so the host does the decoding; there is no byte buffer in linear
+        // memory to walk.
+        self.add_import("string", "from_utf8", vec![I32], vec![I32]); // (bytes) -> str
         // Aliased so the bare names resolve: `Number(x)` lowers to
         // `parse_float(x)`, and the qualified `string_parse_float` is not what
         // anyone writes.

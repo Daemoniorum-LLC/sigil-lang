@@ -189,7 +189,11 @@ impl WasmCompiler {
 
             // Incorporation chains: expr·method(args)·method2(args2)
             Expr::Incorporation { segments } => self.compile_incorporation(segments),
-            Expr::Unsafe(_) => Err(WasmError::unsupported("unsafe blocks")),
+            // `unsafe` is a Rust inheritance: it marks intent, not a different
+            // lowering. Everything it guards here — an FFI call to an `extern`
+            // import — compiles the same either way, and rejecting the keyword
+            // outright stopped whole files that were otherwise ordinary.
+            Expr::Unsafe(block) => self.compile_block(block),
             Expr::Deref(_) => Err(WasmError::unsupported("raw pointer dereference")),
             Expr::AddrOf { .. } => Err(WasmError::unsupported("address-of expressions")),
             Expr::InlineAsm(_) => Err(WasmError::unsupported("inline assembly")),
@@ -461,6 +465,9 @@ impl WasmCompiler {
             return Ok(());
         }
 
+        if Self::stubbing_unresolved() {
+            return self.stub_unresolved(name);
+        }
         Err(WasmError::undefined_variable(name))
     }
 
@@ -999,12 +1006,19 @@ impl WasmCompiler {
                         }));
 
                         // Store discriminant for later
+                        // LocalSet, not LocalTee: every branch below re-reads
+                        // the discriminant with LocalGet, so teeing it here
+                        // leaves a stray i64 under the match result.
                         let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(disc));
+                        func.push(Instruction::LocalSet(disc));
 
                         // If pattern has bindings, extract the value
                         if let Some(first_field) = fields.first() {
-                            if let Pattern::Ident { name, .. } = first_field {
+                            // `ref x` / `&x` bind exactly like `x` here: every
+                            // value in this backend is already an i64 handle.
+                            if let Some(bound) =
+                                crate::wasm::statements::extract_pattern_name(first_field)
+                            {
                                 // Load payload from Option (offset 8)
                                 func.push(Instruction::LocalGet(opt_ptr));
                                 func.push(Instruction::I32WrapI64);
@@ -1015,7 +1029,7 @@ impl WasmCompiler {
                                 }));
 
                                 // Bind to local variable
-                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                let binding = func.alloc_local(bound, ValType::I64);
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
@@ -1040,11 +1054,18 @@ impl WasmCompiler {
                             memory_index: 0,
                         }));
 
+                        // LocalSet, not LocalTee: every branch below re-reads
+                        // the discriminant with LocalGet, so teeing it here
+                        // leaves a stray i64 under the match result.
                         let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(disc));
+                        func.push(Instruction::LocalSet(disc));
 
                         if let Some(first_field) = fields.first() {
-                            if let Pattern::Ident { name, .. } = first_field {
+                            // `ref x` / `&x` bind exactly like `x` here: every
+                            // value in this backend is already an i64 handle.
+                            if let Some(bound) =
+                                crate::wasm::statements::extract_pattern_name(first_field)
+                            {
                                 func.push(Instruction::LocalGet(result_ptr));
                                 func.push(Instruction::I32WrapI64);
                                 func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1052,7 +1073,7 @@ impl WasmCompiler {
                                     align: 3,
                                     memory_index: 0,
                                 }));
-                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                let binding = func.alloc_local(bound, ValType::I64);
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
@@ -1076,11 +1097,18 @@ impl WasmCompiler {
                             memory_index: 0,
                         }));
 
+                        // LocalSet, not LocalTee: every branch below re-reads
+                        // the discriminant with LocalGet, so teeing it here
+                        // leaves a stray i64 under the match result.
                         let disc = func.alloc_local("__let_disc".to_string(), ValType::I64);
-                        func.push(Instruction::LocalTee(disc));
+                        func.push(Instruction::LocalSet(disc));
 
                         if let Some(first_field) = fields.first() {
-                            if let Pattern::Ident { name, .. } = first_field {
+                            // `ref x` / `&x` bind exactly like `x` here: every
+                            // value in this backend is already an i64 handle.
+                            if let Some(bound) =
+                                crate::wasm::statements::extract_pattern_name(first_field)
+                            {
                                 func.push(Instruction::LocalGet(result_ptr));
                                 func.push(Instruction::I32WrapI64);
                                 func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1088,7 +1116,7 @@ impl WasmCompiler {
                                     align: 3,
                                     memory_index: 0,
                                 }));
-                                let binding = func.alloc_local(name.name.clone(), ValType::I64);
+                                let binding = func.alloc_local(bound, ValType::I64);
                                 func.push(Instruction::LocalSet(binding));
                             }
                         }
@@ -1125,11 +1153,16 @@ impl WasmCompiler {
                     }
                 }
             }
-            // Simple binding: let x = value (always matches)
-            Pattern::Ident { name, .. } => {
+            // Simple binding: let x = value (always matches).
+            // `ref x` and `&x` are the same binding at this level.
+            Pattern::Ident { .. } | Pattern::RefBinding { .. } | Pattern::Ref { .. }
+                if crate::wasm::statements::extract_pattern_name(pattern).is_some() =>
+            {
+                let bound = crate::wasm::statements::extract_pattern_name(pattern)
+                    .expect("guard checked");
                 let func = self.current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
-                let local = func.alloc_local(name.name.clone(), ValType::I64);
+                let local = func.alloc_local(bound, ValType::I64);
                 func.push(Instruction::LocalSet(local));
                 func.push(Instruction::I64Const(1)); // Always matches
             }

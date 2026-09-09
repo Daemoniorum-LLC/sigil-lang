@@ -246,16 +246,10 @@ fn main() -> ExitCode {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
                 } else {
-                    args[2]
-                        .trim_end_matches(".sigil")
-                        .trim_end_matches(".sg")
-                        .to_string() + ".wasm"
+                    default_wasm_output(&args[2])
                 }
             } else {
-                args[2]
-                    .trim_end_matches(".sigil")
-                    .trim_end_matches(".sg")
-                    .to_string() + ".wasm"
+                default_wasm_output(&args[2])
             };
             wasm_compile_file(&args[2], &output)
         }
@@ -2133,6 +2127,28 @@ codegen-units = 1
     )
 }
 
+/// Default output path for `sigil wasm <input>`.
+///
+/// Stripping the source extension is right for a file and wrong for a
+/// directory: a project built as `.` used to be written to `..wasm`. A
+/// directory is named after itself, resolved so that `.` and `..` name the
+/// directory they point at.
+#[cfg(feature = "wasm")]
+fn default_wasm_output(input: &str) -> String {
+    let path = std::path::Path::new(input);
+    if path.is_dir() {
+        let name = std::fs::canonicalize(path)
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "project".to_string());
+        return format!("{}.wasm", name);
+    }
+    format!(
+        "{}.wasm",
+        input.trim_end_matches(".sigil").trim_end_matches(".sg")
+    )
+}
+
 /// Compile a Sigil source file or project to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
@@ -2169,7 +2185,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                 }
 
                 if let Err(e) = validate_wasm_module(&wasm_bytes, &project_dir.display().to_string()) {
-                    eprintln!("Compilation error: {}", e);
+                    report_invalid_module(&e, compiler.stack_reports(), output);
                     return ExitCode::from(1);
                 }
 
@@ -2177,6 +2193,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
                 report_stubbed_calls(&compiler);
+                report_unresolved(&compiler);
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -2197,26 +2214,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                 }
 
                 if let Err(e) = validate_wasm_module(&wasm_bytes, &path.display().to_string()) {
-                    eprintln!("Compilation error: {}", e);
-                    // The validator reports a byte offset into the encoded
-                    // binary. The stack checker reports the instruction, in the
-                    // function that emitted it, with the operands around it.
-                    let reports = compiler.stack_reports();
-                    if reports.is_empty() {
-                        eprintln!(
-                            "  (the stack checker found nothing — the construct is outside \
-                             the subset it models)"
-                        );
-                    } else {
-                        for r in reports {
-                            eprint!("{}", r);
-                        }
-                    }
-                    eprintln!(
-                        "  The output was written to '{}' so it can be inspected, but it \
-                         will not load.",
-                        output
-                    );
+                    report_invalid_module(&e, compiler.stack_reports(), output);
                     return ExitCode::from(1);
                 }
 
@@ -2224,6 +2222,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
                 report_stubbed_calls(&compiler);
+                report_unresolved(&compiler);
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -2243,6 +2242,25 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
 /// not fix that, but it is the difference between a wrong answer and a wrong
 /// answer nobody can see.
 #[cfg(feature = "wasm")]
+/// List the names a survey build stubbed. Only reachable with
+/// `SIGIL_WASM_STUB_UNRESOLVED` set — see `WasmCompiler::stubbing_unresolved`.
+#[cfg(feature = "wasm")]
+fn report_unresolved(compiler: &WasmCompiler) {
+    let unresolved = compiler.unresolved();
+    if unresolved.is_empty() {
+        return;
+    }
+    eprintln!(
+        "SIGIL_WASM_STUB_UNRESOLVED: {} name(s) resolved to nothing and were \
+         compiled to a constant 0:",
+        unresolved.len()
+    );
+    for name in unresolved {
+        eprintln!("  {}", name);
+    }
+    eprintln!("  This module does NOT do what its source says. Survey only.");
+}
+
 fn report_stubbed_calls(compiler: &WasmCompiler) {
     let stubbed = compiler.stubbed_calls();
     if stubbed.is_empty() {
@@ -2270,6 +2288,32 @@ fn report_stubbed_calls(compiler: &WasmCompiler) {
 /// that ran on real input. A module that does not validate is a compiler bug,
 /// and saying so at the point it is produced is the difference between one
 /// diagnostic and a browser console.
+/// Report a module the validator rejected.
+///
+/// `wasmparser` gives a byte offset into the encoded binary, which names
+/// nothing anyone can act on. The stack checker names the instruction, the
+/// function that emitted it, and the operands around it. Both compilation
+/// paths — single file and project — report through here, so a project build
+/// cannot lose the diagnosis the single-file build would have printed.
+fn report_invalid_module(error: &str, reports: &[String], output: &str) {
+    eprintln!("Compilation error: {}", error);
+    if reports.is_empty() {
+        eprintln!(
+            "  (the stack checker found nothing — the construct is outside \
+             the subset it models)"
+        );
+    } else {
+        for r in reports {
+            eprint!("{}", r);
+        }
+    }
+    eprintln!(
+        "  The output was written to '{}' so it can be inspected, but it \
+         will not load.",
+        output
+    );
+}
+
 fn validate_wasm_module(bytes: &[u8], source: &str) -> Result<(), String> {
     wasmparser::Validator::new()
         .validate_all(bytes)

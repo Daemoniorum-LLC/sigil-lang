@@ -848,10 +848,13 @@ impl WasmCompiler {
         // Build qualified name
         let qualified_name = self.qualify_name(&func.name.name);
 
-        // Skip if already registered
-        if self.func_map.contains_key(&qualified_name) {
-            return Ok(());
-        }
+        // A second definition under the same qualified name — two impl blocks
+        // on one type, say — still needs its own function. Registering only the
+        // first used to leave the second body appended to the first, past its
+        // `End`, which every runtime rejects as operators after the end of a
+        // function. Give the duplicate its own slot, and leave name resolution
+        // pointing at the first.
+        let duplicate = self.func_map.contains_key(&qualified_name);
 
         // Build parameter types
         let param_types: Vec<ValType> = func.params.iter().map(|_| ValType::I64).collect();
@@ -865,22 +868,28 @@ impl WasmCompiler {
 
         let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
 
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         // Record function index with both qualified and simple names
         self.func_arity.insert(func_idx, param_types.len());
         self.note_candidate(&func.name.name, func_idx);
-        self.func_map.insert(qualified_name.clone(), func_idx);
-        // Also register simple name for backwards compatibility
-        if !self.module_path.is_empty() {
-            self.func_map.insert(func.name.name.clone(), func_idx);
+        self.def_slots
+            .entry(qualified_name.clone())
+            .or_default()
+            .push(func_idx);
+        if !duplicate {
+            self.func_map.insert(qualified_name.clone(), func_idx);
+            // Also register simple name for backwards compatibility
+            if !self.module_path.is_empty() {
+                self.func_map.insert(func.name.name.clone(), func_idx);
 
-            // For impl methods, also register with short Type::method format
-            // This allows method resolution when the type is known without full path
-            // e.g., VNode::attr in addition to qliphoth::core::vdom::VNode::attr
-            if let Some(type_name) = self.module_path.last() {
-                let short_qualified = format!("{}::{}", type_name, func.name.name);
-                self.func_map.insert(short_qualified, func_idx);
+                // For impl methods, also register with short Type::method format
+                // This allows method resolution when the type is known without full path
+                // e.g., VNode::attr in addition to qliphoth::core::vdom::VNode::attr
+                if let Some(type_name) = self.module_path.last() {
+                    let short_qualified = format!("{}::{}", type_name, func.name.name);
+                    self.func_map.insert(short_qualified, func_idx);
+                }
             }
         }
 
@@ -893,8 +902,17 @@ impl WasmCompiler {
 
         let is_exported = matches!(func.visibility, Visibility::Public);
 
+        // Name the duplicate apart so a diagnostic naming it says which of the
+        // two definitions it means.
+        let compiled_name = if duplicate {
+            let n = self.def_slots.get(&qualified_name).map(|v| v.len()).unwrap_or(1) - 1;
+            format!("{}#{}", func.name.name, n)
+        } else {
+            func.name.name.clone()
+        };
+
         let compiled_func = CompiledFunction::new(
-            func.name.name.clone(),
+            compiled_name,
             type_idx,
             func_idx,
             params_with_names,
@@ -934,7 +952,7 @@ impl WasmCompiler {
         };
 
         let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         // Record function index with both qualified and simple names
         // Two handlers of the same name compile into one function with a second
@@ -1002,7 +1020,7 @@ impl WasmCompiler {
         let param_types = vec![ValType::I64, ValType::I64];
         let result_types = vec![ValType::I64];
         let type_idx = self.get_or_create_type(param_types, result_types.clone());
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
         self.func_map.insert(name.clone(), func_idx);
 
         self.functions.push(CompiledFunction::new(
@@ -1047,7 +1065,8 @@ impl WasmCompiler {
             Some(&idx) => idx,
             None => return Ok(()),
         };
-        let fn_list_idx = (func_idx - self.imports.import_count()) as usize;
+        let fn_list_idx = Self::func_list_index(func_idx)
+            .ok_or_else(|| WasmError::internal(format!("{} is an import, not a function", name)))?;
         self.current_fn_idx = Some(fn_list_idx);
 
         for (i, handler) in actor.handlers.iter().enumerate() {
@@ -1097,24 +1116,36 @@ impl WasmCompiler {
 
     /// Compile a function.
     fn compile_function(&mut self, func: &Function) -> WasmResult<()> {
-        // Find the function index (try qualified name first, then simple name)
+        // Find the function index. The signature pass recorded one slot per
+        // definition, in order; take the next one for this qualified name, so
+        // two definitions of the same method name compile into two functions
+        // rather than one body appended to the other.
         let qualified_name = self.qualify_name(&func.name.name);
-        let func_idx = self
-            .func_map
-            .get(&qualified_name)
-            .or_else(|| self.func_map.get(&func.name.name))
-            .copied()
+        let slot = {
+            let taken = self.def_cursor.entry(qualified_name.clone()).or_insert(0);
+            let picked = self
+                .def_slots
+                .get(&qualified_name)
+                .and_then(|v| v.get(*taken))
+                .copied();
+            if picked.is_some() {
+                *taken += 1;
+            }
+            picked
+        };
+        let func_idx = slot
+            .or_else(|| self.func_map.get(&qualified_name).copied())
+            .or_else(|| self.func_map.get(&func.name.name).copied())
             .ok_or_else(|| WasmError::internal(format!(
                 "function not registered: '{}' (qualified: '{}')",
                 func.name.name, qualified_name
             )))?;
 
-        // Find the function in our list by matching func_idx
-        // NOTE: We can't use (func_idx - import_count) because import_count may have
-        // changed since registration due to dynamic import additions during compilation
-        let fn_list_idx = self.functions
-            .iter()
-            .position(|f| f.func_idx == func_idx)
+        // Function indices come from `FUNC_BASE`, so the position is the index
+        // minus that base — no search, and no dependence on an import count that
+        // grows as later files and crates register their `extern` blocks.
+        let fn_list_idx = Self::func_list_index(func_idx)
+            .filter(|&i| i < self.functions.len())
             .ok_or_else(|| WasmError::internal(format!(
                 "function not found in list: func_idx={}, qualified='{}'",
                 func_idx, qualified_name
@@ -1543,8 +1574,9 @@ impl WasmCompiler {
             )))?;
 
         // Get the function list index
-        let import_count = self.imports.import_count();
-        let fn_list_idx = (func_idx - import_count) as usize;
+        let fn_list_idx = Self::func_list_index(func_idx).ok_or_else(|| {
+            WasmError::internal(format!("handler '{}' is an import, not a function", handler_name))
+        })?;
 
         // Set current function context
         self.current_fn_idx = Some(fn_list_idx);
@@ -1702,7 +1734,7 @@ impl ParamExt for Param {
 
 /// Recursively extract the binding name from a pattern.
 /// Handles &self, &mut self, ref self, and plain self patterns.
-fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
+pub(crate) fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
     use crate::ast::Pattern;
     match pattern {
         // Direct identifier: self, x, etc.

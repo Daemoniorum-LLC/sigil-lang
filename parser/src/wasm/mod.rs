@@ -104,6 +104,14 @@ pub struct WasmCompiler {
     /// the one name that stopped the whole `qliphoth-sys` package compiling.
     /// When a call cannot be resolved by type, the arity decides between these.
     pub(crate) func_candidates: HashMap<String, Vec<u32>>,
+    /// Every function index registered under a qualified name, in the order
+    /// the signature pass met them. Two impl blocks on the same type may
+    /// define the same method name; each definition needs its own body.
+    pub(crate) def_slots: HashMap<String, Vec<u32>>,
+    /// How many definitions of a qualified name the body pass has consumed.
+    /// The two passes walk the same items in the same order, so the Nth body
+    /// belongs to the Nth registered slot.
+    pub(crate) def_cursor: HashMap<String, usize>,
 
     /// Diagnostics from the stack checker, filled in as the module is encoded.
     pub(crate) stack_reports: Vec<String>,
@@ -214,12 +222,32 @@ pub struct WasmCompiler {
     /// constant `0` instead. See `stubbed_calls()` — this is silent wrong
     /// behaviour, not a compile error, and callers must be able to see it.
     pub(crate) stubbed_calls: std::collections::BTreeSet<String>,
+    /// Names stubbed under `SIGIL_WASM_STUB_UNRESOLVED`. See `stubbing_unresolved`.
+    pub(crate) unresolved: std::collections::BTreeSet<String>,
 
     /// Actor methods declared with a `self` receiver, by `Actor::method`. Actor
     /// state lives in globals, so the receiver is a placeholder — but it is part
     /// of the WASM signature, and a call through the actor's name has to push it.
     pub(crate) actor_self_methods: std::collections::HashSet<String>,
 }
+
+/// Base for function indices while compiling.
+///
+/// A WebAssembly function index space puts imports first, so a defined
+/// function's real index is `import_count + position`. Indices used to be
+/// assigned that way at registration — and `import_count` keeps growing, because
+/// an `extern` block in a later file, or a later crate in the same project, adds
+/// imports after earlier functions were already numbered. Every call to one of
+/// those earlier functions then pointed one slot too low, silently, at whatever
+/// function happened to sit there: 96 of qliphoth's 353 functions were numbered
+/// against a stale count, and the module still validated.
+///
+/// Function indices are therefore assigned from this base and are stable for the
+/// whole compilation. `resolve_function_indices`, the first thing
+/// `generate_module` does, rewrites them to `import_count + position` once the
+/// import count is final. It also keeps "is this an import?" a question about
+/// the index alone, rather than about a number that moves.
+pub(crate) const FUNC_BASE: u32 = 0x4000_0000;
 
 impl WasmCompiler {
     /// Create a new WASM compiler.
@@ -231,6 +259,8 @@ impl WasmCompiler {
             func_arity: HashMap::new(),
             extern_statics: HashMap::new(),
             func_candidates: HashMap::new(),
+            def_slots: HashMap::new(),
+            def_cursor: HashMap::new(),
             stack_reports: Vec::new(),
             globals: Vec::new(),
             global_map: HashMap::new(),
@@ -265,6 +295,7 @@ impl WasmCompiler {
             start_function_idx: None,
             current_actor: None,
             stubbed_calls: std::collections::BTreeSet::new(),
+            unresolved: std::collections::BTreeSet::new(),
             actor_self_methods: std::collections::HashSet::new(),
         };
 
@@ -298,6 +329,36 @@ impl WasmCompiler {
     /// dropped calls has to be able to say which ones.
     pub fn stubbed_calls(&self) -> &std::collections::BTreeSet<String> {
         &self.stubbed_calls
+    }
+
+    /// Whether to stub every unresolved name instead of stopping at the first.
+    ///
+    /// A port surfaces missing names one rebuild at a time, which is the slow
+    /// way to learn what a codebase needs. With `SIGIL_WASM_STUB_UNRESOLVED`
+    /// set, one build lists all of them. Off by default: a stubbed call is
+    /// silently wrong at run time, so this is a survey aid, never a build mode.
+    pub fn stubbing_unresolved() -> bool {
+        std::env::var("SIGIL_WASM_STUB_UNRESOLVED").is_ok()
+    }
+
+    /// Names stubbed only because `SIGIL_WASM_STUB_UNRESOLVED` was set.
+    pub fn unresolved(&self) -> &std::collections::BTreeSet<String> {
+        &self.unresolved
+    }
+
+    /// Record an unresolved name and leave a unit in its place.
+    pub(crate) fn stub_unresolved(&mut self, name: &str) -> WasmResult<()> {
+        // Name the function it appears in: `new` says nothing on its own.
+        let where_ = self
+            .current_function()
+            .map(|f| f.name.clone())
+            .unwrap_or_else(|| "<module scope>".to_string());
+        self.unresolved.insert(format!("{}  (in {})", name, where_));
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(wasm_encoder::Instruction::I64Const(0));
+        Ok(())
     }
 
     /// Every host function the compiler can import, as `module.name`, sorted.
@@ -560,15 +621,84 @@ impl WasmCompiler {
             .and_then(move |idx| self.functions.get_mut(idx))
     }
 
+    /// The index the next registered function gets. Stable for the whole
+    /// compilation — see `FUNC_BASE`.
+    pub(crate) fn next_func_idx(&self) -> u32 {
+        FUNC_BASE + self.functions.len() as u32
+    }
+
+    /// Position in `self.functions` of a compile-time function index, or `None`
+    /// when the index names an import.
+    pub(crate) fn func_list_index(idx: u32) -> Option<usize> {
+        idx.checked_sub(FUNC_BASE).map(|i| i as usize)
+    }
+
+    /// Whether a compile-time index names an import rather than a defined
+    /// function.
+    pub(crate) fn is_import_idx(idx: u32) -> bool {
+        idx < FUNC_BASE
+    }
+
+    /// Rewrite every compile-time function index to its final WebAssembly index.
+    ///
+    /// Called once, at the top of `generate_module`, when the import count can
+    /// no longer change. After this the whole module speaks final indices, so
+    /// the encoder, the validator and every diagnostic agree on what a `call`
+    /// names.
+    fn resolve_function_indices(&mut self) {
+        use wasm_encoder::Instruction;
+        let base = self.imports.import_count();
+        let resolve = |idx: u32| -> u32 {
+            match Self::func_list_index(idx) {
+                Some(pos) => base + pos as u32,
+                None => idx,
+            }
+        };
+        for func in &mut self.functions {
+            for instr in &mut func.instructions {
+                match instr {
+                    Instruction::Call(idx) => *idx = resolve(*idx),
+                    Instruction::RefFunc(idx) => *idx = resolve(*idx),
+                    _ => {}
+                }
+            }
+        }
+        for (i, func) in self.functions.iter_mut().enumerate() {
+            func.func_idx = base + i as u32;
+        }
+        for idx in &mut self.table_elements {
+            *idx = resolve(*idx);
+        }
+        if let Some(idx) = self.start_function_idx.as_mut() {
+            *idx = resolve(*idx);
+        }
+    }
+
+    /// How many operands a call to `func_idx` takes.
+    ///
+    /// `func_arity` records user functions and `extern` blocks only, so an
+    /// arity check that consulted it alone waved through every builtin host
+    /// import — which is how a four-argument `remove_event_listener` bound to
+    /// the two-parameter `browser.remove_event_listener` and emitted a call
+    /// that left two operands stranded.
+    pub(crate) fn arity_of(&self, func_idx: u32) -> Option<usize> {
+        if let Some(&declared) = self.func_arity.get(&func_idx) {
+            return Some(declared);
+        }
+        if Self::is_import_idx(func_idx) {
+            return self.imports.get_param_types(func_idx).map(|p| p.len());
+        }
+        None
+    }
+
     /// Check if a user-defined function returns void (no results).
     pub fn func_returns_void(&self, func_idx: u32) -> bool {
-        let import_count = self.imports.import_count();
-        if func_idx < import_count {
+        if Self::is_import_idx(func_idx) {
             // Import function - check via imports
             self.imports.get_return_type(func_idx).is_none()
         } else {
             // User-defined function
-            let local_idx = (func_idx - import_count) as usize;
+            let local_idx = Self::func_list_index(func_idx).unwrap_or(usize::MAX);
             self.functions
                 .get(local_idx)
                 .map(|f| f.results.is_empty())
@@ -665,7 +795,7 @@ impl WasmCompiler {
         // and so does `⊢ Window`, with a different arity — and returning the
         // first match made the caller reject a call that was resolvable.
         let fits = |idx: u32| {
-            argc.is_none_or(|n| self.func_arity.get(&idx).is_none_or(|&a| a == n))
+            argc.is_none_or(|n| self.arity_of(idx).is_none_or(|a| a == n))
         };
 
         // If it's a single-segment path, check simple name first
@@ -798,14 +928,13 @@ impl WasmCompiler {
             // Case 3: Spurious i64.const 0 before a call that expects i32 args
             // Pattern: ..., i32.wrap_i64, i64.const 0, call(import)
             // The i64.const 0 is spurious - remove it
-            let import_count = self.imports.import_count();
             let mut i = 0;
             while i + 2 < func.instructions.len() {
                 if let Instruction::I64Const(0) = &func.instructions[i] {
                     if let Instruction::Call(call_idx) = &func.instructions[i + 1] {
                         let call_idx = *call_idx;
                         // Check if it's an import
-                        if call_idx < import_count {
+                        if Self::is_import_idx(call_idx) {
                             if let Some(params) = self.imports.get_param_types(call_idx) {
                                 // The i64.const 0 is spurious if:
                                 // 1. All params are i32 (classic case), OR
@@ -870,7 +999,7 @@ impl WasmCompiler {
                     if let Instruction::Call(call_idx) = &func.instructions[idx] {
                         let call_idx = *call_idx;
                         // Check if it's calling an import
-                        if call_idx < import_count {
+                        if Self::is_import_idx(call_idx) {
                             // Get the import's param count
                             let param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
                             // If import expects params but we have 0, need to push a default value
@@ -905,7 +1034,7 @@ impl WasmCompiler {
             for i in 0..func.instructions.len().min(20) {
                 if let Instruction::Call(call_idx) = &func.instructions[i] {
                     let call_idx = *call_idx;
-                    if call_idx < import_count {
+                    if Self::is_import_idx(call_idx) {
                         let import_param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
                         if import_param_count == 0 {
                             continue;
@@ -929,14 +1058,14 @@ impl WasmCompiler {
                                 }
                                 Instruction::Call(idx) => {
                                     // For calls, track stack effect
-                                    if *idx < import_count {
+                                    if Self::is_import_idx(*idx) {
                                         // Import function: use known param count
                                         let params = import_param_counts.get(*idx as usize).copied().unwrap_or(0);
                                         stack_depth -= params as i32;
                                         stack_depth += 1; // Assume 1 return value
                                     } else {
                                         // Local function: look up param count from pre-calculated vector
-                                        let local_idx = (*idx - import_count) as usize;
+                                        let local_idx = Self::func_list_index(*idx).unwrap_or(usize::MAX);
                                         if let Some(&param_count) = local_func_param_counts.get(local_idx) {
                                             stack_depth -= param_count as i32;
                                         }
@@ -1028,7 +1157,7 @@ impl WasmCompiler {
 
         // Create __wasm_start function: () -> ()
         let type_idx = self.get_or_create_type(vec![], vec![]);
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         let mut start_func = CompiledFunction::new(
             "__wasm_start".to_string(),
@@ -1077,6 +1206,12 @@ impl WasmCompiler {
     }
 
     fn generate_module(&mut self) -> WasmResult<Vec<u8>> {
+        // Function indices were assigned from `FUNC_BASE` while the import count
+        // was still moving. Settle them first: everything below — the encoder,
+        // the repair passes, the stack checker, the exports — speaks final
+        // WebAssembly indices from here on.
+        self.resolve_function_indices();
+
         // TODO: Implement in codegen.rs
         use wasm_encoder::{
             CodeSection, DataSection, DataSegment, DataSegmentMode, ElementSection, Elements,

@@ -54,7 +54,7 @@ impl WasmCompiler {
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
         // Create function
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
         let params_with_names: Vec<(String, ValType)> = params
             .iter()
             .map(|p| (get_param_name(p), ValType::I64))
@@ -147,7 +147,7 @@ impl WasmCompiler {
 
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         let mut params_with_names = vec![("__env".to_string(), ValType::I64)];
         params_with_names.extend(params.iter().map(|p| (get_param_name(p), ValType::I64)));
@@ -905,7 +905,7 @@ impl WasmCompiler {
                 // then checking it turned a resolvable call into an error.
                 let argc = args.len();
                 let fits = |c: &Self, idx: u32| -> bool {
-                    c.func_arity.get(&idx).is_none_or(|&declared| declared == argc)
+                    c.arity_of(idx).is_none_or(|declared| declared == argc)
                 };
                 let func_idx_opt = self
                     .get_func_by_path_arity(&resolved_segments, Some(argc))
@@ -921,6 +921,22 @@ impl WasmCompiler {
                         self.func_candidates
                             .get(simple_name)
                             .and_then(|c| c.iter().copied().find(|i| fits(self, *i)))
+                    })
+                    // `Type·method(…)` as a host import, under the same
+                    // `module_function` convention `vdom·mount_vnode` already
+                    // uses: `String·from_utf8` is `string.from_utf8`. Without
+                    // this, an associated function that exists only on the host
+                    // read as an undefined function.
+                    .or_else(|| {
+                        let (head, tail) = (
+                            resolved_segments.first()?,
+                            resolved_segments.last()?,
+                        );
+                        if resolved_segments.len() < 2 {
+                            return None;
+                        }
+                        let import = format!("{}_{}", head.to_lowercase(), tail);
+                        self.imports.get_func(&import).filter(|i| fits(self, *i))
                     });
                 if let Some(func_idx) = func_idx_opt {
                     // An arity that cannot match is a defect wherever it comes
@@ -971,6 +987,9 @@ impl WasmCompiler {
                                 closure_ptr_idx,
                                 args.len(),
                             );
+                        }
+                        if Self::stubbing_unresolved() {
+                            return self.stub_unresolved(simple_name);
                         }
                         return Err(WasmError::undefined_variable(simple_name));
                     } else {
@@ -1038,6 +1057,13 @@ impl WasmCompiler {
                             // Return dummy value (Option None / 0)
                             func.push(Instruction::I64Const(0));
                             return Ok(());
+                        }
+                        if Self::stubbing_unresolved() {
+                            for _ in 0..args.len() {
+                                let func = self.current_function_mut().unwrap();
+                                func.push(Instruction::Drop);
+                            }
+                            return self.stub_unresolved(name);
                         }
                         Err(WasmError::undefined_function(name))
                     }
@@ -1289,8 +1315,25 @@ impl WasmCompiler {
     /// Emitting it anyway produces a module the compiler calls a success and no
     /// runtime will load. An unknown index (an import, or a function registered
     /// without arity) is left alone.
+    /// Whether a builtin arm's host import really is what was called.
+    ///
+    /// A builtin arm fires on a method *name*, and a name is not enough:
+    /// `p·remove_event_listener(element, event, id)` is a user method with four
+    /// operands, while `browser.remove_event_listener` takes two. Firing anyway
+    /// emitted a call that left two operands stranded — a module the compiler
+    /// reported as compiled and no runtime would load. When the arities
+    /// disagree the builtin is not the callee: fall through and let normal
+    /// resolution find the user's method. An import this build does not have at
+    /// all is left to the arm, which stubs it.
+    fn builtin_import_fits(&self, import: &str, operands: usize) -> bool {
+        match self.imports.get_func(import) {
+            Some(idx) => self.arity_of(idx).is_none_or(|declared| declared == operands),
+            None => true,
+        }
+    }
+
     fn ensure_arity(&self, func_idx: u32, provided: usize, name: &str) -> WasmResult<()> {
-        if let Some(&declared) = self.func_arity.get(&func_idx) {
+        if let Some(declared) = self.arity_of(func_idx) {
             if declared != provided {
                 return Err(WasmError::unsupported(&format!(
                     "{} takes {} argument(s), called with {}",
@@ -1418,7 +1461,14 @@ impl WasmCompiler {
         if let Expr::Path(path) = receiver {
             if path.segments.len() == 1 {
                 let module_name = &path.segments[0].ident.name;
+                // A type name is capitalised and the import module is not:
+                // `String·from_utf8` is `string.from_utf8`. Try both.
                 let import_name = format!("{}_{}", module_name, method);
+                let import_name = if self.imports.get_func(&import_name).is_some() {
+                    import_name
+                } else {
+                    format!("{}_{}", module_name.to_lowercase(), method)
+                };
 
                 if let Some(func_idx) = self.imports.get_func(&import_name) {
                     // Get parameter types for proper conversion
@@ -1482,7 +1532,7 @@ impl WasmCompiler {
         // answer, and the one the per-file build already gave.
         let wanted = args.len() + 1;
         let fits = |idx: &u32| -> bool {
-            self.func_arity.get(idx).is_none_or(|&declared| declared == wanted)
+            self.arity_of(*idx).is_none_or(|declared| declared == wanted)
         };
         let simple_func = self.get_func(method).filter(fits);
 
@@ -1497,10 +1547,12 @@ impl WasmCompiler {
             .get(method)
             .and_then(|c| c.iter().copied().find(|i| fits(i)));
 
-        let func_idx = qualified_func
-            .or(simple_func)
-            .or(other)
-            .ok_or_else(|| WasmError::undefined_function(method))?;
+        let Some(func_idx) = qualified_func.or(simple_func).or(other) else {
+            if Self::stubbing_unresolved() {
+                return self.stub_unresolved(method);
+            }
+            return Err(WasmError::undefined_function(method));
+        };
         self.ensure_arity(func_idx, args.len() + 1, method)?;
 
         // Compile receiver as first argument
@@ -1521,10 +1573,19 @@ impl WasmCompiler {
         }
 
         // Call the method
+        let returns_void = self.func_returns_void(func_idx);
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
         func.push(Instruction::Call(func_idx));
+        if returns_void {
+            // Every expression on this stack leaves one i64 and the statement
+            // compiler drops it, so a void call as a statement emitted a `drop`
+            // against an empty stack. Unit is 0. Every other call site in this
+            // file does this; this fallback — the one an `extern "js"` method
+            // with no return type reaches — did not.
+            func.push(Instruction::I64Const(0));
+        }
         Ok(())
     }
 
@@ -1827,6 +1888,72 @@ impl WasmCompiler {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::Call(func_idx));
                 }
+                Ok(true)
+            }
+            // `s·push_str(t)` mutates in Rust. A Sigil string here is an
+            // immutable heap handle, so the only faithful lowering is
+            // `s = concat(s, t)` — which needs the receiver to be a local we
+            // can write back to. Anything else has nowhere to put the result.
+            "push_str" if args.len() == 1 => {
+                let target = match receiver {
+                    Expr::Path(path) if path.segments.len() == 1 => self
+                        .current_function()
+                        .and_then(|f| f.get_local(&path.segments[0].ident.name))
+                        .map(|l| l.index),
+                    _ => None,
+                };
+                let Some(target) = target else {
+                    return Err(WasmError::unsupported(&format!(
+                        "{}() on a receiver that is not a local variable — a Sigil \
+                         string is immutable, so the result has nowhere to go",
+                        method
+                    )));
+                };
+                let Some(concat_idx) = self.imports.get_func("string_concat") else {
+                    return Err(WasmError::internal("string_concat not found"));
+                };
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                self.compile_expr(&args[0])?;
+                self.push_wrap()?;
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Call(concat_idx));
+                func.push(Instruction::I64ExtendI32U);
+                func.push(Instruction::LocalSet(target));
+                // A statement's value: this returns unit, like Rust's push_str.
+                func.push(Instruction::I64Const(0));
+                Ok(true)
+            }
+            // `xs·retain(pred)` keeps the elements the predicate accepts, in
+            // place. `filter` already builds the kept elements; the only thing
+            // missing is putting them back, so this is `xs = xs·filter(pred)`
+            // written out and compiled as an ordinary assignment — which works
+            // for a field or an index as well as a plain local.
+            "retain" if args.len() == 1 => {
+                let filtered = Expr::MethodCall {
+                    receiver: Box::new(receiver.clone()),
+                    method: crate::ast::Ident {
+                        name: "filter".to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: crate::span::Span::new(0, 0),
+                    },
+                    type_args: None,
+                    args: args.to_vec(),
+                };
+                self.compile_expr(&Expr::Assign {
+                    target: Box::new(receiver.clone()),
+                    value: Box::new(filtered),
+                })?;
+                Ok(true)
+            }
+
+            // `x·as_ptr()` / `x·as_mut_ptr()`. Every value in this backend is
+            // already an opaque handle, and that handle is exactly what an
+            // `extern` import is given. There is no separate address to take,
+            // so these are the identity — not unsupported.
+            "as_ptr" | "as_mut_ptr" if args.is_empty() => {
+                self.compile_expr(receiver)?;
                 Ok(true)
             }
             "trim" => {
@@ -2304,7 +2431,8 @@ impl WasmCompiler {
             }
 
             // DOM event listener methods - map to browser imports
-            "add_event_listener" => {
+            "add_event_listener" if self.builtin_import_fits(
+                "browser_add_event_listener", args.len() + 1) => {
                 // window.add_event_listener(event_type, callback) -> browser::add_event_listener
                 self.compile_expr(receiver)?; // window/element handle
                 for arg in args {
@@ -2321,7 +2449,8 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
-            "remove_event_listener" => {
+            "remove_event_listener" if self.builtin_import_fits(
+                "browser_remove_event_listener", args.len() + 1) => {
                 self.compile_expr(receiver)?;
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -3896,6 +4025,11 @@ impl WasmCompiler {
                 if path.segments.len() == 1 {
                     let module_name = &path.segments[0].ident.name;
                     let import_name = format!("{}_{}", module_name, method_name);
+                    let import_name = if self.imports.get_func(&import_name).is_some() {
+                        import_name
+                    } else {
+                        format!("{}_{}", module_name.to_lowercase(), method_name)
+                    };
 
                     if let Some(func_idx) = self.imports.get_func(&import_name) {
                         // Get parameter types for proper conversion
@@ -3998,6 +4132,8 @@ impl WasmCompiler {
                         }],
                     });
                 }
+            } else if Self::stubbing_unresolved() {
+                self.stub_unresolved(method_name)?;
             } else {
                 return Err(WasmError::undefined_function(method_name));
             }
