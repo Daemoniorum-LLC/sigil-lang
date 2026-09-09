@@ -121,6 +121,24 @@ git checkout -b feature/my-feature
 - Target `develop` for all feature work
 - Target `main` only for release PRs from `develop`
 
+This is enforced by `.github/workflows/branch-policy.yml`: a PR to `main` whose head
+is not `develop`, `release/*` or `hotfix/*` fails. Changing the base branch on an
+existing PR is enough to fix it -- GitHub keeps the commits, no push required.
+
+**Why it is enforced rather than documented.** The convention lapsed: #59 and #61
+merged straight to `main`, leaving `main` and `develop` diverged by 8 commits each
+and parsing the ecosystem differently. Measured on files passing `sigil check`:
+
+| Repository | merge base | `main` | `develop` |
+|---|---:|---:|---:|
+| `nihil` | 104/104 | **83/104** | 104/104 |
+| `morgoth` | 50/259 | **257/259** | 42/259 |
+| `lucifer` | 18/26 | 21/26 | 18/26 |
+
+Neither branch was correct and each held work the other lacked -- `main` regressed
+nihil while fixing morgoth. Reconciling them is a 97-hunk merge across 17 files.
+That is the cost of the rule not holding.
+
 ## Development Workflow
 
 1. **Branch from develop**: `git checkout develop && git checkout -b feature/my-feature`
