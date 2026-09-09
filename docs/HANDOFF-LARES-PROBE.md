@@ -27,6 +27,12 @@ that #74 replaces, and risks contradicting it.
 
 **Sequence: #74 lands → merge `develop` into this branch → resolve the rest.**
 
+One consequence to know about: **CI does not run on #62 while it is
+conflicted.** GitHub cannot compute a merge ref for a conflicted PR, so
+`pull_request` workflows do not fire. The last green run was `14ffff3`. Absent
+checks are neither a pass nor a fail — validate locally with the commands
+below.
+
 The base was retargeted from `main` to `develop` per #69 and #74's own note.
 
 ## Before you change anything about `None`
