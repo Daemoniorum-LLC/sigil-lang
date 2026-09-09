@@ -3939,12 +3939,17 @@ impl WasmCompiler {
         // `\u{2205}·to_string()` and `None·to_string()` are the empty string.
         //
         // Generated code emits this wherever React had `{null}` or a fallback
-        // to nothing — a hundred times in the client. `None` is not the integer
-        // zero: an Option is an ALLOCATED enum, so the value is a heap pointer
-        // the host cannot classify, and it rendered as the decimal of its own
-        // address in the middle of a card. React renders `{null}` as nothing.
-        if matches!(receiver, Expr::Literal(crate::ast::Literal::Null))
-            || matches!(receiver, Expr::Path(p)
+        // to nothing — a hundred times in the client, and React renders
+        // `{null}` as nothing.
+        //
+        // `\u{2205}` used to miss this arm and render "0": it is
+        // `Literal::Empty`, not `Literal::Null`. That was invisible while
+        // `None` was a boxed Option and the two were different values. They are
+        // the same value now, so they have to read the same way.
+        if matches!(
+            receiver,
+            Expr::Literal(crate::ast::Literal::Null) | Expr::Literal(crate::ast::Literal::Empty)
+        ) || matches!(receiver, Expr::Path(p)
                 if p.segments.len() == 1 && p.segments[0].ident.name == "None")
         {
             let offset = self.add_string("");

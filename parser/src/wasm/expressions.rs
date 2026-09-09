@@ -257,27 +257,25 @@ impl WasmCompiler {
         // Handle Option/Result builtins
         match name {
             "None" => {
-                // Create Option::None (discriminant 0, no payload)
-                // Allocate 16 bytes for Option struct
-                let alloc_idx = self.get_func("heap_alloc")
-                    .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+                // An Option is TRANSPARENT in this backend: `Some(x)` compiles
+                // to `x` and nothing wraps it, so `None` is the absence of a
+                // value — the same 0 that `∅` is.
+                //
+                // This used to allocate a fresh 16-byte Option every time the
+                // word appeared, with equality comparing the pointers. So
+                // `None == None` was FALSE, `∅ == None` was false, and no
+                // `x == None` guard in a migrated program could ever be true —
+                // silently, on the data path, everywhere. The two halves of the
+                // representation contradicted each other: the constructor was
+                // transparent and the constant was boxed.
+                //
+                // `NONE` is a sentinel, not 0: 0 is `false`, the integer
+                // zero, and every host function's "absent". `conn_row` reads
+                // `up: boolean | null` and has to tell a service that is DOWN
+                // from one that has not been checked.
                 let func = self.current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::I64Const(16));
-                func.push(Instruction::Call(alloc_idx));
-
-                // Store in temp and write discriminant 0
-                let ptr = func.alloc_local("__none_ptr".to_string(), ValType::I64);
-                func.push(Instruction::LocalTee(ptr));
-                func.push(Instruction::I32WrapI64);
-                func.push(Instruction::I64Const(0)); // None discriminant
-                func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                }));
-                // Return pointer
-                func.push(Instruction::LocalGet(ptr));
+                func.push(Instruction::I64Const(super::NONE));
                 return Ok(());
             }
             "true" => {
@@ -1303,6 +1301,67 @@ mod tests {
             compiler.unresolved()
         );
         assert!(compiler.finish_unresolved_for_test().is_err());
+    }
+
+    #[test]
+    fn the_host_spells_nothing_the_same_way_the_compiler_does() {
+        // `NONE` is a value both sides have to agree on: the module emits it
+        // and the runtime tests for it. Two copies of a magic number is exactly
+        // the kind of thing that drifts, so pin them.
+        let runtime = std::fs::read_to_string(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../qliphoth/runtime/sigil_runtime.js"),
+        );
+        let Ok(runtime) = runtime else {
+            // Qliphoth is a sibling checkout, not a build dependency.
+            return;
+        };
+        assert!(
+            runtime.contains(&format!("export const NONE = {}n;", super::super::NONE)),
+            "sigil_runtime.js does not spell NONE as {}",
+            super::super::NONE
+        );
+    }
+
+    #[test]
+    fn an_option_is_transparent_and_its_two_spellings_of_nothing_agree() {
+        // `Some(x)` compiles to `x` — nothing wraps it — but `None` used to
+        // allocate a fresh 16-byte Option at every mention, with equality on
+        // the pointer. So `None == None` was false, `∅ == None` was false, and
+        // no `x == None` guard in a migrated program could ever be true. The
+        // two halves of the representation contradicted each other.
+        //
+        // These compile to constants, so the check is on the emitted code: no
+        // allocation for `None`, and the same instruction for `∅`.
+        let mut compiler = WasmCompiler::new();
+        let wasm = compiler.compile(
+            "\u{2609} rite none_is_nothing() -> Any! { None }\n\
+             \u{2609} rite nil_is_nothing() -> Any! { \u{2205} }\n",
+        );
+        assert!(wasm.is_ok(), "{:?}", wasm.err());
+
+        for name in ["none_is_nothing", "nil_is_nothing"] {
+            let func = compiler
+                .functions
+                .iter()
+                .find(|f| f.name == name)
+                .unwrap_or_else(|| panic!("{name} was not compiled"));
+            assert!(
+                func.instructions
+                    .iter()
+                    .any(|i| matches!(i, Instruction::I64Const(c) if *c == super::super::NONE)),
+                "{name} does not yield NONE"
+            );
+            // Not 0: that is `false`, the integer zero, and every host
+            // function's "absent". `conn_row` reads `up: boolean | null` and
+            // has to tell DOWN from NOT-YET-CHECKED.
+            assert!(
+                !func
+                    .instructions
+                    .iter()
+                    .any(|i| matches!(i, Instruction::I64Const(0) | Instruction::I64Const(16))),
+                "{name} yields 0 or allocates an Option"
+            );
+        }
     }
 
     #[test]

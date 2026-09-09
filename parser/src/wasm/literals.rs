@@ -70,7 +70,13 @@ impl WasmCompiler {
             Literal::ByteChar(b) => {
                 func.push(Instruction::I64Const(*b as i64));
             }
-            Literal::Null | Literal::Empty | Literal::Circle => {
+            // `\u{2205}` and `null` are the same nothing `None` is, and have to
+            // be the same value: a padded argument arrives as `\u{2205}` and the
+            // function it lands in guards with `x == None`.
+            Literal::Null | Literal::Empty => {
+                func.push(Instruction::I64Const(super::NONE));
+            }
+            Literal::Circle => {
                 func.push(Instruction::I64Const(0));
             }
             Literal::Infinity => {
@@ -429,8 +435,10 @@ mod tests {
 
         compiler.compile_literal(&Literal::Null).unwrap();
 
+        // `null` is the same nothing `None` is, and not 0 — 0 is `false`, the
+        // integer zero, and every host function's "absent".
         let func = compiler.current_function().unwrap();
-        assert!(matches!(func.instructions[0], Instruction::I64Const(0)));
+        assert!(matches!(func.instructions[0], Instruction::I64Const(c) if c == super::super::NONE));
     }
 
     #[test]
@@ -439,8 +447,10 @@ mod tests {
 
         compiler.compile_literal(&Literal::Empty).unwrap();
 
+        // A padded argument arrives as `∅` and the function it lands in guards
+        // with `x == None`, so the two have to be the same value.
         let func = compiler.current_function().unwrap();
-        assert!(matches!(func.instructions[0], Instruction::I64Const(0)));
+        assert!(matches!(func.instructions[0], Instruction::I64Const(c) if c == super::super::NONE));
     }
 
     #[test]

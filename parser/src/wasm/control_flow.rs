@@ -778,6 +778,20 @@ impl WasmCompiler {
                     .map(|s| s.ident.name.as_str())
                     .unwrap_or("");
 
+                // `None` is the absence of a value, not a tag in a box: an
+                // Option is transparent here, so `Some(x)` IS `x` and `None`
+                // is 0. Reading it as a tag happened to agree, because the
+                // tag is 0 too — but only by accident, and the `Some` arm
+                // below did not agree with it at all.
+                if variant_name == "None" {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::LocalGet(scrutinee_idx));
+                    func.push(Instruction::I64Const(super::NONE));
+                    func.push(Instruction::I64Eq);
+                    func.push(Instruction::I64ExtendI32U);
+                    return Ok(());
+                }
+
                 // Look up variant tag (enum layout)
                 let tag = self.get_enum_variant_tag(variant_name);
 
@@ -796,6 +810,28 @@ impl WasmCompiler {
                     .last()
                     .map(|s| s.ident.name.as_str())
                     .unwrap_or("");
+
+                // `Some(x)` compiles to `x` — the constructor wraps nothing —
+                // so the value IS the payload and there is no tag to load.
+                // Loading one read memory at the address of the payload:
+                // `⌥ Some(5) { Some(v) => v }` dereferenced 5 and gave 0.
+                if variant_name == "Some" {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::LocalGet(scrutinee_idx));
+                    func.push(Instruction::I64Const(super::NONE));
+                    func.push(Instruction::I64Ne);
+                    func.push(Instruction::I64ExtendI32U);
+                    // The payload is the scrutinee itself.
+                    if let Some(inner) = fields.first() {
+                        if !matches!(inner, Pattern::Ident { .. } | Pattern::Wildcard) {
+                            self.compile_pattern_check(scrutinee_idx, inner)?;
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::I64And);
+                        }
+                    }
+                    return Ok(());
+                }
+
                 let tag = self.get_enum_variant_tag(variant_name);
 
                 // Check tag first
@@ -1027,6 +1063,21 @@ impl WasmCompiler {
             }
 
             Pattern::TupleStruct { path, fields } => {
+                // `Some(v)` binds `v` to the value itself: the constructor is
+                // transparent, so there is no box to read a payload out of.
+                if path.segments.last().map(|s| s.ident.name.as_str()) == Some("Some") {
+                    return match fields.first() {
+                        Some(inner) => self.bind_pattern(inner),
+                        None => {
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Drop);
+                            Ok(())
+                        }
+                    };
+                }
+
                 // Store pointer
                 let func = self
                     .current_function_mut()

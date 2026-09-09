@@ -244,6 +244,11 @@ function looksLikeStringPointer(n) {
 /// Resolve an argument to a JS value: a handle we issued, a string we can read,
 /// or the number itself.
 function jsonResolve(ref) {
+    // Nothing resolves to nothing, not to the enormous negative number it is
+    // spelled with.
+    if (isNone(ref)) {
+        return null;
+    }
     const n = Number(ref);
     if (jsonValues.has(n)) {
         return jsonValues.get(n);
@@ -262,7 +267,20 @@ function jsonResolve(ref) {
 // on `&&`, `||` or a ternary over a non-boolean. It is a host call because only
 // the host can tell a string pointer from a small integer — `""` is falsy, and a
 // pointer to it is not zero.
+// `None` and `\u{2205}`, as the compiler emits them.
+//
+// An Option is transparent in the WASM backend — `Some(x)` IS `x` — so
+// "nothing" has to be a value no real one can be. 0 will not do: that is
+// `false`, the integer zero, and this file's own "absent". Pinned to
+// `wasm::NONE` in the compiler by a test.
+export const NONE = -9223372036854775808n;
+
+function isNone(ref) {
+    return BigInt(ref) === NONE;
+}
+
 function valueToBool(ref) {
+    if (isNone(ref)) return 0n;
     const v = jsonResolve(ref);
     if (typeof v === 'string') return BigInt(v.length > 0 ? 1 : 0);
     if (Array.isArray(v)) return BigInt(v.length > 0 ? 1 : 0);
@@ -700,6 +718,11 @@ function stringEq(ptr1, ptr2) {
 // not a heuristic: the alternative — treating any value that happens to point
 // at plausible bytes as a string — would misprint genuine integers.
 function stringFromValue(value) {
+    // Nothing renders as nothing. React writes `{null}` as an empty string,
+    // and generated code emits `(x)·to_string()` wherever React had one.
+    if (isNone(value)) {
+        return writeLengthPrefixedString('');
+    }
     const n = Number(value);
     if (stringHandles.has(n)) return n;
     // A literal in the module's data section, if it reads as one. Bounded to
@@ -2097,7 +2120,7 @@ function promiseReject(id, errorPtr, errorLen) {
     const p = promises.get(Number(id));
     if (!p || p.state !== PROMISE_PENDING) return;
     p.state = PROMISE_REJECTED;
-    p.error = errorPtr ? readLengthPrefixedString(errorPtr) : 'Unknown error';
+    p.error = errorPtr && !isNone(errorPtr) ? readLengthPrefixedString(errorPtr) : 'Unknown error';
     console.log('[promise.reject]', id, p.error);
     // Execute catch callbacks
     for (const cb of p.catchCallbacks) {
@@ -2501,7 +2524,7 @@ export function createImports() {
             },
             prompt: (msgPtr, defPtr) => {
                 const msg = readLengthPrefixedString(msgPtr);
-                const def = defPtr ? readLengthPrefixedString(defPtr) : '';
+                const def = defPtr && !isNone(defPtr) ? readLengthPrefixedString(defPtr) : '';
                 if (typeof window === 'undefined' || !window.prompt) {
                     return writeLengthPrefixedString('');
                 }
@@ -2569,8 +2592,8 @@ export function jspiAvailable() {
 // program does not have. This is the shape `.await` can use.
 function fetchRequest(urlPtr, methodPtr, bodyPtr) {
     const url = readLengthPrefixedString(urlPtr);
-    const method = methodPtr ? readLengthPrefixedString(methodPtr) : 'GET';
-    const body = bodyPtr ? readLengthPrefixedString(bodyPtr) : null;
+    const method = methodPtr && !isNone(methodPtr) ? readLengthPrefixedString(methodPtr) : 'GET';
+    const body = bodyPtr && !isNone(bodyPtr) ? readLengthPrefixedString(bodyPtr) : null;
     const id = nextPromiseId++;
     const entry = { state: PROMISE_PENDING, value: 0n };
     promises.set(id, entry);

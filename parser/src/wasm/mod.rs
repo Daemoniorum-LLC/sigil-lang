@@ -62,6 +62,23 @@ use wasm_encoder::ValType;
 use crate::optimize::OptLevel;
 use crate::parser::Parser;
 
+/// The value of `None` and `\u{2205}`.
+///
+/// An Option is TRANSPARENT in this backend — `Some(x)` compiles to `x` and
+/// nothing wraps it — so "nothing" has to be a value no real one can be. It
+/// used to be 0, which is also `false`, also the integer zero, and also every
+/// host function's "absent": `conn_row` reads `up: boolean | null` and could
+/// not tell a service that is DOWN from one it has not checked yet.
+///
+/// Before that it was a fresh 16-byte heap allocation at every mention, with
+/// equality on the pointer, so `None == None` was false and no `x == None`
+/// guard could ever be true.
+///
+/// `i64::MIN` is not a number any interface computes, not a pointer into a
+/// 32-bit linear memory, and not a handle. The host knows the same value —
+/// `sigil_runtime.js` calls it `NONE`, and a test pins the two together.
+pub const NONE: i64 = i64::MIN;
+
 /// The type name the parser gives every anonymous object literal.
 ///
 /// Kept next to the compiler that special-cases it, and pinned by a test, so a
