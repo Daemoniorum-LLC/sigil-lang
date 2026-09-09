@@ -358,12 +358,7 @@ impl WasmCompiler {
         // the function's index in the indirect-call table, which is exactly what
         // `sigil_runtime.js` looks up when a vnode prop holds a function pointer.
         if let Some(func_idx) = self.get_func(name) {
-            let table_idx = self.add_to_table(func_idx);
-            let func = self
-                .current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::I64Const(table_idx as i64));
-            return Ok(());
+            return self.emit_function_reference(func_idx);
         }
 
         // Handle multi-segment paths like typography·FONT_SANS or api·ConnectionState·Connected

@@ -1412,6 +1412,19 @@ impl WasmCompiler {
         let mut exports = ExportSection::new();
         exports.export("memory", wasm_encoder::ExportKind::Memory, 0);
 
+        // The module's bump pointer, so the host can share it.
+        //
+        // There were two allocators over one linear memory: enum construction
+        // bumps this global inline, everything else calls `memory.heap_alloc`
+        // on the host, and the host kept its own pointer starting at a constant
+        // 65536. They handed out the same addresses, so a VNode's tag was
+        // overwritten by whatever was allocated next — `createElement('')`,
+        // from the largest component only, because the small ones never
+        // allocated enough to collide. Exported, there is one pointer.
+        if let Some(heap_ptr) = self.global_map.get("__heap_ptr").copied() {
+            exports.export("__heap_ptr", wasm_encoder::ExportKind::Global, heap_ptr);
+        }
+
         if !self.table_elements.is_empty() {
             exports.export("__indirect_function_table", wasm_encoder::ExportKind::Table, 0);
         }
@@ -1552,6 +1565,17 @@ impl WasmCompiler {
             let base = self.imports.import_count();
             for (i, f) in self.functions.iter().enumerate() {
                 eprintln!("func #{} = {}", base as usize + i, f.name);
+            }
+        }
+
+        // `GlobalGet(512)` says nothing on its own, and a closure held in the
+        // wrong global is invisible without the map.
+        if std::env::var("SIGIL_WASM_GLOBALS").is_ok() {
+            let mut by_index: Vec<(u32, &String)> =
+                self.global_map.iter().map(|(n, i)| (*i, n)).collect();
+            by_index.sort();
+            for (idx, name) in by_index {
+                eprintln!("global #{} = {}", idx, name);
             }
         }
 

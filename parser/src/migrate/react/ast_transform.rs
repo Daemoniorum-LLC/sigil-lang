@@ -167,6 +167,19 @@ fn is_simple_identifier(s: &str) -> bool {
         && s.chars().all(|c| c.is_alphanumeric() || c == '_')
 }
 
+/// A numeric literal that is definitely not zero.
+fn is_nonzero_literal(e: &Expr) -> bool {
+    match e {
+        Expr::Lit(Lit::Num(n)) => n.value != 0.0,
+        // `-1`, `+2`: the sign does not make it zero.
+        Expr::Unary(u) if matches!(u.op, UnaryOp::Minus | UnaryOp::Plus) => {
+            is_nonzero_literal(&u.arg)
+        }
+        Expr::Paren(p) => is_nonzero_literal(&p.expr),
+        _ => false,
+    }
+}
+
 /// Methods an optional call may keep verbatim: Sigil spells them the same, so
 /// `a?.b()` coming out as `a\u{b7}b()` means it WAS recognised.
 const KNOWN_OPTIONAL_METHODS: &[&str] = &[
@@ -622,6 +635,14 @@ impl<'a> ExprTransformer<'a> {
                 left.replace("*/", "* /"),
                 right.replace("*/", "* /")
             );
+        }
+
+        // `a / b` — see `JS_DIVIDE_HELPER`. JavaScript's division never fails
+        // and Sigil's is an error on a zero divisor, so a divisor that is not a
+        // literal goes through the guard. A literal one cannot be zero unless
+        // the source says so, and `bytes / 1024` should stay readable.
+        if matches!(bin.op, BinaryOp::Div) && !is_nonzero_literal(&bin.right) {
+            return format!("js_divide({}, {})", left, right);
         }
 
         let op = match bin.op {
@@ -1230,6 +1251,19 @@ impl<'a> ExprTransformer<'a> {
                     let name = id.sym.to_string();
                     if let Some(field) = self.setter_target(&name) {
                         if call.args.len() == 1 {
+                            // `setX(prev => f(prev))` — React's functional
+                            // setState. Passed through, the CLOSURE was stored
+                            // in the field, and calling or reading it later
+                            // reached `call_indirect` with a value that is not
+                            // a function: "null function or function signature
+                            // mismatch", which takes the whole page down. The
+                            // update is `self.x = f(self.x)`, which an actor
+                            // can express exactly.
+                            if let Some(updated) =
+                                self.functional_setter(&field, &call.args[0].expr)
+                            {
+                                return updated;
+                            }
                             return format!("{{ self.{} = {}; }}", field, args);
                         }
                     }
@@ -1261,6 +1295,47 @@ impl<'a> ExprTransformer<'a> {
                 format!("/* import({}) */", args)
             }
         }
+    }
+
+    /// `setX(prev => …)` as the assignment it means.
+    ///
+    /// `None` when the argument is not a one-parameter arrow — a plain value
+    /// goes through the caller's ordinary path.
+    fn functional_setter(&mut self, field: &str, arg: &Expr) -> Option<String> {
+        let Expr::Arrow(arrow) = arg else { return None };
+        let param = match arrow.params.first() {
+            Some(Pat::Ident(id)) => to_snake_case(&id.id.sym),
+            _ => return None,
+        };
+        if arrow.params.len() != 1 {
+            return None;
+        }
+
+        // The parameter IS the field's current value.
+        self.scope_locals.push(param.clone());
+        let body = match &*arrow.body {
+            BlockStmtOrExpr::Expr(e) => self.transform_expr(e),
+            BlockStmtOrExpr::BlockStmt(block) => {
+                let src = super::stmt_transform::slice(self.src, block.span);
+                let mut inner = self.config.clone();
+                inner.locals.extend(self.scope_locals.iter().cloned());
+                let r = super::stmt_transform::transform_statements(&src, &inner, "    ");
+                if !r.complete {
+                    self.warnings.extend(r.warnings);
+                }
+                if r.code.trim().is_empty() {
+                    self.scope_locals.pop();
+                    return None;
+                }
+                format!("{{\n{}\n}}", r.code)
+            }
+        };
+        self.scope_locals.pop();
+
+        Some(format!(
+            "{{ \u{2254} {} = self.{}; self.{} = {}; }}",
+            param, field, field, body
+        ))
     }
 
     /// `setFoo` → the state field `foo`, when the actor declares one.

@@ -2604,7 +2604,11 @@ pub fn generate_shared_module(specs: &[&ComponentMigrationSpec]) -> String {
     let (constants_code, emitted) = gen.generate_module_constants();
     let helpers_code = gen.generate_helper_functions(&emitted);
 
-    let mut out = String::from("// Module scope shared by every generated component: the constants and\n                               // helper functions their React modules declared, emitted once.\n\n");
+    let mut out = String::from(
+        "// Module scope shared by every generated component: the constants and\n\
+         // helper functions their React modules declared, emitted once.\n\n",
+    );
+    out.push_str(JS_DIVIDE_HELPER);
     out.push_str(&constants_code);
     if !constants_code.is_empty() {
         out.push('\n');
@@ -2612,6 +2616,23 @@ pub fn generate_shared_module(specs: &[&ComponentMigrationSpec]) -> String {
     out.push_str(&helpers_code);
     out
 }
+
+/// JavaScript's `/` and Sigil's are different operators.
+///
+/// `a / 0` is `Infinity` or `NaN` in JavaScript — ugly output, never a failure.
+/// In Sigil it is an error, in both backends: `averageTrendTotal` divides by
+/// `trend.length` with no guard, exactly as its React did, and the whole
+/// dashboard trapped on an empty list. Migrated divisions go through this so a
+/// program that was merely untidy in JavaScript does not become one that stops.
+///
+/// Zero is not NaN. The value is wrong in the same place JavaScript's was, and
+/// visibly so.
+const JS_DIVIDE_HELPER: &str = "\
+// JavaScript's `/` never fails; Sigil's is an error on a zero divisor. Migrated\n\
+// divisions come here so a program that printed NaN does not stop instead.\n\
+\u{2609} rite js_divide(a: Any, b: Any) -> Any! {\n\
+\u{20}   \u{2387} b \u{2260} 0 { a / b } \u{2389} { 0 }\n\
+}\n\n";
 
 /// Free-standing functions the WASM backend resolves, which a helper body may
 /// therefore name without the file declaring anything.
@@ -2621,6 +2642,10 @@ const HOST_FUNCTIONS: &[&str] = &[
     "json_pretty", "json_get", "json_set", "timing_now", "timing_parse", "math_random",
     "None", "true", "false", "Some", "Ok", "Err", "This", "Self", "VNode", "VElement",
     "HashMap", "HashSet", "Vec", "String",
+    // Emitted into the shared module by `JS_DIVIDE_HELPER`, so a helper body
+    // may name it without declaring anything. Left out, every body containing
+    // a division failed the known-names check and went back to untranslated.
+    "js_divide",
 ];
 
 /// Strip characters a Sigil comment cannot carry.

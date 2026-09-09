@@ -18,6 +18,19 @@ fn get_param_name(param: &ClosureParam) -> String {
     }
 }
 
+/// Every closure has the same WASM signature: `(env, a0 … a3) -> i64`.
+///
+/// Arity is part of a function's type, so a one-parameter closure in the table
+/// and a two-argument call site are different types and `call_indirect` traps —
+/// "null function or function signature mismatch", from a frame with no
+/// relation to either. Generated code puts closures in places where the call
+/// site cannot know the arity (an actor's state, a prop), so the only way a
+/// table entry and a call site cannot disagree is for there to be one type.
+///
+/// Declared parameters bind in order; the rest are ignored, and a call site
+/// that has fewer arguments passes the empty value for them.
+pub(crate) const CLOSURE_ARITY: usize = 4;
+
 impl WasmCompiler {
     /// Compile a closure expression.
     ///
@@ -54,7 +67,7 @@ impl WasmCompiler {
         // and `call_indirect` reports that as "null function or function
         // signature mismatch" — with no indication of which closure.
         let mut param_types: Vec<ValType> = vec![ValType::I64];
-        param_types.extend(params.iter().map(|_| ValType::I64));
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
         // Create function
@@ -66,6 +79,9 @@ impl WasmCompiler {
                 .iter()
                 .map(|p| (get_param_name(p), ValType::I64)),
         );
+        for i in params.len()..CLOSURE_ARITY {
+            params_with_names.push((format!("__unused_{}", i), ValType::I64));
+        }
 
         let mut func = CompiledFunction::new(
             closure_name.clone(),
@@ -148,6 +164,78 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// A named function used as a value: `onClick={handleSubmit}`, `xs·map(f)`.
+    ///
+    /// Not the function itself — a THUNK with the one closure signature that
+    /// forwards to it, wrapped in the `[table_idx, env_ptr]` pair every call
+    /// site loads. The arm this replaces pushed the function's own table index,
+    /// bare: the wrong value (a small integer where a pointer belongs) of the
+    /// wrong type (its own arity, not the closure convention), so calling one
+    /// trapped with "null function or function signature mismatch".
+    pub(crate) fn emit_function_reference(&mut self, func_idx: u32) -> WasmResult<()> {
+        let arity = self.arity_of(func_idx).unwrap_or(0).min(CLOSURE_ARITY);
+        let returns_void = self.func_returns_void(func_idx);
+
+        let mut param_types = vec![ValType::I64]; // env, ignored
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
+        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
+
+        let thunk_idx = self.next_func_idx();
+        let mut params_with_names = vec![("__env".to_string(), ValType::I64)];
+        for i in 0..CLOSURE_ARITY {
+            params_with_names.push((format!("__a{}", i), ValType::I64));
+        }
+        let mut thunk = CompiledFunction::new(
+            format!("__fnref_{}", self.closure_counter),
+            type_idx,
+            thunk_idx,
+            params_with_names,
+            vec![ValType::I64],
+            false,
+        );
+        self.closure_counter += 1;
+        // Only the parameters the callee actually declares.
+        for i in 0..arity {
+            thunk.push(Instruction::LocalGet(1 + i as u32));
+        }
+        thunk.push(Instruction::Call(func_idx));
+        if returns_void {
+            thunk.push(Instruction::I64Const(0));
+        }
+        thunk.push(Instruction::End);
+        self.functions.push(thunk);
+
+        let table_idx = self.add_to_table(thunk_idx);
+
+        let alloc_idx = self
+            .get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I64Const(16));
+        func.push(Instruction::Call(alloc_idx));
+        let obj = func.alloc_local("__fnref_obj".to_string(), ValType::I64);
+        func.push(Instruction::LocalTee(obj));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Const(table_idx as i64));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::LocalGet(obj));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::LocalGet(obj));
+        Ok(())
+    }
+
     /// Compile a closure with captured variables.
     ///
     /// `is_move`: When true, captured values are moved (copied) into the closure's
@@ -176,7 +264,7 @@ impl WasmCompiler {
 
         // Closure function takes: [env_ptr, ...params]
         let mut param_types = vec![ValType::I64]; // env pointer
-        param_types.extend(params.iter().map(|_| ValType::I64));
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
 
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
@@ -184,6 +272,9 @@ impl WasmCompiler {
 
         let mut params_with_names = vec![("__env".to_string(), ValType::I64)];
         params_with_names.extend(params.iter().map(|p| (get_param_name(p), ValType::I64)));
+        for i in params.len()..CLOSURE_ARITY {
+            params_with_names.push((format!("__unused_{}", i), ValType::I64));
+        }
 
         let func = CompiledFunction::new(
             closure_name.clone(),
@@ -1325,23 +1416,50 @@ impl WasmCompiler {
 
         // Type includes env parameter
         let mut param_types = vec![ValType::I64]; // env
-        param_types.extend(std::iter::repeat(ValType::I64).take(arg_count));
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
         let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
 
+        let table_len = self.table_elements.len() as i64;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-        // A closure that is not there. Generated code binds a callback prop to
-        // `∅` — Sigil has no mechanism for one — and then calls it. Reading a
-        // table index out of address 0 gives a garbage index, and the trap is
-        // "null function or function signature mismatch" from somewhere with no
-        // relation to the callback. A callback nobody supplied does nothing.
+        // A closure that is not there, or is not a closure.
+        //
+        // Generated code binds a callback prop to the empty value — Sigil has
+        // no mechanism for one — and then calls it; it also assigns closures to
+        // actor state, which is the same gap seen from the other side
+        // (§8.2.22, callable fields). Either way a value that is not a closure
+        // reaches here, and reading a table index out of it gives a garbage
+        // index: the trap is "null function or function signature mismatch"
+        // from a frame with no relation to the callback, and it takes the whole
+        // page down.
+        //
+        // Null OR out of range, checked together. This CONTAINS the gap, it
+        // does not close it — the value is still wrong, and it is still the
+        // migrator's to get right.
+        // ptr != 0 …
         func.push(Instruction::LocalGet(closure_ptr_idx));
         func.push(Instruction::I64Eqz);
-        func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I64)));
-        func.push(Instruction::I64Const(0));
+        func.push(Instruction::I32Eqz);
+        // … and the table index it holds is one this module has.
+        func.push(Instruction::LocalGet(closure_ptr_idx));
+        func.push(Instruction::I64Eqz);
+        func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+        func.push(Instruction::I32Const(0));
         func.push(Instruction::Else);
+        func.push(Instruction::LocalGet(closure_ptr_idx));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::I64Const(table_len));
+        func.push(Instruction::I64LtU);
+        func.push(Instruction::End);
+        func.push(Instruction::I32And);
+        func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I64)));
 
         // env pointer (offset 8) — the first parameter
         func.push(Instruction::LocalGet(closure_ptr_idx));
@@ -1352,9 +1470,13 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-        // then the arguments
+        // then the arguments, padded to the one closure arity
+        let pushed = arg_locals.len();
         for l in arg_locals {
             func.push(Instruction::LocalGet(l));
+        }
+        for _ in pushed..CLOSURE_ARITY {
+            func.push(Instruction::I64Const(0));
         }
 
         // table index (offset 0) — last, as `call_indirect` requires
@@ -1371,6 +1493,9 @@ impl WasmCompiler {
             type_index: type_idx,
             table_index: 0,
         });
+        // …and nothing at all when the value was not callable.
+        func.push(Instruction::Else);
+        func.push(Instruction::I64Const(0));
         func.push(Instruction::End);
 
         Ok(())
@@ -1400,7 +1525,7 @@ impl WasmCompiler {
         }
 
         let mut param_types = vec![ValType::I64]; // env
-        param_types.extend(std::iter::repeat(ValType::I64).take(arg_count));
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
         let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
 
         let func = self
@@ -1408,8 +1533,12 @@ impl WasmCompiler {
             .ok_or_else(|| WasmError::internal("not in function context"))?;
         // No captures, so no env to pass — but the parameter is still there.
         func.push(Instruction::I64Const(0));
+        let pushed = arg_locals.len();
         for l in arg_locals {
             func.push(Instruction::LocalGet(l));
+        }
+        for _ in pushed..CLOSURE_ARITY {
+            func.push(Instruction::I64Const(0));
         }
         func.push(Instruction::I32Const(closure_info.table_idx as i32));
         func.push(Instruction::CallIndirect {

@@ -1,0 +1,42 @@
+// `.` and `·`. The interpreter accepts both as a method separator; the
+// migrator emits `.len()` because it rewrites JavaScript's `.length`
+// textually, so the two spellings have to mean the same thing.
+
+☉ rite t_dot_len() -> i64! {
+    ≔ xs = [1, 2, 3];
+    ⤺ xs.len();
+}
+☉ rite t_mid_len() -> i64! {
+    ≔ xs = [1, 2, 3];
+    ⤺ xs·len();
+}
+☉ rite t_dot_len_empty() -> i64! {
+    ≔ xs = [];
+    ⤺ xs.len();
+}
+☉ rite t_dot_len_filtered() -> i64! {
+    ≔ xs = [1, 2, 3]·filter(|x| x > 99);
+    ⤺ xs.len();
+}
+☉ rite t_dot_guard_empty() -> i64! {
+    ≔ xs = [1, 2, 3]·filter(|x| x > 99);
+    ⤺ ⎇ xs.len()·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_dot_trim() -> String! {
+    ≔ s = "  x  ";
+    ⤺ s.trim();
+}
+☉ rite t_dot_upper() -> String! {
+    ≔ s = "ab";
+    ⤺ s.to_uppercase();
+}
+
+☉ rite main() {
+    println((t_dot_len())·to_string());
+    println((t_mid_len())·to_string());
+    println((t_dot_len_empty())·to_string());
+    println((t_dot_len_filtered())·to_string());
+    println((t_dot_guard_empty())·to_string());
+    println(t_dot_trim());
+    println(t_dot_upper());
+}

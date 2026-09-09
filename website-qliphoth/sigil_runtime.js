@@ -11,11 +11,40 @@
 
 let wasmMemory = null;
 let wasmExports = null;
-let heapPtr = 1024 * 64; // Start heap after 64KB stack
+// The bump pointer, shared with the module.
+//
+// The module allocates too — enum construction bumps its own `__heap_ptr`
+// global inline — so a separate pointer on this side is a second allocator over
+// the same memory, and the two hand out the same addresses. When the module
+// exports its global, that IS the pointer; `localHeapPtr` is the fallback for a
+// module compiled before the export existed.
+let localHeapPtr = 1024 * 64; // Start heap after 64KB stack
+let heapGlobal = null;
+
+function getHeapPtr() {
+    return heapGlobal ? heapGlobal.value : localHeapPtr;
+}
+function setHeapPtr(v) {
+    if (heapGlobal) heapGlobal.value = v;
+    else localHeapPtr = v;
+}
 
 function setWasmExports(exports) {
     wasmExports = exports;
     wasmMemory = exports.memory;
+    // Start the host's bump allocator above the module's own data.
+    //
+    // This side and the module's side are two allocators over one linear
+    // memory, and the host used to assume the literals ended by 64 KB. The
+    // Lares client's reach 71740, so every host allocation in the first 6 KB
+    // overwrote a string the module would later read — a VNode's tag came back
+    // empty and `createElement('')` threw, from the largest component only,
+    // because the small ones never allocated enough to reach the overlap.
+    // `__heap_base` is where the compiler put its own heap; anything at or
+    // below it belongs to the module.
+    heapGlobal = exports.__heap_ptr instanceof WebAssembly.Global
+        ? exports.__heap_ptr
+        : null;
     // An actor compiles to a `<Actor>_dispatch(msg_id, payload)` export. Their
     // presence is what tells this runtime that an `on*` prop carries a message
     // id rather than an indirect-function-table index — a module with no actors
@@ -89,10 +118,11 @@ function readLengthPrefixedString(ptr) {
 
 function writeString(str) {
     const bytes = new TextEncoder().encode(str);
-    const ptr = heapPtr;
+    heapReserve(bytes.length + 1);
+    const ptr = getHeapPtr();
     const mem = getMemory();
     mem.set(bytes, ptr);
-    heapPtr += bytes.length + 1; // +1 for null terminator
+    setHeapPtr(ptr + bytes.length + 1); // +1 for null terminator
     return { ptr, len: bytes.length };
 }
 
@@ -106,7 +136,7 @@ function writeString(str) {
 // took until `map` and `filter` actually ran — each one allocating a string per
 // element — for a page to be exhausted at all.
 function heapReserve(size) {
-    const need = heapPtr + size;
+    const need = getHeapPtr() + size;
     if (!wasmMemory || wasmMemory.buffer.byteLength >= need) return;
     const have = wasmMemory.buffer.byteLength / 65536;
     const want = Math.ceil(need / 65536);
@@ -123,7 +153,7 @@ function heapReserve(size) {
 function writeLengthPrefixedString(str) {
     const bytes = new TextEncoder().encode(str);
     heapReserve(4 + bytes.length + 8);
-    const ptr = heapPtr;
+    const ptr = getHeapPtr();
     const view = new DataView(wasmMemory.buffer);
     // Write 4-byte length
     view.setUint32(ptr, bytes.length, true); // little-endian
@@ -131,8 +161,7 @@ function writeLengthPrefixedString(str) {
     const mem = getMemory();
     mem.set(bytes, ptr + 4);
     // Align to 8 bytes
-    heapPtr += 4 + bytes.length;
-    heapPtr = (heapPtr + 7) & ~7;
+    setHeapPtr((ptr + 4 + bytes.length + 7) & ~7);
     return ptr;
 }
 
@@ -1210,9 +1239,9 @@ function routerForward() {
 // =============================================================================
 
 function memoryAlloc(size) {
-    heapReserve(size);
-    const ptr = heapPtr;
-    heapPtr += size;
+    heapReserve(Number(size));
+    const ptr = getHeapPtr();
+    setHeapPtr(ptr + Number(size));
     return ptr;
 }
 
@@ -1438,7 +1467,15 @@ function sigilClosure(closurePtr) {
         return null;
     }
     if (typeof fn !== 'function') return null;
-    return (...args) => fn(env, ...args);
+    // Every Sigil closure has one signature, `(env, a0 … aN) -> i64`, so that a
+    // table entry and a call site cannot disagree on arity. A caller with fewer
+    // arguments pads: an omitted parameter arrives as `undefined`, which the
+    // boundary rejects with "Cannot convert undefined to a BigInt".
+    return (...args) => {
+        const padded = args.slice(0, Math.max(0, fn.length - 1));
+        while (padded.length < fn.length - 1) padded.push(0n);
+        return fn(env, ...padded);
+    };
 }
 
 // The higher-order array morphemes. Every one of these used to ignore its
