@@ -2741,7 +2741,11 @@ const HOST_FUNCTIONS: &[&str] = &[
     // `Math.*` over the uniform value domain. The F64-typed `math.*` imports
     // cannot be called from a migrated program, where every number is an i64.
     "math_floor", "math_ceil", "math_round", "math_trunc", "math_abs",
-    "math_min", "math_max",
+    "math_min", "math_max", "math_sqrt", "math_pow",
+    // `string.parse_int` / `parse_float`, aliased bare since the start and
+    // never listed here — so `hexToRgb` and every other body that parses a
+    // number failed the gate on a name the backend resolves.
+    "parse_int", "parse_float",
 ];
 
 /// React's attribute spelling, as the DOM's.

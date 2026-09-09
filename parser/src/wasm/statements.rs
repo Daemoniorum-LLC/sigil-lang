@@ -1706,7 +1706,23 @@ impl WasmCompiler {
 
             Expr::Literal(Literal::Bool(b)) => Ok(if *b { 1 } else { 0 }),
 
-            Expr::Literal(Literal::Null | Literal::Empty) => Ok(0),
+            // A float, as the f64 bits `compile_literal` emits for it. There
+            // was no arm at all, so a module-scope `≔ x = 4.5;` failed the
+            // whole-project link with "expression is not constant" while the
+            // same literal inside a function compiled fine — const and runtime
+            // have to agree about what a value IS.
+            Expr::Literal(Literal::Float { value, .. }) => {
+                let v: f64 = value
+                    .parse()
+                    .map_err(|_| WasmError::not_const_expr(&format!("float {value}")))?;
+                Ok(v.to_bits() as i64)
+            }
+
+            // The same nothing `None` is — see `wasm::NONE`. This answered 0
+            // while `None` below answered 0 too, which agreed with each other
+            // and with neither of the two runtime paths once nothing became a
+            // sentinel.
+            Expr::Literal(Literal::Null | Literal::Empty) => Ok(super::NONE),
 
             Expr::Unary { op, expr } => {
                 let val = self.eval_const_expr(expr)?;
@@ -1755,19 +1771,18 @@ impl WasmCompiler {
                 // `Literal::Null | Literal::Empty` arm above — `≔ x = None;` at
                 // module scope passed `sigil check` and failed to compile with
                 // "expression is not constant", while `∅` in the same position
-                // worked. It is the absent value; in the uniform i64 model that
-                // is 0, the same as `∅`.
+                // worked. It is the absent value, and the same one `∅` is.
                 if name == "None" && path.segments.len() == 1 {
-                    return Ok(0);
+                    return Ok(super::NONE);
                 }
                 if let Some(&idx) = self.global_map.get(name) {
                     Ok(self.globals[idx as usize].2)
                 } else {
-                    Err(WasmError::not_const())
+                    Err(WasmError::not_const_expr(name))
                 }
             }
 
-            _ => Err(WasmError::not_const()),
+            other => Err(WasmError::not_const_expr(&format!("{other:?}"))),
         }
     }
 }
@@ -2062,11 +2077,12 @@ mod tests {
     fn test_eval_const_expr_null() {
         let compiler = WasmCompiler::new();
 
+        // Nothing, at compile time, is the same value it is at run time.
         let null_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Null)).unwrap();
-        assert_eq!(null_result, 0);
+        assert_eq!(null_result, crate::wasm::NONE);
 
         let empty_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Empty)).unwrap();
-        assert_eq!(empty_result, 0);
+        assert_eq!(empty_result, crate::wasm::NONE);
     }
 
     #[test]

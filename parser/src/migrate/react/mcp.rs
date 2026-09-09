@@ -124,6 +124,17 @@ pub struct MigrationSession {
     /// The companion to `exported_constants`, and resolved the same way.
     exported_helpers: HashMap<String, HelperFunctionExtraction>,
 
+    /// Every helper function seen anywhere, exported or not.
+    ///
+    /// The companion to `all_constants`, and missing for exactly as long as
+    /// that one was. A file-private helper cannot be an import specifier, so
+    /// nothing seeds the queue with it — but an EXPORTED helper's body calls
+    /// it, and that call is how it has to travel. `isMrList` is exported and
+    /// arrived; the `isMr` it calls and the `isObj` that calls in turn are
+    /// file-private, and both were dropped. `isObj` alone blocked 15 helpers
+    /// in the Lares client, each of which blocked more.
+    all_helpers: HashMap<String, HelperFunctionExtraction>,
+
     /// Every module constant seen anywhere, exported or not.
     ///
     /// Only reachable transitively: a name that is not exported cannot be an
@@ -167,6 +178,7 @@ impl MigrationSession {
             resolved_ambiguities: HashMap::new(),
             exported_constants: HashMap::new(),
             exported_helpers: HashMap::new(),
+            all_helpers: HashMap::new(),
             all_constants: HashMap::new(),
         })
     }
@@ -191,6 +203,7 @@ impl MigrationSession {
             resolved_ambiguities: HashMap::new(),
             exported_constants: HashMap::new(),
             exported_helpers: HashMap::new(),
+            all_helpers: HashMap::new(),
             all_constants: HashMap::new(),
         }
     }
@@ -223,6 +236,9 @@ impl MigrationSession {
                     .entry(h.name.clone())
                     .or_insert_with(|| h.clone());
             }
+            self.all_helpers
+                .entry(h.name.clone())
+                .or_insert_with(|| h.clone());
         }
 
         // Generate spec for each component
@@ -261,6 +277,7 @@ impl MigrationSession {
         let table = self.exported_constants.clone();
         let deep = self.all_constants.clone();
         let helpers = self.exported_helpers.clone();
+        let deep_helpers = self.all_helpers.clone();
         for comp in &mut self.spec.components {
             let mut have: std::collections::HashSet<String> = comp
                 .source
@@ -273,6 +290,28 @@ impl MigrationSession {
             // component's file brings in, alongside its own helpers and
             // constants — the latter two are in `have` and skip themselves.
             let mut queue: Vec<String> = comp.source.module_scope.clone();
+
+            // …and every name mentioned by a helper this component will pull
+            // in. A file-private constant that only an imported helper's body
+            // names is in nobody's `module_scope`, so nothing queued it:
+            // `mirrorPrefix`, `builtinThemes`, `checkpointLabels` and
+            // `terminalTokenKeys` all reached the generator as undeclared
+            // names, and the helpers that read them stayed untranslated.
+            //
+            // The helper walk below decides which helpers those are; this needs
+            // the same reachable set, so it is computed once here.
+            let reachable_helpers =
+                Self::reachable_helper_set(&comp.source, &helpers, &deep_helpers);
+            for h in &reachable_helpers {
+                for word in h
+                    .source
+                    .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                {
+                    if !word.is_empty() && (table.contains_key(word) || deep.contains_key(word)) {
+                        queue.push(word.to_string());
+                    }
+                }
+            }
 
             let mut added: Vec<ModuleConstantExtraction> = Vec::new();
             let mut guard = 0;
@@ -325,30 +364,9 @@ impl MigrationSession {
             merged.append(&mut comp.source.module_constants);
             comp.source.module_constants = merged;
 
-            // Helpers, the same way. A helper's own body may call another
-            // helper, so this walks transitively too.
-            let mut have_h: std::collections::HashSet<String> =
-                comp.source.helpers.iter().map(|h| h.name.clone()).collect();
-            let mut hq: Vec<String> = comp.source.module_scope.clone();
-            let mut added_h: Vec<HelperFunctionExtraction> = Vec::new();
-            let mut guard = 0;
-            while let Some(name) = hq.pop() {
-                guard += 1;
-                if guard > 512 {
-                    break;
-                }
-                if have_h.contains(&name) {
-                    continue;
-                }
-                let Some(h) = helpers.get(&name) else { continue };
-                have_h.insert(name.clone());
-                for called in &h.calls {
-                    if helpers.contains_key(called) {
-                        hq.push(called.clone());
-                    }
-                }
-                added_h.push(h.clone());
-            }
+            // Helpers, computed above: a helper's own body may reference
+            // another helper, so that walk is transitive too.
+            let added_h = reachable_helpers;
             for h in &added_h {
                 if !comp.source.module_scope.contains(&h.name) {
                     comp.source.module_scope.push(h.name.clone());
@@ -359,6 +377,55 @@ impl MigrationSession {
             }
             comp.source.helpers.extend(added_h);
         }
+    }
+
+    /// Every helper a component reaches, transitively, that it does not already
+    /// have.
+    ///
+    /// Seeded names must be exported — they came from an import specifier.
+    /// Anything reached from a helper's own body may be file-private, exactly
+    /// as for constants: `isMrList` is exported and arrived, and the `isMr` it
+    /// reaches through `v.every(isMr)` was dropped with the `isObj` behind it.
+    ///
+    /// The helper's SOURCE, not its `calls` list — that is empty on everything
+    /// the extractor produces, and would miss a bare reference passed as an
+    /// argument even if it were not.
+    fn reachable_helper_set(
+        source: &crate::migrate::react::spec::ComponentSource,
+        exported: &HashMap<String, HelperFunctionExtraction>,
+        all: &HashMap<String, HelperFunctionExtraction>,
+    ) -> Vec<HelperFunctionExtraction> {
+        let mut have: std::collections::HashSet<String> =
+            source.helpers.iter().map(|h| h.name.clone()).collect();
+        let mut queue: Vec<String> = source.module_scope.clone();
+        let mut added: Vec<HelperFunctionExtraction> = Vec::new();
+        let mut guard = 0;
+        while let Some(name) = queue.pop() {
+            guard += 1;
+            if guard > 512 {
+                break;
+            }
+            if have.contains(&name) {
+                continue;
+            }
+            let Some(h) = exported.get(&name).or_else(|| all.get(&name)) else {
+                continue;
+            };
+            have.insert(name.clone());
+            for word in h
+                .source
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+            {
+                if !word.is_empty()
+                    && word != name
+                    && (exported.contains_key(word) || all.contains_key(word))
+                {
+                    queue.push(word.to_string());
+                }
+            }
+            added.push(h.clone());
+        }
+        added
     }
 
     /// Update the migration state counts.
@@ -728,6 +795,7 @@ impl MigrationSession {
             // carry their resolved constants.
             exported_constants: HashMap::new(),
             exported_helpers: HashMap::new(),
+            all_helpers: HashMap::new(),
             all_constants: HashMap::new(),
         })
     }

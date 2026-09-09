@@ -249,6 +249,15 @@ impl ImportRegistry {
         self.add_import("string", "locale_compare", vec![I32, I32], vec![I64]);
         self.add_import("string", "replace", vec![I32, I32, I32], vec![I32]); // (str, from, to) -> new str
         self.add_import("string", "chars", vec![I32], vec![I32]); // (str) -> array of chars
+        // `s.padStart(n, pad)` / `padEnd`. Migrated code formats timestamps and
+        // ids with these, and they reached the backend as undefined functions.
+        // `s.indexOf(x)` / `lastIndexOf(x)`, -1 when absent. `splitPath` finds
+        // the last `/` with one; neither existed, so it reached the backend as
+        // an undefined function.
+        self.add_import("string", "index_of", vec![I32, I32], vec![I64]);
+        self.add_import("string", "last_index_of", vec![I32, I32], vec![I64]);
+        self.add_import("string", "pad_start", vec![I32, I64, I32], vec![I32]);
+        self.add_import("string", "pad_end", vec![I32, I64, I32], vec![I32]);
     }
 
     fn register_dom_imports(&mut self) {

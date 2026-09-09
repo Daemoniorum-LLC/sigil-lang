@@ -992,6 +992,35 @@ function stringReplace(ptr, fromPtr, toPtr) {
     return writeLengthPrefixedString(str.replaceAll(from, to));
 }
 
+// `s.indexOf(x)` and `s.lastIndexOf(x)` — -1 when absent, as JavaScript's are.
+function stringIndexOf(ptr, needlePtr) {
+    const str = readLengthPrefixedString(ptr);
+    const needle = readLengthPrefixedString(needlePtr);
+    return BigInt(str.indexOf(needle));
+}
+
+function stringLastIndexOf(ptr, needlePtr) {
+    const str = readLengthPrefixedString(ptr);
+    const needle = readLengthPrefixedString(needlePtr);
+    return BigInt(str.lastIndexOf(needle));
+}
+
+// `s.padStart(n, pad)` and `s.padEnd(n, pad)`.
+//
+// Migrated code formats timestamps and ids with these; without them they
+// reached the module as undefined functions.
+function stringPadStart(ptr, len, padPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const pad = padPtr && !isNone(padPtr) ? readLengthPrefixedString(padPtr) : ' ';
+    return writeLengthPrefixedString(str.padStart(Number(len), pad || ' '));
+}
+
+function stringPadEnd(ptr, len, padPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const pad = padPtr && !isNone(padPtr) ? readLengthPrefixedString(padPtr) : ' ';
+    return writeLengthPrefixedString(str.padEnd(Number(len), pad || ' '));
+}
+
 function stringChars(ptr) {
     const str = readLengthPrefixedString(ptr);
     const chars = [...str].map(ch => writeLengthPrefixedString(ch));
@@ -2308,6 +2337,10 @@ export function createImports() {
             decode_uri_component: decodeUriComponent,
             replace: stringReplace,
             chars: stringChars,
+            index_of: stringIndexOf,
+            last_index_of: stringLastIndexOf,
+            pad_start: stringPadStart,
+            pad_end: stringPadEnd,
         }, 'string'),
         dom: {
             create_element: domCreateElement,

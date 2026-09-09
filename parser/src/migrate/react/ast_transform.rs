@@ -251,6 +251,10 @@ fn js_static_call(obj: &str, method: &str) -> Option<&'static str> {
         ("math", "max") => "math_max",
         ("math", "sqrt") => "math_sqrt",
         ("math", "pow") => "math_pow",
+        // `Math.trunc` was left out of this table, so `nonNegativeInt` — and
+        // everything downstream of it — came out as `math·trunc(n)`, a
+        // lowercase path root that resolves to nothing.
+        ("math", "trunc") => "math_trunc",
         // `Object.values(x)` was becoming `object·values(x)`, which resolves to
         // a `values` free function that does not exist. Same for the other two.
         ("object", "values") => "object_values",
@@ -522,6 +526,15 @@ impl<'a> ExprTransformer<'a> {
         }
         if name == "null" || name == "undefined" {
             return "None".to_string();
+        }
+
+        // `NaN` is "not a number", and this backend has no float domain to put
+        // one in. Nothing is the closest true thing: `is_finite(None)` is
+        // false, which is the test every use of it is guarded by. Left alone it
+        // snake-cased to `na_n` — an undeclared identifier that failed the
+        // known-names gate and took `initialBacklogN` and its callers with it.
+        if name == "NaN" {
+            return "\u{2205}".to_string();
         }
 
         // `xs.filter(Boolean)` — the constructor used as a truthiness
@@ -970,7 +983,10 @@ impl<'a> ExprTransformer<'a> {
                         // RegExp-only method names, and Sigil has no regex — the
                         // literal is already marked, so the call on it named an
                         // undefined function on an undefined receiver.
-                        if matches!(method.as_str(), "test" | "exec") {
+                        // `matchAll` belongs here too: it is a regex method
+                        // whichever side it is spelled from, and it reached the
+                        // backend as an undefined `match_all`.
+                        if matches!(method.as_str(), "test" | "exec" | "matchAll" | "match") {
                             self.warn(&format!("regex .{}() — Sigil has no regex", method));
                             return format!(
                                 "/* {}·{}({}) — Sigil has no regex */ \u{2205}",

@@ -2417,6 +2417,52 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            // `s·index_of(x)` / `last_index_of(x)` — -1 when absent, as
+            // JavaScript's are. `splitPath` finds the last `/` with one.
+            "index_of" | "last_index_of" if args.len() == 1 => {
+                let import = if method == "index_of" {
+                    "string_index_of"
+                } else {
+                    "string_last_index_of"
+                };
+                let Some(func_idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Call(func_idx));
+                Ok(true)
+            }
+
+            // `s·pad_start(n, pad)` / `pad_end`. The imports exist; without an
+            // arm the method reached the backend as an undefined free function.
+            // A one-argument call pads with a space, as JavaScript's does.
+            "pad_start" | "pad_end" if !args.is_empty() && args.len() <= 2 => {
+                let import = if method == "pad_start" {
+                    "string_pad_start"
+                } else {
+                    "string_pad_end"
+                };
+                let Some(func_idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                match args.get(1) {
+                    Some(pad) => self.compile_expr(pad)?,
+                    None => {
+                        let offset = self.add_string(" ");
+                        let func = self.current_function_mut().unwrap();
+                        func.push(Instruction::I32Const(offset as i32));
+                        func.push(Instruction::I64ExtendI32U);
+                    }
+                }
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Call(func_idx));
+                Ok(true)
+            }
+
             // `s·slice(a, b)` — JavaScript's `String.prototype.slice`, which
             // the migrator emits verbatim. `string_slice` has been imported all
             // along and `char_at` below already calls it; the two-argument form
@@ -2433,6 +2479,33 @@ impl WasmCompiler {
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                 func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
+            // `s·slice(a)` — the same, to the end of the string. JavaScript's
+            // one-argument form, which `splitPath` uses for the basename:
+            // `path.slice(i + 1)`. Only the two-argument arm existed, so this
+            // reached the backend as an undefined free function `slice`.
+            "slice" if args.len() == 1 => {
+                let (slice_idx, len_idx) = match (
+                    self.imports.get_func("string_slice"),
+                    self.imports.get_func("string_length"),
+                ) {
+                    (Some(a), Some(b)) => (a, b),
+                    _ => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let recv = func.alloc_local("__slice_recv".to_string(), ValType::I64);
+                func.push(Instruction::LocalTee(recv));
+                drop(func);
+                self.compile_expr(&args[0])?;
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::LocalGet(recv));
+                func.push(Instruction::Call(len_idx));
+                func.push(Instruction::Call(slice_idx));
                 Ok(true)
             }
 
