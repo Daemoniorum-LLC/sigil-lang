@@ -45,6 +45,11 @@ function setWasmExports(exports) {
     heapGlobal = exports.__heap_ptr instanceof WebAssembly.Global
         ? exports.__heap_ptr
         : null;
+    // Where the module's string literals live: from the start of its data to
+    // wherever its heap pointer begins. Those are strings this host did not
+    // write, so they are not in `stringHandles`, and `x·to_string()` on one
+    // printed the decimal of its address.
+    literalEnd = heapGlobal ? Number(heapGlobal.value) : 0;
     // An actor compiles to a `<Actor>_dispatch(msg_id, payload)` export. Their
     // presence is what tells this runtime that an `on*` prop carries a message
     // id rather than an indirect-function-table index — a module with no actors
@@ -150,10 +155,29 @@ function heapReserve(size) {
     }
 }
 
+// Every address this host has written a string to.
+//
+// `x·to_string()` cannot be decided from the value: a Sigil value is a bare
+// i64, so 83072 is either the number eighty-three thousand or a pointer to a
+// string, and the compiler only knows which when it can see a literal. It used
+// to assume "number" and print the decimal of the address, so every string that
+// came back from a helper rendered into the DOM as a meaningless integer.
+//
+// The host does not have to guess: it knows which addresses it wrote. Nothing
+// is freed from this bump allocator, so a recorded handle stays a string.
+const stringHandles = new Set();
+
+// The module's own data section: `[LITERAL_START, literalEnd)`. Set when the
+// module is bound, because that is when its heap pointer still marks the end
+// of its literals.
+const LITERAL_START = 1024;
+let literalEnd = 0;
+
 function writeLengthPrefixedString(str) {
     const bytes = new TextEncoder().encode(str);
     heapReserve(4 + bytes.length + 8);
     const ptr = getHeapPtr();
+    stringHandles.add(ptr);
     const view = new DataView(wasmMemory.buffer);
     // Write 4-byte length
     view.setUint32(ptr, bytes.length, true); // little-endian
@@ -620,6 +644,27 @@ function stringEq(ptr1, ptr2) {
     const str1 = readLengthPrefixedString(ptr1);
     const str2 = readLengthPrefixedString(ptr2);
     return str1 === str2 ? 1 : 0;
+}
+
+// `x·to_string()` where the compiler could not prove which it is.
+//
+// A handle this host wrote is that string; anything else is a number. Exact,
+// not a heuristic: the alternative — treating any value that happens to point
+// at plausible bytes as a string — would misprint genuine integers.
+function stringFromValue(value) {
+    const n = Number(value);
+    if (stringHandles.has(n)) return n;
+    // A literal in the module's data section, if it reads as one. Bounded to
+    // that region: outside it, a plausible-looking length is a coincidence and
+    // a genuine integer must print as itself.
+    if (n >= LITERAL_START && n < literalEnd) {
+        try {
+            const view = new DataView(getMemory().buffer);
+            const len = view.getUint32(n, true);
+            if (len > 0 && n + 4 + len <= literalEnd) return n;
+        } catch { /* not a string */ }
+    }
+    return writeLengthPrefixedString(String(n));
 }
 
 function stringFromInt(value) {
@@ -1185,6 +1230,12 @@ function fetchGetStatus(id) {
 }
 
 function fetchGetBody(id) {
+    // A handle from `fetch.request` — the promise-shaped API — keeps its body
+    // here rather than in the polling registry below.
+    const p = promises.get(Number(id));
+    if (p && typeof p.text === 'string') {
+        return writeLengthPrefixedString(p.text);
+    }
     const req = fetchRequests.get(Number(id));
     if (req?.body) {
         return writeLengthPrefixedString(req.body);
@@ -2123,6 +2174,7 @@ export function createImports() {
             slice: stringSlice,
             eq: stringEq,
             from_int: stringFromInt,
+            from_value: stringFromValue,
             from_float: stringFromFloat,
             from_utf8: stringFromUtf8,
             parse_int: stringParseInt,
@@ -2180,6 +2232,7 @@ export function createImports() {
         fetch: {
             request: fetchRequest,
             status: fetchStatus,
+            ok: fetchOk,
             start: fetchStart,
             poll: fetchPoll,
             get_status: fetchGetStatus,
@@ -2428,33 +2481,45 @@ function fetchRequest(urlPtr, methodPtr, bodyPtr) {
         init.body = body;
         init.headers = { 'content-type': 'application/json' };
     }
+    // The promise resolves to the id ITSELF, which doubles as the response
+    // handle. `await fetch(…)` in JavaScript gives a Response, not a body, and
+    // migrated code goes on to ask it for `.json()` and `.status`; resolving to
+    // the body would leave those with nothing to read.
     entry.promise = (typeof fetch === 'function'
         ? fetch(url, init).then((res) => res.text().then((text) => ({ ok: res.ok, status: res.status, text })))
         : Promise.reject(new Error('no fetch in this host'))
     ).then(
         (r) => {
             entry.state = PROMISE_RESOLVED;
-            // The body as a Sigil string handle. Status travels with it, so a
-            // caller can still see a failure — see `fetch_status`.
             entry.status = r.status;
-            entry.value = BigInt(writeLengthPrefixedString(r.text));
+            entry.ok = r.ok;
+            entry.text = r.text;
+            entry.value = BigInt(id);
             return entry.value;
         },
         (e) => {
             entry.state = PROMISE_REJECTED;
             entry.status = 0;
+            entry.ok = false;
+            entry.text = '';
             entry.error = String(e && e.message ? e.message : e);
-            entry.value = BigInt(writeLengthPrefixedString(''));
+            entry.value = BigInt(id);
             return entry.value;
         },
     );
     return id;
 }
 
-// The status of the request a promise id came from, or 0 if it is not one.
+// The status of the request a response handle came from, or 0 if it is not one.
 function fetchStatus(id) {
     const p = promises.get(Number(id));
     return p && typeof p.status === 'number' ? p.status : 0;
+}
+
+// Whether it succeeded, the way JavaScript's `res.ok` reads.
+function fetchOk(id) {
+    const p = promises.get(Number(id));
+    return p && p.ok ? 1 : 0;
 }
 
 // `async.await_promise`, as a suspending import: the WASM stack parks here

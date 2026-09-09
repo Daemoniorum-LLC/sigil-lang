@@ -755,10 +755,25 @@ impl WasmCompiler {
         self.get_field_offset(field)
     }
 
+    /// The offset for a field whose receiver has no known type.
+    ///
+    /// An untyped receiver in this codebase is an anonymous object — a props
+    /// bag — so its slot table is asked first. `id` is also a field of
+    /// `VElement`, and answering with `VElement`'s offset made `props.id` read
+    /// the element's `key`.
+    ///
+    /// The named-struct fallback after it iterates in sorted order. It used to
+    /// walk a `HashMap`, so which struct answered for a field several of them
+    /// declare depended on hash order and could change between builds.
     pub fn get_field_offset(&self, field: &str) -> WasmResult<u32> {
-        // Check all struct layouts for this field
-        for layout in self.struct_layouts.values() {
-            if let Some(offset) = layout.field_offset(field) {
+        if let Some(offset) = self.anon_field_offset(field) {
+            return Ok(offset);
+        }
+
+        let mut names: Vec<&String> = self.struct_layouts.keys().collect();
+        names.sort();
+        for name in names {
+            if let Some(offset) = self.struct_layouts[name].field_offset(field) {
                 return Ok(offset);
             }
         }
@@ -1288,6 +1303,44 @@ mod tests {
             compiler.unresolved()
         );
         assert!(compiler.finish_unresolved_for_test().is_err());
+    }
+
+    #[test]
+    fn anonymous_literals_of_different_shapes_do_not_share_offsets() {
+        // Two `{ ... }` literals with different field names. The parser calls
+        // both `__anonymous__`, and they used to share one StructLayout: the
+        // second literal's own field names were not in it, so every one of them
+        // fell to offset 0 and overwrote the others. A props bag read back as
+        // whichever field happened to be assigned last.
+        let mut compiler = WasmCompiler::new();
+        let wasm = compiler.compile(
+            "\u{2609} rite a() -> Any! { { label: \"x\", up: true } }\n\
+             \u{2609} rite b() -> Any! { { kind: \"e\", text: \"t\" } }\n",
+        );
+        assert!(wasm.is_ok(), "{:?}", wasm.err());
+
+        let mut seen = std::collections::HashSet::new();
+        for name in ["label", "up", "kind", "text"] {
+            let offset = compiler
+                .anon_field_offset(name)
+                .unwrap_or_else(|| panic!("{name} got no slot"));
+            assert!(seen.insert(offset), "{name} shares an offset with another field");
+        }
+    }
+
+    #[test]
+    fn anonymous_literal_type_name_matches_the_parser() {
+        // The compiler special-cases the name the parser invents for `{ a: 1 }`.
+        // If the parser renames it, anonymous literals silently go back to
+        // sharing one layout, so pin the two together.
+        let mut parser = crate::parser::Parser::new("\u{2609} rite a() -> Any! { { q: 1 } }\n");
+        let file = parser.parse_file().expect("parses");
+        let src = format!("{file:?}");
+        assert!(
+            src.contains(super::super::ANON_STRUCT),
+            "parser no longer names anonymous literals {}",
+            super::super::ANON_STRUCT
+        );
     }
 
     // Helper to create a compiler with full imports (for async tests)

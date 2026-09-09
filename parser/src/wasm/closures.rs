@@ -6,7 +6,7 @@ use wasm_encoder::{BlockType, Instruction, ValType};
 
 use super::error::{WasmError, WasmResult};
 use super::types::{ClosureInfo, CompiledFunction};
-use super::WasmCompiler;
+use super::{WasmCompiler, ANON_STRUCT};
 use crate::ast::{ClosureParam, Expr, Pattern};
 
 /// Get name from a closure parameter pattern.
@@ -3884,7 +3884,78 @@ impl WasmCompiler {
 
     /// Compile to_string() method call.
     /// Uses runtime type detection: strings pass through, numbers convert.
+    /// Is this expression's value a boolean, statically?
+    ///
+    /// A bool and the integer 1 are the same i64, so the host cannot tell them
+    /// apart — but the compiler can see that a comparison produced this one.
+    /// Without it `(a == b)·to_string()` rendered "1", and an `aria-expanded`
+    /// in the DOM read `1` where every assistive technology wants `true`.
+    fn is_bool_expr(&self, expr: &Expr) -> bool {
+        use crate::ast::BinOp;
+        match expr {
+            Expr::Binary { op, .. } => matches!(
+                op,
+                BinOp::Eq
+                    | BinOp::Ne
+                    | BinOp::Lt
+                    | BinOp::Le
+                    | BinOp::Gt
+                    | BinOp::Ge
+                    | BinOp::And
+                    | BinOp::Or
+            ),
+            Expr::Unary { op, expr } => {
+                matches!(op, crate::ast::UnaryOp::Not) || self.is_bool_expr(expr)
+            }
+            Expr::MethodCall { method, .. } => {
+                matches!(method.name.as_str(), "to_bool" | "is_empty" | "is_none" | "is_some")
+            }
+            Expr::Literal(crate::ast::Literal::Bool(_)) => true,
+            _ => false,
+        }
+    }
+
     fn compile_to_string(&mut self, receiver: &Expr) -> WasmResult<()> {
+        // A boolean prints as `true`/`false`, which is what the interpreter
+        // says and what the DOM wants in an ARIA attribute.
+        if self.is_bool_expr(receiver) {
+            let t = self.add_string("true");
+            let f = self.add_string("false");
+            self.compile_expr(receiver)?;
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Eqz);
+            func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I64)));
+            func.push(Instruction::I32Const(f as i32));
+            func.push(Instruction::I64ExtendI32U);
+            func.push(Instruction::Else);
+            func.push(Instruction::I32Const(t as i32));
+            func.push(Instruction::I64ExtendI32U);
+            func.push(Instruction::End);
+            return Ok(());
+        }
+
+        // `\u{2205}·to_string()` and `None·to_string()` are the empty string.
+        //
+        // Generated code emits this wherever React had `{null}` or a fallback
+        // to nothing — a hundred times in the client. `None` is not the integer
+        // zero: an Option is an ALLOCATED enum, so the value is a heap pointer
+        // the host cannot classify, and it rendered as the decimal of its own
+        // address in the middle of a card. React renders `{null}` as nothing.
+        if matches!(receiver, Expr::Literal(crate::ast::Literal::Null))
+            || matches!(receiver, Expr::Path(p)
+                if p.segments.len() == 1 && p.segments[0].ident.name == "None")
+        {
+            let offset = self.add_string("");
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32Const(offset as i32));
+            func.push(Instruction::I64ExtendI32U);
+            return Ok(());
+        }
+
         // A string is already a string. The comment this replaces said "strings
         // are already string handles, so they'd need special handling, but the
         // common case is numbers" — and the common case in a view is not: every
@@ -3896,18 +3967,22 @@ impl WasmCompiler {
         // Compile the receiver expression
         self.compile_expr(receiver)?;
 
-        // Uniform i64 representation: anything not known to be a string is
-        // converted as an integer.
-        if let Some(func_idx) = self.imports.get_func("string_from_int") {
+        // Anything the compiler could not prove is a string goes to the host,
+        // which knows which addresses it wrote strings to. This used to call
+        // `string_from_int` unconditionally, so every string that came back
+        // from a helper — `fmt_time(…)`, a `-> Any!` return, anything
+        // `is_string_expr` cannot see into — rendered into the DOM as the
+        // decimal of its own address.
+        if let Some(func_idx) = self.imports.get_func("string_from_value") {
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             func.push(Instruction::Call(func_idx));
-            // string_from_int returns i32 (string handle), extend to i64
+            // Returns i32 (a string handle); extend to i64.
             func.push(Instruction::I64ExtendI32U);
             Ok(())
         } else {
-            Err(WasmError::internal("string_from_int import not found"))
+            Err(WasmError::internal("string_from_value import not found"))
         }
     }
 
@@ -4975,6 +5050,10 @@ impl WasmCompiler {
             .map(|s| s.ident.name.as_str())
             .unwrap_or("");
 
+        if struct_name == ANON_STRUCT {
+            return self.compile_anonymous_literal(fields);
+        }
+
         // Get or create struct layout
         let layout = if let Some(l) = self.struct_layouts.get(struct_name) {
             l.clone()
@@ -5041,6 +5120,80 @@ impl WasmCompiler {
         let func = self.current_function_mut().unwrap();
         func.push(Instruction::LocalGet(struct_idx));
 
+        Ok(())
+    }
+
+    /// The program-wide slot for an anonymous object's field, assigning one on
+    /// first sight. See `WasmCompiler::anon_field_slots`.
+    pub(crate) fn anon_field_slot(&mut self, name: &str) -> u32 {
+        if let Some(i) = self.anon_field_slots.iter().position(|n| n == name) {
+            return (i as u32) * 8;
+        }
+        self.anon_field_slots.push(name.to_string());
+        ((self.anon_field_slots.len() - 1) as u32) * 8
+    }
+
+    /// The slot an anonymous object's field already has, if any. Read-only, so
+    /// a field read cannot invent a slot no literal ever wrote.
+    pub(crate) fn anon_field_offset(&self, name: &str) -> Option<u32> {
+        self.anon_field_slots
+            .iter()
+            .position(|n| n == name)
+            .map(|i| (i as u32) * 8)
+    }
+
+    /// Compile `{ a: 1, b: 2 }`.
+    ///
+    /// Each field goes to its program-wide slot, and the object is allocated up
+    /// to its own highest slot — not to the size of the whole slot table, which
+    /// would make every small literal pay for every field name in the program.
+    fn compile_anonymous_literal(&mut self, fields: &[crate::ast::FieldInit]) -> WasmResult<()> {
+        let offsets: Vec<u32> = fields
+            .iter()
+            .map(|f| self.anon_field_slot(&f.name.name))
+            .collect();
+        let size = offsets.iter().copied().max().map(|m| m + 8).unwrap_or(8);
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I64Const(size as i64));
+
+        let alloc_idx = self
+            .get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::Call(alloc_idx));
+        let obj = func.alloc_local("__anon".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(obj));
+
+        for (field, offset) in fields.iter().zip(offsets) {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(obj));
+            func.push(Instruction::I32WrapI64);
+
+            if let Some(value) = &field.value {
+                self.compile_expr(value)?;
+            } else {
+                self.compile_expr(&Expr::Path(crate::ast::TypePath {
+                    segments: vec![crate::ast::PathSegment {
+                        ident: field.name.clone(),
+                        generics: None,
+                    }],
+                }))?;
+            }
+
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: offset as u64,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::LocalGet(obj));
         Ok(())
     }
 }

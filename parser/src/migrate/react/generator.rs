@@ -1524,8 +1524,17 @@ impl<'a> QliphothGenerator<'a> {
                 format!("{}·text_child(\"{}\")", pad, escape_string(value))
             }
             JsxNodeType::Expression { code } => {
-                // Expression interpolation - convert to text_child with to_string
                 let expr = self.transform_expression_scoped(code, scope);
+                // A call to a SIBLING COMPONENT in a child position is a node,
+                // not text. `{worktreeChips(status, branch)}` became
+                // `·text_child(worktree_chips(…)·to_string())`, so a VNode
+                // handle rendered into the document as the decimal of its own
+                // address — a bare five-digit number in the middle of a card.
+                // `component_props` is every component this migration knows.
+                if self.renders_a_node(&expr) {
+                    return format!("{}·child({})", pad, expr);
+                }
+                // Everything else is interpolated text.
                 format!("{}·text_child({}·to_string())", pad, expr)
             }
             JsxNodeType::Conditional { condition, consequent, alternate } => {
@@ -2074,7 +2083,33 @@ impl<'a> QliphothGenerator<'a> {
     }
 
     /// Generate attribute with scope awareness
+    /// Does this transformed expression evaluate to a VNode?
+    ///
+    /// True when it is a call to a component this migration generated — those
+    /// are emitted as `rite <name>(…) -> VNode!`. Nothing else is assumed: a
+    /// helper that formats a string is still text, and guessing wrong either
+    /// way puts the wrong thing in the document.
+    fn renders_a_node(&self, expr: &str) -> bool {
+        let head = expr.trim();
+        let Some(open) = head.find('(') else { return false };
+        let name = &head[..open];
+        if !name.chars().all(|c| c.is_alphanumeric() || c == '_') || name.is_empty() {
+            return false;
+        }
+        // The map is keyed by the React name; the emitted call is snake_case.
+        self.component_props
+            .keys()
+            .any(|k| to_snake_case(k) == name)
+    }
+
     fn generate_attribute_scoped(&self, attr: &JsxAttribute, scope: &VNodeScope) -> String {
+        // `ref` and `key` are React's, not the DOM's. React never renders them;
+        // emitted as attributes they showed up in the document as `ref="0"`,
+        // because the value is a ref object the migration has no equivalent for.
+        if matches!(attr.name.as_str(), "ref" | "key" | "dangerouslySetInnerHTML") {
+            return String::new();
+        }
+
         // Handle special attributes
         match attr.name.as_str() {
             "className" | "class" => {
@@ -2095,10 +2130,12 @@ impl<'a> QliphothGenerator<'a> {
                         let unbalanced_quotes = transformed.matches('"').count() % 2 == 1;
                         if transformed.starts_with('"') && unbalanced_quotes {
                             format!("·class({}\")", transformed)
-                        } else if !transformed.starts_with('"') && !transformed.contains('"') {
-                            // Simple identifier, wrap in quotes
-                            format!("·class(\"{}\")", transformed)
                         } else {
+                            // Never quoted. `className={x}` in React is the VALUE
+                            // of `x`, never the text "x" — and an arm here wrapped
+                            // anything without a quote in one, so
+                            // `className={chip.cls}` rendered as the literal class
+                            // name `chip.cls`, in the DOM, visible.
                             format!("·class({})", transformed)
                         }
                     }
@@ -2214,7 +2251,7 @@ impl<'a> QliphothGenerator<'a> {
             "disabled" | "checked" | "selected" | "readonly" => {
                 // Boolean attributes
                 match &attr.value {
-                    JsxAttributeValue::True => format!("·attr(\"{}\", \"true\")", attr.name),
+                    JsxAttributeValue::True => format!("·attr(\"{}\", \"true\")", dom_attribute_name(&attr.name)),
                     JsxAttributeValue::Expression { code } => {
                         // `·when(cond, |n| n·attr(…))` — a closure — is not a form
                         // Qliphoth's builder has: "No DSL, no function types, no
@@ -2223,7 +2260,7 @@ impl<'a> QliphothGenerator<'a> {
                         // against a signature that does not exist. `attr_when` is
                         // the same idea without the closure.
                         let transformed = self.transform_expression_scoped(code, scope);
-                        format!("·attr_when({}, \"{}\", \"true\")", transformed, attr.name)
+                        format!("·attr_when({}, \"{}\", \"true\")", transformed, dom_attribute_name(&attr.name))
                     }
                     _ => String::new(),
                 }
@@ -2232,10 +2269,10 @@ impl<'a> QliphothGenerator<'a> {
                 // Common attributes
                 match &attr.value {
                     JsxAttributeValue::String { value } => {
-                        format!("·attr(\"{}\", \"{}\")", attr.name, escape_string(value))
+                        format!("·attr(\"{}\", \"{}\")", dom_attribute_name(&attr.name), escape_string(value))
                     }
                     JsxAttributeValue::Expression { code } => {
-                        format!("·attr(\"{}\", {})", attr.name, self.attr_value_as_string(code, scope))
+                        format!("·attr(\"{}\", {})", dom_attribute_name(&attr.name), self.attr_value_as_string(code, scope))
                     }
                     _ => String::new(),
                 }
@@ -2244,17 +2281,17 @@ impl<'a> QliphothGenerator<'a> {
                 // Generic attribute
                 match &attr.value {
                     JsxAttributeValue::String { value } => {
-                        format!("·attr(\"{}\", \"{}\")", attr.name, escape_string(value))
+                        format!("·attr(\"{}\", \"{}\")", dom_attribute_name(&attr.name), escape_string(value))
                     }
                     JsxAttributeValue::Expression { code } => {
-                        format!("·attr(\"{}\", {})", attr.name, self.attr_value_as_string(code, scope))
+                        format!("·attr(\"{}\", {})", dom_attribute_name(&attr.name), self.attr_value_as_string(code, scope))
                     }
                     JsxAttributeValue::Spread { name } => {
                         // Spread attributes can't be directly represented, skip
                         String::new()
                     }
                     JsxAttributeValue::True => {
-                        format!("·attr(\"{}\", \"true\")", attr.name)
+                        format!("·attr(\"{}\", \"true\")", dom_attribute_name(&attr.name))
                     }
                 }
             }
@@ -2647,6 +2684,54 @@ const HOST_FUNCTIONS: &[&str] = &[
     // a division failed the known-names check and went back to untranslated.
     "js_divide",
 ];
+
+/// React's attribute spelling, as the DOM's.
+///
+/// JSX writes `strokeWidth`, `htmlFor` and `tabIndex`; the DOM has
+/// `stroke-width`, `for` and `tabindex`. Emitted verbatim, a browser does not
+/// recognise them and silently ignores them — the notification bell drew at the
+/// default hairline weight instead of 1.8, which no test can see and a
+/// screenshot can.
+///
+/// SVG presentation attributes are the bulk of it: every hyphenated SVG
+/// attribute is camelCase in JSX. The general rule below covers them, and the
+/// exceptions above it are the ones the rule would get wrong — `viewBox` and
+/// friends really are camelCase in the DOM too.
+fn dom_attribute_name(name: &str) -> String {
+    match name {
+        // React-only spellings with a different DOM name.
+        "htmlFor" => return "for".to_string(),
+        "className" => return "class".to_string(),
+        // Genuinely camelCase in SVG: the rule below must not touch these.
+        "viewBox" | "preserveAspectRatio" | "baseProfile" | "gradientUnits"
+        | "gradientTransform" | "patternUnits" | "patternContentUnits"
+        | "clipPathUnits" | "maskUnits" | "maskContentUnits" | "markerUnits"
+        | "markerWidth" | "markerHeight" | "refX" | "refY" | "spreadMethod"
+        | "startOffset" | "textLength" | "lengthAdjust" | "primitiveUnits"
+        | "filterUnits" | "surfaceScale" | "specularConstant"
+        | "specularExponent" | "diffuseConstant" | "kernelMatrix"
+        | "stdDeviation" | "attributeName" | "repeatCount" | "keyPoints"
+        | "keyTimes" | "keySplines" | "calcMode" | "pathLength" => {
+            return name.to_string();
+        }
+        _ => {}
+    }
+    // `data-*` and `aria-*` are already hyphenated, and anything with no
+    // capital is already the DOM's spelling.
+    if name.contains('-') || !name.chars().any(|c| c.is_ascii_uppercase()) {
+        return name.to_string();
+    }
+    let mut out = String::with_capacity(name.len() + 2);
+    for c in name.chars() {
+        if c.is_ascii_uppercase() {
+            out.push('-');
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
 
 /// Strip characters a Sigil comment cannot carry.
 ///

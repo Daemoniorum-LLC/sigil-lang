@@ -62,6 +62,13 @@ use wasm_encoder::ValType;
 use crate::optimize::OptLevel;
 use crate::parser::Parser;
 
+/// The type name the parser gives every anonymous object literal.
+///
+/// Kept next to the compiler that special-cases it, and pinned by a test, so a
+/// rename in the parser cannot quietly turn every `{ a: 1 }` back into a
+/// same-named struct sharing one layout.
+pub(crate) const ANON_STRUCT: &str = "__anonymous__";
+
 /// WASM Compiler for Sigil.
 ///
 /// Compiles Sigil source code to WASM bytecode.
@@ -162,6 +169,20 @@ pub struct WasmCompiler {
 
     /// Struct layouts
     pub(crate) struct_layouts: HashMap<String, StructLayout>,
+    /// Field slots for anonymous object literals (`{ a: 1, b: 2 }`).
+    ///
+    /// The parser names every anonymous literal `__anonymous__`, so they all
+    /// used to share ONE `StructLayout` — the first shape compiled. Every field
+    /// name that shape did not have fell to `unwrap_or(0)`, so a second literal
+    /// wrote all of its fields over each other at offset 0 and read them back
+    /// as whatever landed there last. Anonymous objects are how untyped props
+    /// bags are passed, so this silently flattened them.
+    ///
+    /// Instead: one program-wide slot per distinct field name, assigned in
+    /// first-seen order. Offsets are then stable no matter which literal is
+    /// compiled first, and each literal allocates only up to its own highest
+    /// slot.
+    pub(crate) anon_field_slots: Vec<String>,
 
     /// Enum layouts
     pub(crate) enum_layouts: HashMap<String, EnumLayout>,
@@ -295,6 +316,7 @@ impl WasmCompiler {
             closure_map: HashMap::new(),
             closure_counter: 0,
             struct_layouts: HashMap::new(),
+            anon_field_slots: Vec::new(),
             enum_layouts: HashMap::new(),
             current_fn_idx: None,
             loop_stack: Vec::new(),

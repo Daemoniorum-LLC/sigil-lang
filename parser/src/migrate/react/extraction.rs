@@ -1834,13 +1834,22 @@ impl<'a> Extractor<'a> {
                     // `let text: string` with the value assigned in branches
                     // below is an ordinary React shape, and skipping it left
                     // `text` bound nowhere — the view read a name the file does
-                    // not declare. The branch assignments are still lost to the
-                    // control-flow flattening in S30; the binding is not.
+                    // not declare.
+                    //
+                    // The branch assignments used to be lost too, so the binding
+                    // stayed ∅ and the view rendered an empty string where
+                    // React renders "Refreshing…". Where every branch of the
+                    // if/else chain that follows does nothing but assign this
+                    // one name, the chain IS the initialiser: fold it into a
+                    // conditional expression, which the transform already
+                    // handles. Anything less uniform stays opaque.
                     if let Pat::Ident(id) = &decl.name {
+                        let name = id.id.sym.to_string();
+                        let folded = self.fold_assign_chain_for(&body.stmts, &name);
                         out.push(LocalBinding {
-                            name: id.id.sym.to_string(),
-                            init: "∅".to_string(),
-                            opaque: true,
+                            name,
+                            init: folded.clone().unwrap_or_else(|| "∅".to_string()),
+                            opaque: folded.is_none(),
                         });
                     }
                     continue;
@@ -1945,6 +1954,61 @@ impl<'a> Extractor<'a> {
             }
         }
         out
+    }
+
+    /// The first `if`/`else` chain in `stmts` that assigns nothing but `name`,
+    /// rendered as a JS conditional expression.
+    ///
+    /// `let text; if (a) text = x; else if (b) text = y; else text = z;` is the
+    /// standard React way to pick a string, and it becomes
+    /// `a ? x : b ? y : z` — source text, so the normal expression transform
+    /// translates it the same as any ternary written by hand.
+    fn fold_assign_chain_for(&self, stmts: &[Stmt], name: &str) -> Option<String> {
+        stmts
+            .iter()
+            .find_map(|stmt| self.fold_assign_chain(stmt, name))
+    }
+
+    fn fold_assign_chain(&self, stmt: &Stmt, name: &str) -> Option<String> {
+        let Stmt::If(if_stmt) = stmt else {
+            return None;
+        };
+        let test = self.span_to_source(self.expr_span(&if_stmt.test));
+        let cons = self.assigned_value(&if_stmt.cons, name)?;
+        let alt = if_stmt.alt.as_ref()?;
+        // `else if` recurses; a plain `else` is the last value.
+        let alt_src = self
+            .fold_assign_chain(alt, name)
+            .or_else(|| self.assigned_value(alt, name))?;
+        Some(format!("({}) ? ({}) : ({})", test, cons, alt_src))
+    }
+
+    /// The right-hand side of `stmt`, when `stmt` is exactly `name = <expr>;`
+    /// (optionally wrapped in a one-statement block). Anything else — a second
+    /// statement, an assignment to some other name, a compound operator —
+    /// returns None, so the fold gives up rather than dropping work.
+    fn assigned_value(&self, stmt: &Stmt, name: &str) -> Option<String> {
+        let stmt = match stmt {
+            Stmt::Block(block) if block.stmts.len() == 1 => &block.stmts[0],
+            other => other,
+        };
+        let Stmt::Expr(expr_stmt) = stmt else {
+            return None;
+        };
+        let Expr::Assign(assign) = expr_stmt.expr.as_ref() else {
+            return None;
+        };
+        if assign.op != AssignOp::Assign {
+            return None;
+        }
+        let target = match &assign.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(id)) => id.id.sym.to_string(),
+            _ => return None,
+        };
+        if target != name {
+            return None;
+        }
+        Some(self.span_to_source(self.expr_span(&assign.right)))
     }
 
     fn extract_hooks_from_body(&self, body: &Option<BlockStmt>) -> Vec<HookUsage> {

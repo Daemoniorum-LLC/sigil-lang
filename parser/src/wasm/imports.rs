@@ -185,7 +185,27 @@ impl ImportRegistry {
         self.add_import("string", "length", vec![I32], vec![I32]); // (str) -> length
         self.add_import("string", "slice", vec![I32, I32, I32], vec![I32]); // (str, start, end) -> new_str
         self.add_import("string", "eq", vec![I32, I32], vec![I32]); // (str1, str2) -> bool
-        self.add_import("string", "from_int", vec![I64], vec![I32]); // (int) -> str
+        self.add_import("string", "from_int", vec![I64], vec![I32]);
+        // `x·to_string()` where the compiler cannot prove which it is. The host
+        // knows which addresses it wrote strings to; `from_int` would print the
+        // decimal of the address.
+        self.add_import_with_alias(
+            "string",
+            "from_value",
+            "string_from_value",
+            vec![I64],
+            vec![I32],
+        );
+        // `x·to_string()` where the compiler cannot prove which it is. The host
+        // knows which addresses it wrote strings to; `from_int` would print the
+        // decimal of the address.
+        self.add_import_with_alias(
+            "string",
+            "from_value",
+            "string_from_value",
+            vec![I64],
+            vec![I32],
+        ); // (int) -> str
         self.add_import("string", "from_float", vec![F64], vec![I32]); // (float) -> str
         // `String·from_utf8(bytes)`. A Sigil `Vec[u8]` is a host array handle,
         // so the host does the decoding; there is no byte buffer in linear
