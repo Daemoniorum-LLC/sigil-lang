@@ -24,6 +24,9 @@ pub struct ProjectManifest {
     pub lib_path: PathBuf,
     pub dependencies: Vec<Dependency>,
     pub root_dir: PathBuf,
+    /// `[features]` — each name mapped to the features it implies. `default`
+    /// names the set enabled unless `--no-default-features` is passed.
+    pub features: HashMap<String, Vec<String>>,
 }
 
 impl ProjectManifest {
@@ -56,9 +59,11 @@ impl ProjectManifest {
         let mut version = String::new();
         let mut lib_path = PathBuf::from("src/lib.sigil");
         let mut dependencies = Vec::new();
+        let mut features: HashMap<String, Vec<String>> = HashMap::new();
 
         let mut in_package = false;
         let mut in_dependencies = false;
+        let mut in_features = false;
         let mut current_dep_name: Option<String> = None;
         let mut current_dep_path: Option<String> = None;
 
@@ -74,16 +79,25 @@ impl ProjectManifest {
             if line == "[package]" || line == "[project]" {
                 in_package = true;
                 in_dependencies = false;
+                in_features = false;
+                continue;
+            }
+            if line == "[features]" {
+                in_package = false;
+                in_dependencies = false;
+                in_features = true;
                 continue;
             }
             if line == "[dependencies]" {
                 in_package = false;
                 in_dependencies = true;
+                in_features = false;
                 continue;
             }
             if line.starts_with('[') {
                 in_package = false;
                 in_dependencies = false;
+                in_features = false;
                 continue;
             }
 
@@ -92,7 +106,16 @@ impl ProjectManifest {
                 let key = key.trim();
                 let value = value.trim().trim_matches('"');
 
-                if in_package {
+                if in_features {
+                    // `name = ["implied", "features"]`
+                    let raw = value.trim().trim_start_matches('[').trim_end_matches(']');
+                    let implied: Vec<String> = raw
+                        .split(',')
+                        .map(|p| p.trim().trim_matches('"').to_string())
+                        .filter(|p| !p.is_empty())
+                        .collect();
+                    features.insert(key.to_string(), implied);
+                } else if in_package {
                     match key {
                         "name" => name = value.to_string(),
                         "version" => version = value.to_string(),
@@ -150,8 +173,43 @@ impl ProjectManifest {
             lib_path,
             dependencies,
             root_dir: root_dir.to_path_buf(),
+            features,
         })
     }
+}
+
+/// Resolve a feature selection against a manifest's `[features]` table.
+///
+/// `default` is included unless `no_default` is set, and every feature pulls in
+/// the features it implies, transitively — `gtk = ["native"]` means asking for
+/// `gtk` gets `native` too.
+pub fn resolve_features(
+    manifest: &ProjectManifest,
+    requested: &[String],
+    no_default: bool,
+    all: bool,
+) -> HashSet<String> {
+    let mut queue: Vec<String> = if all {
+        manifest.features.keys().cloned().collect()
+    } else {
+        let mut q: Vec<String> = requested.to_vec();
+        if !no_default {
+            q.push("default".to_string());
+        }
+        q
+    };
+    let mut enabled: HashSet<String> = HashSet::new();
+    while let Some(name) = queue.pop() {
+        if !enabled.insert(name.clone()) {
+            continue;
+        }
+        if let Some(implied) = manifest.features.get(&name) {
+            queue.extend(implied.iter().cloned());
+        }
+    }
+    // `default` is the name of a set, not a feature anyone tests for.
+    enabled.remove("default");
+    enabled
 }
 
 /// Dependency graph for topological ordering.

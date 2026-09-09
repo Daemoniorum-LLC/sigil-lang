@@ -251,6 +251,7 @@ fn main() -> ExitCode {
             } else {
                 default_wasm_output(&args[2])
             };
+            set_wasm_cfg(std::path::Path::new(&args[2]), &parse_feature_flags(&args));
             wasm_compile_file(&args[2], &output)
         }
         #[cfg(not(feature = "wasm"))]
@@ -2147,6 +2148,81 @@ fn default_wasm_output(input: &str) -> String {
         "{}.wasm",
         input.trim_end_matches(".sigil").trim_end_matches(".sg")
     )
+}
+
+/// Feature selection from the command line.
+///
+/// `--features a,b` (repeatable, comma- or space-separated),
+/// `--no-default-features`, `--all-features`. The names are resolved against
+/// the project's `[features]` table; a single file has no table, so its
+/// requested names are taken at face value.
+#[cfg(feature = "wasm")]
+struct FeatureFlags {
+    requested: Vec<String>,
+    no_default: bool,
+    all: bool,
+}
+
+#[cfg(feature = "wasm")]
+fn parse_feature_flags(args: &[String]) -> FeatureFlags {
+    let mut requested = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--features" || args[i] == "-F" {
+            if let Some(list) = args.get(i + 1) {
+                requested.extend(
+                    list.split([',', ' '])
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string),
+                );
+                i += 1;
+            }
+        } else if let Some(list) = args[i].strip_prefix("--features=") {
+            requested.extend(
+                list.split([',', ' '])
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            );
+        }
+        i += 1;
+    }
+    FeatureFlags {
+        requested,
+        no_default: args.iter().any(|a| a == "--no-default-features"),
+        all: args.iter().any(|a| a == "--all-features"),
+    }
+}
+
+/// Select the target `@[cfg(…)]` is evaluated against for a WebAssembly build.
+///
+/// Without this the target was the machine running the compiler, so
+/// `@[cfg(target_arch = "wasm32")]` was false while compiling to WebAssembly
+/// and a platform module gated on `not(wasm)` was compiled in anyway.
+#[cfg(feature = "wasm")]
+fn set_wasm_cfg(input: &std::path::Path, flags: &FeatureFlags) {
+    use sigil_parser::cfg::CfgContext;
+    use sigil_parser::wasm::deps::{resolve_features, ProjectManifest};
+
+    let project_dir = if input.is_dir() {
+        Some(input.to_path_buf())
+    } else {
+        input.parent().map(|p| p.to_path_buf())
+    };
+    let features: std::collections::BTreeSet<String> = project_dir
+        .as_deref()
+        .and_then(|dir| ProjectManifest::from_dir(dir).ok())
+        .map(|m| {
+            resolve_features(&m, &flags.requested, flags.no_default, flags.all)
+                .into_iter()
+                .collect()
+        })
+        .unwrap_or_else(|| flags.requested.iter().cloned().collect());
+
+    let mut cfg = CfgContext::wasm32();
+    cfg.features = features;
+    sigil_parser::cfg::set_active(cfg);
 }
 
 /// Compile a Sigil source file or project to WebAssembly.
