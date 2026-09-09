@@ -123,6 +123,16 @@ pub fn transform_expression(code: &str, config: &TransformConfig) -> TransformRe
     }
 }
 
+/// Is this transformed expression a date — something `date_format` can take?
+///
+/// The only dates this migration produces are `timing_parse(…)` (which is
+/// `new Date(x)`) and `date_now()`. Anything else spelled `toLocaleString` is
+/// a number or a string, and keeps the plain `to_string`.
+fn is_date_expr(obj: &str) -> bool {
+    let o = obj.trim();
+    o.starts_with("timing_parse(") || o == "date_now()"
+}
+
 /// Parse a JavaScript expression string into an AST.
 fn parse_expression(code: &str) -> Result<Box<Expr>, String> {
     let cm: Lrc<SourceMap> = Lrc::new(SourceMap::new(FilePathMapping::empty()));
@@ -226,7 +236,7 @@ fn js_static_call(obj: &str, method: &str) -> Option<&'static str> {
         ("window", "setInterval") => "timing_set_interval",
         ("window", "clearInterval") => "timing_clear_interval",
         ("window", "requestAnimationFrame") => "timing_request_animation_frame",
-        ("date", "now") => "timing_now",
+        ("date", "now") => "date_now",
         ("date", "parse") => "timing_parse",
         ("json", "stringify") => "json_stringify",
         ("json", "parse") => "json_parse",
@@ -417,7 +427,7 @@ impl<'a> ExprTransformer<'a> {
                 // twice.
                 if callee == "date" {
                     return if args.trim().is_empty() {
-                        "timing_now()".to_string()
+                        "date_now()".to_string()
                     } else {
                         format!("timing_parse({})", args)
                     };
@@ -1104,15 +1114,41 @@ impl<'a> ExprTransformer<'a> {
                         if method == "getTime"
                             || (method == "valueOf"
                                 && (obj.starts_with("timing_parse(")
-                                    || obj == "timing_now()"))
+                                    || obj == "date_now()"))
                         {
                             return obj;
                         }
 
+                        // `new Date(x).toLocaleDateString()` — a formatted
+                        // date, not a number. These used to become `to_string`,
+                        // which is `to_string` on the millisecond count, so
+                        // "on 1757325600000" went into the document where React
+                        // writes a date. The host does the formatting; it is
+                        // the only side with a locale.
+                        if matches!(
+                            method.as_str(),
+                            "toLocaleString" | "toLocaleDateString" | "toLocaleTimeString"
+                        ) && is_date_expr(&obj)
+                        {
+                            let kind = match method.as_str() {
+                                "toLocaleDateString" => "\"date\"",
+                                "toLocaleTimeString" => "\"time\"",
+                                _ => "\"datetime\"",
+                            };
+                            // React passes `(undefined, { weekday: "short" })`
+                            // — the locale first, the options second.
+                            let opts = call
+                                .args
+                                .get(1)
+                                .map(|a| self.transform_expr(&a.expr))
+                                .unwrap_or_else(|| "\u{2205}".to_string());
+                            return format!("date_format({obj}, {kind}, {opts})");
+                        }
+
                         // Transform common JS methods to Sigil equivalents
                         let sigil_method = match method.as_str() {
-                            // `toLocaleString` is a formatted `toString`; Sigil
-                            // has no locale layer, so the plain one is honest.
+                            // On anything that is not a date: Sigil has no
+                            // locale layer, so the plain one is honest.
                             "toLocaleString" | "toLocaleDateString"
                             | "toLocaleTimeString" | "toISOString" => "to_string",
                             "charAt" => "char_at",

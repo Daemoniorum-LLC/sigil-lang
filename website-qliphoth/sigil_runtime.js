@@ -328,6 +328,54 @@ function valueTypeOf(ref) {
     return BigInt(writeLengthPrefixedString(v === null ? 'object' : typeof v));
 }
 
+// `Math.floor` and friends over the uniform value domain.
+//
+// The `math.*` imports next door are F64-typed, and a migrated JavaScript
+// number reaches WASM as an i64, so nothing in a migrated program could call
+// them. These take the value as it is — a raw integer, or a handle to a float
+// the host is holding — and give back an integer when the answer is one, or a
+// handle when it is not, so nothing is quietly truncated on the way home.
+function numberOf(ref) {
+    const v = jsonResolve(ref);
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : NaN;
+}
+
+function mathResult(n) {
+    if (!Number.isFinite(n)) {
+        return 0n;
+    }
+    return Number.isInteger(n) ? BigInt(n) : BigInt(jsonHandle(n));
+}
+
+function valueMathFloor(ref) {
+    return mathResult(Math.floor(numberOf(ref)));
+}
+
+function valueMathCeil(ref) {
+    return mathResult(Math.ceil(numberOf(ref)));
+}
+
+function valueMathRound(ref) {
+    return mathResult(Math.round(numberOf(ref)));
+}
+
+function valueMathTrunc(ref) {
+    return mathResult(Math.trunc(numberOf(ref)));
+}
+
+function valueMathAbs(ref) {
+    return mathResult(Math.abs(numberOf(ref)));
+}
+
+function valueMathMin(a, b) {
+    return mathResult(Math.min(numberOf(a), numberOf(b)));
+}
+
+function valueMathMax(a, b) {
+    return mathResult(Math.max(numberOf(a), numberOf(b)));
+}
+
 function valueIsArray(ref) {
     return BigInt(Array.isArray(jsonResolve(ref)) ? 1 : 0);
 }
@@ -1147,8 +1195,50 @@ function eventsGetValue(eventId, resultPtr) {
 // Timing
 // =============================================================================
 
+// The monotonic clock, as an F64. `timing.now` is declared that way, so this
+// stays what it was; `value.date_now` below is the epoch one.
 function timingNow() {
     return performance.now();
+}
+
+// `Date.now()` — epoch milliseconds, as an i64.
+//
+// Migrated code meant this every time it said `Date.now()`, and it was routed
+// to `timing.now`: milliseconds since the page LOADED, and an F64 besides. So
+// every age, staleness check and relative time in the Lares client was
+// measuring epoch timestamps against a three-digit number.
+function valueDateNow() {
+    return BigInt(Date.now());
+}
+
+// `new Date(x).toLocaleDateString()` and its siblings.
+//
+// These were collapsing to `timing_parse(x)·to_string()` — the millisecond
+// count itself, rendered into the document: "on 1757325600000" where React
+// writes "on 08/09/2025". `kind` picks the method; `opts` is the JSON options
+// object, or 0 for none.
+function valueDateFormat(msRef, kindRef, optsRef) {
+    const ms = Number(jsonResolve(msRef));
+    if (!Number.isFinite(ms)) {
+        return writeLengthPrefixedString('');
+    }
+    const kind = kindRef ? String(jsonResolve(kindRef)) : 'datetime';
+    const opts = optsRef ? jsonResolve(optsRef) : undefined;
+    const d = new Date(ms);
+    const options = opts && typeof opts === 'object' ? opts : undefined;
+    let out;
+    try {
+        if (kind === 'date') {
+            out = d.toLocaleDateString(undefined, options);
+        } else if (kind === 'time') {
+            out = d.toLocaleTimeString(undefined, options);
+        } else {
+            out = d.toLocaleString(undefined, options);
+        }
+    } catch {
+        out = d.toISOString();
+    }
+    return writeLengthPrefixedString(out);
 }
 
 function timingSetTimeout(callbackPtr, ms) {
@@ -2318,6 +2408,15 @@ export function createImports() {
             to_fixed: valueToFixed,
             is_array: valueIsArray,
             type_of: valueTypeOf,
+            math_floor: valueMathFloor,
+            math_ceil: valueMathCeil,
+            math_round: valueMathRound,
+            math_trunc: valueMathTrunc,
+            math_abs: valueMathAbs,
+            math_min: valueMathMin,
+            math_max: valueMathMax,
+            date_now: valueDateNow,
+            date_format: valueDateFormat,
         },
         json: {
             parse: jsonParse,

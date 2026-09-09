@@ -389,6 +389,21 @@ impl<'a> QliphothGenerator<'a> {
             pending.push(h);
         }
 
+        // Every pending helper is emitted — with a translated body if it passes
+        // the gates below, and otherwise as a declared signature over `∅`. Its
+        // NAME therefore resolves either way, which is what the known-names
+        // gate is actually asking about.
+        //
+        // The gate did not know that: the stub loop runs after this one, so a
+        // helper whose body named `fuzzyMatch` was rejected because
+        // `fuzzy_match` had not been emitted yet, and it never would be —
+        // `fuzzy_match` was itself waiting on something else. 165 of the 166
+        // untranslated bodies in the Lares client failed this gate, and the
+        // cascade is most of why.
+        for h in &pending {
+            known.insert(to_snake_case(&h.name));
+        }
+
         let mut emitted: Vec<String> = Vec::new();
         let mut done: std::collections::HashSet<String> = std::collections::HashSet::new();
         loop {
@@ -401,6 +416,7 @@ impl<'a> QliphothGenerator<'a> {
                 let mut inner = scope.clone();
                 let mut params: Vec<String> = Vec::new();
                 let mut local_known = known.clone();
+                let mut defaults: Vec<String> = Vec::new();
                 for p in &h.parameters {
                     let pn = to_snake_case(&p.name);
                     // Every parameter, including the defaulted ones: Sigil has
@@ -408,7 +424,25 @@ impl<'a> QliphothGenerator<'a> {
                     // `TransformConfig::fn_arity`).
                     params.push(format!("{}: Any", pn));
                     inner.locals.push(p.name.clone());
-                    local_known.insert(pn);
+                    local_known.insert(pn.clone());
+                    // Padded with `∅`, a defaulted parameter arrived as nothing
+                    // and the default was lost: `formatRelativeTime(ms, now =
+                    // Date.now())` compared every timestamp against 0, so
+                    // everything was "just now". Sigil has no defaults, so the
+                    // function applies its own on the way in.
+                    if let Some(d) = &p.default_value {
+                        let value = self.transform_expression_free(d, &inner);
+                        // Truthiness, not `== None`: the padded argument is
+                        // `∅`, which is the integer 0, and `None` is a fresh
+                        // heap allocation — so `∅ == None` is false and the
+                        // default never applied. Wider than JavaScript's rule,
+                        // which fires only on `undefined`; for a defaulted
+                        // parameter the difference is 0 and "", and taking the
+                        // default for those beats never taking it at all.
+                        defaults.push(format!(
+                            "    \u{2254} {pn} = \u{2387} {pn}\u{00B7}to_bool() {{ {pn} }} \u{2389} {{ {value} }};"
+                        ));
+                    }
                 }
 
                 // A body that is one `return` is an expression; anything else
@@ -418,11 +452,13 @@ impl<'a> QliphothGenerator<'a> {
                     Some(expr) => self.transform_expression_free(expr, &inner),
                     None => {
                         let Some(src) = stmt_transform::body_of_function(&h.source) else {
+                            helper_skip(&name, "no function body found");
                             continue;
                         };
                         let config = self.statement_config(&inner);
                         let r = stmt_transform::transform_statements(&src, &config, "    ");
                         if r.code.trim().is_empty() {
+                            helper_skip(&name, "statement transform produced nothing");
                             continue;
                         }
                         if r.complete {
@@ -436,12 +472,22 @@ impl<'a> QliphothGenerator<'a> {
                     }
                 };
                 if !free_identifiers_known(&body, &local_known) {
+                    let unknown = first_unknown(&body, &local_known);
+                    helper_skip(&name, &format!("unknown name: {:?}", unknown));
+                    if let Some(u) = &unknown {
+                        helper_skip_line(&name, u, &body);
+                    }
                     continue;
                 }
                 let body = if body.starts_with("    ") {
                     body
                 } else {
                     format!("    {}", body)
+                };
+                let body = if defaults.is_empty() {
+                    body
+                } else {
+                    format!("{}\n{}", defaults.join("\n"), body)
                 };
                 // The function as it will be emitted has to type-check, not just
                 // parse. A body whose tail is uncertain — `w?.tickets` — under a
@@ -450,6 +496,7 @@ impl<'a> QliphothGenerator<'a> {
                 // only the statement one had it.
                 let signature = format!("rite __probe({}) -> Any!", params.join(", "));
                 if !parses_as_statements(&signature, &body) {
+                    helper_skip(&name, "the emitted body does not parse or check");
                     continue;
                 }
                 emitted.push(format!(
@@ -2677,12 +2724,24 @@ const HOST_FUNCTIONS: &[&str] = &[
     "to_bool", "to_fixed", "to_string", "is_array", "is_finite", "is_nan", "is_integer",
     "object_values", "object_keys", "object_entries", "json_parse", "json_stringify",
     "json_pretty", "json_get", "json_set", "timing_now", "timing_parse", "math_random",
+    "date_now", "date_format",
     "None", "true", "false", "Some", "Ok", "Err", "This", "Self", "VNode", "VElement",
     "HashMap", "HashSet", "Vec", "String",
     // Emitted into the shared module by `JS_DIVIDE_HELPER`, so a helper body
     // may name it without declaring anything. Left out, every body containing
     // a division failed the known-names check and went back to untranslated.
     "js_divide",
+    // Import aliases the WASM backend already resolves. Left out, a body that
+    // named any of them failed the known-names gate and went back to
+    // untranslated — `type_of` and `fetch_request` between them blocked 17
+    // helpers in the Lares client, each of which blocked more.
+    "type_of", "fetch_request", "fetch_status", "fetch_ok", "fetch_get_body",
+    "encode_uri_component", "decode_uri_component", "string_from_value",
+    "window", "document", "confirm", "alert", "prompt", "console_log", "print",
+    // `Math.*` over the uniform value domain. The F64-typed `math.*` imports
+    // cannot be called from a migrated program, where every number is an i64.
+    "math_floor", "math_ceil", "math_round", "math_trunc", "math_abs",
+    "math_min", "math_max",
 ];
 
 /// React's attribute spelling, as the DOM's.
@@ -2809,6 +2868,122 @@ fn names_bound_in(body: &str) -> Vec<String> {
     out
 }
 
+/// Sigil markers that a word-scanner reads as identifiers but which bind and
+/// resolve nothing: the match wildcard and the mutable-binding marker.
+fn is_not_a_name(word: &str) -> bool {
+    matches!(word, "_" | "\u{0394}")
+}
+
+/// Report why a helper's body was not translated, under `SIGIL_MIGRATE_SKIPS`.
+///
+/// 157 helpers in the Lares client came out as `∅` under a "needs a statement
+/// transform" comment when the statement transform had been written months
+/// earlier. Which gate each one actually failed is not guessable from the
+/// output — the emitted stub is identical whichever it was.
+fn helper_skip(name: &str, why: &str) {
+    if std::env::var_os("SIGIL_MIGRATE_SKIPS").is_some() {
+        eprintln!("[skip] {name}: {why}");
+    }
+}
+
+/// The line the rejected name appears on, under `SIGIL_MIGRATE_SKIPS=2`.
+fn helper_skip_line(name: &str, unknown: &str, body: &str) {
+    if std::env::var("SIGIL_MIGRATE_SKIPS").ok().as_deref() != Some("2") {
+        return;
+    }
+    for line in body.lines() {
+        if line.contains(unknown) {
+            eprintln!("[skip-line] {name}: {}", line.trim());
+            return;
+        }
+    }
+}
+
+/// The first name in `value` that `known` does not have — the one
+/// `free_identifiers_known` rejected on. Diagnostic only.
+fn first_unknown(value: &str, known: &std::collections::HashSet<String>) -> Option<String> {
+    let mut known = known.clone();
+    known.extend(names_bound_in(value));
+    for word in words_of(value) {
+        if !known.contains(&word) {
+            return Some(word);
+        }
+    }
+    None
+}
+
+/// The free words of a Sigil body, by the same reading `free_identifiers_known`
+/// uses: outside strings and comments, not after `·` or `.`, not an object key.
+fn words_of(value: &str) -> Vec<String> {
+    let chars: Vec<char> = value.chars().collect();
+    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut out = Vec::new();
+    let mut i = 0;
+    let mut in_str = false;
+    let mut escaped = false;
+    while i < chars.len() {
+        let c = chars[i];
+        if !in_str && c == '/' && chars.get(i + 1) == Some(&'/') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if !in_str && c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
+            continue;
+        }
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_str = true;
+            i += 1;
+            continue;
+        }
+        if is_word(c) && !c.is_ascii_digit() {
+            let start = i;
+            while i < chars.len() && is_word(chars[i]) {
+                i += 1;
+            }
+            let after_sep = start > 0 && matches!(chars[start - 1], '\u{00B7}' | '.');
+            let mut j = i;
+            while j < chars.len() && chars[j].is_whitespace() {
+                j += 1;
+            }
+            let is_key = chars.get(j) == Some(&':') && chars.get(j + 1) != Some(&':');
+            let word: String = chars[start..i].iter().collect();
+            if !after_sep && !is_key && !is_not_a_name(&word) {
+                out.push(word);
+            }
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
+/// `free_identifiers_known`, reachable from the test module.
+#[cfg(test)]
+pub(crate) fn free_identifiers_known_for_test(
+    value: &str,
+    known: &std::collections::HashSet<String>,
+) -> bool {
+    free_identifiers_known(value, known)
+}
+
 fn free_identifiers_known(
     value: &str,
     known: &std::collections::HashSet<String>,
@@ -2831,6 +3006,19 @@ fn free_identifiers_known(
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;
             }
+            continue;
+        }
+        // So does a `/* … */` one, and those were being read as code: the
+        // transform marks what it cannot translate with them, and
+        // `/* regex: /\.service$/ — unsupported */` then failed the gate on the
+        // word `service`. A quote inside such a comment was worse — it opened a
+        // string state that swallowed the rest of the body.
+        if !in_str && c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i < chars.len() && !(chars[i] == '*' && chars.get(i + 1) == Some(&'/')) {
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
             continue;
         }
         if in_str {
@@ -2861,7 +3049,11 @@ fn free_identifiers_known(
                 j += 1;
             }
             let is_key = chars.get(j) == Some(&':') && chars.get(j + 1) != Some(&':');
-            if after_sep || is_key {
+            // `_` is a match wildcard and `Δ` is the mutable-binding marker.
+            // Neither is a name, but both are alphanumeric to Rust, so the
+            // scanner read them as free identifiers: `≔ Δ i = 0;` failed the
+            // gate on the `Δ`, and `_ => { }` on the wildcard.
+            if after_sep || is_key || is_not_a_name(&word) {
                 continue;
             }
             if !known.contains(&word) {

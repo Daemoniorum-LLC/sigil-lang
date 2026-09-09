@@ -506,6 +506,41 @@ impl ImportRegistry {
         self.add_import_with_alias("value", "is_array", "is_array", vec![I64], vec![I64]);
         // `typeof x` — "string", "number", "object", … Only the host can say.
         self.add_import_with_alias("value", "type_of", "type_of", vec![I64], vec![I64]);
+
+        // `Math.floor` and friends over the uniform value domain.
+        //
+        // `math.floor` next door takes and returns an F64, and a migrated
+        // JavaScript number is an i64 here — so nothing could call it, and
+        // `formatRelativeTime`, `formatFileSize`, `kbToSize` and everything
+        // like them stayed untranslated on the name alone. These take the
+        // value, whatever it is, and hand it to the host, which is the only
+        // thing that can tell an integer from a handle to a float.
+        self.add_import_with_alias("value", "math_floor", "math_floor", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_ceil", "math_ceil", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_round", "math_round", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_trunc", "math_trunc", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_abs", "math_abs", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_min", "math_min", vec![I64, I64], vec![I64]);
+        self.add_import_with_alias("value", "math_max", "math_max", vec![I64, I64], vec![I64]);
+
+        // `Date.now()` — epoch milliseconds, as an i64.
+        //
+        // `timing.now` is the monotonic clock and is declared F64. Migrated
+        // code was routed there, so it compared epoch timestamps against
+        // milliseconds-since-page-load, as a float, in a value domain that is
+        // otherwise entirely i64.
+        self.add_import_with_alias("value", "date_now", "date_now", vec![], vec![I64]);
+
+        // `new Date(x).toLocaleDateString()` and its siblings. Without it these
+        // collapsed to `to_string` on the millisecond count, and the number
+        // itself was rendered into the document.
+        self.add_import_with_alias(
+            "value",
+            "date_format",
+            "date_format",
+            vec![I64, I64, I64],
+            vec![I32],
+        );
     }
 
     fn register_math_imports(&mut self) {
