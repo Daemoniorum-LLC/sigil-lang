@@ -5431,6 +5431,12 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         ("return", "⤺", &[" ", ";", "(", ","]),
         ("break", "⊗", &[";", " ", ","]),
         ("continue", "↻", &[";", " ", ","]),
+        // `crate` is a Rust word with no Sigil equivalent — Sigil's term for a
+        // compilation unit is `tome`. Left alone it still parses, because
+        // `crate` is not a Sigil keyword and so reads as a module literally
+        // named "crate": silently wrong rather than loudly wrong. Runs after
+        // the `::` pass above, so the separator is already `·`.
+        ("crate", "tome", &["·", ")"]),
     ];
 
     let mut result = source.clone();
@@ -6598,6 +6604,24 @@ mod migrate_span_tests {
     fn an_identifier_ending_in_b_or_r_is_not_a_literal_prefix() {
         // `sub` and `attr` end in b/r; the following quote opens a real string.
         assert_eq!(mark(r#"sub("for")"#), r#"SUB("for")"#);
+    }
+
+    #[test]
+    fn the_word_crate_survives_in_prose() {
+        // `crate` -> `tome` is a code substitution. "this crate provides..."
+        // is one of the commonest phrases in Rust documentation, and a doc
+        // comment that reads "this tome provides" would be nonsense. The
+        // scanner is what keeps the two apart, so pin it here.
+        let src = "//! This crate provides maths.\nlet x = crate::E;";
+        let out = map_rust_code_spans(src, |c| c.replace("crate", "tome"));
+        assert_eq!(out, "//! This crate provides maths.\nlet x = tome::E;");
+
+        let s2 = "let m = \"this crate is not a tome\"; let y = crate::F;";
+        let o2 = map_rust_code_spans(s2, |c| c.replace("crate", "tome"));
+        assert_eq!(
+            o2,
+            "let m = \"this crate is not a tome\"; let y = tome::F;"
+        );
     }
 
     #[test]
