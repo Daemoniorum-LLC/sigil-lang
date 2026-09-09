@@ -617,22 +617,13 @@ impl WasmCompiler {
                     self.compile_expr(&args[0])?;
                     return Ok(());
                 }
-                if (name == "HashSet_new" || simple_name == "new")
-                    && resolved_segments.len() >= 2
-                    && (resolved_segments[resolved_segments.len() - 2] == "HashSet"
-                        || resolved_segments.iter().any(|s| s == "HashSet"))
-                    && args.is_empty()
-                {
-                    // HashSet::new() -> new array (use morpheme_array_new)
-                    if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
-                        let func = self.current_function_mut()
-                            .ok_or_else(|| WasmError::internal("not in function context"))?;
-                        func.push(Instruction::Call(func_idx));
-                        // array_new returns i32, extend to i64 for Sigil's uniform type system
-                        func.push(Instruction::I64ExtendI32U);
-                        return Ok(());
-                    }
-                }
+                // `HashSet·new()` is NOT here. It used to build an ARRAY —
+                // `morpheme_array_new` — and this arm sits far enough up the
+                // function to shadow the set constructor added with the `set`
+                // import group. Everything after it then addressed a set that
+                // did not exist: `s·insert(x)` looked up a set by an array's id
+                // and did nothing, and `s·len()` found the empty array.
+                // The real one is with the other collection constructors below.
 
                 // std::mem::take - replace with default and return original
                 // In WASM, this is simplified to just returning the value (no mutation tracking)
@@ -2056,17 +2047,16 @@ impl WasmCompiler {
                 Ok(true)
             }
 
-            // Option methods
-            "map" => {
-                // For map(), we apply the closure to the unwrapped value
-                // Simplified: if Some, apply closure; if None, return None
-                self.compile_expr(receiver)?;
-                if args.len() == 1 {
-                    // For now, just return the receiver (proper implementation later)
-                    // TODO: Implement proper Option::map semantics
-                }
-                Ok(true)
-            }
+            // `map` is NOT here. It used to be — an Option stub that compiled
+            // the receiver and dropped the closure on the floor — and because
+            // this arm comes first it shadowed the array `map` further down.
+            // `xs·map(f)` therefore returned `xs`, in a module that compiled,
+            // validated and reported success. rustc had been calling the array
+            // arm an unreachable pattern the whole time.
+            //
+            // The array import is the identity on a handle the host does not
+            // hold, which is exactly what `Option::map` wanted here, so one arm
+            // serves both.
             "unwrap_or" => {
                 // unwrap_or(default): return value if Some, otherwise default
                 self.compile_expr(receiver)?;
@@ -2475,16 +2465,36 @@ impl WasmCompiler {
             // Pointers are i64 internally and these imports take i32, so both the
             // array and the closure are wrapped, and a handle result extended
             // back.
-            "filter" | "map" if args.len() == 1 && self.is_array_receiver(receiver) => {
-                let import = if method == "filter" {
-                    "morpheme_array_filter"
-                } else {
-                    "morpheme_array_map"
+            // The higher-order morphemes, one table.
+            //
+            // Every one of these used to be a stub: `map` and `filter` handed
+            // the receiver back, `find` returned 0, `position` -1, `fold` its
+            // init, `flat_map` the receiver. They compiled, validated and
+            // reported success, so a view rendered a list of the wrong things
+            // rather than failing — and the Lares client calls `map` 113 times.
+            //
+            // The imports are `(array: i32, closure: i32) -> …`, so both
+            // operands are wrapped and a handle result extended back. The
+            // closure value is the `[table_idx, env_ptr]` pair; the host calls
+            // it through the module's own function table.
+            "map" | "filter" | "find" | "flat_map" | "position" | "find_index"
+            | "any" | "some" | "all" | "every"
+                if args.len() == 1 && self.is_array_receiver(receiver) =>
+            {
+                let import = match method {
+                    "map" => "morpheme_array_map",
+                    "filter" => "morpheme_array_filter",
+                    "find" => "morpheme_array_find",
+                    "flat_map" => "morpheme_array_flat_map",
+                    "position" | "find_index" => "morpheme_array_position",
+                    "any" | "some" => "morpheme_array_any_by",
+                    _ => "morpheme_array_all_by",
                 };
-                let idx = match self.imports.get_func(import) {
-                    Some(i) => i,
-                    None => return Ok(false),
+                let Some(idx) = self.imports.get_func(import) else {
+                    return Ok(false);
                 };
+                // `find` alone returns an i64 value rather than a handle.
+                let returns_i64 = method == "find";
                 self.compile_expr(receiver)?;
                 self.push_wrap()?;
                 self.compile_expr(&args[0])?;
@@ -2493,52 +2503,65 @@ impl WasmCompiler {
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
                 func.push(Instruction::Call(idx));
-                func.push(Instruction::I64ExtendI32U);
+                if !returns_i64 {
+                    func.push(Instruction::I64ExtendI32U);
+                }
                 Ok(true)
             }
 
-            // `any(pred)` / `all(pred)`. The imported `array_any` and `array_all`
-            // take no predicate at all, so these are filter-then-count: `any` is
-            // a non-empty filtered array, `all` is one the filter did not shrink.
-            "any" | "some" | "all" | "every" if args.len() == 1 && self.is_array_receiver(receiver) => {
-                let (filter_idx, len_idx) = match (
-                    self.imports.get_func("morpheme_array_filter"),
-                    self.imports.get_func("morpheme_array_len"),
-                ) {
-                    (Some(f), Some(l)) => (f, l),
-                    _ => return Ok(false),
+            // `xs·fold(init, f)`. The initial value comes FIRST - that is
+            // what the interpreter accepts, and it is the oracle. Migrated code
+            // used to emit JavaScript's order and the interpreter rejected it;
+            // nothing caught that because the backend's fold was a stub.
+            "fold" | "reduce" if args.len() == 2 && self.is_array_receiver(receiver) => {
+                let Some(idx) = self.imports.get_func("morpheme_array_reduce") else {
+                    return Ok(false);
                 };
-                let wants_all = matches!(method, "all" | "every");
-
-                // Keep the array: `all` needs its original length too.
                 self.compile_expr(receiver)?;
                 self.push_wrap()?;
-                let arr_local = {
-                    let func = self
-                        .current_function_mut()
-                        .ok_or_else(|| WasmError::internal("not in function context"))?;
-                    let local = func.alloc_local("__hof_arr".to_string(), ValType::I32);
-                    func.push(Instruction::LocalTee(local));
-                    local
-                };
                 self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
                 self.push_wrap()?;
                 let func = self
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Call(filter_idx));
-                func.push(Instruction::Call(len_idx));
-                if wants_all {
-                    func.push(Instruction::LocalGet(arr_local));
-                    func.push(Instruction::Call(len_idx));
-                    func.push(Instruction::I32Eq);
-                } else {
-                    func.push(Instruction::I32Const(0));
-                    func.push(Instruction::I32GtS);
-                }
-                func.push(Instruction::I64ExtendI32U);
+                func.push(Instruction::Call(idx));
                 Ok(true)
             }
+
+            // The no-closure array morphemes. Every one has had an import
+            // since the start and no method arm pointing at it, so `xs·sum()`
+            // and `xs·min()` were undefined names — reported, but only once the
+            // whole-project build stopped dying on the first one.
+            //
+            // `sum`/`min`/`max`/`product` return an element (i64); the rest
+            // return a handle.
+            "flatten" | "rev" | "reverse" | "sum" | "product" | "min" | "max"
+                if args.is_empty() && self.is_array_receiver(receiver) =>
+            {
+                let (import, returns_i64) = match method {
+                    "flatten" => ("morpheme_array_flatten", false),
+                    "rev" | "reverse" => ("morpheme_array_reverse", false),
+                    "sum" => ("morpheme_array_sum", true),
+                    "product" => ("morpheme_array_product", true),
+                    "min" => ("morpheme_array_min", true),
+                    _ => ("morpheme_array_max", true),
+                };
+                let Some(idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                if !returns_i64 {
+                    func.push(Instruction::I64ExtendI32U);
+                }
+                Ok(true)
+            }
+
 
             // Collection methods - map to morpheme imports
             // Vec/Array methods
@@ -2889,7 +2912,8 @@ impl WasmCompiler {
             }
 
             // Type conversion and Any methods
-            "dyn_into" | "unchecked_ref" | "into" => {
+            // `dyn_into` and `into` have arms earlier in this match.
+            "unchecked_ref" => {
                 // Type conversion - just return the receiver
                 self.compile_expr(receiver)?;
                 Ok(true)
@@ -2899,8 +2923,11 @@ impl WasmCompiler {
                 // Returns Option<&T> - just return receiver wrapped in Some
                 Ok(true)
             }
-            "and_then" | "map" | "filter" | "or_else" => {
-                // Option/Iterator combinator - compile receiver then call closure
+            // `map` and `filter` are not here either: they are collection
+            // morphemes, handled above. `or_else` keeps the Option behaviour;
+            // `and_then` and `dyn_into`/`into`/`as_ref` already have arms
+            // earlier in this match, which is why rustc called this one dead.
+            "or_else" => {
                 self.compile_expr(receiver)?;
                 if !args.is_empty() {
                     self.compile_expr(&args[0])?;
@@ -3630,7 +3657,16 @@ impl WasmCompiler {
             // Leaving it out sent the whole chain to a free-function lookup and
             // reported `any` undefined, which reads as a missing builtin rather
             // than a receiver this predicate did not recognise.
-            | Expr::Call { .. } => {
+            | Expr::Call { .. }
+            // …and anything whose value is whatever its branches produce.
+            // `(⎇ w.tickets·to_bool() { w.tickets } ⎉ { [] })·filter(…)` is the
+            // shape generated code reaches for constantly — a fallback to an
+            // empty list — and it was not recognised, so the call fell through
+            // to a stub that silently did nothing.
+            | Expr::If { .. }
+            | Expr::Match { .. }
+            | Expr::Block(_)
+            | Expr::Await { .. } => {
                 // A closure argument is the giveaway: Option::map takes one too,
                 // but Option is never indexed or built from a list literal here,
                 // and the generated views only reach these through collections.

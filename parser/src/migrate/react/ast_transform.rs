@@ -1039,6 +1039,21 @@ impl<'a> ExprTransformer<'a> {
                             }
                         }
 
+                        // `arr.reduce(f, init)` is `xs\u{b7}fold(init, f)`:
+                        // Sigil's fold takes the initial value FIRST, and the
+                        // interpreter rejects the other order outright ("fold
+                        // expects function as second argument"). The arguments
+                        // were passed through in JavaScript's order, which only
+                        // went unnoticed because the WASM backend's fold was a
+                        // stub that returned a constant.
+                        if (method == "reduce" || method == "reduceRight")
+                            && call.args.len() == 2
+                        {
+                            let f = self.transform_expr(&call.args[0].expr);
+                            let init = self.transform_expr(&call.args[1].expr);
+                            return format!("{}\u{b7}fold({}, {})", obj, init, f);
+                        }
+
                         // A promise `.catch(cb)` / `.finally(cb)` in
                         // expression position — `await res.json().catch(() =>
                         // ({}))`. Sigil has no exceptions, so the handler cannot

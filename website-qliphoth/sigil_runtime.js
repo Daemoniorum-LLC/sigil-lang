@@ -76,7 +76,13 @@ function readLengthPrefixedString(ptr) {
     const p = Number(ptr); // Convert BigInt from WASM to Number
     const mem = getMemory();
     const view = new DataView(wasmMemory.buffer);
+    // A pointer that is not a string reads a garbage 32-bit length — up to 4 GB
+    // — and this used to slice all of it, so one type confusion in the compiler
+    // came out as a multi-megabyte allocation from a component that renders a
+    // button. A length that does not fit in memory is not a string.
+    if (!Number.isFinite(p) || p < 0 || p + 4 > view.byteLength) return '';
     const len = view.getUint32(p, true); // little-endian
+    if (p + 4 + len > view.byteLength) return '';
     const bytes = mem.slice(p + 4, p + 4 + len);
     return new TextDecoder().decode(bytes);
 }
@@ -91,8 +97,32 @@ function writeString(str) {
 }
 
 // Write a length-prefixed string (Sigil's format: 4-byte len + bytes)
+// Make sure `size` more bytes fit above `heapPtr`, growing linear memory if
+// they do not.
+//
+// Nothing grew memory on the string path: the module declares 16 pages and the
+// host wrote past the end of them the moment it produced enough strings, with
+// "offset is out of bounds" from a DataView write and no mention of memory. It
+// took until `map` and `filter` actually ran — each one allocating a string per
+// element — for a page to be exhausted at all.
+function heapReserve(size) {
+    const need = heapPtr + size;
+    if (!wasmMemory || wasmMemory.buffer.byteLength >= need) return;
+    const have = wasmMemory.buffer.byteLength / 65536;
+    const want = Math.ceil(need / 65536);
+    try {
+        wasmMemory.grow(want - have);
+    } catch (e) {
+        throw new RangeError(
+            `Sigil heap exhausted: needed ${need} bytes, memory caps out at ` +
+            `${wasmMemory.buffer.byteLength} (${e.message})`,
+        );
+    }
+}
+
 function writeLengthPrefixedString(str) {
     const bytes = new TextEncoder().encode(str);
+    heapReserve(4 + bytes.length + 8);
     const ptr = heapPtr;
     const view = new DataView(wasmMemory.buffer);
     // Write 4-byte length
@@ -468,7 +498,19 @@ function stringConcat(ptr1, ptr2) {
     return writeLengthPrefixedString(result);
 }
 
+// `x·len()` compiles to THIS import for every receiver — the compiler tries
+// `string_length` first and it is always registered, so the array branch below
+// it was dead and `xs·len()` on an array read a length prefix out of a
+// collection id. The host is the only side that knows which kind a handle is,
+// so it answers for all four.
 function stringLength(ptr) {
+    const n = Number(ptr);
+    const arr = arrays.get(n);
+    if (arr) return arr.length;
+    const m = maps.get(n);
+    if (m) return m.size;
+    const st = sets.get(n);
+    if (st) return st.size;
     const str = readLengthPrefixedString(ptr);
     return str.length;
 }
@@ -510,10 +552,18 @@ const maps = new Map();
 // entries in it reported a length of 0.
 let nextCollectionId = 1;
 
+// The lowest address a string handle can have. Below it, a value is a number:
+// string literals and the heap both live well above this, and `getUint32` at a
+// small address happily reads a plausible-looking length out of whatever is
+// there — so `xs·contains(9)` matched a "string" at address 9 and answered
+// true for an array of 1, 2, 3.
+const MIN_STRING_HANDLE = 1024;
+
 function mapKey(k) {
     // A key is a string handle when it points at a readable length-prefixed
     // string, and a plain number otherwise.
     const n = Number(k);
+    if (n < MIN_STRING_HANDLE) return n;
     try {
         const view = new DataView(getMemory().buffer);
         const len = view.getUint32(n, true);
@@ -690,27 +740,27 @@ function stringToLowercase(ptr) {
 
 function stringContains(ptr, searchPtr) {
     const n = Number(ptr);
-    if (sets.has(n)) return setHas(n, searchPtr) ? 1n : 0n;
+    if (sets.has(n)) return setHas(n, searchPtr) ? 1 : 0;
     const arr = arrays.get(n);
     if (arr) {
         const needle = mapKey(searchPtr);
-        return arr.some((v) => mapKey(v) === needle) ? 1n : 0n;
+        return arr.some((v) => mapKey(v) === needle) ? 1 : 0;
     }
     const str = readLengthPrefixedString(ptr);
     const search = readLengthPrefixedString(searchPtr);
-    return str.includes(search) ? 1n : 0n;
+    return str.includes(search) ? 1 : 0;
 }
 
 function stringStartsWith(ptr, prefixPtr) {
     const str = readLengthPrefixedString(ptr);
     const prefix = readLengthPrefixedString(prefixPtr);
-    return str.startsWith(prefix) ? 1n : 0n;
+    return str.startsWith(prefix) ? 1 : 0;
 }
 
 function stringEndsWith(ptr, suffixPtr) {
     const str = readLengthPrefixedString(ptr);
     const suffix = readLengthPrefixedString(suffixPtr);
-    return str.endsWith(suffix) ? 1n : 0n;
+    return str.endsWith(suffix) ? 1 : 0;
 }
 
 function stringReplace(ptr, fromPtr, toPtr) {
@@ -917,7 +967,10 @@ function eventsAddListener(elId, typePtr, callbackPtr, flags) {
     const el = domElements.get(Number(elId));
     if (!el) {
         console.warn('[events.add_listener] Element not found:', elId);
-        return 0n;
+        // `-> i32`, so a Number. The success path below already returns one;
+        // this early return did not, and a listener on an element that is not
+        // there is the common case during a first render.
+        return 0;
     }
 
     const type = readLengthPrefixedString(typePtr);
@@ -1157,13 +1210,9 @@ function routerForward() {
 // =============================================================================
 
 function memoryAlloc(size) {
+    heapReserve(size);
     const ptr = heapPtr;
     heapPtr += size;
-    // Grow memory if needed
-    const pages = Math.ceil(heapPtr / 65536);
-    if (wasmMemory && wasmMemory.buffer.byteLength < pages * 65536) {
-        wasmMemory.grow(pages - wasmMemory.buffer.byteLength / 65536);
-    }
     return ptr;
 }
 
@@ -1286,7 +1335,16 @@ function arrayPush(arrId, value) {
 }
 
 function arrayGet(arrId, index) {
-    const arr = arrays.get(Number(arrId));
+    const n = Number(arrId);
+    // `x·get(k)` compiles to THIS import whatever the receiver is, so a map
+    // reached it with a key where an index belongs and read past the end of an
+    // array it does not have. The host is the only side that knows the kind.
+    const m = maps.get(n);
+    if (m) {
+        const v = m.get(mapKey(index));
+        return v === undefined ? 0n : toI64(v);
+    }
+    const arr = arrays.get(n);
     if (!arr) return 0n;
     // The module declares an i64 result, so the value has to BE a BigInt.
     // An element that arrived as a plain number — anything the host pushed
@@ -1355,17 +1413,139 @@ function vecJoin(arrId, sepStrRef) {
     return writeLengthPrefixedString(parts.join(sep));
 }
 
+// A Sigil closure, callable from the host.
+//
+// The value is the pair `[table_idx, env_ptr]` in linear memory, and the
+// calling convention is `(env, args…)` — the same one `call_indirect` uses.
+// `null` when the pointer is not a closure, so a caller can fall back rather
+// than trap.
+function sigilClosure(closurePtr) {
+    const ptr = Number(closurePtr);
+    const table = wasmExports && wasmExports.__indirect_function_table;
+    if (!ptr || !table) return null;
+    let tableIdx, env;
+    try {
+        const view = new DataView(getMemory().buffer);
+        tableIdx = Number(view.getBigInt64(ptr, true));
+        env = view.getBigInt64(ptr + 8, true);
+    } catch {
+        return null;
+    }
+    let fn;
+    try {
+        fn = table.get(tableIdx);
+    } catch {
+        return null;
+    }
+    if (typeof fn !== 'function') return null;
+    return (...args) => fn(env, ...args);
+}
+
+// The higher-order array morphemes. Every one of these used to ignore its
+// closure and hand the receiver straight back — `xs·map(f)` returned `xs`,
+// `xs·filter(p)` returned `xs`, `xs·fold(f, init)` returned `init`. They
+// compiled, validated and reported success, so a view rendered a list of the
+// wrong things rather than failing.
+//
+// A handle that is not an array is returned unchanged: `Option·map` compiles
+// to the same import, and that IS the identity on a value the host does not
+// hold.
 function arrayMap(arrId, fnPtr) {
-    // Simplified
-    return Number(arrId);
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return Number(arrId);
+    return arrayOf(arr.map((x) => toI64(call(x))));
 }
 
 function arrayFilter(arrId, fnPtr) {
-    return Number(arrId);
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return Number(arrId);
+    return arrayOf(arr.filter((x) => truthy(call(x))));
 }
 
-function arrayReduce(arrId, fnPtr, initial) {
-    return initial;
+// `xs·fold(init, f)`. The INITIAL VALUE comes first — that is the order the
+// interpreter accepts, and it is the oracle. The closure itself takes the
+// accumulator first, matching Sigil's `|sum, v|`.
+function arrayReduce(arrId, initial, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return toI64(initial);
+    let acc = toI64(initial);
+    for (const x of arr) acc = toI64(call(acc, x));
+    return acc;
+}
+
+function arrayFind(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return 0n;
+    const hit = arr.find((x) => truthy(call(x)));
+    return hit === undefined ? 0n : toI64(hit);
+}
+
+// The index, or -1. Not an Option: the compiler's callers compare against -1.
+function arrayPosition(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return -1;
+    return arr.findIndex((x) => truthy(call(x)));
+}
+
+function arrayAnyBy(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return 0;
+    return arr.some((x) => truthy(call(x))) ? 1 : 0;
+}
+
+function arrayAllBy(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return 0;
+    return arr.every((x) => truthy(call(x))) ? 1 : 0;
+}
+
+// `xs·flat_map(f)`: each result that is itself an array is spliced in.
+function arrayFlatMap(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return Number(arrId);
+    const out = [];
+    for (const x of arr) {
+        const r = call(x);
+        const inner = arrays.get(Number(r));
+        if (inner) out.push(...inner);
+        else out.push(toI64(r));
+    }
+    return arrayOf(out);
+}
+
+function arrayFlatten(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) return Number(arrId);
+    const out = [];
+    for (const x of arr) {
+        const inner = arrays.get(Number(x));
+        if (inner) out.push(...inner);
+        else out.push(toI64(x));
+    }
+    return arrayOf(out);
+}
+
+function arrayReverse(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) return Number(arrId);
+    return arrayOf([...arr].reverse());
+}
+
+// What a Sigil closure returning a bool hands back: 0/1 as i64, or a value the
+// host is asked to judge. `0n` and `0` are the only falsehoods a predicate can
+// return — a string handle is a pointer, and every pointer is truthy.
+function truthy(v) {
+    if (typeof v === 'bigint') return v !== 0n;
+    if (typeof v === 'number') return v !== 0;
+    return Boolean(v);
 }
 
 // `xs·sort(|a, b| …)`. The comparator is a Sigil closure — the pair
@@ -1373,16 +1553,9 @@ function arrayReduce(arrId, fnPtr, initial) {
 // is `(env, args…)`, so the host can call it like any other.
 function arraySortBy(arrId, closurePtr) {
     const arr = arrays.get(Number(arrId));
-    if (!arr) return Number(arrId);
-    const ptr = Number(closurePtr);
-    const table = wasmExports && wasmExports.__indirect_function_table;
-    if (!ptr || !table) return Number(arrId);
-    const view = new DataView(getMemory().buffer);
-    const tableIdx = Number(view.getBigInt64(ptr, true));
-    const env = view.getBigInt64(ptr + 8, true);
-    const fn = table.get(tableIdx);
-    if (typeof fn !== 'function') return Number(arrId);
-    arr.sort((a, b) => Number(fn(env, a, b)));
+    const call = sigilClosure(closurePtr);
+    if (!arr || !call) return Number(arrId);
+    arr.sort((a, b) => Number(call(a, b)));
     return Number(arrId);
 }
 
@@ -1969,6 +2142,13 @@ export function createImports() {
             array_max: arrayMax,
             array_all: arrayAll,
             array_any: arrayAny,
+            array_find: arrayFind,
+            array_position: arrayPosition,
+            array_any_by: arrayAnyBy,
+            array_all_by: arrayAllBy,
+            array_flat_map: arrayFlatMap,
+            array_flatten: arrayFlatten,
+            array_reverse: arrayReverse,
             array_random_element: arrayRandomElement,
             array_parallel_map: arrayParallelMap,
             array_parallel_filter: arrayParallelFilter,
@@ -2038,18 +2218,21 @@ export function createImports() {
         },
         // browser module - window/document access
         browser: {
-            window: () => 0n,  // Return handle to window
-            document: () => 0n,  // Return handle to document
-            inner_width: () => BigInt(typeof window !== 'undefined' ? window.innerWidth : 1920),
-            inner_height: () => BigInt(typeof window !== 'undefined' ? window.innerHeight : 1080),
+            // Every one of these is declared `-> i32`. They used to return
+            // BigInt, so the call itself threw "Cannot convert a BigInt value
+            // to a number" — a whole group that could never be called at all.
+            window: () => 0,  // Return handle to window
+            document: () => 0,  // Return handle to document
+            inner_width: () => (typeof window !== 'undefined' ? window.innerWidth : 1920),
+            inner_height: () => (typeof window !== 'undefined' ? window.innerHeight : 1080),
             add_event_listener: (target, event, callback, capture) => {
                 // Stub - would need callback registry
-                return 0n;
+                return 0;
             },
             remove_event_listener: (target, listenerId) => {},
-            match_media: (query) => 0n,
-            mql_matches: (mql) => 0n,
-            mql_add_listener: (mql, callback) => 0n,
+            match_media: (query) => 0,
+            mql_matches: (mql) => 0,
+            mql_add_listener: (mql, callback) => 0,
             mql_remove_listener: (mql, listenerId) => {},
             // Dialogs. Outside a browser they answer the way a dismissed
             // dialog does, so a headless render does not trap.

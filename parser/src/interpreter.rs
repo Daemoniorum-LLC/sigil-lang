@@ -12757,7 +12757,13 @@ impl Interpreter {
                 let was_new = s.borrow_mut().insert(key);
                 Ok(Value::Bool(was_new))
             }
-            (Value::Set(s), "contains") => {
+            // `contains_key` too: a set is a map with no values, so the name
+            // is unambiguous on one, and it is the spelling migrated JavaScript
+            // reaches for — `Set.has(x)` and `Map.has(k)` are one method there.
+            // The WASM backend has always accepted both; the interpreter
+            // rejected `contains_key` outright, so generated code ran on one
+            // backend and not the other.
+            (Value::Set(s), "contains") | (Value::Set(s), "contains_key") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("contains expects 1 argument"));
                 }

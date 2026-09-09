@@ -358,7 +358,9 @@ impl ImportRegistry {
         self.add_import("morpheme", "array_parallel_map", vec![I32, I32], vec![I32]);
         self.add_import("morpheme", "array_parallel_filter", vec![I32, I32], vec![I32]);
         self.add_import("morpheme", "array_parallel_reduce", vec![I32, I32, I64], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I32, I64], vec![I64]);
+        // `(array, init, closure)` - Sigil's `fold` takes the initial value
+        // first, and the interpreter is the oracle for that.
+        self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I64, I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_sort", "array_sort", vec![I32], vec![I32]);
         // `xs·sort(|a, b| …)`. Sigil's own `sort` takes no comparator, so a
         // comparator sort had nowhere to go — and dropping the comparator
@@ -380,6 +382,29 @@ impl ImportRegistry {
         self.add_import_with_alias("morpheme", "array_max", "array_max", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_all", "array_all", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_any", "array_any", vec![I32], vec![I32]);
+
+        // The higher-order morphemes that take a closure. `array_all` and
+        // `array_any` above take no predicate at all, so `xs·any(|x| …)` was
+        // compiled as filter-then-count against a filter that did nothing.
+        self.add_import_with_alias("morpheme", "array_find", "array_find", vec![I32, I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_position",
+            "array_position",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import_with_alias("morpheme", "array_any_by", "array_any_by", vec![I32, I32], vec![I32]);
+        self.add_import_with_alias("morpheme", "array_all_by", "array_all_by", vec![I32, I32], vec![I32]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_flat_map",
+            "array_flat_map",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import_with_alias("morpheme", "array_flatten", "array_flatten", vec![I32], vec![I32]);
+        self.add_import_with_alias("morpheme", "array_reverse", "array_reverse", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
         // Vec::join - concatenate elements with separator
         self.add_import_with_alias("morpheme", "vec_join", "vec_join", vec![I32, I32], vec![I32]);

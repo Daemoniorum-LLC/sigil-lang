@@ -1,0 +1,73 @@
+// The array morphemes that take a closure.
+//
+// Every one of these was a backend stub that ignored its closure and handed
+// the receiver back, in a module that compiled and reported success.
+
+☉ rite t_map_value() -> i64! {
+    ⤺ ([1, 2, 3]·map(|x| x * 10))[1];
+}
+☉ rite t_map_len() -> i64! {
+    ⤺ [1, 2, 3]·map(|x| x + 1)·len();
+}
+☉ rite t_filter_len() -> i64! {
+    ⤺ [1, 2, 3, 4]·filter(|x| x > 2)·len();
+}
+☉ rite t_filter_value() -> i64! {
+    ⤺ ([1, 2, 3, 4]·filter(|x| x > 2))[0];
+}
+☉ rite t_filter_none() -> i64! {
+    ⤺ [1, 2, 3]·filter(|x| x > 99)·len();
+}
+☉ rite t_filter_all() -> i64! {
+    ⤺ [1, 2, 3]·filter(|x| x > 0)·len();
+}
+☉ rite t_fold_sum() -> i64! {
+    ⤺ [1, 2, 3, 4]·fold(0, |sum, v| sum + v);
+}
+☉ rite t_fold_init() -> i64! {
+    ⤺ [1, 2]·fold(100, |sum, v| sum + v);
+}
+☉ rite t_fold_empty() -> i64! {
+    ⤺ []·fold(7, |sum, v| sum + v);
+}
+☉ rite t_any_true() -> i64! {
+    ⤺ ⎇ [1, 2, 3]·any(|x| x == 2) { 1 } ⎉ { 0 };
+}
+☉ rite t_any_false() -> i64! {
+    ⤺ ⎇ [1, 2, 3]·any(|x| x == 9) { 1 } ⎉ { 0 };
+}
+☉ rite t_all_true() -> i64! {
+    ⤺ ⎇ [1, 2, 3]·all(|x| x > 0) { 1 } ⎉ { 0 };
+}
+☉ rite t_all_false() -> i64! {
+    ⤺ ⎇ [1, 2, 3]·all(|x| x > 1) { 1 } ⎉ { 0 };
+}
+☉ rite t_chain() -> i64! {
+    ⤺ [1, 2, 3, 4, 5]·filter(|x| x > 1)·map(|x| x * 2)·fold(0, |s, v| s + v);
+}
+☉ rite t_map_twice() -> i64! {
+    ⤺ ([1, 2]·map(|x| x + 1)·map(|x| x * 3))[0];
+}
+☉ rite t_closure_captures() -> i64! {
+    ≔ n = 10;
+    ⤺ ([1, 2]·map(|x| x + n))[1];
+}
+
+☉ rite main() {
+    println((t_map_value())·to_string());
+    println((t_map_len())·to_string());
+    println((t_filter_len())·to_string());
+    println((t_filter_value())·to_string());
+    println((t_filter_none())·to_string());
+    println((t_filter_all())·to_string());
+    println((t_fold_sum())·to_string());
+    println((t_fold_init())·to_string());
+    println((t_fold_empty())·to_string());
+    println((t_any_true())·to_string());
+    println((t_any_false())·to_string());
+    println((t_all_true())·to_string());
+    println((t_all_false())·to_string());
+    println((t_chain())·to_string());
+    println((t_map_twice())·to_string());
+    println((t_closure_captures())·to_string());
+}
