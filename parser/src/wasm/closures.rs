@@ -391,6 +391,19 @@ impl WasmCompiler {
 
     /// Compile a function call expression.
     pub fn compile_call(&mut self, func_expr: &Expr, args: &[Expr]) -> WasmResult<()> {
+        /// Whether the program declares `Type·method` itself, for the exact
+        /// type named — not any function that shares the last segment, since
+        /// the general lookup falls back to a bare name and `HashMap·new()`
+        /// would find `VFragment::new`.
+        fn declares_own(c: &WasmCompiler, segments: &[String]) -> bool {
+            if segments.len() < 2 {
+                return false;
+            }
+            let ty = &segments[segments.len() - 2];
+            let m = &segments[segments.len() - 1];
+            c.func_map.contains_key(&format!("{}::{}", ty, m))
+        }
+
         match func_expr {
             // `x.method(args)`. Sigil's separator is `·`, but the interpreter
             // has always accepted `.` here too, and this backend did not: it
@@ -759,6 +772,52 @@ impl WasmCompiler {
                     // Single uppercase letter followed by underscore is typically a generic
                     || (name.len() >= 3 && name.chars().next().unwrap().is_ascii_uppercase()
                         && name.chars().nth(1) == Some('_'));
+                // `Vec·new()` / `HashMap·new()` and friends. These used to fall
+                // into the stub list below and compile to the constant `0`, so
+                // every empty collection in the program was a null pointer that
+                // `∀ x ∈ xs` then dereferenced.
+                //
+                // They allocate the SAME shape an array literal does — a 4-byte
+                // length followed by 8-byte slots — because that is what `∀`
+                // and indexing read. The `morpheme` array imports are a second,
+                // host-side representation that `push`, `filter` and `map`
+                // already use, and the two are not interchangeable: that split
+                // is a language-level decision, not something to settle here.
+                // An empty memory array is at least consistent with what reads
+                // it.
+                if args.is_empty()
+                    && resolved_segments.len() == 2
+                    && matches!(
+                        (resolved_segments[0].as_str(), resolved_segments[1].as_str()),
+                        (
+                            "Vec" | "VecDeque" | "HashMap" | "BTreeMap" | "HashSet"
+                                | "BTreeSet",
+                            "new"
+                        )
+                    )
+                    && !declares_own(self, &resolved_segments)
+                {
+                    let alloc_idx = self
+                        .get_func("heap_alloc")
+                        .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I64Const(4));
+                    func.push(Instruction::Call(alloc_idx));
+                    let arr = func.alloc_local("__empty_coll".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(arr));
+                    func.push(Instruction::I32WrapI64);
+                    func.push(Instruction::I32Const(0));
+                    func.push(Instruction::I32Store(wasm_encoder::MemArg {
+                        offset: 0,
+                        align: 2,
+                        memory_index: 0,
+                    }));
+                    func.push(Instruction::LocalGet(arr));
+                    return Ok(());
+                }
+
                 // …but only when the program does not define the thing itself.
                 // This list fires on the underscore-joined path, so `VNode·div()`
                 // is `VNode_div` and was stubbed to a constant `0` before any
@@ -772,20 +831,8 @@ impl WasmCompiler {
                 // falls back to a bare last segment, so `HashMap·new()` would
                 // find `VFragment::new` and the two would call each other until
                 // the stack ran out.
-                let declares_it = |c: &Self| -> bool {
-                    if c.func_map.contains_key(&qualified_path) {
-                        return true;
-                    }
-                    if resolved_segments.len() < 2 {
-                        return false;
-                    }
-                    let ty = &resolved_segments[resolved_segments.len() - 2];
-                    let m = &resolved_segments[resolved_segments.len() - 1];
-                    c.func_map
-                        .get(&format!("{}::{}", ty, m))
-                        .is_some_and(|&i| c.arity_of(i) == Some(args.len()))
-                };
-                let resolves_locally = declares_it(self);
+                let resolves_locally = self.func_map.contains_key(&qualified_path)
+                    || declares_own(self, &resolved_segments);
                 if is_cross_module_stub && !resolves_locally {
                     self.stubbed_calls.insert(format!("{}()", resolved_segments.join("·")));
                     // Compile all arguments (for side effects), then leave

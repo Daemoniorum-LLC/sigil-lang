@@ -131,6 +131,7 @@ impl ImportRegistry {
         self.register_router_imports();
         self.register_memory_imports();
         self.register_morpheme_imports();
+        self.register_map_imports();
         self.register_math_imports();
         self.register_vdom_imports();
         self.register_signal_imports();
@@ -277,6 +278,25 @@ impl ImportRegistry {
         self.add_import("memory", "free", vec![I32], vec![]);
         // heap_alloc takes i64 size and returns i64 pointer (used for closures/structs)
         self.add_import_with_alias("memory", "heap_alloc", "heap_alloc", vec![I64], vec![I64]);
+    }
+
+    /// `HashMap` / `HashSet`. A Sigil map is a host object, like an array:
+    /// there is no map in linear memory to walk. Without these, `HashMap·new()`
+    /// was stubbed to a constant `0` and every `VElement.attrs` was a null
+    /// pointer the renderer then dereferenced.
+    fn register_map_imports(&mut self) {
+        use ValType::*;
+        self.add_import_with_alias("map", "new", "map_new", vec![], vec![I32]);
+        self.add_import_with_alias("map", "set", "map_set", vec![I32, I64, I64], vec![]);
+        self.add_import_with_alias("map", "get", "map_get", vec![I32, I64], vec![I64]);
+        self.add_import_with_alias("map", "has", "map_has", vec![I32, I64], vec![I32]);
+        self.add_import_with_alias("map", "remove", "map_remove", vec![I32, I64], vec![]);
+        self.add_import_with_alias("map", "len", "map_len", vec![I32], vec![I32]);
+        self.add_import_with_alias("map", "is_empty", "map_is_empty", vec![I32], vec![I32]);
+        // Iteration: the host returns an array, which the array imports walk.
+        self.add_import_with_alias("map", "keys", "map_keys", vec![I32], vec![I32]);
+        self.add_import_with_alias("map", "values", "map_values", vec![I32], vec![I32]);
+        self.add_import_with_alias("map", "entries", "map_entries", vec![I32], vec![I32]);
     }
 
     fn register_morpheme_imports(&mut self) {
