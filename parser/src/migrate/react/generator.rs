@@ -1199,6 +1199,29 @@ impl<'a> QliphothGenerator<'a> {
         }
     }
 
+    /// A JSX attribute value as the string a DOM attribute actually holds.
+    ///
+    /// `Qliphoth::attr` takes `&str`. React's `step={0.5}` and `rows={3}` are
+    /// numbers, and passing one through unchanged handed the host the f64 bit
+    /// pattern where a string handle belonged. A literal is emitted as its own
+    /// text; anything else goes through `·to_string()`.
+    fn attr_value_as_string(&self, code: &str, scope: &VNodeScope) -> String {
+        let transformed = self.transform_expression_scoped(code, scope);
+        let trimmed = transformed.trim();
+        if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+            return transformed;
+        }
+        // A bare numeric or boolean literal is known here; quote it rather than
+        // emitting a conversion the runtime has to do on every render.
+        if trimmed.parse::<f64>().is_ok() {
+            return format!("\"{}\"", trimmed);
+        }
+        if trimmed == "true" || trimmed == "false" {
+            return format!("\"{}\"", trimmed);
+        }
+        format!("({})·to_string()", transformed)
+    }
+
     /// The VALUE of a JSX attribute, with no `·attr(…)` wrapper — for passing
     /// a child component's props as arguments.
     fn generate_attribute_value(&self, attr: &JsxAttribute, scope: &VNodeScope) -> String {
@@ -1817,8 +1840,7 @@ impl<'a> QliphothGenerator<'a> {
                         format!("·attr(\"{}\", \"{}\")", attr.name, escape_string(value))
                     }
                     JsxAttributeValue::Expression { code } => {
-                        let transformed = self.transform_expression_scoped(code, scope);
-                        format!("·attr(\"{}\", {})", attr.name, transformed)
+                        format!("·attr(\"{}\", {})", attr.name, self.attr_value_as_string(code, scope))
                     }
                     _ => String::new(),
                 }
@@ -1830,8 +1852,7 @@ impl<'a> QliphothGenerator<'a> {
                         format!("·attr(\"{}\", \"{}\")", attr.name, escape_string(value))
                     }
                     JsxAttributeValue::Expression { code } => {
-                        let transformed = self.transform_expression_scoped(code, scope);
-                        format!("·attr(\"{}\", {})", attr.name, transformed)
+                        format!("·attr(\"{}\", {})", attr.name, self.attr_value_as_string(code, scope))
                     }
                     JsxAttributeValue::Spread { name } => {
                         // Spread attributes can't be directly represented, skip

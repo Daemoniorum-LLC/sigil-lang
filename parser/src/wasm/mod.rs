@@ -393,11 +393,46 @@ impl WasmCompiler {
     /// checked against the compiler that will target it, rather than against a
     /// grep of this file.
     pub fn host_imports(&self) -> Vec<String> {
+        // With the signature, not just the name. A runtime can supply every
+        // name and still be wrong: `value.to_fixed` and `value.type_of` are
+        // declared to return i64 and returned a plain JavaScript Number, which
+        // WebAssembly rejects as "Cannot convert N to a BigInt" — and only on
+        // the call, so it was invisible until a component that formatted a
+        // number happened to run. An i64 parameter or result is a BigInt on the
+        // JavaScript side; an i32 or f64 is a Number.
+        let types = self.imports.types();
         let mut names: Vec<String> = self
             .imports
             .imports()
             .iter()
-            .map(|i| format!("{}.{}", i.module, i.name))
+            .map(|i| {
+                let sig = types.get(i.type_idx as usize);
+                let render = |ts: &[wasm_encoder::ValType]| {
+                    ts.iter()
+                        .map(|t| match t {
+                            wasm_encoder::ValType::I32 => "i32",
+                            wasm_encoder::ValType::I64 => "i64",
+                            wasm_encoder::ValType::F32 => "f32",
+                            wasm_encoder::ValType::F64 => "f64",
+                            _ => "?",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                match sig {
+                    Some((params, results)) if results.is_empty() => {
+                        format!("{}.{}({})", i.module, i.name, render(params))
+                    }
+                    Some((params, results)) => format!(
+                        "{}.{}({}) -> {}",
+                        i.module,
+                        i.name,
+                        render(params),
+                        render(results)
+                    ),
+                    None => format!("{}.{}", i.module, i.name),
+                }
+            })
             .collect();
         names.sort();
         names.dedup();

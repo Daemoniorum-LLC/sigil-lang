@@ -192,10 +192,10 @@ function valueToBool(ref) {
 function jsonParse(strRef) {
     const text = readLengthPrefixedString(strRef);
     try {
-        return jsonHandle(JSON.parse(text));
+        return BigInt(jsonHandle(JSON.parse(text)));
     } catch (e) {
         console.error('[json.parse]', e.message);
-        return jsonHandle(null);
+        return BigInt(jsonHandle(null));
     }
 }
 
@@ -223,7 +223,7 @@ function jsonGet(ref, pathRef) {
             current = null;
         }
     }
-    return jsonHandle(current ?? null);
+    return BigInt(jsonHandle(current ?? null));
 }
 
 function jsonSet(ref, pathRef, valueRef) {
