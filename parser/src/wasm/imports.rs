@@ -283,6 +283,23 @@ impl ImportRegistry {
         // call a signature mismatch.
         self.add_import("fetch", "get_body", vec![I32], vec![I32]);
         self.add_import("fetch", "abort", vec![I32], vec![]);
+        // One request, as a promise.
+        //
+        // `start`/`poll`/`get_body` is a polling protocol, and a Sigil program
+        // has no loop to poll from — `.await` is the only thing it says. This
+        // returns a promise id that `async.await_promise` suspends on, so
+        // `fetch_request(url, method, body).await` is the whole of it.
+        self.add_import_with_alias(
+            "fetch",
+            "request",
+            "fetch_request",
+            vec![I32, I32, I32],
+            vec![I32],
+        );
+        // The HTTP status the request came back with, so a program can tell a
+        // 404 from a body it could not parse.
+        self.add_import_with_alias("fetch", "status", "fetch_status", vec![I32], vec![I32]);
+        self.add_import_with_alias("fetch", "ok", "fetch_ok", vec![I32], vec![I32]);
     }
 
     fn register_storage_imports(&mut self) {

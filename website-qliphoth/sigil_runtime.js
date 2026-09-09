@@ -248,6 +248,72 @@ function valueToBool(ref) {
     return 1n;
 }
 
+/// `Object.values` / `Object.keys` / `Object.entries` over a value the module
+/// holds as a handle. The migrator emits these because React code uses them to
+/// walk record types, and WASM has no way to enumerate a JS object itself.
+function objectValues(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return BigInt(jsonHandle([]));
+    if (Array.isArray(v)) return BigInt(jsonHandle(v.slice()));
+    if (typeof v === 'object') return BigInt(jsonHandle(Object.values(v)));
+    return BigInt(jsonHandle([]));
+}
+
+function objectKeys(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return BigInt(jsonHandle([]));
+    if (typeof v === 'object') return BigInt(jsonHandle(Object.keys(v)));
+    return BigInt(jsonHandle([]));
+}
+
+function objectEntries(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return jsonHandle([]);
+    if (typeof v === 'object') return jsonHandle(Object.entries(v).map(([k, x]) => [k, x]));
+    return jsonHandle([]);
+}
+
+function valueIsFinite(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isFinite(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+function valueIsNaN(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isNaN(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+function valueIsInteger(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isInteger(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+/// `new Date(s).getTime()` — epoch millis from a timestamp string. Returns 0
+/// for anything unparseable rather than NaN, which BigInt cannot represent.
+/// `x.toFixed(n)` — a formatted string, returned as a string handle.
+function valueToFixed(ref, digits) {
+    const v = jsonResolve(ref);
+    const n = typeof v === 'number' ? v : Number(v);
+    const d = Math.max(0, Math.min(100, Number(digits)));
+    return BigInt(writeLengthPrefixedString(Number.isFinite(n) ? n.toFixed(d) : '0'));
+}
+
+/// `typeof x`, as a string handle. Arrays report "object", as in JS.
+function valueTypeOf(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(writeLengthPrefixedString(v === null ? 'object' : typeof v));
+}
+
+function valueIsArray(ref) {
+    return BigInt(Array.isArray(jsonResolve(ref)) ? 1 : 0);
+}
+
+function timingParse(ref) {
+    const v = jsonResolve(ref);
+    const ms = typeof v === 'number' ? v : Date.parse(String(v));
+    return BigInt(Number.isFinite(ms) ? Math.trunc(ms) : 0);
+}
+
 function jsonParse(strRef) {
     const text = readLengthPrefixedString(strRef);
     try {
@@ -566,6 +632,17 @@ function stringFromFloat(value) {
     const str = String(value);
     console.log('[string.from_float]', value, '=>', JSON.stringify(str));
     return writeLengthPrefixedString(str);
+}
+
+// `String·from_utf8(bytes)`. A Sigil `Vec[u8]` is an array of byte values held
+// by the host, not a buffer in linear memory, so decoding happens here.
+function stringFromUtf8(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) {
+        return writeLengthPrefixedString('');
+    }
+    const bytes = Uint8Array.from(arr, (b) => Number(b) & 0xff);
+    return writeLengthPrefixedString(new TextDecoder().decode(bytes));
 }
 
 // ---------------------------------------------------------------------------
@@ -957,32 +1034,6 @@ function domCloneNode(elId, deep) {
         return id;
     }
     return 0;
-}
-
-function domGetValue(elId) {
-    const el = domElements.get(Number(elId));
-    if (el && 'value' in el) {
-        return writeLengthPrefixedString(el.value);
-    }
-    return 0;
-}
-
-function domSetValue(elId, valuePtr) {
-    const el = domElements.get(Number(elId));
-    if (el && 'value' in el) {
-        const value = readLengthPrefixedString(valuePtr);
-        el.value = value;
-    }
-}
-
-function domFocus(elId) {
-    const el = domElements.get(Number(elId));
-    if (el && el.focus) el.focus();
-}
-
-function domScrollTo(elId, x, y) {
-    const el = domElements.get(Number(elId));
-    if (el) el.scrollTo(Number(x), Number(y));
 }
 
 // =============================================================================
@@ -2073,6 +2124,7 @@ export function createImports() {
             eq: stringEq,
             from_int: stringFromInt,
             from_float: stringFromFloat,
+            from_utf8: stringFromUtf8,
             parse_int: stringParseInt,
             parse_float: stringParseFloat,
             lines: stringLines,
@@ -2107,10 +2159,6 @@ export function createImports() {
             get_element_by_id: domGetElementById,
             query_selector: domQuerySelector,
             clone_node: domCloneNode,
-            get_value: domGetValue,
-            set_value: domSetValue,
-            focus: domFocus,
-            scroll_to: domScrollTo,
         },
         events: {
             add_listener: eventsAddListener,
@@ -2127,8 +2175,11 @@ export function createImports() {
             set_interval: timingSetInterval,
             clear_interval: timingClearInterval,
             request_animation_frame: timingRequestAnimationFrame,
+            parse: timingParse,
         },
         fetch: {
+            request: fetchRequest,
+            status: fetchStatus,
             start: fetchStart,
             poll: fetchPoll,
             get_status: fetchGetStatus,
@@ -2205,6 +2256,15 @@ export function createImports() {
         },
         value: {
             to_bool: valueToBool,
+            object_values: objectValues,
+            object_keys: objectKeys,
+            object_entries: objectEntries,
+            is_finite: valueIsFinite,
+            is_nan: valueIsNaN,
+            is_integer: valueIsInteger,
+            to_fixed: valueToFixed,
+            is_array: valueIsArray,
+            type_of: valueTypeOf,
         },
         json: {
             parse: jsonParse,
@@ -2249,7 +2309,12 @@ export function createImports() {
             promise_race: promiseRace,
             spawn: promiseSpawn,
             yield_now: promiseYieldNow,
-            await_promise: promiseAwait,
+            // Suspending where the host supports it: the WASM stack parks
+            // in here until the promise settles. Without JSPI this is the old
+            // synchronous reader, which cannot wait and says so by answering 0.
+            await_promise: jspiAvailable()
+                ? new WebAssembly.Suspending(awaitPromiseAsync)
+                : promiseAwait,
             create_continuation: promiseContinuation,
             resume: promiseResume,
         },
@@ -2309,6 +2374,124 @@ export async function loadWasm(wasmPath, additionalImports = {}) {
     return instance;
 }
 
+// A module that returns a String hands back a heap handle, not text. The host
+// has no way to read one without this: `render_vnode_to_string` produced
+// perfectly good HTML that nothing on this side could see.
+// The other half of `readSigilString`: a caller could read a string out of a
+// module and had no way to pass one in, so every exported function taking a
+// String was uncallable from the host.
+export function writeSigilString(str) {
+    return writeLengthPrefixedString(String(str));
+}
+
+export function readSigilString(ptr) {
+    return readLengthPrefixedString(ptr);
+}
+
+// Instantiate from bytes rather than a URL, for callers that are not a browser
+// fetch — a Node driver, a test harness.
+// ---------------------------------------------------------------------------
+// Asynchrony, through JavaScript Promise Integration.
+//
+// A Sigil program says `.await` and nothing else: it has no event loop, no
+// continuations, and the compiler does no CPS transform. JSPI is what makes
+// that work — `WebAssembly.Suspending` lets a host import suspend the whole
+// WASM stack until a promise settles, and `WebAssembly.promising` turns an
+// export into one that returns a promise. The module's straight-line code is
+// unchanged; the suspension happens underneath it.
+//
+// Where JSPI is not available the import still resolves — it answers with a
+// settled promise's value and `0` for a pending one, which is what it did
+// before. That is wrong for a real request, and `jspiAvailable()` says so
+// rather than pretending.
+// ---------------------------------------------------------------------------
+
+export function jspiAvailable() {
+    return typeof WebAssembly.Suspending === 'function'
+        && typeof WebAssembly.promising === 'function';
+}
+
+// `fetch_request(url, method, body)` — one request, as a promise id.
+//
+// The polling protocol next to it (`start`/`poll`/`get_body`) needs a loop the
+// program does not have. This is the shape `.await` can use.
+function fetchRequest(urlPtr, methodPtr, bodyPtr) {
+    const url = readLengthPrefixedString(urlPtr);
+    const method = methodPtr ? readLengthPrefixedString(methodPtr) : 'GET';
+    const body = bodyPtr ? readLengthPrefixedString(bodyPtr) : null;
+    const id = nextPromiseId++;
+    const entry = { state: PROMISE_PENDING, value: 0n };
+    promises.set(id, entry);
+
+    const init = { method: method || 'GET' };
+    if (body !== null && body !== '' && method && method !== 'GET') {
+        init.body = body;
+        init.headers = { 'content-type': 'application/json' };
+    }
+    entry.promise = (typeof fetch === 'function'
+        ? fetch(url, init).then((res) => res.text().then((text) => ({ ok: res.ok, status: res.status, text })))
+        : Promise.reject(new Error('no fetch in this host'))
+    ).then(
+        (r) => {
+            entry.state = PROMISE_RESOLVED;
+            // The body as a Sigil string handle. Status travels with it, so a
+            // caller can still see a failure — see `fetch_status`.
+            entry.status = r.status;
+            entry.value = BigInt(writeLengthPrefixedString(r.text));
+            return entry.value;
+        },
+        (e) => {
+            entry.state = PROMISE_REJECTED;
+            entry.status = 0;
+            entry.error = String(e && e.message ? e.message : e);
+            entry.value = BigInt(writeLengthPrefixedString(''));
+            return entry.value;
+        },
+    );
+    return id;
+}
+
+// The status of the request a promise id came from, or 0 if it is not one.
+function fetchStatus(id) {
+    const p = promises.get(Number(id));
+    return p && typeof p.status === 'number' ? p.status : 0;
+}
+
+// `async.await_promise`, as a suspending import: the WASM stack parks here
+// until the promise settles, and the value comes back as the call's result.
+async function awaitPromiseAsync(id) {
+    const p = promises.get(Number(id));
+    if (!p) return 0n;
+    if (p.promise) {
+        try {
+            return await p.promise;
+        } catch {
+            return 0n;
+        }
+    }
+    return p.state === PROMISE_RESOLVED ? p.value : 0n;
+}
+
+// An export that may await, as one that returns a promise.
+//
+// JSPI requires the whole stack between a promising export and a suspending
+// import to be WASM, so the entry point has to be wrapped explicitly. Returns
+// the export unchanged when JSPI is not available — the call will not suspend,
+// which is visible rather than silent because `jspiAvailable()` is false.
+export function promising(name) {
+    const fn = wasmExports && wasmExports[name];
+    if (typeof fn !== 'function') return null;
+    return jspiAvailable() ? WebAssembly.promising(fn) : fn;
+}
+
+export function instantiateWasm(bytes, additionalImports = {}) {
+    const imports = createImports();
+    Object.assign(imports, additionalImports);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), imports);
+    setWasmExports(instance.exports);
+    return instance;
+}
+
 // Convenience function to mount a vnode to a selector from JS
 export function mountVnode(vnodeId, selector) {
     const container = document.querySelector(selector) || document.getElementById(selector.replace('#', ''));
@@ -2347,4 +2530,4 @@ export class SigilRuntime {
     }
 }
 
-export default { createImports, loadWasm, mountVnode, SigilRuntime };
+export default { createImports, loadWasm, instantiateWasm, mountVnode, readSigilString, SigilRuntime };

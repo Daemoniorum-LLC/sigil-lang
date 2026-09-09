@@ -5598,8 +5598,16 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Dot) => {
                     self.advance();
-                    // Handle `.⌛` as await syntax (alternative to `expr⌛`)
-                    if self.check(&Token::Async) {
+                    // Handle `.⌛` and `.await` as await syntax (alternatives
+                    // to `expr⌛`).
+                    //
+                    // `.await` was not among them, so it parsed as a FIELD named
+                    // `await` and compiled to a load at offset 0 of whatever the
+                    // expression produced — reading a promise id as a pointer.
+                    // Every `.await` in a migrated program is this spelling, so
+                    // none of them awaited anything, in code that compiled and
+                    // reported success.
+                    if self.check(&Token::Async) || self.check(&Token::Await) {
                         self.advance();
                         let evidentiality = self.parse_evidentiality_opt();
                         expr = Expr::Await {

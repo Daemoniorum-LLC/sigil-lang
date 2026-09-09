@@ -1156,6 +1156,21 @@ impl<'a> ExprTransformer<'a> {
                     }
                 }
 
+                // `fetch(url, { method, body })` — the host takes the three
+                // separately, and returns a promise `.await` suspends on.
+                // Passed through, `fetch` resolved to nothing and every request
+                // in the client compiled to a constant 0.
+                if let Expr::Ident(id) = expr {
+                    if id.sym.as_ref() == "fetch" && !call.args.is_empty() {
+                        let url = self.transform_expr(&call.args[0].expr);
+                        let (method, body) = match call.args.get(1) {
+                            Some(opts) => self.fetch_options(&opts.expr),
+                            None => ("\"GET\"".to_string(), "\u{2205}".to_string()),
+                        };
+                        return format!("fetch_request({}, {}, {})", url, method, body);
+                    }
+                }
+
                 // `Number(x)` and `String(x)` are conversions, not calls to
                 // anything a Sigil program declares — they came out as
                 // `number(x)` and `string(x)`, two more lowercase names the
@@ -1295,6 +1310,38 @@ impl<'a> ExprTransformer<'a> {
                 format!("/* import({}) */", args)
             }
         }
+    }
+
+    /// The `method` and `body` out of a `fetch` options object.
+    ///
+    /// Anything that is not an object literal is reported: the host needs the
+    /// two separately and there is nothing to read them from.
+    fn fetch_options(&mut self, opts: &Expr) -> (String, String) {
+        let mut method = "\"GET\"".to_string();
+        let mut body = "\u{2205}".to_string();
+        let Expr::Object(obj) = opts else {
+            self.warn("fetch options are not an object literal");
+            return (method, body);
+        };
+        for prop in &obj.props {
+            let PropOrSpread::Prop(p) = prop else { continue };
+            let Prop::KeyValue(kv) = &**p else { continue };
+            let key = match &kv.key {
+                PropName::Ident(i) => i.sym.to_string(),
+                PropName::Str(sv) => format!("{:?}", sv.value).trim_matches(0x22 as char).to_string(),
+                _ => continue,
+            };
+            match key.as_str() {
+                "method" => method = self.transform_expr(&kv.value),
+                "body" => body = self.transform_expr(&kv.value),
+                // Headers are not modelled: the host sets a JSON content type
+                // for a request that has a body, which is what every call in
+                // the client asked for.
+                "headers" => self.warn("fetch headers are not passed through"),
+                _ => {}
+            }
+        }
+        (method, body)
     }
 
     /// `setX(prev => …)` as the assignment it means.
