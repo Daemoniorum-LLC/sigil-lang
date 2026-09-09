@@ -5187,6 +5187,74 @@ fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
     (out, dropped)
 }
 
+/// Rewrite `from` to `to` where `from` begins a path, returning the new text
+/// and how many roots were rewritten.
+///
+/// "Begins a path" means the preceding character is neither an identifier
+/// character nor `·`. That second exclusion is what keeps `std·alloc·Layout`
+/// intact while rewriting a bare `alloc·Layout`: `std::alloc` is a real `std`
+/// path, and rewriting its second segment would produce `std·std·Layout`.
+fn rewrite_path_root(text: &str, from: &str, to: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut rewritten = 0;
+    for (idx, _) in text.match_indices(from) {
+        if idx < last {
+            continue;
+        }
+        let at_root = text[..idx]
+            .chars()
+            .last()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '·'));
+        if at_root {
+            out.push_str(&text[last..idx]);
+            out.push_str(to);
+            last = idx + from.len();
+            rewritten += 1;
+        }
+    }
+    out.push_str(&text[last..]);
+    (out, rewritten)
+}
+
+/// Collapse a qualified path ending in `suffix` to `to`, dropping any crate
+/// qualifier in front of it. Returns the new text and how many were collapsed.
+///
+/// Generated code rarely names the no_std prelude paths directly: prost emits
+/// `::prost::alloc::string::String`, its own re-export for no_std builds. That
+/// is the same `String`, so the qualifier is noise once the path is no longer
+/// Rust's.
+fn collapse_qualified_path(text: &str, suffix: &str, to: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut collapsed = 0;
+    for (idx, _) in text.match_indices(suffix) {
+        if idx < last {
+            continue;
+        }
+        // Walk back over any `ident·` segments qualifying this path.
+        let mut start = idx;
+        loop {
+            let head = &text[last..start];
+            let Some(before_dot) = head.strip_suffix('·') else {
+                break;
+            };
+            let trimmed = before_dot.trim_end_matches(|c: char| c.is_alphanumeric() || c == '_');
+            if trimmed.len() == before_dot.len() {
+                // A `·` with no identifier in front of it is not a qualifier.
+                break;
+            }
+            start = last + trimmed.len();
+        }
+        out.push_str(&text[last..start]);
+        out.push_str(to);
+        last = idx + suffix.len();
+        collapsed += 1;
+    }
+    out.push_str(&text[last..]);
+    (out, collapsed)
+}
+
 /// Split Rust source into code and non-code regions, applying `f` to the code
 /// only and copying comments and literals through untouched.
 ///
@@ -5589,6 +5657,33 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
                 changes += count;
                 piece = piece.replace(from, to);
             }
+        }
+
+        // `core` and `alloc` are Rust's no_std subsets of `std`. Sigil
+        // registers neither, so a migrated `core·option·Option` names a module
+        // that does not exist — it parses, and resolves to nothing. Everything
+        // those two expose is re-exported from `std`, so rewrite the root onto
+        // it. The three prelude types that dominate generated protobuf output
+        // collapse to the bare names a Sigil programmer would write.
+        // The three prelude types collapse to their bare names wherever they
+        // appear, qualifier and all: prost writes
+        // `::prost::alloc::string::String`, which is still just `String`.
+        for (suffix, to) in [
+            ("core·option·Option", "Option"),
+            ("alloc·string·String", "String"),
+            ("alloc·vec·Vec", "Vec"),
+        ] {
+            let (collapsed, count) = collapse_qualified_path(&piece, suffix, to);
+            piece = collapsed;
+            changes += count;
+        }
+
+        // Anything else under those roots moves onto `std`, but only at a path
+        // root: `std·alloc·Layout` is a real std path.
+        for (from, to) in [("core·", "std·"), ("alloc·", "std·")] {
+            let (rewritten, count) = rewrite_path_root(&piece, from, to);
+            piece = rewritten;
+            changes += count;
         }
 
         for (keyword, replacement, suffixes) in keyword_replacements {
@@ -6642,6 +6737,40 @@ mod migrate_span_tests {
         let (out, n) = super::drop_absolute_path_prefix("d(::a::B, ::c::D)");
         assert_eq!(out, "d(a::B, c::D)");
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn no_std_roots_are_rewritten_onto_std() {
+        let f = |t: &str| {
+            let mut s = t.to_string();
+            for (suffix, to) in [
+                ("core·option·Option", "Option"),
+                ("alloc·string·String", "String"),
+                ("alloc·vec·Vec", "Vec"),
+            ] {
+                s = super::collapse_qualified_path(&s, suffix, to).0;
+            }
+            for (from, to) in [("core·", "std·"), ("alloc·", "std·")] {
+                s = super::rewrite_path_root(&s, from, to).0;
+            }
+            s
+        };
+        // Prelude types collapse to bare names.
+        assert_eq!(f("a: core·option·Option<u32>"), "a: Option<u32>");
+        assert_eq!(f("b: alloc·string·String"), "b: String");
+        assert_eq!(f("c: alloc·vec·Vec<u8>"), "c: Vec<u8>");
+        // Including through a crate's own no_std re-export, as prost emits.
+        assert_eq!(f("d: prost·alloc·string·String"), "d: String");
+        assert_eq!(f("e: prost·alloc·vec·Vec<u8>"), "e: Vec<u8>");
+        assert_eq!(f("f: core·option·Option<prost·alloc·string·String>"), "f: Option<String>");
+        // Anything else moves onto std.
+        assert_eq!(f("core·sync·atomic·Ordering"), "std·sync·atomic·Ordering");
+        // `std::alloc` is a real std path and must survive untouched — the
+        // reason the root guard excludes a preceding `·`.
+        assert_eq!(f("std·alloc·Layout"), "std·alloc·Layout");
+        assert_eq!(f("invoke std·alloc·{alloc, dealloc}"), "invoke std·alloc·{alloc, dealloc}");
+        // An identifier that merely ends in the root is not a root.
+        assert_eq!(f("mycore·x"), "mycore·x");
     }
 
     #[test]
