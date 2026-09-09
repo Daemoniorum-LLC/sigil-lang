@@ -38763,13 +38763,19 @@ fn register_sys(interp: &mut Interpreter) {
                     };
                     let ret = match addr {
                         std::net::SocketAddr::V4(v4) => {
-                            let sa = libc::sockaddr_in {
-                                sin_family: libc::AF_INET as libc::sa_family_t,
-                                sin_port: v4.port().to_be(),
-                                sin_addr: libc::in_addr {
-                                    s_addr: u32::from_ne_bytes(v4.ip().octets()),
-                                },
-                                sin_zero: [0; 8],
+                            // Zeroed and assigned, not a struct literal:
+                            // `sockaddr_in` does not have the same fields on
+                            // every unix. Darwin and the BSDs carry a leading
+                            // `sin_len`, so the literal form failed to compile
+                            // on macOS while building fine on Linux. `bind`
+                            // takes the length as its own argument, so leaving
+                            // `sin_len` zero is what the call actually uses.
+                            let mut sa: libc::sockaddr_in =
+                                unsafe { std::mem::zeroed() };
+                            sa.sin_family = libc::AF_INET as libc::sa_family_t;
+                            sa.sin_port = v4.port().to_be();
+                            sa.sin_addr = libc::in_addr {
+                                s_addr: u32::from_ne_bytes(v4.ip().octets()),
                             };
                             unsafe {
                                 libc::bind(
