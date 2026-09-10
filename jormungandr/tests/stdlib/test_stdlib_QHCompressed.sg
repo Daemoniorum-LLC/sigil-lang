@@ -1,3 +1,14 @@
+// SKIP #156 -- QHCompressed has NO registered members; the type is
+// unreachable from Sigil.
+//
+// The implementation is ABSENT, not flaky.
+//
+// It passed until #146 only because the fallback named the struct it
+// fabricated after the type in the call, so `type_of(qhc)` returned
+// "struct:QHCompressed" no matter what. `Wibble·new()` satisfies the same
+// assertion.
+//
+// Kept rather than deleted so the gap keeps a number a reader can find.
 // Stdlib Tests: QHCompressed
 // Compressed quantum hypergraph with REAL assertions
 // TODO: Expand coverage - currently only tests constructor, needs quantum operation testing

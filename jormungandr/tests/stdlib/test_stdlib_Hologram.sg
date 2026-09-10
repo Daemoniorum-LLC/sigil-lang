@@ -1,3 +1,13 @@
+// SKIP #158 -- the reachable `Hologram·encode` is a 1-arg stub that shadows
+// the real 4-arg Reed-Solomon encoder; `Hologram·new` does not exist.
+//
+// The implementation is SHADOWED, not flaky.
+//
+// `Hologram·new` was fabricated by the fallback removed in #146, and the
+// `type_of` assertion on `encode` is satisfied equally by the stub and by a
+// real encoder, so this file could not tell them apart.
+//
+// Kept rather than deleted so the gap keeps a number a reader can find.
 // Stdlib Tests: Hologram
 // Hologram type with REAL assertions
 
