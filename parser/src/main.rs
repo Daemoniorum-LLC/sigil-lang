@@ -6286,11 +6286,12 @@ fn report_keyword_collisions(collisions: &[(String, usize)]) {
     let names = collisions.len();
     eprintln!();
     eprintln!(
-        "warning: {} name{} in this file {} refused by the Sigil parser where {} stand:",
+        "warning: {} name{} in this file {} refused by the Sigil parser where {} stand{}:",
         names,
         if names == 1 { "" } else { "s" },
         if names == 1 { "is" } else { "are" },
         if names == 1 { "it" } else { "they" },
+        if names == 1 { "s" } else { "" },
     );
     for (word, count) in collisions {
         eprintln!(
