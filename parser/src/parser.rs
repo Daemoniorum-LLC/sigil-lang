@@ -101,6 +101,10 @@ pub struct Parser<'a> {
     current: Option<(Token, Span)>,
     /// Tracks whether we're parsing a condition (if/while/for) where < is comparison not generics
     in_condition: bool,
+    /// Tracks whether we're parsing a type, where `·` is unambiguously a path separator.
+    /// A type position contains no variables, so the lowercase-means-method-call heuristic in
+    /// `parse_type_path` does not apply there -- see the comment in that function.
+    in_type_position: bool,
     /// Tracks if we have a pending `>` from splitting `>>` (Shr) in generic contexts
     pending_gt: Option<Span>,
 }
@@ -116,6 +120,7 @@ impl<'a> Parser<'a> {
             lexer,
             current,
             in_condition: false,
+            in_type_position: false,
             pending_gt: None,
         }
     }
@@ -2127,7 +2132,7 @@ impl<'a> Parser<'a> {
 
         // Support both `⊢ Trait ∀ Type` and `⊢ Type : Trait` syntax
         // Also accept `for` keyword for Rust backwards compatibility
-        let (trait_, self_ty) = if self.consume_if(&Token::ForAll) || self.consume_if(&Token::For) {
+        let (trait_, self_ty) = if self.consume_if(&Token::ForAll) {
             // Traditional syntax: ⊢ Trait ∀ Type (impl Trait for Type)
             // Or Rust-style: impl Trait for Type
             let self_ty = self.parse_type()?;
@@ -6144,13 +6149,13 @@ impl<'a> Parser<'a> {
             }
             Some(Token::If) => self.parse_if_expr(),
             Some(Token::Match) => self.parse_match_expr(),
-            Some(Token::ForAll) | Some(Token::For) => {
+            Some(Token::ForAll) => {
                 // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
                 // Also accept Rust-style `for pattern in iter { ... }`
                 self.advance();
                 let pattern = self.parse_pattern()?;
                 // Accept both ∈ (ElementOf) and `in` (In token) for backwards compatibility
-                if !self.consume_if(&Token::ElementOf) && !self.consume_if(&Token::In) {
+                if !self.consume_if(&Token::ElementOf) {
                     return Err(ParseError::UnexpectedToken {
                         expected: "∈ or in".to_string(),
                         found: self.current_token().cloned().unwrap_or(Token::Semi),
@@ -6237,11 +6242,11 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::ForAll) | Some(Token::For) => {
+                    Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
                         // Accept both ∈ (ElementOf) and `in` (In token)
-                        if !self.consume_if(&Token::ElementOf) && !self.consume_if(&Token::In) {
+                        if !self.consume_if(&Token::ElementOf) {
                             return Err(ParseError::UnexpectedToken {
                                 expected: "∈ or in".to_string(),
                                 found: self.current_token().cloned().unwrap_or(Token::Semi),

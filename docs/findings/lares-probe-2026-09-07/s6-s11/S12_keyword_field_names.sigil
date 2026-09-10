@@ -1,0 +1,29 @@
+//! S12 — a Sigil keyword IS legitimately an identifier, in field position.
+//!
+//! `sigil migrate`'s keyword-identifier pass renames every keyword found in a
+//! binding position, on the stated premise that "a keyword can never legitimately
+//! be an identifier". The premise is false: the parser accepts most keywords as
+//! struct field names, in both the declaration and the literal.
+//!
+//! These five parse today and need no rename.
+
+Σ Accepted {
+    anima: Int,
+    state: Int,
+    body: Int,
+    layer: Int,
+    scope: Int,
+}
+
+rite main() {
+    ≔ a = Accepted { anima: 1, state: 2, body: 3, layer: 4, scope: 5 };
+}
+
+// These two do NOT parse as field names, and are the cases the pass exists for:
+//
+//     Σ Rejected { aspect: Int }   // expected identifier, found Trait
+//     Σ Rejected { alter: Int }    // expected identifier, found Alter
+//
+// So the rename is right for `aspect` and `alter` and wrong for the five above.
+// Expected once fixed: the pass consults which keywords the parser actually
+// rejects in the position it found the name, instead of renaming all of them.
