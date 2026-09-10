@@ -54,7 +54,7 @@ fn main() -> ExitCode {
         eprintln!("Commands:");
         eprintln!("  run <file>      Execute a Sigil file (interpreted)");
         eprintln!("  run-dir <dir>   Execute all .sg/.sigil files in dir (multi-module)");
-        eprintln!("  run-ws [bin]    Run a workspace (reads Sigil.toml, optional bin crate name)");
+        eprintln!("  run-ws [bin]    Run a workspace (reads Sigil.toml, optional bin tome name)");
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
@@ -700,7 +700,7 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
         dir_name.to_string()
     };
 
-    eprintln!("Crate name: {}", crate_name);
+    eprintln!("Tome name: {}", crate_name);
 
     // Set up interpreter state for multi-module project
     interpreter.set_current_source_dir(Some(abs_dir.to_string_lossy().to_string()));
@@ -747,28 +747,39 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
         }
     }
 
-    // Create program args array
-    let args_value = sigil_parser::Value::Array(
-        std::rc::Rc::new(std::cell::RefCell::new(
-            program_args.iter()
-                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-                .collect()
-        ))
-    );
+    call_main(&mut interpreter, program_args)
+}
 
-    // Try to call main with args
-    match interpreter.call_function_by_name("main", vec![args_value]) {
-        Ok(value) => {
-            // Check if result is an exit code
-            match &value {
-                sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-                sigil_parser::Value::Null => ExitCode::SUCCESS,
-                _ => {
-                    println!("{}", value);
-                    ExitCode::SUCCESS
-                }
+/// Invoke the entry point and turn its result into a process exit code.
+///
+/// `main` may be written either way — `rite main()` or `rite main(args)` — so the
+/// argument list is shaped to the arity the program actually declares. Asking
+/// first matters: calling with the wrong count and retrying on failure runs
+/// `main` a second time, repeating every side effect it performed before it
+/// failed, and reports the retry's arity complaint in place of the real error.
+fn call_main(interpreter: &mut Interpreter, program_args: &[String]) -> ExitCode {
+    let args = match interpreter.function_arity("main") {
+        // Zero-arg `main` is the common shape and takes nothing.
+        Some(0) => vec![],
+        _ => vec![sigil_parser::Value::Array(std::rc::Rc::new(
+            std::cell::RefCell::new(
+                program_args
+                    .iter()
+                    .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
+                    .collect(),
+            ),
+        ))],
+    };
+
+    match interpreter.call_function_by_name("main", args) {
+        Ok(value) => match &value {
+            sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
+            sigil_parser::Value::Null => ExitCode::SUCCESS,
+            _ => {
+                println!("{}", value);
+                ExitCode::SUCCESS
             }
-        }
+        },
         Err(e) => {
             eprintln!("Runtime error: {}", e);
             ExitCode::from(1)
@@ -858,7 +869,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         }
     }
 
-    eprintln!("Found {} crates:", members.len());
+    eprintln!("Found {} tomes:", members.len());
     for member in &members {
         eprintln!("  - {}", member);
     }
@@ -1122,16 +1133,16 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
         interpreter.set_current_module(None);
     }
 
-    eprintln!("All crates loaded successfully.");
+    eprintln!("All tomes loaded successfully.");
 
     // Check we found a binary crate to run
     let binary_crate = match binary_crate {
         Some(name) => name,
         None => {
             if let Some(name) = bin_name {
-                eprintln!("Error: Binary crate '{}' not found in workspace", name);
+                eprintln!("Error: Binary tome '{}' not found in workspace", name);
             } else {
-                eprintln!("Error: No binary crate found in workspace (no main.sigil)");
+                eprintln!("Error: No binary tome found in workspace (no main.sigil)");
             }
             return ExitCode::from(1);
         }
@@ -1139,47 +1150,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
 
     eprintln!("Running binary: {}\n", binary_crate);
 
-    // Create program args array
-    let args_value = sigil_parser::Value::Array(
-        std::rc::Rc::new(std::cell::RefCell::new(
-            program_args.iter()
-                .map(|s| sigil_parser::Value::String(std::rc::Rc::new(s.clone())))
-                .collect()
-        ))
-    );
-
-    // Try to call main
-    match interpreter.call_function_by_name("main", vec![args_value.clone()]) {
-        Ok(value) => {
-            match &value {
-                sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-                sigil_parser::Value::Null => ExitCode::SUCCESS,
-                _ => {
-                    println!("{}", value);
-                    ExitCode::SUCCESS
-                }
-            }
-        }
-        Err(e) => {
-            // Try calling main with no args
-            match interpreter.call_function_by_name("main", vec![]) {
-                Ok(value) => {
-                    match &value {
-                        sigil_parser::Value::Int(code) => ExitCode::from(*code as u8),
-                        sigil_parser::Value::Null => ExitCode::SUCCESS,
-                        _ => {
-                            println!("{}", value);
-                            ExitCode::SUCCESS
-                        }
-                    }
-                }
-                Err(e2) => {
-                    eprintln!("Runtime error: {}", e2);
-                    ExitCode::from(1)
-                }
-            }
-        }
-    }
+    call_main(&mut interpreter, program_args)
 }
 
 #[cfg(feature = "jit")]
@@ -1833,7 +1804,7 @@ fn rust_compile_workspace(
     };
 
     if crate_dirs.is_empty() {
-        eprintln!("No Sigil crates found in workspace");
+        eprintln!("No Sigil tomes found in workspace");
         return ExitCode::from(1);
     }
 
@@ -1843,7 +1814,7 @@ fn rust_compile_workspace(
         return ExitCode::from(1);
     }
 
-    println!("Compiling {} crates to Rust...", crate_dirs.len());
+    println!("Compiling {} tomes to Rust...", crate_dirs.len());
 
     // Configure codegen options
     let options = RustCodegenOptions {
@@ -1968,7 +1939,7 @@ fn rust_compile_workspace(
         }
     }
 
-    println!("\nCompiled {}/{} crates successfully", success_count, crate_dirs.len());
+    println!("\nCompiled {}/{} tomes successfully", success_count, crate_dirs.len());
 
     if success_count > 0 {
         ExitCode::SUCCESS
