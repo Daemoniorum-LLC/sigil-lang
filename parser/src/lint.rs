@@ -3571,7 +3571,11 @@ fn parse_error_to_diagnostic(error: &ParseError, source_len: usize) -> Diagnosti
                 .with_code(code)
                 .with_label(*span, format!("Rust syntax not supported"))
                 .with_note(format!("Sigil has its own native syntax. Use: {}", sigil))
-                .with_note("Run `sigil migrate <file>` to auto-convert Rust syntax to Sigil".to_string())
+                // Named with a destination, because `sigil migrate <file>` on
+                // its own no longer does anything — it used to overwrite the
+                // file, which is exactly the suggestion nobody should follow
+                // blind (#92).
+                .with_note("Run `sigil migrate <file> --dry-run` to see the conversion, or `-o <dir>` to write it out".to_string())
         }
         ParseError::UnexpectedToken { expected, found, span } => {
             Diagnostic::error(format!("Unexpected token: expected {}, found {:?}", expected, found), *span)

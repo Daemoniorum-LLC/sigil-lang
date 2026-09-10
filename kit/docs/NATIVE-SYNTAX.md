@@ -78,16 +78,27 @@ See `TOOLING.md` for LSP setup which provides automatic completion.
 
 Use the built-in migrate command:
 
+`migrate` always needs to be told where to put its results — one of `-o`,
+`--dry-run` or `--in-place`. There is no default, because the default used to be
+"overwrite whatever path you named" and that is not a thing to do by accident.
+
 ```bash
-# Preview changes (dry run)
+# Recommended: write the migrated tree somewhere else, leaving the input alone
+sigil migrate src/ -o migrated/
+
+# Preview: report what would change, write nothing anywhere
 sigil migrate file.sg --dry-run
 
-# Migrate file in place
-sigil migrate file.sg
+# Destructive, and now explicit: overwrite the input
+sigil migrate file.sg --in-place
 
-# Migrate directory recursively
-sigil migrate src/ --recursive
+# ...with the original kept beside it as file.sg.bak
+sigil migrate file.sg --in-place --backup
 ```
+
+With `-o`, directories are mirrored into the destination and `.rs` files are
+written as `.sg`. `--dry-run` also reads `.rs` files, so it doubles as a
+read-only analysis pass over a Rust crate.
 
 ### Before Migration
 

@@ -81,7 +81,7 @@ fn main() -> ExitCode {
         eprintln!("  test            Run tests in the current project");
         eprintln!("  build           Build the current project");
         eprintln!("  migrate <file|dir>  Convert Rust syntax to native Sigil");
-        eprintln!("                      Options: --dry-run, --backup, --workspace");
+        eprintln!("                      Needs a destination: -o <dir>, --dry-run, or --in-place");
         eprintln!();
         eprintln!("AI Agent Options (for 'check' command):");
         eprintln!("  --format=json       Output diagnostics as JSON (pretty-printed)");
@@ -480,7 +480,11 @@ fn main() -> ExitCode {
         "test" => run_tests(),
         "build" => build_project(),
         "migrate" => {
-            let dry_run = args.iter().any(|a| a == "--dry-run");
+            // `--diff` is accepted as a synonym for `--dry-run`: the thing people
+            // reach for when they want to see what a migration would do is called
+            // both names in the wild, and neither writes anything.
+            let dry_run = args.iter().any(|a| a == "--dry-run" || a == "--diff");
+            let in_place = args.iter().any(|a| a == "--in-place");
             let backup = args.iter().any(|a| a == "--backup");
             let evidentiality = args.iter().any(|a| a == "--evidentiality");
             let workspace = args.iter().any(|a| a == "--workspace");
@@ -489,7 +493,7 @@ fn main() -> ExitCode {
                 .position(|a| a == "-o" || a == "--output")
                 .and_then(|pos| args.get(pos + 1).cloned());
 
-            // React migration (feature-gated)
+            // React migration (feature-gated) — it parses its own flags.
             #[cfg(feature = "react-migrate")]
             if args.iter().any(|a| a == "--from-react") {
                 return match sigil_parser::migrate::react::run_react_migrate(&args[2..]) {
@@ -501,34 +505,52 @@ fn main() -> ExitCode {
                 };
             }
 
-            if workspace {
-                // Migrate entire workspace from Sigil.toml
-                migrate_workspace(dry_run, backup, evidentiality)
-            } else if args.len() < 3 || args[2].starts_with('-') {
-                eprintln!("Usage: sigil migrate <file|directory> [options]");
-                eprintln!("       sigil migrate <file|directory> -o <output_dir> [options]");
-                eprintln!("       sigil migrate --workspace [options]");
-                #[cfg(feature = "react-migrate")]
-                eprintln!("       sigil migrate --from-react <dir> [options]");
-                eprintln!();
-                eprintln!("Options:");
-                eprintln!("  -o, --output     Output directory (writes .sg files, preserves structure)");
-                eprintln!("  --dry-run        Show changes without applying");
-                eprintln!("  --backup         Create .bak backup before modifying");
-                eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
-                eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
-                #[cfg(feature = "react-migrate")]
-                eprintln!("  --from-react     Migrate React/TSX to Qliphoth actors");
-                eprintln!();
-                eprintln!("When -o is specified, .rs files are converted to .sg files in output dir.");
-                eprintln!("Without -o, files are modified in-place (must be .sg or .sigil).");
+            let source = migrate_source_arg(&args);
+            if !workspace && source.is_none() {
+                print_migrate_usage();
                 return ExitCode::from(1);
+            }
+
+            let mode = match resolve_migrate_mode(in_place, dry_run, output_dir.is_some()) {
+                Ok(mode) => mode,
+                Err(message) => {
+                    eprintln!("{}", message);
+                    // 2, not 1: nothing was read, nothing was written, and the
+                    // only thing wrong is the invocation. A sweep script can
+                    // tell "you asked for the impossible" from "the migration
+                    // itself failed" without parsing stderr.
+                    return ExitCode::from(2);
+                }
+            };
+
+            if workspace {
+                if mode == MigrateMode::Output {
+                    eprintln!("Error: --workspace cannot write to -o/--output yet.");
+                    eprintln!("  It rewrites the members named by Sigil.toml where they sit, so the");
+                    eprintln!("  only honest modes for it are --dry-run and --in-place. To mirror a");
+                    eprintln!("  tree into a destination, point migrate at the directory instead:");
+                    eprintln!("      sigil migrate <directory> -o <output_dir>");
+                    return ExitCode::from(2);
+                }
+                // Migrate entire workspace from Sigil.toml
+                migrate_workspace(mode, backup, evidentiality)
             } else {
-                let path = std::path::Path::new(&args[2]);
+                let source = source.expect("checked above");
+                let opts = MigrateOptions {
+                    mode,
+                    output_dir: output_dir.as_deref(),
+                    backup,
+                    evidentiality,
+                    // A single file's dry run prints the migrated text, which is
+                    // the useful thing to look at. A directory's does not — see
+                    // MigrateOptions::show_dry_run_body.
+                    show_dry_run_body: true,
+                };
+                let path = std::path::Path::new(source);
                 if path.is_dir() {
-                    migrate_directory(&args[2], output_dir.as_deref(), dry_run, backup, evidentiality)
+                    migrate_directory(source, opts)
                 } else {
-                    migrate_file(&args[2], output_dir.as_deref(), dry_run, backup, evidentiality)
+                    migrate_file(source, opts)
                 }
             }
         }
@@ -5272,6 +5294,135 @@ fn compile_library(path: &str, name: &str, target_dir: &std::path::Path) -> Exit
 }
 
 /// Recursively collect all .sg and .sigil files from a directory.
+/// Where a migration puts its results.
+///
+/// There is no default. `sigil migrate <src>` used to mean `--in-place`, which
+/// made the destructive mode the one you got by typing the least — point it at
+/// a checkout and the checkout is gone, point it at `~/.cargo/registry` and
+/// every project on the machine is (#92). Overwriting your input is a real
+/// thing to want, so it stayed; it just has to be asked for now.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MigrateMode {
+    /// `-o <dir>`: write results under a destination, mirroring the input tree.
+    /// The input is not touched. This is the recommended mode.
+    Output,
+    /// `--dry-run` / `--diff`: report what would change, write nothing anywhere.
+    DryRun,
+    /// `--in-place`: overwrite the input. Destructive, and now explicit.
+    InPlace,
+}
+
+/// Everything `migrate_file` needs beyond the path it is working on.
+#[derive(Clone, Copy)]
+struct MigrateOptions<'a> {
+    mode: MigrateMode,
+    /// Destination root. `Some` whenever `-o` was given, including alongside
+    /// `--dry-run`, where it only affects the paths that get reported.
+    output_dir: Option<&'a str>,
+    backup: bool,
+    evidentiality: bool,
+    /// Whether a dry run prints the whole migrated file.
+    ///
+    /// For one file that is the point of the mode. For a directory sweep it is
+    /// thousands of files of stdout, which is exactly what makes a sweep
+    /// harness (#90) unpleasant to write, so directory mode prints one line per
+    /// changed file instead.
+    show_dry_run_body: bool,
+}
+
+impl MigrateOptions<'_> {
+    /// True when this run may put bytes on disk at all.
+    fn writes(&self) -> bool {
+        self.mode != MigrateMode::DryRun
+    }
+}
+
+/// Decide the migration mode from the flags, or explain why they do not name one.
+///
+/// Pure so the decision can be tested without a filesystem — the whole point of
+/// #92 is that this decision must never quietly fall back to overwriting.
+fn resolve_migrate_mode(
+    in_place: bool,
+    dry_run: bool,
+    has_output: bool,
+) -> Result<MigrateMode, String> {
+    match (in_place, dry_run, has_output) {
+        (true, true, _) => Err("\
+Error: --in-place and --dry-run ask for opposite things.
+  --dry-run writes nothing; --in-place overwrites the input. Pick one."
+            .to_string()),
+        (true, false, true) => Err("\
+Error: --in-place and -o/--output name different destinations.
+  --in-place writes over the input; -o writes to a directory. Pick one."
+            .to_string()),
+        (true, false, false) => Ok(MigrateMode::InPlace),
+        // --dry-run wins over -o, which is not a conflict: it means "show me
+        // what would land in that directory", and still writes nothing.
+        (false, true, _) => Ok(MigrateMode::DryRun),
+        (false, false, true) => Ok(MigrateMode::Output),
+        (false, false, false) => Err("\
+Error: `sigil migrate` needs to be told where to put its output.
+
+  sigil migrate <src> -o <dest>    write the migrated tree to <dest>, leaving <src> alone
+  sigil migrate <src> --dry-run    report what would change and write nothing
+  sigil migrate <src> --in-place   overwrite <src> (destructive)
+
+Migration used to rewrite <src> in place when given no flag at all, so the
+destructive mode was the one you got by typing the least and there was no way
+to get the original back. It is opt-in now. See issue #92."
+            .to_string()),
+    }
+}
+
+/// The file or directory to migrate: the first positional argument after the
+/// subcommand.
+///
+/// Scans rather than reading `args[2]`, so `sigil migrate --dry-run src/` works
+/// as well as `sigil migrate src/ --dry-run`. The token after `-o`/`--output`
+/// is that flag's value, not a source.
+fn migrate_source_arg(args: &[String]) -> Option<&str> {
+    let mut skip_next = false;
+    for arg in &args[2.min(args.len())..] {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg == "-o" || arg == "--output" {
+            skip_next = true;
+            continue;
+        }
+        if arg.starts_with('-') {
+            continue;
+        }
+        return Some(arg);
+    }
+    None
+}
+
+fn print_migrate_usage() {
+    eprintln!("Usage: sigil migrate <file|directory> -o <output_dir> [options]   (recommended)");
+    eprintln!("       sigil migrate <file|directory> --dry-run [options]");
+    eprintln!("       sigil migrate <file|directory> --in-place [options]");
+    eprintln!("       sigil migrate --workspace (--dry-run | --in-place) [options]");
+    #[cfg(feature = "react-migrate")]
+    eprintln!("       sigil migrate --from-react <dir> [options]");
+    eprintln!();
+    eprintln!("Destination (exactly one is required):");
+    eprintln!("  -o, --output <dir>  Write results under <dir>, mirroring the input tree.");
+    eprintln!("                      The input is left byte-for-byte alone.");
+    eprintln!("  --dry-run, --diff   Report what would change. Writes nothing, anywhere.");
+    eprintln!("  --in-place          Overwrite the input. Destructive.");
+    eprintln!();
+    eprintln!("Options:");
+    eprintln!("  --backup            With --in-place, write <file>.bak first");
+    eprintln!("  --evidentiality     Add evidentiality markers to external data sources");
+    eprintln!("  --workspace         Migrate all files in workspace (reads Sigil.toml)");
+    #[cfg(feature = "react-migrate")]
+    eprintln!("  --from-react        Migrate React/TSX to Qliphoth actors");
+    eprintln!();
+    eprintln!("With -o, .rs files are converted to .sg files in the output dir.");
+}
+
 fn collect_migrate_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     collect_migrate_files_with_rs(dir, false)
 }
@@ -5311,17 +5462,22 @@ fn collect_migrate_files_with_rs(dir: &std::path::Path, include_rs: bool) -> Vec
 }
 
 /// Migrate all .sg/.sigil/.rs files in a directory (recursive).
-/// With output_dir, preserves directory structure and converts .rs → .sg.
-fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+/// With `-o`, preserves directory structure and converts .rs → .sg.
+fn migrate_directory(dir_path: &str, opts: MigrateOptions<'_>) -> ExitCode {
     let input_path = std::path::Path::new(dir_path);
     if !input_path.exists() {
         eprintln!("Error: directory '{}' does not exist", dir_path);
         return ExitCode::from(1);
     }
 
-    let files = collect_migrate_files_with_rs(input_path, output_dir.is_some());
+    // `.rs` files are in scope for every mode that does not overwrite the input.
+    // A dry run over a Rust tree is the read-only analysis path #92 asks for and
+    // the sweep #90 needs; scanning only .sg/.sigil there would have made it see
+    // nothing at all. In-place still declines to rewrite a Rust checkout wholesale.
+    let include_rs = opts.mode != MigrateMode::InPlace;
+    let files = collect_migrate_files_with_rs(input_path, include_rs);
     if files.is_empty() {
-        if output_dir.is_some() {
+        if include_rs {
             eprintln!("No .sg, .sigil, or .rs files found in '{}'", dir_path);
         } else {
             eprintln!("No .sg or .sigil files found in '{}'", dir_path);
@@ -5329,8 +5485,11 @@ fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, ba
         return ExitCode::from(1);
     }
 
-    println!("Migrating {} files in '{}'...", files.len(), dir_path);
-    if let Some(out_dir) = output_dir {
+    match opts.mode {
+        MigrateMode::DryRun => println!("Dry run over {} files in '{}' (nothing will be written)...", files.len(), dir_path),
+        _ => println!("Migrating {} files in '{}'...", files.len(), dir_path),
+    }
+    if let Some(out_dir) = opts.output_dir {
         println!("Output directory: {}", out_dir);
     }
     println!();
@@ -5347,13 +5506,16 @@ fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, ba
                 || source.contains("struct ") || source.contains("impl ") || source.contains("trait ")
                 || source.contains("enum ") || source.contains("match ") || source.contains("::")
                 || source.contains("#[");
-            if !has_rust && !evidentiality && output_dir.is_none() {
-                continue; // Skip already-native files silently (in-place mode only)
+            if !has_rust && !opts.evidentiality && opts.output_dir.is_none() {
+                // Nothing to write and nowhere to mirror it to, so an
+                // already-native file is not worth a line of output. With -o the
+                // file still has to be copied across for the mirror to be whole.
+                continue;
             }
         }
 
         // Compute output subdirectory preserving structure
-        let file_output_dir = if let Some(out_dir) = output_dir {
+        let file_output_dir = if let Some(out_dir) = opts.output_dir {
             // Get relative path from input directory
             let rel_path = file.strip_prefix(input_path).unwrap_or(file);
             if let Some(parent) = rel_path.parent() {
@@ -5370,7 +5532,14 @@ fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, ba
             None
         };
 
-        let result = migrate_file(&file_str, file_output_dir.as_deref(), dry_run, backup, evidentiality);
+        let file_opts = MigrateOptions {
+            output_dir: file_output_dir.as_deref(),
+            // One file's worth of migrated text is worth reading; a whole
+            // tree's is not.
+            show_dry_run_body: false,
+            ..opts
+        };
+        let result = migrate_file(&file_str, file_opts);
         if result == ExitCode::SUCCESS {
             total_files_changed += 1;
         } else {
@@ -5381,7 +5550,13 @@ fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, ba
     println!();
     println!("=== Migration Summary ===");
     println!("  Files scanned: {}", files.len());
-    println!("  Files migrated: {}", total_files_changed);
+    if opts.mode == MigrateMode::DryRun {
+        // Not "migrated": nothing was. The per-file `would change:` lines above
+        // are the report; this only says how many files came back clean.
+        println!("  Files analyzed: {}", total_files_changed);
+    } else {
+        println!("  Files migrated: {}", total_files_changed);
+    }
     if errors > 0 {
         println!("  Errors: {}", errors);
     }
@@ -5390,8 +5565,9 @@ fn migrate_directory(dir_path: &str, output_dir: Option<&str>, dry_run: bool, ba
 }
 
 /// Migrate all files in a workspace (reads Sigil.toml).
-fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+fn migrate_workspace(mode: MigrateMode, backup: bool, evidentiality: bool) -> ExitCode {
     use toml::Value as TomlValue;
+    debug_assert_ne!(mode, MigrateMode::Output, "callers reject -o for --workspace");
 
     // Look for Sigil.toml
     let manifest_content = match fs::read_to_string("Sigil.toml")
@@ -5401,7 +5577,7 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
         Err(_) => {
             eprintln!("Error: No Sigil.toml found in current directory");
             eprintln!("Run this command from a Sigil workspace root, or use:");
-            eprintln!("  sigil migrate <directory>");
+            eprintln!("  sigil migrate <directory> -o <output_dir>");
             return ExitCode::from(1);
         }
     };
@@ -5438,7 +5614,11 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
         return ExitCode::from(1);
     }
 
-    println!("Migrating workspace '{}' ({} members)...", project_name, members.len());
+    if mode == MigrateMode::DryRun {
+        println!("Dry run over workspace '{}' ({} members) — nothing will be written...", project_name, members.len());
+    } else {
+        println!("Migrating workspace '{}' ({} members)...", project_name, members.len());
+    }
     println!();
 
     // Collect all files from all workspace members
@@ -5486,7 +5666,13 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
             }
         }
 
-        let result = migrate_file(&file_str, None, dry_run, backup, evidentiality);
+        let result = migrate_file(&file_str, MigrateOptions {
+            mode,
+            output_dir: None,
+            backup,
+            evidentiality,
+            show_dry_run_body: false,
+        });
         if result == ExitCode::SUCCESS {
             files_migrated += 1;
         } else {
@@ -5498,7 +5684,11 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
     println!("=== Workspace Migration Summary ===");
     println!("  Workspace: {}", project_name);
     println!("  Files scanned: {}", all_files.len());
-    println!("  Files migrated: {}", files_migrated);
+    if mode == MigrateMode::DryRun {
+        println!("  Files analyzed: {}", files_migrated);
+    } else {
+        println!("  Files migrated: {}", files_migrated);
+    }
     if files_skipped > 0 {
         println!("  Files already native: {}", files_skipped);
     }
@@ -6219,7 +6409,8 @@ fn map_rust_code_spans(src: &str, mut f: impl FnMut(&str) -> String) -> String {
     }
     out
 }
-fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
+fn migrate_file(path: &str, opts: MigrateOptions<'_>) -> ExitCode {
+    let evidentiality = opts.evidentiality;
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -6231,7 +6422,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     let keyword_collisions = collect_keyword_collisions(&source);
 
     // Compute output path
-    let output_path = if let Some(out_dir) = output_dir {
+    let output_path = if let Some(out_dir) = opts.output_dir {
         let input_path = std::path::Path::new(path);
         let file_name = input_path.file_name().unwrap_or_default().to_string_lossy();
         // Change .rs extension to .sg
@@ -6244,6 +6435,20 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     } else {
         path.to_string()
     };
+
+    // The invariant #92 is about, checked where the write actually happens
+    // rather than trusted to the flag parsing three call frames up: only
+    // --in-place is allowed to land on the file it read.
+    if opts.writes()
+        && opts.mode != MigrateMode::InPlace
+        && std::path::Path::new(&output_path) == std::path::Path::new(path)
+    {
+        eprintln!(
+            "Error: refusing to overwrite the input '{}' — that needs --in-place.",
+            path
+        );
+        return ExitCode::from(1);
+    }
 
     // Path separator. Applied to code only, via map_rust_code_spans below —
     // `::` occurs constantly in prose ("the std::fmt docs", "see Vec::push")
@@ -6627,24 +6832,33 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         return ExitCode::SUCCESS;
     }
 
-    if dry_run {
-        println!("=== Dry run: {} changes would be made to {} ===", total_changes, path);
-        if changes > 0 {
-            println!("  Syntax changes: {}", changes);
+    if opts.mode == MigrateMode::DryRun {
+        if opts.show_dry_run_body {
+            println!("=== Dry run: {} changes would be made to {} ===", total_changes, path);
+            if changes > 0 {
+                println!("  Syntax changes: {}", changes);
+            }
+            if ev_changes > 0 {
+                println!("  Evidentiality markers added: {}", ev_changes);
+            }
+            if opts.output_dir.is_some() {
+                println!("  Would be written to: {}", output_path);
+            }
+            println!();
+            println!("{}", result);
+            println!();
+            println!("Nothing was written. Re-run with -o <dir> or --in-place to apply.");
+        } else {
+            // One grep-able line per file: this is what makes a sweep over a
+            // large tree readable, and what #90's harness reads.
+            println!("would change: {} ({} replacements)", path, total_changes);
         }
-        if ev_changes > 0 {
-            println!("  Evidentiality markers added: {}", ev_changes);
-        }
-        println!();
-        println!("{}", result);
-        println!();
-        println!("Run without --dry-run to apply changes.");
-        report_keyword_collisions(&keyword_collisions);
+        report_keyword_collisions(path, &keyword_collisions);
         return ExitCode::SUCCESS;
     }
 
     // Create backup if requested (only for in-place migration)
-    if backup && output_dir.is_none() {
+    if opts.backup && opts.mode == MigrateMode::InPlace {
         let backup_path = format!("{}.bak", path);
         if let Err(e) = fs::write(&backup_path, &source) {
             eprintln!("Error creating backup '{}': {}", backup_path, e);
@@ -6654,7 +6868,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     }
 
     // Create output directory if needed
-    if let Some(out_dir) = output_dir {
+    if let Some(out_dir) = opts.output_dir {
         if let Err(e) = fs::create_dir_all(out_dir) {
             eprintln!("Error creating output directory '{}': {}", out_dir, e);
             return ExitCode::from(1);
@@ -6667,7 +6881,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         return ExitCode::from(1);
     }
 
-    if output_dir.is_some() {
+    if opts.output_dir.is_some() {
         println!("✓ Migrated {} → {} ({} replacements)", path, output_path, total_changes);
     } else {
         println!("✓ Migrated {} ({} replacements)", path, total_changes);
@@ -6688,7 +6902,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         println!("  ◊ (Predicted) - ML models, LLM completions");
     }
 
-    report_keyword_collisions(&keyword_collisions);
+    report_keyword_collisions(path, &keyword_collisions);
 
     ExitCode::SUCCESS
 }
@@ -6699,7 +6913,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
 /// is the mode someone uses to see what a migration would do to a file, so it
 /// is the run that most wants this warning — leaving it on the write path only
 /// meant the preview was silent and the applied migration was not.
-fn report_keyword_collisions(collisions: &[(String, usize)]) {
+fn report_keyword_collisions(path: &str, collisions: &[(String, usize)]) {
     if collisions.is_empty() {
         return;
     }
@@ -6708,8 +6922,13 @@ fn report_keyword_collisions(collisions: &[(String, usize)]) {
     // file with two uses of one name announced two names and then listed one.
     let names = collisions.len();
     eprintln!();
+    // Named, not "this file". One file at a time it was obvious; a --dry-run
+    // sweep over a tree is thousands of these interleaved, and a warning that
+    // will not say which file it is about cannot be triaged — which is the
+    // shape of harness #90 needs.
     eprintln!(
-        "warning: {} name{} in this file {} refused by the Sigil parser where {} stand{}:",
+        "warning: {}: {} name{} {} refused by the Sigil parser where {} stand{}:",
+        path,
         names,
         if names == 1 { "" } else { "s" },
         if names == 1 { "is" } else { "are" },
@@ -7942,5 +8161,325 @@ mod migrate_span_tests {
             mark(src),
             "LET S = \"héllo → wörld\"; // café ∀\nLET X = 1;"
         );
+    }
+}
+
+/// Tests for the destination rules added for #92.
+///
+/// `sigil migrate <src>` used to overwrite `<src>`, so the destructive mode was
+/// the default and the only way to run the reserved-name diagnostic (#68) was
+/// to destroy the file you were asking about. These cover the three modes that
+/// replaced that default, and in particular that the two non-destructive ones
+/// really do leave the input alone — the property the old behaviour lacked.
+#[cfg(test)]
+mod migrate_destination_tests {
+    use super::{
+        migrate_directory, migrate_file, migrate_source_arg, resolve_migrate_mode, MigrateMode,
+        MigrateOptions,
+    };
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::ExitCode;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const RUST_SOURCE: &str = "pub struct Point {\n    x: f64,\n}\n\nimpl Point {\n    pub fn new(x: f64) -> Self {\n        let p = Point { x };\n        return p;\n    }\n}\n";
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    /// A fresh directory under the system temp dir, removed when the guard drops.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> TempDir {
+            let n = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "sigil-migrate-{}-{}-{}",
+                tag,
+                std::process::id(),
+                n
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("create temp dir");
+            TempDir(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn join(&self, rel: &str) -> PathBuf {
+            self.0.join(rel)
+        }
+
+        /// Write a file, creating parents.
+        fn write(&self, rel: &str, contents: &str) -> PathBuf {
+            let path = self.join(rel);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent");
+            }
+            fs::write(&path, contents).expect("write fixture");
+            path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Every path under `root`, relative and sorted, so a tree can be compared
+    /// against itself before and after a run.
+    fn tree(root: &Path) -> Vec<String> {
+        fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
+            let entries = match fs::read_dir(dir) {
+                Ok(e) => e,
+                Err(_) => return,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                out.push(
+                    path.strip_prefix(root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                if path.is_dir() {
+                    walk(&path, root, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, root, &mut out);
+        out.sort();
+        out
+    }
+
+    fn opts(mode: MigrateMode, output_dir: Option<&str>) -> MigrateOptions<'_> {
+        MigrateOptions {
+            mode,
+            output_dir,
+            backup: false,
+            evidentiality: false,
+            show_dry_run_body: false,
+        }
+    }
+
+    // --- the mode decision itself -------------------------------------------
+
+    #[test]
+    fn no_destination_flag_is_refused_rather_than_overwriting() {
+        let err = resolve_migrate_mode(false, false, false)
+            .expect_err("a bare migrate must not resolve to a mode");
+        // The refusal is only useful if it says what to type instead, so the
+        // message has to name all three destinations.
+        assert!(err.contains("-o"), "{}", err);
+        assert!(err.contains("--dry-run"), "{}", err);
+        assert!(err.contains("--in-place"), "{}", err);
+    }
+
+    #[test]
+    fn each_flag_selects_its_own_mode() {
+        assert_eq!(resolve_migrate_mode(false, false, true), Ok(MigrateMode::Output));
+        assert_eq!(resolve_migrate_mode(false, true, false), Ok(MigrateMode::DryRun));
+        assert_eq!(resolve_migrate_mode(true, false, false), Ok(MigrateMode::InPlace));
+    }
+
+    #[test]
+    fn dry_run_survives_an_output_dir_without_becoming_a_write() {
+        // `--dry-run -o dest` is "show me what would land in dest", not a
+        // conflict — and it must still write nothing.
+        assert_eq!(resolve_migrate_mode(false, true, true), Ok(MigrateMode::DryRun));
+    }
+
+    #[test]
+    fn in_place_conflicts_with_the_non_destructive_modes() {
+        assert!(resolve_migrate_mode(true, true, false).is_err());
+        assert!(resolve_migrate_mode(true, false, true).is_err());
+    }
+
+    // --- finding the source argument ----------------------------------------
+
+    #[test]
+    fn the_source_may_come_before_or_after_the_flags() {
+        let after: Vec<String> = ["sigil", "migrate", "src/", "--dry-run"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let before: Vec<String> = ["sigil", "migrate", "--dry-run", "src/"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(migrate_source_arg(&after), Some("src/"));
+        assert_eq!(migrate_source_arg(&before), Some("src/"));
+    }
+
+    #[test]
+    fn the_output_dir_is_not_mistaken_for_the_source() {
+        let args: Vec<String> = ["sigil", "migrate", "-o", "out/", "src/"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(migrate_source_arg(&args), Some("src/"));
+
+        let only_output: Vec<String> = ["sigil", "migrate", "-o", "out/"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(migrate_source_arg(&only_output), None);
+    }
+
+    // --- what actually reaches the disk -------------------------------------
+
+    #[test]
+    fn output_mode_writes_to_the_destination_and_leaves_the_source_byte_identical() {
+        let dir = TempDir::new("out");
+        let src = dir.write("src/lib.rs", RUST_SOURCE);
+        let out = dir.join("out");
+
+        let code = migrate_file(
+            &src.to_string_lossy(),
+            opts(MigrateMode::Output, Some(&out.to_string_lossy())),
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+
+        // The bug in #92, stated as an assertion: the input is untouched.
+        assert_eq!(fs::read_to_string(&src).unwrap(), RUST_SOURCE);
+
+        // .rs becomes .sg in the destination, and the migration really ran.
+        let written = fs::read_to_string(out.join("lib.sg")).expect("destination file");
+        assert!(written.contains('Σ'), "{}", written);
+        assert!(!written.contains("pub struct"), "{}", written);
+    }
+
+    #[test]
+    fn dry_run_writes_nothing_anywhere() {
+        let dir = TempDir::new("dry");
+        dir.write("src/lib.rs", RUST_SOURCE);
+        dir.write("src/nested/deep.rs", RUST_SOURCE);
+        let before = tree(dir.path());
+
+        let code = migrate_directory(
+            &dir.join("src").to_string_lossy(),
+            opts(MigrateMode::DryRun, None),
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+
+        // No new files, no removed files, and the originals still say `pub struct`.
+        assert_eq!(tree(dir.path()), before);
+        assert_eq!(fs::read_to_string(dir.join("src/lib.rs")).unwrap(), RUST_SOURCE);
+        assert_eq!(
+            fs::read_to_string(dir.join("src/nested/deep.rs")).unwrap(),
+            RUST_SOURCE
+        );
+    }
+
+    #[test]
+    fn dry_run_with_an_output_dir_still_creates_no_output_dir() {
+        let dir = TempDir::new("dryout");
+        let src = dir.write("src/lib.rs", RUST_SOURCE);
+        let out = dir.join("out");
+
+        let code = migrate_file(
+            &src.to_string_lossy(),
+            opts(MigrateMode::DryRun, Some(&out.to_string_lossy())),
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert!(!out.exists(), "--dry-run created {}", out.display());
+        assert_eq!(fs::read_to_string(&src).unwrap(), RUST_SOURCE);
+    }
+
+    #[test]
+    fn directory_mode_mirrors_the_input_tree_into_the_destination() {
+        let dir = TempDir::new("tree");
+        dir.write("src/lib.rs", RUST_SOURCE);
+        dir.write("src/nested/deep.rs", RUST_SOURCE);
+        dir.write("src/nested/deeper/deepest.rs", RUST_SOURCE);
+        let src_before = tree(&dir.join("src"));
+        let out = dir.join("out");
+
+        let code = migrate_directory(
+            &dir.join("src").to_string_lossy(),
+            opts(MigrateMode::Output, Some(&out.to_string_lossy())),
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+
+        assert_eq!(
+            tree(&out),
+            vec![
+                "lib.sg".to_string(),
+                "nested".to_string(),
+                "nested/deep.sg".to_string(),
+                "nested/deeper".to_string(),
+                "nested/deeper/deepest.sg".to_string(),
+            ]
+        );
+        // The source tree gained nothing — no .sg siblings, no .bak files.
+        assert_eq!(tree(&dir.join("src")), src_before);
+        assert_eq!(fs::read_to_string(dir.join("src/lib.rs")).unwrap(), RUST_SOURCE);
+    }
+
+    #[test]
+    fn dry_run_over_a_directory_sees_rust_files() {
+        // The read-only sweep #90 wants is over a Rust tree. Before #92 the
+        // .rs extension was only in scope when -o was given, so a dry run over
+        // a crate found nothing to look at.
+        let dir = TempDir::new("sweep");
+        dir.write("src/lib.rs", RUST_SOURCE);
+
+        let code = migrate_directory(
+            &dir.join("src").to_string_lossy(),
+            opts(MigrateMode::DryRun, None),
+        );
+        assert_eq!(code, ExitCode::SUCCESS, "no .rs files were found to analyze");
+    }
+
+    #[test]
+    fn in_place_still_overwrites_for_anyone_who_asks_for_it() {
+        let dir = TempDir::new("inplace");
+        let src = dir.write("lib.sg", RUST_SOURCE);
+
+        let code = migrate_file(&src.to_string_lossy(), opts(MigrateMode::InPlace, None));
+        assert_eq!(code, ExitCode::SUCCESS);
+
+        let after = fs::read_to_string(&src).unwrap();
+        assert_ne!(after, RUST_SOURCE);
+        assert!(after.contains('Σ'), "{}", after);
+    }
+
+    #[test]
+    fn in_place_with_backup_keeps_the_original_next_to_it() {
+        let dir = TempDir::new("backup");
+        let src = dir.write("lib.sg", RUST_SOURCE);
+
+        let code = migrate_file(
+            &src.to_string_lossy(),
+            MigrateOptions {
+                backup: true,
+                ..opts(MigrateMode::InPlace, None)
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert_eq!(
+            fs::read_to_string(dir.join("lib.sg.bak")).unwrap(),
+            RUST_SOURCE
+        );
+    }
+
+    #[test]
+    fn an_output_dir_that_resolves_onto_the_input_is_refused() {
+        // -o can name the directory the input already lives in, which for a
+        // .sg file makes the destination path the input path. Without a check
+        // at the write itself that is an in-place migration wearing the
+        // non-destructive flag.
+        let dir = TempDir::new("self");
+        let src = dir.write("lib.sg", RUST_SOURCE);
+
+        let code = migrate_file(
+            &src.to_string_lossy(),
+            opts(MigrateMode::Output, Some(&dir.path().to_string_lossy())),
+        );
+        assert_eq!(code, ExitCode::from(1));
+        assert_eq!(fs::read_to_string(&src).unwrap(), RUST_SOURCE);
     }
 }
