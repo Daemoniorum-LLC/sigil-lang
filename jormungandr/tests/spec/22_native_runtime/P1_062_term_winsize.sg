@@ -1,0 +1,54 @@
+// Test: Terminal window size query/set
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Window size query/set
+// Priority: P1
+//
+// Purpose:
+// Validates that term_get_winsize() returns terminal dimensions and
+// term_set_winsize() can set PTY dimensions. In interpreter mode these
+// return simulated values; in native mode they use ioctl TIOCGWINSZ/TIOCSWINSZ.
+//
+// Expected behavior:
+// - term_get_winsize(fd) returns {rows, cols} with positive values
+// - term_set_winsize(fd, rows, cols) returns 0 on success
+
+rite main() {
+    // Test 1: Query terminal size
+    ≔ size = term_get_winsize(0);
+    ≔ rows = size.rows;
+    ≔ cols = size.cols;
+    ⎇ rows > 0 ∧ cols > 0 {
+        println("get_winsize: OK");
+    } ⎉ {
+        println("get_winsize: FAILED");
+    }
+
+    // Test 2: Rows should be reasonable (1-500)
+    ⎇ rows >= 1 ∧ rows <= 500 {
+        println("rows_range: OK");
+    } ⎉ {
+        println("rows_range: FAILED");
+    }
+
+    // Test 3: Cols should be reasonable (1-500)
+    ⎇ cols >= 1 ∧ cols <= 500 {
+        println("cols_range: OK");
+    } ⎉ {
+        println("cols_range: FAILED");
+    }
+
+    // Test 4: Set window size (on fd 0 in interpreter, returns simulated success)
+    ≔ set_result = term_set_winsize(0, 50, 120);
+    ⎇ set_result == 0 {
+        println("set_winsize: OK");
+    } ⎉ {
+        println("set_winsize: FAILED");
+    }
+
+    // Test 5: Get winsize after set should reflect new values
+    ≔ size2 = term_get_winsize(0);
+    ⎇ size2.rows == 50 ∧ size2.cols == 120 {
+        println("set_get_roundtrip: OK");
+    } ⎉ {
+        println("set_get_roundtrip: FAILED");
+    }
+}

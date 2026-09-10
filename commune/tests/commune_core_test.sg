@@ -1,0 +1,285 @@
+// commune_core_test.sg — Agent-TDD for Commune v0.2 (Message + in-process router)
+
+// ============================================================================
+// Inline Message implementation (target shape; matches commune_core.sg)
+// ============================================================================
+
+Σ Message { sender: String, recipient: String, kind: String, payload: String, ts: String }
+
+⊢ Message {
+    rite new(sender, recipient, kind, payload) {
+        ↩ Message {
+            sender:    sender,
+            recipient: recipient,
+            kind:      kind,
+            payload:   payload,
+            ts:        to_string(Sys·clock_gettime())
+        }
+    }
+}
+
+// ============================================================================
+// Inline Commune implementation (target shape; matches commune_core.sg)
+// ============================================================================
+
+// agents: flat Array of registered id strings
+// messages: flat Array of pending Message objects across all agents
+Σ Commune { agents: Array, messages: Array }
+
+⊢ Commune {
+    rite new() {
+        ↩ Commune { agents: [], messages: [] }
+    }
+
+    rite is_registered(self, id_str) {
+        ≔ mut i = 0;
+        ⟳ i < len(self.agents) {
+            ⎇ self.agents[i] == id_str { ↩ true; }
+            i = i + 1;
+        }
+        ↩ false
+    }
+
+    // Add agent to routing table. No-op if already registered.
+    rite register(self, id_str) {
+        ⎇ self·is_registered(id_str) == false {
+            push(self.agents, id_str);
+        }
+    }
+
+    // Remove agent and discard its pending messages. No-op if not registered.
+    rite unregister(self, id_str) {
+        ≔ mut new_agents = [];
+        ≔ mut new_messages = [];
+        ≔ mut i = 0;
+        ⟳ i < len(self.agents) {
+            ⎇ self.agents[i] != id_str {
+                push(new_agents, self.agents[i]);
+            }
+            i = i + 1;
+        }
+        i = 0;
+        ⟳ i < len(self.messages) {
+            ⎇ self.messages[i].recipient != id_str {
+                push(new_messages, self.messages[i]);
+            }
+            i = i + 1;
+        }
+        self.agents = new_agents;
+        self.messages = new_messages;
+    }
+
+    // Route msg to the recipient's queue.
+    // Silently drops msg if recipient is not registered.
+    rite send(self, msg) {
+        ⎇ self·is_registered(msg.recipient) == true {
+            push(self.messages, msg);
+        }
+    }
+
+    // Drain and return all pending messages for id_str in FIFO order.
+    // Returns [] if agent is not registered or has no messages.
+    rite recv(self, id_str) {
+        ≔ mut result = [];
+        ≔ mut remaining = [];
+        ≔ mut i = 0;
+        ⟳ i < len(self.messages) {
+            ⎇ self.messages[i].recipient == id_str {
+                push(result, self.messages[i]);
+            } ⎉ {
+                push(remaining, self.messages[i]);
+            }
+            i = i + 1;
+        }
+        self.messages = remaining;
+        ↩ result
+    }
+}
+
+// ============================================================================
+// Test helpers
+// ============================================================================
+
+rite pass(name) {
+    println("PASS: " + name);
+}
+
+rite fail(name, msg) {
+    println("FAIL: " + name + " — " + msg);
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+// T1: new() returns a routing table with no registered agents
+rite test_new_empty() {
+    ≔ mut c = Commune·new();
+    ⎇ c·is_registered("anyone") == false {
+        pass("new_empty");
+    } ⎉ {
+        fail("new_empty", "new routing table should have no agents");
+    }
+}
+
+// T2: register() + is_registered() lifecycle
+rite test_register_is_registered() {
+    ≔ mut c = Commune·new();
+    ≔ id = "agent-001";
+    ⎇ c·is_registered(id) == true {
+        fail("register_is_registered", "should not be registered before register()");
+    } ⎉ {
+        c·register(id);
+        ⎇ c·is_registered(id) == true {
+            pass("register_is_registered");
+        } ⎉ {
+            fail("register_is_registered", "should be registered after register()");
+        }
+    }
+}
+
+// T3: unregister() sets is_registered false and discards pending messages
+rite test_unregister_clears() {
+    ≔ mut c = Commune·new();
+    ≔ id = "agent-002";
+    c·register(id);
+    c·send(Message·new("other", id, "ping", "pending-data"));
+    c·unregister(id);
+    ≔ mut ok = true;
+    ⎇ c·is_registered(id) == true {
+        fail("unregister_clears", "is_registered should be false after unregister");
+        ok = false;
+    }
+    ⎇ ok == true {
+        ≔ msgs = c·recv(id);
+        ⎇ len(msgs) != 0 {
+            fail("unregister_clears", "pending messages should be discarded on unregister");
+            ok = false;
+        }
+    }
+    ⎇ ok == true { pass("unregister_clears"); }
+}
+
+// T4: send() then recv() roundtrip — message fields are preserved
+rite test_send_recv_basic() {
+    ≔ mut c = Commune·new();
+    ≔ id = "agent-003";
+    c·register(id);
+    c·send(Message·new("sender-x", id, "inform", "hello"));
+    ≔ msgs = c·recv(id);
+    ⎇ len(msgs) == 1 ∧ msgs[0].payload == "hello" ∧ msgs[0].kind == "inform" ∧ msgs[0].sender == "sender-x" {
+        pass("send_recv_basic");
+    } ⎉ {
+        fail("send_recv_basic", "expected 1 message with matching fields");
+    }
+}
+
+// T5: recv() clears the queue; second recv returns []
+rite test_recv_clears_queue() {
+    ≔ mut c = Commune·new();
+    ≔ id = "agent-004";
+    c·register(id);
+    c·send(Message·new("x", id, "ping", ""));
+    ≔ first  = c·recv(id);
+    ≔ second = c·recv(id);
+    ⎇ len(first) == 1 ∧ len(second) == 0 {
+        pass("recv_clears_queue");
+    } ⎉ {
+        fail("recv_clears_queue", "second recv should return empty array");
+    }
+}
+
+// T6: recv() on unregistered agent returns [] without error
+rite test_recv_unknown_agent() {
+    ≔ mut c = Commune·new();
+    ≔ id_reg = "agent-005";
+    c·register(id_reg);
+    c·send(Message·new("x", id_reg, "ping", "data"));
+    ≔ msgs = c·recv("nobody");
+    ⎇ len(msgs) == 0 {
+        pass("recv_unknown_agent");
+    } ⎉ {
+        fail("recv_unknown_agent", "recv on unknown agent should return []");
+    }
+}
+
+// T7: send() to unregistered recipient is silently dropped
+rite test_send_to_unregistered_dropped() {
+    ≔ mut c = Commune·new();
+    ≔ id_a = "agent-006";
+    c·register(id_a);
+    c·send(Message·new("x", "nobody", "ping", "dropped"));
+    ≔ msgs = c·recv(id_a);
+    ⎇ len(msgs) == 0 {
+        pass("send_to_unregistered_dropped");
+    } ⎉ {
+        fail("send_to_unregistered_dropped", "dropped message should not appear in other queues");
+    }
+}
+
+// T8: messages to different agents do not cross
+rite test_multiple_agents_isolated() {
+    ≔ mut c = Commune·new();
+    ≔ id_a = "agent-007";
+    ≔ id_b = "agent-008";
+    c·register(id_a);
+    c·register(id_b);
+    c·send(Message·new("x", id_a, "inform", "for-a"));
+    c·send(Message·new("x", id_b, "inform", "for-b"));
+    ≔ msgs_a = c·recv(id_a);
+    ≔ msgs_b = c·recv(id_b);
+    ⎇ len(msgs_a) == 1 ∧ msgs_a[0].payload == "for-a" ∧
+      len(msgs_b) == 1 ∧ msgs_b[0].payload == "for-b" {
+        pass("multiple_agents_isolated");
+    } ⎉ {
+        fail("multiple_agents_isolated", "agent messages crossed");
+    }
+}
+
+// T9: Message·new() sets all fields correctly
+rite test_message_fields() {
+    ≔ msg = Message·new("alice", "bob", "request", "do-something");
+    ≔ mut ok = true;
+    ⎇ msg.sender != "alice"             { fail("message_fields", "sender wrong");    ok = false; }
+    ⎇ ok == true ∧ msg.recipient != "bob"      { fail("message_fields", "recipient wrong"); ok = false; }
+    ⎇ ok == true ∧ msg.kind != "request"       { fail("message_fields", "kind wrong");      ok = false; }
+    ⎇ ok == true ∧ msg.payload != "do-something" { fail("message_fields", "payload wrong");   ok = false; }
+    ⎇ ok == true ∧ len(msg.ts) == 0            { fail("message_fields", "ts should not be empty"); ok = false; }
+    ⎇ ok == true { pass("message_fields"); }
+}
+
+// T10: multiple sends to same agent arrive in FIFO order
+rite test_queue_ordering() {
+    ≔ mut c = Commune·new();
+    ≔ id = "agent-009";
+    c·register(id);
+    c·send(Message·new("x", id, "msg", "first"));
+    c·send(Message·new("x", id, "msg", "second"));
+    c·send(Message·new("x", id, "msg", "third"));
+    ≔ msgs = c·recv(id);
+    ⎇ len(msgs) == 3 ∧ msgs[0].payload == "first" ∧
+      msgs[1].payload == "second" ∧ msgs[2].payload == "third" {
+        pass("queue_ordering");
+    } ⎉ {
+        fail("queue_ordering", "messages not in FIFO order");
+    }
+}
+
+// ============================================================================
+// Runner
+// ============================================================================
+
+rite main() {
+    println("Commune v0.2 core tests");
+    test_new_empty();
+    test_register_is_registered();
+    test_unregister_clears();
+    test_send_recv_basic();
+    test_recv_clears_queue();
+    test_recv_unknown_agent();
+    test_send_to_unregistered_dropped();
+    test_multiple_agents_isolated();
+    test_message_fields();
+    test_queue_ordering();
+    println("Done");
+}

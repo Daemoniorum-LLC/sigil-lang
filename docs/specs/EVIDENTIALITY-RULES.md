@@ -1,6 +1,6 @@
 # Sigil Evidentiality System - Definitive Reference
 
-> **TODO**: Sync this documentation to sigil-lang.com wherever evidentiality markers are explained. Ensure all 5 markers (`!`, `?`, `◊`, `~`, `‽`) are documented with their semantic meanings, especially `◊` (Predicted) for AI/ML outputs.
+> **TODO**: Sync this documentation to sigil-lang.com wherever evidentiality markers are explained. Ensure all 6 markers (`!`, `?`, `◊`, `⁂`, `~`, `‽`) are documented with their semantic meanings.
 
 ## Overview
 
@@ -12,11 +12,15 @@ Evidentiality is Sigil's type-level tracking of data provenance and trustworthin
 |-------|--------|------|-------|----------|
 | Known | `!` | Direct | Full | Computed locally, validated |
 | Uncertain | `?` | Possible | Partial | May be absent (like Option) |
-| Reported | `~` | External | None | From network, user input, files |
 | Predicted | `◊` | Speculative | Partial | AI/ML model outputs, forecasts |
+| Chaos | `⁂` | Entropic | Partial | Intentional randomness, RNG, sampling |
+| Reported | `~` | External | None | From network, user input, files |
 | Paradox | `‽` | Boundary | Explicit | Trust assertions, FFI |
 
-**Note:** `Predicted (◊)` maps to `Uncertain` level in the type checker - predictions are inherently uncertain but have distinct semantic meaning for AI-aware code.
+**Note:** `Predicted (◊)`, `Uncertain (?)`, and `Chaos (⁂)` share the same trust level in the type checker but have distinct semantic meanings:
+- `?` — existence uncertainty (value may be absent)
+- `◊` — inference uncertainty (model made a pattern-based guess)
+- `⁂` — entropic uncertainty (intentionally random, patternless by design)
 
 ## Syntax Forms
 
@@ -94,16 +98,19 @@ fn assume!(data: Data~, reason: str) -> Data! {
 Evidence forms a lattice with subtyping:
 
 ```
-           Known (!)        ← Most certain
-              ↓
-    Uncertain (?) = Predicted (◊)
-              ↓
-         Reported (~)
-              ↓
-          Paradox (‽)       ← Least certain
+                Known (!)                    ← Most certain
+                    ↓
+    Uncertain (?) = Predicted (◊) = Chaos (⁂)
+                    ↓
+               Reported (~)
+                    ↓
+               Paradox (‽)                   ← Least certain
 ```
 
-**Note:** `Predicted (◊)` and `Uncertain (?)` share the same trust level but have distinct semantic meaning. Use `?` for optional/nullable values, `◊` for AI/ML outputs.
+**Note:** Three markers share the "Uncertain" trust level but have distinct semantic meanings:
+- `?` — optional/nullable values (existence uncertainty)
+- `◊` — AI/ML outputs (inference uncertainty)
+- `⁂` — random/stochastic values (entropic uncertainty)
 
 **Subtyping:** More certain evidence satisfies less certain requirements.
 
@@ -132,14 +139,14 @@ let sum3 = b + c;  // i32? (Uncertain + Reported = Uncertain)
 
 **Propagation table:**
 
-| Op | `!` | `?`/`◊` | `~` | `‽` |
-|----|-----|---------|-----|-----|
+| Op | `!` | `?`/`◊`/`⁂` | `~` | `‽` |
+|----|-----|-------------|-----|-----|
 | `!` | `!` | `?` | `~` | `‽` |
-| `?`/`◊` | `?` | `?` | `?` | `‽` |
+| `?`/`◊`/`⁂` | `?` | `?` | `?` | `‽` |
 | `~` | `~` | `?` | `~` | `‽` |
 | `‽` | `‽` | `‽` | `‽` | `‽` |
 
-**Note:** `◊` (Predicted) behaves identically to `?` (Uncertain) in propagation.
+**Note:** `◊` (Predicted), `?` (Uncertain), and `⁂` (Chaos) behave identically in propagation — they share the same trust level.
 
 ## Evidence Transitions
 
@@ -262,6 +269,60 @@ fn ensemble_predict(data: Data!) -> Prediction◊ {
     vote(p1◊, p2◊, p3◊)◊
 }
 ```
+
+### Stochastic Values
+
+```sigil
+// Random number generation returns chaotic values
+fn rand_f32⁂() -> f32⁂ {
+    rng.next_f32()⁂
+}
+
+// Fill tensor with random values - output is entropic
+fn fill_randn⁂(tensor: &mut Tensor!) {
+    for i in 0..tensor.len() {
+        tensor[i] = randn()⁂;
+    }
+}
+
+// Monte Carlo integration - result inherits chaos
+fn monte_carlo_pi⁂(samples: usize!) -> f64⁂ {
+    let mut inside⁂ = 0;
+    for _ in 0..samples {
+        let x⁂ = rand_f64()⁂;
+        let y⁂ = rand_f64()⁂;
+        if x⁂ * x⁂ + y⁂ * y⁂ <= 1.0 {
+            inside⁂ += 1;
+        }
+    }
+    4.0 * (inside⁂ as f64) / (samples as f64)
+}
+
+// Stochastic gradient descent - minibatch selection is chaotic
+fn sgd_step⁂(model: &mut Model!, data: &Dataset!, batch_size: usize!) {
+    let batch⁂ = data.random_sample(batch_size)⁂;
+    let gradients⁂ = compute_gradients(model, batch⁂);
+    model.update(gradients⁂);
+}
+
+// Dropout during training - mask is entropic
+fn dropout⁂(x: Tensor!, p: f32!) -> Tensor⁂ {
+    let mask⁂ = random_mask(x.shape(), p)⁂;
+    x * mask⁂  // Result is chaotic due to random mask
+}
+
+// Cryptographic key generation - must be entropic
+fn generate_key⁂(bits: usize!) -> Key⁂ {
+    let entropy⁂ = secure_random_bytes(bits / 8)⁂;
+    Key::from_bytes(entropy⁂)⁂
+}
+```
+
+**Note:** Chaos (`⁂`) differs from Predicted (`◊`) in that:
+- `◊` implies pattern-based inference (a model learned something)
+- `⁂` implies intentional patternlessness (entropy by design)
+
+Both are uncertain, but for opposite reasons: predictions try to find patterns; chaos ensures there are none.
 
 ### Trust Boundaries
 

@@ -1,0 +1,24 @@
+// Test: none_where — true if no element satisfies predicate
+// Spec: 09A-ARRAY-COMBINATORS.md § 3.3
+// Priority: P1
+
+rite main() {
+    // None match → true
+    println(none_where([1, 3, 5], |x| x % 2 == 0));  // true
+
+    // One matches → false
+    println(none_where([1, 2, 5], |x| x % 2 == 0));  // false
+
+    // All match → false
+    println(none_where([2, 4, 6], |x| x % 2 == 0));  // false
+
+    // Empty array → true (vacuous: no element satisfies)
+    println(none_where([], |x| true));                // true
+
+    // Exact complement of any_where
+    ≔ arr = [1, 3, 5];
+    println(none_where(arr, |x| x % 2 == 0));   // true
+    println(any_where(arr, |x| x % 2 == 0));    // false
+
+    println("PASS");
+}

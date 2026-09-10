@@ -1,0 +1,73 @@
+// Test: Sys·poll_fd — non-blocking check for available data
+// Spec: MORGOTH-SPEC.md § Phase 1.0 Gap 2 - poll_fd
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·poll_fd(fd, timeout_ms) checks whether data is
+// available to read on a file descriptor without blocking. Essential
+// for the Morgoth event loop.
+//
+// Expected behavior:
+// - Sys·poll_fd on pipe with data returns true
+// - Sys·poll_fd on empty pipe returns false
+// - Sys·poll_fd on PTY with data returns true
+// - Sys·poll_fd on empty PTY returns false
+// - Sys·poll_fd on invalid fd returns false
+
+rite main() {
+    // Test 1: Poll pipe with data — should return true
+    ≔ pipe = Sys·pipe();
+    Sys·write(pipe.write_fd, "data", 4);
+    ≔ has_data = Sys·poll_fd(pipe.read_fd, 0);
+    ⎇ has_data == true {
+        println("poll_pipe_data: OK");
+    } ⎉ {
+        println("poll_pipe_data: FAILED");
+    }
+
+    // Test 2: Poll empty pipe — should return false
+    ≔ pipe2 = Sys·pipe();
+    ≔ no_data = Sys·poll_fd(pipe2.read_fd, 0);
+    ⎇ no_data == false {
+        println("poll_pipe_empty: OK");
+    } ⎉ {
+        println("poll_pipe_empty: FAILED");
+    }
+
+    // Test 3: Poll PTY with data — should return true
+    ≔ pty = Pty·open();
+    Sys·write(pty.master_fd, "pty", 3);
+    ≔ pty_data = Sys·poll_fd(pty.slave_fd, 0);
+    ⎇ pty_data == true {
+        println("poll_pty_data: OK");
+    } ⎉ {
+        println("poll_pty_data: FAILED");
+    }
+
+    // Test 4: Poll empty PTY — should return false
+    ≔ pty2 = Pty·open();
+    ≔ pty_empty = Sys·poll_fd(pty2.slave_fd, 0);
+    ⎇ pty_empty == false {
+        println("poll_pty_empty: OK");
+    } ⎉ {
+        println("poll_pty_empty: FAILED");
+    }
+
+    // Test 5: Poll invalid fd — should return false
+    ≔ invalid = Sys·poll_fd(99999, 0);
+    ⎇ invalid == false {
+        println("poll_invalid_fd: OK");
+    } ⎉ {
+        println("poll_invalid_fd: FAILED");
+    }
+
+    // Cleanup
+    Sys·close(pipe.read_fd);
+    Sys·close(pipe.write_fd);
+    Sys·close(pipe2.read_fd);
+    Sys·close(pipe2.write_fd);
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+    Sys·close(pty2.master_fd);
+    Sys·close(pty2.slave_fd);
+}

@@ -1,0 +1,17 @@
+//! Minimal test using only intrinsics
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite main() {
+    // Write "OK\n" directly
+    ≔ buf = __intrinsic_malloc(3);
+    *(buf as *vary u8) = 79;      // 'O'
+    *((buf + 1) as *vary u8) = 75; // 'K'
+    *((buf + 2) as *vary u8) = 10; // '\n'
+    __intrinsic_write(1, buf, 3);
+    __intrinsic_free(buf);
+}

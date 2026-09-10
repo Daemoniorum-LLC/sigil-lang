@@ -1,0 +1,74 @@
+//! Test println_int
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() {
+    write_byte(10);
+}
+
+rite print_int(n: i64) {
+    ⎇ n == 0 {
+        write_byte(48);
+        ⤺
+    } ⎉ {}
+
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+
+    ⎇ num < 0 {
+        negative = true;
+        num = 0 - num;
+    } ⎉ {}
+
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+
+    ⎇ negative {
+        write_byte(45);
+    } ⎉ {}
+
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) {
+    print_int(n);
+    print_newline();
+}
+
+rite main() {
+    ≔ vary bytes: Vec<u8> = vec![];
+    bytes.push(65 as u8);
+    bytes.push(66 as u8);
+    bytes.push(67 as u8);
+
+    println_int(bytes.len() as i64);
+    println_int(bytes[0] as i64);
+    println_int(bytes[1] as i64);
+    println_int(bytes[2] as i64);
+}

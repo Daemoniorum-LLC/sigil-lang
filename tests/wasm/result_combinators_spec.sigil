@@ -1,0 +1,303 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Daemoniorum, LLC
+
+//! Specification Tests: Result Combinators for WASM Backend
+//!
+//! These tests crystallize understanding of how Result combinators
+//! should behave when compiled to WASM. Each test specifies exact
+//! behavior that the implementation must satisfy.
+//!
+//! @spec WASM-RESULT-COMBINATORS-SPEC.md
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Test Infrastructure
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Simple Result type for testing
+enum TestResult[T, E] {
+    Ok(T),
+    Err(E),
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: map_err
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// P1: Ok(v).map_err(f) = Ok(v) - Ok values pass through unchanged
+#[test]
+rite spec_map_err_ok_passthrough() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(42);
+    ≔ mapped = result·map_err(|e| e * 2);
+
+    ⎇ mapped {
+        TestResult·Ok(v) => assert_eq!(v, 42, "Ok value must be preserved"),
+        TestResult·Err(_) => panic!("Ok should not become Err"),
+    }
+}
+
+/// P2: Err(e).map_err(f) = Err(f(e)) - Err values are transformed
+#[test]
+rite spec_map_err_transforms_error() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(10);
+    ≔ mapped = result·map_err(|e| e * 2);
+
+    ⎇ mapped {
+        TestResult·Ok(_) => panic!("Err should not become Ok"),
+        TestResult·Err(e) => assert_eq!(e, 20, "Error must be transformed by closure"),
+    }
+}
+
+/// P3: Closure is called exactly once for Err
+#[test]
+rite spec_map_err_closure_called_once() {
+    ≔ mut call_count = 0;
+    ≔ result: TestResult[i64, i64] = TestResult·Err(1);
+
+    ≔ _ = result·map_err(|e| {
+        call_count += 1;
+        e
+    });
+
+    assert_eq!(call_count, 1, "Closure must be called exactly once for Err");
+}
+
+/// P3b: Closure is never called for Ok
+#[test]
+rite spec_map_err_closure_not_called_for_ok() {
+    ≔ mut call_count = 0;
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(42);
+
+    ≔ _ = result·map_err(|e| {
+        call_count += 1;
+        e
+    });
+
+    assert_eq!(call_count, 0, "Closure must not be called for Ok");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: map
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// map on Ok transforms the value
+#[test]
+rite spec_map_ok_transforms_value() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(10);
+    ≔ mapped = result·map(|v| v + 5);
+
+    ⎇ mapped {
+        TestResult·Ok(v) => assert_eq!(v, 15, "Ok value must be transformed"),
+        TestResult·Err(_) => panic!("Ok should remain Ok after map"),
+    }
+}
+
+/// map on Err passes through unchanged
+#[test]
+rite spec_map_err_passthrough() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(99);
+    ≔ mapped = result·map(|v| v + 5);
+
+    ⎇ mapped {
+        TestResult·Ok(_) => panic!("Err should not become Ok"),
+        TestResult·Err(e) => assert_eq!(e, 99, "Err value must be preserved"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: and_then
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// and_then chains successful operations
+#[test]
+rite spec_and_then_chains_success() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(5);
+    ≔ chained = result·and_then(|v| TestResult·Ok(v * 2));
+
+    ⎇ chained {
+        TestResult·Ok(v) => assert_eq!(v, 10, "Chained Ok must apply function"),
+        TestResult·Err(_) => panic!("Successful chain should not produce Err"),
+    }
+}
+
+/// and_then propagates errors
+#[test]
+rite spec_and_then_propagates_error() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(42);
+    ≔ chained = result·and_then(|v| TestResult·Ok(v * 2));
+
+    ⎇ chained {
+        TestResult·Ok(_) => panic!("Err should propagate through and_then"),
+        TestResult·Err(e) => assert_eq!(e, 42, "Original error must be preserved"),
+    }
+}
+
+/// and_then can transform Ok to Err
+#[test]
+rite spec_and_then_can_fail() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(5);
+    ≔ chained = result·and_then(|_| TestResult·Err(999));
+
+    ⎇ chained {
+        TestResult·Ok(_) => panic!("and_then closure returned Err"),
+        TestResult·Err(e) => assert_eq!(e, 999, "New error from closure"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: unwrap_or
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// unwrap_or returns Ok value when present
+#[test]
+rite spec_unwrap_or_returns_ok() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(42);
+    ≔ value = result·unwrap_or(0);
+
+    assert_eq!(value, 42, "unwrap_or must return Ok value");
+}
+
+/// unwrap_or returns default for Err
+#[test]
+rite spec_unwrap_or_returns_default() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(999);
+    ≔ value = result·unwrap_or(0);
+
+    assert_eq!(value, 0, "unwrap_or must return default for Err");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: is_ok / is_err
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// is_ok returns true for Ok
+#[test]
+rite spec_is_ok_true_for_ok() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(1);
+    assert!(result·is_ok(), "is_ok must return true for Ok");
+}
+
+/// is_ok returns false for Err
+#[test]
+rite spec_is_ok_false_for_err() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(1);
+    assert!(!result·is_ok(), "is_ok must return false for Err");
+}
+
+/// is_err returns true for Err
+#[test]
+rite spec_is_err_true_for_err() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(1);
+    assert!(result·is_err(), "is_err must return true for Err");
+}
+
+/// is_err returns false for Ok
+#[test]
+rite spec_is_err_false_for_ok() {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(1);
+    assert!(!result·is_err(), "is_err must return false for Ok");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: ? Operator (Try)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// ? operator unwraps Ok value
+rite try_ok() -> TestResult[i64, i64]! {
+    ≔ result: TestResult[i64, i64] = TestResult·Ok(42);
+    ≔ value = result?;  // Should unwrap to 42
+    TestResult·Ok(value + 1)
+}
+
+#[test]
+rite spec_try_unwraps_ok() {
+    ≔ result = try_ok();
+    ⎇ result {
+        TestResult·Ok(v) => assert_eq!(v, 43, "? must unwrap Ok and continue"),
+        TestResult·Err(_) => panic!("Should succeed"),
+    }
+}
+
+/// ? operator propagates Err
+rite try_err() -> TestResult[i64, i64]! {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(999);
+    ≔ value = result?;  // Should early return with Err(999)
+    TestResult·Ok(value + 1)  // Never reached
+}
+
+#[test]
+rite spec_try_propagates_err() {
+    ≔ result = try_err();
+    ⎇ result {
+        TestResult·Ok(_) => panic!("Should have propagated error"),
+        TestResult·Err(e) => assert_eq!(e, 999, "? must propagate exact error"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Specification: Closure Captures
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Closures can capture immutable variables
+#[test]
+rite spec_closure_captures_immutable() {
+    ≔ prefix = 100;
+    ≔ result: TestResult[i64, i64] = TestResult·Err(5);
+    ≔ mapped = result·map_err(|e| prefix + e);
+
+    ⎇ mapped {
+        TestResult·Ok(_) => panic!("Should be Err"),
+        TestResult·Err(e) => assert_eq!(e, 105, "Closure must capture prefix"),
+    }
+}
+
+/// Nested map_err operations
+#[test]
+rite spec_chained_map_err() {
+    ≔ result: TestResult[i64, i64] = TestResult·Err(1);
+    ≔ mapped = result
+        ·map_err(|e| e * 2)
+        ·map_err(|e| e + 10);
+
+    ⎇ mapped {
+        TestResult·Ok(_) => panic!("Should be Err"),
+        TestResult·Err(e) => assert_eq!(e, 12, "Chained map_err: (1*2)+10 = 12"),
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Property Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Property: map_err is identity when closure is identity
+#[test]
+rite property_map_err_identity() {
+    ≔ err_val = 42;
+    ≔ result: TestResult[i64, i64] = TestResult·Err(err_val);
+    ≔ mapped = result·map_err(|e| e);  // Identity
+
+    ⎇ mapped {
+        TestResult·Err(e) => assert_eq!(e, err_val, "Identity map_err preserves value"),
+        _ => panic!("Should remain Err"),
+    }
+}
+
+/// Property: map_err composed with map_err equals single map_err with composed function
+#[test]
+rite property_map_err_composition() {
+    ≔ f = |x: i64| x + 1;
+    ≔ g = |x: i64| x * 2;
+
+    ≔ result1: TestResult[i64, i64] = TestResult·Err(5);
+    ≔ result2: TestResult[i64, i64] = TestResult·Err(5);
+
+    // f then g: (5+1)*2 = 12
+    ≔ chained = result1·map_err(f)·map_err(g);
+
+    // Composed: g(f(5)) = (5+1)*2 = 12
+    ≔ composed = result2·map_err(|x| g(f(x)));
+
+    ≔ chained_val = ⎇ chained { TestResult·Err(e) => e, _ => 0 };
+    ≔ composed_val = ⎇ composed { TestResult·Err(e) => e, _ => 0 };
+
+    assert_eq!(chained_val, composed_val, "map_err must respect composition");
+}

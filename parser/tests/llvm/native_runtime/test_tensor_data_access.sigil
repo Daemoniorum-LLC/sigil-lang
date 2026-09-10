@@ -1,0 +1,117 @@
+//! Test Tensor.data[0] access - simulating Stage 7 pattern
+//! The issue: Stage 7 shows logits.data[0]=-4606397116896512954 instead of f64
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Simplified Tensor struct
+Σ Tensor {
+    data: Vec<f64>,
+    shape: Vec<i64>,
+}
+
+⊢ Tensor {
+    rite new(data: Vec<f64>, shape: Vec<i64>) → Self {
+        Self { data: data, shape: shape }
+    }
+
+    // Method that returns a Tensor (like forward() does)
+    rite transform(&this) → Tensor {
+        ≔ vary new_data = vec![];
+        ∀ i ∈ 0..this.data.len() {
+            new_data.push(this.data[i] * 2.0);
+        }
+        Tensor·new(new_data, this.shape.clone())
+    }
+}
+
+// Simulates model.forward() returning a Tensor
+rite create_logits() → Tensor {
+    ≔ vary data = vec![];
+    data.push(3.14);
+    data.push(2.71);
+    data.push(1.41);
+
+    ≔ vary shape = vec![];
+    shape.push(1);
+    shape.push(3);
+
+    Tensor·new(data, shape)
+}
+
+rite main() {
+    println_int(1000);
+
+    // Pattern 1: Direct function return (like model.forward())
+    ≔ logits = create_logits();
+
+    println_int(2000);
+
+    // Access data.len()
+    println_int(logits.data.len() as i64);  // Should be 3
+
+    println_int(3000);
+
+    // THE CRITICAL TEST - Access logits.data[0]
+    // Stage 7 shows -4606397116896512954 here
+    ≔ val0 = logits.data[0];  // Should be 3.14
+    ≔ val1 = logits.data[1];  // Should be 2.71
+
+    // Print as i64 to see if we're getting bit patterns
+    println_int((val0 * 100.0) as i64);  // Should be 314
+    println_int((val1 * 100.0) as i64);  // Should be 271
+
+    println_int(4000);
+
+    // Pattern 2: Method that returns Tensor
+    ≔ transformed = logits.transform();
+    ≔ tval0 = transformed.data[0];  // Should be 6.28
+    println_int((tval0 * 100.0) as i64);  // Should be 628
+
+    println_int(5000);
+
+    // Test println! with f64 from struct field
+    println!("val0 = {}", val0);  // Should print 3.14
+    println!("tval0 = {}", tval0);  // Should print 6.28
+
+    println_int(9999);
+}

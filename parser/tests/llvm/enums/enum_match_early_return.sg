@@ -1,0 +1,32 @@
+// G45: Match with early return in arm
+// This pattern causes orphan blocks
+
+rite maybe_double(x: i64) → i64 {
+    ⌥ x > 0 {
+        true => x * 2,
+        false => { ⤺ 0; }
+    }
+}
+
+rite test_option() → i64 {
+    ≔ val = Some(42);
+    ⌥ val {
+        Some(x) => x,
+        None => { ⤺ -1; }
+    }
+}
+
+rite main() {
+    println!("Testing early return in match...");
+
+    ≔ r1 = maybe_double(5);
+    println!("maybe_double(5) = {}", r1);
+
+    ≔ r2 = maybe_double(-3);
+    println!("maybe_double(-3) = {}", r2);
+
+    ≔ r3 = test_option();
+    println!("test_option() = {}", r3);
+
+    println!("Done!");
+}

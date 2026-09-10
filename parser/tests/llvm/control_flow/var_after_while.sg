@@ -1,0 +1,43 @@
+// G46: Variable defined after while loop used elsewhere
+// Tests domination - alloca should be in entry block
+
+rite test_var_after_while(n: i64) → i64 {
+    ≔ vary x = 0;
+
+    ⟳ x < n {
+        x = x + 1;
+    }
+
+    // Variable defined after while - should still be valid
+    ≔ result = x * 2;
+    result
+}
+
+rite test_nested_control(n: i64) → i64 {
+    ≔ vary sum = 0;
+
+    ⎇ n > 0 {
+        ⟳ sum < n {
+            sum = sum + 1;
+        }
+        // Variable defined inside if, after while
+        ≔ exp = 10 - sum;
+        sum = sum + exp;
+    } ⎉ {
+        sum = 0;
+    }
+
+    sum
+}
+
+rite main() {
+    println!("Testing var after while...");
+
+    ≔ r1 = test_var_after_while(5);
+    println!("test_var_after_while(5) = {}", r1);
+
+    ≔ r2 = test_nested_control(5);
+    println!("test_nested_control(5) = {}", r2);
+
+    println!("Done!");
+}

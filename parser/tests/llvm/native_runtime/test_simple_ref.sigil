@@ -1,0 +1,108 @@
+//! Simplest test of &Struct parameter
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Simple struct with single field
+Σ Wrapper { value: i64 }
+
+⊢ Wrapper {
+    rite get_ptr(&self) → i64 {
+        // Just return some constant to verify method is called
+        888
+    }
+
+    rite get_simple(&self) → i64 {
+        // Try accessing value but print debug first
+        println_int(555);  // Marker inside get_simple
+        self.value  // The actual field access
+    }
+
+    rite get(&self) → i64 {
+        self.value  // The actual field access
+    }
+}
+
+// Function with &Struct param - test method call on ref param
+rite get_via_method(w: &Wrapper) → i64 {
+    println_int(200);
+
+    // Manual G26 deref: w contains the address of main's w alloca
+    // We need to load from that address to get the heap pointer
+    // In Sigil: w is already loaded (compile_expr loads from param alloca)
+    // The G26 deref then loads from THAT value
+
+    // Let's try direct field access on w
+    println_int(w.value);  // This triggers G26 deref + field access
+}
+
+// Function with &Struct param accessing field DIRECTLY
+rite get_via_field(w: &Wrapper) → i64 {
+    println_int(300);
+    w.value  // Direct field access on ref param
+}
+
+rite main() {
+    ≔ w = Wrapper { value: 42 };
+
+    // Debug: Print struct pointer
+    println_int(777);
+    // w is stored in an alloca. compile_expr(w) loads from it, giving heap_ptr
+    // Actually we want the raw struct pointer. Let's use a simpler approach:
+    // Print w.value to verify local access works
+    println_int(w.value);
+
+    // Test 1.5: Method call on local (NOT via &ref)
+    println_int(15);
+    ≔ v0 = w.get();  // Direct method call on local
+    println_int(v0);  // Should be 42
+
+    // Test 2: Method call on ref param
+    println_int(2);
+    ≔ v1 = get_via_method(&w);
+    println_int(v1);  // Should be 42
+
+    // Test 3: Direct field access on ref param
+    println_int(3);
+    ≔ v2 = get_via_field(&w);
+    println_int(v2);  // Should be 42
+}

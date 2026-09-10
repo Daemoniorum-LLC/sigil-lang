@@ -169,8 +169,8 @@ impl WasmCompiler {
             // Reduce with initial value
             PipeOp::ReduceWithInit(_, _) => Err(WasmError::unsupported("reduce with init")),
 
-            // Function call in pipe context
-            PipeOp::Call(_) => Err(WasmError::unsupported("call in pipe context")),
+            // Function call in pipe context: value·func(args) => func(value, args)
+            PipeOp::Call(callee) => self.compile_pipe_call(callee),
         }
     }
 
@@ -1025,6 +1025,18 @@ impl WasmCompiler {
 
     /// Compile a pipe method call.
     fn compile_pipe_method(&mut self, name: &str, args: &[Expr]) -> WasmResult<()> {
+        // Handle special morpheme names that might be parsed as methods
+        match name {
+            "Σ" | "sum" => return self.compile_reduce_sum(),
+            "Π" | "product" => return self.compile_reduce_prod(),
+            "α" | "first" => return self.compile_first(),
+            "ω" | "last" => return self.compile_last(),
+            "μ" | "middle" | "median" => return self.compile_middle(),
+            "χ" | "choice" | "random" => return self.compile_choice(),
+            "ξ" | "next" => return self.compile_next(),
+            _ => {}
+        }
+
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
@@ -1042,6 +1054,12 @@ impl WasmCompiler {
         let method_name = name.to_string();
         if let Some(func_idx) = self.get_func(&method_name) {
             // Push receiver back as first argument
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(recv_idx));
+            func.push(Instruction::Call(func_idx));
+            Ok(())
+        } else if let Some(func_idx) = self.imports.get_func(&method_name) {
+            // Check imports too
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalGet(recv_idx));
             func.push(Instruction::Call(func_idx));
@@ -1194,6 +1212,140 @@ impl WasmCompiler {
             }
 
             _ => Err(WasmError::unsupported("complex binary function")),
+        }
+    }
+
+    /// Compile a pipe call: value·func(args) => func(value, args)
+    /// The piped value is already on the stack.
+    fn compile_pipe_call(&mut self, callee: &Expr) -> WasmResult<()> {
+        // Store the piped value in a temp local
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let piped_val = func.alloc_local("__piped".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(piped_val));
+
+        match callee {
+            // value·func(args) => compile as func(value, args)
+            Expr::Call { func: inner_func, args, .. } => {
+                // Push the piped value as first argument
+                drop(func);
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::LocalGet(piped_val));
+
+                // Compile remaining arguments
+                drop(func);
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+
+                // Now compile the function call itself
+                // We need to resolve the function and call it with all args
+                self.compile_pipe_call_target(inner_func, args.len() + 1)?;
+            }
+
+            // value·method => compile as method(value)
+            Expr::Path(path) => {
+                // Push the piped value
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::LocalGet(piped_val));
+
+                // Call the function by name
+                drop(func);
+                self.compile_pipe_call_target(callee, 1)?;
+            }
+
+            // For other expressions, try to evaluate as a function
+            _ => {
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::LocalGet(piped_val));
+                drop(func);
+                // Try to compile as a call with the piped value
+                self.compile_expr(callee)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile the target of a pipe call (resolve function and emit call).
+    fn compile_pipe_call_target(&mut self, target: &Expr, _arg_count: usize) -> WasmResult<()> {
+        match target {
+            Expr::Path(path) => {
+                // Get the function name from the path
+                let name = path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join("::");
+
+                // Handle morpheme names that might appear as paths
+                match name.as_str() {
+                    "Σ" | "sum" => return self.compile_reduce_sum(),
+                    "Π" | "product" => return self.compile_reduce_prod(),
+                    "α" | "first" => return self.compile_first(),
+                    "ω" | "last" => return self.compile_last(),
+                    "μ" | "middle" | "median" => return self.compile_middle(),
+                    "χ" | "choice" | "random" => return self.compile_choice(),
+                    "ξ" | "next" => return self.compile_next(),
+                    _ => {}
+                }
+
+                // Look up the function
+                if let Some(func_idx) = self.get_func(&name) {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                    Ok(())
+                } else if let Some(func_idx) = self.imports.get_func(&name) {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                    Ok(())
+                } else {
+                    // Check for simple method name (last segment only)
+                    let simple_name = path
+                        .segments
+                        .last()
+                        .map(|s| s.ident.name.as_str())
+                        .unwrap_or("");
+
+                    if let Some(func_idx) = self.get_func(simple_name) {
+                        let func = self.current_function_mut().unwrap();
+                        func.push(Instruction::Call(func_idx));
+                        Ok(())
+                    } else if let Some(func_idx) = self.imports.get_func(simple_name) {
+                        let func = self.current_function_mut().unwrap();
+                        func.push(Instruction::Call(func_idx));
+                        Ok(())
+                    } else {
+                        Err(WasmError::undefined_function(&name))
+                    }
+                }
+            }
+
+            Expr::Field { expr, field } => {
+                // Handle method-style field access: Type::method
+                // The receiver should already be on the stack
+                let method_name = &field.name;
+
+                // Try to find as Type_method or just method
+                if let Some(func_idx) = self.get_func(method_name) {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                    Ok(())
+                } else if let Some(func_idx) = self.imports.get_func(method_name) {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::Call(func_idx));
+                    Ok(())
+                } else {
+                    // Try to compile the field access expression
+                    self.compile_expr(expr)?;
+                    // This puts the method/function on the stack - need indirect call
+                    Err(WasmError::unsupported("indirect call through field access"))
+                }
+            }
+
+            _ => Err(WasmError::unsupported("complex pipe call target")),
         }
     }
 }

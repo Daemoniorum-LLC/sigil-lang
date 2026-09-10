@@ -1,7 +1,6 @@
 // Procedural Memory Module
 // Skill memory - how to do things
 
-module engram·procedural
 
 invoke engram·types·*
 invoke engram·config·ProceduralConfig

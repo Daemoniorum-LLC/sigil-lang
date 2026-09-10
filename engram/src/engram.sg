@@ -1,7 +1,6 @@
 // Engram - Main Entry Point
 // Memory Infrastructure ∀ Artificial Minds
 
-module engram
 
 invoke engram·types·*
 invoke engram·instant·InstantMemory
@@ -234,7 +233,7 @@ invoke engram·query·{Query, RecallResult}
 
         // Add recent episodes
         ⎇ config.include.contains(&ContextSource·EpisodicRecent) {
-            ≔ episodes = self.episodic.recall_at(Instant·now(), window: 1h)
+            ≔ episodes = self.episodic.recall_at(Instant·now(), 3600)
             ∀ episode ∈ episodes.take(5) {
                 ≔ summary = episode.summarize()
                 ≔ tokens = TokenCount·from_text(&summary)

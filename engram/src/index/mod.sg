@@ -1,7 +1,6 @@
 // Index Module
 // Indexing structures ∀ efficient memory retrieval
 
-module engram·index
 
 ☉ scroll hnsw
 ☉ scroll temporal
