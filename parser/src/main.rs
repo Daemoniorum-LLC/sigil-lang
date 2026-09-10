@@ -5282,6 +5282,12 @@ fn parser_accepts(name: &str, position: NamePosition) -> bool {
 /// closure parameter, a match arm, a type ascription somewhere unusual. Those
 /// are passed over rather than guessed at.
 fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePosition> {
+    // A `where` bound is not a name being declared. `where Self: Sized` puts
+    // `Self` in front of a colon inside a trait body, which otherwise reads as
+    // a field.
+    if prev_words[1] == "where" {
+        return None;
+    }
     // `let x: T` and `let mut x: T` are locals whatever encloses them.
     if prev_words[1] == "let" || (prev_words[1] == "mut" && prev_words[0] == "let") {
         return Some(NamePosition::Local);
@@ -5305,12 +5311,17 @@ fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String,
     let mut brackets: Vec<u8> = Vec::new();
     // The two words before the current one, for `let` and `let mut`.
     let mut prev_words: [&str; 2] = [""; 2];
+    // Inside a `where` clause, where every `name:` is a bound rather than a
+    // declaration. It runs from the keyword to the body or semicolon that
+    // ends it, and may carry several comma-separated bounds.
+    let mut in_where = false;
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
         if matches!(b, b'(' | b'{' | b'[') {
             brackets.push(b);
             prev_words = [""; 2];
+            in_where = false;
             i += 1;
             continue;
         }
@@ -5331,12 +5342,15 @@ fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String,
             // Only a word introducing a name is a candidate. `::` excludes
             // path segments, where a reserved word is fine.
             let rest = source[i..].trim_start_matches([' ', '\t']);
-            if rest.starts_with(':') && !rest.starts_with("::") {
+            if rest.starts_with(':') && !rest.starts_with("::") && !in_where {
                 if let Some(position) = name_position(prev_words, brackets.last().copied()) {
                     if !parser_accepts(word, position) {
                         *counts.entry(word.to_string()).or_default() += 1;
                     }
                 }
+            }
+            if word == "where" {
+                in_where = true;
             }
             prev_words = [prev_words[1], word];
             continue;
@@ -5344,6 +5358,9 @@ fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String,
         // Punctuation separates words; whitespace does not.
         if !(b as char).is_whitespace() {
             prev_words = [""; 2];
+            if b == b';' {
+                in_where = false;
+            }
         }
         i += 1;
     }
@@ -6883,6 +6900,22 @@ mod migrate_span_tests {
         // `≔ const = 1;` parses on its own; `const + 1` does not. A probe that
         // binds without reading would call this fine.
         assert_eq!(f("let const: u32 = 1;"), vec![("const".into(), 1)]);
+    }
+
+    #[test]
+    fn a_where_bound_is_not_a_declaration() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `Self: Sized` sits in front of a colon inside a trait body, which
+        // otherwise reads as a field name — and `Self` is not a valid one.
+        assert!(f("trait W {\n    fn q() -> I\n    where\n        Self: Sized;\n}").is_empty());
+        // The clause can carry several bounds, and ends at the body.
+        assert!(f("fn g<T, U>() where T: A, U: B { }").is_empty());
+        // A field after the clause has ended is still judged.
+        assert_eq!(
+            f("fn g<T>() where T: A { }\nstruct C { aspect: f32 }"),
+            vec![("aspect".into(), 1)]
+        );
     }
 
     #[test]
