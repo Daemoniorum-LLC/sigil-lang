@@ -4159,8 +4159,29 @@ impl Interpreter {
                         if !self.types.contains_key(&qualified)
                             && self.globals.borrow().get(&qualified).is_none()
                         {
-                            // Load from current source directory
-                            if let Some(source_dir) = &self.current_source_dir.clone() {
+                            // Searched from the declaring file's own directory
+                            // first, then the tome root -- the same list a
+                            // `scroll` uses (#139). An `invoke` is relative for
+                            // the same reason: `invoke tome·constants·{ESC}`
+                            // inside `tui/terminal.sg` means `tui/constants.sg`.
+                            //
+                            // Only the root was searched before, so a module in
+                            // a subdirectory could not reach its own sibling.
+                            // It failed silently -- the `else` below returns
+                            // Ok(()) -- so nothing bound, `sigil check` passed,
+                            // and the first use site said `undefined variable`.
+                            // Worse, it was invisible whenever the top-level
+                            // program imported the same name, which put it in
+                            // scope for everything: the nested module then
+                            // worked by coincidence, and broke for the next
+                            // consumer that did not import it.
+                            let search_dirs: Vec<String> = self
+                                .current_module_dir
+                                .iter()
+                                .chain(self.current_source_dir.iter())
+                                .cloned()
+                                .collect();
+                            if !search_dirs.is_empty() {
                                 // Which of the path's segments name the module,
                                 // and which name the item inside it, is not
                                 // known from the path alone:
@@ -4178,8 +4199,9 @@ impl Interpreter {
                                 let mut segments: Vec<String> =
                                     prefix.iter().skip(1).cloned().collect();
                                 segments.push(simple_name.clone());
-                                let Some((module_name, module_file)) =
-                                    Self::resolve_tome_module(source_dir, &segments)
+                                let Some((module_name, module_file)) = search_dirs
+                                    .iter()
+                                    .find_map(|dir| Self::resolve_tome_module(dir, &segments))
                                 else {
                                     crate::sigil_debug!(
                                         "DEBUG process_use_tree: no tome module file for {:?}",
@@ -27232,6 +27254,45 @@ mod tests {
             err.to_string().contains("no variant 'Nope' on enum 'Status'"),
             "expected a no-such-variant error, got: {err}"
         );
+    }
+
+    #[test]
+    fn a_nested_module_binds_a_constant_from_its_sibling() {
+        // The consumer deliberately does NOT import MARK. That is the whole
+        // point: when the top-level program imports the same constant, it
+        // lands in scope for everything and the nested module's own binding is
+        // never exercised -- so the broken case passes and the module looks
+        // fine. morgoth shipped src/tui/terminal.sg in exactly that state:
+        // `invoke tome·constants·{ESC}` never bound ESC for terminal.sg, and
+        // terminal_init() worked only because src/render.sg independently
+        // imported the same constants. It failed for the first consumer that
+        // did not.
+        //
+        // Constants are the gap, not modules: every neighbouring test here
+        // covers `☉ rite`, and functions were already reached.
+        let tome = TempTome::new("relconst");
+        tome.write("tui/consts.sg", "≔ MARK = 27;")
+            .write("tui/user.sg", "invoke tome·consts·{MARK};\n☉ rite emit() -> i32 { MARK }");
+        let source = "\
+            invoke tome·tui·user·{emit};
+            rite main() { ⤺ emit(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(27))));
+    }
+
+    #[test]
+    fn the_masking_import_is_not_a_regression_test_for_that() {
+        // Same tome, except the consumer also imports MARK. This passes with
+        // or without the fix, because the top-level import puts MARK in scope
+        // before the nested module is ever asked for it. Kept so that nobody
+        // writes only this shape and concludes the bug is gone.
+        let tome = TempTome::new("relconstmasked");
+        tome.write("tui/consts.sg", "≔ MARK = 27;")
+            .write("tui/user.sg", "invoke tome·consts·{MARK};\n☉ rite emit() -> i32 { MARK }");
+        let source = "\
+            invoke tome·tui·user·{emit};
+            invoke tome·tui·consts·{MARK};
+            rite main() { ⤺ emit(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(27))));
     }
 
     #[test]
