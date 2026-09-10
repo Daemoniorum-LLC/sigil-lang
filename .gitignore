@@ -127,3 +127,10 @@ jormungandr/build/.jormungandr_full.c
 # Python bytecode from tools/
 __pycache__/
 *.pyc
+
+# Native runtime static libraries linked at the parser crate root.
+# parser/runtime/.gitignore already ignores *.a beside the sources; the link
+# step also drops one here, and that copy was reaching `git status` untracked.
+# Deliberately narrow: sigil-web/src/*.wasm and jormungandr/src/*.sg.bak are
+# tracked on purpose, so no blanket *.wasm or *.bak rule belongs here.
+/parser/*.a
