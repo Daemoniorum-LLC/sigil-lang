@@ -1215,17 +1215,26 @@ fn jit_file(path: &str) -> ExitCode {
     }
 }
 
-/// Type-check a source file before handing it to LLVM codegen.
+/// Type-check a source file before handing it to any codegen backend.
 ///
-/// `sigil check` already refuses these programs, but `sigil llvm` and
-/// `sigil compile` used to walk straight past that verdict into codegen, where
-/// an ill-typed program becomes malformed IR: at best the LLVM module verifier
-/// rejects it after the whole module has been dumped to stdout, at worst the
-/// JIT runs it and segfaults. Gating here makes the codegen paths agree with
-/// `sigil check`, and turns those failures back into source-level diagnostics.
+/// `sigil check` already refuses these programs, but the codegen commands used
+/// to walk straight past that verdict. For LLVM an ill-typed program becomes
+/// malformed IR: at best the module verifier rejects it after the whole module
+/// has been dumped to stdout, at worst the JIT runs it and segfaults.
+///
+/// `wasm` and `rust` were left out of that gate when it was added (#96), and
+/// their failure mode is quieter and worse than LLVM's. `sigil wasm` emitted a
+/// module that was *structurally valid* and instantiated — so nothing crashed,
+/// nothing warned, and the backend had silently picked some meaning for an
+/// operation the type checker says is meaningless. `sigil rust` transpiled the
+/// same rejected program without complaint. Both returned exit 0 (#114).
+///
+/// That mattered beyond the commands themselves. The Lares/Qliphoth probe used
+/// `sigil wasm project/` as the step that catches what per-file `sigil check`
+/// cannot see, and then surveyed the module it produced — so a type error
+/// travelled the whole validation chain as a pass.
 ///
 /// Returns `Err(ExitCode)` if the caller should stop.
-#[cfg(feature = "llvm")]
 fn typecheck_before_codegen(path: &str, source: &str) -> Result<(), ExitCode> {
     let mut parser = Parser::new(source);
     match parser.parse_file() {
@@ -1246,6 +1255,49 @@ fn typecheck_before_codegen(path: &str, source: &str) -> Result<(), ExitCode> {
             eprintln!("Parse error in '{}': {}", path, e);
             Err(ExitCode::from(1))
         }
+    }
+}
+
+/// Type-check the modules a project build actually compiled.
+///
+/// Takes the file set from the compiler rather than walking `src/`. That
+/// distinction is the whole design: a project build enters through `lib.sigil`
+/// and follows module resolution, so `src/` is a **superset** of what it
+/// compiles. Gating on the directory instead was measured against five bundled
+/// projects and rejected four of them — for files that do not even parse,
+/// because they are unported Rust sitting beside the real sources and the build
+/// had never looked at them. A gate that fails builds over files codegen ignores
+/// is not a stricter version of this check, it is a different bug.
+///
+/// Returns `Err(ExitCode)` if the caller should stop before writing anything.
+#[cfg(feature = "wasm")]
+fn typecheck_modules_before_emit(modules: &std::collections::HashSet<std::path::PathBuf>) -> Result<(), ExitCode> {
+    // `read_dir` order is not stable and a HashSet has no order at all, so the
+    // diagnostics would otherwise reshuffle between runs on identical input —
+    // which is exactly the property that makes a report untrustworthy.
+    let mut files: Vec<_> = modules.iter().collect();
+    files.sort();
+
+    let mut failed = false;
+    for file in files {
+        let source = match fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error reading file '{}': {}", file.display(), e);
+                return Err(ExitCode::from(1));
+            }
+        };
+        // Every failing module is reported, not just the first: stopping at one
+        // makes the reader run the build N times to learn how much is wrong.
+        if typecheck_before_codegen(&file.display().to_string(), &source).is_err() {
+            failed = true;
+        }
+    }
+
+    if failed {
+        Err(ExitCode::from(1))
+    } else {
+        Ok(())
     }
 }
 
@@ -1783,6 +1835,10 @@ fn rust_compile_file(
         }
     };
 
+    if let Err(code) = typecheck_before_codegen(path, &source) {
+        return code;
+    }
+
     // Configure options
     let options = RustCodegenOptions {
         preserve_evidence,
@@ -2290,6 +2346,15 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
         let mut compiler = WasmCompiler::new();
         match compiler.compile_project_into(&project_dir) {
             Ok(wasm_bytes) => {
+                // Nothing is written until the modules that produced these bytes
+                // type-check. Resolution has to run first to know which files
+                // those are, so the check sits here rather than up front — but
+                // no artifact reaches disk for a program `sigil check` rejects,
+                // which is the property #114 was actually about.
+                if let Err(code) = typecheck_modules_before_emit(compiler.loaded_modules()) {
+                    return code;
+                }
+
                 if let Err(e) = fs::write(output, &wasm_bytes) {
                     eprintln!("Error writing output file '{}': {}", output, e);
                     return ExitCode::from(1);
@@ -2314,6 +2379,18 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
         }
     } else {
         // Single file compilation
+        match fs::read_to_string(path) {
+            Ok(source) => {
+                if let Err(code) = typecheck_before_codegen(&path.display().to_string(), &source) {
+                    return code;
+                }
+            }
+            Err(e) => {
+                eprintln!("Error reading file '{}': {}", path.display(), e);
+                return ExitCode::from(1);
+            }
+        }
+
         println!("Compiling {} -> {} (WebAssembly)", path.display(), output);
 
         let mut compiler = WasmCompiler::new();
