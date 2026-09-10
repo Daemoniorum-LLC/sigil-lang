@@ -5316,6 +5316,227 @@ fn migrate_workspace(dry_run: bool, backup: bool, evidentiality: bool) -> ExitCo
 ///
 /// With output_dir, writes to that directory (converting .rs → .sg).
 /// Without output_dir, modifies files in-place.
+/// Drop Rust's absolute-path prefix from `text`, returning the new text and
+/// how many prefixes were removed.
+///
+/// `::gltf::Error` and `::prost::Message` name a path from the crate root.
+/// Sigil has no equivalent, and translating the prefix to `·` yields a leading
+/// middle dot, which does not parse. A `::` that follows an identifier, `>`
+/// (as in `<T as Tr>::Assoc`) or `)` is a real separator and is left alone for
+/// the caller to translate.
+fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut dropped = 0;
+    for (idx, _) in text.match_indices("::") {
+        if idx < last {
+            continue;
+        }
+        let follows_path = text[..idx]
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '>' || c == ')');
+        if !follows_path {
+            out.push_str(&text[last..idx]);
+            last = idx + 2;
+            dropped += 1;
+        }
+    }
+    out.push_str(&text[last..]);
+    (out, dropped)
+}
+
+/// Split Rust source into code and non-code regions, applying `f` to the code
+/// only and copying comments and literals through untouched.
+///
+/// The migration substitutions are plain text replacements. Run over a whole
+/// file they also rewrite the insides of comments and string literals, where
+/// the words they match are English rather than Rust: `for`, `let`, `in`, `if`
+/// and `match` are as common in prose as in code, so doc comments, error
+/// messages and user-facing text all get glyphs spliced into them. Worse, `::`
+/// is replaced unconditionally, which corrupts every `::` mentioned in prose
+/// and produces `·` in type positions the grammar rejects.
+///
+/// Recognises line comments, nested block comments, string literals (with
+/// escapes), raw strings of any hash depth, byte and byte-string literals, and
+/// character literals — distinguishing `'a'` from the lifetime `'a`.
+fn map_rust_code_spans(src: &str, mut f: impl FnMut(&str) -> String) -> String {
+    let b = src.as_bytes();
+    let mut out = String::with_capacity(src.len());
+    let mut code_start = 0usize;
+    let mut i = 0usize;
+
+    // True when the byte before `idx` could continue an identifier, so a `b` or
+    // `r` there is part of a name rather than a literal prefix.
+    let prev_is_ident = |idx: usize| -> bool {
+        if idx == 0 {
+            return false;
+        }
+        match src[..idx].chars().last() {
+            Some(c) => c.is_alphanumeric() || c == '_',
+            None => false,
+        }
+    };
+
+    while i < b.len() {
+        // Line comment: // ... including /// and //!
+        if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'/' {
+            if i > code_start {
+                out.push_str(&f(&src[code_start..i]));
+            }
+            let start = i;
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            out.push_str(&src[start..i]);
+            code_start = i;
+            continue;
+        }
+
+        // Block comment: /* ... */, which nests in Rust
+        if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'*' {
+            if i > code_start {
+                out.push_str(&f(&src[code_start..i]));
+            }
+            let start = i;
+            let mut depth = 0usize;
+            while i < b.len() {
+                if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'*' {
+                    depth += 1;
+                    i += 2;
+                } else if b[i] == b'*' && i + 1 < b.len() && b[i + 1] == b'/' {
+                    depth -= 1;
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    i += 1;
+                }
+            }
+            out.push_str(&src[start..i]);
+            code_start = i;
+            continue;
+        }
+
+        // Raw string: r"..", r#".."#, br#".."# and any hash depth
+        if (b[i] == b'r' || (b[i] == b'b' && i + 1 < b.len() && b[i + 1] == b'r'))
+            && !prev_is_ident(i)
+        {
+            let mut k = if b[i] == b'b' { i + 2 } else { i + 1 };
+            let mut hashes = 0usize;
+            while k < b.len() && b[k] == b'#' {
+                hashes += 1;
+                k += 1;
+            }
+            if k < b.len() && b[k] == b'"' {
+                if i > code_start {
+                    out.push_str(&f(&src[code_start..i]));
+                }
+                let start = i;
+                i = k + 1;
+                while i < b.len() {
+                    if b[i] == b'"' {
+                        let mut seen = 0usize;
+                        let mut m = i + 1;
+                        while seen < hashes && m < b.len() && b[m] == b'#' {
+                            seen += 1;
+                            m += 1;
+                        }
+                        if seen == hashes {
+                            i = m;
+                            break;
+                        }
+                    }
+                    i += 1;
+                }
+                out.push_str(&src[start..i]);
+                code_start = i;
+                continue;
+            }
+        }
+
+        // String literal, and byte string b".."
+        if b[i] == b'"'
+            || (b[i] == b'b' && i + 1 < b.len() && b[i + 1] == b'"' && !prev_is_ident(i))
+        {
+            if i > code_start {
+                out.push_str(&f(&src[code_start..i]));
+            }
+            let start = i;
+            if b[i] == b'b' {
+                i += 1;
+            }
+            i += 1; // opening quote
+            while i < b.len() {
+                if b[i] == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if b[i] == b'"' {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            out.push_str(&src[start..i]);
+            code_start = i;
+            continue;
+        }
+
+        // Character literal, but not a lifetime: 'a' and '\n' are literals,
+        // the 'a in &'a str is not. A byte-char literal b'x' carries its
+        // prefix into the literal span.
+        let quote_at = if b[i] == b'\'' {
+            Some(i)
+        } else if b[i] == b'b' && i + 1 < b.len() && b[i + 1] == b'\'' && !prev_is_ident(i) {
+            Some(i + 1)
+        } else {
+            None
+        };
+        if let Some(q) = quote_at {
+            let is_char_literal = if q + 1 < b.len() && b[q + 1] == b'\\' {
+                true
+            } else {
+                match src[q + 1..].chars().next() {
+                    Some(c) => {
+                        let after = q + 1 + c.len_utf8();
+                        after < b.len() && b[after] == b'\''
+                    }
+                    None => false,
+                }
+            };
+            if is_char_literal {
+                if i > code_start {
+                    out.push_str(&f(&src[code_start..i]));
+                }
+                let start = i;
+                i = q + 1;
+                while i < b.len() {
+                    if b[i] == b'\\' {
+                        i += 2;
+                        continue;
+                    }
+                    if b[i] == b'\'' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+                out.push_str(&src[start..i]);
+                code_start = i;
+                continue;
+            }
+        }
+
+        i += 1;
+    }
+
+    if code_start < src.len() {
+        out.push_str(&f(&src[code_start..]));
+    }
+    out
+}
 fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: bool, evidentiality: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
@@ -5340,7 +5561,9 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         path.to_string()
     };
 
-    // Simple replacements (not keywords - always replace)
+    // Path separator. Applied to code only, via map_rust_code_spans below —
+    // `::` occurs constantly in prose ("the std::fmt docs", "see Vec::push")
+    // and replacing it there corrupts the comment without helping the parser.
     let simple_replacements = [
         ("::", "·"),
     ];
@@ -5367,20 +5590,17 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         ("return", "⤺", &[" ", ";", "(", ","]),
         ("break", "⊗", &[";", " ", ","]),
         ("continue", "↻", &[";", " ", ","]),
+        // `crate` is a Rust word with no Sigil equivalent — Sigil's term for a
+        // compilation unit is `tome`. Left alone it still parses, because
+        // `crate` is not a Sigil keyword and so reads as a module literally
+        // named "crate": silently wrong rather than loudly wrong. Runs after
+        // the `::` pass above, so the separator is already `·`.
+        ("crate", "tome", &["·", ")"]),
     ];
 
     let mut result = source.clone();
     let mut changes = 0;
     let mut ev_changes = 0;
-
-    // Apply simple replacements
-    for (from, to) in &simple_replacements {
-        let count = result.matches(from).count();
-        if count > 0 {
-            changes += count;
-            result = result.replace(from, to);
-        }
-    }
 
     // Convert Rust attributes #[...] and #![...] to Sigil rune comments //@ rune: ...
     // Only converts line-starting attributes (not inline ones like #[from] in enum variants)
@@ -5447,7 +5667,10 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
                 }
 
                 // Convert the attribute content
-                // Replace :: with · in attribute names (e.g., tokio::test → tokio·test)
+                // Replace :: with · in attribute names (e.g., tokio::test → tokio·test),
+                // after dropping any absolute-path prefix: `#[derive(::prost::Message)]`
+                // must not render as `·prost·Message`.
+                let (attr_content, _) = drop_absolute_path_prefix(&attr_content);
                 let converted_attr = attr_content.replace("::", "·");
 
                 // Known Sigil rune attributes (convert to //@ rune:)
@@ -5504,43 +5727,70 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
     result = attr_result;
     changes += attr_changes;
 
-    // Apply keyword replacements with word boundary check
-    for (keyword, replacement, suffixes) in keyword_replacements {
-        for suffix in *suffixes {
-            let pattern = format!("{}{}", keyword, suffix);
-            let replacement_str = format!("{}{}", replacement, suffix);
+    // Apply the path separator, the keywords and `in` to code only.
+    //
+    // Every one of these substitutions matches text that is also ordinary
+    // English. Run over the whole file they rewrite the insides of comments and
+    // string literals — turning "gizmos for manipulating transforms" into
+    // "gizmos ∀ manipulating transforms", and "Cannot allocate {} bytes for {}"
+    // into a message no reader can parse. Attributes converted to `//@ rune:`
+    // comments above are likewise protected, since they are comments by now.
+    result = map_rust_code_spans(&result, |code| {
+        let mut piece = code.to_string();
 
-            // Only replace if preceded by word boundary (start, whitespace, newline, or certain punctuation)
-            let mut new_result = String::with_capacity(result.len());
-            let mut last_end = 0;
+        let (stripped, dropped) = drop_absolute_path_prefix(&piece);
+        piece = stripped;
+        changes += dropped;
 
-            for (idx, _) in result.match_indices(&pattern) {
-                // Check if this is at a word boundary
-                let is_word_boundary = if idx == 0 {
-                    true
-                } else {
-                    let prev_char = result[..idx].chars().last().unwrap();
-                    !prev_char.is_alphanumeric() && prev_char != '_'
-                };
-
-                if is_word_boundary {
-                    new_result.push_str(&result[last_end..idx]);
-                    new_result.push_str(&replacement_str);
-                    last_end = idx + pattern.len();
-                    changes += 1;
-                }
+        for (from, to) in &simple_replacements {
+            let count = piece.matches(from).count();
+            if count > 0 {
+                changes += count;
+                piece = piece.replace(from, to);
             }
-            new_result.push_str(&result[last_end..]);
-            result = new_result;
         }
-    }
 
-    // Special case: " in " -> " ∈ " (always safe, has spaces on both sides)
-    let in_count = result.matches(" in ").count();
-    if in_count > 0 {
-        changes += in_count;
-        result = result.replace(" in ", " ∈ ");
-    }
+        for (keyword, replacement, suffixes) in keyword_replacements {
+            for suffix in *suffixes {
+                let pattern = format!("{}{}", keyword, suffix);
+                let replacement_str = format!("{}{}", replacement, suffix);
+
+                // Only replace if preceded by word boundary (start, whitespace, newline, or certain punctuation)
+                let mut new_piece = String::with_capacity(piece.len());
+                let mut last_end = 0;
+
+                for (idx, _) in piece.match_indices(&pattern) {
+                    if idx < last_end {
+                        continue;
+                    }
+                    // Check if this is at a word boundary
+                    let is_word_boundary = if idx == 0 {
+                        true
+                    } else {
+                        let prev_char = piece[..idx].chars().last().unwrap();
+                        !prev_char.is_alphanumeric() && prev_char != '_'
+                    };
+
+                    if is_word_boundary {
+                        new_piece.push_str(&piece[last_end..idx]);
+                        new_piece.push_str(&replacement_str);
+                        last_end = idx + pattern.len();
+                        changes += 1;
+                    }
+                }
+                new_piece.push_str(&piece[last_end..]);
+                piece = new_piece;
+            }
+        }
+
+        let in_count = piece.matches(" in ").count();
+        if in_count > 0 {
+            changes += in_count;
+            piece = piece.replace(" in ", " ∈ ");
+        }
+
+        piece
+    });
 
     // Apply evidentiality markers if requested
     if evidentiality {
@@ -6427,5 +6677,154 @@ fn evaluate_input(interpreter: &mut Interpreter, input: &str, show_ast: bool) {
             }
         }
         Err(e) => eprintln!("{}Parse error: {}{}", colors::SPECIAL, e, colors::RESET),
+    }
+}
+
+#[cfg(test)]
+mod migrate_span_tests {
+    use super::map_rust_code_spans;
+
+    /// Uppercase every code region so the test can see exactly which spans the
+    /// scanner classified as code.
+    fn mark(src: &str) -> String {
+        map_rust_code_spans(src, |code| code.to_uppercase())
+    }
+
+    #[test]
+    fn line_comments_are_not_code() {
+        assert_eq!(
+            mark("let x = 1; // keep for in me\n"),
+            "LET X = 1; // keep for in me\n"
+        );
+    }
+
+    #[test]
+    fn doc_comments_are_not_code() {
+        assert_eq!(
+            mark("/// Axis for gizmo ops\nfn a"),
+            "/// Axis for gizmo ops\nFN A"
+        );
+        assert_eq!(
+            mark("//! Vectors for SIMD\nfn a"),
+            "//! Vectors for SIMD\nFN A"
+        );
+    }
+
+    #[test]
+    fn block_comments_nest() {
+        assert_eq!(
+            mark("a /* one /* two */ still */ b"),
+            "A /* one /* two */ still */ B"
+        );
+    }
+
+    #[test]
+    fn strings_are_not_code() {
+        assert_eq!(mark(r#"let s = "for in let";"#), r#"LET S = "for in let";"#);
+    }
+
+    #[test]
+    fn string_escapes_do_not_end_the_literal() {
+        assert_eq!(
+            mark(r#"let s = "a\"for\" b"; c"#),
+            r#"LET S = "a\"for\" b"; C"#
+        );
+    }
+
+    #[test]
+    fn raw_strings_of_any_hash_depth_are_not_code() {
+        assert_eq!(
+            mark(r##"let s = r#"for "in" let"#; x"##),
+            r##"LET S = r#"for "in" let"#; X"##
+        );
+        assert_eq!(
+            mark(r###"let s = r##"a"# b"##; x"###),
+            r###"LET S = r##"a"# b"##; X"###
+        );
+    }
+
+    #[test]
+    fn byte_and_byte_string_literals_are_not_code() {
+        assert_eq!(
+            mark(r#"let s = b"for"; let c = b'f'; x"#),
+            r#"LET S = b"for"; LET C = b'f'; X"#
+        );
+    }
+
+    #[test]
+    fn char_literals_are_not_code_but_lifetimes_are() {
+        // 'f' is a literal and must survive; 'static is a lifetime and is code.
+        assert_eq!(mark("let c = 'f'; x"), "LET C = 'f'; X");
+        assert_eq!(mark("fn f(s: &'static str)"), "FN F(S: &'STATIC STR)");
+        assert_eq!(mark(r"let c = '\''; x"), r"LET C = '\''; X");
+    }
+
+    #[test]
+    fn an_identifier_ending_in_b_or_r_is_not_a_literal_prefix() {
+        // `sub` and `attr` end in b/r; the following quote opens a real string.
+        assert_eq!(mark(r#"sub("for")"#), r#"SUB("for")"#);
+    }
+
+    #[test]
+    fn the_word_crate_survives_in_prose() {
+        // `crate` -> `tome` is a code substitution. "this crate provides..."
+        // is one of the commonest phrases in Rust documentation, and a doc
+        // comment that reads "this tome provides" would be nonsense. The
+        // scanner is what keeps the two apart, so pin it here.
+        let src = "//! This crate provides maths.\nlet x = crate::E;";
+        let out = map_rust_code_spans(src, |c| c.replace("crate", "tome"));
+        assert_eq!(out, "//! This crate provides maths.\nlet x = tome::E;");
+
+        let s2 = "let m = \"this crate is not a tome\"; let y = crate::F;";
+        let o2 = map_rust_code_spans(s2, |c| c.replace("crate", "tome"));
+        assert_eq!(
+            o2,
+            "let m = \"this crate is not a tome\"; let y = tome::F;"
+        );
+    }
+
+    #[test]
+    fn absolute_path_prefix_is_dropped_not_translated() {
+        // `::gltf::Error` must not keep its leading `::`, which would become a
+        // leading `·` and fail to parse. Inner separators survive.
+        assert_eq!(
+            super::drop_absolute_path_prefix("x(::gltf::Error)").0,
+            "x(gltf::Error)"
+        );
+        // A separator that follows an identifier, `>` or `)` is untouched.
+        assert_eq!(super::drop_absolute_path_prefix("a::b").0, "a::b");
+        assert_eq!(
+            super::drop_absolute_path_prefix("<T as Tr>::Assoc").0,
+            "<T as Tr>::Assoc"
+        );
+        // Every prefix in a list is dropped, and the count is reported.
+        let (out, n) = super::drop_absolute_path_prefix("d(::a::B, ::c::D)");
+        assert_eq!(out, "d(a::B, c::D)");
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn code_between_non_code_regions_is_still_transformed() {
+        let src = "let a = 1; // for\nlet b = \"for\"; let c = 2;";
+        assert_eq!(mark(src), "LET A = 1; // for\nLET B = \"for\"; LET C = 2;");
+    }
+
+    #[test]
+    fn unterminated_regions_do_not_panic() {
+        // Malformed input must not index past the end.
+        mark("let s = \"unterminated");
+        mark("a /* unterminated");
+        mark("let c = 'x");
+        mark("let s = r#\"unterminated");
+    }
+
+    #[test]
+    fn multibyte_content_is_preserved() {
+        // Byte-wise scanning must not split a UTF-8 sequence.
+        let src = "let s = \"héllo → wörld\"; // café ∀\nlet x = 1;";
+        assert_eq!(
+            mark(src),
+            "LET S = \"héllo → wörld\"; // café ∀\nLET X = 1;"
+        );
     }
 }

@@ -91,6 +91,10 @@ pub struct Parser<'a> {
     current: Option<(Token, Span)>,
     /// Tracks whether we're parsing a condition (if/while/for) where < is comparison not generics
     in_condition: bool,
+    /// Tracks whether we're parsing a type, where `·` is unambiguously a path separator.
+    /// A type position contains no variables, so the lowercase-means-method-call heuristic in
+    /// `parse_type_path` does not apply there -- see the comment in that function.
+    in_type_position: bool,
     /// Tracks if we have a pending `>` from splitting `>>` (Shr) in generic contexts
     pending_gt: Option<Span>,
 }
@@ -103,6 +107,7 @@ impl<'a> Parser<'a> {
             lexer,
             current,
             in_condition: false,
+            in_type_position: false,
             pending_gt: None,
         }
     }
@@ -2154,7 +2159,7 @@ impl<'a> Parser<'a> {
 
         // Support both `⊢ Trait ∀ Type` and `⊢ Type : Trait` syntax
         // Also accept `for` keyword for Rust backwards compatibility
-        let (trait_, self_ty) = if self.consume_if(&Token::ForAll) || self.consume_if(&Token::For) {
+        let (trait_, self_ty) = if self.consume_if(&Token::ForAll) {
             // Traditional syntax: ⊢ Trait ∀ Type (impl Trait for Type)
             // Or Rust-style: impl Trait for Type
             let self_ty = self.parse_type()?;
@@ -3851,7 +3856,7 @@ impl<'a> Parser<'a> {
 
                 // Check for "as Trait" clause
                 let trait_path = if self.consume_if(&Token::As) {
-                    Some(self.parse_type_path()?)
+                    Some(self.parse_type_path_in_type_position()?)
                 } else {
                     None
                 };
@@ -4130,13 +4135,30 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::Path(TypePath { segments }))
             }
             _ => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path_in_type_position()?;
                 Ok(TypeExpr::Path(path))
             }
         }
     }
 
+    /// `parse_type_path` with `·` treated as a path separator regardless of case.
+    ///
+    /// Only type positions call this. Expression positions keep the uppercase heuristic,
+    /// because there `lhs·method()` really is a method call.
+    fn parse_type_path_in_type_position(&mut self) -> ParseResult<TypePath> {
+        let was_in_type_position = self.in_type_position;
+        self.in_type_position = true;
+        let result = self.parse_type_path();
+        self.in_type_position = was_in_type_position;
+        result
+    }
+
     fn parse_type_path(&mut self) -> ParseResult<TypePath> {
+        // Read-once: the flag applies to this path and nothing reached from it. A type can
+        // contain an expression (a const generic argument, an array length), and that
+        // expression is expression position again -- `·` there is a method call.
+        let in_type_position = std::mem::replace(&mut self.in_type_position, false);
+
         let mut segments = Vec::new();
         segments.push(self.parse_path_segment()?);
 
@@ -4148,10 +4170,16 @@ impl<'a> Parser<'a> {
         // - For type paths starting with uppercase (HashMap·new), allow · as separator
         // - For variable paths starting with lowercase (tag·to_string), DON'T consume ·
         //   because those are method calls handled by postfix expression parsing
-        let first_segment_is_type = segments
-            .first()
-            .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
-            .unwrap_or(false);
+        //
+        // The uppercase test is a heuristic for *expression* position, where `tag·to_string`
+        // is a method call. It does not apply in a type position: a type contains no
+        // variables, so every `·` there is a path separator. Without this, a lowercase module
+        // path in a type -- `std·fmt·Formatter<'_>` -- is rejected, which is #61's regression.
+        let first_segment_is_type = in_type_position
+            || segments
+                .first()
+                .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
+                .unwrap_or(false);
 
         while !self.pending_gt.is_some() {
             // Only allow · as a path separator for type paths (uppercase first letter).
@@ -6071,13 +6099,13 @@ impl<'a> Parser<'a> {
             }
             Some(Token::If) => self.parse_if_expr(),
             Some(Token::Match) => self.parse_match_expr(),
-            Some(Token::ForAll) | Some(Token::For) => {
+            Some(Token::ForAll) => {
                 // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
                 // Also accept Rust-style `for pattern in iter { ... }`
                 self.advance();
                 let pattern = self.parse_pattern()?;
                 // Accept both ∈ (ElementOf) and `in` (In token) for backwards compatibility
-                if !self.consume_if(&Token::ElementOf) && !self.consume_if(&Token::In) {
+                if !self.consume_if(&Token::ElementOf) {
                     return Err(ParseError::UnexpectedToken {
                         expected: "∈ or in".to_string(),
                         found: self.current_token().cloned().unwrap_or(Token::Semi),
@@ -6164,11 +6192,11 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::ForAll) | Some(Token::For) => {
+                    Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
                         // Accept both ∈ (ElementOf) and `in` (In token)
-                        if !self.consume_if(&Token::ElementOf) && !self.consume_if(&Token::In) {
+                        if !self.consume_if(&Token::ElementOf) {
                             return Err(ParseError::UnexpectedToken {
                                 expected: "∈ or in".to_string(),
                                 found: self.current_token().cloned().unwrap_or(Token::Semi),
