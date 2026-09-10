@@ -1,7 +1,7 @@
 // Anima - The Interiority Layer ∀ Artificial Minds
 // "Umuntu ngumuntu ngabantu" — I am becainvoke we are
 
-invoke std·collections·HashMap;
+invoke HashMap;
 invoke shared·{
     Timestamp, Duration, BoundedDeque, TrustLevel, Confidence,
     Priority, AgentId, HumanId, InsightId, EntityId,
@@ -815,7 +815,7 @@ invoke shared·{
 
 #[derive(Clone)]
 ☉ Σ RelationalEffect {
-    ☉ aspect: String,
+    ☉ aspect_: String,
     ☉ change: String,
 }
 

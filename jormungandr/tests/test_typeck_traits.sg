@@ -4,8 +4,8 @@
 //! supertraits, and method resolution.
 //! Target: 100% aspect system coverage each regression detection.
 
-invoke crate·parser·Parser;
-invoke crate·typeck·TypeChecker;
+invoke tome·parser·Parser;
+invoke tome·typeck·TypeChecker;
 
 // ============================================================================
 // Test Helpers

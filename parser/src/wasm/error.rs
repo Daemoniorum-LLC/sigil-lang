@@ -121,6 +121,18 @@ impl WasmError {
         Self::new(WasmErrorKind::Codegen, "expression is not constant")
     }
 
+    /// As `not_const`, but saying WHICH expression.
+    ///
+    /// "expression is not constant" with no location is a whole-project link
+    /// failure over 3000 lines of generated module scope, and the only way to
+    /// find the one binding was to bisect by hand.
+    pub fn not_const_expr(what: &str) -> Self {
+        Self::new(
+            WasmErrorKind::Codegen,
+            format!("expression is not constant: {what}"),
+        )
+    }
+
     pub fn div_by_zero() -> Self {
         Self::new(WasmErrorKind::Codegen, "division by zero")
     }

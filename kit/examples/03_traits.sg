@@ -3,13 +3,13 @@
 // Run: sigil run examples/03_traits.sg
 
 // Define a trait
-trait Drawable {
+aspect Drawable {
     rite draw(&this) → String;
     rite area(&this) → f64;
 }
 
 // Define a trait with default implementation
-trait Describable {
+aspect Describable {
     rite name(&this) → String;
 
     // Default implementation
@@ -28,7 +28,7 @@ trait Describable {
 }
 
 // Implement Drawable for Circle
-⊢ Drawable for Circle {
+⊢ Drawable ∀ Circle {
     rite draw(&this) → String {
         "○ (circle with radius " + str(this.radius) + ")"
     }
@@ -39,7 +39,7 @@ trait Describable {
 }
 
 // Implement Drawable for Square
-⊢ Drawable for Square {
+⊢ Drawable ∀ Square {
     rite draw(&this) → String {
         "□ (square with side " + str(this.side) + ")"
     }
@@ -50,13 +50,13 @@ trait Describable {
 }
 
 // Implement Describable for both
-⊢ Describable for Circle {
+⊢ Describable ∀ Circle {
     rite name(&this) → String {
         "circle"
     }
 }
 
-⊢ Describable for Square {
+⊢ Describable ∀ Square {
     rite name(&this) → String {
         "square"
     }

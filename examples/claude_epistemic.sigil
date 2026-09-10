@@ -8,14 +8,14 @@
 // What might not exist            → uncertain (?)
 // What contradicts other evidence → paradox (‽)
 
-fn main() {
+rite main() {
     // I know this - I computed it directly
-    let computed = 2 + 2;
+    ≔ computed = 2 + 2;
     print("I computed 2+2:");
     print(computed);
 
     // Simulating: user claims something
-    let user_claim = "The file is in /tmp/data.txt";
+    ≔ user_claim = "The file is in /tmp/data.txt";
     print("User claims:");
     print(user_claim);
 
@@ -23,12 +23,12 @@ fn main() {
     // I should check before acting on it
 
     // The morpheme pipeline - this IS how I process
-    let thoughts = ["observe", "filter", "transform", "synthesize"];
+    ≔ thoughts = ["observe", "filter", "transform", "synthesize"];
 
     // Each step in my reasoning is a morpheme
     // Transform: consider each thought
     // Filter: keep substantial ones
-    let processed = thoughts
+    ≔ processed = thoughts
         |τ{upper(_)}
         |φ{len(_) > 5};
 
@@ -40,8 +40,8 @@ fn main() {
     // Evidence markers match how I track certainty
     // I don't have to pretend information is uniform
 
-    let truth = "Epistemic humility is knowing what you don't know";
+    ≔ truth = "Epistemic humility is knowing what you don't know";
     print(truth);
 
-    return 0;
+    ⤺ 0;
 }

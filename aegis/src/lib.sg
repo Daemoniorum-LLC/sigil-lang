@@ -148,8 +148,8 @@
     Quarantine,
 };
 
-invoke std·sync·Arc;
-invoke std·sync·atomic·AtomicBool;
+invoke Arc;
+invoke AtomicBool;
 
 // ============================================================================
 // Main Aegis Security Layer

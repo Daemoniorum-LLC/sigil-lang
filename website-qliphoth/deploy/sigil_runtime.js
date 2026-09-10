@@ -11,11 +11,86 @@
 
 let wasmMemory = null;
 let wasmExports = null;
-let heapPtr = 1024 * 64; // Start heap after 64KB stack
+// The bump pointer, shared with the module.
+//
+// The module allocates too — enum construction bumps its own `__heap_ptr`
+// global inline — so a separate pointer on this side is a second allocator over
+// the same memory, and the two hand out the same addresses. When the module
+// exports its global, that IS the pointer; `localHeapPtr` is the fallback for a
+// module compiled before the export existed.
+let localHeapPtr = 1024 * 64; // Start heap after 64KB stack
+let heapGlobal = null;
+
+function getHeapPtr() {
+    return heapGlobal ? heapGlobal.value : localHeapPtr;
+}
+function setHeapPtr(v) {
+    if (heapGlobal) heapGlobal.value = v;
+    else localHeapPtr = v;
+}
 
 function setWasmExports(exports) {
     wasmExports = exports;
     wasmMemory = exports.memory;
+    // Start the host's bump allocator above the module's own data.
+    //
+    // This side and the module's side are two allocators over one linear
+    // memory, and the host used to assume the literals ended by 64 KB. The
+    // Lares client's reach 71740, so every host allocation in the first 6 KB
+    // overwrote a string the module would later read — a VNode's tag came back
+    // empty and `createElement('')` threw, from the largest component only,
+    // because the small ones never allocated enough to reach the overlap.
+    // `__heap_base` is where the compiler put its own heap; anything at or
+    // below it belongs to the module.
+    heapGlobal = exports.__heap_ptr instanceof WebAssembly.Global
+        ? exports.__heap_ptr
+        : null;
+    // Where the module's string literals live: from the start of its data to
+    // wherever its heap pointer begins. Those are strings this host did not
+    // write, so they are not in `stringHandles`, and `x·to_string()` on one
+    // printed the decimal of its address.
+    literalEnd = heapGlobal ? Number(heapGlobal.value) : 0;
+    // An actor compiles to a `<Actor>_dispatch(msg_id, payload)` export. Their
+    // presence is what tells this runtime that an `on*` prop carries a message
+    // id rather than an indirect-function-table index — a module with no actors
+    // has no dispatcher and keeps the older behaviour exactly.
+    messageDispatchers = Object.entries(exports)
+        .filter(([name, fn]) => name.endsWith('_dispatch') && typeof fn === 'function')
+        .map(([name, fn]) => [name.slice(0, -'_dispatch'.length), fn]);
+}
+
+// Actor dispatchers, as [actorName, fn] pairs.
+let messageDispatchers = [];
+// Optional page hook, run after a message is delivered — where a re-render goes.
+let afterMessage = null;
+
+/// Register a callback to run after each dispatched message.
+///
+/// An actor handler mutates state in WASM globals; nothing re-renders on its
+/// own. This is where a page puts its `render()` call.
+export function onMessageDispatched(fn) {
+    afterMessage = fn;
+}
+
+/// Deliver a message id (and optional payload) to every actor in the module.
+///
+/// Returns false when the module has no actors, so the caller can fall back to
+/// the function-pointer convention.
+export function dispatchMessage(msgId, payload = 0) {
+    if (messageDispatchers.length === 0) {
+        return false;
+    }
+    for (const [name, fn] of messageDispatchers) {
+        try {
+            fn(BigInt(msgId), BigInt(payload));
+        } catch (e) {
+            console.error(`[dispatch] ${name} failed for message ${msgId}:`, e);
+        }
+    }
+    if (afterMessage) {
+        afterMessage(Number(msgId), Number(payload));
+    }
+    return true;
 }
 
 function getMemory() {
@@ -35,24 +110,74 @@ function readLengthPrefixedString(ptr) {
     const p = Number(ptr); // Convert BigInt from WASM to Number
     const mem = getMemory();
     const view = new DataView(wasmMemory.buffer);
+    // A pointer that is not a string reads a garbage 32-bit length — up to 4 GB
+    // — and this used to slice all of it, so one type confusion in the compiler
+    // came out as a multi-megabyte allocation from a component that renders a
+    // button. A length that does not fit in memory is not a string.
+    if (!Number.isFinite(p) || p < 0 || p + 4 > view.byteLength) return '';
     const len = view.getUint32(p, true); // little-endian
+    if (p + 4 + len > view.byteLength) return '';
     const bytes = mem.slice(p + 4, p + 4 + len);
     return new TextDecoder().decode(bytes);
 }
 
 function writeString(str) {
     const bytes = new TextEncoder().encode(str);
-    const ptr = heapPtr;
+    heapReserve(bytes.length + 1);
+    const ptr = getHeapPtr();
     const mem = getMemory();
     mem.set(bytes, ptr);
-    heapPtr += bytes.length + 1; // +1 for null terminator
+    setHeapPtr(ptr + bytes.length + 1); // +1 for null terminator
     return { ptr, len: bytes.length };
 }
 
 // Write a length-prefixed string (Sigil's format: 4-byte len + bytes)
+// Make sure `size` more bytes fit above `heapPtr`, growing linear memory if
+// they do not.
+//
+// Nothing grew memory on the string path: the module declares 16 pages and the
+// host wrote past the end of them the moment it produced enough strings, with
+// "offset is out of bounds" from a DataView write and no mention of memory. It
+// took until `map` and `filter` actually ran — each one allocating a string per
+// element — for a page to be exhausted at all.
+function heapReserve(size) {
+    const need = getHeapPtr() + size;
+    if (!wasmMemory || wasmMemory.buffer.byteLength >= need) return;
+    const have = wasmMemory.buffer.byteLength / 65536;
+    const want = Math.ceil(need / 65536);
+    try {
+        wasmMemory.grow(want - have);
+    } catch (e) {
+        throw new RangeError(
+            `Sigil heap exhausted: needed ${need} bytes, memory caps out at ` +
+            `${wasmMemory.buffer.byteLength} (${e.message})`,
+        );
+    }
+}
+
+// Every address this host has written a string to.
+//
+// `x·to_string()` cannot be decided from the value: a Sigil value is a bare
+// i64, so 83072 is either the number eighty-three thousand or a pointer to a
+// string, and the compiler only knows which when it can see a literal. It used
+// to assume "number" and print the decimal of the address, so every string that
+// came back from a helper rendered into the DOM as a meaningless integer.
+//
+// The host does not have to guess: it knows which addresses it wrote. Nothing
+// is freed from this bump allocator, so a recorded handle stays a string.
+const stringHandles = new Set();
+
+// The module's own data section: `[LITERAL_START, literalEnd)`. Set when the
+// module is bound, because that is when its heap pointer still marks the end
+// of its literals.
+const LITERAL_START = 1024;
+let literalEnd = 0;
+
 function writeLengthPrefixedString(str) {
     const bytes = new TextEncoder().encode(str);
-    const ptr = heapPtr;
+    heapReserve(4 + bytes.length + 8);
+    const ptr = getHeapPtr();
+    stringHandles.add(ptr);
     const view = new DataView(wasmMemory.buffer);
     // Write 4-byte length
     view.setUint32(ptr, bytes.length, true); // little-endian
@@ -60,8 +185,7 @@ function writeLengthPrefixedString(str) {
     const mem = getMemory();
     mem.set(bytes, ptr + 4);
     // Align to 8 bytes
-    heapPtr += 4 + bytes.length;
-    heapPtr = (heapPtr + 7) & ~7;
+    setHeapPtr((ptr + 4 + bytes.length + 7) & ~7);
     return ptr;
 }
 
@@ -81,6 +205,256 @@ const pendingEffects = new Set();
 
 // Effect registry
 const effects = new Map();          // effectId -> { run, deps, cleanup }
+// =============================================================================
+// JSON
+// =============================================================================
+//
+// Sigil's JSON is `json_parse` / `json_stringify` / `json_get` / `json_set` /
+// `json_pretty`, and the WASM backend had no binding for any of them — under the
+// unresolved-call stub they compiled to a constant 0, so a web target could not
+// read or write JSON and would not say so. Values are opaque handles here, the
+// same way vnodes and arrays are; strings are length-prefixed pointers.
+
+const jsonValues = new Map();
+
+// Everything in WASM is a uniform i64, so a JSON argument arrives as a bare
+// number and could be a value handle, a pointer to a length-prefixed string, or
+// an actual number. Handles are issued from a range no string pointer and no
+// plausible integer can reach, and string data starts at HEAP_START (0x4000) —
+// so the three are told apart by magnitude, then confirmed.
+const JSON_HANDLE_BASE = 0x7000_0000;
+const WASM_DATA_START = 0x4000;
+let nextJsonId = JSON_HANDLE_BASE;
+
+function jsonHandle(value) {
+    const id = nextJsonId++;
+    jsonValues.set(id, value);
+    return BigInt(id);
+}
+
+/// Is this plausibly a pointer to a length-prefixed UTF-8 string?
+function looksLikeStringPointer(n) {
+    if (!Number.isInteger(n) || n < WASM_DATA_START) return false;
+    const mem = getMemory();
+    if (n + 4 > mem.byteLength) return false;
+    const len = new DataView(wasmMemory.buffer).getUint32(n, true);
+    return len <= 1 << 20 && n + 4 + len <= mem.byteLength;
+}
+
+/// Resolve an argument to a JS value: a handle we issued, a string we can read,
+/// or the number itself.
+function jsonResolve(ref) {
+    // Nothing resolves to nothing, not to the enormous negative number it is
+    // spelled with.
+    if (isNone(ref)) {
+        return null;
+    }
+    const n = Number(ref);
+    if (jsonValues.has(n)) {
+        return jsonValues.get(n);
+    }
+    if (looksLikeStringPointer(n)) {
+        try {
+            return readLengthPrefixedString(n);
+        } catch {
+            return n;
+        }
+    }
+    return n;
+}
+
+// JavaScript truthiness. The compiler emits `x·to_bool()` wherever React relied
+// on `&&`, `||` or a ternary over a non-boolean. It is a host call because only
+// the host can tell a string pointer from a small integer — `""` is falsy, and a
+// pointer to it is not zero.
+// `None` and `\u{2205}`, as the compiler emits them.
+//
+// An Option is transparent in the WASM backend — `Some(x)` IS `x` — so
+// "nothing" has to be a value no real one can be. 0 will not do: that is
+// `false`, the integer zero, and this file's own "absent". Pinned to
+// `wasm::NONE` in the compiler by a test.
+export const NONE = -9223372036854775808n;
+
+function isNone(ref) {
+    return BigInt(ref) === NONE;
+}
+
+function valueToBool(ref) {
+    if (isNone(ref)) return 0n;
+    const v = jsonResolve(ref);
+    if (typeof v === 'string') return BigInt(v.length > 0 ? 1 : 0);
+    if (Array.isArray(v)) return BigInt(v.length > 0 ? 1 : 0);
+    if (v === null || v === undefined) return 0n;
+    if (typeof v === 'number') return BigInt(v !== 0 ? 1 : 0);
+    if (typeof v === 'boolean') return BigInt(v ? 1 : 0);
+    return 1n;
+}
+
+/// `Object.values` / `Object.keys` / `Object.entries` over a value the module
+/// holds as a handle. The migrator emits these because React code uses them to
+/// walk record types, and WASM has no way to enumerate a JS object itself.
+function objectValues(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return BigInt(jsonHandle([]));
+    if (Array.isArray(v)) return BigInt(jsonHandle(v.slice()));
+    if (typeof v === 'object') return BigInt(jsonHandle(Object.values(v)));
+    return BigInt(jsonHandle([]));
+}
+
+function objectKeys(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return BigInt(jsonHandle([]));
+    if (typeof v === 'object') return BigInt(jsonHandle(Object.keys(v)));
+    return BigInt(jsonHandle([]));
+}
+
+function objectEntries(ref) {
+    const v = jsonResolve(ref);
+    if (v === null || v === undefined) return jsonHandle([]);
+    if (typeof v === 'object') return jsonHandle(Object.entries(v).map(([k, x]) => [k, x]));
+    return jsonHandle([]);
+}
+
+function valueIsFinite(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isFinite(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+function valueIsNaN(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isNaN(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+function valueIsInteger(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(Number.isInteger(typeof v === 'number' ? v : Number(v)) ? 1 : 0);
+}
+
+/// `new Date(s).getTime()` — epoch millis from a timestamp string. Returns 0
+/// for anything unparseable rather than NaN, which BigInt cannot represent.
+/// `x.toFixed(n)` — a formatted string, returned as a string handle.
+function valueToFixed(ref, digits) {
+    const v = jsonResolve(ref);
+    const n = typeof v === 'number' ? v : Number(v);
+    const d = Math.max(0, Math.min(100, Number(digits)));
+    return BigInt(writeLengthPrefixedString(Number.isFinite(n) ? n.toFixed(d) : '0'));
+}
+
+/// `typeof x`, as a string handle. Arrays report "object", as in JS.
+function valueTypeOf(ref) {
+    const v = jsonResolve(ref);
+    return BigInt(writeLengthPrefixedString(v === null ? 'object' : typeof v));
+}
+
+// `Math.floor` and friends over the uniform value domain.
+//
+// The `math.*` imports next door are F64-typed, and a migrated JavaScript
+// number reaches WASM as an i64, so nothing in a migrated program could call
+// them. These take the value as it is — a raw integer, or a handle to a float
+// the host is holding — and give back an integer when the answer is one, or a
+// handle when it is not, so nothing is quietly truncated on the way home.
+function numberOf(ref) {
+    const v = jsonResolve(ref);
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : NaN;
+}
+
+function mathResult(n) {
+    if (!Number.isFinite(n)) {
+        return 0n;
+    }
+    return Number.isInteger(n) ? BigInt(n) : BigInt(jsonHandle(n));
+}
+
+function valueMathFloor(ref) {
+    return mathResult(Math.floor(numberOf(ref)));
+}
+
+function valueMathCeil(ref) {
+    return mathResult(Math.ceil(numberOf(ref)));
+}
+
+function valueMathRound(ref) {
+    return mathResult(Math.round(numberOf(ref)));
+}
+
+function valueMathTrunc(ref) {
+    return mathResult(Math.trunc(numberOf(ref)));
+}
+
+function valueMathAbs(ref) {
+    return mathResult(Math.abs(numberOf(ref)));
+}
+
+function valueMathMin(a, b) {
+    return mathResult(Math.min(numberOf(a), numberOf(b)));
+}
+
+function valueMathMax(a, b) {
+    return mathResult(Math.max(numberOf(a), numberOf(b)));
+}
+
+function valueIsArray(ref) {
+    return BigInt(Array.isArray(jsonResolve(ref)) ? 1 : 0);
+}
+
+function timingParse(ref) {
+    const v = jsonResolve(ref);
+    const ms = typeof v === 'number' ? v : Date.parse(String(v));
+    return BigInt(Number.isFinite(ms) ? Math.trunc(ms) : 0);
+}
+
+function jsonParse(strRef) {
+    const text = readLengthPrefixedString(strRef);
+    try {
+        return BigInt(jsonHandle(JSON.parse(text)));
+    } catch (e) {
+        console.error('[json.parse]', e.message);
+        return BigInt(jsonHandle(null));
+    }
+}
+
+function jsonStringify(ref) {
+    return BigInt(writeLengthPrefixedString(JSON.stringify(jsonResolve(ref)) ?? 'null'));
+}
+
+function jsonPretty(ref) {
+    return BigInt(writeLengthPrefixedString(JSON.stringify(jsonResolve(ref), null, 2) ?? 'null'));
+}
+
+/// Dotted path lookup, matching the interpreter's `json_get`: each segment is an
+/// object key, or an array index when the segment parses as a number.
+function jsonGet(ref, pathRef) {
+    const path = readLengthPrefixedString(pathRef);
+    let current = jsonResolve(ref);
+    for (const key of path.split('.')) {
+        if (current == null) break;
+        if (Array.isArray(current)) {
+            const i = Number.parseInt(key, 10);
+            current = Number.isNaN(i) ? null : (current[i] ?? null);
+        } else if (typeof current === 'object') {
+            current = current[key] ?? null;
+        } else {
+            current = null;
+        }
+    }
+    return BigInt(jsonHandle(current ?? null));
+}
+
+function jsonSet(ref, pathRef, valueRef) {
+    const path = readLengthPrefixedString(pathRef).split('.');
+    const root = structuredClone(jsonResolve(ref) ?? {});
+    let current = root;
+    for (const key of path.slice(0, -1)) {
+        if (current[key] == null || typeof current[key] !== 'object') {
+            current[key] = {};
+        }
+        current = current[key];
+    }
+    current[path[path.length - 1]] = jsonResolve(valueRef);
+    return jsonHandle(root);
+}
+
 
 function signalCreate(initialValue) {
     const id = nextSignalId++;
@@ -275,6 +649,23 @@ function consoleLogStr(ptr, len) {
     console.log('[sigil]', readString(ptr, len));
 }
 
+// console.log / warn / error take a single length-prefixed string pointer, not
+// the (ptr, len) pair `log_str` takes. The compiler has emitted all three since
+// the string macros landed; this runtime implemented none of them, and a WASM
+// module that imports a function the runtime does not provide does not degrade
+// — `WebAssembly.instantiate` throws and nothing runs at all.
+function consoleLog(strRef) {
+    console.log('[sigil]', readLengthPrefixedString(strRef));
+}
+
+function consoleWarn(strRef) {
+    console.warn('[sigil]', readLengthPrefixedString(strRef));
+}
+
+function consoleError(strRef) {
+    console.error('[sigil]', readLengthPrefixedString(strRef));
+}
+
 function consolePrint(value) {
     console.log(value);
 }
@@ -292,7 +683,19 @@ function stringConcat(ptr1, ptr2) {
     return writeLengthPrefixedString(result);
 }
 
+// `x·len()` compiles to THIS import for every receiver — the compiler tries
+// `string_length` first and it is always registered, so the array branch below
+// it was dead and `xs·len()` on an array read a length prefix out of a
+// collection id. The host is the only side that knows which kind a handle is,
+// so it answers for all four.
 function stringLength(ptr) {
+    const n = Number(ptr);
+    const arr = arrays.get(n);
+    if (arr) return arr.length;
+    const m = maps.get(n);
+    if (m) return m.size;
+    const st = sets.get(n);
+    if (st) return st.size;
     const str = readLengthPrefixedString(ptr);
     return str.length;
 }
@@ -309,6 +712,32 @@ function stringEq(ptr1, ptr2) {
     return str1 === str2 ? 1 : 0;
 }
 
+// `x·to_string()` where the compiler could not prove which it is.
+//
+// A handle this host wrote is that string; anything else is a number. Exact,
+// not a heuristic: the alternative — treating any value that happens to point
+// at plausible bytes as a string — would misprint genuine integers.
+function stringFromValue(value) {
+    // Nothing renders as nothing. React writes `{null}` as an empty string,
+    // and generated code emits `(x)·to_string()` wherever React had one.
+    if (isNone(value)) {
+        return writeLengthPrefixedString('');
+    }
+    const n = Number(value);
+    if (stringHandles.has(n)) return n;
+    // A literal in the module's data section, if it reads as one. Bounded to
+    // that region: outside it, a plausible-looking length is a coincidence and
+    // a genuine integer must print as itself.
+    if (n >= LITERAL_START && n < literalEnd) {
+        try {
+            const view = new DataView(getMemory().buffer);
+            const len = view.getUint32(n, true);
+            if (len > 0 && n + 4 + len <= literalEnd) return n;
+        } catch { /* not a string */ }
+    }
+    return writeLengthPrefixedString(String(n));
+}
+
 function stringFromInt(value) {
     const str = String(value);
     console.log('[string.from_int]', value, '=>', JSON.stringify(str));
@@ -319,6 +748,158 @@ function stringFromFloat(value) {
     const str = String(value);
     console.log('[string.from_float]', value, '=>', JSON.stringify(str));
     return writeLengthPrefixedString(str);
+}
+
+// `String·from_utf8(bytes)`. A Sigil `Vec[u8]` is an array of byte values held
+// by the host, not a buffer in linear memory, so decoding happens here.
+function stringFromUtf8(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) {
+        return writeLengthPrefixedString('');
+    }
+    const bytes = Uint8Array.from(arr, (b) => Number(b) & 0xff);
+    return writeLengthPrefixedString(new TextDecoder().decode(bytes));
+}
+
+// ---------------------------------------------------------------------------
+// HashMap / HashSet. A Sigil map is a host object, the same way an array is:
+// the module holds an id, not a buffer. Keys arrive as string handles, so they
+// are read to text — two equal strings at different addresses are one key.
+// ---------------------------------------------------------------------------
+const maps = new Map();
+
+// Arrays and maps share one id space. `xs·len()` and `∀ x ∈ xs` dispatch on the
+// handle alone — they cannot tell which kind it is — so two separate counters
+// meant array 1 and map 1 both existed and the array always won: a map with
+// entries in it reported a length of 0.
+let nextCollectionId = 1;
+
+// The lowest address a string handle can have. Below it, a value is a number:
+// string literals and the heap both live well above this, and `getUint32` at a
+// small address happily reads a plausible-looking length out of whatever is
+// there — so `xs·contains(9)` matched a "string" at address 9 and answered
+// true for an array of 1, 2, 3.
+const MIN_STRING_HANDLE = 1024;
+
+function mapKey(k) {
+    // A key is a string handle when it points at a readable length-prefixed
+    // string, and a plain number otherwise.
+    const n = Number(k);
+    if (n < MIN_STRING_HANDLE) return n;
+    try {
+        const view = new DataView(getMemory().buffer);
+        const len = view.getUint32(n, true);
+        if (len < 4096 && n + 4 + len <= view.byteLength) {
+            return readLengthPrefixedString(n);
+        }
+    } catch { /* not a string */ }
+    return n;
+}
+
+function mapNew() {
+    const id = nextCollectionId++;
+    maps.set(id, new Map());
+    return id;
+}
+function mapSet(mapId, k, v) {
+    const m = maps.get(Number(mapId));
+    if (m) m.set(mapKey(k), v);
+}
+function mapGet(mapId, k) {
+    const m = maps.get(Number(mapId));
+    const v = m ? m.get(mapKey(k)) : undefined;
+    return v === undefined ? 0n : BigInt(v);
+}
+function mapHas(mapId, k) {
+    const n = Number(mapId);
+    if (sets.has(n)) return setHas(n, k);
+    const m = maps.get(n);
+    return m && m.has(mapKey(k)) ? 1 : 0;
+}
+function mapRemove(mapId, k) {
+    const n = Number(mapId);
+    if (sets.has(n)) { setRemove(n, k); return; }
+    const m = maps.get(n);
+    if (m) m.delete(mapKey(k));
+}
+function mapLen(mapId) {
+    const n = Number(mapId);
+    if (sets.has(n)) return setLen(n);
+    const m = maps.get(n);
+    return m ? m.size : 0;
+}
+function mapIsEmpty(mapId) {
+    return mapLen(mapId) === 0 ? 1 : 0;
+}
+function arrayOf(values) {
+    const id = arrayNew();
+    const arr = arrays.get(id);
+    for (const v of values) arr.push(v);
+    return id;
+}
+function mapKeys(mapId) {
+    const n = Number(mapId);
+    if (sets.has(n)) return setValues(n);
+    const m = maps.get(n);
+    if (!m) return arrayOf([]);
+    return arrayOf([...m.keys()].map((k) =>
+        typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k)));
+}
+function mapValues(mapId) {
+    const n = Number(mapId);
+    if (sets.has(n)) return setValues(n);
+    const m = maps.get(n);
+    return arrayOf(m ? [...m.values()].map(toI64) : []);
+}
+function mapEntries(mapId) {
+    const n = Number(mapId);
+    if (sets.has(n)) return setValues(n);
+    const m = maps.get(n);
+    if (!m) return arrayOf([]);
+    // Each entry is a two-element array: [key, value].
+    return arrayOf([...m.entries()].map(([k, v]) => BigInt(arrayOf([
+        typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k),
+        BigInt(v),
+    ]))));
+}
+
+// `HashMap·from(entries)` — an array of two-element [k, v] arrays, which is
+// what `Object.entries(x)` and `new Map(pairs)` both hand over.
+function mapFrom(srcId) {
+    const id = mapNew();
+    const m = maps.get(id);
+    const arr = arrays.get(Number(srcId));
+    if (arr) {
+        for (const pair of arr) {
+            const entry = arrays.get(Number(pair));
+            if (entry && entry.length >= 2) m.set(mapKey(entry[0]), entry[1]);
+        }
+        return id;
+    }
+    const other = maps.get(Number(srcId));
+    if (other) for (const [k, v] of other) m.set(k, v);
+    return id;
+}
+
+function encodeUriComponent(ptr) {
+    return writeLengthPrefixedString(encodeURIComponent(readLengthPrefixedString(ptr)));
+}
+function decodeUriComponent(ptr) {
+    const s = readLengthPrefixedString(ptr);
+    try {
+        return writeLengthPrefixedString(decodeURIComponent(s));
+    } catch {
+        // A malformed escape is not a reason to trap the whole module.
+        return writeLengthPrefixedString(s);
+    }
+}
+
+// `a·locale_compare(b)` — JavaScript's `localeCompare`, which every migrated
+// sort comparator uses.
+function stringLocaleCompare(aRef, bRef) {
+    const a = readLengthPrefixedString(aRef);
+    const b = readLengthPrefixedString(bRef);
+    return BigInt(a.localeCompare(b));
 }
 
 function stringParseInt(ptr) {
@@ -380,21 +961,28 @@ function stringToLowercase(ptr) {
 }
 
 function stringContains(ptr, searchPtr) {
+    const n = Number(ptr);
+    if (sets.has(n)) return setHas(n, searchPtr) ? 1 : 0;
+    const arr = arrays.get(n);
+    if (arr) {
+        const needle = mapKey(searchPtr);
+        return arr.some((v) => mapKey(v) === needle) ? 1 : 0;
+    }
     const str = readLengthPrefixedString(ptr);
     const search = readLengthPrefixedString(searchPtr);
-    return str.includes(search) ? 1n : 0n;
+    return str.includes(search) ? 1 : 0;
 }
 
 function stringStartsWith(ptr, prefixPtr) {
     const str = readLengthPrefixedString(ptr);
     const prefix = readLengthPrefixedString(prefixPtr);
-    return str.startsWith(prefix) ? 1n : 0n;
+    return str.startsWith(prefix) ? 1 : 0;
 }
 
 function stringEndsWith(ptr, suffixPtr) {
     const str = readLengthPrefixedString(ptr);
     const suffix = readLengthPrefixedString(suffixPtr);
-    return str.endsWith(suffix) ? 1n : 0n;
+    return str.endsWith(suffix) ? 1 : 0;
 }
 
 function stringReplace(ptr, fromPtr, toPtr) {
@@ -402,6 +990,35 @@ function stringReplace(ptr, fromPtr, toPtr) {
     const from = readLengthPrefixedString(fromPtr);
     const to = readLengthPrefixedString(toPtr);
     return writeLengthPrefixedString(str.replaceAll(from, to));
+}
+
+// `s.indexOf(x)` and `s.lastIndexOf(x)` — -1 when absent, as JavaScript's are.
+function stringIndexOf(ptr, needlePtr) {
+    const str = readLengthPrefixedString(ptr);
+    const needle = readLengthPrefixedString(needlePtr);
+    return BigInt(str.indexOf(needle));
+}
+
+function stringLastIndexOf(ptr, needlePtr) {
+    const str = readLengthPrefixedString(ptr);
+    const needle = readLengthPrefixedString(needlePtr);
+    return BigInt(str.lastIndexOf(needle));
+}
+
+// `s.padStart(n, pad)` and `s.padEnd(n, pad)`.
+//
+// Migrated code formats timestamps and ids with these; without them they
+// reached the module as undefined functions.
+function stringPadStart(ptr, len, padPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const pad = padPtr && !isNone(padPtr) ? readLengthPrefixedString(padPtr) : ' ';
+    return writeLengthPrefixedString(str.padStart(Number(len), pad || ' '));
+}
+
+function stringPadEnd(ptr, len, padPtr) {
+    const str = readLengthPrefixedString(ptr);
+    const pad = padPtr && !isNone(padPtr) ? readLengthPrefixedString(padPtr) : ' ';
+    return writeLengthPrefixedString(str.padEnd(Number(len), pad || ' '));
 }
 
 function stringChars(ptr) {
@@ -575,7 +1192,10 @@ function eventsAddListener(elId, typePtr, callbackPtr, flags) {
     const el = domElements.get(Number(elId));
     if (!el) {
         console.warn('[events.add_listener] Element not found:', elId);
-        return 0n;
+        // `-> i32`, so a Number. The success path below already returns one;
+        // this early return did not, and a listener on an element that is not
+        // there is the common case during a first render.
+        return 0;
     }
 
     const type = readLengthPrefixedString(typePtr);
@@ -627,8 +1247,50 @@ function eventsGetValue(eventId, resultPtr) {
 // Timing
 // =============================================================================
 
+// The monotonic clock, as an F64. `timing.now` is declared that way, so this
+// stays what it was; `value.date_now` below is the epoch one.
 function timingNow() {
     return performance.now();
+}
+
+// `Date.now()` — epoch milliseconds, as an i64.
+//
+// Migrated code meant this every time it said `Date.now()`, and it was routed
+// to `timing.now`: milliseconds since the page LOADED, and an F64 besides. So
+// every age, staleness check and relative time in the Lares client was
+// measuring epoch timestamps against a three-digit number.
+function valueDateNow() {
+    return BigInt(Date.now());
+}
+
+// `new Date(x).toLocaleDateString()` and its siblings.
+//
+// These were collapsing to `timing_parse(x)·to_string()` — the millisecond
+// count itself, rendered into the document: "on 1757325600000" where React
+// writes "on 08/09/2025". `kind` picks the method; `opts` is the JSON options
+// object, or 0 for none.
+function valueDateFormat(msRef, kindRef, optsRef) {
+    const ms = Number(jsonResolve(msRef));
+    if (!Number.isFinite(ms)) {
+        return writeLengthPrefixedString('');
+    }
+    const kind = kindRef ? String(jsonResolve(kindRef)) : 'datetime';
+    const opts = optsRef ? jsonResolve(optsRef) : undefined;
+    const d = new Date(ms);
+    const options = opts && typeof opts === 'object' ? opts : undefined;
+    let out;
+    try {
+        if (kind === 'date') {
+            out = d.toLocaleDateString(undefined, options);
+        } else if (kind === 'time') {
+            out = d.toLocaleTimeString(undefined, options);
+        } else {
+            out = d.toLocaleString(undefined, options);
+        }
+    } catch {
+        out = d.toISOString();
+    }
+    return writeLengthPrefixedString(out);
 }
 
 function timingSetTimeout(callbackPtr, ms) {
@@ -710,6 +1372,12 @@ function fetchGetStatus(id) {
 }
 
 function fetchGetBody(id) {
+    // A handle from `fetch.request` — the promise-shaped API — keeps its body
+    // here rather than in the polling registry below.
+    const p = promises.get(Number(id));
+    if (p && typeof p.text === 'string') {
+        return writeLengthPrefixedString(p.text);
+    }
     const req = fetchRequests.get(Number(id));
     if (req?.body) {
         return writeLengthPrefixedString(req.body);
@@ -815,13 +1483,9 @@ function routerForward() {
 // =============================================================================
 
 function memoryAlloc(size) {
-    const ptr = heapPtr;
-    heapPtr += size;
-    // Grow memory if needed
-    const pages = Math.ceil(heapPtr / 65536);
-    if (wasmMemory && wasmMemory.buffer.byteLength < pages * 65536) {
-        wasmMemory.grow(pages - wasmMemory.buffer.byteLength / 65536);
-    }
+    heapReserve(Number(size));
+    const ptr = getHeapPtr();
+    setHeapPtr(ptr + Number(size));
     return ptr;
 }
 
@@ -871,10 +1535,69 @@ const mathImports = {
 // =============================================================================
 
 const arrays = new Map();
-let nextArrayId = 1;
+
+// ---------------------------------------------------------------------------
+// HashSet. A set is its own host collection, not a map with dummy values: `∀ x
+// ∈ set` has to yield the elements, and a map yields `[k, v]` pairs. Ids come
+// from the one shared counter, so every dispatcher below can tell the three
+// kinds apart by handle alone.
+// ---------------------------------------------------------------------------
+const sets = new Map();
+
+function materializeKey(k) {
+    return typeof k === 'string' ? BigInt(writeLengthPrefixedString(k)) : BigInt(k);
+}
+
+function setNew() {
+    const id = nextCollectionId++;
+    sets.set(id, new Set());
+    return id;
+}
+function setAdd(setId, v) {
+    const s = sets.get(Number(setId));
+    if (s) s.add(mapKey(v));
+}
+function setHas(setId, v) {
+    const s = sets.get(Number(setId));
+    return s && s.has(mapKey(v)) ? 1 : 0;
+}
+function setRemove(setId, v) {
+    const s = sets.get(Number(setId));
+    if (s) s.delete(mapKey(v));
+}
+function setLen(setId) {
+    const s = sets.get(Number(setId));
+    return s ? s.size : 0;
+}
+function setValues(setId) {
+    const s = sets.get(Number(setId));
+    return arrayOf(s ? [...s].map(materializeKey) : []);
+}
+// `HashSet·from(xs)` — an array, another set, or a map's keys.
+function setFrom(srcId) {
+    const id = setNew();
+    const s = sets.get(id);
+    const n = Number(srcId);
+    const arr = arrays.get(n);
+    if (arr) {
+        for (const v of arr) s.add(mapKey(v));
+        return id;
+    }
+    const other = sets.get(n);
+    if (other) {
+        for (const k of other) s.add(k);
+        return id;
+    }
+    const m = maps.get(n);
+    if (m) {
+        for (const k of m.keys()) s.add(k);
+    }
+    return id;
+}
+
 
 function arrayNew() {
-    const id = nextArrayId++;
+    const id = nextCollectionId++;
     arrays.set(id, []);
     return id;
 }
@@ -885,8 +1608,31 @@ function arrayPush(arrId, value) {
 }
 
 function arrayGet(arrId, index) {
-    const arr = arrays.get(Number(arrId));
-    return arr ? (arr[Number(index)] ?? 0n) : 0n;
+    const n = Number(arrId);
+    // `x·get(k)` compiles to THIS import whatever the receiver is, so a map
+    // reached it with a key where an index belongs and read past the end of an
+    // array it does not have. The host is the only side that knows the kind.
+    const m = maps.get(n);
+    if (m) {
+        const v = m.get(mapKey(index));
+        return v === undefined ? 0n : toI64(v);
+    }
+    const arr = arrays.get(n);
+    if (!arr) return 0n;
+    // The module declares an i64 result, so the value has to BE a BigInt.
+    // An element that arrived as a plain number — anything the host pushed
+    // itself — threw "Cannot convert N to a BigInt" at the call boundary,
+    // which reads as a compiler bug and is a host one.
+    return toI64(arr[Number(index)]);
+}
+
+/// Whatever a collection holds, as the i64 the module expects.
+function toI64(v) {
+    if (typeof v === 'bigint') return v;
+    if (typeof v === 'number') return BigInt(Math.trunc(v));
+    if (typeof v === 'boolean') return v ? 1n : 0n;
+    if (typeof v === 'string') return BigInt(writeLengthPrefixedString(v));
+    return 0n;
 }
 
 function arraySet(arrId, index, value) {
@@ -895,21 +1641,203 @@ function arraySet(arrId, index, value) {
 }
 
 function arrayLen(arrId) {
-    const arr = arrays.get(Number(arrId));
-    return arr ? arr.length : 0;
+    // `xs·len()` dispatches here for any collection, so a map has to answer
+    // too — otherwise `attrs·len()` was 0 for a map with entries in it.
+    const n = Number(arrId);
+    const arr = arrays.get(n);
+    if (arr) return arr.length;
+    const m = maps.get(n);
+    if (m) return m.size;
+    const st = sets.get(n);
+    return st ? st.size : 0;
 }
 
+// `∀` iterates this. A map becomes its entries — an array of two-element arrays
+// — and an array is already itself, so `∀ x ∈ xs` and `∀ (k, v) ∈ m` are one
+// loop over different contents. See S57: before this the loop read a 4-byte
+// length out of linear memory, which is not where a Vec lives.
+function iterOf(id) {
+    const n = Number(id);
+    if (arrays.has(n)) return n;
+    if (maps.has(n)) return mapEntries(n);
+    if (sets.has(n)) return setValues(n);
+    // Not a collection this runtime knows: iterate nothing rather than trap.
+    return arrayNew();
+}
+
+// Vec::join(separator). The compiler wraps both pointers to i32 before the
+// call and extends the result back to i64.
+function vecJoin(arrId, sepStrRef) {
+    const arr = arrays.get(Number(arrId));
+    const sep = readLengthPrefixedString(sepStrRef);
+    if (!arr) {
+        return writeLengthPrefixedString('');
+    }
+    // Elements are either string handles or numbers; a handle points at a
+    // length-prefixed string inside the same linear memory.
+    const parts = arr.map((v) => {
+        const n = Number(v);
+        try {
+            return readLengthPrefixedString(n);
+        } catch {
+            return String(n);
+        }
+    });
+    return writeLengthPrefixedString(parts.join(sep));
+}
+
+// A Sigil closure, callable from the host.
+//
+// The value is the pair `[table_idx, env_ptr]` in linear memory, and the
+// calling convention is `(env, args…)` — the same one `call_indirect` uses.
+// `null` when the pointer is not a closure, so a caller can fall back rather
+// than trap.
+function sigilClosure(closurePtr) {
+    const ptr = Number(closurePtr);
+    const table = wasmExports && wasmExports.__indirect_function_table;
+    if (!ptr || !table) return null;
+    let tableIdx, env;
+    try {
+        const view = new DataView(getMemory().buffer);
+        tableIdx = Number(view.getBigInt64(ptr, true));
+        env = view.getBigInt64(ptr + 8, true);
+    } catch {
+        return null;
+    }
+    let fn;
+    try {
+        fn = table.get(tableIdx);
+    } catch {
+        return null;
+    }
+    if (typeof fn !== 'function') return null;
+    // Every Sigil closure has one signature, `(env, a0 … aN) -> i64`, so that a
+    // table entry and a call site cannot disagree on arity. A caller with fewer
+    // arguments pads: an omitted parameter arrives as `undefined`, which the
+    // boundary rejects with "Cannot convert undefined to a BigInt".
+    return (...args) => {
+        const padded = args.slice(0, Math.max(0, fn.length - 1));
+        while (padded.length < fn.length - 1) padded.push(0n);
+        return fn(env, ...padded);
+    };
+}
+
+// The higher-order array morphemes. Every one of these used to ignore its
+// closure and hand the receiver straight back — `xs·map(f)` returned `xs`,
+// `xs·filter(p)` returned `xs`, `xs·fold(f, init)` returned `init`. They
+// compiled, validated and reported success, so a view rendered a list of the
+// wrong things rather than failing.
+//
+// A handle that is not an array is returned unchanged: `Option·map` compiles
+// to the same import, and that IS the identity on a value the host does not
+// hold.
 function arrayMap(arrId, fnPtr) {
-    // Simplified
-    return Number(arrId);
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return Number(arrId);
+    return arrayOf(arr.map((x) => toI64(call(x))));
 }
 
 function arrayFilter(arrId, fnPtr) {
-    return Number(arrId);
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return Number(arrId);
+    return arrayOf(arr.filter((x) => truthy(call(x))));
 }
 
-function arrayReduce(arrId, fnPtr, initial) {
-    return initial;
+// `xs·fold(init, f)`. The INITIAL VALUE comes first — that is the order the
+// interpreter accepts, and it is the oracle. The closure itself takes the
+// accumulator first, matching Sigil's `|sum, v|`.
+function arrayReduce(arrId, initial, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return toI64(initial);
+    let acc = toI64(initial);
+    for (const x of arr) acc = toI64(call(acc, x));
+    return acc;
+}
+
+function arrayFind(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return 0n;
+    const hit = arr.find((x) => truthy(call(x)));
+    return hit === undefined ? 0n : toI64(hit);
+}
+
+// The index, or -1. Not an Option: the compiler's callers compare against -1.
+function arrayPosition(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return -1;
+    return arr.findIndex((x) => truthy(call(x)));
+}
+
+function arrayAnyBy(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return 0;
+    return arr.some((x) => truthy(call(x))) ? 1 : 0;
+}
+
+function arrayAllBy(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return 0;
+    return arr.every((x) => truthy(call(x))) ? 1 : 0;
+}
+
+// `xs·flat_map(f)`: each result that is itself an array is spliced in.
+function arrayFlatMap(arrId, fnPtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(fnPtr);
+    if (!arr || !call) return Number(arrId);
+    const out = [];
+    for (const x of arr) {
+        const r = call(x);
+        const inner = arrays.get(Number(r));
+        if (inner) out.push(...inner);
+        else out.push(toI64(r));
+    }
+    return arrayOf(out);
+}
+
+function arrayFlatten(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) return Number(arrId);
+    const out = [];
+    for (const x of arr) {
+        const inner = arrays.get(Number(x));
+        if (inner) out.push(...inner);
+        else out.push(toI64(x));
+    }
+    return arrayOf(out);
+}
+
+function arrayReverse(arrId) {
+    const arr = arrays.get(Number(arrId));
+    if (!arr) return Number(arrId);
+    return arrayOf([...arr].reverse());
+}
+
+// What a Sigil closure returning a bool hands back: 0/1 as i64, or a value the
+// host is asked to judge. `0n` and `0` are the only falsehoods a predicate can
+// return — a string handle is a pointer, and every pointer is truthy.
+function truthy(v) {
+    if (typeof v === 'bigint') return v !== 0n;
+    if (typeof v === 'number') return v !== 0;
+    return Boolean(v);
+}
+
+// `xs·sort(|a, b| …)`. The comparator is a Sigil closure — the pair
+// `[table_idx, env_ptr]` in linear memory — and the uniform calling convention
+// is `(env, args…)`, so the host can call it like any other.
+function arraySortBy(arrId, closurePtr) {
+    const arr = arrays.get(Number(arrId));
+    const call = sigilClosure(closurePtr);
+    if (!arr || !call) return Number(arrId);
+    arr.sort((a, b) => Number(call(a, b)));
+    return Number(arrId);
 }
 
 function arraySort(arrId) {
@@ -1030,6 +1958,18 @@ function vdomSetVnodeStrProp(vnodeId, nameStrRef, valueStrRef) {
     }
 }
 
+function vdomSetVnodeStyle(vnodeId, propStrRef, valueStrRef) {
+    const id = Number(vnodeId);
+    const vnode = vnodes.get(id);
+    if (vnode && !vnode.isText) {
+        const prop = readLengthPrefixedString(propStrRef);
+        const value = readLengthPrefixedString(valueStrRef);
+        vnode.style ??= {};
+        vnode.style[prop] = value;
+        console.log(`[vdom.set_style] id=${id} ${prop}=${JSON.stringify(value)}`);
+    }
+}
+
 function vdomAppendVnodeChild(parentId, childId) {
     const pId = Number(parentId);
     const cId = Number(childId);
@@ -1066,22 +2006,38 @@ function renderVnodeToDom(vnodeId) {
 
     // Set properties/attributes
     for (const [name, value] of Object.entries(vnode.props || {})) {
+        if (name.endsWith('_payload')) {
+            continue; // read by the event handler above, never an attribute
+        }
         if (name.startsWith('on')) {
-            // Event handler - value is a function pointer
+            // Event handler. In an actor module the value is a message id, which
+            // is what `VNode·on_click(message_id: u64)` is declared to take; in a
+            // flat FFI module it is an indirect-function-table index. Try the
+            // dispatcher first — it reports false when there are no actors.
             const eventName = name.slice(2).toLowerCase();
+            // A message id alone cannot say *which* row was clicked, and
+            // `VNode·on_click(message_id: u64)` has no slot for it. A sibling
+            // `<event>_payload` prop carries the argument.
+            const payload = vnode.props?.[`${name}_payload`] ?? 0;
             el.addEventListener(eventName, () => {
-                // Call WASM function if it's a function index
-                if (typeof value === 'bigint' || typeof value === 'number') {
-                    const table = wasmExports?.__indirect_function_table;
-                    if (table) {
-                        try { table.get(Number(value))(); } catch (e) { console.error(e); }
-                    }
+                if (typeof value !== 'bigint' && typeof value !== 'number') {
+                    return;
+                }
+                if (dispatchMessage(value, payload)) {
+                    return;
+                }
+                const table = wasmExports?.__indirect_function_table;
+                if (table) {
+                    try { table.get(Number(value))(); } catch (e) { console.error(e); }
                 }
             });
         } else if (name === 'style' && typeof value === 'string') {
             el.setAttribute('style', value);
         } else if (name === 'class' || name === 'className') {
-            el.className = String(value);
+            // `setAttribute`, not `className`: on an SVG element `className` is
+            // a read-only SVGAnimatedString, so assigning it threw and took the
+            // whole mount down. Qliphoth's `bell_glyph` is an `<svg>`.
+            el.setAttribute('class', String(value));
         } else if (name === 'id') {
             el.id = String(value);
         } else if (name === 'innerHTML') {
@@ -1193,7 +2149,7 @@ function promiseReject(id, errorPtr, errorLen) {
     const p = promises.get(Number(id));
     if (!p || p.state !== PROMISE_PENDING) return;
     p.state = PROMISE_REJECTED;
-    p.error = errorPtr ? readLengthPrefixedString(errorPtr) : 'Unknown error';
+    p.error = errorPtr && !isNone(errorPtr) ? readLengthPrefixedString(errorPtr) : 'Unknown error';
     console.log('[promise.reject]', id, p.error);
     // Execute catch callbacks
     for (const cb of p.catchCallbacks) {
@@ -1327,14 +2283,42 @@ export function createImports() {
             println_f64: consoleLogF64,
             println_str: consoleLogStr,
             println: consolePrint,
+            log: consoleLog,
+            warn: consoleWarn,
+            error: consoleError,
         }, 'console'),
+        map: wrapImports({
+            new: mapNew,
+            set: mapSet,
+            get: mapGet,
+            has: mapHas,
+            remove: mapRemove,
+            len: mapLen,
+            is_empty: mapIsEmpty,
+            keys: mapKeys,
+            values: mapValues,
+            entries: mapEntries,
+            iter_of: iterOf,
+            from: mapFrom,
+        }, 'map'),
+        set: wrapImports({
+            new: setNew,
+            from: setFrom,
+            add: setAdd,
+            has: setHas,
+            remove: setRemove,
+            len: setLen,
+            values: setValues,
+        }, 'set'),
         string: wrapImports({
             concat: stringConcat,
             length: stringLength,
             slice: stringSlice,
             eq: stringEq,
             from_int: stringFromInt,
+            from_value: stringFromValue,
             from_float: stringFromFloat,
+            from_utf8: stringFromUtf8,
             parse_int: stringParseInt,
             parse_float: stringParseFloat,
             lines: stringLines,
@@ -1348,8 +2332,15 @@ export function createImports() {
             contains: stringContains,
             starts_with: stringStartsWith,
             ends_with: stringEndsWith,
+            locale_compare: stringLocaleCompare,
+            encode_uri_component: encodeUriComponent,
+            decode_uri_component: decodeUriComponent,
             replace: stringReplace,
             chars: stringChars,
+            index_of: stringIndexOf,
+            last_index_of: stringLastIndexOf,
+            pad_start: stringPadStart,
+            pad_end: stringPadEnd,
         }, 'string'),
         dom: {
             create_element: domCreateElement,
@@ -1382,8 +2373,12 @@ export function createImports() {
             set_interval: timingSetInterval,
             clear_interval: timingClearInterval,
             request_animation_frame: timingRequestAnimationFrame,
+            parse: timingParse,
         },
         fetch: {
+            request: fetchRequest,
+            status: fetchStatus,
+            ok: fetchOk,
             start: fetchStart,
             poll: fetchPoll,
             get_status: fetchGetStatus,
@@ -1415,6 +2410,7 @@ export function createImports() {
         math: mathImports,
         morpheme: {
             array_new: arrayNew,
+            vec_join: vecJoin,
             array_push: arrayPush,
             array_get: arrayGet,
             array_set: arraySet,
@@ -1423,6 +2419,7 @@ export function createImports() {
             array_filter: arrayFilter,
             array_reduce: arrayReduce,
             array_sort: arraySort,
+            array_sort_by: arraySortBy,
             array_first: arrayFirst,
             array_last: arrayLast,
             array_nth: arrayNth,
@@ -1432,6 +2429,13 @@ export function createImports() {
             array_max: arrayMax,
             array_all: arrayAll,
             array_any: arrayAny,
+            array_find: arrayFind,
+            array_position: arrayPosition,
+            array_any_by: arrayAnyBy,
+            array_all_by: arrayAllBy,
+            array_flat_map: arrayFlatMap,
+            array_flatten: arrayFlatten,
+            array_reverse: arrayReverse,
             array_random_element: arrayRandomElement,
             array_parallel_map: arrayParallelMap,
             array_parallel_filter: arrayParallelFilter,
@@ -1443,10 +2447,39 @@ export function createImports() {
             create_fragment: vdomCreateFragment,
             set_vnode_prop: vdomSetVnodeProp,
             set_vnode_str_prop: vdomSetVnodeStrProp,
+            set_vnode_style: vdomSetVnodeStyle,
             append_vnode_child: vdomAppendVnodeChild,
             diff_and_patch: vdomDiffAndPatch,
             mount_vnode: vdomMountVnode,
             dispose: vdomDispose,
+        },
+        value: {
+            to_bool: valueToBool,
+            object_values: objectValues,
+            object_keys: objectKeys,
+            object_entries: objectEntries,
+            is_finite: valueIsFinite,
+            is_nan: valueIsNaN,
+            is_integer: valueIsInteger,
+            to_fixed: valueToFixed,
+            is_array: valueIsArray,
+            type_of: valueTypeOf,
+            math_floor: valueMathFloor,
+            math_ceil: valueMathCeil,
+            math_round: valueMathRound,
+            math_trunc: valueMathTrunc,
+            math_abs: valueMathAbs,
+            math_min: valueMathMin,
+            math_max: valueMathMax,
+            date_now: valueDateNow,
+            date_format: valueDateFormat,
+        },
+        json: {
+            parse: jsonParse,
+            stringify: jsonStringify,
+            pretty: jsonPretty,
+            get: jsonGet,
+            set: jsonSet,
         },
         signal: {
             create: signalCreate,
@@ -1484,25 +2517,52 @@ export function createImports() {
             promise_race: promiseRace,
             spawn: promiseSpawn,
             yield_now: promiseYieldNow,
-            await_promise: promiseAwait,
+            // Suspending where the host supports it: the WASM stack parks
+            // in here until the promise settles. Without JSPI this is the old
+            // synchronous reader, which cannot wait and says so by answering 0.
+            await_promise: jspiAvailable()
+                ? new WebAssembly.Suspending(awaitPromiseAsync)
+                : promiseAwait,
             create_continuation: promiseContinuation,
             resume: promiseResume,
         },
         // browser module - window/document access
         browser: {
-            window: () => 0n,  // Return handle to window
-            document: () => 0n,  // Return handle to document
-            inner_width: () => BigInt(typeof window !== 'undefined' ? window.innerWidth : 1920),
-            inner_height: () => BigInt(typeof window !== 'undefined' ? window.innerHeight : 1080),
+            // Every one of these is declared `-> i32`. They used to return
+            // BigInt, so the call itself threw "Cannot convert a BigInt value
+            // to a number" — a whole group that could never be called at all.
+            window: () => 0,  // Return handle to window
+            document: () => 0,  // Return handle to document
+            inner_width: () => (typeof window !== 'undefined' ? window.innerWidth : 1920),
+            inner_height: () => (typeof window !== 'undefined' ? window.innerHeight : 1080),
             add_event_listener: (target, event, callback, capture) => {
                 // Stub - would need callback registry
-                return 0n;
+                return 0;
             },
             remove_event_listener: (target, listenerId) => {},
-            match_media: (query) => 0n,
-            mql_matches: (mql) => 0n,
-            mql_add_listener: (mql, callback) => 0n,
+            match_media: (query) => 0,
+            mql_matches: (mql) => 0,
+            mql_add_listener: (mql, callback) => 0,
             mql_remove_listener: (mql, listenerId) => {},
+            // Dialogs. Outside a browser they answer the way a dismissed
+            // dialog does, so a headless render does not trap.
+            confirm: (msgPtr) => {
+                const msg = readLengthPrefixedString(msgPtr);
+                if (typeof window === 'undefined' || !window.confirm) return 0;
+                return window.confirm(msg) ? 1 : 0;
+            },
+            alert: (msgPtr) => {
+                const msg = readLengthPrefixedString(msgPtr);
+                if (typeof window !== 'undefined' && window.alert) window.alert(msg);
+            },
+            prompt: (msgPtr, defPtr) => {
+                const msg = readLengthPrefixedString(msgPtr);
+                const def = defPtr && !isNone(defPtr) ? readLengthPrefixedString(defPtr) : '';
+                if (typeof window === 'undefined' || !window.prompt) {
+                    return writeLengthPrefixedString('');
+                }
+                return writeLengthPrefixedString(window.prompt(msg, def) ?? '');
+            },
         },
     };
 }
@@ -1519,6 +2579,136 @@ export async function loadWasm(wasmPath, additionalImports = {}) {
 
     setWasmExports(instance.exports);
 
+    return instance;
+}
+
+// A module that returns a String hands back a heap handle, not text. The host
+// has no way to read one without this: `render_vnode_to_string` produced
+// perfectly good HTML that nothing on this side could see.
+// The other half of `readSigilString`: a caller could read a string out of a
+// module and had no way to pass one in, so every exported function taking a
+// String was uncallable from the host.
+export function writeSigilString(str) {
+    return writeLengthPrefixedString(String(str));
+}
+
+export function readSigilString(ptr) {
+    return readLengthPrefixedString(ptr);
+}
+
+// Instantiate from bytes rather than a URL, for callers that are not a browser
+// fetch — a Node driver, a test harness.
+// ---------------------------------------------------------------------------
+// Asynchrony, through JavaScript Promise Integration.
+//
+// A Sigil program says `.await` and nothing else: it has no event loop, no
+// continuations, and the compiler does no CPS transform. JSPI is what makes
+// that work — `WebAssembly.Suspending` lets a host import suspend the whole
+// WASM stack until a promise settles, and `WebAssembly.promising` turns an
+// export into one that returns a promise. The module's straight-line code is
+// unchanged; the suspension happens underneath it.
+//
+// Where JSPI is not available the import still resolves — it answers with a
+// settled promise's value and `0` for a pending one, which is what it did
+// before. That is wrong for a real request, and `jspiAvailable()` says so
+// rather than pretending.
+// ---------------------------------------------------------------------------
+
+export function jspiAvailable() {
+    return typeof WebAssembly.Suspending === 'function'
+        && typeof WebAssembly.promising === 'function';
+}
+
+// `fetch_request(url, method, body)` — one request, as a promise id.
+//
+// The polling protocol next to it (`start`/`poll`/`get_body`) needs a loop the
+// program does not have. This is the shape `.await` can use.
+function fetchRequest(urlPtr, methodPtr, bodyPtr) {
+    const url = readLengthPrefixedString(urlPtr);
+    const method = methodPtr && !isNone(methodPtr) ? readLengthPrefixedString(methodPtr) : 'GET';
+    const body = bodyPtr && !isNone(bodyPtr) ? readLengthPrefixedString(bodyPtr) : null;
+    const id = nextPromiseId++;
+    const entry = { state: PROMISE_PENDING, value: 0n };
+    promises.set(id, entry);
+
+    const init = { method: method || 'GET' };
+    if (body !== null && body !== '' && method && method !== 'GET') {
+        init.body = body;
+        init.headers = { 'content-type': 'application/json' };
+    }
+    // The promise resolves to the id ITSELF, which doubles as the response
+    // handle. `await fetch(…)` in JavaScript gives a Response, not a body, and
+    // migrated code goes on to ask it for `.json()` and `.status`; resolving to
+    // the body would leave those with nothing to read.
+    entry.promise = (typeof fetch === 'function'
+        ? fetch(url, init).then((res) => res.text().then((text) => ({ ok: res.ok, status: res.status, text })))
+        : Promise.reject(new Error('no fetch in this host'))
+    ).then(
+        (r) => {
+            entry.state = PROMISE_RESOLVED;
+            entry.status = r.status;
+            entry.ok = r.ok;
+            entry.text = r.text;
+            entry.value = BigInt(id);
+            return entry.value;
+        },
+        (e) => {
+            entry.state = PROMISE_REJECTED;
+            entry.status = 0;
+            entry.ok = false;
+            entry.text = '';
+            entry.error = String(e && e.message ? e.message : e);
+            entry.value = BigInt(id);
+            return entry.value;
+        },
+    );
+    return id;
+}
+
+// The status of the request a response handle came from, or 0 if it is not one.
+function fetchStatus(id) {
+    const p = promises.get(Number(id));
+    return p && typeof p.status === 'number' ? p.status : 0;
+}
+
+// Whether it succeeded, the way JavaScript's `res.ok` reads.
+function fetchOk(id) {
+    const p = promises.get(Number(id));
+    return p && p.ok ? 1 : 0;
+}
+
+// `async.await_promise`, as a suspending import: the WASM stack parks here
+// until the promise settles, and the value comes back as the call's result.
+async function awaitPromiseAsync(id) {
+    const p = promises.get(Number(id));
+    if (!p) return 0n;
+    if (p.promise) {
+        try {
+            return await p.promise;
+        } catch {
+            return 0n;
+        }
+    }
+    return p.state === PROMISE_RESOLVED ? p.value : 0n;
+}
+
+// An export that may await, as one that returns a promise.
+//
+// JSPI requires the whole stack between a promising export and a suspending
+// import to be WASM, so the entry point has to be wrapped explicitly. Returns
+// the export unchanged when JSPI is not available — the call will not suspend,
+// which is visible rather than silent because `jspiAvailable()` is false.
+export function promising(name) {
+    const fn = wasmExports && wasmExports[name];
+    if (typeof fn !== 'function') return null;
+    return jspiAvailable() ? WebAssembly.promising(fn) : fn;
+}
+
+export function instantiateWasm(bytes, additionalImports = {}) {
+    const imports = createImports();
+    Object.assign(imports, additionalImports);
+    const instance = new WebAssembly.Instance(new WebAssembly.Module(bytes), imports);
+    setWasmExports(instance.exports);
     return instance;
 }
 
@@ -1560,4 +2750,4 @@ export class SigilRuntime {
     }
 }
 
-export default { createImports, loadWasm, mountVnode, SigilRuntime };
+export default { createImports, loadWasm, instantiateWasm, mountVnode, readSigilString, SigilRuntime };

@@ -7,7 +7,7 @@
 //! - Oracle → Covenant: Explanations ∈ handoffs
 //! - Anima → Oracle: Felt experience informs reasoning
 
-invoke crate·{
+invoke tome·{
     Timestamp, Confidence, TrustLevel, Priority,
     AgentId, HumanId,
 };
@@ -609,17 +609,17 @@ invoke crate·{
 
     /// Drain emotional contexts ∀ processing
     ☉ rite drain_emotional_contexts(&Δ self) -> Vec<EmotionalContext> {
-        std·mem·take(&Δ self.emotional_contexts)
+        take(&Δ self.emotional_contexts)
     }
 
     /// Drain learning insights ∀ processing
     ☉ rite drain_learning_insights(&Δ self) -> Vec<LearningInsight> {
-        std·mem·take(&Δ self.learning_insights)
+        take(&Δ self.learning_insights)
     }
 
     /// Drain trust events ∀ processing
     ☉ rite drain_trust_events(&Δ self) -> Vec<TrustEvent> {
-        std·mem·take(&Δ self.trust_events)
+        take(&Δ self.trust_events)
     }
 
     /// Check ⎇ there are pending events

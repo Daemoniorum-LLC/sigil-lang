@@ -46,7 +46,7 @@
     ECONNREFUSED    = 111,  // Connection refused
     EHOSTUNREACH    = 113,  // No route to host
     EINPROGRESS     = 115,  // Operation now ∈ progress
-    Unknown(i32)!,          // Unknown error code
+    Unknown(i32),          // Unknown error code
 }
 
 ☉ ⊢ SyscallError {

@@ -1,26 +1,26 @@
 // Example: Building a Persona Sigil with Evidentiality
 // This demonstrates the AI-facing IR with pipelines, morphemes, and evidence tracking
 
-struct PersonaIntent {
+Σ PersonaIntent {
     name: str,
     traits: [str],
     confidence: f64,
 }
 
-struct Sigil {
+Σ Sigil {
     geometry: [f64],
     frequency: f64,
     color: str,
 }
 
-struct FeatureVector {
+Σ FeatureVector {
     dimensions: [f64],
     normalized: bool,
 }
 
 // Transform intent into protocol representation
-fn intent_to_proto(intent: PersonaIntent!) -> Proto! {
-    let features! = intent.traits
+rite intent_to_proto(intent: PersonaIntent!) -> Proto! {
+    ≔ features! = intent.traits
         |τ{trait_to_feature}
         |φ{_ > 0.0}
         |σ;
@@ -32,9 +32,9 @@ fn intent_to_proto(intent: PersonaIntent!) -> Proto! {
 }
 
 // Enrich with sacred geometry
-fn enrich_with_geometry(proto: Proto!) -> EnrichedProto! {
-    let phi! = 1.618033988749895;  // Golden ratio
-    let geometry! = [
+rite enrich_with_geometry(proto: Proto!) -> EnrichedProto! {
+    ≔ phi! = 1.618033988749895;  // Golden ratio
+    ≔ geometry! = [
         phi,
         phi * phi,
         proto.features|Σ,
@@ -47,53 +47,53 @@ fn enrich_with_geometry(proto: Proto!) -> EnrichedProto! {
 }
 
 // Convert to feature vector for ML
-fn sigil_to_features(sigil: Sigil!) -> FeatureVector! {
-    let dims! = sigil.geometry
+rite sigil_to_features(sigil_: Sigil!) -> FeatureVector! {
+    ≔ dims! = sigil_.geometry
         |τ{_ / 1.618}
         |ρ{a + _};
 
     FeatureVector {
-        dimensions: [dims, sigil.frequency],
+        dimensions: [dims, sigil_.frequency],
         normalized: true,
     }
 }
 
 // Main persona builder with fork for parallel processing
-fn build_persona_sigil(intent: PersonaIntent!) -> (Sigil!, FeatureVector!) {
+rite build_persona_sigil(intent: PersonaIntent!) -> (Sigil!, FeatureVector!) {
     // Pipeline with evidentiality tracking
-    let result! = intent
+    ≔ result! = intent
         |intent_to_proto
         |enrich_with_geometry;
 
     // Create sigil and feature vector
-    let sigil! = Sigil {
+    ≔ sigil! = Sigil {
         geometry: result.geometry,
         frequency: 432.0,
         color: "violet",
     };
 
-    let features! = sigil_to_features(sigil);
+    ≔ features! = sigil_to_features(sigil_);
 
-    (sigil, features)
+    (sigil_, features)
 }
 
 // Fetch external persona data (yields Reported evidence)
-async fn fetch_persona_data(url: str) -> PersonaData~ {
-    let response~ = http·get(url)|timeout{5000};
+async rite fetch_persona_data(url: str) -> PersonaData~ {
+    ≔ response~ = http·get(url)|timeout{5000};
     response~|json·parse
 }
 
 // Verify external data (upgrades to Known)
-fn verify_persona(data: PersonaData~) -> PersonaData! {
+rite verify_persona(data: PersonaData~) -> PersonaData! {
     // Verification logic would go here
     trust(data)
 }
 
 // Example with uncertainty handling
-fn maybe_enhance(sigil: Sigil?) -> Sigil? {
-    match sigil {
+rite maybe_enhance(sigil_: Sigil?) -> Sigil? {
+    ⌥ sigil_ {
         Some(s) => {
-            let enhanced? = s.geometry|τ{_ * 1.1};
+            ≔ enhanced? = s.geometry|τ{_ * 1.1};
             Some(Sigil { geometry: enhanced, ..s })
         }
         None => None

@@ -819,7 +819,7 @@ impl WasmCompiler {
                 // Get just the types for type registration
                 let just_types: Vec<ValType> = param_types.iter().map(|(_, t)| *t).collect();
                 let type_idx = self.get_or_create_type(just_types, result_types.clone());
-                let func_idx = self.imports.import_count() + self.functions.len() as u32;
+                let func_idx = self.next_func_idx();
 
                 let new_func = super::types::CompiledFunction::new(
                     fn_name.clone(),
@@ -1065,7 +1065,7 @@ impl WasmCompiler {
             func.push(Instruction::Call(func_idx));
             Ok(())
         } else {
-            Err(WasmError::undefined_function(&method_name))
+            self.stub_unresolved(&method_name)
         }
     }
 

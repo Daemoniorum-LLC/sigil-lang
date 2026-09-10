@@ -1,8 +1,8 @@
 //! Repository - Data Access with Morphemes
 
-invoke crate·query·{Query, QueryResult, QueryParam, Filter, CompareOp};
-invoke crate·evidence·{Evidenced, HttpEvidence, EvidenceLevel};
-invoke crate·error·{BasilicaError, BasilicaResult};
+invoke tome·query·{Query, QueryResult, QueryParam, Filter, CompareOp};
+invoke tome·evidence·{Evidenced, HttpEvidence, EvidenceLevel};
+invoke tome·error·{BasilicaError, BasilicaResult};
 invoke shared·{Timestamp, Value};
 
 /// Trait ∀ repository implementations
@@ -45,7 +45,7 @@ invoke shared·{Timestamp, Value};
     id_column: String,
 
     /// Connection pool (placeholder)
-    _marker: std·marker·PhantomData<T>,
+    _marker: PhantomData<T>,
 }
 
 ⊢<T> PostgresRepository<T> {
@@ -53,7 +53,7 @@ invoke shared·{Timestamp, Value};
         Self {
             table: table.to_string(),
             id_column: "id".to_string(),
-            _marker: std·marker·PhantomData,
+            _marker: PhantomData,
         }
     }
 

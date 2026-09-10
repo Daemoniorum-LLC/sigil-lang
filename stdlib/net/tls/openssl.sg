@@ -181,7 +181,7 @@ static vary TLS_INITIALIZED: bool = false;
 ☉ rite ssl_set_hostname(ssl: *void, hostname: &str) -> Result<(), TlsError>! {
     unsafe {
         // Need null-terminated string
-        vary buf: [u8; 256] = [0; 256];
+        ≔ vary buf: [u8; 256] = [0; 256];
         ∀ (i, c) ∈ hostname.bytes().enumerate() {
             ⎇ i >= 255 {
                 ⊗;
@@ -318,8 +318,8 @@ static vary TLS_INITIALIZED: bool = false;
         }
 
         // Convert C string to Sigil string
-        vary version = String·new();
-        vary i: usize = 0;
+        ≔ vary version = String·new();
+        ≔ vary i: usize = 0;
         loop {
             ≔ c = *(version_ptr.offset(i as isize));
             ⎇ c == 0 {
@@ -344,11 +344,11 @@ rite get_openssl_error() -> String! {
             ret "Unknown error".to_string();
         }
 
-        vary buf: [u8; 256] = [0; 256];
+        ≔ vary buf: [u8; 256] = [0; 256];
         ERR_error_string(err, &buf as *u8);
 
         // Convert to string
-        vary msg = String·new();
+        ≔ vary msg = String·new();
         ∀ c ∈ buf {
             ⎇ c == 0 {
                 ⊗;

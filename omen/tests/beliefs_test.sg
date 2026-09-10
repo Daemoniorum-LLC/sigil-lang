@@ -2,7 +2,7 @@
 //!
 //! Verifies Belief, Proposition, Evidence, BeliefSource, and BeliefManager.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types

@@ -1,0 +1,27 @@
+// Test: native comparison symbols ≠ ≤ ≥
+// Spec: 01-LEXICAL.md — native symbol vocabulary
+// Priority: P1 — regression guard for defect S10
+//
+// These three symbols were absent from the lexer. Because the lexer skips
+// anything logos does not recognise, they produced NO TOKEN AT ALL rather than
+// an error, so `a ≠ 2` silently lexed as `a 2` and evaluated to `a`. Both
+// `1 ≠ 2` and `1 ≠ 1` printed the same value.
+//
+// This pins semantics, not just parsing — a test that only checked "it parses"
+// would have passed against the broken lexer.
+
+rite main() {
+    ≔ a = 1;
+
+    println(a ≠ 2);   // true
+    println(a ≠ 1);   // false
+    println(a ≤ 1);   // true
+    println(a ≤ 0);   // false
+    println(a ≥ 1);   // true
+    println(a ≥ 2);   // false
+
+    // and in condition position, where they previously failed to parse
+    ⎇ a ≠ 2 { println("ne_cond"); }
+    ⎇ a ≤ 1 { println("le_cond"); }
+    ⎇ a ≥ 1 { println("ge_cond"); }
+}

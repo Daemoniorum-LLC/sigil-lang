@@ -1,11 +1,11 @@
 // Events Module
 // Cross-platform event handling with type-safe handlers
 
-use std::collections::HashMap;
+invoke HashMap;
 
 /// Event types supported by Sigil Web
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum EventType {
+☉ ᛈ EventType {
     // Mouse events
     Click,
     DblClick,
@@ -97,80 +97,80 @@ pub enum EventType {
     Custom(u64!)
 }
 
-impl EventType {
+⊢ EventType {
     /// Get the DOM event name
-    pub fn dom_name(&self) -> &'static str! {
-        match self {
-            EventType::Click => "click",
-            EventType::DblClick => "dblclick",
-            EventType::MouseDown => "mousedown",
-            EventType::MouseUp => "mouseup",
-            EventType::MouseMove => "mousemove",
-            EventType::MouseEnter => "mouseenter",
-            EventType::MouseLeave => "mouseleave",
-            EventType::MouseOver => "mouseover",
-            EventType::MouseOut => "mouseout",
-            EventType::ContextMenu => "contextmenu",
-            EventType::KeyDown => "keydown",
-            EventType::KeyUp => "keyup",
-            EventType::KeyPress => "keypress",
-            EventType::Submit => "submit",
-            EventType::Reset => "reset",
-            EventType::Change => "change",
-            EventType::Input => "input",
-            EventType::Invalid => "invalid",
-            EventType::Focus => "focus",
-            EventType::Blur => "blur",
-            EventType::FocusIn => "focusin",
-            EventType::FocusOut => "focusout",
-            EventType::TouchStart => "touchstart",
-            EventType::TouchMove => "touchmove",
-            EventType::TouchEnd => "touchend",
-            EventType::TouchCancel => "touchcancel",
-            EventType::PointerDown => "pointerdown",
-            EventType::PointerUp => "pointerup",
-            EventType::PointerMove => "pointermove",
-            EventType::PointerEnter => "pointerenter",
-            EventType::PointerLeave => "pointerleave",
-            EventType::PointerCancel => "pointercancel",
-            EventType::DragStart => "dragstart",
-            EventType::Drag => "drag",
-            EventType::DragEnd => "dragend",
-            EventType::DragEnter => "dragenter",
-            EventType::DragLeave => "dragleave",
-            EventType::DragOver => "dragover",
-            EventType::Drop => "drop",
-            EventType::Copy => "copy",
-            EventType::Cut => "cut",
-            EventType::Paste => "paste",
-            EventType::Play => "play",
-            EventType::Pause => "pause",
-            EventType::Ended => "ended",
-            EventType::TimeUpdate => "timeupdate",
-            EventType::VolumeChange => "volumechange",
-            EventType::Seeking => "seeking",
-            EventType::Seeked => "seeked",
-            EventType::LoadedData => "loadeddata",
-            EventType::LoadedMetadata => "loadedmetadata",
-            EventType::CanPlay => "canplay",
-            EventType::CanPlayThrough => "canplaythrough",
-            EventType::Scroll => "scroll",
-            EventType::Wheel => "wheel",
-            EventType::AnimationStart => "animationstart",
-            EventType::AnimationEnd => "animationend",
-            EventType::AnimationIteration => "animationiteration",
-            EventType::TransitionEnd => "transitionend",
-            EventType::Load => "load",
-            EventType::Error => "error",
-            EventType::Resize => "resize",
-            EventType::Select => "select",
-            EventType::Custom(_) => "custom"
+    ☉ rite dom_name(&self) -> &'static str! {
+        ⌥ self {
+            EventType·Click => "click",
+            EventType·DblClick => "dblclick",
+            EventType·MouseDown => "mousedown",
+            EventType·MouseUp => "mouseup",
+            EventType·MouseMove => "mousemove",
+            EventType·MouseEnter => "mouseenter",
+            EventType·MouseLeave => "mouseleave",
+            EventType·MouseOver => "mouseover",
+            EventType·MouseOut => "mouseout",
+            EventType·ContextMenu => "contextmenu",
+            EventType·KeyDown => "keydown",
+            EventType·KeyUp => "keyup",
+            EventType·KeyPress => "keypress",
+            EventType·Submit => "submit",
+            EventType·Reset => "reset",
+            EventType·Change => "change",
+            EventType·Input => "input",
+            EventType·Invalid => "invalid",
+            EventType·Focus => "focus",
+            EventType·Blur => "blur",
+            EventType·FocusIn => "focusin",
+            EventType·FocusOut => "focusout",
+            EventType·TouchStart => "touchstart",
+            EventType·TouchMove => "touchmove",
+            EventType·TouchEnd => "touchend",
+            EventType·TouchCancel => "touchcancel",
+            EventType·PointerDown => "pointerdown",
+            EventType·PointerUp => "pointerup",
+            EventType·PointerMove => "pointermove",
+            EventType·PointerEnter => "pointerenter",
+            EventType·PointerLeave => "pointerleave",
+            EventType·PointerCancel => "pointercancel",
+            EventType·DragStart => "dragstart",
+            EventType·Drag => "drag",
+            EventType·DragEnd => "dragend",
+            EventType·DragEnter => "dragenter",
+            EventType·DragLeave => "dragleave",
+            EventType·DragOver => "dragover",
+            EventType·Drop => "drop",
+            EventType·Copy => "copy",
+            EventType·Cut => "cut",
+            EventType·Paste => "paste",
+            EventType·Play => "play",
+            EventType·Pause => "pause",
+            EventType·Ended => "ended",
+            EventType·TimeUpdate => "timeupdate",
+            EventType·VolumeChange => "volumechange",
+            EventType·Seeking => "seeking",
+            EventType·Seeked => "seeked",
+            EventType·LoadedData => "loadeddata",
+            EventType·LoadedMetadata => "loadedmetadata",
+            EventType·CanPlay => "canplay",
+            EventType·CanPlayThrough => "canplaythrough",
+            EventType·Scroll => "scroll",
+            EventType·Wheel => "wheel",
+            EventType·AnimationStart => "animationstart",
+            EventType·AnimationEnd => "animationend",
+            EventType·AnimationIteration => "animationiteration",
+            EventType·TransitionEnd => "transitionend",
+            EventType·Load => "load",
+            EventType·Error => "error",
+            EventType·Resize => "resize",
+            EventType·Select => "select",
+            EventType·Custom(_) => "custom"
         }
     }
 }
 
 /// Generic event wrapper
-pub struct Event {
+☉ Σ Event {
     /// Event type
     event_type: EventType!
     /// Target element ID
@@ -187,35 +187,35 @@ pub struct Event {
     data: EventData!
 }
 
-impl Event {
+⊢ Event {
     /// Prevent default browser behavior
-    pub fn prevent_default(&mut self) {
+    ☉ rite prevent_default(&Δ self) {
         self.default_prevented = true
     }
 
     /// Stop event propagation
-    pub fn stop_propagation(&mut self) {
+    ☉ rite stop_propagation(&Δ self) {
         self.propagation_stopped = true
     }
 
     /// Check if default is prevented
-    pub fn is_default_prevented(&self) -> bool! {
+    ☉ rite is_default_prevented(&self) -> bool! {
         self.default_prevented
     }
 
     /// Get event type
-    pub fn event_type(&self) -> EventType! {
+    ☉ rite event_type(&self) -> EventType! {
         self.event_type
     }
 
     /// Get target ID
-    pub fn target_id(&self) -> u64! {
+    ☉ rite target_id(&self) -> u64! {
         self.target_id
     }
 }
 
 /// Event-specific data
-pub enum EventData {
+☉ ᛈ EventData {
     None,
     Mouse(MouseEventData!),
     Keyboard(KeyboardEventData!),
@@ -229,212 +229,212 @@ pub enum EventData {
 }
 
 /// Mouse event data
-pub struct MouseEventData {
+☉ Σ MouseEventData {
     /// X coordinate relative to viewport
-    pub client_x: f64!
+    ☉ client_x: f64!
     /// Y coordinate relative to viewport
-    pub client_y: f64!
+    ☉ client_y: f64!
     /// X coordinate relative to page
-    pub page_x: f64!
+    ☉ page_x: f64!
     /// Y coordinate relative to page
-    pub page_y: f64!
+    ☉ page_y: f64!
     /// X coordinate relative to screen
-    pub screen_x: f64!
+    ☉ screen_x: f64!
     /// Y coordinate relative to screen
-    pub screen_y: f64!
+    ☉ screen_y: f64!
     /// X coordinate relative to target
-    pub offset_x: f64!
+    ☉ offset_x: f64!
     /// Y coordinate relative to target
-    pub offset_y: f64!
+    ☉ offset_y: f64!
     /// Mouse button (0=left, 1=middle, 2=right)
-    pub button: i32!
+    ☉ button: i32!
     /// Buttons currently pressed (bitmask)
-    pub buttons: i32!
+    ☉ buttons: i32!
     /// Alt key pressed
-    pub alt_key: bool!
+    ☉ alt_key: bool!
     /// Ctrl key pressed
-    pub ctrl_key: bool!
+    ☉ ctrl_key: bool!
     /// Shift key pressed
-    pub shift_key: bool!
+    ☉ shift_key: bool!
     /// Meta key pressed (Command on Mac)
-    pub meta_key: bool!
+    ☉ meta_key: bool!
 }
 
 /// Keyboard event data
-pub struct KeyboardEventData {
+☉ Σ KeyboardEventData {
     /// Key value ("a", "Enter", "Escape", etc.)
-    pub key: String!
+    ☉ key: String!
     /// Physical key code ("KeyA", "Enter", etc.)
-    pub code: String!
+    ☉ code: String!
     /// Alt key pressed
-    pub alt_key: bool!
+    ☉ alt_key: bool!
     /// Ctrl key pressed
-    pub ctrl_key: bool!
+    ☉ ctrl_key: bool!
     /// Shift key pressed
-    pub shift_key: bool!
+    ☉ shift_key: bool!
     /// Meta key pressed
-    pub meta_key: bool!
+    ☉ meta_key: bool!
     /// Is this a repeat event?
-    pub repeat: bool!
+    ☉ repeat: bool!
     /// Key location (standard, left, right, numpad)
-    pub location: u32!
+    ☉ location: u32!
 }
 
-impl KeyboardEventData {
+⊢ KeyboardEventData {
     /// Check if this is a modifier key combination
-    pub fn is_combo(&self, key: &str, ctrl: bool, shift: bool, alt: bool) -> bool! {
+    ☉ rite is_combo(&self, key: &str, ctrl: bool, shift: bool, alt: bool) -> bool! {
         self.key == key && self.ctrl_key == ctrl && self.shift_key == shift && self.alt_key == alt
     }
 
     /// Check for common shortcuts
-    pub fn is_save(&self) -> bool! { self·is_combo("s", true, false, false) }
-    pub fn is_copy(&self) -> bool! { self·is_combo("c", true, false, false) }
-    pub fn is_paste(&self) -> bool! { self·is_combo("v", true, false, false) }
-    pub fn is_cut(&self) -> bool! { self·is_combo("x", true, false, false) }
-    pub fn is_undo(&self) -> bool! { self·is_combo("z", true, false, false) }
-    pub fn is_redo(&self) -> bool! { self·is_combo("z", true, true, false) || self·is_combo("y", true, false, false) }
-    pub fn is_select_all(&self) -> bool! { self·is_combo("a", true, false, false) }
-    pub fn is_escape(&self) -> bool! { self.key == "Escape" }
-    pub fn is_enter(&self) -> bool! { self.key == "Enter" }
-    pub fn is_tab(&self) -> bool! { self.key == "Tab" }
-    pub fn is_backspace(&self) -> bool! { self.key == "Backspace" }
-    pub fn is_delete(&self) -> bool! { self.key == "Delete" }
-    pub fn is_arrow_up(&self) -> bool! { self.key == "ArrowUp" }
-    pub fn is_arrow_down(&self) -> bool! { self.key == "ArrowDown" }
-    pub fn is_arrow_left(&self) -> bool! { self.key == "ArrowLeft" }
-    pub fn is_arrow_right(&self) -> bool! { self.key == "ArrowRight" }
+    ☉ rite is_save(&self) -> bool! { self·is_combo("s", true, false, false) }
+    ☉ rite is_copy(&self) -> bool! { self·is_combo("c", true, false, false) }
+    ☉ rite is_paste(&self) -> bool! { self·is_combo("v", true, false, false) }
+    ☉ rite is_cut(&self) -> bool! { self·is_combo("x", true, false, false) }
+    ☉ rite is_undo(&self) -> bool! { self·is_combo("z", true, false, false) }
+    ☉ rite is_redo(&self) -> bool! { self·is_combo("z", true, true, false) || self·is_combo("y", true, false, false) }
+    ☉ rite is_select_all(&self) -> bool! { self·is_combo("a", true, false, false) }
+    ☉ rite is_escape(&self) -> bool! { self.key == "Escape" }
+    ☉ rite is_enter(&self) -> bool! { self.key == "Enter" }
+    ☉ rite is_tab(&self) -> bool! { self.key == "Tab" }
+    ☉ rite is_backspace(&self) -> bool! { self.key == "Backspace" }
+    ☉ rite is_delete(&self) -> bool! { self.key == "Delete" }
+    ☉ rite is_arrow_up(&self) -> bool! { self.key == "ArrowUp" }
+    ☉ rite is_arrow_down(&self) -> bool! { self.key == "ArrowDown" }
+    ☉ rite is_arrow_left(&self) -> bool! { self.key == "ArrowLeft" }
+    ☉ rite is_arrow_right(&self) -> bool! { self.key == "ArrowRight" }
 }
 
 /// Touch event data
-pub struct TouchEventData {
+☉ Σ TouchEventData {
     /// List of touch points
-    pub touches: Vec<Touch>!
+    ☉ touches: Vec<Touch>!
     /// Touch points that changed
-    pub changed_touches: Vec<Touch>!
+    ☉ changed_touches: Vec<Touch>!
     /// Touch points on target
-    pub target_touches: Vec<Touch>!
+    ☉ target_touches: Vec<Touch>!
     /// Alt key pressed
-    pub alt_key: bool!
+    ☉ alt_key: bool!
     /// Ctrl key pressed
-    pub ctrl_key: bool!
+    ☉ ctrl_key: bool!
     /// Shift key pressed
-    pub shift_key: bool!
+    ☉ shift_key: bool!
     /// Meta key pressed
-    pub meta_key: bool!
+    ☉ meta_key: bool!
 }
 
 /// Single touch point
-pub struct Touch {
-    pub identifier: i64!
-    pub client_x: f64!
-    pub client_y: f64!
-    pub page_x: f64!
-    pub page_y: f64!
-    pub screen_x: f64!
-    pub screen_y: f64!
-    pub radius_x: f64!
-    pub radius_y: f64!
-    pub rotation_angle: f64!
-    pub force: f64!
+☉ Σ Touch {
+    ☉ identifier: i64!
+    ☉ client_x: f64!
+    ☉ client_y: f64!
+    ☉ page_x: f64!
+    ☉ page_y: f64!
+    ☉ screen_x: f64!
+    ☉ screen_y: f64!
+    ☉ radius_x: f64!
+    ☉ radius_y: f64!
+    ☉ rotation_angle: f64!
+    ☉ force: f64!
 }
 
 /// Pointer event data
-pub struct PointerEventData {
+☉ Σ PointerEventData {
     /// Unique pointer identifier
-    pub pointer_id: i64!
+    ☉ pointer_id: i64!
     /// Pointer width
-    pub width: f64!
+    ☉ width: f64!
     /// Pointer height
-    pub height: f64!
+    ☉ height: f64!
     /// Pressure (0-1)
-    pub pressure: f64!
+    ☉ pressure: f64!
     /// Tangential pressure
-    pub tangential_pressure: f64!
+    ☉ tangential_pressure: f64!
     /// Tilt X (-90 to 90)
-    pub tilt_x: i32!
+    ☉ tilt_x: i32!
     /// Tilt Y (-90 to 90)
-    pub tilt_y: i32!
+    ☉ tilt_y: i32!
     /// Twist (0-359)
-    pub twist: i32!
+    ☉ twist: i32!
     /// Pointer type ("mouse", "pen", "touch")
-    pub pointer_type: String!
+    ☉ pointer_type: String!
     /// Is primary pointer?
-    pub is_primary: bool!
+    ☉ is_primary: bool!
     /// Mouse data
-    pub mouse: MouseEventData!
+    ☉ mouse: MouseEventData!
 }
 
 /// Wheel event data
-pub struct WheelEventData {
+☉ Σ WheelEventData {
     /// Horizontal scroll amount
-    pub delta_x: f64!
+    ☉ delta_x: f64!
     /// Vertical scroll amount
-    pub delta_y: f64!
+    ☉ delta_y: f64!
     /// Z-axis scroll amount
-    pub delta_z: f64!
+    ☉ delta_z: f64!
     /// Delta mode (pixel, line, page)
-    pub delta_mode: u32!
+    ☉ delta_mode: u32!
     /// Mouse data
-    pub mouse: MouseEventData!
+    ☉ mouse: MouseEventData!
 }
 
 /// Drag event data
-pub struct DragEventData {
+☉ Σ DragEventData {
     /// Data transfer object
-    pub data_transfer: DataTransfer!
+    ☉ data_transfer: DataTransfer!
     /// Mouse data
-    pub mouse: MouseEventData!
+    ☉ mouse: MouseEventData!
 }
 
 /// Data transfer for drag/drop
-pub struct DataTransfer {
+☉ Σ DataTransfer {
     /// Drop effect
-    pub drop_effect: String!
+    ☉ drop_effect: String!
     /// Effect allowed
-    pub effect_allowed: String!
+    ☉ effect_allowed: String!
     /// Files being dragged
-    pub files: Vec<File>!
+    ☉ files: Vec<File>!
     /// Items being dragged
-    pub items: Vec<DataTransferItem>!
+    ☉ items: Vec<DataTransferItem>!
     /// Types available
-    pub types: Vec<String>!
+    ☉ types: Vec<String>!
 }
 
-pub struct File {
-    pub name: String!
-    pub size: u64!
-    pub mime_type: String!
+☉ Σ File {
+    ☉ name: String!
+    ☉ size: u64!
+    ☉ mime_type: String!
 }
 
-pub struct DataTransferItem {
-    pub kind: String!
-    pub type_: String!
+☉ Σ DataTransferItem {
+    ☉ kind: String!
+    ☉ type_: String!
 }
 
 /// Focus event data
-pub struct FocusEventData {
+☉ Σ FocusEventData {
     /// Related target (element gaining/losing focus)
-    pub related_target_id: Option<u64>?
+    ☉ related_target_id: Option<u64>?
 }
 
 /// Input event data
-pub struct InputEventData {
+☉ Σ InputEventData {
     /// Current input value
-    pub value: String!
+    ☉ value: String!
     /// Input type ("insertText", "deleteContentBackward", etc.)
-    pub input_type: String!
+    ☉ input_type: String!
     /// Data being inserted
-    pub data: Option<String>?
+    ☉ data: Option<String>?
     /// Is composing (IME)
-    pub is_composing: bool!
+    ☉ is_composing: bool!
 }
 
 /// Event handler wrapper
-pub enum EventHandler {
+☉ ᛈ EventHandler {
     /// Simple callback with no arguments
     Simple(Box<dyn Fn()>!),
     /// Callback with full event
-    WithEvent(Box<dyn Fn(&mut Event)>!),
+    WithEvent(Box<dyn Fn(&Δ Event)>!),
     /// Callback with value (for inputs)
     WithValue(Box<dyn Fn(String)>!),
     /// Callback with keyboard data
@@ -443,57 +443,57 @@ pub enum EventHandler {
     WithMouse(Box<dyn Fn(&MouseEventData)>!),
 }
 
-impl EventHandler {
+⊢ EventHandler {
     /// Create handler from simple function
-    pub fn from_fn(f: impl Fn() + 'static) -> Self! {
-        EventHandler::Simple(Box::new(f))
+    ☉ rite from_fn(f: ⊢ Fn() + 'static) -> Self! {
+        EventHandler·Simple(Box·new(f))
     }
 
     /// Create handler that receives event
-    pub fn from_event_fn(f: impl Fn(&mut Event) + 'static) -> Self! {
-        EventHandler::WithEvent(Box::new(f))
+    ☉ rite from_event_fn(f: ⊢ Fn(&Δ Event) + 'static) -> Self! {
+        EventHandler·WithEvent(Box·new(f))
     }
 
     /// Create handler that receives input value
-    pub fn from_value_fn(f: impl Fn(String) + 'static) -> Self! {
-        EventHandler::WithValue(Box::new(f))
+    ☉ rite from_value_fn(f: ⊢ Fn(String) + 'static) -> Self! {
+        EventHandler·WithValue(Box·new(f))
     }
 
     /// Create handler that receives keyboard data
-    pub fn from_key_fn(f: impl Fn(&KeyboardEventData) + 'static) -> Self! {
-        EventHandler::WithKeyboard(Box::new(f))
+    ☉ rite from_key_fn(f: ⊢ Fn(&KeyboardEventData) + 'static) -> Self! {
+        EventHandler·WithKeyboard(Box·new(f))
     }
 
     /// Create handler that receives mouse data
-    pub fn from_mouse_fn(f: impl Fn(&MouseEventData) + 'static) -> Self! {
-        EventHandler::WithMouse(Box::new(f))
+    ☉ rite from_mouse_fn(f: ⊢ Fn(&MouseEventData) + 'static) -> Self! {
+        EventHandler·WithMouse(Box·new(f))
     }
 
     /// Create handler that prevents default
-    pub fn from_fn_prevent_default(f: impl Fn() + 'static) -> Self! {
-        EventHandler::WithEvent(Box::new(move |e| {
+    ☉ rite from_fn_prevent_default(f: ⊢ Fn() + 'static) -> Self! {
+        EventHandler·WithEvent(Box·new(move |e| {
             e·prevent_default()
             f()
         }))
     }
 
     /// Invoke the handler
-    pub fn invoke(&self, event: &mut Event) {
-        match self {
-            EventHandler::Simple(f) => f(),
-            EventHandler::WithEvent(f) => f(event),
-            EventHandler::WithValue(f) => {
-                if let EventData::Input(data) = &event.data {
+    ☉ rite invoke(&self, event: &Δ Event) {
+        ⌥ self {
+            EventHandler·Simple(f) => f(),
+            EventHandler·WithEvent(f) => f(event),
+            EventHandler·WithValue(f) => {
+                ⎇ ≔ EventData·Input(data) = &event.data {
                     f(data.value·clone())
                 }
             }
-            EventHandler::WithKeyboard(f) => {
-                if let EventData::Keyboard(data) = &event.data {
+            EventHandler·WithKeyboard(f) => {
+                ⎇ ≔ EventData·Keyboard(data) = &event.data {
                     f(data)
                 }
             }
-            EventHandler::WithMouse(f) => {
-                if let EventData::Mouse(data) = &event.data {
+            EventHandler·WithMouse(f) => {
+                ⎇ ≔ EventData·Mouse(data) = &event.data {
                     f(data)
                 }
             }
@@ -501,8 +501,8 @@ impl EventHandler {
     }
 }
 
-impl Clone for EventHandler {
-    fn clone(&self) -> Self! {
+⊢ Clone ∀ EventHandler {
+    rite clone(&self) -> Self! {
         // In WASM, handlers are function pointers (i64 handles) with Copy semantics.
         // Cloning returns the same handle value - no heap allocation needed.
         *self
@@ -510,66 +510,66 @@ impl Clone for EventHandler {
 }
 
 /// Event delegation system
-pub struct EventDelegator {
+☉ Σ EventDelegator {
     /// Registered handlers by element ID and event type
     handlers: HashMap<(u64, EventType), Vec<EventHandler>>!
     /// Global handlers
     global_handlers: HashMap<EventType, Vec<EventHandler>>!
 }
 
-impl EventDelegator {
-    pub fn new() -> Self! {
+⊢ EventDelegator {
+    ☉ rite new() -> Self! {
         EventDelegator {
-            handlers: HashMap::new(),
-            global_handlers: HashMap::new()
+            handlers: HashMap·new(),
+            global_handlers: HashMap·new()
         }
     }
 
     /// Register handler for element
-    pub fn register(&mut self, element_id: u64, event_type: EventType, handler: EventHandler) {
-        let key! = (element_id, event_type)
+    ☉ rite register(&Δ self, element_id: u64, event_type: EventType, handler: EventHandler) {
+        ≔ key! = (element_id, event_type)
         self.handlers·entry(key)·or_default()·push(handler)
     }
 
     /// Register global handler
-    pub fn register_global(&mut self, event_type: EventType, handler: EventHandler) {
+    ☉ rite register_global(&Δ self, event_type: EventType, handler: EventHandler) {
         self.global_handlers·entry(event_type)·or_default()·push(handler)
     }
 
     /// Dispatch event
-    pub fn dispatch(&self, event: &mut Event) {
+    ☉ rite dispatch(&self, event: &Δ Event) {
         // Call element-specific handlers
-        let key! = (event.target_id, event.event_type)
-        if let Some(handlers) = self.handlers·get(&key) {
-            for handler in handlers {
+        ≔ key! = (event.target_id, event.event_type)
+        ⎇ ≔ Some(handlers) = self.handlers·get(&key) {
+            ∀ handler ∈ handlers {
                 handler·invoke(event)
-                if event.propagation_stopped {
-                    return
+                ⎇ event.propagation_stopped {
+                    ⤺
                 }
             }
         }
 
         // Call global handlers
-        if let Some(handlers) = self.global_handlers·get(&event.event_type) {
-            for handler in handlers {
+        ⎇ ≔ Some(handlers) = self.global_handlers·get(&event.event_type) {
+            ∀ handler ∈ handlers {
                 handler·invoke(event)
-                if event.propagation_stopped {
-                    return
+                ⎇ event.propagation_stopped {
+                    ⤺
                 }
             }
         }
     }
 
     /// Remove handlers for element
-    pub fn remove_element(&mut self, element_id: u64) {
+    ☉ rite remove_element(&Δ self, element_id: u64) {
         self.handlers·retain(|(id, _), _| *id != element_id)
     }
 }
 
-use crate::dom::KeyEvent;
+invoke tome·dom·KeyEvent;
 
-impl From<&KeyboardEventData> for KeyEvent {
-    fn from(data: &KeyboardEventData) -> Self! {
+⊢ From<&KeyboardEventData> ∀ KeyEvent {
+    rite from(data: &KeyboardEventData) -> Self! {
         KeyEvent {
             key: data.key·clone(),
             code: data.code·clone(),
@@ -582,19 +582,19 @@ impl From<&KeyboardEventData> for KeyEvent {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_event_type_names() {
-        assert_eq!(EventType::Click·dom_name(), "click")
-        assert_eq!(EventType::KeyDown·dom_name(), "keydown")
-        assert_eq!(EventType::Submit·dom_name(), "submit")
+    rite test_event_type_names() {
+        assert_eq!(EventType·Click·dom_name(), "click")
+        assert_eq!(EventType·KeyDown·dom_name(), "keydown")
+        assert_eq!(EventType·Submit·dom_name(), "submit")
     }
 
     #[test]
-    fn test_keyboard_shortcuts() {
-        let data! = KeyboardEventData {
+    rite test_keyboard_shortcuts() {
+        ≔ data! = KeyboardEventData {
             key: "s".to_string(),
             code: "KeyS".to_string(),
             ctrl_key: true,
@@ -609,21 +609,21 @@ mod tests {
     }
 
     #[test]
-    fn test_event_handler_invoke() {
-        let called! = std::cell::Cell::new(false)
-        let handler! = EventHandler::from_fn(|| called·set(true))
+    rite test_event_handler_invoke() {
+        ≔ called! = std·cell·Cell·new(false)
+        ≔ handler! = EventHandler·from_fn(|| called·set(true))
 
-        let mut event! = Event {
-            event_type: EventType::Click,
+        ≔ vary event! = Event {
+            event_type: EventType·Click,
             target_id: 1,
             current_target_id: 1,
             timestamp: 0.0,
             default_prevented: false,
             propagation_stopped: false,
-            data: EventData::None
+            data: EventData·None
         }
 
-        handler·invoke(&mut event)
+        handler·invoke(&Δ event)
         assert!(called·get())
     }
 }

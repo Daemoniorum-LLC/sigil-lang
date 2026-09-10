@@ -1,0 +1,25 @@
+// Test: `·ed` / `·ing` must not swallow the head of a path segment
+// Spec: 01-LEXICAL.md — aspect markers
+// Priority: P1 — regression guard for defect S7
+//
+// `·ed` (perfective) and `·ing` (progressive) are aspect markers. logos resolves
+// ambiguity by longest match, so `·edit` lexed as `·ed` + `it` and `·ingest` as
+// `·ing` + `est`. Every path or method segment beginning "ed" or "ing" was hit.
+//
+// Exercised through method calls so the test checks real behaviour rather than
+// only parsing — before the fix these did not resolve.
+
+☉ Σ T { ☉ x: i64! }
+
+⊢ T {
+    ☉ rite edit(&self) -> i64! { ↩ 1; }
+    ☉ rite ingest(&self) -> i64! { ↩ 2; }
+    ☉ rite index(&self) -> i64! { ↩ 3; }
+}
+
+rite main() {
+    ≔ t = T { x: 0 };
+    println(t·edit());     // `·ed` must not eat "edit"
+    println(t·ingest());   // `·ing` must not eat "ingest"
+    println(t·index());    // `·ing` must not eat "index"
+}

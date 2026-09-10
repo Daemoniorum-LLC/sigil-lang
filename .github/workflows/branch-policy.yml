@@ -1,0 +1,51 @@
+# Enforces the branch strategy in CLAUDE.md:
+#
+#   main    - production releases only
+#   develop - staging; all feature work merges here first
+#
+# This exists because the strategy stopped holding. #59 and #61 went straight to
+# `main`, which left `main` and `develop` diverged by 8 commits each and parsing
+# the ecosystem differently -- `main` regressed nihil from 104/104 to 83/104 while
+# fixing morgoth from 50/259 to 257/259, so neither branch was correct and each
+# held work the other lacked. Reconciling that is a 97-hunk merge.
+#
+# A convention that is only written down is one that drifts. This makes it fail.
+name: Branch Policy
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  base-branch:
+    name: PRs to main come from develop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the head branch
+        env:
+          # Passed through the environment rather than interpolated into the
+          # script: a branch name is attacker-controlled text, and `${{ }}` inside
+          # a run block substitutes before the shell sees it.
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            develop|release/*|hotfix/*)
+              echo "OK: $HEAD_REF -> main"
+              exit 0
+              ;;
+          esac
+
+          echo "::error title=Wrong base branch::PRs to main must come from develop, release/* or hotfix/*. This one is from '$HEAD_REF'."
+          cat <<'EOF'
+
+          main is for production releases only. Feature work targets develop and
+          reaches main through a release merge -- see the Git Workflow section of
+          CLAUDE.md.
+
+          To fix: change this PR's base branch to develop. No push is needed;
+          GitHub keeps the commits.
+
+          If this genuinely is a release or a hotfix, name the branch release/<x>
+          or hotfix/<x> and the check will pass.
+          EOF
+          exit 1

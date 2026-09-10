@@ -3,453 +3,453 @@
 /// Base Event interface
 #[wasm_bindgen]
 extern "js" {
-    pub type Event;
+    ☉ type Event;
 
     #[wasm_bindgen(constructor)]
-    pub fn new(type_: &str!) -> Event!;
+    ☉ rite new(type_: &str!) -> Event!;
 
     #[wasm_bindgen(method, getter, js_name = "type")]
-    pub fn type_(this: &Event!) -> String!;
+    ☉ rite type_(this: &Event!) -> String!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn target(this: &Event!) -> Option[EventTarget]?;
+    ☉ rite target(this: &Event!) -> Option[EventTarget]?;
 
     #[wasm_bindgen(method, getter, js_name = "currentTarget")]
-    pub fn current_target(this: &Event!) -> Option[EventTarget]?;
+    ☉ rite current_target(this: &Event!) -> Option[EventTarget]?;
 
     #[wasm_bindgen(method, getter, js_name = "eventPhase")]
-    pub fn event_phase(this: &Event!) -> u16!;
+    ☉ rite event_phase(this: &Event!) -> u16!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn bubbles(this: &Event!) -> bool!;
+    ☉ rite bubbles(this: &Event!) -> bool!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn cancelable(this: &Event!) -> bool!;
+    ☉ rite cancelable(this: &Event!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "defaultPrevented")]
-    pub fn default_prevented(this: &Event!) -> bool!;
+    ☉ rite default_prevented(this: &Event!) -> bool!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn composed(this: &Event!) -> bool!;
+    ☉ rite composed(this: &Event!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "isTrusted")]
-    pub fn is_trusted(this: &Event!) -> bool!;
+    ☉ rite is_trusted(this: &Event!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "timeStamp")]
-    pub fn time_stamp(this: &Event!) -> f64!;
+    ☉ rite time_stamp(this: &Event!) -> f64!;
 
     #[wasm_bindgen(method, js_name = "preventDefault")]
-    pub fn prevent_default(this: &Event!);
+    ☉ rite prevent_default(this: &Event!);
 
     #[wasm_bindgen(method, js_name = "stopPropagation")]
-    pub fn stop_propagation(this: &Event!);
+    ☉ rite stop_propagation(this: &Event!);
 
     #[wasm_bindgen(method, js_name = "stopImmediatePropagation")]
-    pub fn stop_immediate_propagation(this: &Event!);
+    ☉ rite stop_immediate_propagation(this: &Event!);
 
     #[wasm_bindgen(method, js_name = "composedPath")]
-    pub fn composed_path(this: &Event!) -> Vec[EventTarget]!;
+    ☉ rite composed_path(this: &Event!) -> Vec[EventTarget]!;
 }
 
 /// EventTarget interface
 #[wasm_bindgen]
 extern "js" {
-    pub type EventTarget;
+    ☉ type EventTarget;
 
     #[wasm_bindgen(method, js_name = "addEventListener")]
-    pub fn add_event_listener(this: &EventTarget!, type_: &str!, callback: &Closure!);
+    ☉ rite add_event_listener(this: &EventTarget!, type_: &str!, callback: &Closure!);
 
     #[wasm_bindgen(method, js_name = "removeEventListener")]
-    pub fn remove_event_listener(this: &EventTarget!, type_: &str!, callback: &Closure!);
+    ☉ rite remove_event_listener(this: &EventTarget!, type_: &str!, callback: &Closure!);
 
     #[wasm_bindgen(method, js_name = "dispatchEvent")]
-    pub fn dispatch_event(this: &EventTarget!, event: &Event!) -> bool!;
+    ☉ rite dispatch_event(this: &EventTarget!, event: &Event!) -> bool!;
 }
 
 /// MouseEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type MouseEvent;
+    ☉ type MouseEvent;
 
     #[wasm_bindgen(constructor)]
-    pub fn new(type_: &str!) -> MouseEvent!;
+    ☉ rite new(type_: &str!) -> MouseEvent!;
 
     #[wasm_bindgen(method, getter, js_name = "clientX")]
-    pub fn client_x(this: &MouseEvent!) -> i32!;
+    ☉ rite client_x(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "clientY")]
-    pub fn client_y(this: &MouseEvent!) -> i32!;
+    ☉ rite client_y(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "pageX")]
-    pub fn page_x(this: &MouseEvent!) -> i32!;
+    ☉ rite page_x(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "pageY")]
-    pub fn page_y(this: &MouseEvent!) -> i32!;
+    ☉ rite page_y(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "screenX")]
-    pub fn screen_x(this: &MouseEvent!) -> i32!;
+    ☉ rite screen_x(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "screenY")]
-    pub fn screen_y(this: &MouseEvent!) -> i32!;
+    ☉ rite screen_y(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "offsetX")]
-    pub fn offset_x(this: &MouseEvent!) -> i32!;
+    ☉ rite offset_x(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "offsetY")]
-    pub fn offset_y(this: &MouseEvent!) -> i32!;
+    ☉ rite offset_y(this: &MouseEvent!) -> i32!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn button(this: &MouseEvent!) -> i16!;
+    ☉ rite button(this: &MouseEvent!) -> i16!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn buttons(this: &MouseEvent!) -> u16!;
+    ☉ rite buttons(this: &MouseEvent!) -> u16!;
 
     #[wasm_bindgen(method, getter, js_name = "altKey")]
-    pub fn alt_key(this: &MouseEvent!) -> bool!;
+    ☉ rite alt_key(this: &MouseEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "ctrlKey")]
-    pub fn ctrl_key(this: &MouseEvent!) -> bool!;
+    ☉ rite ctrl_key(this: &MouseEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "shiftKey")]
-    pub fn shift_key(this: &MouseEvent!) -> bool!;
+    ☉ rite shift_key(this: &MouseEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "metaKey")]
-    pub fn meta_key(this: &MouseEvent!) -> bool!;
+    ☉ rite meta_key(this: &MouseEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "relatedTarget")]
-    pub fn related_target(this: &MouseEvent!) -> Option[EventTarget]?;
+    ☉ rite related_target(this: &MouseEvent!) -> Option[EventTarget]?;
 }
 
 /// KeyboardEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type KeyboardEvent;
+    ☉ type KeyboardEvent;
 
     #[wasm_bindgen(constructor)]
-    pub fn new(type_: &str!) -> KeyboardEvent!;
+    ☉ rite new(type_: &str!) -> KeyboardEvent!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn key(this: &KeyboardEvent!) -> String!;
+    ☉ rite key(this: &KeyboardEvent!) -> String!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn code(this: &KeyboardEvent!) -> String!;
+    ☉ rite code(this: &KeyboardEvent!) -> String!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn location(this: &KeyboardEvent!) -> u32!;
+    ☉ rite location(this: &KeyboardEvent!) -> u32!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn repeat(this: &KeyboardEvent!) -> bool!;
+    ☉ rite repeat(this: &KeyboardEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "isComposing")]
-    pub fn is_composing(this: &KeyboardEvent!) -> bool!;
+    ☉ rite is_composing(this: &KeyboardEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "altKey")]
-    pub fn alt_key(this: &KeyboardEvent!) -> bool!;
+    ☉ rite alt_key(this: &KeyboardEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "ctrlKey")]
-    pub fn ctrl_key(this: &KeyboardEvent!) -> bool!;
+    ☉ rite ctrl_key(this: &KeyboardEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "shiftKey")]
-    pub fn shift_key(this: &KeyboardEvent!) -> bool!;
+    ☉ rite shift_key(this: &KeyboardEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "metaKey")]
-    pub fn meta_key(this: &KeyboardEvent!) -> bool!;
+    ☉ rite meta_key(this: &KeyboardEvent!) -> bool!;
 
     #[wasm_bindgen(method, js_name = "getModifierState")]
-    pub fn get_modifier_state(this: &KeyboardEvent!, key: &str!) -> bool!;
+    ☉ rite get_modifier_state(this: &KeyboardEvent!, key: &str!) -> bool!;
 }
 
 /// InputEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type InputEvent;
+    ☉ type InputEvent;
 
     #[wasm_bindgen(method, getter)]
-    pub fn data(this: &InputEvent!) -> Option[String]?;
+    ☉ rite data(this: &InputEvent!) -> Option[String]?;
 
     #[wasm_bindgen(method, getter, js_name = "inputType")]
-    pub fn input_type(this: &InputEvent!) -> String!;
+    ☉ rite input_type(this: &InputEvent!) -> String!;
 
     #[wasm_bindgen(method, getter, js_name = "isComposing")]
-    pub fn is_composing(this: &InputEvent!) -> bool!;
+    ☉ rite is_composing(this: &InputEvent!) -> bool!;
 }
 
 /// FocusEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type FocusEvent;
+    ☉ type FocusEvent;
 
     #[wasm_bindgen(method, getter, js_name = "relatedTarget")]
-    pub fn related_target(this: &FocusEvent!) -> Option[EventTarget]?;
+    ☉ rite related_target(this: &FocusEvent!) -> Option[EventTarget]?;
 }
 
 /// WheelEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = MouseEvent)]
-    pub type WheelEvent;
+    ☉ type WheelEvent;
 
     #[wasm_bindgen(method, getter, js_name = "deltaX")]
-    pub fn delta_x(this: &WheelEvent!) -> f64!;
+    ☉ rite delta_x(this: &WheelEvent!) -> f64!;
 
     #[wasm_bindgen(method, getter, js_name = "deltaY")]
-    pub fn delta_y(this: &WheelEvent!) -> f64!;
+    ☉ rite delta_y(this: &WheelEvent!) -> f64!;
 
     #[wasm_bindgen(method, getter, js_name = "deltaZ")]
-    pub fn delta_z(this: &WheelEvent!) -> f64!;
+    ☉ rite delta_z(this: &WheelEvent!) -> f64!;
 
     #[wasm_bindgen(method, getter, js_name = "deltaMode")]
-    pub fn delta_mode(this: &WheelEvent!) -> u32!;
+    ☉ rite delta_mode(this: &WheelEvent!) -> u32!;
 }
 
 /// TouchEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type TouchEvent;
+    ☉ type TouchEvent;
 
     #[wasm_bindgen(method, getter)]
-    pub fn touches(this: &TouchEvent!) -> TouchList!;
+    ☉ rite touches(this: &TouchEvent!) -> TouchList!;
 
     #[wasm_bindgen(method, getter, js_name = "targetTouches")]
-    pub fn target_touches(this: &TouchEvent!) -> TouchList!;
+    ☉ rite target_touches(this: &TouchEvent!) -> TouchList!;
 
     #[wasm_bindgen(method, getter, js_name = "changedTouches")]
-    pub fn changed_touches(this: &TouchEvent!) -> TouchList!;
+    ☉ rite changed_touches(this: &TouchEvent!) -> TouchList!;
 
     #[wasm_bindgen(method, getter, js_name = "altKey")]
-    pub fn alt_key(this: &TouchEvent!) -> bool!;
+    ☉ rite alt_key(this: &TouchEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "ctrlKey")]
-    pub fn ctrl_key(this: &TouchEvent!) -> bool!;
+    ☉ rite ctrl_key(this: &TouchEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "shiftKey")]
-    pub fn shift_key(this: &TouchEvent!) -> bool!;
+    ☉ rite shift_key(this: &TouchEvent!) -> bool!;
 
     #[wasm_bindgen(method, getter, js_name = "metaKey")]
-    pub fn meta_key(this: &TouchEvent!) -> bool!;
+    ☉ rite meta_key(this: &TouchEvent!) -> bool!;
 }
 
 /// TouchList
 #[wasm_bindgen]
 extern "js" {
-    pub type TouchList;
+    ☉ type TouchList;
 
     #[wasm_bindgen(method, getter)]
-    pub fn length(this: &TouchList!) -> u32!;
+    ☉ rite length(this: &TouchList!) -> u32!;
 
     #[wasm_bindgen(method)]
-    pub fn item(this: &TouchList!, index: u32!) -> Option[Touch]?;
+    ☉ rite item(this: &TouchList!, index: u32!) -> Option[Touch]?;
 
     #[wasm_bindgen(method)]
-    pub fn get(this: &TouchList!, index: u32!) -> Option[Touch]?;
+    ☉ rite get(this: &TouchList!, index: u32!) -> Option[Touch]?;
 }
 
 /// Touch
 #[wasm_bindgen]
 extern "js" {
-    pub type Touch;
+    ☉ type Touch;
 
     #[wasm_bindgen(method, getter)]
-    pub fn identifier(this: &Touch!) -> i32!;
+    ☉ rite identifier(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "clientX")]
-    pub fn client_x(this: &Touch!) -> i32!;
+    ☉ rite client_x(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "clientY")]
-    pub fn client_y(this: &Touch!) -> i32!;
+    ☉ rite client_y(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "pageX")]
-    pub fn page_x(this: &Touch!) -> i32!;
+    ☉ rite page_x(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "pageY")]
-    pub fn page_y(this: &Touch!) -> i32!;
+    ☉ rite page_y(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "screenX")]
-    pub fn screen_x(this: &Touch!) -> i32!;
+    ☉ rite screen_x(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter, js_name = "screenY")]
-    pub fn screen_y(this: &Touch!) -> i32!;
+    ☉ rite screen_y(this: &Touch!) -> i32!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn target(this: &Touch!) -> EventTarget!;
+    ☉ rite target(this: &Touch!) -> EventTarget!;
 
     #[wasm_bindgen(method, getter, js_name = "radiusX")]
-    pub fn radius_x(this: &Touch!) -> f32!;
+    ☉ rite radius_x(this: &Touch!) -> f32!;
 
     #[wasm_bindgen(method, getter, js_name = "radiusY")]
-    pub fn radius_y(this: &Touch!) -> f32!;
+    ☉ rite radius_y(this: &Touch!) -> f32!;
 
     #[wasm_bindgen(method, getter, js_name = "rotationAngle")]
-    pub fn rotation_angle(this: &Touch!) -> f32!;
+    ☉ rite rotation_angle(this: &Touch!) -> f32!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn force(this: &Touch!) -> f32!;
+    ☉ rite force(this: &Touch!) -> f32!;
 }
 
 /// DragEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = MouseEvent)]
-    pub type DragEvent;
+    ☉ type DragEvent;
 
     #[wasm_bindgen(method, getter, js_name = "dataTransfer")]
-    pub fn data_transfer(this: &DragEvent!) -> Option[DataTransfer]?;
+    ☉ rite data_transfer(this: &DragEvent!) -> Option[DataTransfer]?;
 }
 
 /// DataTransfer
 #[wasm_bindgen]
 extern "js" {
-    pub type DataTransfer;
+    ☉ type DataTransfer;
 
     #[wasm_bindgen(method, getter, js_name = "dropEffect")]
-    pub fn drop_effect(this: &DataTransfer!) -> String!;
+    ☉ rite drop_effect(this: &DataTransfer!) -> String!;
 
     #[wasm_bindgen(method, setter, js_name = "dropEffect")]
-    pub fn set_drop_effect(this: &DataTransfer!, effect: &str!);
+    ☉ rite set_drop_effect(this: &DataTransfer!, effect: &str!);
 
     #[wasm_bindgen(method, getter, js_name = "effectAllowed")]
-    pub fn effect_allowed(this: &DataTransfer!) -> String!;
+    ☉ rite effect_allowed(this: &DataTransfer!) -> String!;
 
     #[wasm_bindgen(method, setter, js_name = "effectAllowed")]
-    pub fn set_effect_allowed(this: &DataTransfer!, effect: &str!);
+    ☉ rite set_effect_allowed(this: &DataTransfer!, effect: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn files(this: &DataTransfer!) -> FileList!;
+    ☉ rite files(this: &DataTransfer!) -> FileList!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn types(this: &DataTransfer!) -> Vec[String]!;
+    ☉ rite types(this: &DataTransfer!) -> Vec[String]!;
 
     #[wasm_bindgen(method, js_name = "getData")]
-    pub fn get_data(this: &DataTransfer!, format: &str!) -> String!;
+    ☉ rite get_data(this: &DataTransfer!, format: &str!) -> String!;
 
     #[wasm_bindgen(method, js_name = "setData")]
-    pub fn set_data(this: &DataTransfer!, format: &str!, data: &str!);
+    ☉ rite set_data(this: &DataTransfer!, format: &str!, data: &str!);
 
     #[wasm_bindgen(method, js_name = "clearData")]
-    pub fn clear_data(this: &DataTransfer!, format: Option[&str]?);
+    ☉ rite clear_data(this: &DataTransfer!, format: Option[&str]?);
 }
 
 /// AnimationEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type AnimationEvent;
+    ☉ type AnimationEvent;
 
     #[wasm_bindgen(method, getter, js_name = "animationName")]
-    pub fn animation_name(this: &AnimationEvent!) -> String!;
+    ☉ rite animation_name(this: &AnimationEvent!) -> String!;
 
     #[wasm_bindgen(method, getter, js_name = "elapsedTime")]
-    pub fn elapsed_time(this: &AnimationEvent!) -> f32!;
+    ☉ rite elapsed_time(this: &AnimationEvent!) -> f32!;
 
     #[wasm_bindgen(method, getter, js_name = "pseudoElement")]
-    pub fn pseudo_element(this: &AnimationEvent!) -> String!;
+    ☉ rite pseudo_element(this: &AnimationEvent!) -> String!;
 }
 
 /// TransitionEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type TransitionEvent;
+    ☉ type TransitionEvent;
 
     #[wasm_bindgen(method, getter, js_name = "propertyName")]
-    pub fn property_name(this: &TransitionEvent!) -> String!;
+    ☉ rite property_name(this: &TransitionEvent!) -> String!;
 
     #[wasm_bindgen(method, getter, js_name = "elapsedTime")]
-    pub fn elapsed_time(this: &TransitionEvent!) -> f32!;
+    ☉ rite elapsed_time(this: &TransitionEvent!) -> f32!;
 
     #[wasm_bindgen(method, getter, js_name = "pseudoElement")]
-    pub fn pseudo_element(this: &TransitionEvent!) -> String!;
+    ☉ rite pseudo_element(this: &TransitionEvent!) -> String!;
 }
 
 /// PopStateEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type PopStateEvent;
+    ☉ type PopStateEvent;
 
     #[wasm_bindgen(method, getter)]
-    pub fn state(this: &PopStateEvent!) -> JsValue!;
+    ☉ rite state(this: &PopStateEvent!) -> JsValue!;
 }
 
 /// HashChangeEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type HashChangeEvent;
+    ☉ type HashChangeEvent;
 
     #[wasm_bindgen(method, getter, js_name = "oldURL")]
-    pub fn old_url(this: &HashChangeEvent!) -> String!;
+    ☉ rite old_url(this: &HashChangeEvent!) -> String!;
 
     #[wasm_bindgen(method, getter, js_name = "newURL")]
-    pub fn new_url(this: &HashChangeEvent!) -> String!;
+    ☉ rite new_url(this: &HashChangeEvent!) -> String!;
 }
 
 /// CustomEvent
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Event)]
-    pub type CustomEvent;
+    ☉ type CustomEvent;
 
     #[wasm_bindgen(constructor)]
-    pub fn new(type_: &str!) -> CustomEvent!;
+    ☉ rite new(type_: &str!) -> CustomEvent!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn detail(this: &CustomEvent!) -> JsValue!;
+    ☉ rite detail(this: &CustomEvent!) -> JsValue!;
 }
 
 /// FileList
 #[wasm_bindgen]
 extern "js" {
-    pub type FileList;
+    ☉ type FileList;
 
     #[wasm_bindgen(method, getter)]
-    pub fn length(this: &FileList!) -> u32!;
+    ☉ rite length(this: &FileList!) -> u32!;
 
     #[wasm_bindgen(method)]
-    pub fn item(this: &FileList!, index: u32!) -> Option[File]?;
+    ☉ rite item(this: &FileList!, index: u32!) -> Option[File]?;
 }
 
 /// File
 #[wasm_bindgen]
 extern "js" {
     #[wasm_bindgen(extends = Blob)]
-    pub type File;
+    ☉ type File;
 
     #[wasm_bindgen(method, getter)]
-    pub fn name(this: &File!) -> String!;
+    ☉ rite name(this: &File!) -> String!;
 
     #[wasm_bindgen(method, getter, js_name = "lastModified")]
-    pub fn last_modified(this: &File!) -> f64!;
+    ☉ rite last_modified(this: &File!) -> f64!;
 
     #[wasm_bindgen(method, getter, js_name = "webkitRelativePath")]
-    pub fn webkit_relative_path(this: &File!) -> String!;
+    ☉ rite webkit_relative_path(this: &File!) -> String!;
 }
 
 /// Blob
 #[wasm_bindgen]
 extern "js" {
-    pub type Blob;
+    ☉ type Blob;
 
     #[wasm_bindgen(method, getter)]
-    pub fn size(this: &Blob!) -> u64!;
+    ☉ rite size(this: &Blob!) -> u64!;
 
     #[wasm_bindgen(method, getter, js_name = "type")]
-    pub fn type_(this: &Blob!) -> String!;
+    ☉ rite type_(this: &Blob!) -> String!;
 
     #[wasm_bindgen(method)]
-    pub fn slice(this: &Blob!, start: Option[i64]?, end: Option[i64]?, content_type: Option[&str]?) -> Blob!;
+    ☉ rite slice(this: &Blob!, start: Option[i64]?, end: Option[i64]?, content_type: Option[&str]?) -> Blob!;
 
     #[wasm_bindgen(method, js_name = "arrayBuffer")]
-    pub fn array_buffer(this: &Blob!) -> Promise!;
+    ☉ rite array_buffer(this: &Blob!) -> Promise!;
 
     #[wasm_bindgen(method)]
-    pub fn text(this: &Blob!) -> Promise!;
+    ☉ rite text(this: &Blob!) -> Promise!;
 
     #[wasm_bindgen(method)]
-    pub fn stream(this: &Blob!) -> ReadableStream!;
+    ☉ rite stream(this: &Blob!) -> ReadableStream!;
 }

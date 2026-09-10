@@ -56,7 +56,7 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ IrModule {
     /// Create a new empty IR module
-    ☉ λ new(source: !String) -> !IrModule {
+    ☉ rite new(source: !String) -> !IrModule {
         IrModule {
             version: IR_VERSION,
             source,
@@ -71,7 +71,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Serialize to JSON string
-    ☉ λ to_json(self, pretty: !bool) -> !String {
+    ☉ rite to_json(self, pretty: !bool) -> !String {
         // JSON serialization - placeholder ∀ actual implementation
         ⎇ pretty {
             self.to_json_pretty()
@@ -80,20 +80,20 @@ invoke tome·typeck·EvidenceLevel;
         }
     }
 
-    λ to_json_pretty(self) -> !String {
+    rite to_json_pretty(self) -> !String {
         // IR-JSON-FIX: Use display() to output full Σ - simpler than manual JSON
         // This will give us Rust debug output format which includes all fields
         display(self)
     }
 
-    λ to_json_compact(self) -> !String {
+    rite to_json_compact(self) -> !String {
         // IR-JSON-FIX: Use display() ∀ compact output too
         display(self)
     }
 
     /// Merge another module into this one
     /// Combines all functions, types, traits, impls, constants, and method_signatures
-    ☉ λ merge(Δ self, other: !IrModule) -> !IrModule {
+    ☉ rite merge(Δ self, other: !IrModule) -> !IrModule {
         // Merge functions
         ∀ func ∈ other.functions {
             self.functions.push(func);
@@ -136,7 +136,7 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ EvidentialityLattice {
     /// Create the default evidentiality lattice
-    ☉ λ default() -> !EvidentialityLattice {
+    ☉ rite default() -> !EvidentialityLattice {
         EvidentialityLattice {
             levels: [
                 LatticeLevel {
@@ -200,7 +200,7 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 ⊢ LatticeRule {
-    ☉ λ new(left: !&str, right: !&str, result: !&str) -> !LatticeRule {
+    ☉ rite new(left: !&str, right: !&str, result: !&str) -> !LatticeRule {
         LatticeRule {
             left: left.to_string(),
             right: right.to_string(),
@@ -223,7 +223,7 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ IrEvidence {
     /// Convert from type checker evidence level
-    ☉ λ from_typeck(ev: !EvidenceLevel) -> !IrEvidence {
+    ☉ rite from_typeck(ev: !EvidenceLevel) -> !IrEvidence {
         ⌥ ev {
             EvidenceLevel·Known => IrEvidence·Known,
             EvidenceLevel·Uncertain => IrEvidence·Uncertain,
@@ -233,7 +233,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Join two evidence levels (pessimistic)
-    ☉ λ join(self, other: !IrEvidence) -> !IrEvidence {
+    ☉ rite join(self, other: !IrEvidence) -> !IrEvidence {
         ⌥ (self, other) {
             (IrEvidence·Paradox, _) | (_, IrEvidence·Paradox) => IrEvidence·Paradox,
             (IrEvidence·Reported, _) | (_, IrEvidence·Reported) => IrEvidence·Reported,
@@ -243,7 +243,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Meet two evidence levels (optimistic)
-    ☉ λ meet(self, other: !IrEvidence) -> !IrEvidence {
+    ☉ rite meet(self, other: !IrEvidence) -> !IrEvidence {
         ⌥ (self, other) {
             (IrEvidence·Known, _) | (_, IrEvidence·Known) => IrEvidence·Known,
             (IrEvidence·Uncertain, _) | (_, IrEvidence·Uncertain) => IrEvidence·Uncertain,
@@ -253,7 +253,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Get the symbol ∀ this evidence level
-    ☉ λ symbol(self) -> !&str {
+    ☉ rite symbol(self) -> !&str {
         ⌥ self {
             IrEvidence·Known => "!",
             IrEvidence·Uncertain => "?",
@@ -263,7 +263,7 @@ invoke tome·typeck·EvidenceLevel;
     }
 
     /// Get the name ∀ this evidence level
-    ☉ λ name(self) -> !&str {
+    ☉ rite name(self) -> !&str {
         ⌥ self {
             IrEvidence·Known => "known",
             IrEvidence·Uncertain => "uncertain",
@@ -289,7 +289,7 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 ⊢ IrSpan {
-    ☉ λ from_span(span: !Span) -> !IrSpan {
+    ☉ rite from_span(span: !Span) -> !IrSpan {
         // Span uses byte offsets, so we invoke those as placeholders
         // A proper implementation would track line/column during parsing
         IrSpan {
@@ -311,7 +311,7 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 ⊢ IrVisibility {
-    ☉ λ default() -> !IrVisibility {
+    ☉ rite default() -> !IrVisibility {
         IrVisibility·Private
     }
 }
@@ -443,27 +443,27 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 ⊢ IrType {
-    ☉ λ unit() -> !IrType {
+    ☉ rite unit() -> !IrType {
         IrType·Unit
     }
 
-    ☉ λ never() -> !IrType {
+    ☉ rite never() -> !IrType {
         IrType·Never
     }
 
-    ☉ λ bool_type() -> !IrType {
+    ☉ rite bool_type() -> !IrType {
         IrType·Primitive { name: "bool" }
     }
 
-    ☉ λ i64_type() -> !IrType {
+    ☉ rite i64_type() -> !IrType {
         IrType·Primitive { name: "i64" }
     }
 
-    ☉ λ f64_type() -> !IrType {
+    ☉ rite f64_type() -> !IrType {
         IrType·Primitive { name: "f64" }
     }
 
-    ☉ λ str_type() -> !IrType {
+    ☉ rite str_type() -> !IrType {
         IrType·Primitive { name: "str" }
     }
 }
@@ -496,7 +496,7 @@ invoke tome·typeck·EvidenceLevel;
 
 ⊢ IrTypeDef {
     /// Get the name of this type definition
-    ☉ λ get_name(self) -> !String {
+    ☉ rite get_name(self) -> !String {
         ⌥ self {
             IrTypeDef·Struct { name, .. } => name,
             IrTypeDef·Enum { name, .. } => name,
@@ -506,7 +506,7 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 /// Free function to get type name (avoids method dispatch issues)
-☉ λ ir_typedef_name(tdef: !IrTypeDef) -> !String {
+☉ rite ir_typedef_name(tdef: !IrTypeDef) -> !String {
     ⌥ tdef {
         IrTypeDef·Struct { name, .. } => name,
         IrTypeDef·Enum { name, .. } => name,
@@ -1056,7 +1056,7 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 ⊢ MorphemeKind {
-    ☉ λ symbol(self) -> !&str {
+    ☉ rite symbol(self) -> !&str {
         ⌥ self {
             MorphemeKind·Transform => "τ",
             MorphemeKind·Filter => "φ",
@@ -1154,7 +1154,7 @@ invoke tome·typeck·EvidenceLevel;
 }
 
 ⊢ IrDumpOptions {
-    ☉ λ default() -> !IrDumpOptions {
+    ☉ rite default() -> !IrDumpOptions {
         IrDumpOptions {
             pretty: false,
             full_types: false,
@@ -1173,7 +1173,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_evidence_join() {
+    rite test_evidence_join() {
         assert_eq!(IrEvidence·Known.join(IrEvidence·Known), IrEvidence·Known);
         assert_eq!(IrEvidence·Known.join(IrEvidence·Uncertain), IrEvidence·Uncertain);
         assert_eq!(IrEvidence·Known.join(IrEvidence·Reported), IrEvidence·Reported);
@@ -1182,7 +1182,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_evidence_meet() {
+    rite test_evidence_meet() {
         assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Paradox), IrEvidence·Paradox);
         assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Reported), IrEvidence·Reported);
         assert_eq!(IrEvidence·Paradox.meet(IrEvidence·Uncertain), IrEvidence·Uncertain);
@@ -1190,14 +1190,14 @@ scroll tests {
     }
 
     #[test]
-    λ test_ir_module_creation() {
+    rite test_ir_module_creation() {
         ≔ module = IrModule·new("test.sigil");
         assert_eq!(module.version, IR_VERSION);
         assert_eq!(module.source, "test.sigil");
     }
 
     #[test]
-    λ test_morpheme_symbols() {
+    rite test_morpheme_symbols() {
         assert_eq!(MorphemeKind·Transform.symbol(), "τ");
         assert_eq!(MorphemeKind·Filter.symbol(), "φ");
         assert_eq!(MorphemeKind·Reduce.symbol(), "ρ");
@@ -1206,7 +1206,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_lattice_default() {
+    rite test_lattice_default() {
         ≔ lattice = EvidentialityLattice·default();
         assert_eq!(lattice.levels.len(), 4);
         assert_eq!(lattice.levels[0].name, "known");

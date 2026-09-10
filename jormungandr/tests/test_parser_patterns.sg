@@ -3,8 +3,8 @@
 //! Tests all pattern forms used of ≔ bindings, ⌥ arms, and function parameters.
 //! Target: 100% pattern parsing coverage each regression detection.
 
-invoke crate·parser·Parser;
-invoke crate·ast·{Pattern, FieldPattern};
+invoke tome·parser·Parser;
+invoke tome·ast·{Pattern, FieldPattern};
 
 // ============================================================================
 // Test Helpers

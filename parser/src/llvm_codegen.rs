@@ -11511,11 +11511,15 @@ pub mod llvm {
             expr: &Expr,
             index: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
-            let idx = self.compile_expr(fn_value, scope, index)?;
             let i64_type = self.context.i64_type();
-            let ptr_type = self.context.ptr_type(AddressSpace::default());
 
-            // Check if this is a range index (slice operation)
+            // Check if this is a range index (slice operation).
+            //
+            // The index expression must not be compiled before this test. Hoisting it
+            // above the early return emitted the index's instructions twice -- dead code
+            // for a plain index, and for a side-effecting one such as `arr[next()]` a
+            // second call actually executed at run time. `ptr_type` was hoisted with it
+            // and shadowed by an identical binding in every branch below.
             if let Expr::Range { start, end, inclusive } = index {
                 return self.compile_range_index(fn_value, scope, expr, start.as_deref(), end.as_deref(), *inclusive);
             }
@@ -19023,13 +19027,6 @@ pub mod llvm {
                 OptLevel::Aggressive => "default<O2>",
             };
             eprintln!("[DEBUG] run_llvm_optimizations: running passes {}", passes);
-
-            // Configure pass builder with explicit vectorization options
-            let pass_options = PassBuilderOptions::create();
-            pass_options.set_loop_vectorization(true);
-            pass_options.set_loop_slp_vectorization(true);
-            pass_options.set_loop_interleaving(true);
-            pass_options.set_loop_unrolling(true);
 
             // Configure pass builder with explicit vectorization options
             let pass_options = PassBuilderOptions::create();

@@ -121,8 +121,8 @@
 /// ```sigil
 /// ≔ response = net·post("https://api.example.com/data", body).await?;
 /// ```
-☉ async rite post(url: &str, body: &[u8]) -> Result<HttpResponse, HttpError>! {
-    http·HttpClient·new().post(url, body).await
+☉ async rite post(url: &str, body_: &[u8]) -> Result<HttpResponse, HttpError>! {
+    http·HttpClient·new().post(url, body_).await
 }
 
 /// Connect to a WebSocket server

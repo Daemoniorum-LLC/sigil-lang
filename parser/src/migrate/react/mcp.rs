@@ -107,6 +107,42 @@ pub struct MigrationSession {
 
     /// Resolved ambiguities
     resolved_ambiguities: HashMap<String, HashMap<String, usize>>,
+
+    /// Every `export const` seen anywhere in the project, by exported name.
+    ///
+    /// A component's module constants come from its own file, but React code
+    /// keeps shared tables in sibling modules — `INVENTORY_KINDS` in
+    /// `inventory-logic.ts`, `ANIMA_DIMENSIONS` in `types.ts`. Those names are
+    /// import specifiers, so they are module scope and never get a `self.`
+    /// prefix, and nothing then declares them: the generated component
+    /// referenced a binding that did not exist. The session already parses
+    /// every `.ts` in the tree, so the definitions are in hand — they just were
+    /// not carried across the file boundary.
+    exported_constants: HashMap<String, ModuleConstantExtraction>,
+
+    /// Every exported helper function seen anywhere in the project, by name.
+    /// The companion to `exported_constants`, and resolved the same way.
+    exported_helpers: HashMap<String, HelperFunctionExtraction>,
+
+    /// Every helper function seen anywhere, exported or not.
+    ///
+    /// The companion to `all_constants`, and missing for exactly as long as
+    /// that one was. A file-private helper cannot be an import specifier, so
+    /// nothing seeds the queue with it — but an EXPORTED helper's body calls
+    /// it, and that call is how it has to travel. `isMrList` is exported and
+    /// arrived; the `isMr` it calls and the `isObj` that calls in turn are
+    /// file-private, and both were dropped. `isObj` alone blocked 15 helpers
+    /// in the Lares client, each of which blocked more.
+    all_helpers: HashMap<String, HelperFunctionExtraction>,
+
+    /// Every module constant seen anywhere, exported or not.
+    ///
+    /// Only reachable transitively: a name that is not exported cannot be an
+    /// import specifier, so nothing seeds the queue with it. But it can be what
+    /// an exported constant is made of — `export const DEFAULT_PROJECT =
+    /// PROJECT_KEY` beside a file-private `const PROJECT_KEY = …` — and pulling
+    /// the first without the second just moves the undefined name.
+    all_constants: HashMap<String, ModuleConstantExtraction>,
 }
 
 impl MigrationSession {
@@ -140,6 +176,10 @@ impl MigrationSession {
             status: HashMap::new(),
             completed: HashMap::new(),
             resolved_ambiguities: HashMap::new(),
+            exported_constants: HashMap::new(),
+            exported_helpers: HashMap::new(),
+            all_helpers: HashMap::new(),
+            all_constants: HashMap::new(),
         })
     }
 
@@ -161,6 +201,10 @@ impl MigrationSession {
             status,
             completed: HashMap::new(),
             resolved_ambiguities: HashMap::new(),
+            exported_constants: HashMap::new(),
+            exported_helpers: HashMap::new(),
+            all_helpers: HashMap::new(),
+            all_constants: HashMap::new(),
         }
     }
 
@@ -175,6 +219,27 @@ impl MigrationSession {
         // Extract the React file
         let extraction = extract_source(source, path, &relative_path)
             .map_err(|e| McpError::ExtractionError(format!("{:?}", e)))?;
+
+        for c in &extraction.module_constants {
+            if c.exported {
+                self.exported_constants
+                    .entry(c.name.clone())
+                    .or_insert_with(|| c.clone());
+            }
+            self.all_constants
+                .entry(c.name.clone())
+                .or_insert_with(|| c.clone());
+        }
+        for h in &extraction.helper_functions {
+            if h.exported {
+                self.exported_helpers
+                    .entry(h.name.clone())
+                    .or_insert_with(|| h.clone());
+            }
+            self.all_helpers
+                .entry(h.name.clone())
+                .or_insert_with(|| h.clone());
+        }
 
         // Generate spec for each component
         let component_specs = generate_spec(&extraction, source);
@@ -200,6 +265,167 @@ impl MigrationSession {
         self.update_state();
 
         Ok(())
+    }
+
+    /// Pull in every exported constant a component imports from another file.
+    ///
+    /// Run once, after all files are added — a component can import from a
+    /// module that had not been parsed yet when its own spec was generated.
+    /// Transitive: `DEFAULT_PROJECT = PROJECT_KEY` needs `PROJECT_KEY` too, and
+    /// emitting the first without the second just moves the undefined name.
+    pub fn resolve_cross_module_imports(&mut self) {
+        let table = self.exported_constants.clone();
+        let deep = self.all_constants.clone();
+        let helpers = self.exported_helpers.clone();
+        let deep_helpers = self.all_helpers.clone();
+        for comp in &mut self.spec.components {
+            let mut have: std::collections::HashSet<String> = comp
+                .source
+                .module_constants
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
+
+            // `module_scope` already carries every import specifier this
+            // component's file brings in, alongside its own helpers and
+            // constants — the latter two are in `have` and skip themselves.
+            let mut queue: Vec<String> = comp.source.module_scope.clone();
+
+            // …and every name mentioned by a helper this component will pull
+            // in. A file-private constant that only an imported helper's body
+            // names is in nobody's `module_scope`, so nothing queued it:
+            // `mirrorPrefix`, `builtinThemes`, `checkpointLabels` and
+            // `terminalTokenKeys` all reached the generator as undeclared
+            // names, and the helpers that read them stayed untranslated.
+            //
+            // The helper walk below decides which helpers those are; this needs
+            // the same reachable set, so it is computed once here.
+            let reachable_helpers =
+                Self::reachable_helper_set(&comp.source, &helpers, &deep_helpers);
+            for h in &reachable_helpers {
+                for word in h
+                    .source
+                    .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                {
+                    if !word.is_empty() && (table.contains_key(word) || deep.contains_key(word)) {
+                        queue.push(word.to_string());
+                    }
+                }
+            }
+
+            let mut added: Vec<ModuleConstantExtraction> = Vec::new();
+            let mut guard = 0;
+            while let Some(name) = queue.pop() {
+                guard += 1;
+                if guard > 512 {
+                    break;
+                }
+                if have.contains(&name) {
+                    continue;
+                }
+                // Seeded names must be exported (they came from an import
+                // specifier); anything reached from a constant's own body may
+                // be file-private.
+                let c = match table.get(&name).or_else(|| deep.get(&name)) {
+                    Some(c) => c,
+                    None => continue,
+                };
+                have.insert(name.clone());
+                // Whatever bare identifiers the initialiser mentions may
+                // themselves be exported constants from elsewhere.
+                for word in c
+                    .init
+                    .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                {
+                    if !word.is_empty() && (table.contains_key(word) || deep.contains_key(word)) {
+                        queue.push(word.to_string());
+                    }
+                }
+                added.push(c.clone());
+            }
+
+            // Dependencies before dependents. Reversing discovery order is not
+            // enough: a constant can be reached both directly (it is imported
+            // too) and as something another constant is made of, and then it is
+            // discovered first and reversing puts it last. `DEFAULT_PROJECT` is
+            // `PROJECT_KEY` is `identity.name`, and `identity` is imported by
+            // the same file — so the three came out in exactly the wrong order.
+            // Sort them by what they actually reference.
+            added = topo_sort_constants(added);
+            for c in &added {
+                if !comp.source.module_scope.contains(&c.name) {
+                    comp.source.module_scope.push(c.name.clone());
+                }
+            }
+            // Imported constants go FIRST. A module-scope `≔` binding cannot be
+            // read before it is written, and the file's own constants are the
+            // ones that reference the imported ones, not the other way round.
+            let mut merged = added;
+            merged.append(&mut comp.source.module_constants);
+            comp.source.module_constants = merged;
+
+            // Helpers, computed above: a helper's own body may reference
+            // another helper, so that walk is transitive too.
+            let added_h = reachable_helpers;
+            for h in &added_h {
+                if !comp.source.module_scope.contains(&h.name) {
+                    comp.source.module_scope.push(h.name.clone());
+                }
+                if !comp.source.module_functions.contains(&h.name) {
+                    comp.source.module_functions.push(h.name.clone());
+                }
+            }
+            comp.source.helpers.extend(added_h);
+        }
+    }
+
+    /// Every helper a component reaches, transitively, that it does not already
+    /// have.
+    ///
+    /// Seeded names must be exported — they came from an import specifier.
+    /// Anything reached from a helper's own body may be file-private, exactly
+    /// as for constants: `isMrList` is exported and arrived, and the `isMr` it
+    /// reaches through `v.every(isMr)` was dropped with the `isObj` behind it.
+    ///
+    /// The helper's SOURCE, not its `calls` list — that is empty on everything
+    /// the extractor produces, and would miss a bare reference passed as an
+    /// argument even if it were not.
+    fn reachable_helper_set(
+        source: &crate::migrate::react::spec::ComponentSource,
+        exported: &HashMap<String, HelperFunctionExtraction>,
+        all: &HashMap<String, HelperFunctionExtraction>,
+    ) -> Vec<HelperFunctionExtraction> {
+        let mut have: std::collections::HashSet<String> =
+            source.helpers.iter().map(|h| h.name.clone()).collect();
+        let mut queue: Vec<String> = source.module_scope.clone();
+        let mut added: Vec<HelperFunctionExtraction> = Vec::new();
+        let mut guard = 0;
+        while let Some(name) = queue.pop() {
+            guard += 1;
+            if guard > 512 {
+                break;
+            }
+            if have.contains(&name) {
+                continue;
+            }
+            let Some(h) = exported.get(&name).or_else(|| all.get(&name)) else {
+                continue;
+            };
+            have.insert(name.clone());
+            for word in h
+                .source
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+            {
+                if !word.is_empty()
+                    && word != name
+                    && (exported.contains_key(word) || all.contains_key(word))
+                {
+                    queue.push(word.to_string());
+                }
+            }
+            added.push(h.clone());
+        }
+        added
     }
 
     /// Update the migration state counts.
@@ -564,6 +790,13 @@ impl MigrationSession {
             status: state.status,
             completed: state.completed,
             resolved_ambiguities: state.resolved_ambiguities,
+            // A restored session has no files left to parse; nothing can be
+            // added to this table, and the specs it would have fed already
+            // carry their resolved constants.
+            exported_constants: HashMap::new(),
+            exported_helpers: HashMap::new(),
+            all_helpers: HashMap::new(),
+            all_constants: HashMap::new(),
         })
     }
 }
@@ -661,4 +894,49 @@ fn format_parse_error(error: &ParseError) -> (String, Option<String>) {
             (message, suggestion)
         }
     }
+}
+
+/// Order constants so each comes after everything it references.
+///
+/// A plain Kahn's algorithm over "names this initialiser mentions". Anything
+/// left over — a cycle, which JavaScript's module semantics permit and Sigil's
+/// module scope does not — keeps its original position rather than being
+/// dropped; the emission guard will refuse it and say so.
+pub fn topo_sort_constants(items: Vec<ModuleConstantExtraction>) -> Vec<ModuleConstantExtraction> {
+    use std::collections::HashSet;
+    let names: HashSet<String> = items.iter().map(|c| c.name.clone()).collect();
+    let deps: Vec<HashSet<String>> = items
+        .iter()
+        .map(|c| {
+            c.init
+                .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                .filter(|w| !w.is_empty() && names.contains(*w) && *w != c.name)
+                .map(|w| w.to_string())
+                .collect()
+        })
+        .collect();
+
+    let mut placed: HashSet<String> = HashSet::new();
+    let mut out: Vec<ModuleConstantExtraction> = Vec::with_capacity(items.len());
+    let mut remaining: Vec<usize> = (0..items.len()).collect();
+
+    loop {
+        let ready: Vec<usize> = remaining
+            .iter()
+            .copied()
+            .filter(|&i| deps[i].iter().all(|d| placed.contains(d)))
+            .collect();
+        if ready.is_empty() {
+            break;
+        }
+        for i in ready {
+            placed.insert(items[i].name.clone());
+            out.push(items[i].clone());
+            remaining.retain(|&r| r != i);
+        }
+    }
+    for i in remaining {
+        out.push(items[i].clone());
+    }
+    out
 }

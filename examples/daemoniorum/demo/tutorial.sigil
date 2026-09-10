@@ -9,24 +9,24 @@
 //!
 //! Tutorials appear contextually and can be dismissed or disabled.
 
-use crate::system::*;
-use crate::combat::combat::*;
-use crate::runtime::state::*;
-use qliphoth::prelude::*;
+invoke tome·system·*;
+invoke tome·combat·combat·*;
+invoke tome·runtime·state·*;
+invoke qliphoth·prelude·*;
 
 // ============================================================================
 // TUTORIAL DEFINITIONS
 // ============================================================================
 
 /// All tutorial definitions
-pub const TUTORIALS: &[Tutorial]! = &[
+☉ const TUTORIALS: &[Tutorial]! = &[
     // Movement tutorial
     Tutorial {
         id: "movement",
         title: "Exploration",
         content: "Use WASD or Arrow Keys to move.\nPress E to interact with highlighted objects.\nPress TAB to open the menu.",
-        trigger: TutorialTrigger::SceneEntered("church_exterior"),
-        position: TutorialPosition::BottomCenter,
+        trigger: TutorialTrigger·SceneEntered("church_exterior"),
+        position: TutorialPosition·BottomCenter,
         dismissable: true,
         auto_dismiss_ms: Some(8000),
         prerequisite: None,
@@ -37,8 +37,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "alter_switching",
         title: "Plurality System",
         content: "Press 1-6 to switch between alters.\nEach alter has unique abilities and perceptions.\nCurrent: Vessel (Host)",
-        trigger: TutorialTrigger::FlagSet("explored_gate"),
-        position: TutorialPosition::TopRight,
+        trigger: TutorialTrigger·FlagSet("explored_gate"),
+        position: TutorialPosition·TopRight,
         dismissable: true,
         auto_dismiss_ms: Some(10000),
         prerequisite: Some("movement"),
@@ -49,8 +49,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "first_switch",
         title: "Switch Complete",
         content: "You're now seeing through different eyes.\nNotice how the environment description changed.\nDifferent alters notice different details.",
-        trigger: TutorialTrigger::AlterSwitched,
-        position: TutorialPosition::TopRight,
+        trigger: TutorialTrigger·AlterSwitched,
+        position: TutorialPosition·TopRight,
         dismissable: true,
         auto_dismiss_ms: Some(6000),
         prerequisite: Some("alter_switching"),
@@ -61,8 +61,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "cocon",
         title: "Co-Consciousness",
         content: "Hold SHIFT + number to bring an alter co-conscious.\nBoth alters contribute their abilities.\nUseful for combining skills in combat.",
-        trigger: TutorialTrigger::AbilityUnlocked("cocon"),
-        position: TutorialPosition::TopRight,
+        trigger: TutorialTrigger·AbilityUnlocked("cocon"),
+        position: TutorialPosition·TopRight,
         dismissable: true,
         auto_dismiss_ms: Some(10000),
         prerequisite: Some("first_switch"),
@@ -73,8 +73,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "reality_layers",
         title: "Reality Shift",
         content: "Reality is... unstable here.\nYou may see things that aren't there.\nOr fail to see things that are.\n\nTrust your system.",
-        trigger: TutorialTrigger::RealityShifted,
-        position: TutorialPosition::Center,
+        trigger: TutorialTrigger·RealityShifted,
+        position: TutorialPosition·Center,
         dismissable: true,
         auto_dismiss_ms: None, // Must be dismissed manually
         prerequisite: None,
@@ -85,8 +85,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "dialogue",
         title: "Dialogue",
         content: "Choose responses with 1-4 or click.\nDifferent alters unlock different options.\nYour choices affect the story.",
-        trigger: TutorialTrigger::DialogueStarted,
-        position: TutorialPosition::TopCenter,
+        trigger: TutorialTrigger·DialogueStarted,
+        position: TutorialPosition·TopCenter,
         dismissable: true,
         auto_dismiss_ms: Some(8000),
         prerequisite: None,
@@ -97,8 +97,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "combat_start",
         title: "Combat",
         content: "Shadows emerge from the darkness!\n\nSelect actions for your fronting alter.\nSwitch alters mid-combat for different abilities.\nCoordinate your system to survive.",
-        trigger: TutorialTrigger::CombatStarted,
-        position: TutorialPosition::TopCenter,
+        trigger: TutorialTrigger·CombatStarted,
+        position: TutorialPosition·TopCenter,
         dismissable: true,
         auto_dismiss_ms: None,
         prerequisite: None,
@@ -109,8 +109,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "combat_actions",
         title: "Combat Actions",
         content: "Each alter has unique abilities:\n• Strikers deal damage\n• Healers restore stability\n• Tanks draw attacks\n• Tacticians buff allies\n\nChoose wisely!",
-        trigger: TutorialTrigger::FirstCombatTurn,
-        position: TutorialPosition::Right,
+        trigger: TutorialTrigger·FirstCombatTurn,
+        position: TutorialPosition·Right,
         dismissable: true,
         auto_dismiss_ms: Some(12000),
         prerequisite: Some("combat_start"),
@@ -121,8 +121,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "stability_warning",
         title: "System Stability",
         content: "WARNING: Stability is low!\n\nIf stability reaches zero, you'll dissociate.\nSwitch to Vessel to ground the system.\nUse healing abilities to restore stability.",
-        trigger: TutorialTrigger::StabilityLow,
-        position: TutorialPosition::Center,
+        trigger: TutorialTrigger·StabilityLow,
+        position: TutorialPosition·Center,
         dismissable: true,
         auto_dismiss_ms: None,
         prerequisite: None,
@@ -133,8 +133,8 @@ pub const TUTORIALS: &[Tutorial]! = &[
         id: "dissociation",
         title: "Dissociation",
         content: "The system is fragmenting...\n\nHigh dissociation makes switches harder.\nReality perception becomes unreliable.\nFind a safe space to ground.",
-        trigger: TutorialTrigger::DissociationHigh,
-        position: TutorialPosition::Center,
+        trigger: TutorialTrigger·DissociationHigh,
+        position: TutorialPosition·Center,
         dismissable: false,
         auto_dismiss_ms: None,
         prerequisite: None,
@@ -142,7 +142,7 @@ pub const TUTORIALS: &[Tutorial]! = &[
 ];
 
 /// Tutorial definition
-type Tutorial = struct {
+type Tutorial = Σ {
     id: &'static str!,
     title: &'static str!,
     content: &'static str!,
@@ -154,7 +154,7 @@ type Tutorial = struct {
 };
 
 /// What triggers a tutorial
-type TutorialTrigger = enum {
+type TutorialTrigger = ᛈ {
     /// Scene entered
     SceneEntered(&'static str),
     /// Flag set
@@ -180,7 +180,7 @@ type TutorialTrigger = enum {
 };
 
 /// Where tutorial appears
-type TutorialPosition = enum {
+type TutorialPosition = ᛈ {
     TopLeft,
     TopCenter,
     TopRight,
@@ -197,7 +197,7 @@ type TutorialPosition = enum {
 // ============================================================================
 
 /// Manages tutorial display and progression
-type TutorialManager = struct {
+type TutorialManager = Σ {
     /// Tutorials that have been shown
     shown: Vec<String>!,
     /// Currently active tutorial
@@ -209,106 +209,106 @@ type TutorialManager = struct {
 };
 
 /// An active tutorial being displayed
-type ActiveTutorial = struct {
+type ActiveTutorial = Σ {
     tutorial_id: String!,
     elapsed_ms: u64!,
     dismissed: bool!,
 };
 
-impl TutorialManager {
-    pub fn new() -> Self! {
+⊢ TutorialManager {
+    ☉ rite new() -> Self! {
         Self {
-            shown: Vec::new(),
+            shown: Vec·new(),
             active: None,
-            queue: Vec::new(),
+            queue: Vec·new(),
             disabled: false,
         }
     }
 
     /// Update tutorial state
-    pub fn update(mut self, delta_ms: u64) {
-        if self.disabled {
-            return;
+    ☉ rite update(mut self, delta_ms: u64) {
+        ⎇ self.disabled {
+            ⤺;
         }
 
         // Update active tutorial
-        if let Some(ref mut active) = self.active {
+        ⎇ ≔ Some(ref mut active) = self.active {
             active.elapsed_ms += delta_ms;
 
             // Check auto-dismiss
-            if let Some(tutorial) = self·get_tutorial(&active.tutorial_id) {
-                if let Some(auto_dismiss) = tutorial.auto_dismiss_ms {
-                    if active.elapsed_ms >= auto_dismiss {
+            ⎇ ≔ Some(tutorial) = self·get_tutorial(&active.tutorial_id) {
+                ⎇ ≔ Some(auto_dismiss) = tutorial.auto_dismiss_ms {
+                    ⎇ active.elapsed_ms >= auto_dismiss {
                         active.dismissed = true;
                     }
                 }
             }
 
             // Clear if dismissed
-            if active.dismissed {
+            ⎇ active.dismissed {
                 self.active = None;
             }
         }
 
         // Show next queued tutorial if none active
-        if self.active·is_none() && !self.queue·is_empty() {
-            let next_id = self.queue·remove(0);
+        ⎇ self.active·is_none() && !self.queue·is_empty() {
+            ≔ next_id = self.queue·remove(0);
             self·show_tutorial(&next_id);
         }
     }
 
     /// Check if a tutorial should trigger
-    pub fn check_trigger(mut self, trigger: &TutorialTrigger) {
-        if self.disabled {
-            return;
+    ☉ rite check_trigger(mut self, trigger: &TutorialTrigger) {
+        ⎇ self.disabled {
+            ⤺;
         }
 
-        for tutorial in TUTORIALS {
+        ∀ tutorial ∈ TUTORIALS {
             // Skip if already shown
-            if self.shown·contains(&tutorial.id.to_string()) {
+            ⎇ self.shown·contains(&tutorial.id.to_string()) {
                 continue;
             }
 
             // Check prerequisite
-            if let Some(prereq) = tutorial.prerequisite {
-                if !self.shown·contains(&prereq.to_string()) {
+            ⎇ ≔ Some(prereq) = tutorial.prerequisite {
+                ⎇ !self.shown·contains(&prereq.to_string()) {
                     continue;
                 }
             }
 
             // Check trigger match
-            if self·trigger_matches(&tutorial.trigger, trigger) {
+            ⎇ self·trigger_matches(&tutorial.trigger, trigger) {
                 self·queue_tutorial(tutorial.id);
             }
         }
     }
 
     /// Check if triggers match
-    fn trigger_matches(self, tutorial_trigger: &TutorialTrigger, event_trigger: &TutorialTrigger) -> bool! {
-        match (tutorial_trigger, event_trigger) {
-            (TutorialTrigger::SceneEntered(a), TutorialTrigger::SceneEntered(b)) => a == b,
-            (TutorialTrigger::FlagSet(a), TutorialTrigger::FlagSet(b)) => a == b,
-            (TutorialTrigger::AlterSwitched, TutorialTrigger::AlterSwitched) => true,
-            (TutorialTrigger::RealityShifted, TutorialTrigger::RealityShifted) => true,
-            (TutorialTrigger::DialogueStarted, TutorialTrigger::DialogueStarted) => true,
-            (TutorialTrigger::CombatStarted, TutorialTrigger::CombatStarted) => true,
-            (TutorialTrigger::FirstCombatTurn, TutorialTrigger::FirstCombatTurn) => true,
-            (TutorialTrigger::StabilityLow, TutorialTrigger::StabilityLow) => true,
-            (TutorialTrigger::DissociationHigh, TutorialTrigger::DissociationHigh) => true,
-            (TutorialTrigger::AbilityUnlocked(a), TutorialTrigger::AbilityUnlocked(b)) => a == b,
+    rite trigger_matches(self, tutorial_trigger: &TutorialTrigger, event_trigger: &TutorialTrigger) -> bool! {
+        ⌥ (tutorial_trigger, event_trigger) {
+            (TutorialTrigger·SceneEntered(a), TutorialTrigger·SceneEntered(b)) => a == b,
+            (TutorialTrigger·FlagSet(a), TutorialTrigger·FlagSet(b)) => a == b,
+            (TutorialTrigger·AlterSwitched, TutorialTrigger·AlterSwitched) => true,
+            (TutorialTrigger·RealityShifted, TutorialTrigger·RealityShifted) => true,
+            (TutorialTrigger·DialogueStarted, TutorialTrigger·DialogueStarted) => true,
+            (TutorialTrigger·CombatStarted, TutorialTrigger·CombatStarted) => true,
+            (TutorialTrigger·FirstCombatTurn, TutorialTrigger·FirstCombatTurn) => true,
+            (TutorialTrigger·StabilityLow, TutorialTrigger·StabilityLow) => true,
+            (TutorialTrigger·DissociationHigh, TutorialTrigger·DissociationHigh) => true,
+            (TutorialTrigger·AbilityUnlocked(a), TutorialTrigger·AbilityUnlocked(b)) => a == b,
             _ => false,
         }
     }
 
     /// Queue a tutorial to be shown
-    fn queue_tutorial(mut self, id: &str) {
-        if !self.queue·contains(&id.to_string()) {
+    rite queue_tutorial(mut self, id: &str) {
+        ⎇ !self.queue·contains(&id.to_string()) {
             self.queue·push(id.to_string());
         }
     }
 
     /// Show a specific tutorial
-    fn show_tutorial(mut self, id: &str) {
+    rite show_tutorial(mut self, id: &str) {
         self.shown·push(id.to_string());
         self.active = Some(ActiveTutorial {
             tutorial_id: id.to_string(),
@@ -318,17 +318,17 @@ impl TutorialManager {
     }
 
     /// Manually trigger a tutorial
-    pub fn trigger_manual(mut self, id: &str) {
-        if !self.shown·contains(&id.to_string()) {
+    ☉ rite trigger_manual(mut self, id: &str) {
+        ⎇ !self.shown·contains(&id.to_string()) {
             self·show_tutorial(id);
         }
     }
 
     /// Dismiss current tutorial
-    pub fn dismiss(mut self) {
-        if let Some(ref mut active) = self.active {
-            if let Some(tutorial) = self·get_tutorial(&active.tutorial_id) {
-                if tutorial.dismissable {
+    ☉ rite dismiss(mut self) {
+        ⎇ ≔ Some(ref mut active) = self.active {
+            ⎇ ≔ Some(tutorial) = self·get_tutorial(&active.tutorial_id) {
+                ⎇ tutorial.dismissable {
                     active.dismissed = true;
                 }
             }
@@ -336,29 +336,29 @@ impl TutorialManager {
     }
 
     /// Disable all tutorials
-    pub fn disable(mut self) {
+    ☉ rite disable(mut self) {
         self.disabled = true;
         self.active = None;
         self.queue·clear();
     }
 
     /// Enable tutorials
-    pub fn enable(mut self) {
+    ☉ rite enable(mut self) {
         self.disabled = false;
     }
 
     /// Get tutorial by ID
-    fn get_tutorial(self, id: &str) -> Option<&Tutorial>? {
+    rite get_tutorial(self, id: &str) -> Option<&Tutorial>? {
         TUTORIALS·iter()·find(|t| t.id == id)
     }
 
     /// Get active tutorial for rendering
-    pub fn get_active(self) -> Option<&Tutorial>? {
+    ☉ rite get_active(self) -> Option<&Tutorial>? {
         self.active·as_ref()·and_then(|a| self·get_tutorial(&a.tutorial_id))
     }
 
     /// Check if a specific tutorial was shown
-    pub fn was_shown(self, id: &str) -> bool! {
+    ☉ rite was_shown(self, id: &str) -> bool! {
         self.shown·contains(&id.to_string())
     }
 }
@@ -369,22 +369,22 @@ impl TutorialManager {
 
 /// Tutorial popup component
 #[component]
-pub fn TutorialPopup(manager: &TutorialManager) -> Element! {
-    let tutorial = match manager·get_active() {
+☉ rite TutorialPopup(manager: &TutorialManager) -> Element! {
+    ≔ tutorial = ⌥ manager·get_active() {
         Some(t) => t,
-        None => return html! {},
+        None => ⤺ html! {},
     };
 
-    let position_class = match tutorial.position {
-        TutorialPosition::TopLeft => "tutorial-top-left",
-        TutorialPosition::TopCenter => "tutorial-top-center",
-        TutorialPosition::TopRight => "tutorial-top-right",
-        TutorialPosition::Center => "tutorial-center",
-        TutorialPosition::BottomLeft => "tutorial-bottom-left",
-        TutorialPosition::BottomCenter => "tutorial-bottom-center",
-        TutorialPosition::BottomRight => "tutorial-bottom-right",
-        TutorialPosition::Left => "tutorial-left",
-        TutorialPosition::Right => "tutorial-right",
+    ≔ position_class = ⌥ tutorial.position {
+        TutorialPosition·TopLeft => "tutorial-top-left",
+        TutorialPosition·TopCenter => "tutorial-top-center",
+        TutorialPosition·TopRight => "tutorial-top-right",
+        TutorialPosition·Center => "tutorial-center",
+        TutorialPosition·BottomLeft => "tutorial-bottom-left",
+        TutorialPosition·BottomCenter => "tutorial-bottom-center",
+        TutorialPosition·BottomRight => "tutorial-bottom-right",
+        TutorialPosition·Left => "tutorial-left",
+        TutorialPosition·Right => "tutorial-right",
     };
 
     html! {
@@ -396,13 +396,13 @@ pub fn TutorialPopup(manager: &TutorialManager) -> Element! {
             <div class="tutorial-content">
                 {tutorial.content}
             </div>
-            {if tutorial.dismissable {
+            {⎇ tutorial.dismissable {
                 html! {
                     <div class="tutorial-footer">
                         <span class="tutorial-dismiss">{"Press SPACE to dismiss"}</span>
                     </div>
                 }
-            } else {
+            } ⎉ {
                 html! {}
             }}
         </div>
@@ -410,7 +410,7 @@ pub fn TutorialPopup(manager: &TutorialManager) -> Element! {
 }
 
 /// Tutorial styles
-pub const TUTORIAL_STYLES: &str! = r#"
+☉ const TUTORIAL_STYLES: &str! = r#"
     .tutorial-popup {
         position: fixed;
         background: linear-gradient(135deg, rgba(20,20,35,0.95), rgba(30,25,45,0.95));
@@ -502,14 +502,14 @@ pub const TUTORIAL_STYLES: &str! = r#"
 // ============================================================================
 
 /// Combat tutorial helper
-type CombatTutorial = struct {
+type CombatTutorial = Σ {
     /// Current step
     step: CombatTutorialStep!,
     /// Highlighted element
     highlight: Option<String>?,
 };
 
-type CombatTutorialStep = enum {
+type CombatTutorialStep = ᛈ {
     /// Show enemy info
     EnemyIntro,
     /// Explain actions
@@ -528,84 +528,84 @@ type CombatTutorialStep = enum {
     Complete,
 };
 
-impl CombatTutorial {
-    pub fn new() -> Self! {
+⊢ CombatTutorial {
+    ☉ rite new() -> Self! {
         Self {
-            step: CombatTutorialStep::EnemyIntro,
+            step: CombatTutorialStep·EnemyIntro,
             highlight: None,
         }
     }
 
     /// Get current tutorial text
-    pub fn get_text(self) -> Option<(&'static str, &'static str)>? {
-        match self.step {
-            CombatTutorialStep::EnemyIntro => Some((
+    ☉ rite get_text(self) -> Option<(&'static str, &'static str)>? {
+        ⌥ self.step {
+            CombatTutorialStep·EnemyIntro => Some((
                 "Enemy Spotted!",
                 "Shadow Crawlers - weak but numerous.\nCheck their health in the enemy panel."
             )),
-            CombatTutorialStep::ActionExplain => Some((
+            CombatTutorialStep·ActionExplain => Some((
                 "Choose Your Action",
                 "Click an action or press 1-4.\nVessel can STRIKE for damage\nor GROUND to restore stability."
             )),
-            CombatTutorialStep::FirstAttack => Some((
+            CombatTutorialStep·FirstAttack => Some((
                 "Attack!",
                 "Select STRIKE to attack the enemy.\nWatch the combat log for results."
             )),
-            CombatTutorialStep::DamageResult => Some((
+            CombatTutorialStep·DamageResult => Some((
                 "Hit!",
                 "You dealt damage. The enemy's\nhealth bar shows remaining HP."
             )),
-            CombatTutorialStep::EnemyTurn => Some((
+            CombatTutorialStep·EnemyTurn => Some((
                 "Enemy Turn",
                 "The shadows strike back!\nWatch your stability meter."
             )),
-            CombatTutorialStep::SwitchExplain => Some((
+            CombatTutorialStep·SwitchExplain => Some((
                 "Switch Alters",
                 "Press 1-6 to switch alters mid-combat.\nTry switching to Abaddon (2) for\nmore damage, or Beleth (4) to heal."
             )),
-            CombatTutorialStep::Victory => Some((
+            CombatTutorialStep·Victory => Some((
                 "Victory!",
                 "The shadows disperse.\nYou've mastered the basics of combat."
             )),
-            CombatTutorialStep::Complete => None,
+            CombatTutorialStep·Complete => None,
         }
     }
 
     /// Advance to next step
-    pub fn advance(mut self) {
-        self.step = match self.step {
-            CombatTutorialStep::EnemyIntro => CombatTutorialStep::ActionExplain,
-            CombatTutorialStep::ActionExplain => CombatTutorialStep::FirstAttack,
-            CombatTutorialStep::FirstAttack => CombatTutorialStep::DamageResult,
-            CombatTutorialStep::DamageResult => CombatTutorialStep::EnemyTurn,
-            CombatTutorialStep::EnemyTurn => CombatTutorialStep::SwitchExplain,
-            CombatTutorialStep::SwitchExplain => CombatTutorialStep::Victory,
-            CombatTutorialStep::Victory => CombatTutorialStep::Complete,
-            CombatTutorialStep::Complete => CombatTutorialStep::Complete,
+    ☉ rite advance(mut self) {
+        self.step = ⌥ self.step {
+            CombatTutorialStep·EnemyIntro => CombatTutorialStep·ActionExplain,
+            CombatTutorialStep·ActionExplain => CombatTutorialStep·FirstAttack,
+            CombatTutorialStep·FirstAttack => CombatTutorialStep·DamageResult,
+            CombatTutorialStep·DamageResult => CombatTutorialStep·EnemyTurn,
+            CombatTutorialStep·EnemyTurn => CombatTutorialStep·SwitchExplain,
+            CombatTutorialStep·SwitchExplain => CombatTutorialStep·Victory,
+            CombatTutorialStep·Victory => CombatTutorialStep·Complete,
+            CombatTutorialStep·Complete => CombatTutorialStep·Complete,
         };
 
         // Update highlight
-        self.highlight = match self.step {
-            CombatTutorialStep::EnemyIntro => Some("enemy-panel".to_string()),
-            CombatTutorialStep::ActionExplain => Some("action-panel".to_string()),
-            CombatTutorialStep::FirstAttack => Some("action-strike".to_string()),
-            CombatTutorialStep::SwitchExplain => Some("alter-bar".to_string()),
+        self.highlight = ⌥ self.step {
+            CombatTutorialStep·EnemyIntro => Some("enemy-panel".to_string()),
+            CombatTutorialStep·ActionExplain => Some("action-panel".to_string()),
+            CombatTutorialStep·FirstAttack => Some("action-strike".to_string()),
+            CombatTutorialStep·SwitchExplain => Some("alter-bar".to_string()),
             _ => None,
         };
     }
 
     /// Is tutorial complete
-    pub fn is_complete(self) -> bool! {
-        matches!(self.step, CombatTutorialStep::Complete)
+    ☉ rite is_complete(self) -> bool! {
+        matches!(self.step, CombatTutorialStep·Complete)
     }
 }
 
 /// Combat tutorial overlay component
 #[component]
-pub fn CombatTutorialOverlay(tutorial: &CombatTutorial) -> Element! {
-    let (title, content) = match tutorial·get_text() {
+☉ rite CombatTutorialOverlay(tutorial: &CombatTutorial) -> Element! {
+    ≔ (title, content) = ⌥ tutorial·get_text() {
         Some((t, c)) => (t, c),
-        None => return html! {},
+        None => ⤺ html! {},
     };
 
     html! {
@@ -619,11 +619,11 @@ pub fn CombatTutorialOverlay(tutorial: &CombatTutorial) -> Element! {
             </div>
 
             // Highlight element if any
-            {if let Some(ref highlight) = tutorial.highlight {
+            {⎇ ≔ Some(ref highlight) = tutorial.highlight {
                 html! {
                     <div class={format!("tutorial-highlight highlight-{}", highlight)}></div>
                 }
-            } else {
+            } ⎉ {
                 html! {}
             }}
         </div>

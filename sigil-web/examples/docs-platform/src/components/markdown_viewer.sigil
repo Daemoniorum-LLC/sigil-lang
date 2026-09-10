@@ -1,24 +1,24 @@
 // Markdown Viewer Component
 // Displays rendered markdown documentation with syntax highlighting
 
-use sigil_web::prelude::*
-use crate::data::{MarkdownDoc, DocEntry, get_doc, LoadError}
-use crate::components::*
-use crate::layouts::{DocsLayout, DocsLayoutProps, SidebarItem, TocItem, PageLink}
+invoke sigil_web·prelude·*
+invoke tome·data·{MarkdownDoc, DocEntry, get_doc, LoadError}
+invoke tome·components·*
+invoke tome·layouts·{DocsLayout, DocsLayoutProps, SidebarItem, TocItem, PageLink}
 
 /// Markdown viewer component that loads and displays documentation
-pub fn MarkdownViewer(props: MarkdownViewerProps) -> VNode! {
-    let doc_result~ = use_fetch_doc(&props.file_path)
+☉ rite MarkdownViewer(props: MarkdownViewerProps) -> VNode! {
+    ≔ doc_result~ = use_fetch_doc(&props.file_path)
 
-    match doc_result~ {
-        AsyncState::Loading => {
+    ⌥ doc_result~ {
+        AsyncState·Loading => {
             div()
                 ·class("doc-loading")
                 ·child(Spinner {})
                 ·child(p()·text("Loading documentation...")·build())
                 ·build()
         }
-        AsyncState::Error(e~) => {
+        AsyncState·Error(e~) => {
             div()
                 ·class("doc-error")
                 ·children(vec![
@@ -34,7 +34,7 @@ pub fn MarkdownViewer(props: MarkdownViewerProps) -> VNode! {
                 ])
                 ·build()
         }
-        AsyncState::Success(doc~) => {
+        AsyncState·Success(doc~) => {
             article()
                 ·class("markdown-content")
                 ·children(vec![
@@ -79,26 +79,26 @@ pub fn MarkdownViewer(props: MarkdownViewerProps) -> VNode! {
     }
 }
 
-pub struct MarkdownViewerProps {
-    pub file_path: String!
-    pub sidebar_items: Vec<SidebarItem>!
-    pub current_path: String!
-    pub prev_page: Option<PageLink>? = None
-    pub next_page: Option<PageLink>? = None
+☉ Σ MarkdownViewerProps {
+    ☉ file_path: String!
+    ☉ sidebar_items: Vec<SidebarItem>!
+    ☉ current_path: String!
+    ☉ prev_page: Option<PageLink>? = None
+    ☉ next_page: Option<PageLink>? = None
 }
 
 /// Hook to fetch documentation
-fn use_fetch_doc(file_path: &str) -> AsyncState<MarkdownDoc>!! {
-    let (state, set_state) = use_state(AsyncState::Loading)
-    let path_clone! = file_path.to_string()
+rite use_fetch_doc(file_path: &str) -> AsyncState<MarkdownDoc>!! {
+    ≔ (state, set_state) = use_state(AsyncState·Loading)
+    ≔ path_clone! = file_path.to_string()
 
     use_effect(|| {
-        set_state(AsyncState::Loading)
+        set_state(AsyncState·Loading)
 
         spawn_async(async {
-            match get_doc(&path_clone)|await {
-                Ok(doc~) => set_state(AsyncState::Success(doc~)),
-                Err(e) => set_state(AsyncState::Error(e·message()))
+            ⌥ get_doc(&path_clone)|await {
+                Ok(doc~) => set_state(AsyncState·Success(doc~)),
+                Err(e) => set_state(AsyncState·Error(e·message()))
             }
         })
 
@@ -108,18 +108,18 @@ fn use_fetch_doc(file_path: &str) -> AsyncState<MarkdownDoc>!! {
     state
 }
 
-fn spawn_async<F: Future<Output = ()>>(future: F) {
+rite spawn_async<F: Future<Output = ()>>(future: F) {
     // Platform-specific async spawn
 }
 
 /// Documentation page wrapper that includes layout
-pub fn DocPage(props: DocPageProps) -> VNode! {
-    let sidebar_items! = build_full_sidebar()
-    let doc_result~ = use_fetch_doc(&props.file_path)
+☉ rite DocPage(props: DocPageProps) -> VNode! {
+    ≔ sidebar_items! = build_full_sidebar()
+    ≔ doc_result~ = use_fetch_doc(&props.file_path)
 
     // Extract TOC from loaded document
-    let toc_items! = match &doc_result~ {
-        AsyncState::Success(doc~) => doc~.toc·clone(),
+    ≔ toc_items! = ⌥ &doc_result~ {
+        AsyncState·Success(doc~) => doc~.toc·clone(),
         _ => vec![]
     }
 
@@ -143,18 +143,18 @@ pub fn DocPage(props: DocPageProps) -> VNode! {
     })
 }
 
-pub struct DocPageProps {
-    pub file_path: String!
-    pub current_path: String!
-    pub prev_page: Option<PageLink>? = None
-    pub next_page: Option<PageLink>? = None
+☉ Σ DocPageProps {
+    ☉ file_path: String!
+    ☉ current_path: String!
+    ☉ prev_page: Option<PageLink>? = None
+    ☉ next_page: Option<PageLink>? = None
 }
 
 /// Build sidebar from full documentation catalog
-pub fn build_full_sidebar() -> Vec<SidebarItem>! {
-    use crate::data::docs_catalog::{DOCS_CATALOG, DocCategory};
+☉ rite build_full_sidebar() -> Vec<SidebarItem>! {
+    invoke tome·data·docs_catalog·{DOCS_CATALOG, DocCategory};
 
-    let mut items! = vec![
+    ≔ vary items! = vec![
         SidebarItem {
             title: "Home".to_string(),
             path: "/".to_string(),
@@ -172,29 +172,29 @@ pub fn build_full_sidebar() -> Vec<SidebarItem>! {
     ]
 
     // Group projects by category
-    let categories! = vec![
-        (DocCategory::Sigil, "Languages"),
-        (DocCategory::SigilWeb, "Web Frameworks"),
-        (DocCategory::Leviathan, "Backend"),
-        (DocCategory::Bael, "Frontend"),
-        (DocCategory::Nyx, "AI & Agents"),
-        (DocCategory::Aether, "Game Engine"),
-        (DocCategory::Orpheus, "Audio"),
-        (DocCategory::Vulcan, "Manufacturing"),
-        (DocCategory::Architecture, "Platform")
+    ≔ categories! = vec![
+        (DocCategory·Sigil, "Languages"),
+        (DocCategory·SigilWeb, "Web Frameworks"),
+        (DocCategory·Leviathan, "Backend"),
+        (DocCategory·Bael, "Frontend"),
+        (DocCategory·Nyx, "AI & Agents"),
+        (DocCategory·Aether, "Game Engine"),
+        (DocCategory·Orpheus, "Audio"),
+        (DocCategory·Vulcan, "Manufacturing"),
+        (DocCategory·Architecture, "Platform")
     ]
 
-    for (category, label) in categories {
-        let projects! = DOCS_CATALOG·iter()
+    ∀ (category, label) ∈ categories {
+        ≔ projects! = DOCS_CATALOG·iter()
             ·filter(|p| p.category == category)
-            ·collect::<Vec<_>>()
+            ·collect·<Vec<_>>()
 
-        if projects·is_empty() {
+        ⎇ projects·is_empty() {
             continue
         }
 
         // Create category section
-        let category_item! = SidebarItem {
+        ≔ category_item! = SidebarItem {
             title: label.to_string(),
             path: format!("/docs/{}", category·display_name()·to_lowercase()·replace(' ', "-")),
             icon: Some(category·icon().to_string()),
@@ -262,10 +262,10 @@ pub fn build_full_sidebar() -> Vec<SidebarItem>! {
 }
 
 /// Code block with syntax highlighting
-pub fn HighlightedCodeBlock(props: { code: String, language: String, filename: Option<String>? }) -> VNode! {
-    let (copied, set_copied) = use_state(false)
+☉ rite HighlightedCodeBlock(props: Any) -> VNode! {
+    ≔ (copied, set_copied) = use_state(false)
 
-    let copy_to_clipboard! = || {
+    ≔ copy_to_clipboard! = || {
         // Copy code to clipboard
         set_copied(true)
         set_timeout(2000, || set_copied(false))
@@ -292,7 +292,7 @@ pub fn HighlightedCodeBlock(props: { code: String, language: String, filename: O
                         button()
                             ·class("code-block-copy")
                             ·onclick(copy_to_clipboard)
-                            ·child(Icon { name: if copied { "check" } else { "copy" } })
+                            ·child(Icon { name: ⎇ copied { "check" } ⎉ { "copy" } })
                             ·build()
                     ])
                     ·build()
@@ -312,10 +312,10 @@ pub fn HighlightedCodeBlock(props: { code: String, language: String, filename: O
         ·build()
 }
 
-fn set_timeout(ms: u64, callback: fn()) {}
+rite set_timeout(ms: u64, callback: rite()) {}
 
 /// Inline code element
-pub fn InlineCode(props: { code: String }) -> VNode! {
+☉ rite InlineCode(props: Any) -> VNode! {
     code()
         ·class("inline-code")
         ·text(&props.code)
@@ -323,14 +323,14 @@ pub fn InlineCode(props: { code: String }) -> VNode! {
 }
 
 /// Admonition/callout for notes, warnings, etc.
-pub fn Admonition(props: AdmonitionProps) -> VNode! {
-    let icon! = match props.variant {
-        AdmonitionVariant::Note => "info",
-        AdmonitionVariant::Tip => "lightbulb",
-        AdmonitionVariant::Warning => "alert-triangle",
-        AdmonitionVariant::Danger => "alert-circle",
-        AdmonitionVariant::Info => "info",
-        AdmonitionVariant::Success => "check-circle"
+☉ rite Admonition(props: AdmonitionProps) -> VNode! {
+    ≔ icon! = ⌥ props.variant {
+        AdmonitionVariant·Note => "info",
+        AdmonitionVariant·Tip => "lightbulb",
+        AdmonitionVariant·Warning => "alert-triangle",
+        AdmonitionVariant·Danger => "alert-circle",
+        AdmonitionVariant·Info => "info",
+        AdmonitionVariant·Success => "check-circle"
     }
 
     div()
@@ -359,14 +359,14 @@ pub fn Admonition(props: AdmonitionProps) -> VNode! {
         ·build()
 }
 
-pub struct AdmonitionProps {
-    pub variant: AdmonitionVariant! = AdmonitionVariant::Note
-    pub title: Option<String>? = None
-    pub children: Vec<VNode>!
+☉ Σ AdmonitionProps {
+    ☉ variant: AdmonitionVariant! = AdmonitionVariant·Note
+    ☉ title: Option<String>? = None
+    ☉ children: Vec<VNode>!
 }
 
 #[derive(Clone, Copy)]
-pub enum AdmonitionVariant {
+☉ ᛈ AdmonitionVariant {
     Note,
     Tip,
     Warning,
@@ -375,21 +375,21 @@ pub enum AdmonitionVariant {
     Success
 }
 
-impl AdmonitionVariant {
-    fn to_string(&self) -> &'static str! {
-        match self {
-            AdmonitionVariant::Note => "note",
-            AdmonitionVariant::Tip => "tip",
-            AdmonitionVariant::Warning => "warning",
-            AdmonitionVariant::Danger => "danger",
-            AdmonitionVariant::Info => "info",
-            AdmonitionVariant::Success => "success"
+⊢ AdmonitionVariant {
+    rite to_string(&self) -> &'static str! {
+        ⌥ self {
+            AdmonitionVariant·Note => "note",
+            AdmonitionVariant·Tip => "tip",
+            AdmonitionVariant·Warning => "warning",
+            AdmonitionVariant·Danger => "danger",
+            AdmonitionVariant·Info => "info",
+            AdmonitionVariant·Success => "success"
         }
     }
 }
 
 /// API reference item display
-pub fn ApiItem(props: ApiItemProps) -> VNode! {
+☉ rite ApiItem(props: ApiItemProps) -> VNode! {
     div()
         ·class(&format!("api-item api-item--{}", props.kind·to_string()))
         ·id(&props.anchor)
@@ -449,7 +449,7 @@ pub fn ApiItem(props: ApiItemProps) -> VNode! {
 
             // Returns
             when(props.returns·is_some(), || {
-                let (ret_type, ret_desc) = props.returns·clone()·unwrap()
+                ≔ (ret_type, ret_desc) = props.returns·clone()·unwrap()
                 div()
                     ·class("api-item-returns")
                     ·children(vec![
@@ -483,19 +483,19 @@ pub fn ApiItem(props: ApiItemProps) -> VNode! {
         ·build()
 }
 
-pub struct ApiItemProps {
-    pub name: String!
-    pub kind: ApiItemKind!
-    pub anchor: String!
-    pub signature: Option<String>? = None
-    pub parameters: Vec<(String, String, String)>! = Vec::new()
-    pub returns: Option<(String, String)>? = None
-    pub example: Option<String>? = None
-    pub children: Vec<VNode>!
+☉ Σ ApiItemProps {
+    ☉ name: String!
+    ☉ kind: ApiItemKind!
+    ☉ anchor: String!
+    ☉ signature: Option<String>? = None
+    ☉ parameters: Vec<(String, String, String)>! = Vec·new()
+    ☉ returns: Option<(String, String)>? = None
+    ☉ example: Option<String>? = None
+    ☉ children: Vec<VNode>!
 }
 
 #[derive(Clone, Copy)]
-pub enum ApiItemKind {
+☉ ᛈ ApiItemKind {
     Function,
     Struct,
     Enum,
@@ -506,17 +506,17 @@ pub enum ApiItemKind {
     Macro
 }
 
-impl ApiItemKind {
-    fn to_string(&self) -> &'static str! {
-        match self {
-            ApiItemKind::Function => "function",
-            ApiItemKind::Struct => "struct",
-            ApiItemKind::Enum => "enum",
-            ApiItemKind::Trait => "trait",
-            ApiItemKind::Constant => "constant",
-            ApiItemKind::Type => "type",
-            ApiItemKind::Module => "module",
-            ApiItemKind::Macro => "macro"
+⊢ ApiItemKind {
+    rite to_string(&self) -> &'static str! {
+        ⌥ self {
+            ApiItemKind·Function => "function",
+            ApiItemKind·Struct => "struct",
+            ApiItemKind·Enum => "enum",
+            ApiItemKind·Trait => "trait",
+            ApiItemKind·Constant => "constant",
+            ApiItemKind·Type => "type",
+            ApiItemKind·Module => "module",
+            ApiItemKind·Macro => "macro"
         }
     }
 }

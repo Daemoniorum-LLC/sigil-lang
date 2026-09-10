@@ -1,0 +1,98 @@
+// HashMap and HashSet — the host-side collections (S57).
+
+☉ rite t_map_len() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("a", 1);
+    m·insert("b", 2);
+    ⤺ m·len();
+}
+☉ rite t_map_get() -> Any! {
+    ≔ Δ m = HashMap·new();
+    m·insert("k", 42);
+    ⤺ m·get("k");
+}
+☉ rite t_map_overwrite() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("k", 1);
+    m·insert("k", 2);
+    ⤺ m·len();
+}
+☉ rite t_map_has_true() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("k", 1);
+    ⤺ ⎇ m·contains_key("k") { 1 } ⎉ { 0 };
+}
+☉ rite t_map_has_false() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("k", 1);
+    ⤺ ⎇ m·contains_key("nope") { 1 } ⎉ { 0 };
+}
+☉ rite t_map_remove_len() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("a", 1);
+    m·insert("b", 2);
+    m·remove("a");
+    ⤺ m·len();
+}
+☉ rite t_map_empty_len() -> i64! {
+    ≔ m = HashMap·new();
+    ⤺ m·len();
+}
+☉ rite t_set_len() -> i64! {
+    ≔ Δ s = HashSet·new();
+    s·insert("a");
+    s·insert("b");
+    ⤺ s·len();
+}
+☉ rite t_set_dedup() -> i64! {
+    ≔ Δ s = HashSet·new();
+    s·insert("a");
+    s·insert("a");
+    ⤺ s·len();
+}
+☉ rite t_set_has_true() -> i64! {
+    ≔ Δ s = HashSet·new();
+    s·insert("a");
+    ⤺ ⎇ s·contains_key("a") { 1 } ⎉ { 0 };
+}
+☉ rite t_set_has_false() -> i64! {
+    ≔ Δ s = HashSet·new();
+    s·insert("a");
+    ⤺ ⎇ s·contains_key("z") { 1 } ⎉ { 0 };
+}
+☉ rite t_set_remove_len() -> i64! {
+    ≔ Δ s = HashSet·new();
+    s·insert("a");
+    s·insert("b");
+    s·remove("a");
+    ⤺ s·len();
+}
+☉ rite t_map_keys_len() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("a", 1);
+    m·insert("b", 2);
+    ⤺ m·keys()·len();
+}
+☉ rite t_map_values_len() -> i64! {
+    ≔ Δ m = HashMap·new();
+    m·insert("a", 1);
+    m·insert("b", 2);
+    ⤺ m·values()·len();
+}
+
+☉ rite main() {
+    println((t_map_len())·to_string());
+    println((t_map_get())·to_string());
+    println((t_map_overwrite())·to_string());
+    println((t_map_has_true())·to_string());
+    println((t_map_has_false())·to_string());
+    println((t_map_remove_len())·to_string());
+    println((t_map_empty_len())·to_string());
+    println((t_set_len())·to_string());
+    println((t_set_dedup())·to_string());
+    println((t_set_has_true())·to_string());
+    println((t_set_has_false())·to_string());
+    println((t_set_remove_len())·to_string());
+    println((t_map_keys_len())·to_string());
+    println((t_map_values_len())·to_string());
+}

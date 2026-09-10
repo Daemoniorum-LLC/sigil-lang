@@ -518,15 +518,28 @@ pub struct TypeChecker {
     errors: Vec<TypeError>,
     /// Span of the current top-level item being checked (for error fallback)
     current_item_span: Span,
+    /// Report unresolved bare identifiers as errors.
+    ///
+    /// Off by default. Name resolution here is single-file — there is no import
+    /// analysis — so a cross-file reference is indistinguishable from a typo, and
+    /// erroring by default would reject working code. See `--strict`.
+    strict: bool,
 }
 
 impl TypeChecker {
+    /// Turn on strict name resolution: report bare identifiers that resolve to
+    /// nothing. Opt-in, because resolution here is single-file.
+    pub fn set_strict(&mut self, strict: bool) {
+        self.strict = strict;
+    }
+
     pub fn new() -> Self {
         let mut checker = Self {
             env: Rc::new(RefCell::new(TypeEnv::new())),
             types: HashMap::new(),
             functions: HashMap::new(),
             stdlib_functions: std::collections::HashSet::new(),
+            strict: false,
             impl_methods: HashMap::new(),
             current_self_type: None,
             current_generics: HashMap::new(),
@@ -580,6 +593,107 @@ impl TypeChecker {
         self.functions.insert(
             "len".to_string(),
             func(vec![any.clone()], Type::Int(IntSize::USize)),
+        );
+
+        // ===================
+        // JSON
+        // ===================
+        // Registered on the interpreter as `json_*` and on the WASM backend as
+        // the `json` host import group, but never here — so `--strict` reported
+        // "cannot find `json_stringify` in this scope" for Sigil's own JSON.
+        self.functions.insert(
+            "json_parse".to_string(),
+            func(vec![Type::Str], any.clone()),
+        );
+        self.functions.insert(
+            "json_stringify".to_string(),
+            func(vec![any.clone()], Type::Str),
+        );
+        self.functions
+            .insert("json_pretty".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions.insert(
+            "json_get".to_string(),
+            func(vec![any.clone(), Type::Str], any.clone()),
+        );
+        self.functions.insert(
+            "json_set".to_string(),
+            func(vec![any.clone(), Type::Str, any.clone()], any.clone()),
+        );
+
+        self.functions.insert(
+            "to_bool".to_string(),
+            func(vec![any.clone()], Type::Bool),
+        );
+
+        // JS statics the React migrator lowers to host calls. Registered here
+        // for the same reason the JSON ones are: `--strict` resolves names.
+        self.functions.insert(
+            "object_values".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Array { element: Box::new(any.clone()), size: None },
+            ),
+        );
+        self.functions.insert(
+            "object_keys".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Array { element: Box::new(Type::Str), size: None },
+            ),
+        );
+        self.functions.insert(
+            "object_entries".to_string(),
+            func(
+                vec![any.clone()],
+                Type::Array { element: Box::new(any.clone()), size: None },
+            ),
+        );
+        self.functions
+            .insert("is_finite".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            .insert("is_nan".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            .insert("is_integer".to_string(), func(vec![any.clone()], Type::Bool));
+        self.functions
+            // Any, not Str: the runtime accepts a timestamp string or a number
+            // that is already millis, and the migrator cannot always tell which
+            // — `new Date(updatedAt)` where `updatedAt: number | null`.
+            .insert("timing_parse".to_string(), func(vec![any.clone()], Type::Int(IntSize::I64)));
+        self.functions
+            .insert("timing_now".to_string(), func(vec![], Type::Int(IntSize::I64)));
+        // The migrator lowers `Math.random()` to this; the WASM backend has had
+        // the import all along and the checker had never heard of it.
+        self.functions
+            .insert("math_random".to_string(), func(vec![], Type::Float(FloatSize::F64)));
+        let f64t = Type::Float(FloatSize::F64);
+        for name in ["math_round", "math_floor", "math_ceil", "math_abs", "math_sqrt"] {
+            self.functions
+                .insert(name.to_string(), func(vec![f64t.clone()], f64t.clone()));
+        }
+        for name in ["math_min", "math_max", "math_pow"] {
+            self.functions.insert(
+                name.to_string(),
+                func(vec![f64t.clone(), f64t.clone()], f64t.clone()),
+            );
+        }
+        // `typeof x` — the host knows what a value is; the program does not.
+        self.functions
+            .insert("type_of".to_string(), func(vec![any.clone()], Type::Str));
+        self.functions
+            .insert("is_array".to_string(), func(vec![any.clone()], Type::Bool));
+        // `Number(x)` / `parseFloat(x)` — the string imports have carried these
+        // since the start; nothing named them.
+        self.functions.insert(
+            "parse_float".to_string(),
+            func(vec![any.clone()], Type::Float(FloatSize::F64)),
+        );
+        self.functions.insert(
+            "parse_int".to_string(),
+            func(vec![any.clone()], Type::Int(IntSize::I64)),
+        );
+        self.functions.insert(
+            "to_fixed".to_string(),
+            func(vec![any.clone(), Type::Int(IntSize::I64)], Type::Str),
         );
 
         // ===================
@@ -1080,11 +1194,40 @@ impl TypeChecker {
 
     /// Check if actual evidence can satisfy expected evidence requirement.
     /// Returns Ok(()) if compatible, Err with helpful message if not.
+    /// Best-effort source span for an expression, used to anchor diagnostics.
+    ///
+    /// `Expr` carries no uniform span, so this walks to the nearest identifier.
+    /// Returning `None` is safe: the caller then falls back to the enclosing
+    /// item's span, which is the previous behaviour.
+    fn expr_span(expr: &Expr) -> Option<Span> {
+        match expr {
+            Expr::Path(p) => p.segments.first().map(|s| s.ident.span),
+            Expr::Field { field, .. } => Some(field.span),
+            Expr::MethodCall { method, .. } => Some(method.span),
+            Expr::Struct { path, .. } => path.segments.first().map(|s| s.ident.span),
+            Expr::Call { func, .. } => Self::expr_span(func),
+            Expr::Unary { expr, .. } => Self::expr_span(expr),
+            Expr::Index { expr, .. } => Self::expr_span(expr),
+            Expr::Binary { left, .. } => Self::expr_span(left),
+            // Wrappers: recurse to the expression that actually names something.
+            // Evidential is the common one for this diagnostic — an argument
+            // written `x?` or `x~` arrives wrapped here.
+            Expr::Evidential { expr, .. } => Self::expr_span(expr),
+            Expr::Try(expr) => Self::expr_span(expr),
+            Expr::Await { expr, .. } => Self::expr_span(expr),
+            Expr::Morpheme { body, .. } => Self::expr_span(body),
+            Expr::Pipe { expr, .. } => Self::expr_span(expr),
+            Expr::Macro { path, .. } => path.segments.first().map(|s| s.ident.span),
+            _ => None,
+        }
+    }
+
     fn check_evidence(
         &mut self,
         expected: EvidenceLevel,
         actual: EvidenceLevel,
         context: &str,
+        span: Option<Span>,
     ) -> bool {
         if actual.satisfies(expected) {
             true
@@ -1097,6 +1240,11 @@ impl TypeChecker {
                 actual.name(),
                 actual.symbol(),
             ));
+            // Without this the error falls back to the enclosing item's span, which
+            // for a method inside a large impl block points at the whole block.
+            if let Some(sp) = span {
+                err = err.with_span(sp);
+            }
 
             // Add helpful notes based on the specific mismatch
             match (expected, actual) {
@@ -1152,6 +1300,18 @@ impl TypeChecker {
         // Second pass: collect function signatures
         for item in &file.items {
             self.collect_fn_sig(&item.node);
+        }
+
+        // Module-scope bindings, before any body is checked.
+        //
+        // `≔ prefix = "…";` at the top of a file compiles — the WASM backend
+        // evaluates it at compile time — but nothing ever entered it into the
+        // type environment, so every function that read one reported "cannot
+        // find `prefix` in this scope" under `--strict`. Declaration order does
+        // not matter at module scope, so this is its own pass rather than part
+        // of the third.
+        for item in &file.items {
+            self.collect_module_binding(&item.node);
         }
 
         // Third pass: check function bodies
@@ -1370,6 +1530,34 @@ impl TypeChecker {
                 self.current_self_type = None;
                 self.current_generics.clear();
             }
+            Item::ExternBlock(block) => {
+                // Foreign declarations were never collected, so every FFI symbol —
+                // time_ns, __intrinsic_malloc, the whole vdom_* and sigil_tls_*
+                // surface — was unknown to the checker. Their signatures are
+                // declared right there; there is no reason not to use them.
+                for extern_item in &block.items {
+                    if let crate::ast::ExternItem::Function(f) = extern_item {
+                        let params: Vec<Type> = f
+                            .params
+                            .iter()
+                            .map(|p| self.convert_type(&p.ty))
+                            .collect();
+                        let return_type = f
+                            .return_type
+                            .as_ref()
+                            .map(|t| self.convert_type(t))
+                            .unwrap_or(Type::Unit);
+                        self.functions.insert(
+                            f.name.name.clone(),
+                            Type::Function {
+                                params,
+                                return_type: Box::new(return_type),
+                                is_async: false,
+                            },
+                        );
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1385,6 +1573,36 @@ impl TypeChecker {
                     .join("::")
             }
             _ => "Unknown".to_string(),
+        }
+    }
+
+    /// Enter a module-scope `const`/`static` into the type environment.
+    fn collect_module_binding(&mut self, item: &Item) {
+        match item {
+            Item::Const(c) => {
+                let ty = c
+                    .ty
+                    .as_ref()
+                    .map(|t| self.convert_type(t))
+                    .unwrap_or_else(|| self.infer_expr(&c.value));
+                self.env
+                    .borrow_mut()
+                    .define(c.name.name.clone(), ty, EvidenceLevel::Known);
+            }
+            Item::Static(st) => {
+                let ty = self.convert_type(&st.ty);
+                self.env
+                    .borrow_mut()
+                    .define(st.name.name.clone(), ty, EvidenceLevel::Known);
+            }
+            Item::Module(m) => {
+                if let Some(items) = &m.items {
+                    for it in items {
+                        self.collect_module_binding(&it.node);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1539,6 +1757,7 @@ impl TypeChecker {
                         expected_evidence,
                         actual_evidence,
                         &format!("in return type of '{}'", func.name.name),
+                        None,
                     );
                 }
                 // If name has evidentiality, skip the check - function transforms evidence
@@ -1870,9 +2089,40 @@ impl TypeChecker {
                         }
                     }
                 }
-                // For bootstrapping: treat undefined paths as unknown types
-                // This allows cross-file references to not cause errors
-                // A real type checker would require imports or multi-file analysis
+                // For bootstrapping: treat undefined paths as unknown types.
+                // There is no import analysis here, so a name defined in another
+                // file is indistinguishable from a typo.
+                //
+                // The cost is that `sigil check` reports nothing for
+                // `println(totally_undefined_thing)`, which then dies at run time.
+                // --strict trades those false negatives for false positives on
+                // cross-file references, which is why it is opt-in.
+                if self.strict && path.segments.len() == 1 {
+                    let name = path.segments[0].ident.name.clone();
+                    // A bare variant constructor — `Ok`, `Some`, `None`, `Err`,
+                    // or any variant of a user enum — is a name too. Only the
+                    // qualified `Enum·Variant` form goes through the two-segment
+                    // path above.
+                    let is_variant = matches!(name.as_str(), "Ok" | "Err" | "Some" | "None")
+                        || self.types.values().any(|def| {
+                            matches!(def, TypeDef::Enum { variants, .. }
+                                if variants.iter().any(|(v, _)| *v == name))
+                        });
+                    let known = is_variant
+                        || self.functions.contains_key(&name)
+                        || self.stdlib_functions.contains(&name)
+                        || self.types.contains_key(&name)
+                        || self.impl_methods.contains_key(&name)
+                        || self.current_generics.contains_key(&name)
+                        || self.env.borrow().lookup(&name).is_some();
+                    if !known {
+                        let span = path.segments[0].ident.span;
+                        self.error(
+                            TypeError::new(format!("cannot find `{}` in this scope", name))
+                                .with_span(span),
+                        );
+                    }
+                }
                 self.fresh_var()
             }
 
@@ -1942,7 +2192,12 @@ impl TypeChecker {
                     }
 
                     // Check argument types and evidence levels
-                    for (i, (param, arg)) in params.iter().zip(arg_types.iter()).enumerate() {
+                    for (i, ((param, arg), arg_expr)) in params
+                        .iter()
+                        .zip(arg_types.iter())
+                        .zip(args.iter())
+                        .enumerate()
+                    {
                         // Check argument type matches parameter type
                         if !self.unify(param, arg) {
                             // Allow implicit numeric coercion: int → float
@@ -1955,10 +2210,14 @@ impl TypeChecker {
                             if !matches!(param, Type::Var(_)) && !matches!(arg, Type::Var(_))
                                 && !is_numeric_coercion && !is_reference_coercion
                                 && !is_ref_value_coercion {
-                                self.error(TypeError::new(format!(
+                                let mut e = TypeError::new(format!(
                                     "type mismatch in argument {}: expected {}, found {}",
                                     i + 1, param, arg
-                                )));
+                                ));
+                                if let Some(sp) = Self::expr_span(arg_expr) {
+                                    e = e.with_span(sp);
+                                }
+                                self.error(e);
                             }
                         }
 
@@ -1973,6 +2232,7 @@ impl TypeChecker {
                                 expected_evidence,
                                 actual_evidence,
                                 &format!("in argument {}", i + 1),
+                                Self::expr_span(arg_expr),
                             );
                         }
                     }
@@ -2040,8 +2300,13 @@ impl TypeChecker {
                 } else if let Expr::Let { pattern, value } = condition.as_ref() {
                     // Type-check the value being matched
                     let value_ty = self.infer_expr(value);
+                    // `⎇ ≔ ?x = e` is a Some/Ok test, so the binding receives the
+                    // PAYLOAD, not the Option/Result itself. Without this narrowing
+                    // `?x` is just an evidentiality-marked identifier and binds the
+                    // whole Option<T>, which then fails against any use of T.
+                    let bind_ty = self.iflet_binding_type(pattern, &value_ty);
                     // Bind pattern variables to the environment for the then_branch
-                    self.bind_pattern(pattern, &value_ty, EvidenceLevel::Known);
+                    self.bind_pattern(pattern, &bind_ty, EvidenceLevel::Known);
                 }
 
                 let then_ty = self.check_block(then_branch);
@@ -2108,14 +2373,31 @@ impl TypeChecker {
             }
 
             Expr::For {
-                pattern: _,
+                pattern,
                 iter,
                 body,
                 ..
             } => {
-                // Infer the iterable type (for basic type checking)
-                let _ = self.infer_expr(iter);
+                // Bind the loop variable. The pattern used to be discarded, so
+                // `∀ i ∈ xs { … i … }` left `i` unbound: its type fell through to a
+                // fresh variable, and under --strict it read as an undefined name.
+                // That accounted for the single largest group of false positives.
+                let iter_ty = self.infer_expr(iter);
+                let (iter_inner, iter_ev) = self.strip_evidence(&iter_ty);
+                let elem_ty = match self.apply_substitutions(&iter_inner) {
+                    Type::Array { element, .. } | Type::Slice(element) => *element,
+                    Type::Named { ref name, ref generics }
+                        if !generics.is_empty()
+                            && matches!(name.as_str(), "Vec" | "VecDeque" | "HashSet" | "BTreeSet") =>
+                    {
+                        generics[0].clone()
+                    }
+                    _ => self.fresh_var(),
+                };
+                self.push_scope();
+                self.bind_pattern(pattern, &elem_ty, iter_ev);
                 self.check_block(body);
+                self.pop_scope();
                 Type::Unit
             }
 
@@ -2483,12 +2765,47 @@ impl TypeChecker {
                     "keys" | "values" | "values_mut" | "into_keys"
                     | "into_values" | "entry" | "drain" => self.fresh_var(),
 
-                    // Methods returning Option<T>
+                    // Methods returning Option<Element>, where Element comes from the
+                    // receiver. Previously every one of these returned Option<fresh var>,
+                    // so `map.get(k)` on a fully-annotated Map<String, u32> yielded
+                    // Option<?N> and an if-let binding of it never resolved to u32.
                     "first" | "last" | "get" | "get_mut" | "pop" | "pop_front"
-                    | "pop_back" | "find" | "find_map" | "position" | "rposition"
-                    | "next" | "next_back" | "peek" | "nth" | "last_mut"
-                    | "binary_search" | "parent" | "file_name" | "file_stem"
-                    | "extension" => Type::Named {
+                    | "pop_back" | "find" | "next" | "next_back" | "peek" | "nth"
+                    | "last_mut" => {
+                        let effective_recv = if let Type::Named { .. } = &recv_inner {
+                            &recv_inner
+                        } else {
+                            &recv_derefed
+                        };
+                        let elem = match effective_recv {
+                            Type::Named { name, generics } if !generics.is_empty() => {
+                                // A map's `get` yields its VALUE type; a sequence's
+                                // yields its element type.
+                                let is_map = matches!(
+                                    name.as_str(),
+                                    "Map" | "HashMap" | "BTreeMap" | "IndexMap"
+                                );
+                                if is_map && generics.len() >= 2 {
+                                    generics[1].clone()
+                                } else {
+                                    generics[0].clone()
+                                }
+                            }
+                            // Unparameterised receivers (iterators, Path, ...) keep the
+                            // previous behaviour.
+                            _ => self.fresh_var(),
+                        };
+                        Type::Named {
+                            name: "Option".to_string(),
+                            generics: vec![elem],
+                        }
+                    }
+
+                    // Option-returning methods whose payload is NOT the receiver's
+                    // element type: positions are usize, find_map is the closure's
+                    // output, and the Path methods are unrelated to any generic.
+                    "find_map" | "position" | "rposition" | "binary_search"
+                    | "parent" | "file_name" | "file_stem" | "extension" => Type::Named {
                         name: "Option".to_string(),
                         generics: vec![self.fresh_var()],
                     },
@@ -2616,8 +2933,20 @@ impl TypeChecker {
                     }
                 };
 
-                // Propagate evidence from receiver
-                if recv_ev > EvidenceLevel::Known {
+                // Propagate evidence from receiver — except where the method's whole
+                // purpose is to discharge the uncertainty.
+                //
+                // `unwrap`, `expect` and the `unwrap_or*` family exist precisely to turn
+                // a maybe-value into a definite one: after `opt·unwrap_or(0)` the result
+                // is 0 or the contained value, and there is nothing uncertain left to
+                // report. Propagating the receiver's evidence through them made
+                // `-> usize!` unsatisfiable from any Option, which is what blocked
+                // qliphoth-sys/storage and qliphoth-router/params.
+                let discharges_evidence = matches!(
+                    method.name.as_str(),
+                    "unwrap" | "expect" | "unwrap_or" | "unwrap_or_else" | "unwrap_or_default"
+                );
+                if recv_ev > EvidenceLevel::Known && !discharges_evidence {
                     Type::Evidential {
                         inner: Box::new(result_ty),
                         evidence: recv_ev,
@@ -3523,6 +3852,34 @@ impl TypeChecker {
 
     /// Bind pattern variables with the given type and evidence level.
     /// This propagates evidence through pattern matching.
+    /// Type an `⎇ ≔ <pattern> = <value>` binding.
+    ///
+    /// A `?x` pattern is a Some/Ok test rather than an evidence annotation, so the
+    /// bound name takes the payload of an Option/Result. Any other pattern, or a
+    /// scrutinee that is not an Option/Result, is left untouched.
+    fn iflet_binding_type(&self, pattern: &Pattern, value_ty: &Type) -> Type {
+        let is_some_test = matches!(
+            pattern,
+            Pattern::Ident {
+                evidentiality: Some(Evidentiality::Uncertain),
+                ..
+            }
+        );
+        if !is_some_test {
+            return value_ty.clone();
+        }
+        let resolved = self.apply_substitutions(value_ty);
+        let (stripped, _) = self.strip_evidence(&resolved);
+        match &stripped {
+            Type::Named { name, generics }
+                if (name == "Option" || name == "Result") && !generics.is_empty() =>
+            {
+                generics[0].clone()
+            }
+            _ => value_ty.clone(),
+        }
+    }
+
     fn bind_pattern(&mut self, pattern: &Pattern, ty: &Type, evidence: EvidenceLevel) {
         let (inner_ty, ty_ev) = self.strip_evidence(ty);
         // Use the more restrictive evidence level
@@ -3625,12 +3982,107 @@ impl TypeChecker {
     }
 
     /// Attempt to unify two types
+    /// Whether one side names a C integer alias and the other is an integer.
+    fn is_c_int_alias_pair(&self, a: &Type, b: &Type) -> bool {
+        const C_INT_ALIASES: &[&str] = &[
+            "c_char", "c_schar", "c_uchar", "c_short", "c_ushort", "c_int", "c_uint",
+            "c_long", "c_ulong", "c_longlong", "c_ulonglong", "size_t", "ssize_t",
+            "c_size_t", "c_ssize_t", "intptr_t", "uintptr_t", "off_t", "pid_t",
+            "mode_t", "time_t", "socklen_t", "c_bool",
+        ];
+        let is_alias = |t: &Type| {
+            let (t, _) = self.strip_evidence(t);
+            matches!(&t, Type::Named { name, generics }
+                if generics.is_empty() && C_INT_ALIASES.contains(&name.as_str()))
+        };
+        let is_int = |t: &Type| {
+            let (t, _) = self.strip_evidence(t);
+            matches!(t, Type::Int(_))
+        };
+        (is_alias(a) && is_int(b)) || (is_int(a) && is_alias(b))
+    }
+
+    /// Whether one side is a C string pointer and the other a string.
+    fn is_cstr_ptr_pair(&self, a: &Type, b: &Type) -> bool {
+        let is_char_ptr = |t: &Type| match t {
+            Type::Ptr { inner, .. } => {
+                let (i, _) = self.strip_evidence(inner);
+                matches!(i, Type::Int(IntSize::U8) | Type::Int(IntSize::I8) | Type::Str)
+            }
+            _ => false,
+        };
+        let is_stringy = |t: &Type| {
+            let (t, _) = self.strip_evidence(t);
+            match &t {
+                Type::Str => true,
+                Type::Named { name, .. } => name == "String",
+                Type::Ref { inner, .. } => {
+                    let (i, _) = self.strip_evidence(inner);
+                    matches!(i, Type::Str) || matches!(&i, Type::Named { name, .. } if name == "String")
+                }
+                _ => false,
+            }
+        };
+        let (a_s, _) = self.strip_evidence(a);
+        let (b_s, _) = self.strip_evidence(b);
+        (is_char_ptr(&a_s) && is_stringy(&b_s)) || (is_stringy(&a_s) && is_char_ptr(&b_s))
+    }
+
+    /// The universal top type the migrator and hand-written Sigil both spell
+    /// `Any`. Deliberately name-based: there is no `Type::Any` variant, and
+    /// adding one would mean touching every match over `Type` in the checker.
+    fn is_any(t: &Type) -> bool {
+        matches!(t, Type::Named { name, generics } if name == "Any" && generics.is_empty())
+    }
+
     fn unify(&mut self, a: &Type, b: &Type) -> bool {
         // Resolve type aliases first
         let a = self.resolve_alias(a);
         let b = self.resolve_alias(b);
 
         match (&a, &b) {
+            // `Any` is the escape hatch, and it did not escape anything.
+            //
+            // It is not a built-in — it is an ordinary `Named` type with no
+            // definition, so it unified with primitives and with other
+            // undefined names by accident and failed against every type the
+            // program actually declares: `rite label(key: Any)` called with an
+            // `AnimaDimension` was "expected Any, found AnimaDimension". The
+            // React migrator writes `Any` wherever TypeScript's type does not
+            // survive translation, which is most signatures it emits, so this
+            // was a wall in front of the generated client. A top type accepts
+            // anything, in either position.
+            _ if Self::is_any(&a) || Self::is_any(&b) => true,
+
+            // A string where a C pointer is declared. `extern "C" { rite write(…,
+            // buf: *const u8, …) }` called as `write(1, "Hello", 5)` is the ordinary
+            // way to reach a `const char*` parameter, and the FFI layer does exactly
+            // that coercion at run time. Registering extern signatures made the
+            // checker see these calls for the first time, so this has to be allowed
+            // or every FFI string argument becomes an error.
+            //
+            // Evidence has to be stripped on both sides: the declaration is written
+            // `*const !u8`, so the pointee is Evidential(U8), not U8.
+            _ if self.is_cstr_ptr_pair(&a, &b) => true,
+
+            // C integer aliases are integers. `extern "C" { rite abs(x: c_int) → c_int; }`
+            // called as `abs(-42)` is the whole point of an FFI declaration, and until
+            // extern signatures were collected nothing checked these calls at all — so
+            // collecting them turned every one into a type error. c_int and friends are
+            // spelled as opaque named types with no definition; they are i32/i64/usize
+            // wearing C's names.
+            _ if self.is_c_int_alias_pair(&a, &b) => true,
+
+            // An extern function-pointer typedef against a function value. `type
+            // GCallback = rite(*void)` names a C callback type that has no Sigil
+            // definition; a `fn` is exactly what a caller passes for one.
+            (Type::Named { name, generics }, Type::Function { .. })
+            | (Type::Function { .. }, Type::Named { name, generics })
+                if generics.is_empty() && !self.types.contains_key(name) =>
+            {
+                true
+            }
+
             // Type variables - check these FIRST before other patterns
             (Type::Var(v), t) => {
                 if let Some(resolved) = self.substitutions.get(v) {
@@ -3886,6 +4338,15 @@ impl TypeChecker {
 
             // Cycles
             (Type::Cycle { modulus: a }, Type::Cycle { modulus: b }) => a == b,
+
+            // Lifetimes. There is no borrow checker here and no lifetime inference, so a
+            // lifetime bound carries nothing this pass can check — but it still has to
+            // unify, because it travels inside `impl Trait` bounds. With no arm at all
+            // it fell through to the catch-all and `'static` failed to unify with
+            // itself, which reported `impl Fn<(), I64> + 'static!` as mismatched against
+            // a character-for-character identical type. `impl Fn() -> T` alone was fine;
+            // adding `+ 'static` broke it.
+            (Type::Lifetime(_), Type::Lifetime(_)) => true,
 
             // ImplTrait: impl Trait bounds
             // Two impl Trait types unify if their bounds match
@@ -4251,6 +4712,12 @@ impl PatternExt for Pattern {
     fn binding_name(&self) -> Option<String> {
         match self {
             Pattern::Ident { name, .. } => Some(name.name.clone()),
+            // See through a reference pattern. `rite g(&self)` — by far the most
+            // common receiver form — wraps the binding in Pattern::Ref, so it bound
+            // nothing at all and `self` was undefined for the whole method body.
+            // Bare `self` and `&Δ self` take different shapes and did bind, which
+            // is why this survived: the one spelling that failed was the usual one.
+            Pattern::Ref { pattern, .. } => pattern.binding_name(),
             _ => None,
         }
     }
@@ -4258,6 +4725,7 @@ impl PatternExt for Pattern {
     fn binding_span(&self) -> Option<Span> {
         match self {
             Pattern::Ident { name, .. } => Some(name.span),
+            Pattern::Ref { pattern, .. } => pattern.binding_span(),
             _ => None,
         }
     }

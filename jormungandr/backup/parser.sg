@@ -7,10 +7,10 @@
 //! Original: 4,462 lines of Rust
 //! Status: Complete
 
-invoke crate·ast·*;
-invoke crate·lexer·Lexer;
-invoke crate·span·{Span, Spanned};
-invoke crate·token·Token;
+invoke tome·ast·*;
+invoke tome·lexer·Lexer;
+invoke tome·span·{Span, Spanned};
+invoke tome·token·Token;
 
 // ============================================
 // Parse Error Types
@@ -35,7 +35,7 @@ invoke crate·token·Token;
 
 ⊢ ParseError {
     /// Create an unexpected token error.
-    ☉ λ unexpected(expected: !&str, found: !Token, span: !Span) -> !Self {
+    ☉ rite unexpected(expected: !&str, found: !Token, span: !Span) -> !Self {
         ParseError·UnexpectedToken {
             expected: expected.to_string(),
             found,
@@ -44,12 +44,12 @@ invoke crate·token·Token;
     }
 
     /// Create a custom error.
-    ☉ λ custom(msg: !&str) -> !Self {
+    ☉ rite custom(msg: !&str) -> !Self {
         ParseError·Custom(msg.to_string())
     }
 
     /// Get the error message as a string.
-    ☉ λ message(self) -> !String {
+    ☉ rite message(self) -> !String {
         ⌥ self {
             ParseError·UnexpectedToken { expected, found, .. } => {
                 format!("unexpected token: expected {}, found {:?}", expected, found)
@@ -67,7 +67,7 @@ invoke crate·token·Token;
     }
 
     /// Get the span of the error, ⎇ available.
-    ☉ λ span(self) -> ?Span {
+    ☉ rite span(self) -> ?Span {
         ⌥ self {
             ParseError·UnexpectedToken { span, .. } => ?span,
             _ => null,
@@ -96,7 +96,7 @@ invoke crate·token·Token;
 
 ⊢ Parser {
     /// Create a new parser ∀ the given source code.
-    ☉ λ new(source: !String) -> !Self {
+    ☉ rite new(source: !String) -> !Self {
         ≔ Δ lexer = Lexer·new(source);
         ≔ current = lexer.next_token();
         Self {
@@ -112,13 +112,13 @@ invoke crate·token·Token;
     // ========================================
 
     /// Check ⎇ we've reached end of file.
-    λ is_eof(self) -> !bool {
+    rite is_eof(self) -> !bool {
         self.current == null
     }
 
     /// Get the current token (⎇ any).
     /// CG-300: Return by value, not reference - returning &token creates dangling pointer
-    λ current_token(self) -> ?Token {
+    rite current_token(self) -> ?Token {
         ⌥ self.current {
             (token, _) => token,
             null => null,
@@ -126,7 +126,7 @@ invoke crate·token·Token;
     }
 
     /// Get the current span.
-    λ current_span(self) -> !Span {
+    rite current_span(self) -> !Span {
         ⌥ self.current {
             (_, span) => span,
             null => Span·empty_at(0),
@@ -134,12 +134,12 @@ invoke crate·token·Token;
     }
 
     /// Advance to the next token.
-    λ advance(Δ self) {
+    rite advance(Δ self) {
         self.current = self.lexer.next_token();
     }
 
     /// Check ⎇ current token matches expected.
-    λ check(self, expected: !&Token) -> !bool {
+    rite check(self, expected: !&Token) -> !bool {
         ⌥ self.current_token() {
             token => token == expected,
             null => false,
@@ -147,7 +147,7 @@ invoke crate·token·Token;
     }
 
     /// Peek at the next token without consuming current.
-    λ peek_next_token(self) -> ?Token {
+    rite peek_next_token(self) -> ?Token {
         ⌥ self.lexer.peek() {
             ?(token, _) => ?token.clone(),
             null => null,
@@ -155,7 +155,7 @@ invoke crate·token·Token;
     }
 
     /// Check ⎇ next token is a macro delimiter (paren, bracket, brace).
-    λ peek_is_macro_delimiter(self) -> !bool {
+    rite peek_is_macro_delimiter(self) -> !bool {
         ⌥ self.peek_next_token() {
             ?Token·LParen => true,
             ?Token·LBracket => true,
@@ -165,7 +165,7 @@ invoke crate·token·Token;
     }
 
     /// Check ⎇ the next token matches expected.
-    λ peek_is(self, expected: !&Token) -> !bool {
+    rite peek_is(self, expected: !&Token) -> !bool {
         ⌥ self.peek_next_token() {
             ?token => &token == expected,
             null => false,
@@ -173,12 +173,12 @@ invoke crate·token·Token;
     }
 
     /// Check ⎇ ∈ condition context (< is comparison, not generics).
-    λ is_in_condition(self) -> !bool {
+    rite is_in_condition(self) -> !bool {
         self.in_condition
     }
 
     /// Consume token ⎇ it matches, ⤺ whether consumed.
-    λ consume_if(Δ self, expected: !&Token) -> !bool {
+    rite consume_if(Δ self, expected: !&Token) -> !bool {
         ⎇ self.check(expected) {
             self.advance();
             true
@@ -188,7 +188,7 @@ invoke crate·token·Token;
     }
 
     /// Expect and consume a token, or ⤺ error.
-    λ expect(Δ self, expected: !Token) -> !ParseResult<()> {
+    rite expect(Δ self, expected: !Token) -> !ParseResult<()> {
         ⎇ self.check(&expected) {
             self.advance();
             Ok(())
@@ -206,7 +206,7 @@ invoke crate·token·Token;
 
     /// Expect a `>` token, handling the case where `>>` (Shr) needs to be split.
     /// This is necessary ∀ nested generics like `Vec<Option<T>>`.
-    λ expect_gt(Δ self) -> !ParseResult<Span> {
+    rite expect_gt(Δ self) -> !ParseResult<Span> {
         // First check ⎇ we have a pending > from a previous split
         // Use ⌥ instead of ⎇ != null to work around codegen issue
         ⌥ self.pending_gt {
@@ -239,7 +239,7 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse a complete source file.
-    ☉ λ parse_file(Δ self) -> !ParseResult<SourceFile> {
+    ☉ rite parse_file(Δ self) -> !ParseResult<SourceFile> {
         // Parse inner attributes (#![...])
         ≔ Δ attrs = Vec·new();
         ⟳ self.check(&Token·HashBang) {
@@ -266,7 +266,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an inner attribute: `#![name]` or `#![name(args)]`
-    λ parse_inner_attribute(Δ self) -> !ParseResult<Attribute> {
+    rite parse_inner_attribute(Δ self) -> !ParseResult<Attribute> {
         self.expect(Token·HashBang)?;
         self.expect(Token·LBracket)?;
 
@@ -283,7 +283,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an outer attribute: `#[name]` or `#[name(args)]` or `@[name]` or `@[A, B, C]`
-    λ parse_outer_attribute(Δ self) -> !ParseResult<Attribute> {
+    rite parse_outer_attribute(Δ self) -> !ParseResult<Attribute> {
         // Accept both # and @ as attribute prefix
         ≔ is_at_syntax = self.check(&Token·At);
         ⎇ self.check(&Token·Hash) {
@@ -328,7 +328,7 @@ invoke crate·token·Token;
     }
 
     /// Parse attribute arguments ⎇ present.
-    λ parse_attr_args(Δ self) -> !ParseResult<?AttrArgs> {
+    rite parse_attr_args(Δ self) -> !ParseResult<?AttrArgs> {
         ⎇ self.consume_if(&Token·LParen) {
             ≔ Δ args = Vec·new();
             ⟳ !self.check(&Token·RParen) {
@@ -348,7 +348,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a single attribute argument.
-    λ parse_attr_arg(Δ self) -> !ParseResult<AttrArg> {
+    rite parse_attr_arg(Δ self) -> !ParseResult<AttrArg> {
         ⌥ self.current_token().cloned() {
             Token·StringLit(s) => {
                 self.advance();
@@ -371,7 +371,7 @@ invoke crate·token·Token;
     }
 
     /// Continue parsing after identifier ∈ attribute argument.
-    λ parse_attr_arg_after_ident(Δ self, ident: !Ident) -> !ParseResult<AttrArg> {
+    rite parse_attr_arg_after_ident(Δ self, ident: !Ident) -> !ParseResult<AttrArg> {
         ⎇ self.consume_if(&Token·Eq) {
             ≔ value = self.parse_expr()?;
             Ok(AttrArg·KeyValue {
@@ -391,7 +391,7 @@ invoke crate·token·Token;
     }
 
     /// Build crate configuration from parsed attributes.
-    λ build_crate_config(self, attrs: !&[Attribute]) -> !CrateConfig {
+    rite build_crate_config(self, attrs: !&[Attribute]) -> !CrateConfig {
         ≔ Δ config = CrateConfig·default();
 
         ∀ attr ∈ attrs {
@@ -419,7 +419,7 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse a top-level item.
-    λ parse_item(Δ self) -> !ParseResult<Spanned<Item>> {
+    rite parse_item(Δ self) -> !ParseResult<Spanned<Item>> {
         ≔ start = self.current_span().start;
 
         // Parse outer attributes (both #[...] and @[...] syntax)
@@ -507,7 +507,7 @@ invoke crate·token·Token;
     }
 
     /// Parse visibility modifier.
-    λ parse_visibility(Δ self) -> !ParseResult<Visibility> {
+    rite parse_visibility(Δ self) -> !ParseResult<Visibility> {
         ⎇ self.consume_if(&Token·Pub) {
             Ok(Visibility·Public)
         } ⎉ ⎇ self.consume_if(&Token·Crate) {
@@ -520,7 +520,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a function definition.
-    λ parse_function(Δ self, visibility: !Visibility, attrs: ![Attribute], is_async: !bool) -> !ParseResult<Item> {
+    rite parse_function(Δ self, visibility: !Visibility, attrs: ![Attribute], is_async: !bool) -> !ParseResult<Item> {
         self.expect(Token·Fn)?;
 
         ≔ name = self.parse_ident()?;
@@ -530,7 +530,7 @@ invoke crate·token·Token;
             self.consume_if(&Token·Question) || self.consume_if(&Token·Lozenge);
 
         // Parse optional aspect: λ name·ing, λ name·ed, etc.
-        ≔ aspect = ⎇ self.check(&Token·AspectProgressive) {
+        ≔ aspect_ = ⎇ self.check(&Token·AspectProgressive) {
             self.advance();
             Aspect·Progressive
         } ⎉ ⎇ self.check(&Token·AspectPerfective) {
@@ -565,7 +565,7 @@ invoke crate·token·Token;
         ≔ where_clainvoke = self.parse_where_clause_opt()?;
 
         // Parse body (or optional semicolon ∀ declarations)
-        ≔ body = ⎇ self.check(&Token·LBrace) {
+        ≔ body_ = ⎇ self.check(&Token·LBrace) {
             self.parse_block()?
         } ⎉ {
             // Semicolon is optional ∀ trait/⊢ method declarations
@@ -581,17 +581,17 @@ invoke crate·token·Token;
             is_async,
             attrs: fn_attrs,
             name,
-            aspect,
+            aspect_,
             generics,
             params,
             return_type,
             where_clause,
-            body,
+            body_,
         }))
     }
 
     /// Build function attributes from outer attributes.
-    λ build_function_attrs(self, attrs: ![Attribute]) -> !FunctionAttrs {
+    rite build_function_attrs(self, attrs: ![Attribute]) -> !FunctionAttrs {
         ≔ Δ fn_attrs = FunctionAttrs·default();
         fn_attrs.outer_attrs = attrs.clone();
 
@@ -614,7 +614,7 @@ invoke crate·token·Token;
     }
 
     /// Parse function parameters.
-    λ parse_params(Δ self) -> !ParseResult<[Param]> {
+    rite parse_params(Δ self) -> !ParseResult<[Param]> {
         ≔ Δ params = Vec·new();
 
         ⟳ !self.check(&Token·RParen) {
@@ -640,7 +640,7 @@ invoke crate·token·Token;
 
     /// Parse self parameter.
     /// Handles: self, Δ self, &self, &Δ self
-    λ parse_self_param(Δ self) -> !ParseResult<Param> {
+    rite parse_self_param(Δ self) -> !ParseResult<Param> {
         ≔ span = self.current_span();
 
         // Check ∀ reference variants: &self, &Δ self
@@ -682,7 +682,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a Σ definition.
-    λ parse_struct(Δ self, visibility: !Visibility, attrs: ![Attribute]) -> !ParseResult<Item> {
+    rite parse_struct(Δ self, visibility: !Visibility, attrs: ![Attribute]) -> !ParseResult<Item> {
         self.expect(Token·Struct)?;
 
         ≔ name = self.parse_ident()?;
@@ -755,7 +755,7 @@ invoke crate·token·Token;
     }
 
     /// Build Σ attributes from outer attributes.
-    λ build_struct_attrs(self, attrs: ![Attribute]) -> !StructAttrs {
+    rite build_struct_attrs(self, attrs: ![Attribute]) -> !StructAttrs {
         ≔ Δ struct_attrs = StructAttrs·default();
         struct_attrs.outer_attrs = attrs.clone();
 
@@ -801,7 +801,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an ᛈ definition.
-    λ parse_enum(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_enum(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Enum)?;
 
         ≔ name = self.parse_ident()?;
@@ -873,7 +873,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a Θ definition.
-    λ parse_trait(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_trait(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Trait)?;
 
         ≔ name = self.parse_ident()?;
@@ -904,7 +904,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a Θ item.
-    λ parse_trait_item(Δ self) -> !ParseResult<TraitItem> {
+    rite parse_trait_item(Δ self) -> !ParseResult<TraitItem> {
         ⌥ self.current_token() {
             Token·Fn | Token·Async | Token·Unsafe => {
                 ≔ is_async = self.consume_if(&Token·Async);
@@ -938,7 +938,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an ⊢ block.
-    λ parse_impl(Δ self) -> !ParseResult<Item> {
+    rite parse_impl(Δ self) -> !ParseResult<Item> {
         self.expect(Token·Impl)?;
 
         ≔ generics = self.parse_generics_opt()?;
@@ -979,7 +979,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an ⊢ item.
-    λ parse_impl_item(Δ self) -> !ParseResult<ImplItem> {
+    rite parse_impl_item(Δ self) -> !ParseResult<ImplItem> {
         // Skip outer attributes
         ⟳ self.check(&Token·Hash) || self.check(&Token·At) {
             self.parse_outer_attribute()?;
@@ -1038,7 +1038,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a type alias.
-    λ parse_type_alias(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_type_alias(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Type)?;
         ≔ name = self.parse_ident()?;
         // Skip optional evidentiality marker on type alias name
@@ -1091,7 +1091,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a module.
-    λ parse_module(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_module(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Mod)?;
         ≔ name = self.parse_ident()?;
 
@@ -1117,7 +1117,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a invoke declaration.
-    λ parse_use(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_use(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Use)?;
         ≔ tree = self.parse_use_tree()?;
         // Semicolon is optional ∀ use/invoke statements (Rust-compatible)
@@ -1127,7 +1127,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a invoke tree.
-    λ parse_use_tree(Δ self) -> !ParseResult<UseTree> {
+    rite parse_use_tree(Δ self) -> !ParseResult<UseTree> {
         ≔ ident = self.parse_ident()?;
 
         // Consume optional evidentiality markers (Gradient!, MomentEstimate~)
@@ -1181,7 +1181,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a const definition.
-    λ parse_const(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_const(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Const)?;
         ≔ name = self.parse_ident()?;
         self.expect(Token·Colon)?;
@@ -1195,7 +1195,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a static definition.
-    λ parse_static(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_static(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Static)?;
         ≔ mutable = self.consume_if(&Token·Mut);
         ≔ name = self.parse_ident()?;
@@ -1210,7 +1210,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an actor definition.
-    λ parse_actor(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
+    rite parse_actor(Δ self, visibility: !Visibility) -> !ParseResult<Item> {
         self.expect(Token·Actor)?;
         ≔ name = self.parse_ident()?;
         ≔ generics = self.parse_generics_opt()?;
@@ -1257,7 +1257,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a message handler.
-    λ parse_message_handler(Δ self) -> !ParseResult<MessageHandler> {
+    rite parse_message_handler(Δ self) -> !ParseResult<MessageHandler> {
         self.expect(Token·On)?;
         ≔ message = self.parse_ident()?;
         self.expect(Token·LParen)?;
@@ -1270,13 +1270,13 @@ invoke crate·token·Token;
             null
         };
 
-        ≔ body = self.parse_block()?;
+        ≔ body_ = self.parse_block()?;
 
-        Ok(MessageHandler { message, params, return_type, body })
+        Ok(MessageHandler { message, params, return_type, body_ })
     }
 
     /// Parse an extern block.
-    λ parse_extern_block(Δ self) -> !ParseResult<Item> {
+    rite parse_extern_block(Δ self) -> !ParseResult<Item> {
         self.expect(Token·Extern)?;
 
         ≔ abi = ⌥ self.current_token() {
@@ -1334,7 +1334,7 @@ invoke crate·token·Token;
 
     /// Parse a macro_rules! definition.
     /// We parse past the macro body without interpreting it.
-    λ parse_macro_rules(Δ self, exported: bool) -> !ParseResult<Item> {
+    rite parse_macro_rules(Δ self, exported: bool) -> !ParseResult<Item> {
         // Consume "macro_rules"
         self.advance();
         // Expect !
@@ -1378,7 +1378,7 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse optional generic parameters.
-    λ parse_generics_opt(Δ self) -> !ParseResult<?Generics> {
+    rite parse_generics_opt(Δ self) -> !ParseResult<?Generics> {
         ⎇ !self.consume_if(&Token·Lt) {
             ⤺ Ok(null);
         }
@@ -1397,7 +1397,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a generic parameter.
-    λ parse_generic_param(Δ self) -> !ParseResult<GenericParam> {
+    rite parse_generic_param(Δ self) -> !ParseResult<GenericParam> {
         // Check ∀ lifetime ('a, 'static, etc.)
         ⌥ self.current_token() {
             Token·Lifetime(name) => {
@@ -1443,7 +1443,7 @@ invoke crate·token·Token;
     }
 
     /// Parse optional where clause.
-    λ parse_where_clause_opt(Δ self) -> !ParseResult<?WhereClause> {
+    rite parse_where_clause_opt(Δ self) -> !ParseResult<?WhereClause> {
         ⎇ !self.consume_if(&Token·Where) {
             ⤺ Ok(null);
         }
@@ -1482,7 +1482,7 @@ invoke crate·token·Token;
     }
 
     /// Skip a const constraint expression ∈ where clause
-    λ skip_const_constraint(Δ self) -> !ParseResult<()> {
+    rite skip_const_constraint(Δ self) -> !ParseResult<()> {
         ≔ Δ paren_depth = 0;
         loop {
             ⌥ self.current_token() {
@@ -1515,7 +1515,7 @@ invoke crate·token·Token;
     }
 
     /// Skip balanced braces ∈ const expression blocks like { const { ⎇ M < N { M } ⎉ { N } } }
-    λ skip_balanced_braces(Δ self) -> !ParseResult<()> {
+    rite skip_balanced_braces(Δ self) -> !ParseResult<()> {
         ≔ Δ depth = 0;
         loop {
             ⌥ self.current_token() {
@@ -1540,7 +1540,7 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse a type expression.
-    λ parse_type(Δ self) -> !ParseResult<TypeExpr> {
+    rite parse_type(Δ self) -> !ParseResult<TypeExpr> {
         ≔ ty = self.parse_type_primary()?;
 
         // Check ∀ evidentiality suffix: T!, T?, T~
@@ -1577,7 +1577,7 @@ invoke crate·token·Token;
     }
 
     /// Parse primary type expression.
-    λ parse_type_primary(Δ self) -> !ParseResult<TypeExpr> {
+    rite parse_type_primary(Δ self) -> !ParseResult<TypeExpr> {
         ⌥ self.current_token() {
             Token·Amp => {
                 self.advance();
@@ -1784,7 +1784,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a type path (with optional generic arguments).
-    λ parse_type_path(Δ self) -> !ParseResult<TypePath> {
+    rite parse_type_path(Δ self) -> !ParseResult<TypePath> {
         ≔ Δ segments = Vec·new();
         segments.push(self.parse_path_segment(true)?);
 
@@ -1796,7 +1796,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an expression path (without generic arguments - < is comparison).
-    λ parse_expr_path(Δ self) -> !ParseResult<TypePath> {
+    rite parse_expr_path(Δ self) -> !ParseResult<TypePath> {
         ≔ Δ segments = Vec·new();
         segments.push(self.parse_path_segment(false)?);
 
@@ -1829,7 +1829,7 @@ invoke crate·token·Token;
 
     /// Parse a path segment.
     /// If `allow_generics` is true and we're not ∈ condition context, parses generic arguments.
-    λ parse_path_segment(Δ self, allow_generics: !bool) -> !ParseResult<PathSegment> {
+    rite parse_path_segment(Δ self, allow_generics: !bool) -> !ParseResult<PathSegment> {
         ≔ ident = self.parse_ident()?;
 
         // Don't parse generics ∈ condition context or when not allowed
@@ -1891,7 +1891,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a list of types (including associated type bindings like `Item = T`).
-    λ parse_type_list(Δ self) -> !ParseResult<[TypeExpr]> {
+    rite parse_type_list(Δ self) -> !ParseResult<[TypeExpr]> {
         ≔ Δ types = Vec·new();
         // Also check pending_gt - ⎇ set, a nested >> was split and we need to close
         ≔ has_pending = ⌥ self.pending_gt { ?_ => true, null => false };
@@ -1919,7 +1919,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a type or an associated type binding (Item = T) or const generic value.
-    λ parse_type_or_assoc_binding(Δ self) -> !ParseResult<TypeExpr> {
+    rite parse_type_or_assoc_binding(Δ self) -> !ParseResult<TypeExpr> {
         // Check ⎇ this looks like an associated type binding: Ident = Type
         // Use lookahead to check ∀ Ident followed by =
         ⌥ self.current_token() {
@@ -2037,14 +2037,14 @@ invoke crate·token·Token;
     }
 
     /// Convert an expression to a const generic type representation.
-    λ expr_to_const_generic(self, _expr: !Expr) -> !TypeExpr {
+    rite expr_to_const_generic(self, _expr: !Expr) -> !TypeExpr {
         // For const generics, represent the expression as an Infer type
         // since we just need parsing to succeed, not full semantic analysis
         TypeExpr·Infer
     }
 
     /// Parse type bounds (including lifetime bounds like 'static).
-    λ parse_type_bounds(Δ self) -> !ParseResult<[TypeExpr]> {
+    rite parse_type_bounds(Δ self) -> !ParseResult<[TypeExpr]> {
         ≔ Δ bounds = Vec·new();
         bounds.push(self.parse_type_or_lifetime_bound()?);
         ⟳ self.consume_if(&Token·Plus) {
@@ -2054,7 +2054,7 @@ invoke crate·token·Token;
     }
 
     /// Parse either a type bound or a lifetime bound.
-    λ parse_type_or_lifetime_bound(Δ self) -> !ParseResult<TypeExpr> {
+    rite parse_type_or_lifetime_bound(Δ self) -> !ParseResult<TypeExpr> {
         ⌥ self.current_token() {
             Token·Lifetime(name) => {
                 self.advance();
@@ -2071,7 +2071,7 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse an expression.
-    ☉ λ parse_expr(Δ self) -> !ParseResult<Expr> {
+    ☉ rite parse_expr(Δ self) -> !ParseResult<Expr> {
         ≔ lhs = self.parse_expr_bp(0)?;
 
         // Check ∀ assignment
@@ -2118,7 +2118,7 @@ invoke crate·token·Token;
     }
 
     /// Parse expression with binding power (Pratt parser).
-    λ parse_expr_bp(Δ self, min_bp: !u8) -> !ParseResult<Expr> {
+    rite parse_expr_bp(Δ self, min_bp: !u8) -> !ParseResult<Expr> {
         ≔ Δ lhs = self.parse_prefix_expr()?;
 
         loop {
@@ -2242,7 +2242,7 @@ invoke crate·token·Token;
     }
 
     /// Parse prefix expression.
-    λ parse_prefix_expr(Δ self) -> !ParseResult<Expr> {
+    rite parse_prefix_expr(Δ self) -> !ParseResult<Expr> {
         ⌥ self.current_token() {
             Token·Minus => {
                 self.advance();
@@ -2285,7 +2285,7 @@ invoke crate·token·Token;
     /// Check ⎇ an expression is a block-ending expression that should not be callable.
     /// Block expressions like if/while/match/loop/∀ ⤺ values but should not
     /// be directly called like functions.
-    λ is_non_callable_expr(self, expr: !&Expr) -> !bool {
+    rite is_non_callable_expr(self, expr: !&Expr) -> !bool {
         ⌥ expr {
             Expr·If { .. } => true,
             Expr·While { .. } => true,
@@ -2298,7 +2298,7 @@ invoke crate·token·Token;
     }
 
     /// Parse postfix expression.
-    λ parse_postfix_expr(Δ self) -> !ParseResult<Expr> {
+    rite parse_postfix_expr(Δ self) -> !ParseResult<Expr> {
         ≔ Δ expr = self.parse_primary_expr()?;
 
         loop {
@@ -2565,7 +2565,7 @@ invoke crate·token·Token;
     }
 
     /// Convert expression to incorporation segment.
-    λ expr_to_incorporation_segment(self, expr: !Expr) -> !ParseResult<IncorporationSegment> {
+    rite expr_to_incorporation_segment(self, expr: !Expr) -> !ParseResult<IncorporationSegment> {
         ⌥ expr {
             Expr·Path(path) => {
                 ⎇ path.segments.len() == 1 {
@@ -2595,7 +2595,7 @@ invoke crate·token·Token;
     }
 
     /// Parse primary expression.
-    λ parse_primary_expr(Δ self) -> !ParseResult<Expr> {
+    rite parse_primary_expr(Δ self) -> !ParseResult<Expr> {
         ⌥ self.current_token().cloned() {
             Token·IntLit(s) => {
                 self.advance();
@@ -2837,21 +2837,21 @@ invoke crate·token·Token;
                         } ⎉ {
                             null
                         };
-                        ≔ body = self.parse_expr()?;
+                        ≔ body_ = self.parse_expr()?;
                         // Note: move is ignored ∀ now, captured vars treated same
                         Ok(Expr·Closure {
                             params,
                             return_type,
-                            body: Box·new(body),
+                            body_: Box·new(body_),
                         })
                     }
                     Token·OrOr => {
                         self.advance();
-                        ≔ body = self.parse_expr()?;
+                        ≔ body_ = self.parse_expr()?;
                         Ok(Expr·Closure {
                             params: Vec·new(),
                             return_type: null,
-                            body: Box·new(body),
+                            body_: Box·new(body_),
                         })
                     }
                     _ => Err(ParseError·unexpected("closure after move", self.current_token()!, self.current_span())),
@@ -2881,29 +2881,29 @@ invoke crate·token·Token;
                 } ⎉ {
                     null
                 };
-                ≔ body = self.parse_expr()?;
+                ≔ body_ = self.parse_expr()?;
                 Ok(Expr·Closure {
                     params,
                     return_type,
-                    body: Box·new(body),
+                    body_: Box·new(body_),
                 })
             }
             // Or pattern ∈ closures: || body (no params)
             Token·OrOr => {
                 self.advance();
-                ≔ body = self.parse_expr()?;
+                ≔ body_ = self.parse_expr()?;
                 Ok(Expr·Closure {
                     params: Vec·new(),
                     return_type: null,
-                    body: Box·new(body),
+                    body_: Box·new(body_),
                 })
             }
             Token·If => self.parse_if_expr(),
             Token·Match => self.parse_match_expr(),
             Token·Loop => {
                 self.advance();
-                ≔ body = self.parse_block()?;
-                Ok(Expr·Loop(body))
+                ≔ body_ = self.parse_block()?;
+                Ok(Expr·Loop(body_))
             }
             Token·While => {
                 self.advance();
@@ -2914,19 +2914,19 @@ invoke crate·token·Token;
                     self.in_condition = true;
                     ≔ scrutinee = self.parse_expr()?;
                     self.in_condition = false;
-                    ≔ body = self.parse_block()?;
+                    ≔ body_ = self.parse_block()?;
                     // Desugar ⟳ ≔ to loop + match
                     Ok(Expr·WhileLet {
                         pattern,
                         scrutinee: Box·new(scrutinee),
-                        body,
+                        body_,
                     })
                 } ⎉ {
                     self.in_condition = true;
                     ≔ condition = self.parse_expr()?;
                     self.in_condition = false;
-                    ≔ body = self.parse_block()?;
-                    Ok(Expr·While { condition: Box·new(condition), body })
+                    ≔ body_ = self.parse_block()?;
+                    Ok(Expr·While { condition: Box·new(condition), body_ })
                 }
             }
             Token·For => {
@@ -2936,11 +2936,11 @@ invoke crate·token·Token;
                 self.in_condition = true;
                 ≔ iter = self.parse_expr()?;
                 self.in_condition = false;
-                ≔ body = self.parse_block()?;
+                ≔ body_ = self.parse_block()?;
                 Ok(Expr·For {
                     pattern,
                     iter: Box·new(iter),
-                    body,
+                    body_,
                 })
             }
             Token·Return => {
@@ -3119,7 +3119,7 @@ invoke crate·token·Token;
     }
 
     /// Parse block or closure.
-    λ parse_block_or_closure(Δ self) -> !ParseResult<Expr> {
+    rite parse_block_or_closure(Δ self) -> !ParseResult<Expr> {
         self.expect(Token·LBrace)?;
 
         // Check ∀ closure: {x => ...} or {x, y => ...} or |x| or (x)|
@@ -3135,12 +3135,12 @@ invoke crate·token·Token;
             } ⎉ {
                 null
             };
-            ≔ body = self.parse_expr()?;
+            ≔ body_ = self.parse_expr()?;
             self.expect(Token·RBrace)?;
             ⤺ Ok(Expr·Closure {
                 params,
                 return_type,
-                body: Box·new(body),
+                body_: Box·new(body_),
             });
         }
 
@@ -3151,7 +3151,7 @@ invoke crate·token·Token;
     }
 
     /// Check ⎇ we're at the start of a closure.
-    λ is_closure_start(Δ self) -> !bool {
+    rite is_closure_start(Δ self) -> !bool {
         // Look ∀ pattern => or pattern, pattern =>
         // Simple heuristic: check ⎇ pattern start followed by =>, comma, or colon
         ⌥ self.current_token() {
@@ -3194,7 +3194,7 @@ invoke crate·token·Token;
 
     /// Parse closure parameters.
     /// Supports: `params =>`, `|params|` (Rust-style), and `params|` (alternative arrow)
-    λ parse_closure_params(Δ self) -> !ParseResult<[ClosureParam]> {
+    rite parse_closure_params(Δ self) -> !ParseResult<[ClosureParam]> {
         ≔ Δ params = Vec·new();
         // Support |params| syntax: ⎇ starting with |, consume and parse until closing |
         ≔ rust_style = self.consume_if(&Token·Pipe);
@@ -3225,7 +3225,7 @@ invoke crate·token·Token;
     }
 
     /// Parse block contents.
-    λ parse_block_contents(Δ self) -> !ParseResult<Block> {
+    rite parse_block_contents(Δ self) -> !ParseResult<Block> {
         ≔ Δ stmts = Vec·new();
         ≔ Δ expr = null;
 
@@ -3287,7 +3287,7 @@ invoke crate·token·Token;
     }
 
     /// Skip a local function declaration (used ∀ parsing only, not executed)
-    λ skip_local_fn(Δ self) -> !ParseResult<()> {
+    rite skip_local_fn(Δ self) -> !ParseResult<()> {
         // Skip optional unsafe
         self.consume_if(&Token·Unsafe);
         self.expect(Token·Fn)?;
@@ -3331,7 +3331,7 @@ invoke crate·token·Token;
     }
 
     /// Skip a local invoke statement
-    λ skip_use_stmt(Δ self) -> !ParseResult<()> {
+    rite skip_use_stmt(Δ self) -> !ParseResult<()> {
         self.expect(Token·Use)?;
         // Skip until semicolon
         ⟳ !self.check(&Token·Semi) && !self.is_eof() {
@@ -3356,7 +3356,7 @@ invoke crate·token·Token;
     }
 
     /// Skip a local static variable declaration
-    λ skip_static(Δ self) -> !ParseResult<()> {
+    rite skip_static(Δ self) -> !ParseResult<()> {
         self.expect(Token·Static)?;
         // Skip optional mut
         self.consume_if(&Token·Mut);
@@ -3373,7 +3373,7 @@ invoke crate·token·Token;
     }
 
     /// Skip an outer attribute #[...]
-    λ skip_outer_attribute(Δ self) -> !ParseResult<()> {
+    rite skip_outer_attribute(Δ self) -> !ParseResult<()> {
         self.expect(Token·Hash)?;
         self.expect(Token·LBracket)?;
         ≔ Δ depth = 1;
@@ -3389,7 +3389,7 @@ invoke crate·token·Token;
     }
 
     /// Skip generic parameters <T, U, ...>
-    λ skip_generics(Δ self) -> !ParseResult<()> {
+    rite skip_generics(Δ self) -> !ParseResult<()> {
         ⎇ !self.consume_if(&Token·Lt) {
             ⤺ Ok(());
         }
@@ -3407,7 +3407,7 @@ invoke crate·token·Token;
     }
 
     /// Skip where clause
-    λ skip_where_clause(Δ self) -> !ParseResult<()> {
+    rite skip_where_clause(Δ self) -> !ParseResult<()> {
         ⎇ !self.consume_if(&Token·Where) {
             ⤺ Ok(());
         }
@@ -3419,7 +3419,7 @@ invoke crate·token·Token;
     }
 
     /// Skip an unknown item declaration (like `scroll feature;`)
-    λ skip_unknown_item(Δ self) -> !ParseResult<Item> {
+    rite skip_unknown_item(Δ self) -> !ParseResult<Item> {
         // Skip tokens until we hit a semicolon, block, or new item starter
         // (handles newline-terminated items like `☉ scroll feature`)
         ⟳ !self.check(&Token·Semi) && !self.check(&Token·LBrace) && !self.is_eof() {
@@ -3456,7 +3456,7 @@ invoke crate·token·Token;
     }
 
     /// Skip a macro invocation at item level (name!(...) or name!{...})
-    λ skip_item_macro(Δ self) -> !ParseResult<Item> {
+    rite skip_item_macro(Δ self) -> !ParseResult<Item> {
         // Skip macro name
         self.parse_ident()?;
         // Skip !
@@ -3513,7 +3513,7 @@ invoke crate·token·Token;
     }
 
     /// Skip a macro definition (macro name { ... })
-    λ skip_macro_def(Δ self) -> !ParseResult<Item> {
+    rite skip_macro_def(Δ self) -> !ParseResult<Item> {
         // Skip 'macro' identifier
         self.advance();
         // Skip macro name
@@ -3539,7 +3539,7 @@ invoke crate·token·Token;
     }
 
     /// Skip an inline extern block (used ∈ FFI, not needed ∀ bootstrap)
-    λ skip_extern_block(Δ self) -> !ParseResult<()> {
+    rite skip_extern_block(Δ self) -> !ParseResult<()> {
         self.expect(Token·Extern)?;
         // Skip optional ABI string like "C"
         ⎇ ≔ Token·StringLit(_) = self.current_token() {
@@ -3560,7 +3560,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a block.
-    λ parse_block(Δ self) -> !ParseResult<Block> {
+    rite parse_block(Δ self) -> !ParseResult<Block> {
         self.expect(Token·LBrace)?;
         ≔ block = self.parse_block_contents()?;
         self.expect(Token·RBrace)?;
@@ -3568,7 +3568,7 @@ invoke crate·token·Token;
     }
 
     /// Parse ⎇ expression.
-    λ parse_if_expr(Δ self) -> !ParseResult<Expr> {
+    rite parse_if_expr(Δ self) -> !ParseResult<Expr> {
         self.expect(Token·If)?;
 
         // Check ∀ if-let: ⎇ ≔ pattern = expr { ... }
@@ -3610,7 +3610,7 @@ invoke crate·token·Token;
     }
 
     /// Parse ⌥ expression.
-    λ parse_match_expr(Δ self) -> !ParseResult<Expr> {
+    rite parse_match_expr(Δ self) -> !ParseResult<Expr> {
         self.expect(Token·Match)?;
         self.in_condition = true;
         ≔ expr = self.parse_expr()?;
@@ -3633,8 +3633,8 @@ invoke crate·token·Token;
                 null
             };
             self.expect(Token·FatArrow)?;
-            ≔ body = self.parse_expr()?;
-            arms.push(MatchArm { pattern, guard, body });
+            ≔ body_ = self.parse_expr()?;
+            arms.push(MatchArm { pattern, guard, body_ });
             // In Rust/Sigil, commas are optional after block-bodied ⌥ arms
             // So we try to consume a comma, but don't ⊗ ⎇ absent
             self.consume_if(&Token·Comma);
@@ -3648,7 +3648,7 @@ invoke crate·token·Token;
     }
 
     /// Parse morpheme expression.
-    λ parse_morpheme_expr(Δ self) -> !ParseResult<Expr> {
+    rite parse_morpheme_expr(Δ self) -> !ParseResult<Expr> {
         ≔ kind = ⌥ self.current_token() {
             Token·Tau => MorphemeKind·Transform,
             Token·Phi => MorphemeKind·Filter,
@@ -3663,17 +3663,17 @@ invoke crate·token·Token;
         self.advance();
 
         self.expect(Token·LBrace)?;
-        ≔ body = self.parse_expr()?;
+        ≔ body_ = self.parse_expr()?;
         self.expect(Token·RBrace)?;
 
         Ok(Expr·Morpheme {
             kind,
-            body: Box·new(body),
+            body_: Box·new(body_),
         })
     }
 
     /// Parse ≔ statement (with optional ⎉ ∀ let-⎉ syntax).
-    λ parse_let_stmt(Δ self) -> !ParseResult<Stmt> {
+    rite parse_let_stmt(Δ self) -> !ParseResult<Stmt> {
         self.expect(Token·Let)?;
         ≔ pattern = self.parse_pattern()?;
         ≔ ty = ⎇ self.consume_if(&Token·Colon) {
@@ -3706,7 +3706,7 @@ invoke crate·token·Token;
     }
 
     /// Parse condition (in condition context).
-    λ parse_condition(Δ self) -> !ParseResult<Expr> {
+    rite parse_condition(Δ self) -> !ParseResult<Expr> {
         self.in_condition = true;
         ≔ expr = self.parse_expr()?;
         self.in_condition = false;
@@ -3714,7 +3714,7 @@ invoke crate·token·Token;
     }
 
     /// Check ⎇ the token after | looks like a pipe operation (not bitwise OR).
-    λ is_pipe_op_ahead(self) -> !bool {
+    rite is_pipe_op_ahead(self) -> !bool {
         ⌥ self.peek_next_token() {
             ?Token·Tau => true,
             ?Token·Phi => true,
@@ -3748,7 +3748,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a pipe chain.
-    λ parse_pipe_chain(Δ self, initial: !Expr) -> !ParseResult<Expr> {
+    rite parse_pipe_chain(Δ self, initial: !Expr) -> !ParseResult<Expr> {
         ≔ Δ operations = Vec·new();
 
         ⟳ self.consume_if(&Token·Pipe) {
@@ -3763,13 +3763,13 @@ invoke crate·token·Token;
     }
 
     /// Parse a pipe operation.
-    λ parse_pipe_op(Δ self) -> !ParseResult<PipeOp> {
+    rite parse_pipe_op(Δ self) -> !ParseResult<PipeOp> {
         ⌥ self.current_token() {
             Token·Tau => {
                 self.advance();
                 self.expect(Token·LBrace)?;
                 // Check ∀ closure syntax: {x => ...} or {(x)| ...}
-                ≔ body = ⎇ self.is_closure_start() {
+                ≔ body_ = ⎇ self.is_closure_start() {
                     ≔ params = self.parse_closure_params()?;
                     // Accept either => or | as closure arrow
                     ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3784,18 +3784,18 @@ invoke crate·token·Token;
                     // Parse body as block contents (handles both single expr and multi-stmt)
                     ≔ block = self.parse_block_contents()?;
                     ≔ expr = Expr·Block(block);
-                    Expr·Closure { params, return_type, body: Box·new(expr) }
+                    Expr·Closure { params, return_type, body_: Box·new(expr) }
                 } ⎉ {
                     self.parse_expr()?
                 };
                 self.expect(Token·RBrace)?;
-                Ok(PipeOp·Transform(Box·new(body)))
+                Ok(PipeOp·Transform(Box·new(body_)))
             }
             Token·Phi => {
                 self.advance();
                 self.expect(Token·LBrace)?;
                 // Check ∀ closure syntax: {x => ...} or {(x)| ...}
-                ≔ body = ⎇ self.is_closure_start() {
+                ≔ body_ = ⎇ self.is_closure_start() {
                     ≔ params = self.parse_closure_params()?;
                     // Accept either => or | as closure arrow
                     ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3810,12 +3810,12 @@ invoke crate·token·Token;
                     // Parse body as block contents (handles both single expr and multi-stmt)
                     ≔ block = self.parse_block_contents()?;
                     ≔ expr = Expr·Block(block);
-                    Expr·Closure { params, return_type, body: Box·new(expr) }
+                    Expr·Closure { params, return_type, body_: Box·new(expr) }
                 } ⎉ {
                     self.parse_expr()?
                 };
                 self.expect(Token·RBrace)?;
-                Ok(PipeOp·Filter(Box·new(body)))
+                Ok(PipeOp·Filter(Box·new(body_)))
             }
             Token·Sigma => {
                 self.advance();
@@ -3836,7 +3836,7 @@ invoke crate·token·Token;
                     Token·LBrace => {
                         self.advance();
                         // Check ∀ closure syntax: {x => ...} or {(acc, x) => ...}
-                        ≔ body = ⎇ self.is_closure_start() {
+                        ≔ body_ = ⎇ self.is_closure_start() {
                             ≔ params = self.parse_closure_params()?;
                             // Accept either => or | as closure arrow
                             ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3851,12 +3851,12 @@ invoke crate·token·Token;
                             // Parse body as block contents (handles both single expr and multi-stmt)
                             ≔ block = self.parse_block_contents()?;
                             ≔ expr = Expr·Block(block);
-                            Expr·Closure { params, return_type, body: Box·new(expr) }
+                            Expr·Closure { params, return_type, body_: Box·new(expr) }
                         } ⎉ {
                             self.parse_expr()?
                         };
                         self.expect(Token·RBrace)?;
-                        Ok(PipeOp·Reduce(Box·new(body)))
+                        Ok(PipeOp·Reduce(Box·new(body_)))
                     }
                     _ => Err(ParseError·custom("expected reduction variant after ρ")),
                 }
@@ -3956,7 +3956,7 @@ invoke crate·token·Token;
                 ⎇ self.check(&Token·LBrace) && !self.is_in_condition() {
                     self.advance();
                     // Check ∀ closure syntax: {x => ...} or {(x)| ...}
-                    ≔ body = ⎇ self.is_closure_start() {
+                    ≔ body_ = ⎇ self.is_closure_start() {
                         ≔ params = self.parse_closure_params()?;
                         // Accept either => or | as closure arrow
                         ⎇ !self.consume_if(&Token·FatArrow) {
@@ -3971,7 +3971,7 @@ invoke crate·token·Token;
                         // Parse body as block contents (handles both single expr and multi-stmt)
                         ≔ block = self.parse_block_contents()?;
                         ≔ expr = Expr·Block(block);
-                        Expr·Closure { params, return_type, body: Box·new(expr) }
+                        Expr·Closure { params, return_type, body_: Box·new(expr) }
                     } ⎉ {
                         self.parse_expr()?
                     };
@@ -4057,8 +4057,8 @@ invoke crate·token·Token;
                         null
                     };
                     self.expect(Token·FatArrow)?;
-                    ≔ body = self.parse_expr()?;
-                    arms.push(MatchArm { pattern, guard, body });
+                    ≔ body_ = self.parse_expr()?;
+                    arms.push(MatchArm { pattern, guard, body_ });
                     self.consume_if(&Token·Comma);
                 }
                 self.expect(Token·RBrace)?;
@@ -4085,12 +4085,12 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse a pattern.
-    λ parse_pattern(Δ self) -> !ParseResult<Pattern> {
+    rite parse_pattern(Δ self) -> !ParseResult<Pattern> {
         self.parse_pattern_or()
     }
 
     /// Parse or-pattern: p1 | p2.
-    λ parse_pattern_or(Δ self) -> !ParseResult<Pattern> {
+    rite parse_pattern_or(Δ self) -> !ParseResult<Pattern> {
         ≔ Δ patterns: ![Pattern] = [self.parse_pattern_primary()?];
 
         ⟳ self.consume_if(&Token·Pipe) {
@@ -4105,7 +4105,7 @@ invoke crate·token·Token;
     }
 
     /// Parse primary pattern.
-    λ parse_pattern_primary(Δ self) -> !ParseResult<Pattern> {
+    rite parse_pattern_primary(Δ self) -> !ParseResult<Pattern> {
         ⌥ self.current_token() {
             Token·Underscore => {
                 self.advance();
@@ -4367,7 +4367,7 @@ invoke crate·token·Token;
     // ========================================
 
     /// Parse an identifier.
-    λ parse_ident(Δ self) -> !ParseResult<Ident> {
+    rite parse_ident(Δ self) -> !ParseResult<Ident> {
         ≔ span = self.current_span();
         ⌥ self.current_token().cloned() {
             Token·Ident(name) => {
@@ -4529,7 +4529,7 @@ invoke crate·token·Token;
     }
 
     /// Parse optional numeric type suffix (u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize, isize).
-    λ parse_numeric_suffix(Δ self) -> ?String {
+    rite parse_numeric_suffix(Δ self) -> ?String {
         ⌥ self.current_token().cloned() {
             Token·Ident(s) => {
                 ⎇ s == "u8" || s == "u16" || s == "u32" || s == "u64" ||
@@ -4546,7 +4546,7 @@ invoke crate·token·Token;
     }
 
     /// Parse optional evidentiality marker.
-    λ parse_evidentiality_opt(Δ self) -> ?Evidentiality {
+    rite parse_evidentiality_opt(Δ self) -> ?Evidentiality {
         ⌥ self.current_token() {
             Token·Bang => { self.advance(); Evidentiality·Known }
             Token·Question => { self.advance(); Evidentiality·Uncertain }
@@ -4558,7 +4558,7 @@ invoke crate·token·Token;
     }
 
     /// Parse an expression or named argument (name: expr).
-    λ parse_expr_or_named_arg(Δ self) -> !ParseResult<Expr> {
+    rite parse_expr_or_named_arg(Δ self) -> !ParseResult<Expr> {
         // Check ∀ named argument: ident: expr
         ⌥ self.current_token() {
             Token·Ident(_) => {
@@ -4577,7 +4577,7 @@ invoke crate·token·Token;
     }
 
     /// Parse a list of expressions.
-    λ parse_expr_list(Δ self) -> !ParseResult<[Expr]> {
+    rite parse_expr_list(Δ self) -> !ParseResult<[Expr]> {
         ≔ Δ exprs = Vec·new();
         ⎇ !self.check(&Token·RParen) && !self.check(&Token·RBracket) {
             exprs.push(self.parse_expr_or_named_arg()?);
@@ -4592,7 +4592,7 @@ invoke crate·token·Token;
     }
 
     /// Parse macro tokens: collects all tokens inside matching delimiters.
-    λ parse_macro_tokens(Δ self) -> !ParseResult<String> {
+    rite parse_macro_tokens(Δ self) -> !ParseResult<String> {
         // Determine delimiter type
         ≔ open: Token;
         ≔ close: Token;
@@ -4743,7 +4743,7 @@ invoke crate·token·Token;
             self.advance();
         }
 
-        self.expect(close)?;
+        self.expect(close_)?;
         Ok(tokens)
     }
 }
@@ -4753,7 +4753,7 @@ invoke crate·token·Token;
 // ============================================
 
 /// Get binding power ∀ infix operators.
-λ infix_binding_power(op: !BinOp) -> !(u8, u8) {
+rite infix_binding_power(op: !BinOp) -> !(u8, u8) {
     ⌥ op {
         BinOp·Or => (1, 2),
         BinOp·And => (3, 4),
@@ -4773,49 +4773,49 @@ invoke crate·token·Token;
 // ============================================
 
 #[test]
-λ test_parse_empty_file() {
+rite test_parse_empty_file() {
     ≔ Δ parser = Parser·new("".to_string());
     ≔ file = parser.parse_file().unwrap();
     assert!(file.items.is_empty());
 }
 
 #[test]
-λ test_parse_function() {
+rite test_parse_function() {
     ≔ Δ parser = Parser·new("λ main() {}".to_string());
     ≔ file = parser.parse_file().unwrap();
     assert_eq!(file.items.len(), 1);
 }
 
 #[test]
-λ test_parse_struct() {
+rite test_parse_struct() {
     ≔ Δ parser = Parser·new("Σ Point { x: !i32, y: !i32 }".to_string());
     ≔ file = parser.parse_file().unwrap();
     assert_eq!(file.items.len(), 1);
 }
 
 #[test]
-λ test_parse_pipe_chain() {
+rite test_parse_pipe_chain() {
     ≔ Δ parser = Parser·new("λ test() { data|τ{f}|φ{p}|σ }".to_string());
     ≔ file = parser.parse_file().unwrap();
     assert_eq!(file.items.len(), 1);
 }
 
 #[test]
-λ test_parse_evidentiality() {
+rite test_parse_evidentiality() {
     ≔ Δ parser = Parser·new("λ test() { ≔ x: !i32 = value!; }".to_string());
     ≔ file = parser.parse_file().unwrap();
     assert_eq!(file.items.len(), 1);
 }
 
 #[test]
-λ test_parse_morpheme() {
+rite test_parse_morpheme() {
     ≔ Δ parser = Parser·new("λ test() { τ{x + 1} }".to_string());
     ≔ file = parser.parse_file().unwrap();
     assert_eq!(file.items.len(), 1);
 }
 
 #[test]
-λ test_parse_match() {
+rite test_parse_match() {
     ≔ source = r#"
         λ test() {
             ⌥ x {
@@ -4830,7 +4830,7 @@ invoke crate·token·Token;
 }
 
 #[test]
-λ test_parse_trait() {
+rite test_parse_trait() {
     ≔ source = r#"
         Θ Display {
             λ fmt(self) -> String;
@@ -4842,7 +4842,7 @@ invoke crate·token·Token;
 }
 
 #[test]
-λ test_parse_impl() {
+rite test_parse_impl() {
     ≔ source = r#"
         ⊢ Display ∀ Point {
             λ fmt(self) -> String {

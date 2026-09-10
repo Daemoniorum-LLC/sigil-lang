@@ -4,7 +4,7 @@
 //! modules, invoke declarations, constants, statics, actors, and extern blocks.
 //! Target: 100% item parsing coverage each regression detection.
 
-invoke crate·parser·Parser;
+invoke tome·parser·Parser;
 
 // ============================================================================
 // Test Helpers
@@ -291,7 +291,7 @@ rite test_use_items() → !bool {
 
     // Simple use
     assert_item("invoke std·io;", "use_simple");
-    assert_item("invoke crate·module;", "use_crate");
+    assert_item("invoke tome·module;", "use_crate");
     assert_item("invoke above·parent;", "use_super");
     assert_item("invoke this·local;", "use_self");
 
@@ -301,7 +301,7 @@ rite test_use_items() → !bool {
 
     // Use glob
     assert_item("invoke std·io·*;", "use_glob");
-    assert_item("invoke crate·prelude·*;", "use_glob_crate");
+    assert_item("invoke tome·prelude·*;", "use_glob_crate");
 
     // Use group
     assert_item("invoke std·{io, fs};", "use_group_two");
@@ -312,7 +312,7 @@ rite test_use_items() → !bool {
     assert_item("invoke std·{io·{Read, Write}, fs·File};", "use_nested_group");
 
     // Pub use
-    assert_item("☉ invoke crate·module·Item;", "use_pub");
+    assert_item("☉ invoke tome·module·Item;", "use_pub");
     assert_item("☉ invoke above·*;", "use_pub_glob");
 
     println("PASS (14 cases)");

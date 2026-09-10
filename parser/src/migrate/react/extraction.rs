@@ -26,6 +26,32 @@ pub struct ReactExtraction {
     /// Helper functions at module scope (Phase 6.2)
     #[serde(default)]
     pub helper_functions: Vec<HelperFunctionExtraction>,
+    /// Module-scope `const` bindings that are not functions.
+    ///
+    /// These were never extracted, so a component referring to `DEFAULT_SORT`
+    /// hit the unknown-identifier rule and became `self.default_sort` — a field
+    /// no actor declares. 58 of them across the generated Lares client.
+    #[serde(default)]
+    pub module_constants: Vec<ModuleConstantExtraction>,
+}
+
+/// A module-scope `const` that is not a function.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleConstantExtraction {
+    pub name: String,
+    pub exported: bool,
+    /// Type annotation, if written.
+    pub type_annotation: Option<String>,
+    /// The initialiser, as source.
+    pub init: String,
+    /// When the initialiser is an object literal with literal keys, its entries
+    /// as (key, value-source) pairs.
+    ///
+    /// These are lookup tables — `DEFAULT_SORT[view]`, `refusalText[reason]` —
+    /// and a map literal is not a constant expression at module scope, so they
+    /// cannot be emitted as bindings. They can be emitted as functions.
+    #[serde(default)]
+    pub entries: Vec<(String, String)>,
 }
 
 /// File metadata.
@@ -76,12 +102,37 @@ pub struct ComponentExtraction {
     // Event handlers
     pub handlers: Vec<HandlerExtraction>,
 
+    /// `const` bindings in the component body that are not hooks.
+    ///
+    /// React destructures props into locals — `const { repo, session, active } =
+    /// slot` — and derives values from them. Dropping those statements left every
+    /// such name referenced by the view and bound by nothing: `repo` alone appeared
+    /// 80 times across the generated Lares client, resolving to nothing. `sigil
+    /// check` could not see it, because it does not resolve names; `--strict` could.
+    #[serde(default)]
+    pub locals: Vec<LocalBinding>,
+
     // Dependencies
     pub child_components: Vec<String>,
 
     /// Architecture recommendations (Phase 6.5)
     #[serde(default)]
     pub architecture: ArchitectureRecommendation,
+}
+
+/// One `const` binding from a component body.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalBinding {
+    /// The bound name, as written in the source.
+    pub name: String,
+    /// The initialiser expression, as source text.
+    pub init: String,
+    /// The value comes from a custom hook, so there is nothing to translate —
+    /// only a name to bind. `const enabled = useCertificationEnabled()` has to
+    /// resolve, or the unknown-identifier rule turns `enabled` into a `self.`
+    /// field the actor does not have.
+    #[serde(default)]
+    pub opaque: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -448,6 +499,16 @@ pub struct HelperFunctionExtraction {
     pub used_by: Vec<String>,
     /// Full source code
     pub source: String,
+    /// The single expression this function returns, as source, when that is
+    /// all its body does.
+    ///
+    /// The generator has an expression transform and no statement transform, so
+    /// this is the subset it can translate in full. 140 of the Lares client's
+    /// 346 helpers are this shape — `return path.split("/").pop() ?? path` —
+    /// and the rest get a declared signature with an untranslated body, which
+    /// at least resolves the name.
+    #[serde(default)]
+    pub returns_expression: Option<String>,
 }
 
 /// Function parameter with type information
@@ -855,14 +916,21 @@ impl<'a> Extractor<'a> {
         let mut imports = Vec::new();
         let mut exports = Vec::new();
         let mut helper_functions = Vec::new();
+        let mut module_constants = Vec::new();
 
         for item in &module.body {
             match item {
                 ModuleItem::ModuleDecl(decl) => {
                     self.process_module_decl(decl, &mut components, &mut types, &mut imports, &mut exports, &mut helper_functions);
+                    if let ModuleDecl::ExportDecl(export) = decl {
+                        self.collect_module_constants(&export.decl, true, &mut module_constants);
+                    }
                 }
                 ModuleItem::Stmt(stmt) => {
                     self.process_stmt(stmt, &mut components, &mut custom_hooks, &mut types, &mut helper_functions);
+                    if let Stmt::Decl(decl) = stmt {
+                        self.collect_module_constants(decl, false, &mut module_constants);
+                    }
                 }
             }
         }
@@ -880,7 +948,79 @@ impl<'a> Extractor<'a> {
             imports,
             exports,
             helper_functions,
+            module_constants,
         })
+    }
+
+    /// Collect module-scope `const`s that are not functions or components.
+    ///
+    /// A component referring to `DEFAULT_SORT` used to hit the
+    /// unknown-identifier rule and come out as `self.default_sort`, a field no
+    /// actor declares. The name has to be known for the reference to survive.
+    fn collect_module_constants(
+        &self,
+        decl: &Decl,
+        exported: bool,
+        out: &mut Vec<ModuleConstantExtraction>,
+    ) {
+        let var_decl = match decl {
+            Decl::Var(v) => v,
+            _ => return,
+        };
+        for d in &var_decl.decls {
+            let ident = match &d.name {
+                Pat::Ident(i) => i,
+                _ => continue,
+            };
+            let init = match &d.init {
+                Some(i) => i,
+                None => continue,
+            };
+            // `export const KEYS = { … } as const` is a TsConstAssertion, not an
+            // object — so the object-literal arm below never fired for it, and a
+            // 200-key lookup table came out with no entries and an initialiser
+            // ending in ` as const`, which is not Sigil. Same for `satisfies`,
+            // which `ANIMA_DIMENSIONS` carries. The type-level wrappers say
+            // nothing a Sigil binding can use; the value underneath is the whole
+            // content.
+            let init = strip_ts_wrappers(init);
+
+            // Functions are helper_functions; components are components.
+            if matches!(init, Expr::Arrow(_) | Expr::Fn(_) | Expr::Class(_)) {
+                continue;
+            }
+            let entries = match init {
+                Expr::Object(obj) => obj
+                    .props
+                    .iter()
+                    .filter_map(|p| match p {
+                        PropOrSpread::Prop(prop) => match prop.as_ref() {
+                            Prop::KeyValue(kv) => {
+                                let key = match &kv.key {
+                                    PropName::Ident(i) => i.sym.to_string(),
+                                    PropName::Str(sn) => sn.value.as_str().unwrap_or("").to_string(),
+                                    _ => return None,
+                                };
+                                Some((key, self.span_to_source(self.expr_span(&kv.value))))
+                            }
+                            _ => None,
+                        },
+                        PropOrSpread::Spread(_) => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            out.push(ModuleConstantExtraction {
+                name: ident.id.sym.to_string(),
+                exported,
+                type_annotation: ident
+                    .type_ann
+                    .as_ref()
+                    .map(|t| self.span_to_source(t.span)),
+                init: self.span_to_source(self.expr_span(init)),
+                entries,
+            });
+        }
     }
 
     fn process_module_decl(
@@ -1137,6 +1277,7 @@ impl<'a> Extractor<'a> {
             class_info: None,
             jsx: jsx.clone(),
             handlers,
+            locals: self.extract_locals_from_body(&function.body),
             child_components: self.extract_child_components_from_jsx(&jsx),
             architecture,
         })
@@ -1178,6 +1319,10 @@ impl<'a> Extractor<'a> {
             class_info: None,
             jsx: jsx.clone(),
             handlers,
+            locals: match arrow.body.as_ref() {
+                BlockStmtOrExpr::BlockStmt(block) => self.extract_locals_from_body(&Some(block.clone())),
+                BlockStmtOrExpr::Expr(_) => Vec::new(),
+            },
             child_components: self.extract_child_components_from_jsx(&jsx),
             architecture,
         })
@@ -1252,6 +1397,7 @@ impl<'a> Extractor<'a> {
             }),
             jsx: jsx.clone(),
             handlers: Vec::new(),
+            locals: Vec::new(),
             child_components: self.extract_child_components_from_jsx(&jsx),
             architecture,
         })
@@ -1666,6 +1812,205 @@ impl<'a> Extractor<'a> {
         }
     }
 
+    /// Collect the component body's non-hook `const` bindings, in source order.
+    ///
+    /// Destructuring is expanded one name at a time: `const { repo, session } = slot`
+    /// becomes `repo = slot.repo` and `session = slot.session`, which is what the
+    /// view actually refers to. Hook calls are skipped — they are already extracted
+    /// as state, and re-emitting them would bind the same name twice.
+    fn extract_locals_from_body(&self, body: &Option<BlockStmt>) -> Vec<LocalBinding> {
+        let body = match body {
+            Some(b) => b,
+            None => return Vec::new(),
+        };
+        let mut out = Vec::new();
+        for stmt in &body.stmts {
+            let var_decl = match stmt {
+                Stmt::Decl(Decl::Var(v)) => v,
+                _ => continue,
+            };
+            for decl in &var_decl.decls {
+                let Some(init) = decl.init.as_ref() else {
+                    // `let text: string` with the value assigned in branches
+                    // below is an ordinary React shape, and skipping it left
+                    // `text` bound nowhere — the view read a name the file does
+                    // not declare.
+                    //
+                    // The branch assignments used to be lost too, so the binding
+                    // stayed ∅ and the view rendered an empty string where
+                    // React renders "Refreshing…". Where every branch of the
+                    // if/else chain that follows does nothing but assign this
+                    // one name, the chain IS the initialiser: fold it into a
+                    // conditional expression, which the transform already
+                    // handles. Anything less uniform stays opaque.
+                    if let Pat::Ident(id) = &decl.name {
+                        let name = id.id.sym.to_string();
+                        let folded = self.fold_assign_chain_for(&body.stmts, &name);
+                        out.push(LocalBinding {
+                            name,
+                            init: folded.clone().unwrap_or_else(|| "∅".to_string()),
+                            opaque: folded.is_none(),
+                        });
+                    }
+                    continue;
+                };
+                // Hooks are state, not locals — with two exceptions.
+                //
+                // `useMemo(() => expr, [deps])` and `useCallback(fn, [deps])`
+                // bind a DERIVED local, not state; skipping them left `visible`,
+                // `counts`, `projectOptions` and 90-odd others bound nowhere, and
+                // the unknown-identifier rule then turned each into a `self.`
+                // field the actor does not have. What matters is the memo's
+                // body, so that is what becomes the initialiser.
+                let mut memo_init: Option<String> = None;
+                let mut opaque = false;
+                if let Expr::Call(call) = init.as_ref() {
+                    match self.get_callee_name(&call.callee).as_deref() {
+                        // These bind state, handled elsewhere.
+                        Some("useState") | Some("useRef") | Some("useReducer") => continue,
+                        Some(n) if n.starts_with("use") => {
+                            // `useMemo(() => expr, [deps])` binds a derived
+                            // local, and the memo's body is what matters.
+                            if matches!(n, "useMemo" | "useCallback") {
+                                if let Some(first) = call.args.first() {
+                                    if let Expr::Arrow(arrow) = first.expr.as_ref() {
+                                        // `useCallback` binds a FUNCTION, so the
+                                        // arrow itself is the value. Taking only
+                                        // its body dropped the parameters:
+                                        // `useCallback((updater) => setFocus(…))`
+                                        // became `setFocus(…)`, and `updater`
+                                        // then read as an actor field.
+                                        if n == "useCallback" {
+                                            memo_init = Some(
+                                                self.span_to_source(arrow.span()),
+                                            );
+                                        } else if let BlockStmtOrExpr::Expr(body) =
+                                            arrow.body.as_ref()
+                                        {
+                                            memo_init =
+                                                Some(self.span_to_source(self.expr_span(body)));
+                                        }
+                                    }
+                                }
+                            }
+                            // Anything else a hook returns — a custom hook's
+                            // value, an object destructured out of one, a memo
+                            // with a block body — has nothing to translate. The
+                            // NAME still has to exist, or the unknown-identifier
+                            // rule makes it a `self.` field the actor lacks.
+                            if memo_init.is_none() {
+                                opaque = true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                // The real source text, not expr_to_string — that is a stub which
+                // returns the literal "None" for anything past an ident or literal,
+                // so every member access, call, ternary and comparison collapsed to
+                // the same wrong value. span_to_source gives the expression as
+                // written, which transform_expression then translates properly.
+                let init_src = match memo_init {
+                    Some(src) => src,
+                    None => self.span_to_source(self.expr_span(init)),
+                };
+                match &decl.name {
+                    Pat::Ident(ident) => out.push(LocalBinding {
+                        name: ident.id.sym.to_string(),
+                        init: init_src,
+                        opaque,
+                    }),
+                    Pat::Object(obj) => {
+                        for prop in &obj.props {
+                            match prop {
+                                ObjectPatProp::Assign(a) => {
+                                    let field = a.key.sym.to_string();
+                                    out.push(LocalBinding {
+                                        name: field.clone(),
+                                        init: format!("{}.{}", init_src, field),
+                                        opaque,
+                                    });
+                                }
+                                ObjectPatProp::KeyValue(kv) => {
+                                    if let Pat::Ident(bound) = kv.value.as_ref() {
+                                        let field = match &kv.key {
+                                            PropName::Ident(i) => i.sym.to_string(),
+                                            PropName::Str(sn) => format!("{:?}", sn.value).trim_matches('"').to_string(),
+                                            _ => continue,
+                                        };
+                                        out.push(LocalBinding {
+                                            name: bound.id.sym.to_string(),
+                                            init: format!("{}.{}", init_src, field),
+                                            opaque,
+                                        });
+                                    }
+                                }
+                                ObjectPatProp::Rest(_) => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        out
+    }
+
+    /// The first `if`/`else` chain in `stmts` that assigns nothing but `name`,
+    /// rendered as a JS conditional expression.
+    ///
+    /// `let text; if (a) text = x; else if (b) text = y; else text = z;` is the
+    /// standard React way to pick a string, and it becomes
+    /// `a ? x : b ? y : z` — source text, so the normal expression transform
+    /// translates it the same as any ternary written by hand.
+    fn fold_assign_chain_for(&self, stmts: &[Stmt], name: &str) -> Option<String> {
+        stmts
+            .iter()
+            .find_map(|stmt| self.fold_assign_chain(stmt, name))
+    }
+
+    fn fold_assign_chain(&self, stmt: &Stmt, name: &str) -> Option<String> {
+        let Stmt::If(if_stmt) = stmt else {
+            return None;
+        };
+        let test = self.span_to_source(self.expr_span(&if_stmt.test));
+        let cons = self.assigned_value(&if_stmt.cons, name)?;
+        let alt = if_stmt.alt.as_ref()?;
+        // `else if` recurses; a plain `else` is the last value.
+        let alt_src = self
+            .fold_assign_chain(alt, name)
+            .or_else(|| self.assigned_value(alt, name))?;
+        Some(format!("({}) ? ({}) : ({})", test, cons, alt_src))
+    }
+
+    /// The right-hand side of `stmt`, when `stmt` is exactly `name = <expr>;`
+    /// (optionally wrapped in a one-statement block). Anything else — a second
+    /// statement, an assignment to some other name, a compound operator —
+    /// returns None, so the fold gives up rather than dropping work.
+    fn assigned_value(&self, stmt: &Stmt, name: &str) -> Option<String> {
+        let stmt = match stmt {
+            Stmt::Block(block) if block.stmts.len() == 1 => &block.stmts[0],
+            other => other,
+        };
+        let Stmt::Expr(expr_stmt) = stmt else {
+            return None;
+        };
+        let Expr::Assign(assign) = expr_stmt.expr.as_ref() else {
+            return None;
+        };
+        if assign.op != AssignOp::Assign {
+            return None;
+        }
+        let target = match &assign.left {
+            AssignTarget::Simple(SimpleAssignTarget::Ident(id)) => id.id.sym.to_string(),
+            _ => return None,
+        };
+        if target != name {
+            return None;
+        }
+        Some(self.span_to_source(self.expr_span(&assign.right)))
+    }
+
     fn extract_hooks_from_body(&self, body: &Option<BlockStmt>) -> Vec<HookUsage> {
         let body = match body {
             Some(b) => b,
@@ -1741,8 +2086,49 @@ impl<'a> Extractor<'a> {
             "useMemo" => self.extract_use_memo(call),
             "useContext" => self.extract_use_context(pattern, call),
             "useReducer" => self.extract_use_reducer(pattern, call),
-            _ => None, // Custom hook - could be extracted differently
+            // A custom hook destructured as `[value, setValue]` is state-shaped.
+            // usePersistentState, useLocalStorage and friends all keep useState's
+            // contract, so treating them as opaque left the field out of the actor
+            // entirely and gave every handler that set it an empty body.
+            _ => self.extract_custom_state_hook(pattern, call),
         }
+    }
+
+    /// `[value, setValue] = useAnything(...)` — the useState shape under another name.
+    fn extract_custom_state_hook(&self, pattern: &Pat, call: &CallExpr) -> Option<HookUsage> {
+        let arr = match pattern {
+            Pat::Array(a) if a.elems.len() >= 2 => a,
+            _ => return None,
+        };
+        let setter = arr
+            .elems
+            .get(1)
+            .and_then(|e| e.as_ref())
+            .and_then(|p| self.get_ident_from_pattern(p))?;
+        let mut chars = setter.chars();
+        let state_shaped = chars.next() == Some('s')
+            && chars.next() == Some('e')
+            && chars.next() == Some('t')
+            && chars.next().is_some_and(|c| c.is_uppercase());
+        if !state_shaped {
+            return None;
+        }
+
+        let mut hook = self.extract_use_state(pattern, call)?;
+
+        // The initial value is not necessarily arg 0. The ecosystem convention for a
+        // keyed state hook is `(key, initial, opts?)`, so a single argument is the
+        // initial value and otherwise the second one is — unless it is an options
+        // object, in which case we would rather say nothing than say something wrong.
+        hook.initial_value = match call.args.len() {
+            0 => None,
+            1 => call.args.first().map(|a| self.expr_to_string(&a.expr)),
+            _ => match call.args.get(1).map(|a| a.expr.as_ref()) {
+                Some(Expr::Object(_)) | None => None,
+                Some(e) => Some(self.expr_to_string(e)),
+            },
+        };
+        Some(hook)
     }
 
     fn try_extract_standalone_hook(&self, call: &CallExpr) -> Option<HookUsage> {
@@ -2390,17 +2776,23 @@ impl<'a> Extractor<'a> {
             // Look for: const handleX = () => { ... }
             // or: const handleX = function() { ... }
             // or: function handleX() { ... }
+            //
+            // This used to require the name to start with "handle" or "on". Real
+            // components do not honour that convention — `save`, `startNew`,
+            // `copyBody` and `applyView` are all bound to JSX events in the Lares
+            // UI — so only 6 of 93 components contributed any handler at all, and
+            // every one of those messages generated an empty "TODO: implement"
+            // body. Extract every function-valued binding here; deciding which of
+            // them is actually a handler needs the JSX, which this pass does not
+            // have, so that filter lives in `recommend_messages`.
             match stmt {
                 Stmt::Decl(Decl::Var(var_decl)) => {
                     for decl in &var_decl.decls {
                         if let Pat::Ident(ident) = &decl.name {
                             let name = ident.id.sym.to_string();
-                            // Convention: handlers start with "handle" or are event-like
-                            if name.starts_with("handle") || name.starts_with("on") {
-                                if let Some(init) = &decl.init {
-                                    if let Some(handler) = self.extract_handler_from_expr(&name, init) {
-                                        handlers.push(handler);
-                                    }
+                            if let Some(init) = &decl.init {
+                                if let Some(handler) = self.extract_handler_from_expr(&name, init) {
+                                    handlers.push(handler);
                                 }
                             }
                         }
@@ -2408,9 +2800,7 @@ impl<'a> Extractor<'a> {
                 }
                 Stmt::Decl(Decl::Fn(fn_decl)) => {
                     let name = fn_decl.ident.sym.to_string();
-                    if name.starts_with("handle") || name.starts_with("on") {
-                        handlers.push(self.extract_handler_from_function(&name, &fn_decl.function));
-                    }
+                    handlers.push(self.extract_handler_from_function(&name, &fn_decl.function));
                 }
                 _ => {}
             }
@@ -2507,7 +2897,19 @@ impl<'a> Extractor<'a> {
         }
     }
 
+    /// Walk a statement for `setX(...)` calls and API calls.
+    ///
+    /// This used to look inside expression statements, returns, and the *then*
+    /// branch of an `if` — nothing else. An async handler that does its work in a
+    /// `try`, a loop, or an `else` therefore reported no mutations at all, and
+    /// generated an empty handler body. `save`, the most common shape in the Lares
+    /// UI, is exactly that: `try { … setSpecs(next) } catch { setError(e) }`.
     fn find_mutations_and_calls_in_stmt(&self, stmt: &Stmt, state_mutations: &mut Vec<String>, api_calls: &mut Vec<String>) {
+        let mut walk_block = |block: &BlockStmt, sm: &mut Vec<String>, ac: &mut Vec<String>| {
+            for s in &block.stmts {
+                self.find_mutations_and_calls_in_stmt(s, sm, ac);
+            }
+        };
         match stmt {
             Stmt::Expr(expr_stmt) => {
                 self.find_mutations_and_calls_in_expr(&expr_stmt.expr, state_mutations, api_calls);
@@ -2517,10 +2919,39 @@ impl<'a> Extractor<'a> {
                     self.find_mutations_and_calls_in_expr(arg, state_mutations, api_calls);
                 }
             }
+            Stmt::Decl(Decl::Var(var_decl)) => {
+                for decl in &var_decl.decls {
+                    if let Some(init) = &decl.init {
+                        self.find_mutations_and_calls_in_expr(init, state_mutations, api_calls);
+                    }
+                }
+            }
+            Stmt::Block(block) => walk_block(block, state_mutations, api_calls),
             Stmt::If(if_stmt) => {
                 self.find_mutations_and_calls_in_expr(&if_stmt.test, state_mutations, api_calls);
-                if let Stmt::Block(block) = &*if_stmt.cons {
-                    for s in &block.stmts {
+                self.find_mutations_and_calls_in_stmt(&if_stmt.cons, state_mutations, api_calls);
+                if let Some(alt) = &if_stmt.alt {
+                    self.find_mutations_and_calls_in_stmt(alt, state_mutations, api_calls);
+                }
+            }
+            Stmt::Try(try_stmt) => {
+                walk_block(&try_stmt.block, state_mutations, api_calls);
+                if let Some(handler) = &try_stmt.handler {
+                    walk_block(&handler.body, state_mutations, api_calls);
+                }
+                if let Some(finalizer) = &try_stmt.finalizer {
+                    walk_block(finalizer, state_mutations, api_calls);
+                }
+            }
+            Stmt::For(f) => self.find_mutations_and_calls_in_stmt(&f.body, state_mutations, api_calls),
+            Stmt::ForIn(f) => self.find_mutations_and_calls_in_stmt(&f.body, state_mutations, api_calls),
+            Stmt::ForOf(f) => self.find_mutations_and_calls_in_stmt(&f.body, state_mutations, api_calls),
+            Stmt::While(w) => self.find_mutations_and_calls_in_stmt(&w.body, state_mutations, api_calls),
+            Stmt::DoWhile(w) => self.find_mutations_and_calls_in_stmt(&w.body, state_mutations, api_calls),
+            Stmt::Labeled(l) => self.find_mutations_and_calls_in_stmt(&l.body, state_mutations, api_calls),
+            Stmt::Switch(sw) => {
+                for case in &sw.cases {
+                    for s in &case.cons {
                         self.find_mutations_and_calls_in_stmt(s, state_mutations, api_calls);
                     }
                 }
@@ -2533,8 +2964,19 @@ impl<'a> Extractor<'a> {
         match expr {
             Expr::Call(call) => {
                 if let Some(name) = self.get_callee_name(&call.callee) {
-                    // Check for setState calls
-                    if name.starts_with("set") && name.len() > 3 && name.chars().nth(3).map_or(false, |c| c.is_uppercase()) {
+                    // Check for setState calls. `setTimeout`/`setInterval` match
+                    // the set-plus-capital shape exactly and are not state at all;
+                    // once handler extraction stopped requiring a `handle*` name
+                    // they turned up in nearly every body, and the mutation
+                    // transform has no field to bind them to.
+                    if name.starts_with("set")
+                        && name.len() > 3
+                        && name.chars().nth(3).map_or(false, |c| c.is_uppercase())
+                        && !matches!(
+                            name.as_str(),
+                            "setTimeout" | "setInterval" | "setImmediate"
+                        )
+                    {
                         state_mutations.push(self.span_to_source(call.span));
                     }
                     // Check for API calls
@@ -2900,6 +3342,16 @@ impl<'a> Extractor<'a> {
         match pat {
             // Destructuring: ({ name, value, onChange })
             Pat::Object(obj) => {
+                // The destructuring pattern carries the props type inline:
+                //     ({ checked, label }: { checked: boolean; label?: string })
+                // Previously this was dropped and every prop became `Any`. Parse the
+                // annotation once so each prop can pick up its declared type.
+                let declared_types = obj
+                    .type_ann
+                    .as_ref()
+                    .map(|ann| parse_inline_object_members(&self.span_to_source(ann.span)))
+                    .unwrap_or_default();
+
                 for prop in &obj.props {
                     match prop {
                         ObjectPatProp::KeyValue(kv) => {
@@ -2909,10 +3361,15 @@ impl<'a> Extractor<'a> {
                                     name.chars().nth(2).map_or(false, |c| c.is_uppercase());
                                 let is_children = name == "children";
 
+                                let declared = declared_types.get(&name).cloned();
+                                let required = declared
+                                    .as_ref()
+                                    .map(|d| !d.optional)
+                                    .unwrap_or(true);
                                 props.push(PropExtraction {
                                     name,
-                                    type_annotation: None, // Would need type info from context
-                                    required: true,
+                                    type_annotation: declared.map(|d| d.ty),
+                                    required,
                                     default_value: None,
                                     is_callback,
                                     is_children,
@@ -2927,9 +3384,10 @@ impl<'a> Extractor<'a> {
                                 name.chars().nth(2).map_or(false, |c| c.is_uppercase());
                             let is_children = name == "children";
 
+                            let declared = declared_types.get(&name).cloned();
                             props.push(PropExtraction {
                                 name,
-                                type_annotation: None,
+                                type_annotation: declared.map(|d| d.ty),
                                 required: default_value.is_none(),
                                 default_value,
                                 is_callback,
@@ -2951,21 +3409,39 @@ impl<'a> Extractor<'a> {
                     }
                 }
             }
-            // Simple parameter: (props)
+            // Simple parameter: (props), or any other named parameter.
+            //
+            // This used to record the parameter ONLY when it was literally named
+            // `props` or `p`, so a component taking positional arguments —
+            // `renderFileEntryDetail(entry, kindLabel, commandLabel)` — reported
+            // no props at all, and every reference to `entry` in its body came
+            // out as an undefined name. Sixteen of the generated components are
+            // written that way.
             Pat::Ident(ident) => {
-                // If first param is named "props", we can't know individual props
-                // But we note it exists
                 let name = ident.id.sym.to_string();
-                if name == "props" || name == "p" {
-                    // This is a props object, not destructured
-                    props.push(PropExtraction {
-                        name: "props".to_string(),
-                        type_annotation: ident.type_ann.as_ref().map(|ann| self.span_to_source(ann.span)),
-                        required: true,
-                        default_value: None,
-                        is_callback: false,
-                        is_children: false,
-                    });
+                let is_callback = name.starts_with("on")
+                    && name.len() > 2
+                    && name.chars().nth(2).is_some_and(|c| c.is_uppercase());
+                props.push(PropExtraction {
+                    name: if name == "p" { "props".to_string() } else { name },
+                    type_annotation: ident
+                        .type_ann
+                        .as_ref()
+                        .map(|ann| self.span_to_source(ann.span)),
+                    required: true,
+                    default_value: None,
+                    is_callback,
+                    is_children: false,
+                });
+            }
+            // A parameter with a default: `(kind = "agents")`.
+            Pat::Assign(assign) => {
+                let default_value = Some(self.span_to_source(assign.right.span()));
+                let before = props.len();
+                self.extract_props_from_pattern(&assign.left, props);
+                for prop in props.iter_mut().skip(before) {
+                    prop.required = false;
+                    prop.default_value = default_value.clone();
                 }
             }
             _ => {}
@@ -3422,6 +3898,12 @@ impl<'a> Extractor<'a> {
                     calls,
                     used_by: Vec::new(), // Would need cross-file analysis
                     source: self.span_to_source(arrow.span),
+                    returns_expression: match &*arrow.body {
+                        BlockStmtOrExpr::Expr(e) => {
+                            Some(self.span_to_source(self.expr_span(e)))
+                        }
+                        BlockStmtOrExpr::BlockStmt(block) => self.sole_returned_expr(block),
+                    },
                 })
             }
             Expr::Fn(fn_expr) => {
@@ -3457,7 +3939,29 @@ impl<'a> Extractor<'a> {
             calls,
             used_by: Vec::new(),
             source: self.span_to_source(func.span),
+            returns_expression: func
+                .body
+                .as_ref()
+                .and_then(|b| self.sole_returned_expr(b)),
         })
+    }
+
+    /// The expression a block returns, when returning it is all the block does.
+    ///
+    /// One statement, and that statement a `return` with an argument. Anything
+    /// else — a local, a loop, an early return — needs a statement transform
+    /// that does not exist.
+    fn sole_returned_expr(&self, block: &BlockStmt) -> Option<String> {
+        if block.stmts.len() != 1 {
+            return None;
+        }
+        match &block.stmts[0] {
+            Stmt::Return(ret) => ret
+                .arg
+                .as_ref()
+                .map(|e| self.span_to_source(self.expr_span(e))),
+            _ => None,
+        }
     }
 
     /// Check if a block returns JSX (used to distinguish components from helpers)
@@ -3926,5 +4430,106 @@ fn capitalize_first(s: &str) -> String {
     match chars.next() {
         None => String::new(),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
+/// One member of an inline TypeScript object type.
+#[derive(Debug, Clone)]
+pub struct DeclaredMember {
+    pub ty: String,
+    pub optional: bool,
+}
+
+/// Parse the members of an inline TypeScript object type annotation.
+///
+/// Given the source text of `: { checked: boolean; onChange: (c: boolean) => void
+/// label?: string }` this yields checked→boolean, onChange→(c: boolean) => void,
+/// label→string (optional).
+///
+/// Splitting is depth-aware: the colon inside `(c: boolean) => void` and the commas
+/// inside `Map<string, number>` must not be treated as member separators, which a
+/// naive split on ':' or ',' would get wrong.
+pub fn parse_inline_object_members(src: &str) -> std::collections::HashMap<String, DeclaredMember> {
+    let mut out = std::collections::HashMap::new();
+    let t = src.trim().trim_start_matches(':').trim();
+    let inner = match (t.find('{'), t.rfind('}')) {
+        (Some(a), Some(b)) if b > a => &t[a + 1..b],
+        _ => return out,
+    };
+
+    // Split top-level members on ';', ',' or newline.
+    //
+    // `>` is only a closer when it matches an earlier `<`. The arrow in
+    // `(c: boolean) => void` would otherwise drive the depth negative, after which
+    // nothing splits correctly and every member past the first callback is lost.
+    let mut members: Vec<String> = Vec::new();
+    let mut depth = 0i32;
+    let mut angle = 0i32;
+    let mut prev = ' ';
+    let mut cur = String::new();
+    for c in inner.chars() {
+        match c {
+            '{' | '(' | '[' => { depth += 1; cur.push(c); }
+            '}' | ')' | ']' => { depth -= 1; cur.push(c); }
+            '<' => { angle += 1; cur.push(c); }
+            '>' if prev != '=' && angle > 0 => { angle -= 1; cur.push(c); }
+            ';' | ',' | '\n' if depth == 0 && angle == 0 => {
+                if !cur.trim().is_empty() { members.push(cur.trim().to_string()); }
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+        prev = c;
+    }
+    if !cur.trim().is_empty() { members.push(cur.trim().to_string()); }
+
+    for m in members {
+        // name[?]: type — find the first top-level colon
+        let mut depth = 0i32;
+        let mut angle = 0i32;
+        let mut prev = ' ';
+        let mut split_at = None;
+        for (i, c) in m.char_indices() {
+            match c {
+                '{' | '(' | '[' => depth += 1,
+                '}' | ')' | ']' => depth -= 1,
+                '<' => angle += 1,
+                '>' if prev != '=' && angle > 0 => angle -= 1,
+                ':' if depth == 0 && angle == 0 => { split_at = Some(i); break; }
+                _ => {}
+            }
+            prev = c;
+        }
+        let Some(i) = split_at else { continue };
+        let raw_name = m[..i].trim();
+        let ty = m[i + 1..].trim().to_string();
+        let optional = raw_name.ends_with('?');
+        let name = raw_name.trim_end_matches('?').trim().to_string();
+        if name.is_empty() || ty.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            continue;
+        }
+        out.insert(name, DeclaredMember { ty, optional });
+    }
+    out
+}
+
+/// Peel TypeScript's value-level type annotations off an expression.
+///
+/// `x as const`, `x satisfies T`, `x as T`, `x!` and `(x)` all describe the same
+/// runtime value. The migrator cares only about that value: keeping the wrapper
+/// meant the recorded initialiser source ended in ` as const`, which no Sigil
+/// parse accepts, and meant an object literal did not match as one.
+fn strip_ts_wrappers(expr: &Expr) -> &Expr {
+    let mut cur = expr;
+    loop {
+        cur = match cur {
+            Expr::TsAs(e) => &e.expr,
+            Expr::TsConstAssertion(e) => &e.expr,
+            Expr::TsSatisfies(e) => &e.expr,
+            Expr::TsNonNull(e) => &e.expr,
+            Expr::TsInstantiation(e) => &e.expr,
+            Expr::Paren(e) => &e.expr,
+            other => return other,
+        };
     }
 }

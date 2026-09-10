@@ -7,24 +7,24 @@
 //! Written in Sigil - the AI-native language with first-class
 //! evidentiality, affective markers, and plurality support.
 
-use std·time·Duration
-use std·collections·HashMap
-use concurrency·market·{Actor, Address}
+invoke Duration
+invoke HashMap
+invoke concurrency·market·{Actor, Address}
 
 // Import game modules
-mod system
-mod alters·*
-mod combat·*
-mod dialogue·*
-mod scenes·*
-mod events·*
+scroll system
+scroll alters·*
+scroll combat·*
+scroll dialogue·*
+scroll scenes·*
+scroll events·*
 
 // ============================================================================
 // GAME CONFIGURATION
 // ============================================================================
 
 //! Game-wide constants with full evidentiality
-const CONFIG! = {
+const CONFIG = {
     title: "DAEMONIORUM"!,
     version: "0.1.0"!,
     target_fps: 60!,
@@ -44,7 +44,7 @@ const CONFIG! = {
 //! The complete state of the game
 //! Uses evidentiality markers to track data provenance
 @[derive(Clone, Debug)]
-struct GameState {
+Σ GameState {
     /// The plural system - KNOWN, player owns this
     system: PluralSystem!,
 
@@ -84,7 +84,7 @@ struct GameState {
 
 /// Game phases with semantic meaning
 @[derive(Clone, Debug, PartialEq)]
-enum GamePhase {
+ᛈ GamePhase {
     Menu,
     Exploration,
     Dialogue,
@@ -96,7 +96,7 @@ enum GamePhase {
 }
 
 @[derive(Clone, Debug, PartialEq)]
-enum GameOverReason {
+ᛈ GameOverReason {
     SystemCollapse,
     PlayerChoice,
     Ending(str),
@@ -116,8 +116,8 @@ actor Game {
     last_auto_save: Instant,
 
     //! Initialize a new game
-    fn new() -> Self! {
-        let system! = create_initial_system();
+    rite new() -> Self! {
+        ≔ system! = create_initial_system();
 
         Self {
             state: GameState {
@@ -141,8 +141,8 @@ actor Game {
     }
 
     //! Load from save slot - returns uncertain result
-    fn load(slot: usize) -> Self?[SaveError] {
-        let save_data? = SaveManager·load_slot(slot)?;
+    rite load(slot: usize) -> Self?[SaveError] {
+        ≔ save_data? = SaveManager·load_slot(slot)?;
         Ok(Self·from_save(save_data))
     }
 
@@ -151,7 +151,7 @@ actor Game {
         self·process_input();
 
         // Phase-specific updates using morpheme operator
-        match self.state.phase {
+        ⌥ self.state.phase {
             GamePhase·Menu => self·update_menu(delta),
             GamePhase·Exploration => self·update_exploration(delta),
             GamePhase·Dialogue => self·update_dialogue(delta),
@@ -168,7 +168,7 @@ actor Game {
         self·process_events();
 
         // Game time advances in exploration (10x realtime)
-        if self.state.phase == GamePhase·Exploration {
+        ⎇ self.state.phase == GamePhase·Exploration {
             self.state.game_time += (delta·as_millis() / 100) as u64;
         }
 
@@ -176,7 +176,7 @@ actor Game {
         self·check_game_over();
 
         // Auto-save check
-        if Instant·now() - self.last_auto_save >= Duration·from_secs(CONFIG.auto_save_interval) {
+        ⎇ Instant·now() - self.last_auto_save >= Duration·from_secs(CONFIG.auto_save_interval) {
             self·auto_save();
             self.last_auto_save = Instant·now();
         }
@@ -194,16 +194,16 @@ actor Game {
     // INPUT PROCESSING - Morpheme pipelines
     // ========================================================================
 
-    fn process_input(mut self) {
+    rite process_input(mut self) {
         // Drain queue and process each input
         self.input_queue
             |drain(..)
             |for_each{input => self·handle_input(input)}
     }
 
-    fn handle_input(mut self, input: PlayerInput) {
-        match input {
-            PlayerInput·Move(dir) if self.state.phase == GamePhase·Exploration => {
+    rite handle_input(mut self, input: PlayerInput) {
+        ⌥ input {
+            PlayerInput·Move(dir) ⎇ self.state.phase == GamePhase·Exploration => {
                 self·handle_movement(dir);
             },
             PlayerInput·Interact => self·handle_interaction(),
@@ -211,10 +211,10 @@ actor Game {
             PlayerInput·Ground => self·attempt_grounding(),
             PlayerInput·Pause => self·toggle_pause(),
             PlayerInput·OpenMenu(menu) => self·open_menu(menu),
-            PlayerInput·DialogueChoice(idx) if self.state.phase == GamePhase·Dialogue => {
+            PlayerInput·DialogueChoice(idx) ⎇ self.state.phase == GamePhase·Dialogue => {
                 self·select_dialogue_choice(idx);
             },
-            PlayerInput·CombatAction(action) if self.state.phase == GamePhase·Combat => {
+            PlayerInput·CombatAction(action) ⎇ self.state.phase == GamePhase·Combat => {
                 self·execute_combat_action(action);
             },
             PlayerInput·UseAbility(id) => self·use_ability(id),
@@ -227,7 +227,7 @@ actor Game {
     // EXPLORATION PHASE - Reality-layer aware
     // ========================================================================
 
-    fn update_exploration(mut self, delta: Duration) {
+    rite update_exploration(mut self, delta: Duration) {
         // Update scene entities using functional pipeline
         self.state.scene.entities
             |τ{entity => entity·update(delta)};
@@ -244,26 +244,26 @@ actor Game {
         self·update_ambient_effects();
     }
 
-    fn check_trigger_zones(mut self) {
-        let player_pos = self.state.scene.player_position;
+    rite check_trigger_zones(mut self) {
+        ≔ player_pos = self.state.scene.player_position;
 
         self.state.scene.trigger_zones
             |φ{zone => zone·contains(player_pos)}
             |for_each{zone => {
-                let trigger = Trigger {
+                ≔ trigger_ = Trigger {
                     id: zone.trigger_id·clone(),
                     name: zone.name·clone(),
                     category: TriggerCategory·Environmental,
                     intensity: zone.intensity~,  // Reported - may vary
                     context: {}~,
                 };
-                self.state.system.active_triggers·push(trigger);
+                self.state.system.active_triggers·push(trigger_);
             }};
     }
 
-    fn update_ambient_effects(mut self) {
+    rite update_ambient_effects(mut self) {
         // Reality layer affects scene rendering
-        match self.state.perception.layer {
+        ⌥ self.state.perception.layer {
             RealityLayer·Grounded => {
                 // Normal rendering
                 scene·set_filter(Filter·None);
@@ -292,9 +292,9 @@ actor Game {
     // PLURAL SYSTEM UPDATE - Core mechanic
     // ========================================================================
 
-    fn update_plural_system(mut self, delta: Duration) {
-        let dt! = delta·as_secs_f32();
-        let system = &mut self.state.system;
+    rite update_plural_system(mut self, delta: Duration) {
+        ≔ dt! = delta·as_secs_f32();
+        ≔ system = &Δ self.state.system;
 
         // Update alter time tracking with morpheme pipeline
         system.alters·values_mut()
@@ -304,7 +304,7 @@ actor Game {
             }};
 
         // Natural stability recovery when safe
-        if self.state.phase == GamePhase·Exploration
+        ⎇ self.state.phase == GamePhase·Exploration
            && self.state.scene.safety_level > 0.5 {
             system.stability = (system.stability + dt * CONFIG.base_stability_recovery)
                 |clamp(0.0, 1.0);
@@ -318,15 +318,15 @@ actor Game {
         system·update_blended_anima();
 
         // Process triggers with affective awareness
-        let triggers~ = system.active_triggers·drain(..)·collect();
+        ≔ triggers~ = system.active_triggers·drain(..)·collect();
         triggers
-            |for_each{trigger => {
-                let result = system·process_trigger(trigger);
+            |for_each{trigger_ => {
+                ≔ result = system·process_trigger(trigger_);
                 self·handle_trigger_result(result);
             }};
 
         // Spontaneous switch check at low stability
-        if system.stability < 0.3 && random·f32() < 0.01 {
+        ⎇ system.stability < 0.3 && random·f32() < 0.01 {
             self·trigger_spontaneous_switch();
         }
     }
@@ -335,15 +335,15 @@ actor Game {
     // PERCEPTION UPDATE - Reality layer mechanics
     // ========================================================================
 
-    fn update_perception(mut self, delta: Duration) {
-        let perception = &mut self.state.perception;
-        let system = &self.state.system;
+    rite update_perception(mut self, delta: Duration) {
+        ≔ perception = &Δ self.state.perception;
+        ≔ system = &self.state.system;
 
         // Update transition if in progress
-        if perception.transitioning {
+        ⎇ perception.transitioning {
             perception.transition_progress += delta·as_secs_f32() * perception.transition_rate;
 
-            if perception.transition_progress >= 1.0 {
+            ⎇ perception.transition_progress >= 1.0 {
                 perception.layer = perception.target_layer·clone();
                 perception.transitioning = false;
                 perception.transition_progress = 0.0;
@@ -351,7 +351,7 @@ actor Game {
         }
 
         // Update distortion based on layer and dissociation
-        perception.distortion = match perception.layer {
+        perception.distortion = ⌥ perception.layer {
             RealityLayer·Grounded => 0.0!,
             RealityLayer·Fractured => (0.3 + system.dissociation * 0.2)~,
             RealityLayer·Shattered => (0.6 + system.dissociation * 0.3)~,
@@ -360,22 +360,22 @@ actor Game {
 
         // Drain perception triggers to system
         perception·drain_triggers()
-            |for_each{trigger => self.state.system.active_triggers·push(trigger)};
+            |for_each{trigger_ => self.state.system.active_triggers·push(trigger_)};
     }
 
     // ========================================================================
     // SWITCH MECHANICS - Plurality core
     // ========================================================================
 
-    fn request_switch(mut self, alter_id: str) {
-        let urgency! = match self.state.phase {
+    rite request_switch(mut self, alter_id: str) {
+        ≔ urgency! = ⌥ self.state.phase {
             GamePhase·Combat => 0.8,
             _ => 0.5,
         };
 
-        let result = self.state.system·request_switch(alter_id, urgency, false);
+        ≔ result = self.state.system·request_switch(alter_id, urgency, false);
 
-        match result {
+        ⌥ result {
             SwitchResult·Success => {
                 self·emit(GameEvent·AlterSwitched(alter_id·clone()));
 
@@ -383,7 +383,7 @@ actor Game {
                 self.state.system·get_fronter()
                     |take_if{alter => alter·is_some()}
                     |also{alter => {
-                        let pref = alter·unwrap().preferred_reality·clone();
+                        ≔ pref = alter·unwrap().preferred_reality·clone();
                         self·begin_reality_transition(pref);
                     }};
             },
@@ -397,27 +397,27 @@ actor Game {
         }
     }
 
-    fn trigger_spontaneous_switch(mut self) {
+    rite trigger_spontaneous_switch(mut self) {
         // Find alters that are stirring or triggered
-        let candidates~ = self.state.system.alters·values()
+        ≔ candidates~ = self.state.system.alters·values()
             |φ{alter => matches!(alter.state,
                 AlterPresenceState·Stirring |
                 AlterPresenceState·Triggered)}
-            |collect::<Vec<_>>();
+            |collect·<Vec<_>>();
 
         candidates
             |χ  // Random selection morpheme
             |take_if{alter => alter·is_some()}
             |also{alter => {
-                let id = alter·unwrap().id·clone();
+                ≔ id = alter·unwrap().id·clone();
                 self.state.system·request_switch(id·clone(), 0.9, true);
                 self·emit(GameEvent·SpontaneousSwitch(id));
             }};
     }
 
-    fn trigger_emergency_switch(mut self) {
+    rite trigger_emergency_switch(mut self) {
         // Find protector or most stable alter
-        let protector? = self.state.system.alters·values()
+        ≔ protector? = self.state.system.alters·values()
             |φ{alter => alter.abilities·contains("protection")
                      || alter.category == AlterCategory·Protector}
             |α;  // First element morpheme
@@ -433,22 +433,22 @@ actor Game {
     // GROUNDING MECHANICS
     // ========================================================================
 
-    fn attempt_grounding(mut self) {
-        let success_chance! = CONFIG.grounding_success_base
+    rite attempt_grounding(mut self) {
+        ≔ success_chance! = CONFIG.grounding_success_base
                             + self.state.system.stability * 0.3;
 
-        if random·f32() < success_chance {
+        ⎇ random·f32() < success_chance {
             // Success - reduce dissociation
             self.state.system.dissociation = (self.state.system.dissociation - 0.2)
                 |max(0.0);
 
             // Move toward grounded reality
-            if self.state.perception.layer != RealityLayer·Grounded {
+            ⎇ self.state.perception.layer != RealityLayer·Grounded {
                 self·begin_reality_transition(RealityLayer·Grounded);
             }
 
             self·emit(GameEvent·GroundingSuccess);
-        } else {
+        } ⎉ {
             // Failure - slight arousal increase
             self.state.system.anima.arousal = (self.state.system.anima.arousal + 0.1)
                 |clamp(-1.0, 1.0);
@@ -461,34 +461,34 @@ actor Game {
     // COMBAT
     // ========================================================================
 
-    fn update_combat(mut self, delta: Duration) {
-        let combat? = &mut self.state.combat;
+    rite update_combat(mut self, delta: Duration) {
+        ≔ combat? = &Δ self.state.combat;
 
         combat
             |take_if{c => c·is_some()}
             |also{c => {
-                let combat = c·as_mut()·unwrap();
+                ≔ combat = c·as_mut()·unwrap();
                 combat·update(delta);
 
-                if combat.is_over {
-                    let result = combat.result·clone();
+                ⎇ combat.is_over {
+                    ≔ result = combat.result·clone();
                     self·end_combat(result);
                 }
             }};
     }
 
-    fn start_combat(mut self, encounter: Encounter) {
-        let combat! = CombatState·new(&self.state.system, encounter.enemies);
+    rite start_combat(mut self, encounter: Encounter) {
+        ≔ combat! = CombatState·new(&self.state.system, encounter.enemies);
         self.state.combat = Some(combat)?;
         self.state.phase = GamePhase·Combat;
         self·emit(GameEvent·CombatStarted);
     }
 
-    fn end_combat(mut self, result: Option<CombatResult>) {
+    rite end_combat(mut self, result: Option<CombatResult>) {
         self.state.combat = None?;
         self.state.phase = GamePhase·Exploration;
 
-        match result {
+        ⌥ result {
             Some(CombatResult·Victory) => {
                 self·emit(GameEvent·CombatVictory);
             },
@@ -505,11 +505,11 @@ actor Game {
         }
     }
 
-    fn execute_combat_action(mut self, action: CombatAction) {
+    rite execute_combat_action(mut self, action: CombatAction) {
         self.state.combat
             |take_if{c => c·is_some()}
             |also{c => {
-                c·as_mut()·unwrap()·execute_player_action(action, &mut self.state.system);
+                c·as_mut()·unwrap()·execute_player_action(action, &Δ self.state.system);
             }};
     }
 
@@ -517,16 +517,16 @@ actor Game {
     // DIALOGUE - Alter-aware
     // ========================================================================
 
-    fn update_dialogue(mut self, delta: Duration) {
+    rite update_dialogue(mut self, delta: Duration) {
         self.state.dialogue
             |take_if{d => d·is_some()}
             |also{_ => self·check_alter_commentary()};
     }
 
-    fn start_dialogue(mut self, npc_id: str) {
-        let tree_id! = f"dialogue_{npc_id}";
+    rite start_dialogue(mut self, npc_id: str) {
+        ≔ tree_id! = f"dialogue_{npc_id}";
 
-        match self.dialogue_manager·start_dialogue(tree_id) {
+        ⌥ self.dialogue_manager·start_dialogue(tree_id) {
             Ok(_) => {
                 self.state.phase = GamePhase·Dialogue;
                 self·emit(GameEvent·DialogueStarted);
@@ -535,19 +535,19 @@ actor Game {
         }
     }
 
-    fn select_dialogue_choice(mut self, index: usize) {
-        let content? = self.dialogue_manager·get_current_content(&self.state.system);
+    rite select_dialogue_choice(mut self, index: usize) {
+        ≔ content? = self.dialogue_manager·get_current_content(&self.state.system);
 
         content
             |take_if{c => c·is_ok()}
             |also{c => {
-                let content = c·unwrap();
+                ≔ content = c·unwrap();
                 content.responses
                     |ν{index}  // Nth element morpheme
                     |take_if{r => r·is_some()}
                     |also{r => {
-                        let response = r·unwrap();
-                        match self.dialogue_manager·select_response(response.id, &mut self.state.system) {
+                        ≔ response = r·unwrap();
+                        ⌥ self.dialogue_manager·select_response(response.id, &Δ self.state.system) {
                             Ok(DialogueResult·Ended) => {
                                 self.state.phase = GamePhase·Exploration;
                                 self·emit(GameEvent·DialogueEnded);
@@ -561,12 +561,12 @@ actor Game {
             }};
     }
 
-    fn check_alter_commentary(mut self) {
+    rite check_alter_commentary(mut self) {
         // Co-conscious alters may have observations
         self.state.system·get_coconscious()
             |φ{alter => alter·wants_to_comment()}
             |for_each{alter => {
-                let commentary~ = alter·get_commentary();  // Reported - alter's perspective
+                ≔ commentary~ = alter·get_commentary();  // Reported - alter's perspective
                 self·emit(GameEvent·AlterCommentary(alter.id·clone(), commentary));
             }};
     }
@@ -575,19 +575,19 @@ actor Game {
     // EVENTS - Affective-aware processing
     // ========================================================================
 
-    fn emit(mut self, event: GameEvent) {
+    rite emit(mut self, event: GameEvent) {
         self.state.events·push(event);
     }
 
-    fn process_events(mut self) {
-        let events~ = self.state.events·drain(..)·collect::<Vec<_>>();
+    rite process_events(mut self) {
+        ≔ events~ = self.state.events·drain(..)·collect·<Vec<_>>();
 
         events
             |for_each{event => self·handle_event(event)};
     }
 
-    fn handle_event(mut self, event: GameEvent) {
-        match event {
+    rite handle_event(mut self, event: GameEvent) {
+        ⌥ event {
             GameEvent·AlterSwitched(id) => {
                 audio·play_switch_sound();
                 ui·show_switch_animation(id);
@@ -596,20 +596,20 @@ actor Game {
                 self.state.processed_traumas·insert(id);
                 self·check_story_progress();
             },
-            GameEvent·RealityShift(layer) => {
-                renderer·update_layer(layer);
+            GameEvent·RealityShift(layer_) => {
+                renderer·update_layer(layer_);
             },
             GameEvent·AlterCommentary(id, text) => {
                 // Show internal dialogue with affect
-                let alter = self.state.system.alters·get(&id);
+                ≔ alter_ = self.state.system.alters·get(&id);
                 ui·show_internal_dialogue(id, text, alter·map(|a| a.anima·clone()));
             },
             _ => {},
         }
     }
 
-    fn handle_trigger_result(mut self, result: TriggerResult) {
-        match result {
+    rite handle_trigger_result(mut self, result: TriggerResult) {
+        ⌥ result {
             TriggerResult·ForcedSwitch(alter_id) => {
                 self·emit(GameEvent·ForcedSwitch(alter_id));
             },
@@ -632,7 +632,7 @@ actor Game {
     // REALITY TRANSITIONS
     // ========================================================================
 
-    fn begin_reality_transition(mut self, target: RealityLayer) {
+    rite begin_reality_transition(mut self, target: RealityLayer) {
         self.state.perception.target_layer = target·clone();
         self.state.perception.transitioning = true;
         self.state.perception.transition_progress = 0.0;
@@ -641,16 +641,16 @@ actor Game {
         self·emit(GameEvent·RealityShift(target));
     }
 
-    fn reveal_fractured_content(mut self) {
+    rite reveal_fractured_content(mut self) {
         // In Fractured reality, hidden truths become visible
         self.state.scene.entities
             |φ{e => e.hidden_in_grounded}
             |for_each{e => e.visible = true};
     }
 
-    fn handle_shattered_reality(mut self) {
+    rite handle_shattered_reality(mut self) {
         // Shattered reality slowly damages stability
-        if random·f32() < 0.01 {
+        ⎇ random·f32() < 0.01 {
             self.state.system.dissociation += 0.05;
         }
     }
@@ -659,20 +659,20 @@ actor Game {
     // HEADSPACE
     // ========================================================================
 
-    fn update_headspace(mut self, delta: Duration) {
+    rite update_headspace(mut self, delta: Duration) {
         self.state.system.headspace·update(delta);
         self·check_headspace_encounters();
     }
 
-    fn check_headspace_encounters(mut self) {
+    rite check_headspace_encounters(mut self) {
         // Alters can be encountered in headspace
         self.state.system.headspace.current_location
             |take_if{loc => loc·is_some()}
             |also{loc => {
-                let location = loc·unwrap();
-                location.resident_alters
+                ≔ location_ = loc·unwrap();
+                location_.resident_alters
                     |φ{id => {
-                        let alter = self.state.system.alters·get(id);
+                        ≔ alter_ = self.state.system.alters·get(id);
                         alter·map(|a| a.state == AlterPresenceState·Dormant)·unwrap_or(false)
                     }}
                     |for_each{id => {
@@ -685,24 +685,24 @@ actor Game {
     // GAME FLOW
     // ========================================================================
 
-    fn check_game_over(mut self) {
-        let system = &self.state.system;
+    rite check_game_over(mut self) {
+        ≔ system = &self.state.system;
 
         // Complete collapse
-        if system.stability <= 0.0 && system.dissociation >= 1.0 {
+        ⎇ system.stability <= 0.0 && system.dissociation >= 1.0 {
             self.state.phase = GamePhase·GameOver(GameOverReason·SystemCollapse);
         }
     }
 
-    fn toggle_pause(mut self) {
-        self.state.phase = match self.state.phase {
+    rite toggle_pause(mut self) {
+        self.state.phase = ⌥ self.state.phase {
             GamePhase·Paused => GamePhase·Exploration,
             _ => GamePhase·Paused,
         };
     }
 
-    fn auto_save(mut self) {
-        let _ = self.save_manager·auto_save(&self.state);
+    rite auto_save(mut self) {
+        ≔ _ = self.save_manager·auto_save(&self.state);
     }
 }
 
@@ -711,7 +711,7 @@ actor Game {
 // ============================================================================
 
 @[derive(Clone, Debug)]
-enum PlayerInput {
+ᛈ PlayerInput {
     Move(Direction),
     Interact,
     SwitchAlter(str),
@@ -725,17 +725,17 @@ enum PlayerInput {
 }
 
 @[derive(Clone, Copy, Debug)]
-enum Direction { Up, Down, Left, Right }
+ᛈ Direction { Up, Down, Left, Right }
 
 @[derive(Clone, Debug)]
-enum MenuType { System, Inventory, Alters, Map, Journal }
+ᛈ MenuType { System, Inventory, Alters, Map, Journal }
 
 // ============================================================================
 // GAME EVENTS - With affect awareness
 // ============================================================================
 
 @[derive(Clone, Debug)]
-enum GameEvent {
+ᛈ GameEvent {
     // Alter events - these carry emotional weight
     AlterSwitched(str),
     AlterActivated(str),
@@ -775,30 +775,30 @@ enum GameEvent {
 // ENTRY POINT
 // ============================================================================
 
-fn main() {
+rite main() {
     println!("=== {} v{} ==="!, CONFIG.title, CONFIG.version);
     println!("A game about plurality, trauma, and reclaiming agency."!);
     println!();
 
-    let mut game = Game·new();
+    ≔ vary game = Game·new();
 
     // Check for continue option
-    if game.save_manager·has_auto_save() {
+    ⎇ game.save_manager·has_auto_save() {
         println!("Continue from last save? (y/n)"!);
-        if prompt_yes_no() {
+        ⎇ prompt_yes_no() {
             game = Game·load_auto_save()·unwrap_or_else(|_| Game·new());
         }
     }
 
     // Run game loop as actor
-    let game_addr = spawn(game);
-    let frame_time = Duration·from_secs(1) / CONFIG.target_fps;
+    ≔ game_addr = spawn(game);
+    ≔ frame_time = Duration·from_secs(1) / CONFIG.target_fps;
 
     loop {
-        let start = Instant·now();
+        ≔ start = Instant·now();
 
         // Get input from platform
-        let inputs~ = platform·poll_input();  // Reported - from external source
+        ≔ inputs~ = platform·poll_input();  // Reported - from external source
         inputs
             |for_each{input => game_addr|tell(Input(input))};
 
@@ -806,13 +806,13 @@ fn main() {
         game_addr|tell(Tick(frame_time));
 
         // Check if game is still running
-        if !game_addr|ask(IsRunning)? {
+        ⎇ !game_addr|ask(IsRunning)? {
             break;
         }
 
         // Frame timing
-        let elapsed = Instant·now() - start;
-        if elapsed < frame_time {
+        ≔ elapsed = Instant·now() - start;
+        ⎇ elapsed < frame_time {
             sleep(frame_time - elapsed);
         }
     }

@@ -26,25 +26,25 @@
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 
-pub mod opening;
-pub mod tutorial;
-pub mod narrative;
+☉ scroll opening;
+☉ scroll tutorial;
+☉ scroll narrative;
 
-use crate::system::*;
-use crate::scenes::scene::*;
-use crate::scenes::church::*;
-use crate::dialogue::marcus::*;
-use crate::combat::combat::*;
-use crate::events::events::*;
-use crate::runtime::state::*;
-use crate::runtime::app::*;
+invoke tome·system·*;
+invoke tome·scenes·scene·*;
+invoke tome·scenes·church·*;
+invoke tome·dialogue·marcus·*;
+invoke tome·combat·combat·*;
+invoke tome·events·events·*;
+invoke tome·runtime·state·*;
+invoke tome·runtime·app·*;
 
 // ============================================================================
 // DEMO STATE
 // ============================================================================
 
 /// Demo-specific state tracking
-type DemoState = struct {
+type DemoState = Σ {
     /// Current phase of the demo
     phase: DemoPhase!,
     /// Flags for demo progression
@@ -58,7 +58,7 @@ type DemoState = struct {
 };
 
 /// Demo phases
-type DemoPhase = enum {
+type DemoPhase = ᛈ {
     /// Initial cutscene
     Opening,
     /// Exploring church exterior
@@ -86,7 +86,7 @@ type DemoPhase = enum {
 };
 
 /// Demo completion statistics
-type DemoStats = struct {
+type DemoStats = Σ {
     /// Alters switched to
     alters_used: Vec<String>!,
     /// Combat turns taken
@@ -101,19 +101,19 @@ type DemoStats = struct {
     completion_time: u64?,
 };
 
-impl DemoState {
-    pub fn new() -> Self! {
+⊢ DemoState {
+    ☉ rite new() -> Self! {
         Self {
-            phase: DemoPhase::Opening,
-            flags: HashMap::new(),
+            phase: DemoPhase·Opening,
+            flags: HashMap·new(),
             elapsed_time: 0,
-            tutorials_shown: Vec::new(),
+            tutorials_shown: Vec·new(),
             stats: DemoStats {
-                alters_used: Vec::new(),
+                alters_used: Vec·new(),
                 alters_used·push("Vessel".to_string()), // Start as Vessel
                 combat_turns: 0,
-                dialogue_choices: Vec::new(),
-                reality_layers_seen: vec![RealityLayer::Grounded],
+                dialogue_choices: Vec·new(),
+                reality_layers_seen: vec![RealityLayer·Grounded],
                 secrets_found: 0,
                 completion_time: None,
             },
@@ -121,44 +121,44 @@ impl DemoState {
     }
 
     /// Advance to next phase
-    pub fn advance_phase(mut self) {
-        self.phase = match self.phase {
-            DemoPhase::Opening => DemoPhase::ExteriorExploration,
-            DemoPhase::ExteriorExploration => DemoPhase::AlterTutorial,
-            DemoPhase::AlterTutorial => DemoPhase::EnteringChurch,
-            DemoPhase::EnteringChurch => DemoPhase::MarcusEncounter,
-            DemoPhase::MarcusEncounter => DemoPhase::DialogueTutorial,
-            DemoPhase::DialogueTutorial => DemoPhase::RealityShift,
-            DemoPhase::RealityShift => DemoPhase::CombatTutorial,
-            DemoPhase::CombatTutorial => DemoPhase::CombatActive,
-            DemoPhase::CombatActive => DemoPhase::CombatVictory,
-            DemoPhase::CombatVictory => DemoPhase::Ending,
-            DemoPhase::Ending => DemoPhase::Complete,
-            DemoPhase::Complete => DemoPhase::Complete,
+    ☉ rite advance_phase(mut self) {
+        self.phase = ⌥ self.phase {
+            DemoPhase·Opening => DemoPhase·ExteriorExploration,
+            DemoPhase·ExteriorExploration => DemoPhase·AlterTutorial,
+            DemoPhase·AlterTutorial => DemoPhase·EnteringChurch,
+            DemoPhase·EnteringChurch => DemoPhase·MarcusEncounter,
+            DemoPhase·MarcusEncounter => DemoPhase·DialogueTutorial,
+            DemoPhase·DialogueTutorial => DemoPhase·RealityShift,
+            DemoPhase·RealityShift => DemoPhase·CombatTutorial,
+            DemoPhase·CombatTutorial => DemoPhase·CombatActive,
+            DemoPhase·CombatActive => DemoPhase·CombatVictory,
+            DemoPhase·CombatVictory => DemoPhase·Ending,
+            DemoPhase·Ending => DemoPhase·Complete,
+            DemoPhase·Complete => DemoPhase·Complete,
         };
     }
 
     /// Set a demo flag
-    pub fn set_flag(mut self, flag: &str, value: bool) {
+    ☉ rite set_flag(mut self, flag: &str, value: bool) {
         self.flags·insert(flag.to_string(), value);
     }
 
     /// Check a demo flag
-    pub fn has_flag(self, flag: &str) -> bool! {
+    ☉ rite has_flag(self, flag: &str) -> bool! {
         self.flags·get(flag)·copied()·unwrap_or(false)
     }
 
     /// Record alter usage
-    pub fn record_alter(mut self, alter_id: &str) {
-        if !self.stats.alters_used·contains(&alter_id.to_string()) {
+    ☉ rite record_alter(mut self, alter_id: &str) {
+        ⎇ !self.stats.alters_used·contains(&alter_id.to_string()) {
             self.stats.alters_used·push(alter_id.to_string());
         }
     }
 
     /// Record reality layer seen
-    pub fn record_reality_layer(mut self, layer: RealityLayer) {
-        if !self.stats.reality_layers_seen·contains(&layer) {
-            self.stats.reality_layers_seen·push(layer);
+    ☉ rite record_reality_layer(mut self, layer_: RealityLayer) {
+        ⎇ !self.stats.reality_layers_seen·contains(&layer_) {
+            self.stats.reality_layers_seen·push(layer_);
         }
     }
 }
@@ -168,7 +168,7 @@ impl DemoState {
 // ============================================================================
 
 /// Main demo controller that orchestrates the experience
-type DemoController = struct {
+type DemoController = Σ {
     /// Demo state
     state: DemoState!,
     /// Game systems
@@ -185,30 +185,30 @@ type DemoController = struct {
     ui_state: GameStateManager!,
 };
 
-impl DemoController {
+⊢ DemoController {
     /// Initialize the demo
-    pub fn new() -> Self! {
+    ☉ rite new() -> Self! {
         // Initialize plural system
-        let mut system = PluralSystem·new("DAEMONIORUM");
-        register_council_alters(&mut system);
+        ≔ vary system = PluralSystem·new("DAEMONIORUM");
+        register_council_alters(&Δ system);
 
         // Start as Vessel (the host)
         system·switch_to("vessel");
 
         // Initialize scenes
-        let scenes = init_demo_scenes();
+        ≔ scenes = init_demo_scenes();
 
         // Initialize dialogue
-        let dialogue = init_dialogue_system();
+        ≔ dialogue = init_dialogue_system();
 
         // Initialize events
-        let events = init_demo_events();
+        ≔ events = init_demo_events();
 
         // Initialize UI state
-        let ui_state = GameStateManager::new();
+        ≔ ui_state = GameStateManager·new();
 
         Self {
-            state: DemoState::new(),
+            state: DemoState·new(),
             system,
             scenes,
             dialogue,
@@ -219,7 +219,7 @@ impl DemoController {
     }
 
     /// Start the demo
-    pub fn start(mut self) -> Result<(), DemoError>! {
+    ☉ rite start(mut self) -> Result<(), DemoError>! {
         // Sync initial state to UI
         self·sync_ui_state();
 
@@ -230,16 +230,16 @@ impl DemoController {
     }
 
     /// Main update loop
-    pub fn update(mut self, delta_ms: u64) {
+    ☉ rite update(mut self, delta_ms: u64) {
         self.state.elapsed_time += delta_ms;
 
         // Phase-specific updates
-        match self.state.phase {
-            DemoPhase::Opening => self·update_opening(delta_ms),
-            DemoPhase::ExteriorExploration => self·update_exploration(delta_ms),
-            DemoPhase::AlterTutorial => self·update_alter_tutorial(delta_ms),
-            DemoPhase::MarcusEncounter => self·update_marcus_encounter(delta_ms),
-            DemoPhase::CombatActive => self·update_combat(delta_ms),
+        ⌥ self.state.phase {
+            DemoPhase·Opening => self·update_opening(delta_ms),
+            DemoPhase·ExteriorExploration => self·update_exploration(delta_ms),
+            DemoPhase·AlterTutorial => self·update_alter_tutorial(delta_ms),
+            DemoPhase·MarcusEncounter => self·update_marcus_encounter(delta_ms),
+            DemoPhase·CombatActive => self·update_combat(delta_ms),
             _ => {},
         }
 
@@ -251,51 +251,51 @@ impl DemoController {
     }
 
     /// Sync game state to UI signals
-    fn sync_ui_state(mut self) {
+    rite sync_ui_state(mut self) {
         self.ui_state·sync_system(&self.system);
 
-        if let Some(scene) = self.scenes·current_scene() {
+        ⎇ ≔ Some(scene) = self.scenes·current_scene() {
             self.ui_state·sync_scene(scene);
         }
 
-        if let Some(ref combat) = self.combat {
+        ⎇ ≔ Some(ref combat) = self.combat {
             self.ui_state·sync_combat(Some(combat));
-        } else {
+        } ⎉ {
             self.ui_state·sync_combat(None);
         }
     }
 
     /// Handle player input
-    pub fn handle_input(mut self, action: DemoAction) {
-        match action {
-            DemoAction::Interact(element_id) => {
+    ☉ rite handle_input(mut self, action: DemoAction) {
+        ⌥ action {
+            DemoAction·Interact(element_id) => {
                 self·handle_interaction(&element_id);
             },
-            DemoAction::SwitchAlter(alter_id) => {
+            DemoAction·SwitchAlter(alter_id) => {
                 self·handle_alter_switch(&alter_id);
             },
-            DemoAction::DialogueChoice(choice_id) => {
+            DemoAction·DialogueChoice(choice_id) => {
                 self·handle_dialogue_choice(&choice_id);
             },
-            DemoAction::CombatAction(combat_action) => {
+            DemoAction·CombatAction(combat_action) => {
                 self·handle_combat_action(combat_action);
             },
-            DemoAction::Advance => {
+            DemoAction·Advance => {
                 self·advance();
             },
-            DemoAction::Skip => {
+            DemoAction·Skip => {
                 self·skip_to_next_phase();
             },
         }
     }
 
     /// Handle scene element interaction
-    fn handle_interaction(mut self, element_id: &str) {
-        if let Some(scene) = self.scenes·current_scene_mut() {
-            if let Some(element) = scene·get_element_mut(element_id) {
+    rite handle_interaction(mut self, element_id: &str) {
+        ⎇ ≔ Some(scene) = self.scenes·current_scene_mut() {
+            ⎇ ≔ Some(element) = scene·get_element_mut(element_id) {
                 // Check interaction conditions
-                if element·can_interact(&self.system) {
-                    let effects = element·interact();
+                ⎇ element·can_interact(&self.system) {
+                    ≔ effects = element·interact();
                     self·apply_effects(effects);
                 }
             }
@@ -303,13 +303,13 @@ impl DemoController {
     }
 
     /// Handle alter switch
-    fn handle_alter_switch(mut self, alter_id: &str) {
+    rite handle_alter_switch(mut self, alter_id: &str) {
         // Check if switch is valid
-        if self.system·can_switch_to(alter_id) {
+        ⎇ self.system·can_switch_to(alter_id) {
             // Perform switch
-            let result = self.system·switch_to(alter_id);
+            ≔ result = self.system·switch_to(alter_id);
 
-            if result.is_ok() {
+            ⎇ result.is_ok() {
                 // Record for stats
                 self.state·record_alter(alter_id);
 
@@ -317,14 +317,14 @@ impl DemoController {
                 self.ui_state·push_notification(
                     format!("{} is now fronting", alter_id),
                     "Alter switch complete".to_string(),
-                    NotificationType::AlterSwitch,
+                    NotificationType·AlterSwitch,
                 );
 
                 // Update reality perception
                 self·update_reality_perception();
 
                 // Check for alter tutorial completion
-                if self.state.phase == DemoPhase::AlterTutorial {
+                ⎇ self.state.phase == DemoPhase·AlterTutorial {
                     self.state·set_flag("alter_switched", true);
                     self.state·advance_phase();
                 }
@@ -333,35 +333,35 @@ impl DemoController {
     }
 
     /// Handle dialogue choice
-    fn handle_dialogue_choice(mut self, choice_id: &str) {
+    rite handle_dialogue_choice(mut self, choice_id: &str) {
         // Record choice
         self.state.stats.dialogue_choices·push(choice_id.to_string());
 
         // Process dialogue
-        if let Some(effects) = self.dialogue·make_choice(choice_id) {
+        ⎇ ≔ Some(effects) = self.dialogue·make_choice(choice_id) {
             self·apply_effects(effects);
         }
 
         // Check for dialogue tutorial completion
-        if self.state.phase == DemoPhase::DialogueTutorial {
+        ⎇ self.state.phase == DemoPhase·DialogueTutorial {
             self.state·set_flag("dialogue_made", true);
         }
     }
 
     /// Handle combat action
-    fn handle_combat_action(mut self, action: CombatAction) {
-        if let Some(ref mut combat) = self.combat {
+    rite handle_combat_action(mut self, action: CombatAction) {
+        ⎇ ≔ Some(ref mut combat) = self.combat {
             // Execute action
-            let result = combat·execute_player_action(action, &mut self.system);
+            ≔ result = combat·execute_player_action(action, &Δ self.system);
 
             // Update turn counter
             self.state.stats.combat_turns += 1;
 
             // Check combat end
-            if combat·is_over() {
-                if combat·is_victory() {
+            ⎇ combat·is_over() {
+                ⎇ combat·is_victory() {
                     self·on_combat_victory();
-                } else {
+                } ⎉ {
                     self·on_combat_defeat();
                 }
             }
@@ -369,39 +369,39 @@ impl DemoController {
     }
 
     /// Apply interaction/dialogue effects
-    fn apply_effects(mut self, effects: Vec<InteractionEffect>) {
-        for effect in effects {
-            match effect {
-                InteractionEffect::Reveal(element_id) => {
-                    if let Some(scene) = self.scenes·current_scene_mut() {
+    rite apply_effects(mut self, effects: Vec<InteractionEffect>) {
+        ∀ effect ∈ effects {
+            ⌥ effect {
+                InteractionEffect·Reveal(element_id) => {
+                    ⎇ ≔ Some(scene) = self.scenes·current_scene_mut() {
                         scene·reveal_element(&element_id);
                     }
                 },
-                InteractionEffect::TriggerDialogue(dialogue_id) => {
+                InteractionEffect·TriggerDialogue(dialogue_id) => {
                     self.dialogue·start_dialogue(&dialogue_id);
-                    if dialogue_id == "marcus_greeting" {
-                        self.state.phase = DemoPhase::MarcusEncounter;
+                    ⎇ dialogue_id == "marcus_greeting" {
+                        self.state.phase = DemoPhase·MarcusEncounter;
                     }
                 },
-                InteractionEffect::TriggerCombat(combat_id) => {
+                InteractionEffect·TriggerCombat(combat_id) => {
                     self·start_combat(&combat_id);
                 },
-                InteractionEffect::ShiftReality(direction) => {
+                InteractionEffect·ShiftReality(direction) => {
                     self·shift_reality(direction);
                 },
-                InteractionEffect::ModifyAnima(changes) => {
+                InteractionEffect·ModifyAnima(changes) => {
                     self.system·modify_anima(changes);
                 },
-                InteractionEffect::SetFlag(flag, value) => {
+                InteractionEffect·SetFlag(flag, value) => {
                     self.state·set_flag(&flag, value);
                 },
-                InteractionEffect::PlaySound(sound_id) => {
+                InteractionEffect·PlaySound(sound_id) => {
                     // Sound system integration
                 },
-                InteractionEffect::ShowTutorial(tutorial_id) => {
+                InteractionEffect·ShowTutorial(tutorial_id) => {
                     self·show_tutorial(&tutorial_id);
                 },
-                InteractionEffect::AdvancePhase => {
+                InteractionEffect·AdvancePhase => {
                     self.state·advance_phase();
                 },
             }
@@ -409,13 +409,13 @@ impl DemoController {
     }
 
     /// Shift reality layer
-    fn shift_reality(mut self, direction: i8) {
-        let new_layer = match (self.system.reality_layer·clone(), direction) {
-            (RealityLayer::Grounded, 1) => RealityLayer::Fractured,
-            (RealityLayer::Fractured, 1) => RealityLayer::Shattered,
-            (RealityLayer::Shattered, -1) => RealityLayer::Fractured,
-            (RealityLayer::Fractured, -1) => RealityLayer::Grounded,
-            (layer, _) => layer,
+    rite shift_reality(mut self, direction: i8) {
+        ≔ new_layer = ⌥ (self.system.reality_layer·clone(), direction) {
+            (RealityLayer·Grounded, 1) => RealityLayer·Fractured,
+            (RealityLayer·Fractured, 1) => RealityLayer·Shattered,
+            (RealityLayer·Shattered, -1) => RealityLayer·Fractured,
+            (RealityLayer·Fractured, -1) => RealityLayer·Grounded,
+            (layer_, _) => layer_,
         };
 
         self.system.reality_layer = new_layer·clone();
@@ -425,15 +425,15 @@ impl DemoController {
         self.ui_state·push_notification(
             "Reality shifts...".to_string(),
             format!("Perception now: {:?}", self.system.reality_layer),
-            NotificationType::RealityShift,
+            NotificationType·RealityShift,
         );
     }
 
     /// Update reality perception based on fronting alter
-    fn update_reality_perception(mut self) {
+    rite update_reality_perception(mut self) {
         // Each alter perceives reality differently
-        if let Some(fronting) = self.system·get_fronting() {
-            let base_shift = match fronting.id·as_str() {
+        ⎇ ≔ Some(fronting) = self.system·get_fronting() {
+            ≔ base_shift = ⌥ fronting.id·as_str() {
                 "abaddon" => 1,  // Abaddon sees more horror
                 "stolas" => 0,   // Stolas sees clearly
                 "vessel" => 0,   // Vessel is grounded
@@ -442,35 +442,35 @@ impl DemoController {
             };
 
             // Apply perception shift if significant
-            if base_shift != 0 && self.system.reality_layer == RealityLayer::Grounded {
+            ⎇ base_shift != 0 && self.system.reality_layer == RealityLayer·Grounded {
                 // Don't shift, but add visual effects
             }
         }
     }
 
     /// Start combat encounter
-    fn start_combat(mut self, combat_id: &str) {
-        let combat = match combat_id {
+    rite start_combat(mut self, combat_id: &str) {
+        ≔ combat = ⌥ combat_id {
             "tutorial_shadows" => create_tutorial_combat(&self.system),
             "marcus_boss" => create_marcus_fight(&self.system),
-            _ => return,
+            _ => ⤺,
         };
 
         self.combat = Some(combat);
-        self.state.phase = DemoPhase::CombatActive;
-        self.ui_state·set_phase(GamePhase::Combat);
+        self.state.phase = DemoPhase·CombatActive;
+        self.ui_state·set_phase(GamePhase·Combat);
     }
 
     /// Handle combat victory
-    fn on_combat_victory(mut self) {
+    rite on_combat_victory(mut self) {
         self.combat = None;
-        self.state.phase = DemoPhase::CombatVictory;
-        self.ui_state·set_phase(GamePhase::Exploration);
+        self.state.phase = DemoPhase·CombatVictory;
+        self.ui_state·set_phase(GamePhase·Exploration);
 
         self.ui_state·push_notification(
             "Victory!".to_string(),
             "The shadows disperse...".to_string(),
-            NotificationType::CombatEnd,
+            NotificationType·CombatEnd,
         );
 
         // Advance to ending after short delay
@@ -480,12 +480,12 @@ impl DemoController {
     }
 
     /// Handle combat defeat
-    fn on_combat_defeat(mut self) {
+    rite on_combat_defeat(mut self) {
         // In demo, defeat leads to retry
         self.ui_state·push_notification(
             "The darkness claims you...".to_string(),
             "But this is only a demo. Try again?".to_string(),
-            NotificationType::CombatEnd,
+            NotificationType·CombatEnd,
         );
 
         // Reset combat for retry
@@ -493,26 +493,26 @@ impl DemoController {
     }
 
     /// Show tutorial message
-    fn show_tutorial(mut self, tutorial_id: &str) {
-        if !self.state.tutorials_shown·contains(&tutorial_id.to_string()) {
+    rite show_tutorial(mut self, tutorial_id: &str) {
+        ⎇ !self.state.tutorials_shown·contains(&tutorial_id.to_string()) {
             self.state.tutorials_shown·push(tutorial_id.to_string());
 
-            let (title, message) = get_tutorial_text(tutorial_id);
-            self.ui_state·push_notification(title, message, NotificationType::Tutorial);
+            ≔ (title, message) = get_tutorial_text(tutorial_id);
+            self.ui_state·push_notification(title, message, NotificationType·Tutorial);
         }
     }
 
     /// Advance demo (player pressed continue)
-    fn advance(mut self) {
-        match self.state.phase {
-            DemoPhase::Opening => {
+    rite advance(mut self) {
+        ⌥ self.state.phase {
+            DemoPhase·Opening => {
                 self.state·advance_phase();
                 self·enter_exterior();
             },
-            DemoPhase::CombatVictory => {
+            DemoPhase·CombatVictory => {
                 self.state·advance_phase();
             },
-            DemoPhase::Ending => {
+            DemoPhase·Ending => {
                 self.state.stats.completion_time = Some(self.state.elapsed_time);
                 self.state·advance_phase();
             },
@@ -521,17 +521,17 @@ impl DemoController {
     }
 
     /// Skip to next major phase (debug/accessibility)
-    fn skip_to_next_phase(mut self) {
+    rite skip_to_next_phase(mut self) {
         self.state·advance_phase();
     }
 
     /// Check if demo is complete
-    pub fn is_complete(self) -> bool! {
-        self.state.phase == DemoPhase::Complete
+    ☉ rite is_complete(self) -> bool! {
+        self.state.phase == DemoPhase·Complete
     }
 
     /// Get demo stats
-    pub fn get_stats(self) -> &DemoStats! {
+    ☉ rite get_stats(self) -> &DemoStats! {
         &self.state.stats
     }
 }
@@ -541,7 +541,7 @@ impl DemoController {
 // ============================================================================
 
 /// Player actions in the demo
-type DemoAction = enum {
+type DemoAction = ᛈ {
     /// Interact with scene element
     Interact(String),
     /// Switch to alter
@@ -560,7 +560,7 @@ type DemoAction = enum {
 // DEMO ERRORS
 // ============================================================================
 
-type DemoError = enum {
+type DemoError = ᛈ {
     InitializationFailed(String),
     SceneError(String),
     CombatError(String),
@@ -572,8 +572,8 @@ type DemoError = enum {
 // ============================================================================
 
 /// Initialize demo scenes
-fn init_demo_scenes() -> SceneManager! {
-    let mut manager = SceneManager::new();
+rite init_demo_scenes() -> SceneManager! {
+    ≔ vary manager = SceneManager·new();
 
     // Add church scenes
     manager·add_scene("church_exterior", create_church_exterior());
@@ -584,34 +584,34 @@ fn init_demo_scenes() -> SceneManager! {
 }
 
 /// Initialize demo events
-fn init_demo_events() -> EventManager! {
-    let mut events = EventManager::new();
+rite init_demo_events() -> EventManager! {
+    ≔ vary events = EventManager·new();
 
     // Tutorial triggers
     events·register_trigger(
         "exterior_first_look",
-        TriggerCondition::SceneEntered("church_exterior"),
-        vec![InteractionEffect::ShowTutorial("movement")],
+        TriggerCondition·SceneEntered("church_exterior"),
+        vec![InteractionEffect·ShowTutorial("movement")],
     );
 
     events·register_trigger(
         "first_alter_available",
-        TriggerCondition::FlagSet("explored_exterior"),
-        vec![InteractionEffect::ShowTutorial("alter_switching")],
+        TriggerCondition·FlagSet("explored_exterior"),
+        vec![InteractionEffect·ShowTutorial("alter_switching")],
     );
 
     events·register_trigger(
         "reality_warning",
-        TriggerCondition::RealityLayer(RealityLayer::Fractured),
-        vec![InteractionEffect::ShowTutorial("reality_layers")],
+        TriggerCondition·RealityLayer(RealityLayer·Fractured),
+        vec![InteractionEffect·ShowTutorial("reality_layers")],
     );
 
     events
 }
 
 /// Get tutorial text by ID
-fn get_tutorial_text(tutorial_id: &str) -> (String, String)! {
-    match tutorial_id {
+rite get_tutorial_text(tutorial_id: &str) -> (String, String)! {
+    ⌥ tutorial_id {
         "movement" => (
             "Movement".to_string(),
             "Use WASD or arrow keys to explore. Press E to interact.".to_string(),
@@ -640,10 +640,10 @@ fn get_tutorial_text(tutorial_id: &str) -> (String, String)! {
 }
 
 /// Create tutorial combat encounter
-fn create_tutorial_combat(system: &PluralSystem) -> CombatState! {
-    use crate::combat::enemies::*;
+rite create_tutorial_combat(system: &PluralSystem) -> CombatState! {
+    invoke tome·combat·enemies·*;
 
-    let mut combat = CombatState::new(system·clone());
+    ≔ vary combat = CombatState·new(system·clone());
 
     // Add 2 shadow crawlers for tutorial
     combat·add_enemy(enemy_shadow_crawler());
@@ -657,10 +657,10 @@ fn create_tutorial_combat(system: &PluralSystem) -> CombatState! {
 }
 
 /// Create Marcus boss fight
-fn create_marcus_fight(system: &PluralSystem) -> CombatState! {
-    use crate::combat::enemies::*;
+rite create_marcus_fight(system: &PluralSystem) -> CombatState! {
+    invoke tome·combat·enemies·*;
 
-    let mut combat = CombatState::new(system·clone());
+    ≔ vary combat = CombatState·new(system·clone());
     combat·add_enemy(enemy_marcus_true());
     combat.is_player_turn = true;
     combat.turn = 1;
@@ -673,8 +673,8 @@ fn create_marcus_fight(system: &PluralSystem) -> CombatState! {
 // ============================================================================
 
 /// Run the demo
-pub fn run_demo() -> Result<(), DemoError>! {
-    let mut demo = DemoController::new();
+☉ rite run_demo() -> Result<(), DemoError>! {
+    ≔ vary demo = DemoController·new();
     demo·start()?;
 
     // Demo loop handled by runtime

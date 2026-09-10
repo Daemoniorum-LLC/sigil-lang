@@ -1657,6 +1657,7 @@ fn test_mcp_list_migrations_empty() {
         exports: vec![],
         types: vec![],
         helper_functions: vec![],
+        module_constants: vec![],
     };
     let spec = generate_spec(&extraction, "");
     let session = MigrationSession::from_spec(spec, "/tmp/output");
@@ -3572,4 +3573,38 @@ fn test_service_actor_code_generation() {
     // Check message handler
     assert!(generated.code.contains("on AddMessage"),
         "Should have AddMessage handler");
+}
+
+// =============================================================================
+// The known-names gate on translated helper bodies
+// =============================================================================
+
+/// 165 of the 166 untranslated helper bodies in the Lares client failed this
+/// one gate, so what it reads as a "name" is load-bearing.
+#[test]
+fn the_known_names_gate_reads_sigil_markers_as_markers() {
+    use super::generator::{free_identifiers_known_for_test as gate};
+    let known: std::collections::HashSet<String> =
+        ["x", "xs"].iter().map(|s| s.to_string()).collect();
+
+    // `Δ` is the mutable-binding marker and `_` a match wildcard. Both are
+    // alphanumeric to Rust, and both used to read as undeclared names — so
+    // `≔ Δ i = 0;` failed on the `Δ`, in every helper with a mutable local.
+    assert!(gate("\u{2254} \u{0394} i = 0;\ni = x;", &known), "\u{0394} is not a name");
+    assert!(gate("\u{2325} x {\n    _ => { }\n}", &known), "_ is not a name");
+
+    // A `/* … */` comment carries React source the transform could not
+    // translate. Read as code, its words failed the gate — and a quote inside
+    // one opened a string state that swallowed the rest of the body.
+    assert!(
+        gate("/* regex: /\\.service$/ \u{2014} unsupported */ x", &known),
+        "a block comment is not code"
+    );
+    assert!(
+        gate("/* he said \"no\" */ x", &known),
+        "a quote inside a block comment does not open a string"
+    );
+
+    // It still rejects what it is there to reject.
+    assert!(!gate("some_undeclared_helper(x)", &known), "an unknown name is still unknown");
 }

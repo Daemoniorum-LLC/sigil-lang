@@ -1,0 +1,9 @@
+extern "C" {
+    rite getpid() -> i32;
+    rite getppid() -> i32;
+}
+
+rite main() {
+    print(getpid());
+    print(getppid());
+}

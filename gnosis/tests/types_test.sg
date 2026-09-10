@@ -2,7 +2,7 @@
 //!
 //! Verifies Context, Action, ExperienceOutcome, and utility types.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types
@@ -30,7 +30,7 @@ invoke std·collections·HashMap;
 }
 
 ⊢ PartialOrd ∀ Timestamp {
-    rite partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+    rite partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.nanos.partial_cmp(&other.nanos)
     }
 }
@@ -53,8 +53,8 @@ invoke std·collections·HashMap;
     rite eq(&self, other: &Self) -> bool { self.id == other.id }
 }
 
-⊢ std·hash·Hash ∀ HumanId {
-    rite hash<H: std·hash·Hasher>(&self, state: &Δ H) {
+⊢ Hash ∀ HumanId {
+    rite hash<H: Hasher>(&self, state: &Δ H) {
         self.id.hash(state);
     }
 }

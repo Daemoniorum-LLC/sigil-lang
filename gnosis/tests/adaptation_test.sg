@@ -2,7 +2,7 @@
 //!
 //! Verifies AdaptationSystem, CommunicationStyle, HumanProfile, DomainAdaptation.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types
@@ -16,8 +16,8 @@ invoke std·collections·HashMap;
 ⊢ Clone ∀ HumanId { rite clone(&self) -> Self { Self { id: self.id.clone() } } }
 ⊢ PartialEq ∀ HumanId { rite eq(&self, other: &Self) -> bool { self.id == other.id } }
 ⊢ Eq ∀ HumanId {}
-⊢ std·hash·Hash ∀ HumanId {
-    rite hash<H: std·hash·Hasher>(&self, state: &Δ H) { self.id.hash(state); }
+⊢ Hash ∀ HumanId {
+    rite hash<H: Hasher>(&self, state: &Δ H) { self.id.hash(state); }
 }
 
 #[derive(Clone)]

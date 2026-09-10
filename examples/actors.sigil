@@ -1,36 +1,36 @@
 //! Actor System Example
 //! Concurrent actors for a chat application.
 
-use concurrency·market·{Actor, Address, Supervisor, Strategy}
-use concurrency·voice·Channel
-use collections·HashMap
+invoke concurrency·market·{Actor, Address, Supervisor, Strategy}
+invoke concurrency·voice·Channel
+invoke collections·HashMap
 
 // === Message Types ===
 
-enum ChatMessage {
+ᛈ ChatMessage {
     Join { user: str, room: str },
     Leave { user: str, room: str },
     Send { user: str, room: str, text: str },
     Broadcast { room: str, text: str },
-    DirectMessage { from: str, to: str, text: str },
+    DirectMessage { from_: str, to_: str, text: str },
 }
 
-enum RoomMessage {
+ᛈ RoomMessage {
     UserJoined(str),
     UserLeft(str),
-    Message { from: str, text: str },
+    Message { from_: str, text: str },
     GetUsers -> [str],
 }
 
-enum UserMessage {
-    Receive { from: str, text: str },
+ᛈ UserMessage {
+    Receive { from_: str, text: str },
     Notify(str),
     GetHistory -> [ChatEntry],
 }
 
-struct ChatEntry {
+Σ ChatEntry {
     timestamp: u64,
-    from: str,
+    from_: str,
     text: str,
 }
 
@@ -59,10 +59,10 @@ actor Room {
         }
     }
 
-    on Message { from, text } {
-        let entry = ChatEntry {
+    on Message { from_, text } {
+        ≔ entry = ChatEntry {
             timestamp: time·now(),
-            from: from·clone,
+            from_: from·clone,
             text: text·clone,
         }
         self.history|push(entry)
@@ -87,10 +87,10 @@ actor UserActor {
     inbox: Vec<ChatEntry> = Vec·new(),
     notifications: Vec<str> = Vec·new(),
 
-    on Receive { from, text } {
-        let entry = ChatEntry {
+    on Receive { from_, text } {
+        ≔ entry = ChatEntry {
             timestamp: time·now(),
-            from,
+            from_,
             text,
         }
         self.inbox|push(entry)
@@ -117,12 +117,12 @@ actor ChatServer {
 
     on Join { user, room } {
         // Get or create room
-        let room_addr = self.rooms
+        ≔ room_addr = self.rooms
             |get(room)
             |unwrap_or_else{|| self.create_room(room)}
 
         // Get or create user
-        let user_addr = self.users
+        ≔ user_addr = self.users
             |get(user)
             |unwrap_or_else{|| self.create_user(user)}
 
@@ -131,31 +131,31 @@ actor ChatServer {
     }
 
     on Leave { user, room } {
-        if let Some(room_addr) = self.rooms|get(room) {
+        ⎇ ≔ Some(room_addr) = self.rooms|get(room) {
             room_addr|tell(RoomMessage·UserLeft(user))
         }
     }
 
     on Send { user, room, text } {
-        if let Some(room_addr) = self.rooms|get(room) {
+        ⎇ ≔ Some(room_addr) = self.rooms|get(room) {
             room_addr|tell(RoomMessage·Message { from: user, text })
         }
     }
 
-    on DirectMessage { from, to, text } {
-        if let Some(user_addr) = self.users|get(to) {
+    on DirectMessage { from, to_, text } {
+        ⎇ ≔ Some(user_addr) = self.users|get(to_) {
             user_addr|tell(UserMessage·Receive { from, text })
         }
     }
 
-    fn create_room(self, name: str) -> Address<Room> {
-        let room = Room { name: name·clone() }|open
+    rite create_room(self, name: str) -> Address<Room> {
+        ≔ room = Room { name: name·clone() }|open
         self.rooms|insert(name, room·clone)
         room
     }
 
-    fn create_user(self, username: str) -> Address<UserActor> {
-        let user = UserActor { username: username·clone() }|open
+    rite create_user(self, username: str) -> Address<UserActor> {
+        ≔ user = UserActor { username: username·clone() }|open
         self.users|insert(username, user·clone)
         user
     }
@@ -163,22 +163,22 @@ actor ChatServer {
 
 // === Supervision ===
 
-fn create_supervised_chat() -> Address<ChatServer> {
-    let supervisor = Supervisor·new()
+rite create_supervised_chat() -> Address<ChatServer> {
+    ≔ supervisor = Supervisor·new()
         |strategy(Strategy·OneForOne)
         |max_restarts(5, per: 1·minute)
 
     // Create chat server under supervision
-    let server = supervisor|apprentice(ChatServer·new)
+    ≔ server = supervisor|apprentice(ChatServer·new)
 
     server
 }
 
 // === Main ===
 
-async fn main() {
+async rite main() {
     // Start supervised chat server
-    let server = create_supervised_chat()
+    ≔ server = create_supervised_chat()
 
     // Simulate users joining
     server|tell(ChatMessage·Join { user: "Alice", room: "general" })
@@ -203,8 +203,8 @@ async fn main() {
 
     // Direct message
     server|tell(ChatMessage·DirectMessage {
-        from: "Charlie",
-        to: "Alice",
+        from_: "Charlie",
+        to_: "Alice",
         text: "Hey, can we chat privately?",
     })
 

@@ -737,21 +737,59 @@ fn register_core(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
     });
 
+    // HashMap::from([(k, v), …]) — build a map from an array of pairs.
+    //
+    // This did not exist, and calling it did not fail: the method fallback handed
+    // back an empty map, so `HashMap·from([("a", 1)])` silently produced a map of
+    // length 0. It is also the only reasonable way to write a map inside a struct
+    // literal, since Sigil has no map-literal syntax and `new` + `insert` needs
+    // statements.
+    define(interp, "HashMap·from", Some(1), |_, args| {
+        let mut map = HashMap::new();
+        let pairs = match &args[0] {
+            Value::Array(arr) => arr.borrow().clone(),
+            other => {
+                return Err(RuntimeError::new(format!(
+                    "HashMap·from expects an array of (key, value) pairs, got {:?}",
+                    other
+                )))
+            }
+        };
+        for pair in pairs {
+            match &pair {
+                Value::Tuple(items) if items.len() == 2 => {
+                    let key = match &items[0] {
+                        Value::String(s) => (**s).clone(),
+                        other => format!("{}", other),
+                    };
+                    map.insert(key, items[1].clone());
+                }
+                Value::Array(items) if items.borrow().len() == 2 => {
+                    let items = items.borrow();
+                    let key = match &items[0] {
+                        Value::String(s) => (**s).clone(),
+                        other => format!("{}", other),
+                    };
+                    map.insert(key, items[1].clone());
+                }
+                other => {
+                    return Err(RuntimeError::new(format!(
+                        "HashMap·from expects (key, value) pairs, got {:?}",
+                        other
+                    )))
+                }
+            }
+        }
+        Ok(Value::Map(Rc::new(RefCell::new(map))))
+    });
+
     // HashMap::with_capacity
     define(interp, "HashMap·with_capacity", Some(1), |_, _args| {
         // Capacity hint is ignored in our implementation
         Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
     });
 
-    // std::collections::HashMap::new
-    define(interp, "std·collections·HashMap·new", Some(0), |_, _| {
-        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
-    });
 
-    // std::collections::HashMap::with_capacity
-    define(interp, "std·collections·HashMap·with_capacity", Some(1), |_, _args| {
-        Ok(Value::Map(Rc::new(RefCell::new(HashMap::new()))))
-    });
 
     // HashSet::new
     define(interp, "HashSet·new", Some(0), |_, _| {
@@ -763,10 +801,6 @@ fn register_core(interp: &mut Interpreter) {
         Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
     });
 
-    // std::collections::HashSet::new
-    define(interp, "std·collections·HashSet·new", Some(0), |_, _| {
-        Ok(Value::Set(Rc::new(RefCell::new(std::collections::HashSet::new()))))
-    });
 
     // Vec::new - create empty vector/array
     define(interp, "Vec·new", Some(0), |_, _| {
@@ -822,15 +856,6 @@ fn register_core(interp: &mut Interpreter) {
         }
     });
 
-    // slice::from_raw_parts - FFI emulation
-    define(interp, "slice·from_raw_parts", Some(2), |_, args| {
-        // First arg is the "pointer" (string), second is len
-        match &args[0] {
-            Value::String(s) => Ok(Value::String(s.clone())),
-            Value::Array(arr) => Ok(Value::Array(arr.clone())),
-            _ => Ok(args[0].clone()),
-        }
-    });
 }
 
 // Deep clone helper
@@ -3728,7 +3753,7 @@ fn register_iter(interp: &mut Interpreter) {
     });
 }
 
-fn is_truthy(val: &Value) -> bool {
+pub fn is_truthy(val: &Value) -> bool {
     match val {
         Value::Null | Value::Empty => false,
         Value::Bool(b) => *b,
@@ -3838,26 +3863,6 @@ fn register_io(interp: &mut Interpreter) {
         }
     });
 
-    // env::var - Rust-style env::var that returns Result<String, VarError>
-    define(interp, "env·var", Some(1), |_, args| {
-        match &args[0] {
-            Value::String(name) => {
-                match std::env::var(name.as_str()) {
-                    Ok(value) => Ok(Value::Variant {
-                        enum_name: "Result".to_string(),
-                        variant_name: "Ok".to_string(),
-                        fields: Some(Rc::new(vec![Value::String(Rc::new(value))])),
-                    }),
-                    Err(_) => Ok(Value::Variant {
-                        enum_name: "Result".to_string(),
-                        variant_name: "Err".to_string(),
-                        fields: Some(Rc::new(vec![Value::String(Rc::new("environment variable not found".to_string()))])),
-                    }),
-                }
-            }
-            _ => Err(RuntimeError::new("env::var() requires variable name string")),
-        }
-    });
 
     // env_or - get environment variable with default
     define(interp, "env_or", Some(2), |_, args| {
@@ -4052,16 +4057,6 @@ fn register_time(interp: &mut Interpreter) {
         })
     });
 
-    // std::time::UNIX_EPOCH alias
-    define(interp, "std·time·UNIX_EPOCH", Some(0), |_, _| {
-        let mut fields = std::collections::HashMap::new();
-        fields.insert("secs".to_string(), Value::Int(0));
-        fields.insert("nanos".to_string(), Value::Int(0));
-        Ok(Value::Struct {
-            name: "SystemTime".to_string(),
-            fields: Rc::new(RefCell::new(fields)),
-        })
-    });
 
     // timer_start - start a timer (returns opaque handle)
     define(interp, "timer_start", Some(0), |_, _| {
@@ -5715,63 +5710,7 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Null)
     });
 
-    // std::thread::spawn - spawn a thread with a closure
-    // In interpreter mode, execute synchronously (Rc is not thread-safe)
-    // Returns a JoinHandle-like value
-    define(interp, "std·thread·spawn", Some(1), |interp, args| {
-        // The argument should be a closure/function
-        match &args[0] {
-            Value::Function(f) => {
-                // Execute the closure synchronously for now
-                // This makes the server work in single-threaded mode
-                match interp.call_function(f, vec![]) {
-                    Ok(_) => {}
-                    Err(e) => eprintln!("[Sigil thread] Error: {}", e),
-                }
-                // Return a mock JoinHandle
-                let mut map = HashMap::new();
-                map.insert("__type__".to_string(), Value::String(Rc::new("JoinHandle".to_string())));
-                map.insert("done".to_string(), Value::Bool(true));
-                Ok(Value::Map(Rc::new(RefCell::new(map))))
-            }
-            Value::BuiltIn(b) => {
-                match (b.func)(interp, vec![]) {
-                    Ok(_) => {}
-                    Err(e) => eprintln!("[Sigil thread] Error: {}", e),
-                }
-                let mut map = HashMap::new();
-                map.insert("__type__".to_string(), Value::String(Rc::new("JoinHandle".to_string())));
-                map.insert("done".to_string(), Value::Bool(true));
-                Ok(Value::Map(Rc::new(RefCell::new(map))))
-            }
-            _ => Err(RuntimeError::new("std::thread::spawn requires a closure")),
-        }
-    });
 
-    // std::thread::available_parallelism - get number of available CPU cores
-    // Returns Result<NonZeroUsize, io::Error> as a Variant
-    define(interp, "std·thread·available_parallelism", Some(0), |_, _args| {
-        match std::thread::available_parallelism() {
-            Ok(n) => {
-                // Create NonZeroUsize-like struct with get() method capability
-                // For now, just return the inner value directly wrapped in Ok
-                let inner = Value::Int(n.get() as i64);
-                Ok(Value::Variant {
-                    enum_name: "Result".to_string(),
-                    variant_name: "Ok".to_string(),
-                    fields: Some(Rc::new(vec![inner])),
-                })
-            }
-            Err(e) => {
-                // Return Err variant with error message
-                Ok(Value::Variant {
-                    enum_name: "Result".to_string(),
-                    variant_name: "Err".to_string(),
-                    fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
-                })
-            }
-        }
-    });
 
     // thread_join - placeholder for join semantics
     // In interpreter, actual work is done via channels
@@ -5823,39 +5762,9 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(format!("{:?}", id))))
     });
 
-    // --- SYNCHRONIZATION PRIMITIVES ---
-    // parking_lot::Mutex::new - create a mutex wrapper
-    // Returns a Map with __type__="Mutex" and inner value
-    define(interp, "parking_lot·Mutex·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Mutex".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
-    // Also register as std::sync::Mutex::new
-    define(interp, "std·sync·Mutex·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Mutex".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
-    // parking_lot::RwLock::new - create a read-write lock wrapper
-    define(interp, "parking_lot·RwLock·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
-    // std::sync::RwLock::new
-    define(interp, "std·sync·RwLock·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("RwLock".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // RwLock::new (short form)
     define(interp, "RwLock·new", Some(1), |_, args| {
@@ -5877,16 +5786,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     };
     define(interp, "AtomicU8·new", Some(1), atomic_u8_new);
-    define(interp, "std·sync·atomic·AtomicU8·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 0,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU8".to_string())));
-        map.insert("value".to_string(), Value::Int(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // AtomicUsize::new - create atomic usize counter
     let atomic_usize_new = |_: &mut crate::interpreter::Interpreter, args: Vec<Value>| -> Result<Value, RuntimeError> {
@@ -5900,16 +5799,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     };
     define(interp, "AtomicUsize·new", Some(1), atomic_usize_new);
-    define(interp, "std·sync·atomic·AtomicUsize·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 0,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicUsize".to_string())));
-        map.insert("value".to_string(), Value::Int(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // AtomicU64::new - create atomic counter
     define(interp, "AtomicU64·new", Some(1), |_, args| {
@@ -5923,17 +5812,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    // std::sync::atomic::AtomicU64::new
-    define(interp, "std·sync·atomic·AtomicU64·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Int(i) => *i,
-            _ => 0,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicU64".to_string())));
-        map.insert("value".to_string(), Value::Int(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // AtomicBool::new
     define(interp, "AtomicBool·new", Some(1), |_, args| {
@@ -5947,16 +5825,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    define(interp, "std·sync·atomic·AtomicBool·new", Some(1), |_, args| {
-        let val = match &args[0] {
-            Value::Bool(b) => *b,
-            _ => false,
-        };
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("AtomicBool".to_string())));
-        map.insert("value".to_string(), Value::Bool(val));
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // Arc::new - create atomic reference counted wrapper
     define(interp, "Arc·new", Some(1), |_, args| {
@@ -5966,12 +5834,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    define(interp, "std·sync·Arc·new", Some(1), |_, args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("Arc".to_string())));
-        map.insert("inner".to_string(), args[0].clone());
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // OnceLock::new - create a lazy-init cell (empty)
     // Returns a Map with __type__="OnceLock" and initialized=false
@@ -5983,13 +5845,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     };
     define(interp, "OnceLock·new", Some(0), once_lock_new);
-    define(interp, "std·sync·OnceLock·new", Some(0), |_, _args| {
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("OnceLock".to_string())));
-        map.insert("initialized".to_string(), Value::Bool(false));
-        map.insert("value".to_string(), Value::Null);
-        Ok(Value::Map(Rc::new(RefCell::new(map))))
-    });
 
     // --- NETWORKING ---
     // TCP/IP networking support for HTTP servers
@@ -6080,81 +5935,6 @@ fn register_concurrency(interp: &mut Interpreter) {
         })
     });
 
-    define(interp, "std·net·TcpListener·bind", Some(1), |_, args| {
-        let addr_str = match &args[0] {
-            Value::String(s) => s.to_string(),
-            Value::Ref(r) => {
-                match &*r.borrow() {
-                    Value::String(s) => s.to_string(),
-                    Value::Struct { name, fields } if name == "SocketAddr" => {
-                        let f = fields.borrow();
-                        let ip = match f.get("ip") {
-                            Some(Value::String(s)) => s.to_string(),
-                            _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
-                        };
-                        let port = match f.get("port") {
-                            Some(Value::Int(p)) => *p,
-                            _ => return Err(RuntimeError::new("SocketAddr missing port field")),
-                        };
-                        format!("{}:{}", ip, port)
-                    }
-                    _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
-                }
-            }
-            // Handle SocketAddr map (from parse())
-            Value::Map(m) => {
-                let borrowed = m.borrow();
-                if let Some(Value::String(addr)) = borrowed.get("addr") {
-                    addr.to_string()
-                } else {
-                    return Err(RuntimeError::new("TcpListener::bind requires string or SocketAddr"));
-                }
-            }
-            // Handle SocketAddr struct (from parse())
-            Value::Struct { name, fields } if name == "SocketAddr" => {
-                let f = fields.borrow();
-                let ip = match f.get("ip") {
-                    Some(Value::String(s)) => s.to_string(),
-                    _ => return Err(RuntimeError::new("SocketAddr missing ip field")),
-                };
-                let port = match f.get("port") {
-                    Some(Value::Int(p)) => *p,
-                    _ => return Err(RuntimeError::new("SocketAddr missing port field")),
-                };
-                format!("{}:{}", ip, port)
-            }
-            _ => return Err(RuntimeError::new("TcpListener::bind requires string address")),
-        };
-
-        let addr: std::net::SocketAddr = match addr_str.parse() {
-            Ok(a) => a,
-            Err(e) => return Err(RuntimeError::new(format!("Invalid address: {}", e))),
-        };
-
-        let listener = match std::net::TcpListener::bind(addr) {
-            Ok(l) => l,
-            Err(e) => return Err(RuntimeError::new(format!("Failed to bind: {}", e))),
-        };
-
-        let local_addr = listener.local_addr().map(|a| a.to_string()).unwrap_or_default();
-
-        // Store the listener in the global registry
-        let listener_id = store_listener(listener);
-
-        let mut map = HashMap::new();
-        map.insert("__type__".to_string(), Value::String(Rc::new("TcpListener".to_string())));
-        map.insert("addr".to_string(), Value::String(Rc::new(addr_str)));
-        map.insert("local_addr".to_string(), Value::String(Rc::new(local_addr)));
-        map.insert("__listener_id__".to_string(), Value::Int(listener_id as i64));
-
-        eprintln!("[Sigil] TcpListener bound to {} (id={})", addr, listener_id);
-
-        Ok(Value::Variant {
-            enum_name: "Result".to_string(),
-            variant_name: "Ok".to_string(),
-            fields: Some(Rc::new(vec![Value::Map(Rc::new(RefCell::new(map)))])),
-        })
-    });
 
     // SocketAddr::parse - parse a socket address string
     define(interp, "SocketAddr·parse", Some(1), |_, args| {
@@ -9850,21 +9630,6 @@ fn register_fs(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(path)))
     });
 
-    // std::path::PathBuf::from - full path variant
-    define(interp, "std·path·PathBuf·from", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            Value::Ref(r) => {
-                if let Value::String(s) = &*r.borrow() {
-                    s.to_string()
-                } else {
-                    return Err(RuntimeError::new("PathBuf::from() requires string"));
-                }
-            }
-            _ => return Err(RuntimeError::new("PathBuf::from() requires string")),
-        };
-        Ok(Value::String(Rc::new(path)))
-    });
 
     // Path::new - create Path from string
     define(interp, "Path·new", Some(1), |_, args| {
@@ -9882,71 +9647,10 @@ fn register_fs(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(path)))
     });
 
-    // std::path::Path::new - full path variant
-    define(interp, "std·path·Path·new", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("Path::new() requires string")),
-        };
-        Ok(Value::String(Rc::new(path)))
-    });
 
-    // std::fs::read_to_string - alias for fs_read
-    define(interp, "std·fs·read_to_string", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("read_to_string() requires string path")),
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(content) => Ok(Value::String(Rc::new(content))),
-            Err(e) => Err(RuntimeError::new(format!("read_to_string() error: {}", e))),
-        }
-    });
 
-    // fs·read_to_string - returns Result variant for pattern matching
-    define(interp, "fs·read_to_string", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("read_to_string() requires string path")),
-        };
-        match std::fs::read_to_string(&path) {
-            Ok(content) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Ok".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new(content))])),
-            }),
-            Err(e) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Err".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new(e.to_string()))])),
-            }),
-        }
-    });
 
-    // std::fs::write - alias for fs_write
-    define(interp, "std·fs·write", Some(2), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("fs::write() requires string path")),
-        };
-        let content = format!("{}", args[1]);
-        match std::fs::write(&path, content) {
-            Ok(()) => Ok(Value::Null),
-            Err(e) => Err(RuntimeError::new(format!("fs::write() error: {}", e))),
-        }
-    });
 
-    // std::fs::create_dir_all - create directory and all parents
-    define(interp, "std·fs·create_dir_all", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("create_dir_all() requires string path")),
-        };
-        match std::fs::create_dir_all(&path) {
-            Ok(()) => Ok(Value::Null),
-            Err(e) => Err(RuntimeError::new(format!("create_dir_all() error: {}", e))),
-        }
-    });
 
     // OpenOptions::new - create file open options builder
     // Returns a map that can be configured with .read(), .write(), etc.
@@ -9962,18 +9666,6 @@ fn register_fs(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(opts))))
     });
 
-    // std::fs::OpenOptions::new
-    define(interp, "std·fs·OpenOptions·new", Some(0), |_, _| {
-        let mut opts = HashMap::new();
-        opts.insert("read".to_string(), Value::Bool(false));
-        opts.insert("write".to_string(), Value::Bool(false));
-        opts.insert("append".to_string(), Value::Bool(false));
-        opts.insert("truncate".to_string(), Value::Bool(false));
-        opts.insert("create".to_string(), Value::Bool(false));
-        opts.insert("create_new".to_string(), Value::Bool(false));
-        opts.insert("__type__".to_string(), Value::String(Rc::new("OpenOptions".to_string())));
-        Ok(Value::Map(Rc::new(RefCell::new(opts))))
-    });
 
     // File::create - create a file for writing
     define(interp, "File·create", Some(1), |_, args| {
@@ -9993,21 +9685,6 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::fs::File::create
-    define(interp, "std·fs·File·create", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("File::create() requires string path")),
-        };
-        let mut handle = HashMap::new();
-        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
-        handle.insert("mode".to_string(), Value::String(Rc::new("write".to_string())));
-        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
-        match std::fs::File::create(&path) {
-            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
-            Err(e) => Err(RuntimeError::new(format!("File::create() error: {}", e))),
-        }
-    });
 
     // File::open - open a file for reading
     define(interp, "File·open", Some(1), |_, args| {
@@ -10025,21 +9702,6 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::fs::File::open
-    define(interp, "std·fs·File·open", Some(1), |_, args| {
-        let path = match &args[0] {
-            Value::String(s) => s.to_string(),
-            _ => return Err(RuntimeError::new("File::open() requires string path")),
-        };
-        let mut handle = HashMap::new();
-        handle.insert("path".to_string(), Value::String(Rc::new(path.clone())));
-        handle.insert("mode".to_string(), Value::String(Rc::new("read".to_string())));
-        handle.insert("__type__".to_string(), Value::String(Rc::new("File".to_string())));
-        match std::fs::File::open(&path) {
-            Ok(_) => Ok(Value::Map(Rc::new(RefCell::new(handle)))),
-            Err(e) => Err(RuntimeError::new(format!("File::open() error: {}", e))),
-        }
-    });
 
     // BufWriter::new - create a buffered writer wrapper
     define(interp, "BufWriter·new", Some(1), |_, args| {
@@ -10057,19 +9719,6 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::io::BufWriter::new
-    define(interp, "std·io·BufWriter·new", Some(1), |_, args| {
-        match &args[0] {
-            Value::Map(file_map) => {
-                let mut wrapper = HashMap::new();
-                wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
-                wrapper.insert("buffer".to_string(), Value::Array(Rc::new(RefCell::new(Vec::new()))));
-                wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufWriter".to_string())));
-                Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
-            }
-            _ => Err(RuntimeError::new("BufWriter::new requires a file handle")),
-        }
-    });
 
     // BufReader::new - create a buffered reader wrapper (handles both file and TcpStream)
     define(interp, "BufReader·new", Some(1), |_, args| {
@@ -10133,72 +9782,12 @@ fn register_fs(interp: &mut Interpreter) {
         }
     });
 
-    // std::io::BufReader::new
-    define(interp, "std·io·BufReader·new", Some(1), |_, args| {
-        // Helper to extract map from value, handling Ref wrappers
-        let get_map = |val: &Value| -> Option<Rc<RefCell<HashMap<String, Value>>>> {
-            match val {
-                Value::Map(m) => Some(m.clone()),
-                Value::Ref(r) => {
-                    let inner = r.borrow();
-                    if let Value::Map(m) = &*inner {
-                        Some(m.clone())
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            }
-        };
-
-        if let Some(file_map) = get_map(&args[0]) {
-            let borrowed = file_map.borrow();
-            let mut wrapper = HashMap::new();
-
-            // Check if this is a TcpStream
-            if let Some(Value::String(t)) = borrowed.get("__type__") {
-                if t.as_str() == "TcpStream" {
-                    if let Some(Value::Int(stream_id)) = borrowed.get("__stream_id__") {
-                        wrapper.insert("__stream_id__".to_string(), Value::Int(*stream_id));
-                    }
-                }
-            }
-
-            drop(borrowed);
-            wrapper.insert("inner".to_string(), Value::Map(file_map.clone()));
-            wrapper.insert("__type__".to_string(), Value::String(Rc::new("BufReader".to_string())));
-            Ok(Value::Map(Rc::new(RefCell::new(wrapper))))
-        } else {
-            Err(RuntimeError::new("BufReader::new requires a file handle or TcpStream"))
-        }
-    });
 
     // dirs_next functions (native-only: requires dirs crate)
     #[cfg(feature = "native")]
     {
-        // dirs_next::config_dir - get user config directory
-        define(interp, "dirs_next·config_dir", Some(0), |_, _| {
-            match dirs::config_dir() {
-                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-                None => Ok(Value::Null),
-            }
-        });
 
-        // dirs_next::data_dir - get user data directory
-        define(interp, "dirs_next·data_dir", Some(0), |_, _| {
-            match dirs::data_dir() {
-                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-                None => Ok(Value::Null),
-            }
-        });
 
-        // dirs_next::home_dir - get user home directory
-        define(interp, "dirs_next·home_dir", Some(0), |_, _| {
-            match dirs::home_dir() {
-                Some(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-                None => Ok(Value::Null),
-            }
-        });
     }
 }
 
@@ -11356,31 +10945,7 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::Map(Rc::new(RefCell::new(map))))
     });
 
-    // std::env::var - get single environment variable as Result<String, VarError>
-    define(interp, "std·env·var", Some(1), |_, args| {
-        let key = match &args[0] {
-            Value::String(s) => s.as_str().to_string(),
-            _ => return Err(RuntimeError::new("env::var expects string key")),
-        };
-        match std::env::var(&key) {
-            Ok(val) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Ok".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new(val))])),
-            }),
-            Err(_) => Ok(Value::Variant {
-                enum_name: "Result".to_string(),
-                variant_name: "Err".to_string(),
-                fields: Some(Rc::new(vec![Value::String(Rc::new("environment variable not found".to_string()))])),
-            }),
-        }
-    });
 
-    // std::env::temp_dir - get system temp directory
-    define(interp, "std·env·temp_dir", Some(0), |_, _| {
-        let temp_dir = std::env::temp_dir();
-        Ok(Value::String(Rc::new(temp_dir.to_string_lossy().to_string())))
-    });
 
     // Also register with alternate names
     define(interp, "temp_dir", Some(0), |_, _| {
@@ -11388,29 +10953,7 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(temp_dir.to_string_lossy().to_string())))
     });
 
-    // std::env::current_dir - get current working directory (alternate name)
-    define(interp, "std·env·current_dir", Some(0), |_, _| {
-        match std::env::current_dir() {
-            Ok(path) => Ok(Value::String(Rc::new(path.to_string_lossy().to_string()))),
-            Err(e) => Err(RuntimeError::new(format!("current_dir() error: {}", e))),
-        }
-    });
 
-    // std::env::args - get command line arguments (filtered to exclude interpreter args)
-    define(interp, "std·env·args", Some(0), |interp, _| {
-        let args: Vec<Value> = if interp.program_args.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
-            // Fallback: return all args if program_args not set
-            std::env::args()
-                .map(|s| Value::String(Rc::new(s)))
-                .collect()
-        } else {
-            // Return filtered program args
-            interp.program_args.as_ref().unwrap().iter()
-                .map(|a| Value::String(Rc::new(a.clone())))
-                .collect()
-        };
-        Ok(Value::Array(Rc::new(RefCell::new(args))))
-    });
 
     // args - get command line arguments (filtered to exclude interpreter args)
     define(interp, "args", Some(0), |interp, _| {
@@ -11472,14 +11015,6 @@ fn register_system(interp: &mut Interpreter) {
         std::process::exit(code);
     });
 
-    // std::process::exit - exit the program with code (qualified name)
-    define(interp, "std·process·exit", Some(1), |_, args| {
-        let code = match &args[0] {
-            Value::Int(n) => *n as i32,
-            _ => 0,
-        };
-        std::process::exit(code);
-    });
 
     // shell - execute shell command and return output
     define(interp, "shell", Some(1), |_, args| {
@@ -11520,16 +11055,20 @@ fn register_system(interp: &mut Interpreter) {
         Ok(Value::String(Rc::new(std::env::consts::ARCH.to_string())))
     });
 
-    // num_cpus functions (native-only: requires num_cpus crate)
+    // CPU counts live under Sys·, with the rest of the process and machine facts
+    // (Sys·getpid, Sys·getenv, ...). They used to be reachable only as `num_cpus·get`
+    // — a Rust crate name, and one no Sigil program could actually call: a lowercase
+    // path root does not resolve, so every `num_cpus·`, `std·`, `env·`, `fs·`,
+    // `slice·` and `parking_lot·` binding in this file was dead on arrival.
     #[cfg(feature = "native")]
     {
-        // num_cpus::get - get number of available CPUs
-        define(interp, "num_cpus·get", Some(0), |_, _| {
+        // Sys·num_cpus - logical CPUs available to this process
+        define(interp, "Sys·num_cpus", Some(0), |_, _| {
             Ok(Value::Int(num_cpus::get() as i64))
         });
 
-        // num_cpus::get_physical - get number of physical CPU cores
-        define(interp, "num_cpus·get_physical", Some(0), |_, _| {
+        // Sys·num_cpus_physical - physical cores
+        define(interp, "Sys·num_cpus_physical", Some(0), |_, _| {
             Ok(Value::Int(num_cpus::get_physical() as i64))
         });
     }
@@ -14683,7 +14222,7 @@ fn register_devex(interp: &mut Interpreter) {
             Ok(Value::Bool(true))
         } else {
             Err(RuntimeError::new(format!(
-                "Assertion failed: expected null, got {}",
+                "Assertion failed: expected null, got {:?}",
                 format_value_debug(&args[0])
             )))
         }
@@ -14785,7 +14324,7 @@ fn register_devex(interp: &mut Interpreter) {
             Ok(Value::Bool(true))
         } else {
             Err(RuntimeError::new(format!(
-                "Assertion failed: expected length {}, got {}",
+                "Assertion failed: expected length {}, got {:?}",
                 expected, actual
             )))
         }
@@ -38633,10 +38172,10 @@ fn register_sys(interp: &mut Interpreter) {
                 Ok(Value::Int(output.len() as i64))
             }
             _ => {
-                // Native: use libc::write for real fds (< 4000; fake counters start at 4000+)
+                // Native: use libc::write for real fds (below FAKE_FD_THRESHOLD)
                 #[cfg(all(unix, feature = "native"))]
                 {
-                    if fd > 2 && fd < 4000 {
+                    if fd > 2 && fd < FAKE_FD_THRESHOLD {
                         let bytes = output.as_bytes();
                         let n = unsafe {
                             libc::write(fd as i32, bytes.as_ptr() as *const libc::c_void, bytes.len())
@@ -38732,10 +38271,10 @@ fn register_sys(interp: &mut Interpreter) {
                 }
             }
             _ => {
-                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                // Native: use libc::read for real fds (below FAKE_FD_THRESHOLD)
                 #[cfg(all(unix, feature = "native"))]
                 {
-                    if fd > 2 && fd < 4000 {
+                    if fd > 2 && fd < FAKE_FD_THRESHOLD {
                         let mut buffer = vec![0u8; len];
                         let n = unsafe {
                             libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, len)
@@ -38760,6 +38299,7 @@ fn register_sys(interp: &mut Interpreter) {
                         // Read from the peer's write buffer
                         let peer = pipe.peer_fd;
                         drop(m);
+                        drain_bg_output_blocking(peer);
                         FAKE_PIPE_STATE.with(|map2| {
                             let mut m2 = map2.borrow_mut();
                             if let Some(peer_pipe) = m2.get_mut(&peer) {
@@ -38904,7 +38444,7 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
-        // Native path: use libc::open directly so we get a real OS fd (<4000)
+        // Native path: use libc::open directly so we get a real OS fd (below FAKE_FD_THRESHOLD)
         // that Sys·read_string / Sys·poll_fds can handle natively.
         // This is required for FIFOs (O_NONBLOCK) and Unix socket paths.
         #[cfg(all(unix, feature = "native"))]
@@ -38994,10 +38534,10 @@ fn register_sys(interp: &mut Interpreter) {
             map.borrow_mut().remove(&fd).is_some()
         });
 
-        // Native: close real fd via libc (real OS fds are < 4000; fake counters start at 4000+)
+        // Native: close real fd via libc (real OS fds are below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd > 2 && fd < 4000 {
+            if fd > 2 && fd < FAKE_FD_THRESHOLD {
                 unsafe { libc::close(fd as i32); }
             }
         }
@@ -39206,6 +38746,52 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·bind requires int fd")),
         };
 
+        // Native path for real OS sockets, matching listen/accept, which have had one
+        // all along. bind was the only member of the socket/bind/listen/accept group
+        // that never reached libc, so a real socket could be listened on but never
+        // actually bound. The address arrives as "host:port"; the POSIX signature's
+        // sockaddr pointer has no Sigil spelling, and callers pass 0 for it, which is
+        // why the simulated path below stays the default.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                if let Value::String(addr_str) = &args[1] {
+                    let parsed: Result<std::net::SocketAddr, _> = addr_str.parse();
+                    let addr = match parsed {
+                        Ok(a) => a,
+                        Err(_) => return Ok(Value::Int(-22)), // -EINVAL
+                    };
+                    let ret = match addr {
+                        std::net::SocketAddr::V4(v4) => {
+                            // Zeroed and assigned, not a struct literal:
+                            // `sockaddr_in` does not have the same fields on
+                            // every unix. Darwin and the BSDs carry a leading
+                            // `sin_len`, so the literal form failed to compile
+                            // on macOS while building fine on Linux. `bind`
+                            // takes the length as its own argument, so leaving
+                            // `sin_len` zero is what the call actually uses.
+                            let mut sa: libc::sockaddr_in =
+                                unsafe { std::mem::zeroed() };
+                            sa.sin_family = libc::AF_INET as libc::sa_family_t;
+                            sa.sin_port = v4.port().to_be();
+                            sa.sin_addr = libc::in_addr {
+                                s_addr: u32::from_ne_bytes(v4.ip().octets()),
+                            };
+                            unsafe {
+                                libc::bind(
+                                    fd as i32,
+                                    &sa as *const libc::sockaddr_in as *const libc::sockaddr,
+                                    std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+                                )
+                            }
+                        }
+                        std::net::SocketAddr::V6(_) => return Ok(Value::Int(-97)), // -EAFNOSUPPORT
+                    };
+                    return Ok(Value::Int(if ret == 0 { 0 } else { -(nix_errno()) }));
+                }
+            }
+        }
+
         let exists = FAKE_SOCKET_STATE.with(|map| {
             map.borrow().contains_key(&fd)
         });
@@ -39232,10 +38818,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 8,
         };
 
-        // Native path for real OS sockets (fd < 4000)
+        // Native path for real OS sockets (fd < FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 let ret = unsafe { libc::listen(fd as i32, backlog) };
                 return Ok(Value::Int(ret as i64));
             }
@@ -39264,10 +38850,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·accept requires int fd")),
         };
 
-        // Native path for real OS sockets (fd < 4000)
+        // Native path for real OS sockets (fd < FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 let client = unsafe {
                     libc::accept(fd as i32, std::ptr::null_mut(), std::ptr::null_mut())
                 };
@@ -39306,7 +38892,7 @@ fn register_sys(interp: &mut Interpreter) {
         #[cfg(all(unix, feature = "native"))]
         {
             use std::ffi::CString;
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 if let Ok(c_path) = CString::new(path.as_str()) {
                     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
                     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
@@ -39346,7 +38932,7 @@ fn register_sys(interp: &mut Interpreter) {
         #[cfg(all(unix, feature = "native"))]
         {
             use std::ffi::CString;
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 if let Ok(c_path) = CString::new(path.as_str()) {
                     let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
                     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
@@ -39892,10 +39478,10 @@ fn register_sys(interp: &mut Interpreter) {
         if rows < 1 || rows > 65535 || cols < 1 || cols > 65535 {
             return Ok(Value::Int(-22)); // -EINVAL
         }
-        // Native: use ioctl TIOCSWINSZ for real fds (< 4000; fake counters start at 4000+)
+        // Native: use ioctl TIOCSWINSZ for real fds (below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd > 0 && fd < 4000 {
+            if fd > 0 && fd < FAKE_FD_THRESHOLD {
                 let ws = libc::winsize {
                     ws_row: rows as u16,
                     ws_col: cols as u16,
@@ -40068,10 +39654,10 @@ fn register_sys(interp: &mut Interpreter) {
                 }
             }
             _ => {
-                // Native: use libc::read for real fds (< 4000; fake counters start at 4000+)
+                // Native: use libc::read for real fds (below FAKE_FD_THRESHOLD)
                 #[cfg(all(unix, feature = "native"))]
                 {
-                    if fd > 2 && fd < 4000 {
+                    if fd > 2 && fd < FAKE_FD_THRESHOLD {
                         let mut buffer = vec![0u8; max_len];
                         let n = unsafe {
                             libc::read(fd as i32, buffer.as_mut_ptr() as *mut libc::c_void, max_len)
@@ -40093,6 +39679,7 @@ fn register_sys(interp: &mut Interpreter) {
                     if let Some(pipe) = m.get(&fd) {
                         let peer = pipe.peer_fd;
                         drop(m);
+                        drain_bg_output_blocking(peer);
                         FAKE_PIPE_STATE.with(|map2| {
                             let mut m2 = map2.borrow_mut();
                             if let Some(peer_pipe) = m2.get_mut(&peer) {
@@ -40153,6 +39740,7 @@ fn register_sys(interp: &mut Interpreter) {
                         if let Some(pipe) = m.get(&fd) {
                             let peer = pipe.peer_fd;
                             drop(m);
+                            drain_bg_output_blocking(peer);
                             FAKE_PIPE_STATE.with(|map2| {
                                 let mut m2 = map2.borrow_mut();
                                 if let Some(peer_pipe) = m2.get_mut(&peer) {
@@ -40192,58 +39780,30 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
-        // Native: use libc::poll() for real fds (< 4000; fake counters start at 4000+)
+        // Native: use libc::poll() for real fds (below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if fd >= 0 && fd < 4000 {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                 let mut pfd = libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 };
                 let ret = unsafe { libc::poll(&mut pfd, 1, _timeout_ms as i32) };
                 return Ok(Value::Bool(ret > 0 && (pfd.revents & libc::POLLIN) != 0));
             }
         }
 
-        // Check fake pipes — data available in peer's buffer
-        let pipe_ready = FAKE_PIPE_STATE.with(|map| {
-            let m = map.borrow();
-            if let Some(pipe) = m.get(&fd) {
-                let peer = pipe.peer_fd;
-                drop(m);
-                FAKE_PIPE_STATE.with(|map2| {
-                    let m2 = map2.borrow();
-                    if let Some(peer_pipe) = m2.get(&peer) {
-                        Some(!peer_pipe.buffer.is_empty())
-                    } else {
-                        Some(false)
-                    }
-                })
-            } else {
-                None
+        // Fake pipes and PTYs — wait up to the timeout for the peer's buffer to fill.
+        //
+        // This used to be a bare snapshot: poll_fd returned instantly no matter what
+        // timeout the caller passed, so the one primitive whose whole job is to WAIT
+        // for readiness never waited. A background child's first bytes are always a
+        // moment away, which made every poll-then-read on a spawn_bg pipe come back
+        // empty.
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_millis(_timeout_ms.max(0) as u64);
+        while let Some(ready) = fake_fd_poll(fd) {
+            if ready || std::time::Instant::now() >= deadline {
+                return Ok(Value::Bool(ready));
             }
-        });
-        if let Some(ready) = pipe_ready {
-            return Ok(Value::Bool(ready));
-        }
-
-        // Check fake PTYs — data available in peer's buffer
-        let pty_ready = FAKE_PTY_STATE.with(|map| {
-            let m = map.borrow();
-            if let Some(pty) = m.get(&fd) {
-                let peer = pty.peer_fd;
-                drop(m);
-                FAKE_PTY_BUFFER.with(|bufs| {
-                    let b = bufs.borrow();
-                    if let Some(buf) = b.get(&peer) {
-                        Some(!buf.is_empty())
-                    } else {
-                        Some(false)
-                    }
-                })
-            } else {
-                None
-            }
-        });
-        if let Some(ready) = pty_ready {
-            return Ok(Value::Bool(ready));
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
 
         // Native fallback: use libc::poll() for other real fds
@@ -40283,7 +39843,7 @@ fn register_sys(interp: &mut Interpreter) {
             let mut idx_map: Vec<usize> = Vec::new();
 
             for (i, &fd) in fds.iter().enumerate() {
-                if fd >= 0 && fd < 4000 {
+                if fd >= 0 && fd < FAKE_FD_THRESHOLD {
                     pollfds.push(libc::pollfd { fd: fd as i32, events: libc::POLLIN, revents: 0 });
                     idx_map.push(i);
                 } else {
@@ -40374,23 +39934,33 @@ fn register_sys(interp: &mut Interpreter) {
             Ok(mut child) => {
                 let real_pid = child.id() as i64;
 
-                // Read stdout in a thread-safe way: capture output and put in pipe buffer
-                // For short-lived commands, wait and capture output
-                let output = child.wait_with_output();
-                if let Ok(out) = output {
-                    let stdout_data = out.stdout;
-                    let stderr_data = out.stderr;
-                    // Put output into the fake pipe buffers
-                    FAKE_PIPE_STATE.with(|map| {
-                        let mut m = map.borrow_mut();
-                        if let Some(pipe) = m.get_mut(&stdout_write) {
-                            pipe.buffer.extend_from_slice(&stdout_data);
-                        }
-                        if let Some(pipe) = m.get_mut(&stderr_write) {
-                            pipe.buffer.extend_from_slice(&stderr_data);
-                        }
-                    });
+                // Do NOT wait here. wait_with_output() blocked until the child
+                // exited, which made spawn_bg synchronous — indistinguishable from
+                // Sys·spawn, and unusable for the long-lived children it exists to
+                // start. `spawn_bg("/bin/sleep", ["10"])` blocked the interpreter for
+                // ten seconds; the suite's own P1_073 hung on it. Worse,
+                // wait_with_output() reaps, so by the time the pid was returned the
+                // process was already gone and every later kill/waitpid was
+                // addressing a corpse.
+                //
+                // Instead, pump stdout and stderr on their own threads into a shared
+                // buffer that reads drain from, and keep the Child alive so its
+                // stdin pipe stays open and nothing reaps behind Sys·waitpid's back
+                // (Rust's Child does not wait on drop).
+                // Mark the streams open HERE, not inside the thread: the interpreter
+                // can reach a read before the thread is scheduled, and would then see
+                // a stream that looks already closed and return empty.
+                if let Some(mut out) = child.stdout.take() {
+                    set_bg_stream_open(stdout_write, true);
+                    std::thread::spawn(move || pump_bg_stream(&mut out, stdout_write));
                 }
+                if let Some(mut err) = child.stderr.take() {
+                    set_bg_stream_open(stderr_write, true);
+                    std::thread::spawn(move || pump_bg_stream(&mut err, stderr_write));
+                }
+                BG_CHILDREN.with(|m| {
+                    m.borrow_mut().insert(real_pid, child);
+                });
 
                 real_pid
             }
@@ -40444,10 +40014,10 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·spawn_pty requires int slave_fd")),
         };
 
-        // Native: real fork/exec for real PTY fds (< 4000; fake counters start at 4000+)
+        // Native: real fork/exec for real PTY fds (below FAKE_FD_THRESHOLD)
         #[cfg(all(unix, feature = "native"))]
         {
-            if slave_fd < 4000 {
+            if slave_fd < FAKE_FD_THRESHOLD {
                 let master_fd_val = FAKE_PTY_STATE.with(|map| {
                     map.borrow().get(&slave_fd).map(|p| p.peer_fd)
                 });
@@ -40667,6 +40237,102 @@ fn register_sys(interp: &mut Interpreter) {
     define(interp, "WNOHANG", Some(0), |_, _| Ok(Value::Int(1)));
 }
 
+/// Output collected from live `Sys·spawn_bg` children, keyed by the fake pipe fd
+/// a reader thread is filling. Global rather than thread-local: the reader threads
+/// are not the interpreter's thread, so they cannot reach FAKE_PIPE_STATE.
+fn bg_output() -> &'static std::sync::Mutex<HashMap<i64, Vec<u8>>> {
+    static BG_OUTPUT: std::sync::OnceLock<std::sync::Mutex<HashMap<i64, Vec<u8>>>> =
+        std::sync::OnceLock::new();
+    BG_OUTPUT.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+/// Which background-child streams are still open, keyed by the same fake pipe fd.
+/// A read on a pipe whose writer is alive has to block for it — dropping straight
+/// through to "no data" would make every read of a child's output a race the
+/// caller loses.
+fn bg_stream_open() -> &'static std::sync::Mutex<HashMap<i64, bool>> {
+    static OPEN: std::sync::OnceLock<std::sync::Mutex<HashMap<i64, bool>>> =
+        std::sync::OnceLock::new();
+    OPEN.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn set_bg_stream_open(fd: i64, open: bool) {
+    let mut map = match bg_stream_open().lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    map.insert(fd, open);
+}
+
+fn is_bg_stream_open(fd: i64) -> bool {
+    let map = match bg_stream_open().lock() {
+        Ok(g) => g,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    map.get(&fd).copied().unwrap_or(false)
+}
+
+/// Read one of a background child's streams to EOF, accumulating into bg_output().
+fn pump_bg_stream<R: std::io::Read>(stream: &mut R, fd: i64) {
+    let mut buf = [0u8; 4096];
+    loop {
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => {
+                let mut map = match bg_output().lock() {
+                    Ok(g) => g,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                map.entry(fd).or_default().extend_from_slice(&buf[..n]);
+            }
+        }
+    }
+    set_bg_stream_open(fd, false);
+}
+
+/// Drain, but wait for a live writer first — pipe read semantics. Returns as soon
+/// as any data arrives, or once the child closes the stream. `poll_fd` uses the
+/// non-blocking `drain_bg_output` instead, since it carries its own timeout.
+fn drain_bg_output_blocking(fd: i64) {
+    loop {
+        drain_bg_output(fd);
+        let has_data = FAKE_PIPE_STATE.with(|map| {
+            map.borrow().get(&fd).map(|p| !p.buffer.is_empty()).unwrap_or(false)
+        });
+        if has_data || !is_bg_stream_open(fd) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// Move whatever the reader threads have collected for `fd` into its fake pipe
+/// buffer. Called before every read and readiness check so a caller sees a live
+/// child's output without anyone having to block on the child.
+fn drain_bg_output(fd: i64) {
+    let data = {
+        let mut map = match bg_output().lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        match map.get_mut(&fd) {
+            Some(buf) if !buf.is_empty() => std::mem::take(buf),
+            _ => return,
+        }
+    };
+    FAKE_PIPE_STATE.with(|map| {
+        if let Some(pipe) = map.borrow_mut().get_mut(&fd) {
+            pipe.buffer.extend_from_slice(&data);
+        }
+    });
+}
+
+/// Live children started by `Sys·spawn_bg`, held so their stdin pipes stay open
+/// and so nothing reaps them out from under `Sys·waitpid`.
+thread_local! {
+    static BG_CHILDREN: RefCell<HashMap<i64, std::process::Child>> = RefCell::new(HashMap::new());
+}
+
 // Thread-local storage for fake mmap allocations
 thread_local! {
     static FAKE_MMAP_MAP: RefCell<HashMap<i64, Vec<u8>>> = RefCell::new(HashMap::new());
@@ -40683,13 +40349,36 @@ thread_local! {
     #[cfg(all(unix, feature = "native"))]
     static NATIVE_TERMIOS_STATE: RefCell<HashMap<i64, libc::termios>> = RefCell::new(HashMap::new());
 }
-static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(100);
-static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(1000);
-static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(2000);
-static FAKE_TERMIOS_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(3000);
+/// Descriptors at or above this are simulated by this file; below it they are real
+/// OS file descriptors and every native path calls libc directly. Every simulated
+/// counter below MUST start at or above it — see the note there for what happens
+/// when one does not.
+const FAKE_FD_THRESHOLD: i64 = 4000;
+
+/// The current errno, as a positive number. The Sys· layer reports failures as a
+/// negative errno, matching what the raw syscalls return.
+#[cfg(all(unix, feature = "native"))]
+fn nix_errno() -> i64 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(5) as i64
+}
+
+// Simulated descriptors MUST all sit above FAKE_FD_THRESHOLD. Every native path in
+// this file decides "is this a real OS fd?" by testing `fd < FAKE_FD_THRESHOLD`, and four of these
+// counters used to start below it — 100, 1000, 2000 and 3000. So an fd handed out by
+// Sys·socket or Sys·open was then classified as REAL by Sys·read, write, close,
+// listen, accept, poll_fd and the ioctl path, which called libc with a descriptor
+// this process does not own. P1_042 shows the mild version: bind succeeds in the
+// simulation, then listen(1000, 10) reaches libc and fails. The severe version is a
+// collision, where the call lands on an unrelated real fd of the same number.
+//
+// Each band is 1000 wide and none overlaps another.
+static FAKE_FD_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(20000);
+static FAKE_SOCKET_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(21000);
+static FAKE_EPOLL_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(22000);
+static FAKE_TERMIOS_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(23000);
 static FAKE_TERMIOS_RAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(4000);
-static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(5000);
+static FAKE_PIPE_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(24000);
+static FAKE_PTY_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(25000);
 static FAKE_BG_PID_COUNTER: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(7000);
 
 // Native signal handling: global atomic flags set by C signal handler
@@ -40697,6 +40386,42 @@ static NATIVE_SIGNAL_FLAGS: [std::sync::atomic::AtomicBool; 32] = {
     const INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     [INIT; 32]
 };
+
+/// Readiness of a fake fd, as a tri-state: Some(ready) when the fd is one of ours,
+/// None when it is not and the caller should fall through to the real poll(2).
+fn fake_fd_poll(fd: i64) -> Option<bool> {
+    let pipe_ready = FAKE_PIPE_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pipe) = m.get(&fd) {
+            let peer = pipe.peer_fd;
+            drop(m);
+            drain_bg_output(peer);
+            FAKE_PIPE_STATE.with(|map2| {
+                let m2 = map2.borrow();
+                Some(m2.get(&peer).map(|pp| !pp.buffer.is_empty()).unwrap_or(false))
+            })
+        } else {
+            None
+        }
+    });
+    if pipe_ready.is_some() {
+        return pipe_ready;
+    }
+
+    FAKE_PTY_STATE.with(|map| {
+        let m = map.borrow();
+        if let Some(pty) = m.get(&fd) {
+            let peer = pty.peer_fd;
+            drop(m);
+            FAKE_PTY_BUFFER.with(|bufs| {
+                let b = bufs.borrow();
+                Some(b.get(&peer).map(|buf| !buf.is_empty()).unwrap_or(false))
+            })
+        } else {
+            None
+        }
+    })
+}
 
 /// Check whether a fake fd (pipe or PTY) has data ready to read.
 /// Returns true if data is available, false if not or unknown.
@@ -40707,6 +40432,7 @@ fn check_fake_fd_ready(fd: i64) -> bool {
         if let Some(pipe) = m.get(&fd) {
             let peer = pipe.peer_fd;
             drop(m);
+            drain_bg_output(peer);
             FAKE_PIPE_STATE.with(|map2| {
                 let m2 = map2.borrow();
                 m2.get(&peer).map(|pp| !pp.buffer.is_empty()).unwrap_or(false)

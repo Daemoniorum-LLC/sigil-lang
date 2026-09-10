@@ -1,8 +1,6 @@
 // Covenant - Human-Agent Collaboration Infrastructure
 // The bridge between minds
 
-invoke std·collections·{HashMap, HashSet};
-invoke std·hash·{Hash, Hasher};
 invoke shared·{
     Timestamp, Duration, Value, BoundedDeque, TrustLevel,
     Priority, HumanId, AgentId, EntityId,

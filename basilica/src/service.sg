@@ -7,8 +7,8 @@
 //! - Oracle - explainability
 
 invoke shared·{Timestamp, Duration, Confidence, TrustLevel, AgentId, Priority};
-invoke crate·evidence·{HttpEvidence, EvidenceLevel, Evidenced};
-invoke crate·error·{BasilicaError, BasilicaResult};
+invoke tome·evidence·{HttpEvidence, EvidenceLevel, Evidenced};
+invoke tome·error·{BasilicaError, BasilicaResult};
 
 // Re-export daemon types
 ☉ invoke daemon·{
@@ -424,13 +424,13 @@ invoke crate·error·{BasilicaError, BasilicaResult};
 
 /// Registry of active services
 ☉ Σ ServiceRegistry {
-    services: std·collections·HashMap<String, Box<dyn std·any·Any>>,
+    services: HashMap<String, Box<dyn Any>>,
 }
 
 ⊢ ServiceRegistry {
     ☉ rite new() -> Self {
         Self {
-            services: std·collections·HashMap·new(),
+            services: HashMap·new(),
         }
     }
 

@@ -3,14 +3,14 @@
 //! One-shot sound effect definitions for DAEMONIORUM.
 //! Organized by category for horror atmosphere.
 
-use super::{AudioAsset, AudioChannel, AudioId};
+invoke super·{AudioAsset, AudioChannel, AudioId};
 
 // ============================================================================
 // SOUND CATEGORIES
 // ============================================================================
 
 /// Sound effect category
-type SoundCategory = enum {
+type SoundCategory = ᛈ {
     /// UI interactions
     UI,
     /// Combat sounds
@@ -32,7 +32,7 @@ type SoundCategory = enum {
 // ============================================================================
 
 /// All sound effects in the game
-pub const ALL_SOUNDS: &[AudioAsset]! = &[
+☉ const ALL_SOUNDS: &[AudioAsset]! = &[
     // ========================================================================
     // UI SOUNDS
     // ========================================================================
@@ -43,7 +43,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 150,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::UI,
+        channel: AudioChannel·UI,
         loaded: false,
     },
     AudioAsset {
@@ -53,7 +53,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 200,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::UI,
+        channel: AudioChannel·UI,
         loaded: false,
     },
     AudioAsset {
@@ -63,7 +63,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 180,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::UI,
+        channel: AudioChannel·UI,
         loaded: false,
     },
     AudioAsset {
@@ -73,7 +73,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 300,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::UI,
+        channel: AudioChannel·UI,
         loaded: false,
     },
     AudioAsset {
@@ -83,7 +83,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 400,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::UI,
+        channel: AudioChannel·UI,
         loaded: false,
     },
 
@@ -97,7 +97,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1500,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -107,7 +107,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 2000,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -117,7 +117,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 2500,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -127,7 +127,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 400,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -137,7 +137,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 600,
         default_volume: 0.8,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -147,7 +147,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 300,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -157,7 +157,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 350,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -167,7 +167,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 500,
         default_volume: 0.8,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -177,7 +177,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 600,
         default_volume: 0.85,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -187,7 +187,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 300,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -197,7 +197,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 800,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -207,7 +207,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 600,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -217,7 +217,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 600,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -227,7 +227,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 500,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -237,7 +237,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 800,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
 
@@ -251,7 +251,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 200,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -261,7 +261,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 180,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -271,7 +271,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 150,
         default_volume: 0.3,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -281,7 +281,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1500,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -291,7 +291,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 400,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -301,7 +301,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 2000,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
 
@@ -315,7 +315,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 300,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -325,7 +325,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 400,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -335,7 +335,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 350,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -345,7 +345,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 600,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -355,7 +355,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 300,
         default_volume: 0.3,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -365,7 +365,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 500,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
 
@@ -379,7 +379,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1000,
         default_volume: 0.9,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -389,7 +389,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1500,
         default_volume: 0.8,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -399,7 +399,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 2000,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -409,7 +409,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1200,
         default_volume: 0.75,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -419,7 +419,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1800,
         default_volume: 0.85,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -429,7 +429,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 2500,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -439,7 +439,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 800,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -449,7 +449,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1500,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
 
@@ -463,7 +463,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 600,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -473,7 +473,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 800,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -483,7 +483,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1000,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -493,7 +493,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1500,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -503,7 +503,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 2000,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -513,7 +513,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 1200,
         default_volume: 0.5,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -523,7 +523,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 800,
         default_volume: 0.6,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -533,7 +533,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 500,
         default_volume: 0.7,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
 
@@ -547,7 +547,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 300,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -557,7 +557,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 200,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -567,7 +567,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 400,
         default_volume: 0.4,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
     AudioAsset {
@@ -577,7 +577,7 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
         duration_ms: 50,
         default_volume: 0.2,
         looping: false,
-        channel: AudioChannel::SFX,
+        channel: AudioChannel·SFX,
         loaded: false,
     },
 ];
@@ -587,26 +587,26 @@ pub const ALL_SOUNDS: &[AudioAsset]! = &[
 // ============================================================================
 
 /// Get sound by ID
-pub fn get_sound(id: &str) -> Option<&'static AudioAsset>! {
+☉ rite get_sound(id: &str) -> Option<&'static AudioAsset>! {
     ALL_SOUNDS·iter()·find(|s| s.id == id)
 }
 
 /// Get all sounds in a category
-pub fn get_sounds_by_category(category: SoundCategory) -> Vec<&'static AudioAsset>! {
-    let prefix = match category {
-        SoundCategory::UI => "ui_",
-        SoundCategory::Combat => ["combat_", "attack_", "damage_", "defend_", "ability_", "enemy_"].as_slice(),
-        SoundCategory::Movement => ["footstep_", "door_", "gate_"].as_slice(),
-        SoundCategory::Environment => "interact_",
-        SoundCategory::Horror => ["stinger_", "shadow_", "reality_", "distant_", "static_", "breath_"].as_slice(),
-        SoundCategory::System => ["switch_", "cocon_", "stability_", "dissociation_", "grounding_", "trigger_"].as_slice(),
-        SoundCategory::Dialogue => ["dialogue_", "text_"].as_slice(),
+☉ rite get_sounds_by_category(category: SoundCategory) -> Vec<&'static AudioAsset>! {
+    ≔ prefix = ⌥ category {
+        SoundCategory·UI => "ui_",
+        SoundCategory·Combat => ["combat_", "attack_", "damage_", "defend_", "ability_", "enemy_"].as_slice(),
+        SoundCategory·Movement => ["footstep_", "door_", "gate_"].as_slice(),
+        SoundCategory·Environment => "interact_",
+        SoundCategory·Horror => ["stinger_", "shadow_", "reality_", "distant_", "static_", "breath_"].as_slice(),
+        SoundCategory·System => ["switch_", "cocon_", "stability_", "dissociation_", "grounding_", "trigger_"].as_slice(),
+        SoundCategory·Dialogue => ["dialogue_", "text_"].as_slice(),
     };
 
     ALL_SOUNDS·iter()
         ·filter(|s| {
-            match prefix {
-                p if p.starts_with('[') => false, // Handle array case separately
+            ⌥ prefix {
+                p ⎇ p.starts_with('[') => false, // Handle array case separately
                 p => s.id·starts_with(p),
             }
         })

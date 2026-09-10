@@ -1,2 +1,2 @@
-λ hello() -> i64 { 42 }
-λ main() { hello(); }
+rite hello() -> i64 { 42 }
+rite main() { hello(); }

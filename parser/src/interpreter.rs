@@ -1298,6 +1298,17 @@ pub struct Interpreter {
     pub workspace_members: HashMap<String, PathBuf>,
     /// Types that implement Drop trait - call drop() when they go out of scope
     pub drop_types: HashSet<String>,
+    /// Operator trait impls, keyed by (self type, trait name).
+    ///
+    /// Every impl of a trait registers its method under the plain name
+    /// `Type·method`, which is enough to call it directly but not to dispatch
+    /// an operator: `impl Div<f32> for Vec3` and `impl Div<Vec3> for Vec3`
+    /// both define `Vec3·div`, so the later one wins in `globals` and the
+    /// other becomes unreachable. Keeping the right-hand type alongside each
+    /// method lets `/` pick the one that matches its operands. The right-hand
+    /// type is `None` for an unparameterised `impl Add for T`, where it is
+    /// Self.
+    pub operator_impls: HashMap<(String, String), Vec<(Option<String>, Value)>>,
     /// Linear type tracking state (for no-cloning theorem enforcement)
     pub linear_state: LinearTypeState,
     /// Variables declared as mutable (let mut)
@@ -1365,6 +1376,37 @@ pub enum TypeDef {
     Enum(EnumDef),
 }
 
+
+/// `s·slice(start, end)` over CHARACTERS, not bytes.
+///
+/// Sigil had no substring method at all — not slice, substring, substr or sub —
+/// so extracting a piece of a string meant `chars()·skip(n)·take(k)·collect()`.
+/// That is the first thing any text protocol needs; parsing an HTTP request line
+/// is the canonical case. Character indices keep it total for non-ASCII input:
+/// byte slicing would panic mid-codepoint.
+fn string_slice(s: &str, start: i64, end: i64) -> Value {
+    let n = s.chars().count() as i64;
+    let lo = start.clamp(0, n) as usize;
+    let hi = end.clamp(start.clamp(0, n), n) as usize;
+    Value::String(Rc::new(s.chars().skip(lo).take(hi - lo).collect::<String>()))
+}
+
+/// `s·find(needle)` -> Option<i64>, a CHARACTER index, matching string_slice.
+fn string_find(s: &str, needle: &str) -> Value {
+    match s.find(needle) {
+        Some(byte_idx) => Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "Some".to_string(),
+            fields: Some(Rc::new(vec![Value::Int(s[..byte_idx].chars().count() as i64)])),
+        },
+        None => Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        },
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new()));
@@ -1388,6 +1430,7 @@ impl Interpreter {
             project_root: None,
             workspace_members: HashMap::new(),
             drop_types: HashSet::new(),
+            operator_impls: HashMap::new(),
             linear_state: LinearTypeState::default(),
             mutable_vars: RefCell::new(HashSet::new()),
             var_types: RefCell::new(HashMap::new()),
@@ -3402,76 +3445,80 @@ impl Interpreter {
                     }
                 }
 
-                // Register each method/const with qualified name TypeName·method
-                for impl_item in &impl_block.items {
-                    match impl_item {
-                        ImplItem::Function(func) => {
-                            let fn_value = self.create_function(func)?;
-                            let qualified_name = format!("{}·{}", type_name, func.name.name);
-                            // Debug: track Lexer method registration
-                            if type_name == "Lexer" && func.name.name.contains("keyword") {
-                                crate::sigil_debug!("DEBUG registering: {}", qualified_name);
-                            }
-                            self.globals
-                                .borrow_mut()
-                                .define(qualified_name.clone(), fn_value.clone());
-
-                            // Also register with module prefix if in a module context
-                            if let Some(ref module) = self.current_module {
-                                let fully_qualified = format!("{}·{}", module, qualified_name);
-                                self.globals.borrow_mut().define(fully_qualified, fn_value);
+                // Record operator trait impls so `+`, `-`, `*` and friends can
+                // find them. This is kept separate from the `TypeName·method`
+                // registration below, which cannot distinguish two impls of the
+                // same operator on one type.
+                if let Some(trait_path) = &impl_block.trait_ {
+                    if let Some(seg) = trait_path.segments.last() {
+                        let trait_name = seg.ident.name.clone();
+                        if Self::is_operator_trait(&trait_name) {
+                            let expected = Self::operator_trait_method(&trait_name);
+                            // `Div<f32>` declares its right-hand type; a bare
+                            // `Add` leaves it implicit, meaning Self.
+                            let rhs_ty = seg
+                                .generics
+                                .as_ref()
+                                .and_then(|g| g.first())
+                                .and_then(Self::type_expr_name);
+                            for impl_item in &impl_block.items {
+                                if let ImplItem::Function(func) = impl_item {
+                                    if Some(func.name.name.as_str()) != expected {
+                                        continue;
+                                    }
+                                    let fn_value = self.create_function(func)?;
+                                    self.operator_impls
+                                        .entry((type_name.clone(), trait_name.clone()))
+                                        .or_default()
+                                        .push((rhs_ty.clone(), fn_value));
+                                }
                             }
                         }
-                        ImplItem::Const(c) => {
-                            // Set current_self_type so Self/This resolves correctly
-                            let prev_self_type = self.current_self_type.take();
-                            self.current_self_type = Some(type_name.clone());
-
-                            let result = if const_params.is_empty() {
-                                // No const generics: evaluate normally
-                                match self.evaluate(&c.value) {
-                                    Ok(value) => {
-                                        let qualified_name = format!("{}·{}", type_name, c.name.name);
-                                        self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
-
-                                        if let Some(ref module) = self.current_module {
-                                            let fully_qualified = format!("{}·{}", module, qualified_name);
-                                            self.globals.borrow_mut().define(fully_qualified, value);
-                                        }
-                                        Ok(())
-                                    }
-                                    Err(e) => Err(e),
-                                }
-                            } else {
-                                // Try to evaluate; defer if it references a const param
-                                match self.evaluate(&c.value) {
-                                    Ok(value) => {
-                                        let qualified_name = format!("{}·{}", type_name, c.name.name);
-                                        self.globals.borrow_mut().define(qualified_name.clone(), value.clone());
-
-                                        if let Some(ref module) = self.current_module {
-                                            let fully_qualified = format!("{}·{}", module, qualified_name);
-                                            self.globals.borrow_mut().define(fully_qualified, value);
-                                        }
-                                        Ok(())
-                                    }
-                                    Err(e) if const_params.iter().any(|p| e.message.contains(p)) => {
-                                        // Deferred: depends on const generic params
-                                        let key = format!("{}·{}", type_name, c.name.name);
-                                        self.const_generic_deferred_consts.insert(key, c.value.clone());
-                                        Ok(())
-                                    }
-                                    Err(e) => Err(e),
-                                }
-                            };
-
-                            // Restore previous self type
-                            self.current_self_type = prev_self_type;
-                            result?;
-                        }
-                        _ => {}
                     }
                 }
+
+                // An impl block's items are not ordered: a const may be
+                // initialised by a method declared further down. Register every
+                // method first so the consts below can call them.
+                for impl_item in &impl_block.items {
+                    if let ImplItem::Function(func) = impl_item {
+                        let fn_value = self.create_function(func)?;
+                        let qualified_name = format!("{}·{}", type_name, func.name.name);
+                        // Debug: track Lexer method registration
+                        if type_name == "Lexer" && func.name.name.contains("keyword") {
+                            crate::sigil_debug!("DEBUG registering: {}", qualified_name);
+                        }
+                        self.globals
+                            .borrow_mut()
+                            .define(qualified_name.clone(), fn_value.clone());
+
+                        // Also register with module prefix if in a module context
+                        if let Some(ref module) = self.current_module {
+                            let fully_qualified = format!("{}·{}", module, qualified_name);
+                            self.globals.borrow_mut().define(fully_qualified, fn_value);
+                        }
+                    }
+                }
+
+                // Now the consts, which may reference those methods. `Self` has
+                // to name this impl's type while they are evaluated, or an
+                // initialiser like `Self·new(1.0, 0.0, 0.0)` resolves to
+                // nothing and silently yields an empty struct.
+                let prev_self_type = self.current_self_type.replace(type_name.clone());
+                let mut const_result = Ok(());
+                for impl_item in &impl_block.items {
+                    if let ImplItem::Const(c) = impl_item {
+                        const_result = self
+                            .register_impl_const(c, &type_name, &const_params)
+                            .map(|_| ());
+                        if const_result.is_err() {
+                            break;
+                        }
+                    }
+                }
+                self.current_self_type = prev_self_type;
+                const_result?;
+
 
                 // If this is a trait impl, register default methods from the trait
                 // that aren't overridden by the impl block (e.g., `size()` from `DType`)
@@ -3651,6 +3698,50 @@ impl Interpreter {
                                     }
                                 }
 
+                                // Operator trait impls, as for top-level impls.
+                                if let Some(trait_path) = &impl_block.trait_ {
+                                    if let Some(seg) = trait_path.segments.last() {
+                                        let trait_name = seg.ident.name.clone();
+                                        if Self::is_operator_trait(&trait_name) {
+                                            let expected =
+                                                Self::operator_trait_method(&trait_name);
+                                            let rhs_ty = seg
+                                                .generics
+                                                .as_ref()
+                                                .and_then(|g| g.first())
+                                                .and_then(Self::type_expr_name);
+                                            for impl_item in &impl_block.items {
+                                                if let ImplItem::Function(func) = impl_item {
+                                                    if Some(func.name.name.as_str()) != expected {
+                                                        continue;
+                                                    }
+                                                    let fn_value = self.create_function(func)?;
+                                                    // Filed under both names, matching how the
+                                                    // methods below are registered: a value's
+                                                    // runtime type may be either.
+                                                    for key in
+                                                        [&type_name, &qualified_type].iter()
+                                                    {
+                                                        self.operator_impls
+                                                            .entry((
+                                                                (*key).clone(),
+                                                                trait_name.clone(),
+                                                            ))
+                                                            .or_default()
+                                                            .push((
+                                                                rhs_ty.clone(),
+                                                                fn_value.clone(),
+                                                            ));
+                                                        if type_name == qualified_type {
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
                                 // Register each method with module-qualified name
                                 for impl_item in &impl_block.items {
                                     if let ImplItem::Function(func) = impl_item {
@@ -3673,6 +3764,42 @@ impl Interpreter {
                                         }
                                     }
                                 }
+
+                                // Associated consts, which were dropped here
+                                // entirely: an impl inside a module kept its
+                                // methods but lost every `☉ const`.
+                                let prev_self_type =
+                                    self.current_self_type.replace(qualified_type.clone());
+                                let mut const_result = Ok(());
+                                for impl_item in &impl_block.items {
+                                    let ImplItem::Const(c) = impl_item else {
+                                        continue;
+                                    };
+                                    match self.register_impl_const(
+                                        c,
+                                        &qualified_type,
+                                        &const_params,
+                                    ) {
+                                        // Also reachable without the module
+                                        // prefix, as the methods above are.
+                                        Ok(Some(value)) => {
+                                            let local_name =
+                                                format!("{}·{}", type_name, c.name.name);
+                                            if type_name != qualified_type {
+                                                self.globals
+                                                    .borrow_mut()
+                                                    .define(local_name, value);
+                                            }
+                                        }
+                                        Ok(None) => {}
+                                        Err(e) => {
+                                            const_result = Err(e);
+                                            break;
+                                        }
+                                    }
+                                }
+                                self.current_self_type = prev_self_type;
+                                const_result?;
                             }
                             Item::Module(nested_mod) => {
                                 // Handle nested modules recursively
@@ -4242,6 +4369,52 @@ impl Interpreter {
                 }
                 Ok(())
             }
+        }
+    }
+
+    /// Evaluate one associated const from an impl block and bind it as
+    /// `TypeName·CONST`.
+    ///
+    /// Callers must have set `current_self_type` to the impl's type first, so
+    /// that `Self` resolves inside the initialiser.
+    fn register_impl_const(
+        &mut self,
+        c: &crate::ast::ConstDef,
+        type_name: &str,
+        const_params: &[String],
+    ) -> Result<Option<Value>, RuntimeError> {
+        let mut define = |interp: &mut Self, value: Value| {
+            let qualified_name = format!("{}·{}", type_name, c.name.name);
+            interp
+                .globals
+                .borrow_mut()
+                .define(qualified_name.clone(), value.clone());
+            if let Some(ref module) = interp.current_module {
+                let fully_qualified = format!("{}·{}", module, qualified_name);
+                interp.globals.borrow_mut().define(fully_qualified, value);
+            }
+        };
+
+        if const_params.is_empty() {
+            let value = self.evaluate(&c.value)?;
+            define(self, value.clone());
+            return Ok(Some(value));
+        }
+
+        // With const generics in play the initialiser may not be evaluable
+        // yet: defer the ones that depend on a const param.
+        match self.evaluate(&c.value) {
+            Ok(value) => {
+                define(self, value.clone());
+                Ok(Some(value))
+            }
+            Err(e) if const_params.iter().any(|p| e.message.contains(p)) => {
+                let key = format!("{}·{}", type_name, c.name.name);
+                self.const_generic_deferred_consts
+                    .insert(key, c.value.clone());
+                Ok(None)
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -5693,6 +5866,208 @@ impl Interpreter {
         }
     }
 
+    /// The trait and method a binary operator dispatches to when the built-in
+    /// table has nothing for the operand types.
+    fn binop_trait(op: &BinOp) -> Option<(&'static str, &'static str)> {
+        Some(match op {
+            BinOp::Add => ("Add", "add"),
+            BinOp::Sub => ("Sub", "sub"),
+            BinOp::Mul => ("Mul", "mul"),
+            BinOp::Div => ("Div", "div"),
+            BinOp::Rem => ("Rem", "rem"),
+            BinOp::BitAnd => ("BitAnd", "bitand"),
+            BinOp::BitOr => ("BitOr", "bitor"),
+            BinOp::BitXor => ("BitXor", "bitxor"),
+            BinOp::Shl => ("Shl", "shl"),
+            BinOp::Shr => ("Shr", "shr"),
+            _ => return None,
+        })
+    }
+
+    /// The same, for the unary operators.
+    fn unaryop_trait(op: &UnaryOp) -> Option<(&'static str, &'static str)> {
+        Some(match op {
+            UnaryOp::Neg => ("Neg", "neg"),
+            UnaryOp::Not => ("Not", "not"),
+            _ => return None,
+        })
+    }
+
+    /// Whether `trait_name` is one whose impls an operator can dispatch to.
+    fn is_operator_trait(trait_name: &str) -> bool {
+        matches!(
+            trait_name,
+            "Add" | "Sub" | "Mul" | "Div" | "Rem" | "BitAnd" | "BitOr" | "BitXor" | "Shl"
+                | "Shr" | "Neg" | "Not"
+        )
+    }
+
+    /// The method an operator trait is expected to define.
+    fn operator_trait_method(trait_name: &str) -> Option<&'static str> {
+        Some(match trait_name {
+            "Add" => "add",
+            "Sub" => "sub",
+            "Mul" => "mul",
+            "Div" => "div",
+            "Rem" => "rem",
+            "BitAnd" => "bitand",
+            "BitOr" => "bitor",
+            "BitXor" => "bitxor",
+            "Shl" => "shl",
+            "Shr" => "shr",
+            "Neg" => "neg",
+            "Not" => "not",
+            _ => return None,
+        })
+    }
+
+    /// The bare name of a type expression, for matching an operator impl's
+    /// declared operand type against a runtime value.
+    fn type_expr_name(ty: &TypeExpr) -> Option<String> {
+        match ty {
+            TypeExpr::Path(path) => path.segments.last().map(|s| s.ident.name.clone()),
+            TypeExpr::Reference { inner, .. } => Self::type_expr_name(inner),
+            _ => None,
+        }
+    }
+
+    /// The type names under which a value's own operator impls are filed.
+    ///
+    /// Numeric literals carry no width at runtime, so an integer answers to
+    /// every integer type: `impl Mul<Vec3> for f32` has to be reachable from
+    /// a plain `2.0`.
+    fn operand_type_keys(value: &Value) -> Vec<&'static str> {
+        match value {
+            Value::Struct { .. } => Vec::new(), // handled by the caller, which has the name
+            Value::Float(_) => vec!["f32", "f64"],
+            Value::Int(_) => vec!["i32", "i64", "u32", "u64", "usize", "isize", "f32", "f64"],
+            Value::Bool(_) => vec!["bool"],
+            Value::String(_) => vec!["String", "str"],
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether a runtime value could be the operand an impl declared as `ty`.
+    fn operand_matches_type(value: &Value, ty: &str) -> bool {
+        match value {
+            Value::Struct { name, .. } => name == ty,
+            // A numeric literal is untyped at runtime, so it matches any
+            // numeric operand type rather than one particular width.
+            Value::Int(_) | Value::Float(_) => matches!(
+                ty,
+                "f32" | "f64" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16"
+                    | "u32" | "u64" | "u128" | "usize"
+            ),
+            Value::Bool(_) => ty == "bool",
+            Value::String(_) => ty == "String" || ty == "str",
+            Value::Array(_) => ty.starts_with('[') || ty.starts_with("Vec"),
+            _ => false,
+        }
+    }
+
+    /// Find the operator impl that applies to these operands, if any.
+    ///
+    /// `rhs` is `None` for a unary operator. When a type has several impls of
+    /// the same operator trait, the one whose declared right-hand type accepts
+    /// `rhs` wins.
+    /// Returns the impl's own type alongside the method, because the caller has
+    /// to bind `Self` to it before running the body.
+    fn lookup_operator_impl(
+        &self,
+        lhs: &Value,
+        trait_name: &str,
+        rhs: Option<&Value>,
+    ) -> Option<(String, Rc<Function>)> {
+        let mut keys: Vec<String> = Vec::new();
+        if let Value::Struct { name, .. } = lhs {
+            keys.push(name.clone());
+        }
+        keys.extend(Self::operand_type_keys(lhs).into_iter().map(String::from));
+
+        for key in keys {
+            let Some(candidates) = self.operator_impls.get(&(key.clone(), trait_name.to_string()))
+            else {
+                continue;
+            };
+
+            let chosen = match rhs {
+                // Unary, or the only impl of this trait on the type: nothing
+                // to choose between.
+                None => candidates.first(),
+                Some(_) if candidates.len() == 1 => candidates.first(),
+                Some(rhs) => candidates
+                    .iter()
+                    .find(|(declared, _)| match declared {
+                        // An unparameterised `impl Add for T` takes Self.
+                        None => Self::operand_matches_type(rhs, &key),
+                        Some(ty) => Self::operand_matches_type(rhs, ty),
+                    })
+                    // Nothing matched exactly. Run the first impl rather than
+                    // reporting the type as having no such operator at all;
+                    // the mismatch surfaces inside the method, where the error
+                    // says more than "invalid struct operation" would.
+                    .or_else(|| candidates.first()),
+            };
+            if let Some((_, Value::Function(func))) = chosen {
+                return Some((key, func.clone()));
+            }
+        }
+        None
+    }
+
+    /// Dispatch a binary operator to a user impl.
+    ///
+    /// `Ok(None)` means no impl applies, leaving the caller to report the
+    /// error it was about to.
+    fn try_binary_overload(
+        &mut self,
+        lhs: &Value,
+        op: &BinOp,
+        rhs: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some((trait_name, _)) = Self::binop_trait(op) else {
+            return Ok(None);
+        };
+        let Some((self_type, func)) = self.lookup_operator_impl(lhs, trait_name, Some(rhs)) else {
+            return Ok(None);
+        };
+        self.call_operator_impl(self_type, &func, vec![lhs.clone(), rhs.clone()])
+            .map(Some)
+    }
+
+    /// Run an operator impl's method with `Self` bound to the impl's type.
+    ///
+    /// Dispatch here bypasses the qualified-call path that normally sets this,
+    /// and a body like `Self·new(x + o.x)` silently builds an empty struct
+    /// named `Self` when it is unset.
+    fn call_operator_impl(
+        &mut self,
+        self_type: String,
+        func: &Function,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let prev_self_type = self.current_self_type.replace(self_type);
+        let result = self.call_function(func, args);
+        self.current_self_type = prev_self_type;
+        result
+    }
+
+    /// Dispatch a unary operator to a user impl.
+    fn try_unary_overload(
+        &mut self,
+        op: &UnaryOp,
+        value: &Value,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some((trait_name, _)) = Self::unaryop_trait(op) else {
+            return Ok(None);
+        };
+        let Some((self_type, func)) = self.lookup_operator_impl(value, trait_name, None) else {
+            return Ok(None);
+        };
+        self.call_operator_impl(self_type, &func, vec![value.clone()])
+            .map(Some)
+    }
+
     fn eval_binary(
         &mut self,
         left: &Expr,
@@ -5745,7 +6120,17 @@ impl Interpreter {
             );
         }
 
-        match (lhs, rhs) {
+        // Kept for the operator-overload fallback below, which needs the
+        // operands after the match has consumed them. Only structs can carry a
+        // user impl, so nothing is cloned on the arithmetic hot path.
+        let overload_operands = match (&lhs, &rhs) {
+            (Value::Struct { .. }, _) | (_, Value::Struct { .. }) => {
+                Some((lhs.clone(), rhs.clone()))
+            }
+            _ => None,
+        };
+
+        let result = match (lhs, rhs) {
             (Value::Int(a), Value::Int(b)) => self.int_binary_op(a, b, op),
             (Value::Float(a), Value::Float(b)) => self.float_binary_op(a, b, op),
             (Value::Int(a), Value::Float(b)) => self.float_binary_op(a as f64, b, op),
@@ -6499,7 +6884,19 @@ impl Interpreter {
                     l_detail, op, r_detail
                 )))
             }
+        };
+
+        // The table above only knows the built-in types, so its error is not
+        // the last word: a user `impl Add for T` (and friends) still gets a
+        // chance to handle the operands.
+        if result.is_err() {
+            if let Some((lhs, rhs)) = overload_operands {
+                if let Some(value) = self.try_binary_overload(&lhs, op, &rhs)? {
+                    return Ok(value);
+                }
+            }
         }
+        result
     }
 
     fn int_binary_op(&self, a: i64, b: i64, op: &BinOp) -> Result<Value, RuntimeError> {
@@ -6607,11 +7004,18 @@ impl Interpreter {
                 // (dereferencing a copy type in Sigil is a no-op)
                 Ok(unwrapped)
             }
-            _ => Err(RuntimeError::new(format!(
-                "Invalid unary {:?} on {:?}",
-                op,
-                std::mem::discriminant(&val)
-            ))),
+            _ => {
+                // As in eval_binary: a user `impl Neg for T` handles what the
+                // built-in table cannot.
+                if let Some(value) = self.try_unary_overload(op, &val)? {
+                    return Ok(value);
+                }
+                Err(RuntimeError::new(format!(
+                    "Invalid unary {:?} on {:?}",
+                    op,
+                    std::mem::discriminant(&val)
+                )))
+            }
         }
     }
 
@@ -12026,6 +12430,30 @@ impl Interpreter {
             }
             (Value::String(s), "to_string") => Ok(Value::String(s.clone())),
             (Value::String(s), "into") => Ok(Value::String(s.clone())), // into() for String just returns String
+            (Value::String(s), "slice") | (Value::String(s), "substring")
+            | (Value::String(s), "substr") => {
+                let start = match arg_values.first() {
+                    Some(Value::Int(n)) => *n,
+                    _ => 0,
+                };
+                let end = match arg_values.get(1) {
+                    Some(Value::Int(n)) => *n,
+                    _ => s.chars().count() as i64,
+                };
+                Ok(string_slice(s, start, end))
+            }
+            (Value::String(s), "find") => {
+                let needle = match arg_values.first() {
+                    Some(Value::String(n)) => (**n).clone(),
+                    Some(Value::Char(c)) => c.to_string(),
+                    Some(Value::Ref(r)) => match &*r.borrow() {
+                        Value::String(n) => (**n).clone(),
+                        _ => return Err(RuntimeError::new("find expects a string or char")),
+                    },
+                    _ => return Err(RuntimeError::new("find expects a string or char")),
+                };
+                Ok(string_find(s, &needle))
+            }
             (Value::String(s), "starts_with") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("starts_with expects 1 argument"));
@@ -12704,7 +13132,13 @@ impl Interpreter {
                 let was_new = s.borrow_mut().insert(key);
                 Ok(Value::Bool(was_new))
             }
-            (Value::Set(s), "contains") => {
+            // `contains_key` too: a set is a map with no values, so the name
+            // is unambiguous on one, and it is the spelling migrated JavaScript
+            // reaches for — `Set.has(x)` and `Map.has(k)` are one method there.
+            // The WASM backend has always accepted both; the interpreter
+            // rejected `contains_key` outright, so generated code ran on one
+            // backend and not the other.
+            (Value::Set(s), "contains") | (Value::Set(s), "contains_key") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("contains expects 1 argument"));
                 }
@@ -13051,6 +13485,25 @@ impl Interpreter {
                             return Ok(Value::Bool(s.contains(substr)));
                         }
                         "trim" => return Ok(Value::String(Rc::new(s.trim().to_string()))),
+                        "slice" | "substring" | "substr" => {
+                            let start = match arg_values.first() {
+                                Some(Value::Int(n)) => *n,
+                                _ => 0,
+                            };
+                            let end = match arg_values.get(1) {
+                                Some(Value::Int(n)) => *n,
+                                _ => s.chars().count() as i64,
+                            };
+                            return Ok(string_slice(s, start, end));
+                        }
+                        "find" => {
+                            let needle = match arg_values.first() {
+                                Some(Value::String(n)) => (**n).clone(),
+                                Some(Value::Char(c)) => c.to_string(),
+                                _ => return Err(RuntimeError::new("find expects a string or char")),
+                            };
+                            return Ok(string_find(s, &needle));
+                        }
                         "to_lowercase" => return Ok(Value::String(Rc::new(s.to_lowercase()))),
                         "to_uppercase" => return Ok(Value::String(Rc::new(s.to_uppercase()))),
                         "chars" => {
@@ -18872,6 +19325,19 @@ impl Interpreter {
                 let mut borrowed = map.borrow_mut();
                 Ok(borrowed.remove(&key).unwrap_or(Value::Null))
             }
+            // `x·to_bool()` — JavaScript truthiness, spelled as a method.
+            //
+            // `to_bool` existed only as a free function, and the React migrator
+            // emits the method form 548 times across the generated Lares client
+            // (every `&&`, `||` and ternary over a non-boolean). Neither backend
+            // had it: the interpreter answered "no method 'to_bool'", and the
+            // WASM backend had no `to_bool` at all.
+            (_, "to_bool") => {
+                if !arg_values.is_empty() {
+                    return Err(RuntimeError::new("to_bool() takes no arguments"));
+                }
+                Ok(Value::Bool(crate::stdlib::is_truthy(&recv)))
+            }
             _ => {
                 // Debug: what type is failing method lookup
                 let recv_type = match &recv {
@@ -19074,6 +19540,26 @@ impl Interpreter {
             | (Value::String(s), "lowercase")
             | (Value::String(s), "to_lowercase") => Ok(Value::String(Rc::new(s.to_lowercase()))),
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
+            (Value::String(s), "slice") | (Value::String(s), "substring")
+            | (Value::String(s), "substr") => {
+                let start = match args.first() {
+                    Some(Value::Int(n)) => *n,
+                    _ => 0,
+                };
+                let end = match args.get(1) {
+                    Some(Value::Int(n)) => *n,
+                    _ => s.chars().count() as i64,
+                };
+                Ok(string_slice(s, start, end))
+            }
+            (Value::String(s), "find") => {
+                let needle = match args.first() {
+                    Some(Value::String(n)) => (**n).clone(),
+                    Some(Value::Char(c)) => c.to_string(),
+                    _ => return Err(RuntimeError::new("find expects a string or char")),
+                };
+                Ok(string_find(s, &needle))
+            }
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chars))))
@@ -19284,6 +19770,25 @@ impl Interpreter {
                 all_args.extend(args);
                 self.call_function_by_name(method_name, all_args)
             }
+        }
+    }
+
+    /// How many parameters does the named user-defined function declare?
+    ///
+    /// `None` when the name is not bound to a user-defined function — a built-in,
+    /// a non-function value, or absent entirely. Callers that need to shape their
+    /// argument list to a function they did not write (the `main` entry point) ask
+    /// this first, rather than calling and interpreting the failure: a call that
+    /// fails has already run whatever the function did before it failed.
+    pub fn function_arity(&self, name: &str) -> Option<usize> {
+        let value = self
+            .environment
+            .borrow()
+            .get(name)
+            .or_else(|| self.globals.borrow().get(name));
+        match value {
+            Some(Value::Function(f)) => Some(f.params.len()),
+            _ => None,
         }
     }
 
@@ -25973,6 +26478,42 @@ mod tests {
         interp.execute(&file)
     }
 
+    /// Load a file's definitions and hand back the interpreter, so a test can
+    /// inspect what got registered rather than only what `main` returned.
+    fn interp_after(source: &str) -> Interpreter {
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().expect("parse");
+        let mut interp = Interpreter::new();
+        interp.execute(&file).expect("execute");
+        interp
+    }
+
+    #[test]
+    fn function_arity_reports_declared_parameter_count() {
+        // `sigil run-dir` used to pass an argv array to `main` unconditionally,
+        // so every zero-arg `main` died with "Expected 0 arguments, got 1". The
+        // fix shapes the call to the declared arity, which is only as good as
+        // this lookup.
+        let interp = interp_after("rite main() { ⤺ 1; }");
+        assert_eq!(interp.function_arity("main"), Some(0));
+
+        let interp = interp_after("rite main(args) { ⤺ 1; }");
+        assert_eq!(interp.function_arity("main"), Some(1));
+    }
+
+    #[test]
+    fn function_arity_is_none_for_anything_that_is_not_a_user_function() {
+        // The caller falls back to passing argv when this is None, so it must not
+        // report Some for a non-function — an absent `main` has to reach
+        // `call_function_by_name` and produce its own error, not be treated as
+        // zero-arg here.
+        let interp = interp_after("rite other() { ⤺ 1; }");
+        assert_eq!(interp.function_arity("main"), None);
+
+        let interp = interp_after("rite main() { ⤺ 1; }");
+        assert_eq!(interp.function_arity("no_such_function"), None);
+    }
+
     #[test]
     fn test_arithmetic() {
         assert!(matches!(run("rite main() { ⤺ 2 + 3; }"), Ok(Value::Int(5))));
@@ -25992,6 +26533,174 @@ mod tests {
             run("rite main() { ⤺ 2 ** 10; }"),
             Ok(Value::Int(1024))
         ));
+    }
+
+    #[test]
+    fn operator_impl_is_dispatched_by_the_operator() {
+        // A user `impl Add for T` used to be invisible to `+`, which reported
+        // "Invalid struct operation" while the type checker accepted the code.
+        let source = "\
+            ☉ Σ P { ☉ x: f32 }
+            ⊢ P { ☉ rite new(x: f32) -> Self { Self { x } } }
+            ⊢ Add ∀ P {
+                type Output = Self;
+                rite add(self, o: Self) -> Self { Self·new(self.x + o.x) }
+            }
+            ⊢ Neg ∀ P {
+                type Output = Self;
+                rite neg(self) -> Self { Self·new(-self.x) }
+            }
+            rite main() { ≔ a = P·new(2.0); ≔ b = a + a; ⤺ (-b).x; }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == -4.0));
+    }
+
+    #[test]
+    fn operator_impls_are_chosen_by_their_right_hand_type() {
+        // `Div<f32>` and `Div<Vec3>` both define `P·div`, so a lookup by name
+        // alone reaches only whichever was registered last.
+        let source = "\
+            ☉ Σ P { ☉ x: f32 }
+            ⊢ P { ☉ rite new(x: f32) -> Self { Self { x } } }
+            ⊢ Div<f32> ∀ P {
+                type Output = Self;
+                rite div(self, s: f32) -> Self { Self·new(self.x / s) }
+            }
+            ⊢ Div<P> ∀ P {
+                type Output = Self;
+                rite div(self, o: Self) -> Self { Self·new(self.x / o.x) }
+            }
+            rite main() {
+                ≔ a = P·new(12.0);
+                ≔ by_scalar = a / 3.0;
+                ≔ by_struct = a / P·new(2.0);
+                ⤺ by_scalar.x + by_struct.x;
+            }";
+        // 12/3 = 4, 12/2 = 6
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 10.0));
+    }
+
+    #[test]
+    fn associated_const_may_be_initialised_by_a_call() {
+        // `Self·new(..)` in a const initialiser resolved to nothing, yielding an
+        // empty struct named `Self`. The constructor is declared *after* the
+        // const on purpose: impl items are not ordered.
+        let source = "\
+            ☉ Σ P { ☉ x: f32 }
+            ⊢ P {
+                ☉ const ONE: Self = Self·new(1.0);
+                ☉ rite new(x: f32) -> Self { Self { x } }
+            }
+            rite main() { ⤺ P·ONE.x; }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 1.0));
+    }
+
+    #[test]
+    fn impl_inside_a_module_keeps_its_associated_consts() {
+        // Module impls registered their methods but dropped every const, so
+        // `P·ONE` was not merely wrong but absent: reading `.x` off it yielded
+        // null rather than 1.0.
+        //
+        // Asserted through the module-qualified `geom·P·ONE`, which is how the
+        // const is actually spelled from outside the scroll. #75 had to route
+        // this through the unqualified `P·ONE` alias, because the qualified
+        // form could not be parsed at all; see
+        // `module_qualified_paths_resolve`. Both spellings are pinned here.
+        let source = "\
+            scroll geom {
+                ☉ Σ P { ☉ x: f32 }
+                ⊢ P {
+                    ☉ const ONE: Self = Self·new(1.0);
+                    ☉ rite new(x: f32) -> Self { Self { x } }
+                }
+            }
+            rite main() { ⤺ geom·P·ONE.x + P·ONE.x; }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 2.0));
+    }
+
+    #[test]
+    fn module_qualified_paths_resolve() {
+        // `module·Type·member` used to fail with "undefined variable: `geom`":
+        // `parse_type_path` stopped at the first `·` after a lowercase segment,
+        // so the path became a field access on a variable that was never bound.
+        // A plain static method, no consts and no operator traits involved.
+        let source = "\
+            scroll geom {
+                ☉ Σ P { ☉ x: f32 }
+                ⊢ P { ☉ rite new(x: f32) -> Self { Self { x } } }
+            }
+            rite main() { ⤺ geom·P·new(3.0).x; }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 3.0));
+    }
+
+    #[test]
+    fn a_lowercase_receiver_is_still_a_method_call_not_a_path() {
+        // The other half of the same decision, and the reason the qualified
+        // form was broken in the first place: #61 stopped `·` from being
+        // consumed as a path separator after a lowercase segment, because
+        // `tag·to_string()` was being parsed as a call to a path `tag·to_string`
+        // and dispatched to a built-in of the wrong arity. Nothing in the chain
+        // names a type, so it must stay a method call on `tag`.
+        let source = "\
+            scroll geom {
+                ☉ Σ P { ☉ x: f32 }
+                ⊢ P {
+                    ☉ rite new(x: f32) -> Self { Self { x } }
+                    ☉ rite scaled(self, k: f32) -> f32 { self.x * k }
+                }
+            }
+            rite main() {
+                ≔ p = geom·P·new(3.0);
+                ⤺ p·scaled(2.0);
+            }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 6.0));
+    }
+
+    #[test]
+    fn operator_dispatch_runs_a_user_add_impl_end_to_end() {
+        // The capability PR #75 claims, exercised the way real code uses it:
+        // a multi-field vector type whose `+`, `-` and scalar `*` all resolve
+        // through user impls of the operator traits, chained in one expression.
+        //
+        // Without the dispatch these operands never reach the impls at all --
+        // `+` on two structs bottoms out in "Type mismatch in binary
+        // operation" -- so this fails outright rather than merely differing.
+        let source = "\
+            ☉ Σ V3 { ☉ x: f32, ☉ y: f32, ☉ z: f32 }
+            ⊢ V3 {
+                ☉ rite new(x: f32, y: f32, z: f32) -> Self { Self { x, y, z } }
+            }
+            ⊢ Add ∀ V3 {
+                type Output = Self;
+                rite add(self, o: Self) -> Self {
+                    Self·new(self.x + o.x, self.y + o.y, self.z + o.z)
+                }
+            }
+            ⊢ Sub ∀ V3 {
+                type Output = Self;
+                rite sub(self, o: Self) -> Self {
+                    Self·new(self.x - o.x, self.y - o.y, self.z - o.z)
+                }
+            }
+            ⊢ Mul<f32> ∀ V3 {
+                type Output = Self;
+                rite mul(self, s: f32) -> Self {
+                    Self·new(self.x * s, self.y * s, self.z * s)
+                }
+            }
+            rite main() {
+                ≔ a = V3·new(1.0, 2.0, 3.0);
+                ≔ b = V3·new(0.5, 0.5, 0.5);
+                ≔ r = (a + b - b) * 2.0;
+                ⤺ r.x + r.y + r.z;
+            }";
+        // a + b - b == a, times 2 == (2,4,6); 2+4+6 == 12
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 12.0));
+    }
+
+    #[test]
+    fn builtin_operators_are_unaffected_by_operator_dispatch() {
+        assert!(matches!(run("rite main() { ⤺ 2 + 3 * 4; }"), Ok(Value::Int(14))));
+        assert!(matches!(run("rite main() { ⤺ -7; }"), Ok(Value::Int(-7))));
     }
 
     #[test]

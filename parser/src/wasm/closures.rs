@@ -6,7 +6,7 @@ use wasm_encoder::{BlockType, Instruction, ValType};
 
 use super::error::{WasmError, WasmResult};
 use super::types::{ClosureInfo, CompiledFunction};
-use super::WasmCompiler;
+use super::{WasmCompiler, ANON_STRUCT};
 use crate::ast::{ClosureParam, Expr, Pattern};
 
 /// Get name from a closure parameter pattern.
@@ -17,6 +17,19 @@ fn get_param_name(param: &ClosureParam) -> String {
         _ => "__param".to_string(),
     }
 }
+
+/// Every closure has the same WASM signature: `(env, a0 … a3) -> i64`.
+///
+/// Arity is part of a function's type, so a one-parameter closure in the table
+/// and a two-argument call site are different types and `call_indirect` traps —
+/// "null function or function signature mismatch", from a frame with no
+/// relation to either. Generated code puts closures in places where the call
+/// site cannot know the arity (an actor's state, a prop), so the only way a
+/// table entry and a call site cannot disagree is for there to be one type.
+///
+/// Declared parameters bind in order; the rest are ignored, and a call site
+/// that has fewer arguments passes the empty value for them.
+pub(crate) const CLOSURE_ARITY: usize = 4;
 
 impl WasmCompiler {
     /// Compile a closure expression.
@@ -49,16 +62,26 @@ impl WasmCompiler {
         let closure_name = format!("__closure_{}", self.closure_counter);
         self.closure_counter += 1;
 
-        // Create function type
-        let param_types: Vec<ValType> = params.iter().map(|_| ValType::I64).collect();
+        // Every closure takes an env as its first parameter, captures or not.
+        // Two conventions meant a table entry and a call site could disagree,
+        // and `call_indirect` reports that as "null function or function
+        // signature mismatch" — with no indication of which closure.
+        let mut param_types: Vec<ValType> = vec![ValType::I64];
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
         // Create function
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
-        let params_with_names: Vec<(String, ValType)> = params
-            .iter()
-            .map(|p| (get_param_name(p), ValType::I64))
-            .collect();
+        let func_idx = self.next_func_idx();
+        let mut params_with_names: Vec<(String, ValType)> =
+            vec![("__env".to_string(), ValType::I64)];
+        params_with_names.extend(
+            params
+                .iter()
+                .map(|p| (get_param_name(p), ValType::I64)),
+        );
+        for i in params.len()..CLOSURE_ARITY {
+            params_with_names.push((format!("__unused_{}", i), ValType::I64));
+        }
 
         let mut func = CompiledFunction::new(
             closure_name.clone(),
@@ -103,15 +126,113 @@ impl WasmCompiler {
             },
         );
 
-        // Return closure pointer (table index for indirect call)
+        // A closure value is the pair `[table_idx, env_ptr]`, the same for a
+        // closure with captures and one without — every call site loads both
+        // out of it. This pushed the bare table index instead, so calling a
+        // capture-free closure dereferenced a small integer as a pointer, read
+        // a garbage table index out of it, and trapped with "null function or
+        // function signature mismatch". The comment above already described the
+        // representation this did not build.
+        let alloc_idx = self
+            .get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
-
-        // Create closure representation: [table_idx, env_ptr]
-        // For no-capture closure, env_ptr is 0
+        func.push(Instruction::I64Const(16));
+        func.push(Instruction::Call(alloc_idx));
+        let obj = func.alloc_local("__closure_obj".to_string(), ValType::I64);
+        func.push(Instruction::LocalTee(obj));
+        func.push(Instruction::I32WrapI64);
         func.push(Instruction::I64Const(table_idx as i64));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        // No captures, so no environment.
+        func.push(Instruction::LocalGet(obj));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::LocalGet(obj));
 
+        Ok(())
+    }
+
+    /// A named function used as a value: `onClick={handleSubmit}`, `xs·map(f)`.
+    ///
+    /// Not the function itself — a THUNK with the one closure signature that
+    /// forwards to it, wrapped in the `[table_idx, env_ptr]` pair every call
+    /// site loads. The arm this replaces pushed the function's own table index,
+    /// bare: the wrong value (a small integer where a pointer belongs) of the
+    /// wrong type (its own arity, not the closure convention), so calling one
+    /// trapped with "null function or function signature mismatch".
+    pub(crate) fn emit_function_reference(&mut self, func_idx: u32) -> WasmResult<()> {
+        let arity = self.arity_of(func_idx).unwrap_or(0).min(CLOSURE_ARITY);
+        let returns_void = self.func_returns_void(func_idx);
+
+        let mut param_types = vec![ValType::I64]; // env, ignored
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
+        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
+
+        let thunk_idx = self.next_func_idx();
+        let mut params_with_names = vec![("__env".to_string(), ValType::I64)];
+        for i in 0..CLOSURE_ARITY {
+            params_with_names.push((format!("__a{}", i), ValType::I64));
+        }
+        let mut thunk = CompiledFunction::new(
+            format!("__fnref_{}", self.closure_counter),
+            type_idx,
+            thunk_idx,
+            params_with_names,
+            vec![ValType::I64],
+            false,
+        );
+        self.closure_counter += 1;
+        // Only the parameters the callee actually declares.
+        for i in 0..arity {
+            thunk.push(Instruction::LocalGet(1 + i as u32));
+        }
+        thunk.push(Instruction::Call(func_idx));
+        if returns_void {
+            thunk.push(Instruction::I64Const(0));
+        }
+        thunk.push(Instruction::End);
+        self.functions.push(thunk);
+
+        let table_idx = self.add_to_table(thunk_idx);
+
+        let alloc_idx = self
+            .get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I64Const(16));
+        func.push(Instruction::Call(alloc_idx));
+        let obj = func.alloc_local("__fnref_obj".to_string(), ValType::I64);
+        func.push(Instruction::LocalTee(obj));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Const(table_idx as i64));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::LocalGet(obj));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::I64Store(wasm_encoder::MemArg {
+            offset: 8,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::LocalGet(obj));
         Ok(())
     }
 
@@ -143,14 +264,17 @@ impl WasmCompiler {
 
         // Closure function takes: [env_ptr, ...params]
         let mut param_types = vec![ValType::I64]; // env pointer
-        param_types.extend(params.iter().map(|_| ValType::I64));
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
 
         let type_idx = self.get_or_create_type(param_types.clone(), vec![ValType::I64]);
 
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         let mut params_with_names = vec![("__env".to_string(), ValType::I64)];
         params_with_names.extend(params.iter().map(|p| (get_param_name(p), ValType::I64)));
+        for i in params.len()..CLOSURE_ARITY {
+            params_with_names.push((format!("__unused_{}", i), ValType::I64));
+        }
 
         let func = CompiledFunction::new(
             closure_name.clone(),
@@ -391,7 +515,33 @@ impl WasmCompiler {
 
     /// Compile a function call expression.
     pub fn compile_call(&mut self, func_expr: &Expr, args: &[Expr]) -> WasmResult<()> {
+        /// Whether the program declares `Type·method` itself, for the exact
+        /// type named — not any function that shares the last segment, since
+        /// the general lookup falls back to a bare name and `HashMap·new()`
+        /// would find `VFragment::new`.
+        fn declares_own(c: &WasmCompiler, segments: &[String]) -> bool {
+            if segments.len() < 2 {
+                return false;
+            }
+            let ty = &segments[segments.len() - 2];
+            let m = &segments[segments.len() - 1];
+            c.func_map.contains_key(&format!("{}::{}", ty, m))
+        }
+
         match func_expr {
+            // `x.method(args)`. Sigil's separator is `·`, but the interpreter
+            // has always accepted `.` here too, and this backend did not: it
+            // read a field named `method` and then called nothing, so
+            // `tag.to_string()` stored a zero. Qliphoth's own core does this 87
+            // times — `VElement·new("div")` never stored its tag. The two
+            // backends have to agree on what a program means.
+            //
+            // A field that really holds a callable is not a thing Sigil has, so
+            // there is nothing to disambiguate against: this is a method call.
+            Expr::Field { expr: receiver, field } => {
+                self.compile_method_call(receiver, &field.name, args)
+            }
+
             Expr::Path(path) => {
                 // Extract path segments
                 let segments: Vec<String> = path
@@ -435,7 +585,14 @@ impl WasmCompiler {
                     let type_name = &resolved_segments[resolved_segments.len() - 2];
                     let method_name = &resolved_segments[resolved_segments.len() - 1];
 
-                    if type_name == "VNode" {
+                    // The builtin `VNode·div()` builds a *host* vnode through
+                    // the `vdom_*` imports. A program that declares its own
+                    // `VNode` — Qliphoth does, and the generated client vendors
+                    // it — means its own enum, and its own `·attr()` resolves
+                    // to its own method. Intercepting the constructor and not
+                    // the builder left every chain half host and half Sigil:
+                    // valid WebAssembly that rendered nothing.
+                    if type_name == "VNode" && !self.declares_own_vnode() {
                         if let Some(result) = self.try_compile_vnode_constructor(method_name, args) {
                             return result;
                         }
@@ -551,22 +708,13 @@ impl WasmCompiler {
                     self.compile_expr(&args[0])?;
                     return Ok(());
                 }
-                if (name == "HashSet_new" || simple_name == "new")
-                    && resolved_segments.len() >= 2
-                    && (resolved_segments[resolved_segments.len() - 2] == "HashSet"
-                        || resolved_segments.iter().any(|s| s == "HashSet"))
-                    && args.is_empty()
-                {
-                    // HashSet::new() -> new array (use morpheme_array_new)
-                    if let Some(func_idx) = self.imports.get_func("morpheme_array_new") {
-                        let func = self.current_function_mut()
-                            .ok_or_else(|| WasmError::internal("not in function context"))?;
-                        func.push(Instruction::Call(func_idx));
-                        // array_new returns i32, extend to i64 for Sigil's uniform type system
-                        func.push(Instruction::I64ExtendI32U);
-                        return Ok(());
-                    }
-                }
+                // `HashSet·new()` is NOT here. It used to build an ARRAY —
+                // `morpheme_array_new` — and this arm sits far enough up the
+                // function to shadow the set constructor added with the `set`
+                // import group. Everything after it then addressed a set that
+                // did not exist: `s·insert(x)` looked up a set by an array's id
+                // and did nothing, and `s·len()` found the empty array.
+                // The real one is with the other collection constructors below.
 
                 // std::mem::take - replace with default and return original
                 // In WASM, this is simplified to just returning the value (no mutation tracking)
@@ -739,7 +887,71 @@ impl WasmCompiler {
                     // Single uppercase letter followed by underscore is typically a generic
                     || (name.len() >= 3 && name.chars().next().unwrap().is_ascii_uppercase()
                         && name.chars().nth(1) == Some('_'));
-                if is_cross_module_stub {
+                // `HashSet·from(xs)` — build a set from an array, another
+                // set, or a map's keys. Every migrated `new Set([...])` is this.
+                if args.len() == 1
+                    && resolved_segments.len() == 2
+                    && resolved_segments[1] == "from"
+                    && !declares_own(self, &resolved_segments)
+                {
+                    match resolved_segments[0].as_str() {
+                        "HashSet" | "BTreeSet" => {
+                            self.compile_expr(&args[0])?;
+                            return self.emit_set_from();
+                        }
+                        "HashMap" | "BTreeMap" => {
+                            self.compile_expr(&args[0])?;
+                            return self.emit_map_from();
+                        }
+                        _ => {}
+                    }
+                }
+
+                // `Vec·new()` / `HashMap·new()` and friends. These used to fall
+                // into the stub list below and compile to the constant `0`, so
+                // every empty collection was a null pointer. Host-side, per S57.
+                if args.is_empty()
+                    && resolved_segments.len() == 2
+                    && !declares_own(self, &resolved_segments)
+                {
+                    match (resolved_segments[0].as_str(), resolved_segments[1].as_str()) {
+                        ("Vec" | "VecDeque", "new") => return self.emit_array_new(),
+                        ("HashMap" | "BTreeMap", "new") => return self.emit_map_new(),
+                        // A set is its own host collection — see the `set`
+                        // import group. Aliasing it onto a map made `∀ x ∈ set`
+                        // yield `[k, v]` pairs.
+                        ("HashSet" | "BTreeSet", "new") => return self.emit_set_new(),
+                        // `String·new()` is the empty string, not a stub.
+                        ("String", "new") => {
+                            let offset = self.add_string("");
+                            let func = self.current_function_mut().ok_or_else(|| {
+                                WasmError::internal("not in function context")
+                            })?;
+                            func.push(Instruction::I32Const(offset as i32));
+                            func.push(Instruction::I64ExtendI32U);
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+                }
+
+                // …but only when the program does not define the thing itself.
+                // This list fires on the underscore-joined path, so `VNode·div()`
+                // is `VNode_div` and was stubbed to a constant `0` before any
+                // user function was looked up — every call on a user-declared
+                // `VNode`, `Vec`, `HashMap`, `Option`, `Result`, `Rc`, `Cell` or
+                // `Patch` silently did nothing. Qliphoth declares `VNode`, so its
+                // whole builder API compiled to zero. Resolution first; the stub
+                // is the fallback it was documented to be, and it is reported.
+                // "Defines it itself" has to mean this exact type's own method,
+                // not any function that shares the name: the general lookup
+                // falls back to a bare last segment, so `HashMap·new()` would
+                // find `VFragment::new` and the two would call each other until
+                // the stack ran out.
+                let resolves_locally = self.func_map.contains_key(&qualified_path)
+                    || declares_own(self, &resolved_segments);
+                if is_cross_module_stub && !resolves_locally {
+                    self.stubbed_calls.insert(format!("{}()", resolved_segments.join("·")));
                     // Compile all arguments (for side effects), then leave
                     // exactly one i64 value on the stack as a dummy return.
                     for arg in args {
@@ -791,6 +1003,7 @@ impl WasmCompiler {
                         };
 
                         if let Some(func_idx) = method_func_idx {
+                            self.ensure_arity(func_idx, args.len() + 1, method_name)?;
                             // Found the method! Emit receiver as first argument
                             let local_idx = self.current_function()
                                 .and_then(|f| f.get_local(potential_receiver))
@@ -820,6 +1033,68 @@ impl WasmCompiler {
                     }
                 }
 
+                // An actor method reached through the actor's name: `Counter·value()`.
+                //
+                // The `self` receiver is part of the method's WASM signature — a
+                // placeholder, since actor state lives in globals — and the
+                // `self·method()` path above already pushes one. Through the type
+                // name nothing pushed it, so every such call was one argument
+                // short. With an ordinary actor name that is a module which fails
+                // WebAssembly validation while `sigil wasm` reports success; where
+                // it happened to validate anyway, `Counter·value()` returned 0 for
+                // a field holding 7.
+                if resolved_segments.len() == 2 {
+                    let qualified = format!("{}::{}", resolved_segments[0], resolved_segments[1]);
+                    if self.actor_self_methods.contains(&qualified) {
+                        if let Some(&func_idx) = self.func_map.get(&qualified) {
+                            self.ensure_arity(func_idx, args.len() + 1, &qualified)?;
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::I64Const(0)); // placeholder self
+                            for arg in args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+
+                // `None·to_string()` — a two-segment path whose head is a
+                // VALUE, not a type or a module, is a method call. It parses as
+                // a path call, so it never reached method dispatch, and the
+                // last segment was stubbed as an undefined free function.
+                if resolved_segments.len() == 2
+                    && self
+                        .get_func_by_path_arity(&resolved_segments, Some(args.len()))
+                        .is_none()
+                    && !self.struct_layouts.contains_key(&resolved_segments[0])
+                    && !self.enum_layouts.contains_key(&resolved_segments[0])
+                    // An `extern "js" { type Window; }` is a TYPE, so
+                    // `Window·get()` is an associated function, not a method on
+                    // a value called `Window`.
+                    && !self.extern_types.contains(&resolved_segments[0])
+                    && !self.actor_self_methods.iter().any(|m| {
+                        m.starts_with(&format!("{}::", resolved_segments[0]))
+                    })
+                {
+                    if let Expr::Path(p) = func_expr {
+                        let mut head = p.clone();
+                        head.segments.truncate(1);
+                        let receiver = Expr::Path(head);
+                        let method = resolved_segments[1].clone();
+                        return self.compile_method_call(&receiver, &method, args);
+                    }
+                }
+
                 // Compile arguments for non-import calls
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -827,10 +1102,60 @@ impl WasmCompiler {
 
                 // Check for direct function call (user-defined functions)
                 // Try qualified path first (handles tome:: and module::function calls)
-                let func_idx_opt = self.get_func_by_path(&resolved_segments)
-                    .or_else(|| self.get_func(simple_name))
-                    .or_else(|| self.get_func(&qualified_path));
+                //
+                // The bare-name fallback is for a SINGLE-segment path. Applying it
+                // to `Type·method()` binds the call to whatever function happens
+                // to share the method's name — and with `view`, which is what
+                // every generated Qliphoth component calls its render method,
+                // `ConnRow·view()` inside `rite view(self)` resolved to the
+                // enclosing function itself. That takes a `self` the call site
+                // never pushed, so the module underflowed its own stack.
+                // Every candidate has to fit the call. `func_map` keeps one
+                // index per name and a name can mean several things — six
+                // `extern "js"` types in `qliphoth-sys` declare a `get`, and so
+                // does `⊢ Window`, with a different arity. Taking the first and
+                // then checking it turned a resolvable call into an error.
+                let argc = args.len();
+                let fits = |c: &Self, idx: u32| -> bool {
+                    c.arity_of(idx).is_none_or(|declared| declared == argc)
+                };
+                let func_idx_opt = self
+                    .get_func_by_path_arity(&resolved_segments, Some(argc))
+                    .or_else(|| {
+                        if resolved_segments.len() == 1 {
+                            self.get_func(simple_name).filter(|i| fits(self, *i))
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| self.get_func(&qualified_path).filter(|i| fits(self, *i)))
+                    .or_else(|| {
+                        self.func_candidates
+                            .get(simple_name)
+                            .and_then(|c| c.iter().copied().find(|i| fits(self, *i)))
+                    })
+                    // `Type·method(…)` as a host import, under the same
+                    // `module_function` convention `vdom·mount_vnode` already
+                    // uses: `String·from_utf8` is `string.from_utf8`. Without
+                    // this, an associated function that exists only on the host
+                    // read as an undefined function.
+                    .or_else(|| {
+                        let (head, tail) = (
+                            resolved_segments.first()?,
+                            resolved_segments.last()?,
+                        );
+                        if resolved_segments.len() < 2 {
+                            return None;
+                        }
+                        let import = format!("{}_{}", head.to_lowercase(), tail);
+                        self.imports.get_func(&import).filter(|i| fits(self, *i))
+                    });
                 if let Some(func_idx) = func_idx_opt {
+                    // An arity that cannot match is a defect wherever it comes
+                    // from; emitting the call anyway produces a module no runtime
+                    // will load.
+                    self.ensure_arity(func_idx, args.len(), simple_name)?;
+
                     // Check if function returns void
                     let returns_void = self.func_returns_void(func_idx);
 
@@ -858,7 +1183,6 @@ impl WasmCompiler {
                                 let closure_ptr_idx = local.index;
                                 return self.compile_closure_call_with_env(
                                     closure_ptr_idx,
-                                    closure_info,
                                     args.len(),
                                 );
                             }
@@ -873,11 +1197,14 @@ impl WasmCompiler {
 
                             return self.compile_closure_call_with_env(
                                 closure_ptr_idx,
-                                closure_info,
                                 args.len(),
                             );
                         }
-                        return Err(WasmError::undefined_variable(simple_name));
+                        // Recorded, not raised: the build reports every
+                        // unresolved name at once (see `finish_unresolved`).
+                        // Failing at the first one meant one name per rebuild,
+                        // and a rebuild here is two minutes.
+                        return self.stub_unresolved(simple_name);
                     } else {
                         // No captures - simple indirect call
                         self.compile_indirect_call(closure_info, args.len())
@@ -899,54 +1226,41 @@ impl WasmCompiler {
                     // This handles cases like calling a captured closure parameter: `compute()`
                     let local_info = self.current_function().and_then(|f| f.get_local(simple_name).cloned());
                     if let Some(local) = local_info {
-                        // Compile arguments first
-                        for arg in args {
-                            self.compile_expr(arg)?;
-                        }
+                        // The arguments are already on the stack: the shared
+                        // prologue above compiles them before any of these
+                        // branches. Compiling them again pushed each one twice
+                        // and consumed one — `f(x)` left a spare `x` behind, and
+                        // inside an `if` arm that is a block one value too tall.
 
                         // Load the closure pointer from local
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(local.index));
 
                         // Treat as indirect call through closure pointer
-                        // Closure representation: [table_idx, env_ptr]
+                        // Closure representation: [table_idx, env_ptr].
+                        //
+                        // This used to emit the operands itself, and got the
+                        // order wrong in a second way — table index before the
+                        // env pointer, both before the arguments. One sequence,
+                        // in the helper.
                         let temp_ptr = func.alloc_local("__call_local_closure".to_string(), ValType::I64);
                         func.push(Instruction::LocalSet(temp_ptr));
 
-                        // Get table index from closure (offset 0)
-                        func.push(Instruction::LocalGet(temp_ptr));
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: 0,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-                        func.push(Instruction::I32WrapI64);
-
-                        // Get env pointer (offset 8)
-                        func.push(Instruction::LocalGet(temp_ptr));
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: 8,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-
-                        // Indirect call with env as first argument
-                        let mut param_types = vec![ValType::I64]; // env
-                        param_types.extend(std::iter::repeat(ValType::I64).take(args.len()));
-                        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
-
-                        let func = self.current_function_mut().unwrap();
-                        func.push(Instruction::CallIndirect { type_index: type_idx, table_index: 0 });
-
-                        Ok(())
+                        let arg_count = args.len();
+                        self.compile_closure_call_with_env(temp_ptr, arg_count)
                     } else {
                         // Fallback for nested/helper functions that weren't hoisted
                         // These are common patterns like `fn walk(...)` inside functions
                         // For now, stub them by returning a default value
                         if simple_name.chars().next().map_or(false, |c| c.is_ascii_lowercase()) {
-                            // Looks like a local helper function - compile args and return dummy
+                            // Looks like a local helper function - compile args and return dummy.
+                            //
+                            // Every Sigil function name is lowercase, so this arm
+                            // catches every unresolved call, not just un-hoisted
+                            // helpers: `json_parse("…")` compiles to `0` and calls
+                            // nothing, and so does a name that exists nowhere.
+                            // Record it so a build can report what it dropped.
+                            self.stubbed_calls.insert(simple_name.to_string());
                             let func = self.current_function_mut()
                                 .ok_or_else(|| WasmError::internal("not in function context"))?;
                             // Drop all args that were already compiled
@@ -957,7 +1271,11 @@ impl WasmCompiler {
                             func.push(Instruction::I64Const(0));
                             return Ok(());
                         }
-                        Err(WasmError::undefined_function(name))
+                        for _ in 0..args.len() {
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::Drop);
+                        }
+                        self.stub_unresolved(name)
                     }
                 }
             }
@@ -982,54 +1300,168 @@ impl WasmCompiler {
                     self.compile_expr(arg)?;
                 }
 
-                let func = self.current_function_mut().unwrap();
-
-                // Get table index from closure
-                func.push(Instruction::LocalGet(closure_ptr));
-                func.push(Instruction::I32WrapI64);
-                func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                    offset: 0,
-                    align: 3,
-                    memory_index: 0,
-                }));
-                func.push(Instruction::I32WrapI64);
-
-                // Get env pointer
-                func.push(Instruction::LocalGet(closure_ptr));
-                func.push(Instruction::I32WrapI64);
-                func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                    offset: 8,
-                    align: 3,
-                    memory_index: 0,
-                }));
-
-                // Indirect call with env as first argument
-                // Type: (env, args...) -> result
-                let mut param_types = vec![ValType::I64]; // env
-                param_types.extend(std::iter::repeat(ValType::I64).take(args.len()));
-                let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
-
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::CallIndirect { type_index: type_idx, table_index: 0 });
-
-                Ok(())
+                // One sequence, in the helper. This was a second copy of it,
+                // and it emitted `[args…, table_idx, env]` — the table index
+                // not last, which `call_indirect` requires, and the env after
+                // the arguments rather than before them. The same bug was found
+                // and fixed in the helper; this copy never got the fix, so
+                // every component that calls a closure with arguments trapped
+                // with "null function or function signature mismatch".
+                self.compile_closure_call_with_env(closure_ptr, args.len())
             }
         }
     }
 
     /// Compile a closure call when we have the closure pointer in a local.
     /// This extracts the env pointer from the closure object and calls with it.
+    /// `xs·for_each(cb)`: iterate the receiver and call `cb` per element.
+    ///
+    /// A two-parameter callback gets `(element, index)`, matching JavaScript's
+    /// `forEach`. The whole expression evaluates to `0` — `for_each` returns
+    /// nothing, and every expression here leaves one i64 behind.
+    fn compile_for_each(&mut self, receiver: &Expr, callback: &Expr) -> WasmResult<()> {
+        let wants_index = matches!(callback, Expr::Closure { params, .. } if params.len() >= 2);
+
+        // The iterable, as an array handle.
+        self.compile_expr(receiver)?;
+        self.emit_iterable()?;
+        let (arr, len, i, cb) = {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            let arr = func.alloc_local("__fe_arr".to_string(), ValType::I64);
+            func.push(Instruction::LocalSet(arr));
+            let len = func.alloc_local("__fe_len".to_string(), ValType::I64);
+            let i = func.alloc_local("__fe_i".to_string(), ValType::I64);
+            let cb = func.alloc_local("__fe_cb".to_string(), ValType::I64);
+            (arr, len, i, cb)
+        };
+
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(arr));
+        }
+        self.emit_array_len()?;
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalSet(len));
+        }
+
+        // The callback, once — a closure literal allocates, and allocating per
+        // iteration would leak one pair per element.
+        self.compile_expr(callback)?;
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalSet(cb));
+            func.push(Instruction::I64Const(0));
+            func.push(Instruction::LocalSet(i));
+
+            func.push(Instruction::Block(wasm_encoder::BlockType::Empty));
+            func.push(Instruction::Loop(wasm_encoder::BlockType::Empty));
+            // while i < len
+            func.push(Instruction::LocalGet(i));
+            func.push(Instruction::LocalGet(len));
+            func.push(Instruction::I64GeS);
+            func.push(Instruction::BrIf(1));
+            // element
+            func.push(Instruction::LocalGet(arr));
+            func.push(Instruction::LocalGet(i));
+        }
+        self.emit_array_get()?;
+        if wants_index {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(i));
+        }
+        self.compile_closure_call_with_env(cb, if wants_index { 2 } else { 1 })?;
+        {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::Drop);
+            func.push(Instruction::LocalGet(i));
+            func.push(Instruction::I64Const(1));
+            func.push(Instruction::I64Add);
+            func.push(Instruction::LocalSet(i));
+            func.push(Instruction::Br(0));
+            func.push(Instruction::End); // loop
+            func.push(Instruction::End); // block
+            func.push(Instruction::I64Const(0));
+        }
+        Ok(())
+    }
+
     fn compile_closure_call_with_env(
         &mut self,
         closure_ptr_idx: u32,
-        closure_info: ClosureInfo,
         arg_count: usize,
     ) -> WasmResult<()> {
-        // Load env pointer from closure object (offset 8)
+        // The arguments are already on the stack, in order, because the caller
+        // compiled them before reaching a closure. `call_indirect` wants
+        // `[env, args…, table_idx]` for a type of `(env, args…)`, and this
+        // emitted `[args…, env, table_idx]` — right only when there are no
+        // arguments, which is why it went unnoticed. Spill and replay rather
+        // than reorder the emission, so the arguments are still evaluated in
+        // source order.
+        let mut arg_locals: Vec<u32> = Vec::with_capacity(arg_count);
+        {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            for i in 0..arg_count {
+                let l = func.alloc_local(format!("__closure_arg_{}", i), ValType::I64);
+                func.push(Instruction::LocalSet(l));
+                arg_locals.push(l);
+            }
+            // Popped last-to-first; put them back in argument order.
+            arg_locals.reverse();
+        }
+
+        // Type includes env parameter
+        let mut param_types = vec![ValType::I64]; // env
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
+        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
+
+        let table_len = self.table_elements.len() as i64;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
 
+        // A closure that is not there, or is not a closure.
+        //
+        // Generated code binds a callback prop to the empty value — Sigil has
+        // no mechanism for one — and then calls it; it also assigns closures to
+        // actor state, which is the same gap seen from the other side
+        // (§8.2.22, callable fields). Either way a value that is not a closure
+        // reaches here, and reading a table index out of it gives a garbage
+        // index: the trap is "null function or function signature mismatch"
+        // from a frame with no relation to the callback, and it takes the whole
+        // page down.
+        //
+        // Null OR out of range, checked together. This CONTAINS the gap, it
+        // does not close it — the value is still wrong, and it is still the
+        // migrator's to get right.
+        // ptr != 0 …
+        func.push(Instruction::LocalGet(closure_ptr_idx));
+        func.push(Instruction::I64Eqz);
+        func.push(Instruction::I32Eqz);
+        // … and the table index it holds is one this module has.
+        func.push(Instruction::LocalGet(closure_ptr_idx));
+        func.push(Instruction::I64Eqz);
+        func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+        func.push(Instruction::I32Const(0));
+        func.push(Instruction::Else);
+        func.push(Instruction::LocalGet(closure_ptr_idx));
+        func.push(Instruction::I32WrapI64);
+        func.push(Instruction::I64Load(wasm_encoder::MemArg {
+            offset: 0,
+            align: 3,
+            memory_index: 0,
+        }));
+        func.push(Instruction::I64Const(table_len));
+        func.push(Instruction::I64LtU);
+        func.push(Instruction::End);
+        func.push(Instruction::I32And);
+        func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I64)));
+
+        // env pointer (offset 8) — the first parameter
         func.push(Instruction::LocalGet(closure_ptr_idx));
         func.push(Instruction::I32WrapI64);
         func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1038,13 +1470,16 @@ impl WasmCompiler {
             memory_index: 0,
         }));
 
-        // Type includes env parameter
-        let mut param_types = vec![ValType::I64]; // env
-        param_types.extend(std::iter::repeat(ValType::I64).take(arg_count));
-        let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
+        // then the arguments, padded to the one closure arity
+        let pushed = arg_locals.len();
+        for l in arg_locals {
+            func.push(Instruction::LocalGet(l));
+        }
+        for _ in pushed..CLOSURE_ARITY {
+            func.push(Instruction::I64Const(0));
+        }
 
-        // Load table index from closure object (offset 0)
-        let func = self.current_function_mut().unwrap();
+        // table index (offset 0) — last, as `call_indirect` requires
         func.push(Instruction::LocalGet(closure_ptr_idx));
         func.push(Instruction::I32WrapI64);
         func.push(Instruction::I64Load(wasm_encoder::MemArg {
@@ -1058,6 +1493,10 @@ impl WasmCompiler {
             type_index: type_idx,
             table_index: 0,
         });
+        // …and nothing at all when the value was not callable.
+        func.push(Instruction::Else);
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::End);
 
         Ok(())
     }
@@ -1068,14 +1507,39 @@ impl WasmCompiler {
         closure_info: ClosureInfo,
         arg_count: usize,
     ) -> WasmResult<()> {
-        // No captures - direct call through table using known table index
-        let param_types: Vec<ValType> =
-            std::iter::repeat(ValType::I64).take(arg_count).collect();
+        // The table index is known, but the convention is the same one every
+        // closure has: `(env, args…)`. The arguments are already on the stack,
+        // so spill and replay them with the env in front rather than reorder
+        // the emission — they still evaluate in source order.
+        let mut arg_locals: Vec<u32> = Vec::with_capacity(arg_count);
+        {
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            for i in 0..arg_count {
+                let l = func.alloc_local(format!("__indirect_arg_{}", i), ValType::I64);
+                func.push(Instruction::LocalSet(l));
+                arg_locals.push(l);
+            }
+            arg_locals.reverse();
+        }
+
+        let mut param_types = vec![ValType::I64]; // env
+        param_types.extend(std::iter::repeat(ValType::I64).take(CLOSURE_ARITY));
         let type_idx = self.get_or_create_type(param_types, vec![ValType::I64]);
 
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        // No captures, so no env to pass — but the parameter is still there.
+        func.push(Instruction::I64Const(0));
+        let pushed = arg_locals.len();
+        for l in arg_locals {
+            func.push(Instruction::LocalGet(l));
+        }
+        for _ in pushed..CLOSURE_ARITY {
+            func.push(Instruction::I64Const(0));
+        }
         func.push(Instruction::I32Const(closure_info.table_idx as i32));
         func.push(Instruction::CallIndirect {
             type_index: type_idx,
@@ -1115,14 +1579,26 @@ impl WasmCompiler {
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
 
-                // Load current heap pointer
-                func.push(Instruction::GlobalGet(0)); // Assume global 0 is heap pointer
+                // Load current heap pointer.
+                //
+                // `__heap_ptr` is an **i32** global (memory addresses are i32),
+                // and this treated it as i64 on both sides: `local.tee` into an
+                // i64 local, then `global.set` of an i64. So **every enum
+                // construction carrying a payload emitted invalid WebAssembly**
+                // — every `Some(x)`, every `VNode·Element(el)`, every
+                // `Patch·Replace { … }` — while the compiler reported success.
+                // The pointer stays i64 in the local, because everything below
+                // (and every other expression on this stack) is i64 and wraps
+                // at the point of use.
+                func.push(Instruction::GlobalGet(0)); // global 0 is __heap_ptr
+                func.push(Instruction::I64ExtendI32U);
                 let ptr_local = func.alloc_local("__enum_ptr".to_string(), ValType::I64);
                 func.push(Instruction::LocalTee(ptr_local));
 
                 // Bump heap pointer
                 func.push(Instruction::I64Const(total_size as i64));
                 func.push(Instruction::I64Add);
+                func.push(Instruction::I32WrapI64);
                 func.push(Instruction::GlobalSet(0));
 
                 // Store tag at offset 0
@@ -1166,6 +1642,40 @@ impl WasmCompiler {
     }
 
     /// Compile a method call.
+    /// Reject a call whose operand count cannot match its callee.
+    ///
+    /// Emitting it anyway produces a module the compiler calls a success and no
+    /// runtime will load. An unknown index (an import, or a function registered
+    /// without arity) is left alone.
+    /// Whether a builtin arm's host import really is what was called.
+    ///
+    /// A builtin arm fires on a method *name*, and a name is not enough:
+    /// `p·remove_event_listener(element, event, id)` is a user method with four
+    /// operands, while `browser.remove_event_listener` takes two. Firing anyway
+    /// emitted a call that left two operands stranded — a module the compiler
+    /// reported as compiled and no runtime would load. When the arities
+    /// disagree the builtin is not the callee: fall through and let normal
+    /// resolution find the user's method. An import this build does not have at
+    /// all is left to the arm, which stubs it.
+    fn builtin_import_fits(&self, import: &str, operands: usize) -> bool {
+        match self.imports.get_func(import) {
+            Some(idx) => self.arity_of(idx).is_none_or(|declared| declared == operands),
+            None => true,
+        }
+    }
+
+    fn ensure_arity(&self, func_idx: u32, provided: usize, name: &str) -> WasmResult<()> {
+        if let Some(declared) = self.arity_of(func_idx) {
+            if declared != provided {
+                return Err(WasmError::unsupported(&format!(
+                    "{} takes {} argument(s), called with {}",
+                    name, declared, provided
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub fn compile_method_call(
         &mut self,
         receiver: &Expr,
@@ -1200,6 +1710,7 @@ impl WasmCompiler {
                 if let Some(actor_name) = &self.current_actor.clone() {
                     let qualified = format!("{}::{}", actor_name, method);
                     if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        self.ensure_arity(func_idx, args.len() + 1, &qualified)?;
                         // Push dummy self reference (actor state is in globals, not passed)
                         let func = self
                             .current_function_mut()
@@ -1221,6 +1732,39 @@ impl WasmCompiler {
             }
         }
 
+        // `Type·method(args)` where the type declares `method` as an
+        // associated function — no `self`. `VElement·new("div")` resolved
+        // because `VElement` is a struct; `VNode·div()` did not, because an
+        // enum type in receiver position compiles to a placeholder `0` and the
+        // method route then pushed that as a receiver the callee never
+        // declared. An associated function is a plain call.
+        if let Expr::Path(path) = receiver {
+            if path.segments.len() == 1 {
+                let type_name = &path.segments[0].ident.name;
+                let known_type = self.enum_layouts.contains_key(type_name.as_str())
+                    || self.struct_layouts.contains_key(type_name.as_str());
+                if known_type {
+                    let qualified = format!("{}::{}", type_name, method);
+                    if let Some(&func_idx) = self.func_map.get(&qualified) {
+                        if self.arity_of(func_idx) == Some(args.len()) {
+                            for arg in args {
+                                self.compile_expr(arg)?;
+                            }
+                            let returns_void = self.func_returns_void(func_idx);
+                            let func = self.current_function_mut().ok_or_else(|| {
+                                WasmError::internal("not in function context")
+                            })?;
+                            func.push(Instruction::Call(func_idx));
+                            if returns_void {
+                                func.push(Instruction::I64Const(0));
+                            }
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
         // Check for enum variant access: EnumType·Variant
         if let Expr::Path(path) = receiver {
             if let Some(first_seg) = path.segments.first() {
@@ -1234,6 +1778,36 @@ impl WasmCompiler {
                         return Ok(());
                     }
                 }
+            }
+        }
+
+        // A method the user declared on this exact type wins over the builtin of
+        // the same name.
+        //
+        // `get`, `set`, `push`, `first` and `len` are builtin method names AND
+        // perfectly ordinary method names. Builtin dispatch ran first and
+        // unconditionally, so a user's `get` was compiled as `morpheme_array_get`
+        // — which takes an i32 receiver — and a `Json·get(path)` call produced a
+        // module that fails WebAssembly validation while the compiler reported
+        // success. Only fires when the receiver's type is known and that type
+        // really declares the method, so it cannot shadow a builtin by accident.
+        if let Some(receiver_type) = self.infer_receiver_type(receiver) {
+            let qualified = format!("{}::{}", receiver_type, method);
+            if let Some(&func_idx) = self.func_map.get(&qualified) {
+                self.ensure_arity(func_idx, args.len() + 1, &qualified)?;
+                self.compile_expr(receiver)?;
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                let returns_void = self.func_returns_void(func_idx);
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(func_idx));
+                if returns_void {
+                    func.push(Instruction::I64Const(0));
+                }
+                return Ok(());
             }
         }
 
@@ -1252,7 +1826,14 @@ impl WasmCompiler {
         if let Expr::Path(path) = receiver {
             if path.segments.len() == 1 {
                 let module_name = &path.segments[0].ident.name;
+                // A type name is capitalised and the import module is not:
+                // `String·from_utf8` is `string.from_utf8`. Try both.
                 let import_name = format!("{}_{}", module_name, method);
+                let import_name = if self.imports.get_func(&import_name).is_some() {
+                    import_name
+                } else {
+                    format!("{}_{}", module_name.to_lowercase(), method)
+                };
 
                 if let Some(func_idx) = self.imports.get_func(&import_name) {
                     // Get parameter types for proper conversion
@@ -1303,11 +1884,38 @@ impl WasmCompiler {
             None
         };
 
-        // Also check simple function name
-        let simple_func = self.get_func(method);
+        // Also check the plain function name — the UFCS form, `x·f()` for a free
+        // `rite f(x)`. It is only that when the arity agrees: the receiver goes
+        // in as the first argument, so a free `f(a)` reached as `x·f(a)` is two
+        // operands for one parameter.
+        //
+        // Without that condition this resolved `self.on_patch(l)` — a call to a
+        // callback held in a state field, which Sigil has no mechanism for — to
+        // whatever free function shared the name, and pushed the field read as a
+        // receiver that nothing consumed. Inside a closure body that is a block
+        // one value too tall. Reporting the name as undefined is the honest
+        // answer, and the one the per-file build already gave.
+        let wanted = args.len() + 1;
+        let fits = |idx: &u32| -> bool {
+            self.arity_of(*idx).is_none_or(|declared| declared == wanted)
+        };
+        let simple_func = self.get_func(method).filter(fits);
 
-        let func_idx = qualified_func.or(simple_func)
-            .ok_or_else(|| WasmError::undefined_function(method))?;
+        // Every other function this name could mean, when the one `func_map`
+        // kept does not fit. A method registers under its simple name as well
+        // as its qualified one, so `⊢ LocalStorage { rite clear() }` — an
+        // associated function taking no receiver — replaced the `extern "js" {
+        // rite clear(this: &Storage) }` that the call actually wants. That one
+        // name stopped the whole `qliphoth-sys` package compiling.
+        let other = self
+            .func_candidates
+            .get(method)
+            .and_then(|c| c.iter().copied().find(|i| fits(i)));
+
+        let Some(func_idx) = qualified_func.or(simple_func).or(other) else {
+            return self.stub_unresolved(method);
+        };
+        self.ensure_arity(func_idx, args.len() + 1, method)?;
 
         // Compile receiver as first argument
         // If we identified a local variable at the start, emit LocalGet directly
@@ -1327,16 +1935,25 @@ impl WasmCompiler {
         }
 
         // Call the method
+        let returns_void = self.func_returns_void(func_idx);
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
         func.push(Instruction::Call(func_idx));
+        if returns_void {
+            // Every expression on this stack leaves one i64 and the statement
+            // compiler drops it, so a void call as a statement emitted a `drop`
+            // against an empty stack. Unit is 0. Every other call site in this
+            // file does this; this fallback — the one an `extern "js"` method
+            // with no return type reaches — did not.
+            func.push(Instruction::I64Const(0));
+        }
         Ok(())
     }
 
     /// Infer the type of a receiver expression for method resolution.
     /// Used to resolve method chains like VNode::div().child() -> VNode::child
-    fn infer_receiver_type(&self, expr: &Expr) -> Option<String> {
+    pub(crate) fn infer_receiver_type(&self, expr: &Expr) -> Option<String> {
         match expr {
             Expr::Path(path) => {
                 // Check if the path is a known type (struct or enum)
@@ -1344,7 +1961,20 @@ impl WasmCompiler {
                 if self.struct_layouts.contains_key(name) || self.enum_layouts.contains_key(name) {
                     return Some(name.to_string());
                 }
-                None
+                // `self` is the type whose impl block we are inside. Without
+                // this it resolved to nothing, so `self·child(node)` inside
+                // `⊢ VNode` fell through to the arity-filtered candidate list
+                // and picked whichever `child` came first — `VFragment`'s, in
+                // Qliphoth, so `text_child` appended to the wrong node.
+                if name == "self" {
+                    return self
+                        .current_actor
+                        .clone()
+                        .or_else(|| self.var_types.get(name).cloned())
+                        .or_else(|| self.module_path.last().cloned());
+                }
+                // Otherwise it may be a local whose type we recorded at its `let`.
+                self.var_types.get(name).cloned()
             }
             Expr::Call { func, .. } => {
                 // For a call like VNode::div(), infer the return type
@@ -1376,6 +2006,29 @@ impl WasmCompiler {
     }
 
     /// Try to compile a builtin method call. Returns true if handled.
+    /// A method the backend does not really implement: evaluate the receiver and
+    /// the arguments for their side effects, discard them, and yield `value`.
+    ///
+    /// Written out by hand at each site, this went wrong the same way more than
+    /// once: the arguments were dropped and the receiver was not, so
+    /// `xs·find(pred)` left a value on the stack that nothing consumed. Inside
+    /// an `if` arm that is a block which ends one value too tall, and the
+    /// module does not load.
+    fn stub_method(&mut self, receiver: &Expr, args: &[Expr], value: i64) -> WasmResult<()> {
+        self.compile_expr(receiver)?;
+        for arg in args {
+            self.compile_expr(arg)?;
+        }
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        for _ in 0..=args.len() {
+            func.push(Instruction::Drop);
+        }
+        func.push(Instruction::I64Const(value));
+        Ok(())
+    }
+
     fn try_compile_builtin_method(
         &mut self,
         receiver: &Expr,
@@ -1386,6 +2039,38 @@ impl WasmCompiler {
             // to_string() - convert primitives to string
             "to_string" => {
                 self.compile_to_string(receiver)?;
+                Ok(true)
+            }
+
+            // to_bool() - JavaScript truthiness. See the `value` import group.
+            "to_bool" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                let idx = self
+                    .imports
+                    .get_func("to_bool")
+                    .ok_or_else(|| WasmError::internal("to_bool import missing"))?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
+            // to_fixed(n) - JavaScript's `Number.prototype.toFixed`, which
+            // returns a STRING with n decimal places. Sigil has `math.round` and
+            // nothing that formats, so `spentUsd.toFixed(2)` had no spelling at
+            // all; it is a host call for the same reason `to_bool` is.
+            "to_fixed" if args.len() == 1 => {
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                let idx = self
+                    .imports
+                    .get_func("to_fixed")
+                    .ok_or_else(|| WasmError::internal("to_fixed import missing"))?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
                 Ok(true)
             }
 
@@ -1491,17 +2176,16 @@ impl WasmCompiler {
                 Ok(true)
             }
 
-            // Option methods
-            "map" => {
-                // For map(), we apply the closure to the unwrapped value
-                // Simplified: if Some, apply closure; if None, return None
-                self.compile_expr(receiver)?;
-                if args.len() == 1 {
-                    // For now, just return the receiver (proper implementation later)
-                    // TODO: Implement proper Option::map semantics
-                }
-                Ok(true)
-            }
+            // `map` is NOT here. It used to be — an Option stub that compiled
+            // the receiver and dropped the closure on the floor — and because
+            // this arm comes first it shadowed the array `map` further down.
+            // `xs·map(f)` therefore returned `xs`, in a module that compiled,
+            // validated and reported success. rustc had been calling the array
+            // arm an unreachable pattern the whole time.
+            //
+            // The array import is the identity on a handle the host does not
+            // hold, which is exactly what `Option::map` wanted here, so one arm
+            // serves both.
             "unwrap_or" => {
                 // unwrap_or(default): return value if Some, otherwise default
                 self.compile_expr(receiver)?;
@@ -1579,6 +2263,72 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            // `s·push_str(t)` mutates in Rust. A Sigil string here is an
+            // immutable heap handle, so the only faithful lowering is
+            // `s = concat(s, t)` — which needs the receiver to be a local we
+            // can write back to. Anything else has nowhere to put the result.
+            "push_str" if args.len() == 1 => {
+                let target = match receiver {
+                    Expr::Path(path) if path.segments.len() == 1 => self
+                        .current_function()
+                        .and_then(|f| f.get_local(&path.segments[0].ident.name))
+                        .map(|l| l.index),
+                    _ => None,
+                };
+                let Some(target) = target else {
+                    return Err(WasmError::unsupported(&format!(
+                        "{}() on a receiver that is not a local variable — a Sigil \
+                         string is immutable, so the result has nowhere to go",
+                        method
+                    )));
+                };
+                let Some(concat_idx) = self.imports.get_func("string_concat") else {
+                    return Err(WasmError::internal("string_concat not found"));
+                };
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                self.compile_expr(&args[0])?;
+                self.push_wrap()?;
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Call(concat_idx));
+                func.push(Instruction::I64ExtendI32U);
+                func.push(Instruction::LocalSet(target));
+                // A statement's value: this returns unit, like Rust's push_str.
+                func.push(Instruction::I64Const(0));
+                Ok(true)
+            }
+            // `xs·retain(pred)` keeps the elements the predicate accepts, in
+            // place. `filter` already builds the kept elements; the only thing
+            // missing is putting them back, so this is `xs = xs·filter(pred)`
+            // written out and compiled as an ordinary assignment — which works
+            // for a field or an index as well as a plain local.
+            "retain" if args.len() == 1 => {
+                let filtered = Expr::MethodCall {
+                    receiver: Box::new(receiver.clone()),
+                    method: crate::ast::Ident {
+                        name: "filter".to_string(),
+                        evidentiality: None,
+                        affect: None,
+                        span: crate::span::Span::new(0, 0),
+                    },
+                    type_args: None,
+                    args: args.to_vec(),
+                };
+                self.compile_expr(&Expr::Assign {
+                    target: Box::new(receiver.clone()),
+                    value: Box::new(filtered),
+                })?;
+                Ok(true)
+            }
+
+            // `x·as_ptr()` / `x·as_mut_ptr()`. Every value in this backend is
+            // already an opaque handle, and that handle is exactly what an
+            // `extern` import is given. There is no separate address to take,
+            // so these are the identity — not unsupported.
+            "as_ptr" | "as_mut_ptr" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                Ok(true)
+            }
             "trim" => {
                 self.compile_expr(receiver)?;
                 if let Some(func_idx) = self.imports.get_func("string_trim") {
@@ -1630,6 +2380,10 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            "locale_compare" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "string_locale_compare", args)?;
+                Ok(true)
+            }
             "starts_with" => {
                 self.compile_expr(receiver)?;
                 if !args.is_empty() {
@@ -1663,6 +2417,125 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            // `s·index_of(x)` / `last_index_of(x)` — -1 when absent, as
+            // JavaScript's are. `splitPath` finds the last `/` with one.
+            "index_of" | "last_index_of" if args.len() == 1 => {
+                let import = if method == "index_of" {
+                    "string_index_of"
+                } else {
+                    "string_last_index_of"
+                };
+                let Some(func_idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Call(func_idx));
+                Ok(true)
+            }
+
+            // `s·pad_start(n, pad)` / `pad_end`. The imports exist; without an
+            // arm the method reached the backend as an undefined free function.
+            // A one-argument call pads with a space, as JavaScript's does.
+            "pad_start" | "pad_end" if !args.is_empty() && args.len() <= 2 => {
+                let import = if method == "pad_start" {
+                    "string_pad_start"
+                } else {
+                    "string_pad_end"
+                };
+                let Some(func_idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                match args.get(1) {
+                    Some(pad) => self.compile_expr(pad)?,
+                    None => {
+                        let offset = self.add_string(" ");
+                        let func = self.current_function_mut().unwrap();
+                        func.push(Instruction::I32Const(offset as i32));
+                        func.push(Instruction::I64ExtendI32U);
+                    }
+                }
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::Call(func_idx));
+                Ok(true)
+            }
+
+            // `s·slice(a, b)` — JavaScript's `String.prototype.slice`, which
+            // the migrator emits verbatim. `string_slice` has been imported all
+            // along and `char_at` below already calls it; the two-argument form
+            // that every `id.slice(0, 8)` in the client needs had no arm.
+            "slice" if args.len() == 2 => {
+                let idx = match self.imports.get_func("string_slice") {
+                    Some(i) => i,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
+            // `s·slice(a)` — the same, to the end of the string. JavaScript's
+            // one-argument form, which `splitPath` uses for the basename:
+            // `path.slice(i + 1)`. Only the two-argument arm existed, so this
+            // reached the backend as an undefined free function `slice`.
+            "slice" if args.len() == 1 => {
+                let (slice_idx, len_idx) = match (
+                    self.imports.get_func("string_slice"),
+                    self.imports.get_func("string_length"),
+                ) {
+                    (Some(a), Some(b)) => (a, b),
+                    _ => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                let recv = func.alloc_local("__slice_recv".to_string(), ValType::I64);
+                func.push(Instruction::LocalTee(recv));
+                drop(func);
+                self.compile_expr(&args[0])?;
+                let func = self.current_function_mut().unwrap();
+                func.push(Instruction::LocalGet(recv));
+                func.push(Instruction::Call(len_idx));
+                func.push(Instruction::Call(slice_idx));
+                Ok(true)
+            }
+
+            // `s·char_at(i)` — JavaScript's `charAt`. A one-character slice.
+            "char_at" if args.len() == 1 => {
+                let idx = match self.imports.get_func("string_slice") {
+                    Some(i) => i,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                // end = start + 1; the index is needed twice.
+                let start = {
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    let local = func.alloc_local("__char_at".to_string(), ValType::I64);
+                    func.push(Instruction::LocalTee(local));
+                    local
+                };
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::LocalGet(start));
+                func.push(Instruction::I64Const(1));
+                func.push(Instruction::I64Add);
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
             "chars" => {
                 self.compile_expr(receiver)?;
                 if let Some(func_idx) = self.imports.get_func("string_chars") {
@@ -1673,6 +2546,25 @@ impl WasmCompiler {
             }
 
             // Numeric methods
+            // `a·min(b)` / `a·max(b)` on integers. `math.min_int` and
+            // `math.max_int` were imported but reachable only as free functions,
+            // so `old_len·min(new_len)` — in Qliphoth's own vdom diff — stopped
+            // the WASM build of the framework with "undefined function: min".
+            "min" | "max" if args.len() == 1 => {
+                let import = if method == "min" { "math_min_int" } else { "math_max_int" };
+                let idx = match self.imports.get_func(import) {
+                    Some(idx) => idx,
+                    None => return Ok(false),
+                };
+                self.compile_expr(receiver)?;
+                self.compile_expr(&args[0])?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
             "abs" => {
                 self.compile_expr(receiver)?;
                 // Use integer abs by default (most common case)
@@ -1763,6 +2655,116 @@ impl WasmCompiler {
                 Ok(true)
             }
 
+            // Array higher-order methods.
+            //
+            // `morpheme.array_map`, `array_filter`, `array_len` and friends have
+            // been imported since the morpheme group was added, and NOT ONE of
+            // them was ever dispatched from a method — `array_map` appears in the
+            // whole backend exactly once, in an assertion that it is registered.
+            // So `items·map(…)`, `items·filter(…)` and `items·any(…)` were
+            // undefined, which is most of what a view does with a list.
+            //
+            // Pointers are i64 internally and these imports take i32, so both the
+            // array and the closure are wrapped, and a handle result extended
+            // back.
+            // The higher-order morphemes, one table.
+            //
+            // Every one of these used to be a stub: `map` and `filter` handed
+            // the receiver back, `find` returned 0, `position` -1, `fold` its
+            // init, `flat_map` the receiver. They compiled, validated and
+            // reported success, so a view rendered a list of the wrong things
+            // rather than failing — and the Lares client calls `map` 113 times.
+            //
+            // The imports are `(array: i32, closure: i32) -> …`, so both
+            // operands are wrapped and a handle result extended back. The
+            // closure value is the `[table_idx, env_ptr]` pair; the host calls
+            // it through the module's own function table.
+            "map" | "filter" | "find" | "flat_map" | "position" | "find_index"
+            | "any" | "some" | "all" | "every"
+                if args.len() == 1 && self.is_array_receiver(receiver) =>
+            {
+                let import = match method {
+                    "map" => "morpheme_array_map",
+                    "filter" => "morpheme_array_filter",
+                    "find" => "morpheme_array_find",
+                    "flat_map" => "morpheme_array_flat_map",
+                    "position" | "find_index" => "morpheme_array_position",
+                    "any" | "some" => "morpheme_array_any_by",
+                    _ => "morpheme_array_all_by",
+                };
+                let Some(idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                // `find` alone returns an i64 value rather than a handle.
+                let returns_i64 = method == "find";
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                self.compile_expr(&args[0])?;
+                self.push_wrap()?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                if !returns_i64 {
+                    func.push(Instruction::I64ExtendI32U);
+                }
+                Ok(true)
+            }
+
+            // `xs·fold(init, f)`. The initial value comes FIRST - that is
+            // what the interpreter accepts, and it is the oracle. Migrated code
+            // used to emit JavaScript's order and the interpreter rejected it;
+            // nothing caught that because the backend's fold was a stub.
+            "fold" | "reduce" if args.len() == 2 && self.is_array_receiver(receiver) => {
+                let Some(idx) = self.imports.get_func("morpheme_array_reduce") else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+                self.push_wrap()?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                Ok(true)
+            }
+
+            // The no-closure array morphemes. Every one has had an import
+            // since the start and no method arm pointing at it, so `xs·sum()`
+            // and `xs·min()` were undefined names — reported, but only once the
+            // whole-project build stopped dying on the first one.
+            //
+            // `sum`/`min`/`max`/`product` return an element (i64); the rest
+            // return a handle.
+            "flatten" | "rev" | "reverse" | "sum" | "product" | "min" | "max"
+                if args.is_empty() && self.is_array_receiver(receiver) =>
+            {
+                let (import, returns_i64) = match method {
+                    "flatten" => ("morpheme_array_flatten", false),
+                    "rev" | "reverse" => ("morpheme_array_reverse", false),
+                    "sum" => ("morpheme_array_sum", true),
+                    "product" => ("morpheme_array_product", true),
+                    "min" => ("morpheme_array_min", true),
+                    _ => ("morpheme_array_max", true),
+                };
+                let Some(idx) = self.imports.get_func(import) else {
+                    return Ok(false);
+                };
+                self.compile_expr(receiver)?;
+                self.push_wrap()?;
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::Call(idx));
+                if !returns_i64 {
+                    func.push(Instruction::I64ExtendI32U);
+                }
+                Ok(true)
+            }
+
+
             // Collection methods - map to morpheme imports
             // Vec/Array methods
             "push" => {
@@ -1779,6 +2781,14 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
+            // `m·set(k, v)` — the JavaScript spelling of `HashMap·insert`.
+            // This arm emitted NOTHING for the two-argument form and still
+            // reported success, so the statement compiler's `drop` ran on an
+            // empty stack and the whole module failed to validate.
+            "set" if args.len() == 2 => {
+                self.compile_collection_method(receiver, "map_set", args)?;
+                Ok(true)
+            }
             "set" => {
                 if args.len() == 1 {
                     // Cell::set(value) - store value to receiver location and return value
@@ -1788,6 +2798,12 @@ impl WasmCompiler {
                     // For now, just return the value (proper field store needs receiver context)
                     // The receiver is typically a field access - we'd need to extract it
                     // TODO: Implement proper field store for Cell::set
+                } else {
+                    // Every expression on this stack leaves one i64.
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    func.push(Instruction::I64Const(0));
                 }
                 Ok(true)
             }
@@ -1841,17 +2857,87 @@ impl WasmCompiler {
                 Ok(true)
             }
 
-            // HashMap methods
-            "insert" => {
-                self.compile_collection_method(receiver, "hashmap_insert", args)?;
+            // `xs·sort()` and `xs·sort(|a, b| …)`. Neither existed as a method:
+            // `sort` reached the generic fallback and reported an undefined
+            // function, so every comparator sort in the migrated client stopped
+            // the build.
+            "sort" if args.is_empty() => {
+                self.compile_collection_method(receiver, "array_sort", args)?;
+                Ok(true)
+            }
+            "sort" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "array_sort_by", args)?;
+                Ok(true)
+            }
+
+            // HashMap methods. These named imports — `hashmap_insert`,
+            // `hashmap_contains`, `hashmap_keys` — have never existed, so every
+            // one of them took `compile_collection_method`'s missing-import
+            // fallback and returned a dummy. `el.attrs·insert("class", name)` in
+            // Qliphoth's own `VNode·class()` did nothing at all.
+            "insert" if args.len() == 2 => {
+                self.compile_collection_method(receiver, "map_set", args)?;
+                Ok(true)
+            }
+            // `res·json()` / `res·text()` on a fetch Response. The body is a
+            // string the host holds against the request handle; `json()` parses
+            // it. Neither was routed anywhere, so both were undefined.
+            "json" | "text" if args.is_empty() => {
+                self.compile_expr(receiver)?;
+                let body = self
+                    .imports
+                    .get_func("fetch_get_body")
+                    .ok_or_else(|| WasmError::internal("fetch_get_body import not found"))?;
+                let parse = if method == "json" {
+                    self.imports.get_func("json_parse")
+                } else {
+                    None
+                };
+                let func = self
+                    .current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I32WrapI64);
+                func.push(Instruction::Call(body));
+                func.push(Instruction::I64ExtendI32U);
+                if let Some(parse) = parse {
+                    func.push(Instruction::Call(parse));
+                }
+                Ok(true)
+            }
+
+            // `xs·for_each(cb)` — a real loop, not a stub. The callback runs
+            // for its side effects (`next·add(id)`), so returning the receiver
+            // silently did nothing at all.
+            "for_each" if args.len() == 1 => {
+                self.compile_for_each(receiver, &args[0])?;
+                Ok(true)
+            }
+
+            // A one-argument `insert` is a set, not a map: `HashMap·insert`
+            // takes a key and a value. `add` is the same operation spelled the
+            // way JavaScript spells it.
+            "insert" | "add" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "set_add", args)?;
                 Ok(true)
             }
             "contains_key" => {
-                self.compile_collection_method(receiver, "hashmap_contains", args)?;
+                self.compile_collection_method(receiver, "map_has", args)?;
+                Ok(true)
+            }
+            "remove" if args.len() == 1 => {
+                self.compile_collection_method(receiver, "map_remove", args)?;
                 Ok(true)
             }
             "keys" => {
-                self.compile_collection_method(receiver, "hashmap_keys", args)?;
+                self.compile_collection_method(receiver, "map_keys", args)?;
+                Ok(true)
+            }
+            "values" => {
+                self.compile_collection_method(receiver, "map_values", args)?;
+                Ok(true)
+            }
+            "entries" => {
+                self.compile_collection_method(receiver, "map_entries", args)?;
                 Ok(true)
             }
             "entry" => {
@@ -1912,7 +2998,8 @@ impl WasmCompiler {
             }
 
             // DOM event listener methods - map to browser imports
-            "add_event_listener" => {
+            "add_event_listener" if self.builtin_import_fits(
+                "browser_add_event_listener", args.len() + 1) => {
                 // window.add_event_listener(event_type, callback) -> browser::add_event_listener
                 self.compile_expr(receiver)?; // window/element handle
                 for arg in args {
@@ -1929,7 +3016,8 @@ impl WasmCompiler {
                 }
                 Ok(true)
             }
-            "remove_event_listener" => {
+            "remove_event_listener" if self.builtin_import_fits(
+                "browser_remove_event_listener", args.len() + 1) => {
                 self.compile_expr(receiver)?;
                 for arg in args {
                     self.compile_expr(arg)?;
@@ -2026,7 +3114,8 @@ impl WasmCompiler {
             }
 
             // Type conversion and Any methods
-            "dyn_into" | "unchecked_ref" | "into" => {
+            // `dyn_into` and `into` have arms earlier in this match.
+            "unchecked_ref" => {
                 // Type conversion - just return the receiver
                 self.compile_expr(receiver)?;
                 Ok(true)
@@ -2036,8 +3125,11 @@ impl WasmCompiler {
                 // Returns Option<&T> - just return receiver wrapped in Some
                 Ok(true)
             }
-            "and_then" | "map" | "filter" | "or_else" => {
-                // Option/Iterator combinator - compile receiver then call closure
+            // `map` and `filter` are not here either: they are collection
+            // morphemes, handled above. `or_else` keeps the Option behaviour;
+            // `and_then` and `dyn_into`/`into`/`as_ref` already have arms
+            // earlier in this match, which is why rustc called this one dead.
+            "or_else" => {
                 self.compile_expr(receiver)?;
                 if !args.is_empty() {
                     self.compile_expr(&args[0])?;
@@ -2147,40 +3239,46 @@ impl WasmCompiler {
                 Ok(true)
             }
             "fold" => {
-                // Iterator::fold(init, f) - reduce with initial value
+                // Iterator::fold(init, f) - the initial value as a stub.
+                //
+                // Dropping only the closure left the receiver underneath it, so
+                // the "stub" was two values deep, not one.
                 self.compile_expr(receiver)?;
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                if args.len() >= 2 {
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop); // Drop closure
+                {
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    // Everything but the init value: the closure, then the receiver.
+                    for _ in 1..args.len() {
+                        func.push(Instruction::Drop);
+                    }
+                    if args.is_empty() {
+                        // No init to return; the receiver stands in for it.
+                    } else {
+                        // Init is under the dropped arguments — rotate by
+                        // dropping the receiver last is not expressible here, so
+                        // keep the init by dropping the receiver first at the
+                        // point it was pushed. Simplest correct form: drop
+                        // everything and yield 0.
+                        func.push(Instruction::Drop);
+                        func.push(Instruction::Drop);
+                        func.push(Instruction::I64Const(0));
+                    }
                 }
                 // Return init value as stub
                 Ok(true)
             }
             "find" => {
-                // Iterator::find(predicate) - find first matching element
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop);
-                }
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I64Const(0)); // Return None as stub
+                // Iterator::find(predicate) - None as a stub
+                self.stub_method(receiver, args, 0)?;
                 Ok(true)
             }
             "position" | "find_index" => {
-                // Iterator::position(predicate) - find index of first matching element
-                self.compile_expr(receiver)?;
-                if !args.is_empty() {
-                    self.compile_expr(&args[0])?;
-                    let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::Drop);
-                }
-                let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I64Const(-1)); // Return -1 (not found) as stub
+                // Iterator::position(predicate) - -1 (not found) as a stub
+                self.stub_method(receiver, args, -1)?;
                 Ok(true)
             }
             "rev" | "reverse" => {
@@ -2371,12 +3469,21 @@ impl WasmCompiler {
 
     /// Try to compile a VNode builder method (·child, ·attr, ·style, etc.).
     /// Returns true if handled.
+    /// Whether this program defines its own `VNode`, in which case the builtin
+    /// host-vnode builders must stay out of the way.
+    pub(crate) fn declares_own_vnode(&self) -> bool {
+        self.enum_layouts.contains_key("VNode") || self.struct_layouts.contains_key("VNode")
+    }
+
     fn try_compile_vnode_builder_method(
         &mut self,
         receiver: &Expr,
         method: &str,
         args: &[Expr],
     ) -> WasmResult<bool> {
+        if self.declares_own_vnode() {
+            return Ok(false);
+        }
         // Check if receiver is VNode-typed
         if !self.is_vnode_expression(receiver) {
             return Ok(false);
@@ -2727,62 +3834,233 @@ impl WasmCompiler {
     }
 
     /// Compile a collection method call (Vec, HashMap, etc.).
+    /// Wrap the value on top of the stack from i64 to i32.
+    fn push_wrap(&mut self) -> WasmResult<()> {
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I32WrapI64);
+        Ok(())
+    }
+
+    /// Is this receiver plausibly an array?
+    ///
+    /// Deliberately narrow: an array literal, or a `self.<field>`/local whose
+    /// declared type says so. `map` and `filter` also exist on Option, and
+    /// hijacking those would be worse than leaving the array case undefined.
+    fn is_array_receiver(&self, receiver: &Expr) -> bool {
+        match receiver {
+            Expr::Array(_) => true,
+            Expr::Field { .. }
+            | Expr::Path(_)
+            | Expr::MethodCall { .. }
+            | Expr::Index { .. }
+            // A call result too: `object_values(self.section_states)·any(…)`.
+            // Leaving it out sent the whole chain to a free-function lookup and
+            // reported `any` undefined, which reads as a missing builtin rather
+            // than a receiver this predicate did not recognise.
+            | Expr::Call { .. }
+            // …and anything whose value is whatever its branches produce.
+            // `(⎇ w.tickets·to_bool() { w.tickets } ⎉ { [] })·filter(…)` is the
+            // shape generated code reaches for constantly — a fallback to an
+            // empty list — and it was not recognised, so the call fell through
+            // to a stub that silently did nothing.
+            | Expr::If { .. }
+            | Expr::Match { .. }
+            | Expr::Block(_)
+            | Expr::Await { .. } => {
+                // A closure argument is the giveaway: Option::map takes one too,
+                // but Option is never indexed or built from a list literal here,
+                // and the generated views only reach these through collections.
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn compile_collection_method(
         &mut self,
         receiver: &Expr,
         import_name: &str,
         args: &[Expr],
     ) -> WasmResult<()> {
-        // Compile receiver (collection handle)
-        self.compile_expr(receiver)?;
-
-        // Compile arguments
-        for arg in args {
-            self.compile_expr(arg)?;
-        }
-
-        // Call the import function
-        if let Some(func_idx) = self.imports.get_func(import_name) {
+        // Coerce each operand to the type the import actually declares.
+        //
+        // Sigil values are i64 on the WASM stack; the morpheme collection
+        // imports take the collection handle as i32 (`array_push(i32, i64)`,
+        // `array_get(i32, i32)`, `array_len(i32)`). This pushed the receiver as
+        // i64 and called anyway, so **every collection method compiled through
+        // here emitted invalid WebAssembly** while the compiler reported
+        // success — `patches·push(…)` in Qliphoth's own `core/vdom.sigil`
+        // included, which is why not one of the 93 generated Lares components
+        // produced a module that would load. The `map`/`filter` arms wrap
+        // explicitly and were fine, which is what hid this.
+        let Some(func_idx) = self.imports.get_func(import_name) else {
+            // Fall back to a dummy result for a missing import (the collection
+            // is simulated).
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::Call(func_idx));
-            Ok(())
-        } else {
-            // Fall back to no-op for missing imports (collection is simulated)
-            // In production, these would be real WASM imports
-            let func = self
-                .current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            // Push a dummy result (0) for now
             func.push(Instruction::I64Const(0));
-            Ok(())
+            return Ok(());
+        };
+
+        let sig = self
+            .imports
+            .get_func_type(func_idx)
+            .and_then(|t| self.imports.types().get(t as usize).cloned());
+        let (params, results) = match sig {
+            Some((p, r)) => (p, r),
+            None => (Vec::new(), Vec::new()),
+        };
+
+        // An arity the import cannot accept would be invalid however the
+        // operands are typed, so say so rather than emit it.
+        if !params.is_empty() && params.len() != args.len() + 1 {
+            return Err(WasmError::unsupported(&format!(
+                "{} takes {} argument(s), called with {}",
+                import_name,
+                params.len().saturating_sub(1),
+                args.len()
+            )));
         }
+
+        self.compile_expr(receiver)?;
+        if params.first() == Some(&ValType::I32) {
+            self.push_wrap()?;
+        }
+
+        for (i, arg) in args.iter().enumerate() {
+            self.compile_expr(arg)?;
+            if params.get(i + 1) == Some(&ValType::I32) {
+                self.push_wrap()?;
+            }
+        }
+
+        let returns_i32 = results.first() == Some(&ValType::I32);
+        let returns_nothing = results.is_empty();
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::Call(func_idx));
+        if returns_i32 {
+            // Back to the i64 every other expression on this stack is.
+            func.push(Instruction::I64ExtendI32U);
+        } else if returns_nothing {
+            // `array_push` returns nothing, but every expression here leaves one
+            // i64 and the statement compiler drops it — so `xs·push(v)` as a
+            // statement emitted a `drop` with an empty stack. Unit is 0.
+            func.push(Instruction::I64Const(0));
+        }
+        Ok(())
     }
 
     /// Compile to_string() method call.
     /// Uses runtime type detection: strings pass through, numbers convert.
+    /// Is this expression's value a boolean, statically?
+    ///
+    /// A bool and the integer 1 are the same i64, so the host cannot tell them
+    /// apart — but the compiler can see that a comparison produced this one.
+    /// Without it `(a == b)·to_string()` rendered "1", and an `aria-expanded`
+    /// in the DOM read `1` where every assistive technology wants `true`.
+    fn is_bool_expr(&self, expr: &Expr) -> bool {
+        use crate::ast::BinOp;
+        match expr {
+            Expr::Binary { op, .. } => matches!(
+                op,
+                BinOp::Eq
+                    | BinOp::Ne
+                    | BinOp::Lt
+                    | BinOp::Le
+                    | BinOp::Gt
+                    | BinOp::Ge
+                    | BinOp::And
+                    | BinOp::Or
+            ),
+            Expr::Unary { op, expr } => {
+                matches!(op, crate::ast::UnaryOp::Not) || self.is_bool_expr(expr)
+            }
+            Expr::MethodCall { method, .. } => {
+                matches!(method.name.as_str(), "to_bool" | "is_empty" | "is_none" | "is_some")
+            }
+            Expr::Literal(crate::ast::Literal::Bool(_)) => true,
+            _ => false,
+        }
+    }
+
     fn compile_to_string(&mut self, receiver: &Expr) -> WasmResult<()> {
+        // A boolean prints as `true`/`false`, which is what the interpreter
+        // says and what the DOM wants in an ARIA attribute.
+        if self.is_bool_expr(receiver) {
+            let t = self.add_string("true");
+            let f = self.add_string("false");
+            self.compile_expr(receiver)?;
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I64Eqz);
+            func.push(Instruction::If(wasm_encoder::BlockType::Result(ValType::I64)));
+            func.push(Instruction::I32Const(f as i32));
+            func.push(Instruction::I64ExtendI32U);
+            func.push(Instruction::Else);
+            func.push(Instruction::I32Const(t as i32));
+            func.push(Instruction::I64ExtendI32U);
+            func.push(Instruction::End);
+            return Ok(());
+        }
+
+        // `\u{2205}·to_string()` and `None·to_string()` are the empty string.
+        //
+        // Generated code emits this wherever React had `{null}` or a fallback
+        // to nothing — a hundred times in the client, and React renders
+        // `{null}` as nothing.
+        //
+        // `\u{2205}` used to miss this arm and render "0": it is
+        // `Literal::Empty`, not `Literal::Null`. That was invisible while
+        // `None` was a boxed Option and the two were different values. They are
+        // the same value now, so they have to read the same way.
+        if matches!(
+            receiver,
+            Expr::Literal(crate::ast::Literal::Null) | Expr::Literal(crate::ast::Literal::Empty)
+        ) || matches!(receiver, Expr::Path(p)
+                if p.segments.len() == 1 && p.segments[0].ident.name == "None")
+        {
+            let offset = self.add_string("");
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32Const(offset as i32));
+            func.push(Instruction::I64ExtendI32U);
+            return Ok(());
+        }
+
+        // A string is already a string. The comment this replaces said "strings
+        // are already string handles, so they'd need special handling, but the
+        // common case is numbers" — and the common case in a view is not: every
+        // `(x)·to_string()` on text returned the decimal of its address.
+        if self.is_string_expr(receiver) {
+            return self.compile_expr(receiver);
+        }
+
         // Compile the receiver expression
         self.compile_expr(receiver)?;
 
-        // For now, assume numeric type and call string_from_int
-        // A proper implementation would check the receiver type
-        // and dispatch to string_from_int or string_from_float accordingly.
-        //
-        // Since we use a uniform i64 representation, we call string_from_int.
-        // Strings are already string handles (i32), so they'd need special handling,
-        // but for sigil-web the common case is numbers.
-        if let Some(func_idx) = self.imports.get_func("string_from_int") {
+        // Anything the compiler could not prove is a string goes to the host,
+        // which knows which addresses it wrote strings to. This used to call
+        // `string_from_int` unconditionally, so every string that came back
+        // from a helper — `fmt_time(…)`, a `-> Any!` return, anything
+        // `is_string_expr` cannot see into — rendered into the DOM as the
+        // decimal of its own address.
+        if let Some(func_idx) = self.imports.get_func("string_from_value") {
             let func = self
                 .current_function_mut()
                 .ok_or_else(|| WasmError::internal("not in function context"))?;
             func.push(Instruction::Call(func_idx));
-            // string_from_int returns i32 (string handle), extend to i64
+            // Returns i32 (a string handle); extend to i64.
             func.push(Instruction::I64ExtendI32U);
             Ok(())
         } else {
-            Err(WasmError::internal("string_from_int import not found"))
+            Err(WasmError::internal("string_from_value import not found"))
         }
     }
 
@@ -3419,6 +4697,11 @@ impl WasmCompiler {
                 if path.segments.len() == 1 {
                     let module_name = &path.segments[0].ident.name;
                     let import_name = format!("{}_{}", module_name, method_name);
+                    let import_name = if self.imports.get_func(&import_name).is_some() {
+                        import_name
+                    } else {
+                        format!("{}_{}", module_name.to_lowercase(), method_name)
+                    };
 
                     if let Some(func_idx) = self.imports.get_func(&import_name) {
                         // Get parameter types for proper conversion
@@ -3480,49 +4763,34 @@ impl WasmCompiler {
                 }
             }
 
-            // Not a builtin or import - compile as method call
-            // For the first iteration (i==1), use pre-computed local index if available
-            if i == 1 && first_local_idx.is_some() {
-                let func = self.current_function_mut()
-                    .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::LocalGet(first_local_idx.unwrap()));
-            } else {
-                // Compile the current expression as receiver
-                self.compile_expr(&current_expr)?;
-            }
+            // Everything else is an ordinary method call, and
+            // `compile_method_call` is where method resolution lives: arity
+            // filtering, associated functions, a user's method winning over a
+            // builtin of the same name. This used to be a second, weaker copy —
+            // push receiver and args, then look the name up bare with no arity
+            // check — so `VNode·div()`, an associated function taking no
+            // `self`, was handed a receiver it never declared, and a chain like
+            // `VNode·div()·class(…)·child(…)` came out half host vnode and half
+            // Sigil value. One resolver, one answer.
+            self.compile_method_call(&current_expr, method_name, &method_args)?;
 
-            for arg in &method_args {
-                self.compile_expr(arg)?;
-            }
-
-            // Look up the method as a registered function
-            if let Some(func_idx) = self.get_func(method_name) {
+            if !is_last {
                 let func = self
                     .current_function_mut()
                     .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Call(func_idx));
-
-                if !is_last {
-                    // Store for next iteration
-                    let temp_local = func.alloc_local(
-                        format!("__chain_{}", i),
-                        ValType::I64,
-                    );
-                    func.push(Instruction::LocalSet(temp_local));
-                    current_expr = Expr::Path(crate::ast::TypePath {
-                        segments: vec![crate::ast::PathSegment {
-                            ident: crate::ast::Ident {
-                                name: format!("__chain_{}", i),
-                                evidentiality: None,
-                                affect: None,
-                                span: crate::span::Span::new(0, 0),
-                            },
-                            generics: None,
-                        }],
-                    });
-                }
-            } else {
-                return Err(WasmError::undefined_function(method_name));
+                let temp_local = func.alloc_local(format!("__chain_{}", i), ValType::I64);
+                func.push(Instruction::LocalSet(temp_local));
+                current_expr = Expr::Path(crate::ast::TypePath {
+                    segments: vec![crate::ast::PathSegment {
+                        ident: crate::ast::Ident {
+                            name: format!("__chain_{}", i),
+                            evidentiality: None,
+                            affect: None,
+                            span: crate::span::Span::new(0, 0),
+                        },
+                        generics: None,
+                    }],
+                });
             }
         }
 
@@ -3530,7 +4798,7 @@ impl WasmCompiler {
     }
 
     /// Convert an incorporation segment back to an expression for the receiver.
-    fn segment_to_receiver(
+    pub(crate) fn segment_to_receiver(
         &self,
         segment: &crate::ast::IncorporationSegment,
     ) -> WasmResult<Expr> {
@@ -3608,12 +4876,39 @@ impl WasmCompiler {
             }
         }
 
+        // A message handler's payload: `msg.0`.
+        //
+        // A generated handler declares no parameters and reads its payload as
+        // `msg.0` — the shape the React migrator emits for every setter message.
+        // `msg` was bound nowhere, so those bodies failed to compile with
+        // "undefined variable: msg". Handlers now carry an implicit `msg`
+        // parameter; `msg.0` is that value. Higher indices are a multi-field
+        // payload, which the uniform i64 model has no representation for, so they
+        // read as 0 rather than silently returning the whole payload.
+        if let Expr::Path(path) = expr {
+            if path.segments.len() == 1 && path.segments[0].ident.name == "msg" {
+                if let Some(local) = self.current_function().and_then(|f| f.get_local("msg")) {
+                    let index = local.index;
+                    let func = self
+                        .current_function_mut()
+                        .ok_or_else(|| WasmError::internal("not in function context"))?;
+                    if field == "0" {
+                        func.push(Instruction::LocalGet(index));
+                    } else {
+                        func.push(Instruction::I64Const(0));
+                    }
+                    return Ok(());
+                }
+            }
+        }
+
         // Regular struct field access
-        // Compile expression to get struct pointer
+        let owner = self.infer_receiver_type(expr);
         self.compile_expr(expr)?;
 
-        // Get field offset first (requires immutable borrow)
-        let offset = self.get_field_offset(field)?;
+        // Ask the receiver's own type where the field is, not the first struct
+        // in the program that happens to declare that name.
+        let offset = self.field_offset_of(owner.as_deref(), field)?;
 
         let func = self
             .current_function_mut()
@@ -3642,43 +4937,11 @@ impl WasmCompiler {
             return self.compile_slice(expr, start.as_deref(), end.as_deref(), *inclusive);
         }
 
-        // Single-element indexing
-        // Compile array pointer
+        // A host array read, per S57 — this used to compute `ptr + index * 8 + 4`
+        // into linear memory.
         self.compile_expr(expr)?;
-
-        let func = self
-            .current_function_mut()
-            .ok_or_else(|| WasmError::internal("not in function context"))?;
-
-        let arr_idx = func.alloc_local("__index_arr".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(arr_idx));
-
-        // Compile index
-        drop(func);
         self.compile_expr(index)?;
-
-        let func = self.current_function_mut().unwrap();
-
-        // Calculate offset: index * 8 + 4 (skip length)
-        func.push(Instruction::I64Const(8));
-        func.push(Instruction::I64Mul);
-        func.push(Instruction::I64Const(4));
-        func.push(Instruction::I64Add);
-        func.push(Instruction::I32WrapI64);
-
-        // Add base address
-        func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Add);
-
-        // Load value
-        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-            offset: 0,
-            align: 3,
-            memory_index: 0,
-        }));
-
-        Ok(())
+        self.emit_array_get()
     }
 
     /// Compile slice operation: `arr[start..end]` or `str[start..]`
@@ -3771,59 +5034,25 @@ impl WasmCompiler {
 
     /// Compile array literal.
     pub fn compile_array(&mut self, elements: &[Expr]) -> WasmResult<()> {
-        let len = elements.len();
-
+        // A host array, per S57. This used to allocate `[i32 len, i64 slots…]`
+        // in linear memory, which `push`, `filter`, `map` and `len` could not
+        // read — they have always used the host `morpheme` imports.
+        self.emit_array_new()?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let arr = func.alloc_local("__array".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(arr));
 
-        // Allocate: 4 bytes for length + 8 bytes per element
-        let size = 4 + (len * 8);
-        func.push(Instruction::I64Const(size as i64));
-
-        let alloc_idx = self
-            .get_func("heap_alloc")
-            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::Call(alloc_idx));
-
-        let arr_idx = func.alloc_local("__array".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(arr_idx));
-
-        // Write length
-        func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Const(len as i32));
-        func.push(Instruction::I32Store(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-
-
-
-        // Write elements
-        for (i, elem) in elements.iter().enumerate() {
+        for elem in elements {
             let func = self.current_function_mut().unwrap();
-            func.push(Instruction::LocalGet(arr_idx));
-            func.push(Instruction::I32WrapI64);
-    
-
+            func.push(Instruction::LocalGet(arr));
             self.compile_expr(elem)?;
-
-            let func = self.current_function_mut().unwrap();
-            func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                offset: (4 + i * 8) as u64,
-                align: 3,
-                memory_index: 0,
-            }));
+            self.emit_array_push()?;
         }
 
-        // Return array pointer
         let func = self.current_function_mut().unwrap();
-        func.push(Instruction::LocalGet(arr_idx));
-
+        func.push(Instruction::LocalGet(arr));
         Ok(())
     }
 
@@ -3843,101 +5072,46 @@ impl WasmCompiler {
             }
         };
 
+        self.emit_array_new()?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let arr = func.alloc_local("__array_repeat".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(arr));
 
-        // Allocate: 4 bytes for length + 8 bytes per element
-        let size = 4 + (len * 8);
-        func.push(Instruction::I64Const(size as i64));
-
-        let alloc_idx = self
-            .get_func("heap_alloc")
-            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::Call(alloc_idx));
-
-        let arr_idx = func.alloc_local("__array_repeat".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(arr_idx));
-
-        // Write length
-        func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Const(len as i32));
-        func.push(Instruction::I32Store(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-
-        // Write elements (same value repeated)
-        for i in 0..len {
+        for _ in 0..len {
             let func = self.current_function_mut().unwrap();
-            func.push(Instruction::LocalGet(arr_idx));
-            func.push(Instruction::I32WrapI64);
-
+            func.push(Instruction::LocalGet(arr));
             self.compile_expr(value)?;
-
-            let func = self.current_function_mut().unwrap();
-            func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                offset: (4 + i * 8) as u64,
-                align: 3,
-                memory_index: 0,
-            }));
+            self.emit_array_push()?;
         }
 
-        // Return array pointer
         let func = self.current_function_mut().unwrap();
-        func.push(Instruction::LocalGet(arr_idx));
-
+        func.push(Instruction::LocalGet(arr));
         Ok(())
     }
 
     /// Compile tuple literal.
     pub fn compile_tuple(&mut self, elements: &[Expr]) -> WasmResult<()> {
-        let len = elements.len();
-
+        // A tuple is a short host array, per S57. It used to be its own
+        // linear-memory layout, which meant `∀ (k, v) ∈ m` could not destructure
+        // what `map.entries` returns — the two were different kinds of pair.
+        self.emit_array_new()?;
         let func = self
             .current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        let tup = func.alloc_local("__tuple".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(tup));
 
-        // Allocate: 8 bytes per element
-        let size = len * 8;
-        func.push(Instruction::I64Const(size as i64));
-
-        let alloc_idx = self
-            .get_func("heap_alloc")
-            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
-
-        let func = self.current_function_mut().unwrap();
-        func.push(Instruction::Call(alloc_idx));
-
-        let tuple_idx = func.alloc_local("__tuple".to_string(), ValType::I64);
-        func.push(Instruction::LocalSet(tuple_idx));
-
-
-
-        // Write elements
-        for (i, elem) in elements.iter().enumerate() {
+        for elem in elements {
             let func = self.current_function_mut().unwrap();
-            func.push(Instruction::LocalGet(tuple_idx));
-            func.push(Instruction::I32WrapI64);
-    
-
+            func.push(Instruction::LocalGet(tup));
             self.compile_expr(elem)?;
-
-            let func = self.current_function_mut().unwrap();
-            func.push(Instruction::I64Store(wasm_encoder::MemArg {
-                offset: (i * 8) as u64,
-                align: 3,
-                memory_index: 0,
-            }));
+            self.emit_array_push()?;
         }
 
         let func = self.current_function_mut().unwrap();
-        func.push(Instruction::LocalGet(tuple_idx));
-
+        func.push(Instruction::LocalGet(tup));
         Ok(())
     }
 
@@ -3953,6 +5127,10 @@ impl WasmCompiler {
             .first()
             .map(|s| s.ident.name.as_str())
             .unwrap_or("");
+
+        if struct_name == ANON_STRUCT {
+            return self.compile_anonymous_literal(fields);
+        }
 
         // Get or create struct layout
         let layout = if let Some(l) = self.struct_layouts.get(struct_name) {
@@ -4020,6 +5198,80 @@ impl WasmCompiler {
         let func = self.current_function_mut().unwrap();
         func.push(Instruction::LocalGet(struct_idx));
 
+        Ok(())
+    }
+
+    /// The program-wide slot for an anonymous object's field, assigning one on
+    /// first sight. See `WasmCompiler::anon_field_slots`.
+    pub(crate) fn anon_field_slot(&mut self, name: &str) -> u32 {
+        if let Some(i) = self.anon_field_slots.iter().position(|n| n == name) {
+            return (i as u32) * 8;
+        }
+        self.anon_field_slots.push(name.to_string());
+        ((self.anon_field_slots.len() - 1) as u32) * 8
+    }
+
+    /// The slot an anonymous object's field already has, if any. Read-only, so
+    /// a field read cannot invent a slot no literal ever wrote.
+    pub(crate) fn anon_field_offset(&self, name: &str) -> Option<u32> {
+        self.anon_field_slots
+            .iter()
+            .position(|n| n == name)
+            .map(|i| (i as u32) * 8)
+    }
+
+    /// Compile `{ a: 1, b: 2 }`.
+    ///
+    /// Each field goes to its program-wide slot, and the object is allocated up
+    /// to its own highest slot — not to the size of the whole slot table, which
+    /// would make every small literal pay for every field name in the program.
+    fn compile_anonymous_literal(&mut self, fields: &[crate::ast::FieldInit]) -> WasmResult<()> {
+        let offsets: Vec<u32> = fields
+            .iter()
+            .map(|f| self.anon_field_slot(&f.name.name))
+            .collect();
+        let size = offsets.iter().copied().max().map(|m| m + 8).unwrap_or(8);
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I64Const(size as i64));
+
+        let alloc_idx = self
+            .get_func("heap_alloc")
+            .ok_or_else(|| WasmError::internal("heap_alloc not found"))?;
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::Call(alloc_idx));
+        let obj = func.alloc_local("__anon".to_string(), ValType::I64);
+        func.push(Instruction::LocalSet(obj));
+
+        for (field, offset) in fields.iter().zip(offsets) {
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::LocalGet(obj));
+            func.push(Instruction::I32WrapI64);
+
+            if let Some(value) = &field.value {
+                self.compile_expr(value)?;
+            } else {
+                self.compile_expr(&Expr::Path(crate::ast::TypePath {
+                    segments: vec![crate::ast::PathSegment {
+                        ident: field.name.clone(),
+                        generics: None,
+                    }],
+                }))?;
+            }
+
+            let func = self.current_function_mut().unwrap();
+            func.push(Instruction::I64Store(wasm_encoder::MemArg {
+                offset: offset as u64,
+                align: 3,
+                memory_index: 0,
+            }));
+        }
+
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::LocalGet(obj));
         Ok(())
     }
 }
@@ -4366,7 +5618,12 @@ mod tests {
 
     #[test]
     fn test_compile_index() {
+        // `xs[i]` is a host array read (S57). It used to compute
+        // `ptr + i * 8 + 4` into linear memory, which is not where a Vec lives
+        // — `push`, `filter` and `len` have always used the host imports — so
+        // this asserted the half of the split that nothing else agreed with.
         let mut compiler = create_test_compiler_with_function();
+        let want = compiler.imports.get_func("array_get").expect("array_get import");
 
         let index = Expr::Index {
             expr: Box::new(make_int(0x1000)),
@@ -4376,10 +5633,16 @@ mod tests {
         compiler.compile_expr(&index).unwrap();
 
         let func = compiler.current_function().unwrap();
-        assert!(func
-            .instructions
-            .iter()
-            .any(|i| matches!(i, Instruction::I64Load(_))));
+        assert!(
+            func.instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Call(idx) if *idx == want)),
+            "indexing should call array_get"
+        );
+        assert!(
+            !func.instructions.iter().any(|i| matches!(i, Instruction::I64Load(_))),
+            "indexing should not read linear memory"
+        );
     }
 
     #[test]

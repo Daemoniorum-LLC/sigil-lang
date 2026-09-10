@@ -12,51 +12,51 @@
 //! sigil-web-sys = { version = "0.2.0", features = ["Window", "Document", "Fetch"] }
 //! ```
 
-pub mod window;
-pub mod document;
-pub mod element;
-pub mod node;
-pub mod events;
-pub mod console;
-pub mod storage;
-pub mod location;
-pub mod history;
-pub mod navigator;
-pub mod fetch;
-pub mod timers;
-pub mod closure;
-pub mod js;
+☉ scroll window;
+☉ scroll document;
+☉ scroll element;
+☉ scroll node;
+☉ scroll events;
+☉ scroll console;
+☉ scroll storage;
+☉ scroll location;
+☉ scroll history;
+☉ scroll navigator;
+☉ scroll fetch;
+☉ scroll timers;
+☉ scroll closure;
+☉ scroll js;
 
 // Re-exports
-pub use window::*;
-pub use document::*;
-pub use element::*;
-pub use node::*;
-pub use events::*;
-pub use console::*;
-pub use storage::*;
-pub use location::*;
-pub use history::*;
-pub use navigator::*;
-pub use fetch::*;
-pub use timers::*;
-pub use closure::*;
-pub use js::*;
+☉ invoke window·*;
+☉ invoke document·*;
+☉ invoke element·*;
+☉ invoke node·*;
+☉ invoke events·*;
+☉ invoke console·*;
+☉ invoke storage·*;
+☉ invoke location·*;
+☉ invoke history·*;
+☉ invoke navigator·*;
+☉ invoke fetch·*;
+☉ invoke timers·*;
+☉ invoke closure·*;
+☉ invoke js·*;
 
 /// Get the global window object
-pub fn window() -> Option[Window]? {
-    Window::get()
+☉ rite window() -> Option[Window]? {
+    Window·get()
 }
 
 /// Console logging convenience functions
-pub fn log(msg: &str!) {
-    console::log(msg);
+☉ rite log(msg: &str!) {
+    console·log(msg);
 }
 
-pub fn warn(msg: &str!) {
-    console::warn(msg);
+☉ rite warn(msg: &str!) {
+    console·warn(msg);
 }
 
-pub fn error(msg: &str!) {
-    console::error(msg);
+☉ rite error(msg: &str!) {
+    console·error(msg);
 }

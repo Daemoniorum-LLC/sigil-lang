@@ -3,18 +3,16 @@
 //! Demonstrates Sigil's actor model for concurrent programming
 //! with message passing and state isolation.
 
-use std::time
-use std::sync
 
 /// Messages for the rate limiter actor.
-enum RateLimitMsg {
+ᛈ RateLimitMsg {
     Request(str, channel<bool>),
     GetStats(channel<RateLimitStats>),
     Reset,
 }
 
 /// Rate limit statistics.
-struct RateLimitStats {
+Σ RateLimitStats {
     total_requests: i64,
     allowed_requests: i64,
     denied_requests: i64,
@@ -29,8 +27,8 @@ actor RateLimiter {
     last_refill: time.Instant,
     stats: RateLimitStats,
 
-    fn new(capacity: i64, refill_rate: f64) -> RateLimiter {
-        let now = time.Instant.now()
+    rite new(capacity: i64, refill_rate: f64) -> RateLimiter {
+        ≔ now = time.Instant.now()
         RateLimiter {
             capacity,
             tokens: capacity as f64,
@@ -45,9 +43,9 @@ actor RateLimiter {
         }
     }
 
-    fn refill_tokens(mut self) {
-        let now = time.Instant.now()
-        let elapsed = now.duration_since(self.last_refill).as_secs_f64()
+    rite refill_tokens(mut self) {
+        ≔ now = time.Instant.now()
+        ≔ elapsed = now.duration_since(self.last_refill).as_secs_f64()
         self.tokens = min(
             self.capacity as f64,
             self.tokens + (elapsed * self.refill_rate)
@@ -59,11 +57,11 @@ actor RateLimiter {
         self.refill_tokens()
         self.stats.total_requests += 1
 
-        if self.tokens >= 1.0 {
+        ⎇ self.tokens >= 1.0 {
             self.tokens -= 1.0
             self.stats.allowed_requests += 1
             reply <- true
-        } else {
+        } ⎉ {
             self.stats.denied_requests += 1
             reply <- false
         }
@@ -85,7 +83,7 @@ actor RateLimiter {
 }
 
 /// Messages for the cache actor.
-enum CacheMsg<K, V> {
+ᛈ CacheMsg<K, V> {
     Get(K, channel<Option<V>>),
     Set(K, V, Option<time.Duration>),
     Delete(K),
@@ -93,12 +91,12 @@ enum CacheMsg<K, V> {
     Stats(channel<CacheStats>),
 }
 
-struct CacheEntry<V> {
+Σ CacheEntry<V> {
     value: V,
     expires_at: Option<time.Instant>,
 }
 
-struct CacheStats {
+Σ CacheStats {
     hits: i64,
     misses: i64,
     size: i64,
@@ -109,23 +107,23 @@ actor Cache<K: Hash + Eq, V: Clone> {
     entries: Map<K, CacheEntry<V>>,
     stats: CacheStats,
 
-    fn new() -> Cache<K, V> {
+    rite new() -> Cache<K, V> {
         Cache {
             entries: Map.new(),
             stats: CacheStats { hits: 0, misses: 0, size: 0 },
         }
     }
 
-    fn cleanup_expired(mut self) {
-        let now = time.Instant.now()
-        let expired_keys = self.entries
+    rite cleanup_expired(mut self) {
+        ≔ now = time.Instant.now()
+        ≔ expired_keys = self.entries
             |phi{(_, entry) => entry.expires_at
                 |tau{exp => exp < now}
                 |unwrap_or(false)}
             |tau{(k, _) => k}
             |collect
 
-        for key in expired_keys {
+        ∀ key ∈ expired_keys {
             self.entries.remove(key)
         }
         self.stats.size = self.entries|len as i64
@@ -134,17 +132,17 @@ actor Cache<K: Hash + Eq, V: Clone> {
     on Get(key: K, reply: channel<Option<V>>) {
         self.cleanup_expired()
 
-        match self.entries.get(key) {
+        ⌥ self.entries.get(key) {
             Some(entry) => {
                 // Check if expired
-                let is_valid = entry.expires_at
+                ≔ is_valid = entry.expires_at
                     |tau{exp => exp > time.Instant.now()}
                     |unwrap_or(true)
 
-                if is_valid {
+                ⎇ is_valid {
                     self.stats.hits += 1
                     reply <- Some(entry.value.clone())
-                } else {
+                } ⎉ {
                     self.entries.remove(key)
                     self.stats.misses += 1
                     reply <- None
@@ -158,7 +156,7 @@ actor Cache<K: Hash + Eq, V: Clone> {
     }
 
     on Set(key: K, value: V, ttl: Option<time.Duration>) {
-        let expires_at = ttl|tau{d => time.Instant.now() + d}
+        ≔ expires_at = ttl|tau{d => time.Instant.now() + d}
         self.entries.insert(key, CacheEntry { value, expires_at })
         self.stats.size = self.entries|len as i64
     }
@@ -184,8 +182,8 @@ actor WorkerPool<T, R> {
     pending: Queue<(T, channel<R>)>,
     available: Queue<Worker<T, R>>,
 
-    fn new(size: i32, task_fn: fn(T) -> R) -> WorkerPool<T, R> {
-        let workers = (0..size)
+    rite new(size: i32, task_fn: rite(T) -> R) -> WorkerPool<T, R> {
+        ≔ workers = (0..size)
             |tau{_ => spawn Worker.new(task_fn)}
             |collect
 
@@ -197,7 +195,7 @@ actor WorkerPool<T, R> {
     }
 
     on Submit(task: T, reply: channel<R>) {
-        match self.available.pop() {
+        ⌥ self.available.pop() {
             Some(worker) => {
                 // Worker available, dispatch immediately
                 worker <- Execute(task, reply, self)
@@ -210,7 +208,7 @@ actor WorkerPool<T, R> {
     }
 
     on WorkerDone(worker: Worker<T, R>) {
-        match self.pending.pop() {
+        ⌥ self.pending.pop() {
             Some((task, reply)) => {
                 worker <- Execute(task, reply, self)
             }
@@ -222,55 +220,55 @@ actor WorkerPool<T, R> {
 }
 
 actor Worker<T, R> {
-    task_fn: fn(T) -> R,
+    task_fn: rite(T) -> R,
 
-    fn new(task_fn: fn(T) -> R) -> Worker<T, R> {
+    rite new(task_fn: rite(T) -> R) -> Worker<T, R> {
         Worker { task_fn }
     }
 
     on Execute(task: T, reply: channel<R>, pool: WorkerPool<T, R>) {
-        let result = (self.task_fn)(task)
+        ≔ result = (self.task_fn)(task)
         reply <- result
         pool <- WorkerDone(self)
     }
 }
 
 /// Example: Concurrent web scraper.
-async fn scrape_urls(urls: [str]) -> [Result<Page, Error>] {
+async rite scrape_urls(urls: [str]) -> [Result<Page, Error>] {
     // Create a worker pool with 10 concurrent workers
-    let pool = spawn WorkerPool.new(10, fetch_and_parse)
+    ≔ pool = spawn WorkerPool.new(10, fetch_and_parse)
 
     // Rate limiter: 100 requests per second
-    let limiter = spawn RateLimiter.new(100, 100.0)
+    ≔ limiter = spawn RateLimiter.new(100, 100.0)
 
     // Cache for already-seen URLs
-    let cache: Cache<str, Page> = spawn Cache.new()
+    ≔ cache: Cache<str, Page> = spawn Cache.new()
 
     // Process all URLs
-    let results = urls
+    ≔ results = urls
         |tau{url => async {
             // Check cache first
-            let (cached_reply, cached_rx) = channel.new()
+            ≔ (cached_reply, cached_rx) = channel.new()
             cache <- Get(url.clone(), cached_reply)
 
-            match cached_rx|await {
+            ⌥ cached_rx|await {
                 Some(page) => Ok(page),
                 None => {
                     // Check rate limit
-                    let (limit_reply, limit_rx) = channel.new()
+                    ≔ (limit_reply, limit_rx) = channel.new()
                     limiter <- Request(url.clone(), limit_reply)
 
-                    if !limit_rx|await {
-                        return Err(Error.RateLimited)
+                    ⎇ !limit_rx|await {
+                        ⤺ Err(Error.RateLimited)
                     }
 
                     // Submit to worker pool
-                    let (work_reply, work_rx) = channel.new()
+                    ≔ (work_reply, work_rx) = channel.new()
                     pool <- Submit(url.clone(), work_reply)
-                    let result = work_rx|await
+                    ≔ result = work_rx|await
 
                     // Cache successful results
-                    if let Ok(page) = &result {
+                    ⎇ ≔ Ok(page) = &result {
                         cache <- Set(url, page.clone(), Some(time.Duration.minutes(5)))
                     }
 
@@ -281,9 +279,9 @@ async fn scrape_urls(urls: [str]) -> [Result<Page, Error>] {
         |await_all
 
     // Get final stats
-    let (stats_reply, stats_rx) = channel.new()
+    ≔ (stats_reply, stats_rx) = channel.new()
     limiter <- GetStats(stats_reply)
-    let rate_stats = stats_rx|await
+    ≔ rate_stats = stats_rx|await
 
     println("Rate limiter stats: {} allowed, {} denied",
         rate_stats.allowed_requests,
@@ -292,17 +290,17 @@ async fn scrape_urls(urls: [str]) -> [Result<Page, Error>] {
     results
 }
 
-fn main() {
-    let urls = [
+rite main() {
+    ≔ urls = [
         "https://example.com/page1",
         "https://example.com/page2",
         "https://example.com/page3",
         // ... more URLs
     ]
 
-    let results = scrape_urls(urls)|await
+    ≔ results = scrape_urls(urls)|await
 
-    let (successes, failures) = results|partition_results
+    ≔ (successes, failures) = results|partition_results
 
     println("Scraped {} pages successfully, {} failed",
         successes|len,

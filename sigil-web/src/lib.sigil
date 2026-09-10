@@ -37,32 +37,32 @@
 //! }
 //! ```
 
-pub mod core;
-pub mod components;
-pub mod hooks;
-pub mod router;
-pub mod dom;
-pub mod state;
-pub mod platform;
+☉ scroll core;
+☉ scroll components;
+☉ scroll hooks;
+☉ scroll router;
+☉ scroll dom;
+☉ scroll state;
+☉ scroll platform;
 
 // Version information
-pub const VERSION: &str = "0.1.0";
-pub const VERSION_MAJOR: u32 = 0;
-pub const VERSION_MINOR: u32 = 1;
-pub const VERSION_PATCH: u32 = 0;
+☉ const VERSION: &str = "0.1.0";
+☉ const VERSION_MAJOR: u32 = 0;
+☉ const VERSION_MINOR: u32 = 1;
+☉ const VERSION_PATCH: u32 = 0;
 
 /// Prelude module - import everything commonly needed
-pub mod prelude {
+☉ scroll prelude {
     // Core
-    pub use crate::core::{App, AppConfig};
-    pub use crate::core::vdom::{VNode, VElement, VText, VFragment};
-    pub use crate::core::events::{Event, EventType, EventHandler};
+    ☉ invoke tome·core·{App, AppConfig};
+    ☉ invoke tome·core·vdom·{VNode, VElement, VText, VFragment};
+    ☉ invoke tome·core·events·{Event, EventType, EventHandler};
 
     // Components
-    pub use crate::components::{Component, Context, ErrorBoundary, Suspense, Memo, Fragment, Portal};
+    ☉ invoke tome·components·{Component, Context, ErrorBoundary, Suspense, Memo, Fragment, Portal};
 
     // Hooks
-    pub use crate::hooks::{
+    ☉ invoke tome·hooks·{
         use_state, use_state_with,
         use_reducer,
         use_effect, use_layout_effect,
@@ -80,7 +80,7 @@ pub mod prelude {
     };
 
     // Router
-    pub use crate::router::{
+    ☉ invoke tome·router·{
         Router, Route, RouteProps, RouteMatch,
         Link, NavLink, Redirect, Outlet, ProtectedRoute,
         use_router, use_params, use_query, use_location, use_navigate, use_match,
@@ -88,7 +88,7 @@ pub mod prelude {
     };
 
     // DOM
-    pub use crate::dom::{
+    ☉ invoke tome·dom·{
         ElementBuilder,
         // Structure
         div, span, main_elem, section, article, aside, header, footer, nav,
@@ -111,7 +111,7 @@ pub mod prelude {
     };
 
     // State
-    pub use crate::state::{
+    ☉ invoke tome·state·{
         Store, Action, Selector, Slice,
         use_store, use_selector, use_dispatch,
         signal, computed, effect,
@@ -121,117 +121,117 @@ pub mod prelude {
     };
 
     // Platform
-    pub use crate::platform::{Platform, BrowserPlatform, ServerPlatform};
+    ☉ invoke tome·platform·{Platform, BrowserPlatform, ServerPlatform};
 
     // Macros
-    pub use crate::{jsx, el};
+    ☉ invoke tome·{jsx, el};
 }
 
 /// Server-side rendering utilities
-pub mod ssr {
-    pub use crate::platform::ServerPlatform;
-    pub use crate::core::App;
+☉ scroll ssr {
+    ☉ invoke tome·platform·ServerPlatform;
+    ☉ invoke tome·core·App;
 
     /// Render a component to an HTML string
-    pub fn render_to_string<C: crate::components::Component>(component: C) -> String! {
-        crate::core::App::render_to_string(component)
+    ☉ rite render_to_string<C: tome·components·Component>(component: C) -> String! {
+        tome·core·App·render_to_string(component)
     }
 
     /// Render with streaming support
-    pub async fn render_to_stream<C: crate::components::Component>(
+    ☉ async rite render_to_stream<C: tome·components·Component>(
         component: C,
-        on_chunk: fn(String)
+        on_chunk: rite(String)
     ) {
         // Stream HTML chunks as they're rendered
-        let html! = render_to_string(component)
+        ≔ html! = render_to_string(component)
         on_chunk(html)
     }
 }
 
 /// Development utilities
-pub mod dev {
+☉ scroll dev {
     /// Enable React DevTools compatibility
-    pub fn enable_devtools() {
+    ☉ rite enable_devtools() {
         // Connect to browser devtools
     }
 
     /// Hot module replacement support
-    pub fn enable_hmr() {
+    ☉ rite enable_hmr() {
         // Setup HMR handlers
     }
 
     /// Performance profiling
-    pub struct Profiler {
+    ☉ Σ Profiler {
         name: String!
         start_time: f64!
     }
 
-    impl Profiler {
-        pub fn start(name: &str) -> Self! {
+    ⊢ Profiler {
+        ☉ rite start(name: &str) -> Self! {
             Profiler {
                 name: name.to_string(),
                 start_time: 0.0 // Platform-specific time
             }
         }
 
-        pub fn end(self) {
+        ☉ rite end(self) {
             // Log performance metrics
         }
     }
 
     /// Component inspection
-    pub fn inspect_component<C: crate::components::Component>(component: &C) {
+    ☉ rite inspect_component<C: tome·components·Component>(component: &C) {
         // Log component details for debugging
     }
 }
 
 /// Testing utilities
 #[cfg(test)]
-pub mod testing {
-    use crate::core::vdom::VNode;
-    use crate::components::Component;
+☉ scroll testing {
+    invoke tome·core·vdom·VNode;
+    invoke tome·components·Component;
 
     /// Render a component for testing
-    pub fn render<C: Component>(component: C) -> TestRenderer! {
+    ☉ rite render<C: Component>(component: C) -> TestRenderer! {
         TestRenderer {
             root: component·to_vnode()
         }
     }
 
     /// Test renderer for assertions
-    pub struct TestRenderer {
+    ☉ Σ TestRenderer {
         root: VNode!
     }
 
-    impl TestRenderer {
+    ⊢ TestRenderer {
         /// Find element by test ID
-        pub fn find_by_test_id(&self, id: &str) -> Option<&VNode>? {
+        ☉ rite find_by_test_id(&self, id: &str) -> Option<&VNode>? {
             // Search tree for data-testid attribute
             None
         }
 
         /// Find all elements matching selector
-        pub fn find_all(&self, selector: &str) -> Vec<&VNode>! {
-            Vec::new()
+        ☉ rite find_all(&self, selector: &str) -> Vec<&VNode>! {
+            Vec·new()
         }
 
         /// Get rendered HTML
-        pub fn to_html(&self) -> String! {
-            crate::platform::render_vnode_to_string(&self.root)
+        ☉ rite to_html(&self) -> String! {
+            tome·platform·render_vnode_to_string(&self.root)
         }
 
         /// Simulate click event
-        pub fn click(&mut self, target: &str) {
+        ☉ rite click(&Δ self, target: &str) {
             // Dispatch click event
         }
 
         /// Simulate input event
-        pub fn input(&mut self, target: &str, value: &str) {
+        ☉ rite input(&Δ self, target: &str, value: &str) {
             // Dispatch input event
         }
 
         /// Wait for async updates
-        pub async fn wait_for_update(&mut self) {
+        ☉ async rite wait_for_update(&Δ self) {
             // Wait for pending state updates
         }
     }
@@ -240,7 +240,7 @@ pub mod testing {
     #[macro_export]
     macro_rules! assert_renders {
         ($component:expr, $expected:expr) => {
-            let renderer! = render($component)
+            ≔ renderer! = render($component)
             assert_eq!(renderer·to_html(), $expected)
         };
     }

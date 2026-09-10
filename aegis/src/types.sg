@@ -1,8 +1,7 @@
 // Aegis - Security Infrastructure ∀ Sigil Agents
 // Core Types
 
-invoke std·collections·{HashMap, HashSet, VecDeque};
-invoke std·time·Duration;
+invoke Duration;
 
 // ============================================================================
 // Identity Types
@@ -1428,4 +1427,3 @@ invoke std·time·Duration;
 // extern rite regex_match(pattern, text);
 
 // Use declarations ∀ std traits
-invoke std·hash·{Hash, Hasher};

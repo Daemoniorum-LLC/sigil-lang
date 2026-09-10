@@ -1,18 +1,18 @@
 // Pages Module
 // Page components for the documentation platform
 
-use sigil_web::prelude::*
-use crate::components::*
-use crate::layouts::*
-use crate::data::catalog::{PRODUCT_CATALOG, Product, ProductCategory}
-use crate::main::use_theme
+invoke sigil_web·prelude·*
+invoke tome·components·*
+invoke tome·layouts·*
+invoke tome·data·catalog·{PRODUCT_CATALOG, Product, ProductCategory}
+invoke tome·main·use_theme
 
 // ============================================================================
 // Landing Page
 // ============================================================================
 
 /// Home page
-pub fn Home() -> VNode! {
+☉ rite Home() -> VNode! {
     LandingLayout(LandingLayoutProps {
         children: vec![
             // Hero section
@@ -38,13 +38,13 @@ pub fn Home() -> VNode! {
                                 ·class("hero-actions")
                                 ·children(vec![
                                     Link(LinkProps {
-                                        to: "/docs".to_string(),
+                                        to_: "/docs".to_string(),
                                         replace: false,
                                         class: Some("btn btn-primary btn-lg".to_string()),
                                         active_class: None
                                     }, vec![text("Get Started")]),
                                     Link(LinkProps {
-                                        to: "/playground".to_string(),
+                                        to_: "/playground".to_string(),
                                         replace: false,
                                         class: Some("btn btn-secondary btn-lg".to_string()),
                                         active_class: None
@@ -138,7 +138,7 @@ fn main() {
                     h2()·text("Ready to get started?")·build(),
                     p()·text("Join thousands of developers building with Daemoniorum.")·build(),
                     Link(LinkProps {
-                        to: "/docs/getting-started".to_string(),
+                        to_: "/docs/getting-started".to_string(),
                         replace: false,
                         class: Some("btn btn-primary btn-lg".to_string()),
                         active_class: None
@@ -150,7 +150,7 @@ fn main() {
     })
 }
 
-fn ProductCard(props: { product: Product }) -> VNode! {
+rite ProductCard(props: Any) -> VNode! {
     Card(CardProps {
         title: props.product.name·clone(),
         description: Some(props.product.description·clone()),
@@ -159,7 +159,7 @@ fn ProductCard(props: { product: Product }) -> VNode! {
     })
 }
 
-fn FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode! {
+rite FeatureCard(props: Any) -> VNode! {
     div()
         ·class("feature-card")
         ·children(vec![
@@ -175,8 +175,8 @@ fn FeatureCard(props: { icon: &str, title: &str, description: &str }) -> VNode! 
 // ============================================================================
 
 /// Documentation index
-pub fn DocsIndex() -> VNode! {
-    let sidebar_items! = build_docs_sidebar()
+☉ rite DocsIndex() -> VNode! {
+    ≔ sidebar_items! = build_docs_sidebar()
 
     DocsLayout(DocsLayoutProps {
         children: vec![
@@ -205,7 +205,7 @@ pub fn DocsIndex() -> VNode! {
                         ])
                         ·build()
                 })
-                ·collect::<Vec<_>>()
+                ·collect·<Vec<_>>()
                 |into_fragment
         ],
         sidebar_items: sidebar_items,
@@ -222,11 +222,11 @@ pub fn DocsIndex() -> VNode! {
 }
 
 /// Product documentation page
-pub fn ProductDocs(props: { product_id: String }) -> VNode! {
-    let product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
-    let sidebar_items! = build_docs_sidebar()
+☉ rite ProductDocs(props: Any) -> VNode! {
+    ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
+    ≔ sidebar_items! = build_docs_sidebar()
 
-    match product? {
+    ⌥ product? {
         Some(p) => {
             DocsLayout(DocsLayoutProps {
                 children: vec![
@@ -315,15 +315,15 @@ pub fn ProductDocs(props: { product_id: String }) -> VNode! {
 }
 
 /// Product section page
-pub fn ProductSection(props: { product_id: String, section_id: String }) -> VNode! {
-    let product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
-    let sidebar_items! = build_docs_sidebar()
+☉ rite ProductSection(props: Any) -> VNode! {
+    ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
+    ≔ sidebar_items! = build_docs_sidebar()
 
-    match product? {
+    ⌥ product? {
         Some(p) => {
-            let section? = p.sections·iter()·find(|s| s.id == props.section_id)
+            ≔ section? = p.sections·iter()·find(|s| s.id == props.section_id)
 
-            match section? {
+            ⌥ section? {
                 Some(s) => {
                     DocsLayout(DocsLayoutProps {
                         children: vec![
@@ -352,8 +352,8 @@ pub fn ProductSection(props: { product_id: String, section_id: String }) -> VNod
 // ============================================================================
 
 /// API reference index
-pub fn ApiIndex() -> VNode! {
-    let modules! = PRODUCT_CATALOG·iter()
+☉ rite ApiIndex() -> VNode! {
+    ≔ modules! = PRODUCT_CATALOG·iter()
         ·map(|p| ApiModuleInfo {
             name: p.name·clone(),
             path: format!("/api/{}", p.id),
@@ -388,12 +388,12 @@ pub fn ApiIndex() -> VNode! {
 }
 
 /// Product API reference
-pub fn ApiReference(props: { product_id: String }) -> VNode! {
-    let product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
+☉ rite ApiReference(props: Any) -> VNode! {
+    ≔ product? = PRODUCT_CATALOG·iter()·find(|p| p.id == props.product_id)
 
-    match product? {
+    ⌥ product? {
         Some(p) => {
-            let modules! = PRODUCT_CATALOG·iter()
+            ≔ modules! = PRODUCT_CATALOG·iter()
                 ·map(|p| ApiModuleInfo {
                     name: p.name·clone(),
                     path: format!("/api/{}", p.id),
@@ -437,7 +437,7 @@ pub fn ApiReference(props: { product_id: String }) -> VNode! {
 }
 
 /// API module page
-pub fn ApiModule(props: { product_id: String, module_id: String }) -> VNode! {
+☉ rite ApiModule(props: Any) -> VNode! {
     // Detailed API documentation for a specific module
     div()·text(&format!("API Module: {}/{}", props.product_id, props.module_id))·build()
 }
@@ -447,8 +447,8 @@ pub fn ApiModule(props: { product_id: String, module_id: String }) -> VNode! {
 // ============================================================================
 
 /// Guides index
-pub fn GuidesIndex() -> VNode! {
-    let sidebar_items! = build_docs_sidebar()
+☉ rite GuidesIndex() -> VNode! {
+    ≔ sidebar_items! = build_docs_sidebar()
 
     DocsLayout(DocsLayoutProps {
         children: vec![
@@ -522,9 +522,9 @@ pub fn GuidesIndex() -> VNode! {
     })
 }
 
-fn GuideCard(props: { title: &str, description: &str, duration: &str, difficulty: &str, href: &str }) -> VNode! {
+rite GuideCard(props: Any) -> VNode! {
     Link(LinkProps {
-        to: props.href.to_string(),
+        to_: props.href.to_string(),
         replace: false,
         class: Some("guide-card".to_string()),
         active_class: None
@@ -542,8 +542,8 @@ fn GuideCard(props: { title: &str, description: &str, duration: &str, difficulty
 }
 
 /// Individual guide page
-pub fn Guide(props: { guide_id: String }) -> VNode! {
-    let sidebar_items! = build_docs_sidebar()
+☉ rite Guide(props: Any) -> VNode! {
+    ≔ sidebar_items! = build_docs_sidebar()
 
     DocsLayout(DocsLayoutProps {
         children: vec![
@@ -566,7 +566,7 @@ pub fn Guide(props: { guide_id: String }) -> VNode! {
 // ============================================================================
 
 /// Examples index
-pub fn ExamplesIndex() -> VNode! {
+☉ rite ExamplesIndex() -> VNode! {
     div()
         ·class("examples-page")
         ·children(vec![
@@ -635,9 +635,9 @@ pub fn ExamplesIndex() -> VNode! {
         ·build()
 }
 
-fn ExampleCard(props: { title: &str, description: &str, tags: Vec<&str>, href: &str }) -> VNode! {
+rite ExampleCard(props: Any) -> VNode! {
     Link(LinkProps {
-        to: props.href.to_string(),
+        to_: props.href.to_string(),
         replace: false,
         class: Some("example-card".to_string()),
         active_class: None
@@ -656,12 +656,12 @@ fn ExampleCard(props: { title: &str, description: &str, tags: Vec<&str>, href: &
 }
 
 /// Interactive playground
-pub fn Playground() -> VNode! {
-    let (code, set_code) = use_state(DEFAULT_PLAYGROUND_CODE.to_string())
-    let (output, set_output) = use_state("")
-    let (running, set_running) = use_state(false)
+☉ rite Playground() -> VNode! {
+    ≔ (code, set_code) = use_state(DEFAULT_PLAYGROUND_CODE.to_string())
+    ≔ (output, set_output) = use_state("")
+    ≔ (running, set_running) = use_state(false)
 
-    let run_code! = || {
+    ≔ run_code! = || {
         set_running(true)
         // Compile and run code
         // This would use WASM compilation
@@ -687,7 +687,7 @@ pub fn Playground() -> VNode! {
                                         ·attr("disabled", running)
                                         ·children(vec![
                                             Icon { name: "play" },
-                                            text(if running { "Running..." } else { "Run" })
+                                            text(⎇ running { "Running..." } ⎉ { "Run" })
                                         ])
                                         ·build(),
                                     button()
@@ -760,22 +760,22 @@ fn main() {
 // ============================================================================
 
 /// Search results page
-pub fn SearchResults() -> VNode! {
-    let query! = use_query()
-    let search_term! = query·get("q")·unwrap_or(&"".to_string())·clone()
-    let results~ = use_fetch::<Vec<SearchResult>>(&format!("/api/search?q={}", search_term))
+☉ rite SearchResults() -> VNode! {
+    ≔ query! = use_query()
+    ≔ search_term! = query·get("q")·unwrap_or(&"".to_string())·clone()
+    ≔ results~ = use_fetch·<Vec<SearchResult>>(&format!("/api/search?q={}", search_term))
 
     div()
         ·class("search-results-page")
         ·children(vec![
             h1()·text(&format!("Search results for \"{}\"", search_term))·build(),
-            match results~ {
-                AsyncState::Loading => div()·class("loading")·child(Spinner {})·build(),
-                AsyncState::Error(e~) => div()·class("error")·text(&e~)·build(),
-                AsyncState::Success(items~) => {
-                    if items~·is_empty() {
+            ⌥ results~ {
+                AsyncState·Loading => div()·class("loading")·child(Spinner {})·build(),
+                AsyncState·Error(e~) => div()·class("error")·text(&e~)·build(),
+                AsyncState·Success(items~) => {
+                    ⎇ items~·is_empty() {
                         div()·class("no-results")·text("No results found.")·build()
-                    } else {
+                    } ⎉ {
                         ul()
                             ·class("search-results")
                             ·children(
@@ -784,7 +784,7 @@ pub fn SearchResults() -> VNode! {
                                         li()
                                             ·class("search-result")
                                             ·child(Link(LinkProps {
-                                                to: item.path·clone(),
+                                                to_: item.path·clone(),
                                                 replace: false,
                                                 class: None,
                                                 active_class: None
@@ -806,7 +806,7 @@ pub fn SearchResults() -> VNode! {
 }
 
 /// Changelog page
-pub fn Changelog() -> VNode! {
+☉ rite Changelog() -> VNode! {
     div()
         ·class("changelog-page")
         ·children(vec![
@@ -818,7 +818,7 @@ pub fn Changelog() -> VNode! {
 }
 
 /// Release notes for specific version
-pub fn ReleaseNotes(props: { version: String }) -> VNode! {
+☉ rite ReleaseNotes(props: Any) -> VNode! {
     div()
         ·class("release-notes-page")
         ·children(vec![
@@ -829,14 +829,14 @@ pub fn ReleaseNotes(props: { version: String }) -> VNode! {
 }
 
 /// 404 page
-pub fn NotFound() -> VNode! {
+☉ rite NotFound() -> VNode! {
     div()
         ·class("not-found-page")
         ·children(vec![
             h1()·text("404")·build(),
             p()·text("Page not found")·build(),
             Link(LinkProps {
-                to: "/".to_string(),
+                to_: "/".to_string(),
                 replace: false,
                 class: Some("btn btn-primary".to_string()),
                 active_class: None
@@ -849,7 +849,7 @@ pub fn NotFound() -> VNode! {
 // Helpers
 // ============================================================================
 
-fn build_docs_sidebar() -> Vec<SidebarItem>! {
+rite build_docs_sidebar() -> Vec<SidebarItem>! {
     vec![
         SidebarItem {
             title: "Getting Started".to_string(),

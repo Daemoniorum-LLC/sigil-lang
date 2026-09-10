@@ -1,0 +1,26 @@
+// Division. JavaScript's `/` is float division that never fails; Sigil's is
+// integer division that traps on zero. The migrator maps one to the other.
+
+☉ rite t_exact() -> i64! {
+    ⤺ 10 / 5;
+}
+☉ rite t_truncates() -> i64! {
+    ⤺ 10 / 4;
+}
+☉ rite t_negative() -> i64! {
+    ⤺ -10 / 4;
+}
+☉ rite t_modulo() -> i64! {
+    ⤺ 10 % 4;
+}
+☉ rite t_float() -> Any! {
+    ⤺ 10.0 / 4.0;
+}
+
+☉ rite main() {
+    println((t_exact())·to_string());
+    println((t_truncates())·to_string());
+    println((t_negative())·to_string());
+    println((t_modulo())·to_string());
+    println((t_float())·to_string());
+}

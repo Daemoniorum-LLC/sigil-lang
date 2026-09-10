@@ -93,7 +93,7 @@ daemon ResearchAgent {
         }
     }
 
-    rite handle_task_delegation(&Δ self, from: AgentId, task: Task) {
+    rite handle_task_delegation(&Δ self, from_: AgentId, task: Task) {
         // Remember who delegated
         self.coordinator = Some(from.clone());
 
@@ -125,7 +125,7 @@ daemon ResearchAgent {
         }
     }
 
-    rite handle_query(&Δ self, from: AgentId, question: String, context: Value) {
+    rite handle_query(&Δ self, from_: AgentId, question: String, context: Value) {
         // Recall relevant information
         ≔ memories = self.memory.recall(Query·natural(&question)
             .limit(10));
@@ -144,7 +144,7 @@ daemon ResearchAgent {
             Epistemic·Inferred
         };
 
-        commune.express(Intent·respond(from, response))
+        commune.express(Intent·respond(from_, response))
             .with_epistemic(epistemic, 0.8)
             .execute();
     }

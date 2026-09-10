@@ -1,18 +1,18 @@
-fn fib(n) {
-    if n <= 1 {
-        return n;
+rite fib(n) {
+    ⎇ n <= 1 {
+        ⤺ n;
     }
-    return fib(n - 1) + fib(n - 2);
+    ⤺ fib(n - 1) + fib(n - 2);
 }
 
-fn main() {
+rite main() {
     print("Starting...");
-    let start = now();
-    let result = fib(25);
-    let elapsed = now() - start;
+    ≔ start = now();
+    ≔ result = fib(25);
+    ≔ elapsed = now() - start;
     print("Fib(25) =");
     print(result);
     print("Time (ms):");
     print(elapsed);
-    return 0;
+    ⤺ 0;
 }

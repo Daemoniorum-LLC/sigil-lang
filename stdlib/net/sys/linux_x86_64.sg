@@ -40,12 +40,12 @@ invoke super·{SyscallError, syscall_result};
 
 /// Execute syscall with 0 arguments
 rite syscall0(nr: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            lateout("rax") result,
+            ∈("rax") nr,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -56,13 +56,13 @@ rite syscall0(nr: i64) -> isize! {
 
 /// Execute syscall with 1 argument
 rite syscall1(nr: i64, a1: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            in("rdi") a1,
-            lateout("rax") result,
+            ∈("rax") nr,
+            ∈("rdi") a1,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -73,14 +73,14 @@ rite syscall1(nr: i64, a1: i64) -> isize! {
 
 /// Execute syscall with 2 arguments
 rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            in("rdi") a1,
-            in("rsi") a2,
-            lateout("rax") result,
+            ∈("rax") nr,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -91,15 +91,15 @@ rite syscall2(nr: i64, a1: i64, a2: i64) -> isize! {
 
 /// Execute syscall with 3 arguments
 rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            in("rdi") a1,
-            in("rsi") a2,
-            in("rdx") a3,
-            lateout("rax") result,
+            ∈("rax") nr,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            ∈("rdx") a3,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -110,16 +110,16 @@ rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize! {
 
 /// Execute syscall with 4 arguments
 rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            in("rdi") a1,
-            in("rsi") a2,
-            in("rdx") a3,
-            in("r10") a4,
-            lateout("rax") result,
+            ∈("rax") nr,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            ∈("rdx") a3,
+            ∈("r10") a4,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -130,17 +130,17 @@ rite syscall4(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64) -> isize! {
 
 /// Execute syscall with 5 arguments
 rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            in("rdi") a1,
-            in("rsi") a2,
-            in("rdx") a3,
-            in("r10") a4,
-            in("r8") a5,
-            lateout("rax") result,
+            ∈("rax") nr,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            ∈("rdx") a3,
+            ∈("r10") a4,
+            ∈("r8") a5,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)
@@ -151,18 +151,18 @@ rite syscall5(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64) -> isize! {
 
 /// Execute syscall with 6 arguments
 rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> isize! {
-    vary result: isize;
+    ≔ vary result: isize;
     unsafe {
         asm!(
             "syscall",
-            in("rax") nr,
-            in("rdi") a1,
-            in("rsi") a2,
-            in("rdx") a3,
-            in("r10") a4,
-            in("r8") a5,
-            in("r9") a6,
-            lateout("rax") result,
+            ∈("rax") nr,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            ∈("rdx") a3,
+            ∈("r10") a4,
+            ∈("r8") a5,
+            ∈("r9") a6,
+            out("rax") result,
             out("rcx") _,
             out("r11") _,
             options(nostack)

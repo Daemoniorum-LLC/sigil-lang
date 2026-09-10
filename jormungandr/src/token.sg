@@ -398,7 +398,7 @@ invoke tome·span·Span;
 
 ⊢ Token {
     /// Check ⎇ this token is a keyword.
-    ☉ λ is_keyword(self) -> !bool {
+    ☉ rite is_keyword(self) -> !bool {
         ⌥ self {
             Token·Fn | Token·Async | Token·Let | Token·Mut |
             Token·Const | Token·Type | Token·Struct | Token·Enum |
@@ -413,7 +413,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a morpheme (Greek letter operator).
-    ☉ λ is_morpheme(self) -> !bool {
+    ☉ rite is_morpheme(self) -> !bool {
         ⌥ self {
             Token·Tau | Token·Phi | Token·Sigma | Token·Rho |
             Token·Lambda | Token·Pi | Token·Hourglass |
@@ -427,7 +427,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a verb aspect marker.
-    ☉ λ is_aspect(self) -> !bool {
+    ☉ rite is_aspect(self) -> !bool {
         ⌥ self {
             Token·AspectProgressive | Token·AspectPerfective |
             Token·AspectPotential | Token·AspectResultative => true,
@@ -436,7 +436,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a data operation.
-    ☉ λ is_data_op(self) -> !bool {
+    ☉ rite is_data_op(self) -> !bool {
         ⌥ self {
             Token·Bowtie | Token·ElementSmallVerticalBar |
             Token·SquareCup | Token·SquareCap => true,
@@ -445,7 +445,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a bitwise symbol.
-    ☉ λ is_bitwise_symbol(self) -> !bool {
+    ☉ rite is_bitwise_symbol(self) -> !bool {
         ⌥ self {
             Token·BitwiseAndSymbol | Token·BitwiseOrSymbol => true,
             _ => false,
@@ -453,7 +453,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a quantifier.
-    ☉ λ is_quantifier(self) -> !bool {
+    ☉ rite is_quantifier(self) -> !bool {
         ⌥ self {
             Token·ForAll | Token·Exists |
             Token·ElementOf | Token·NotElementOf => true,
@@ -462,7 +462,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a set operation.
-    ☉ λ is_set_op(self) -> !bool {
+    ☉ rite is_set_op(self) -> !bool {
         ⌥ self {
             Token·Union | Token·Intersection | Token·SetMinus |
             Token·Subset | Token·SubsetEq |
@@ -472,7 +472,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a logic operator.
-    ☉ λ is_logic_op(self) -> !bool {
+    ☉ rite is_logic_op(self) -> !bool {
         ⌥ self {
             Token·LogicAnd | Token·LogicOr | Token·LogicNot |
             Token·LogicXor | Token·Top | Token·Bottom => true,
@@ -481,7 +481,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is an evidentiality marker.
-    ☉ λ is_evidentiality(self) -> !bool {
+    ☉ rite is_evidentiality(self) -> !bool {
         ⌥ self {
             Token·Bang | Token·Question |
             Token·Tilde | Token·Interrobang | Token·Lozenge => true,
@@ -490,7 +490,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is an affective marker.
-    ☉ λ is_affective(self) -> !bool {
+    ☉ rite is_affective(self) -> !bool {
         ⌥ self {
             Token·DirectSum | Token·AffectNegative | Token·AffectNeutral |
             Token·IronyMark | Token·IntensityUp | Token·IntensityDown |
@@ -503,7 +503,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a sentiment marker.
-    ☉ λ is_sentiment(self) -> !bool {
+    ☉ rite is_sentiment(self) -> !bool {
         ⌥ self {
             Token·DirectSum | Token·AffectNegative | Token·AffectNeutral => true,
             _ => false,
@@ -511,7 +511,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is an emotion marker.
-    ☉ λ is_emotion(self) -> !bool {
+    ☉ rite is_emotion(self) -> !bool {
         ⌥ self {
             Token·EmotionJoy | Token·EmotionSadness | Token·EmotionAnger |
             Token·EmotionFear | Token·EmotionSurprise | Token·EmotionLove => true,
@@ -520,7 +520,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is an intensity marker.
-    ☉ λ is_intensity(self) -> !bool {
+    ☉ rite is_intensity(self) -> !bool {
         ⌥ self {
             Token·IntensityUp | Token·IntensityDown | Token·IntensityMax => true,
             _ => false,
@@ -528,7 +528,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a literal.
-    ☉ λ is_literal(self) -> !bool {
+    ☉ rite is_literal(self) -> !bool {
         ⌥ self {
             Token·BinaryLit(_) | Token·OctalLit(_) | Token·HexLit(_) |
             Token·VigesimalLit(_) | Token·SexagesimalLit(_) | Token·DuodecimalLit(_) |
@@ -543,7 +543,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a delimiter.
-    ☉ λ is_delimiter(self) -> !bool {
+    ☉ rite is_delimiter(self) -> !bool {
         ⌥ self {
             Token·LParen | Token·RParen |
             Token·LBrace | Token·RBrace |
@@ -553,7 +553,7 @@ invoke tome·span·Span;
     }
 
     /// Check ⎇ this token is a protocol keyword.
-    ☉ λ is_protocol(self) -> !bool {
+    ☉ rite is_protocol(self) -> !bool {
         ⌥ self {
             Token·Send | Token·Recv | Token·Stream |
             Token·Connect | Token·Close | Token·Timeout |
@@ -575,7 +575,7 @@ invoke tome·span·Span;
 // ============================================
 
 #[test]
-λ test_token_is_keyword() {
+rite test_token_is_keyword() {
     assert!(Token·Fn.is_keyword());
     assert!(Token·Let.is_keyword());
     assert!(Token·If.is_keyword());
@@ -584,7 +584,7 @@ invoke tome·span·Span;
 }
 
 #[test]
-λ test_token_is_morpheme() {
+rite test_token_is_morpheme() {
     assert!(Token·Tau.is_morpheme());
     assert!(Token·Phi.is_morpheme());
     assert!(Token·Sigma.is_morpheme());
@@ -593,7 +593,7 @@ invoke tome·span·Span;
 }
 
 #[test]
-λ test_token_is_evidentiality() {
+rite test_token_is_evidentiality() {
     assert!(Token·Bang.is_evidentiality());
     assert!(Token·Question.is_evidentiality());
     assert!(Token·Tilde.is_evidentiality());
@@ -602,7 +602,7 @@ invoke tome·span·Span;
 }
 
 #[test]
-λ test_token_is_literal() {
+rite test_token_is_literal() {
     assert!(Token·IntLit("42".to_string()).is_literal());
     assert!(Token·StringLit("hello".to_string()).is_literal());
     assert!(Token·True.is_literal());

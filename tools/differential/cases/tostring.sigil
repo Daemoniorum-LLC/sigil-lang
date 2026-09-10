@@ -1,0 +1,40 @@
+// `x·to_string()` on values the compiler cannot prove are strings. Every one of
+// these reaches the DOM in a view.
+
+☉ rite t_int() -> String! {
+    ⤺ (42)·to_string();
+}
+☉ rite t_zero() -> String! {
+    ⤺ (0)·to_string();
+}
+// `(∅)·to_string()` is NOT here, and the client emits it in a hundred places.
+// The interpreter rejects it outright — "no method 'to_string' on type
+// Discriminant(14)" — and the WASM backend cannot even tell the case apart:
+// `None` and the integer zero are both 0 in a uniform i64 value model, so one
+// of `(∅)·to_string()` and `(0)·to_string()` has to be wrong whatever is
+// chosen. A probe cannot hold both; the divergence is recorded instead.
+☉ rite t_literal() -> String! {
+    ≔ s = "hello";
+    ⤺ s·to_string();
+}
+☉ rite t_via_helper() -> String! {
+    ⤺ helper()·to_string();
+}
+☉ rite helper() -> Any! {
+    "from a helper"
+}
+☉ rite t_concat() -> String! {
+    ⤺ "n=" + (7)·to_string();
+}
+☉ rite t_bool() -> String! {
+    ⤺ (1 == 1)·to_string();
+}
+
+☉ rite main() {
+    println(t_int());
+    println(t_zero());
+    println(t_literal());
+    println(t_via_helper());
+    println(t_concat());
+    println(t_bool());
+}

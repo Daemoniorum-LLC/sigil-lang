@@ -94,7 +94,7 @@ rite uuid_v7() -> [u8; 16] { [0u8; 16] }
     ☉ rite as_secs(&self) -> u64 { self.nanos / 1_000_000_000 }
 }
 
-⊢ std·ops·Add<Duration> ∀ Timestamp {
+⊢ Add<Duration> ∀ Timestamp {
     type Output = Self;
     rite add(self, d: Duration) -> Self {
         Self { nanos: self.nanos + d.nanos }
@@ -129,7 +129,7 @@ rite uuid_v7() -> [u8; 16] { [0u8; 16] }
     }
 }
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 ☉ Σ State {
     ☉ variables: HashMap<String, Value>,

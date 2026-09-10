@@ -1,11 +1,11 @@
 // Todo App Example
 // Demonstrates CRUD operations, lists, and form handling
 
-use sigil_web::prelude::*
-use std::collections::HashMap;
+invoke sigil_web·prelude·*
+invoke HashMap;
 
 /// Todo item structure
-struct Todo {
+Σ Todo {
     id: u64!
     text: String!
     completed: bool!
@@ -13,13 +13,13 @@ struct Todo {
 
 /// Todo list component with full CRUD functionality
 component TodoApp {
-    state todos: Vec<Todo>! = Vec::new()
+    state todos: Vec<Todo>! = Vec·new()
     state next_id: u64! = 1
-    state filter: Filter! = Filter::All
+    state filter: Filter! = Filter·All
     state input_text: String! = ""
     state editing_id: Option<u64>? = None
 
-    fn render(self) -> VNode {
+    rite render(self) -> VNode {
         div()
             ·class("todo-app")
             ·children(vec![
@@ -76,11 +76,11 @@ component TodoApp {
             ·build()
     }
 
-    fn render_input(&self) -> VNode! {
+    rite render_input(&self) -> VNode! {
         form()
             ·class("todo-input-form")
             ·onsubmit(|| {
-                if !self.input_text·trim()·is_empty() {
+                ⎇ !self.input_text·trim()·is_empty() {
                     self·add_todo()
                 }
             })
@@ -96,8 +96,8 @@ component TodoApp {
             ·build()
     }
 
-    fn render_todo_item(&self, todo: &Todo) -> VNode! {
-        let is_editing! = self.editing_id == Some(todo.id)
+    rite render_todo_item(&self, todo: &Todo) -> VNode! {
+        ≔ is_editing! = self.editing_id == Some(todo.id)
 
         li()
             ·class(classes()
@@ -142,9 +142,9 @@ component TodoApp {
                         ·attr("autofocus", true)
                         ·onblur(|| self.editing_id = None)
                         ·onkeydown(|e| {
-                            if e·is_enter() {
+                            ⎇ e·is_enter() {
                                 self.editing_id = None
-                            } else if e·is_escape() {
+                            } ⎉ ⎇ e·is_escape() {
                                 self.editing_id = None
                             }
                         })
@@ -155,9 +155,9 @@ component TodoApp {
             ·build()
     }
 
-    fn render_footer(&self) -> VNode! {
-        let active_count! = self.todos·iter()·filter(|t| !t.completed)·count()
-        let completed_count! = self.todos·len() - active_count
+    rite render_footer(&self) -> VNode! {
+        ≔ active_count! = self.todos·iter()·filter(|t| !t.completed)·count()
+        ≔ completed_count! = self.todos·len() - active_count
 
         footer()
             ·class("todo-footer")
@@ -168,7 +168,7 @@ component TodoApp {
                     ·text(&format!(
                         "{} item{} left",
                         active_count,
-                        if active_count == 1 { "" } else { "s" }
+                        ⎇ active_count == 1 { "" } ⎉ { "s" }
                     ))
                     ·build(),
 
@@ -176,9 +176,9 @@ component TodoApp {
                 ul()
                     ·class("todo-filters")
                     ·children(vec![
-                        self·render_filter_button(Filter::All, "All"),
-                        self·render_filter_button(Filter::Active, "Active"),
-                        self·render_filter_button(Filter::Completed, "Completed")
+                        self·render_filter_button(Filter·All, "All"),
+                        self·render_filter_button(Filter·Active, "Active"),
+                        self·render_filter_button(Filter·Completed, "Completed")
                     ])
                     ·build(),
 
@@ -194,7 +194,7 @@ component TodoApp {
             ·build()
     }
 
-    fn render_filter_button(&self, filter: Filter, label: &str) -> VNode! {
+    rite render_filter_button(&self, filter: Filter, label: &str) -> VNode! {
         li()
             ·child(
                 button()
@@ -210,8 +210,8 @@ component TodoApp {
     }
 
     // Actions
-    fn add_todo(&mut self) {
-        let todo! = Todo {
+    rite add_todo(&Δ self) {
+        ≔ todo! = Todo {
             id: self.next_id,
             text: self.input_text·trim()·to_string(),
             completed: false
@@ -221,44 +221,44 @@ component TodoApp {
         self.input_text = "".to_string()
     }
 
-    fn remove_todo(&mut self, id: u64) {
+    rite remove_todo(&Δ self, id: u64) {
         self.todos·retain(|t| t.id != id)
     }
 
-    fn toggle_todo(&mut self, id: u64) {
-        if let Some(todo) = self.todos·iter_mut()·find(|t| t.id == id) {
+    rite toggle_todo(&Δ self, id: u64) {
+        ⎇ ≔ Some(todo) = self.todos·iter_mut()·find(|t| t.id == id) {
             todo.completed = !todo.completed
         }
     }
 
-    fn update_todo(&mut self, id: u64, text: String) {
-        if let Some(todo) = self.todos·iter_mut()·find(|t| t.id == id) {
+    rite update_todo(&Δ self, id: u64, text: String) {
+        ⎇ ≔ Some(todo) = self.todos·iter_mut()·find(|t| t.id == id) {
             todo.text = text
         }
     }
 
-    fn toggle_all(&mut self) {
-        let all_completed! = self·all_completed()
-        for todo in &mut self.todos {
+    rite toggle_all(&Δ self) {
+        ≔ all_completed! = self·all_completed()
+        ∀ todo ∈ &Δ self.todos {
             todo.completed = !all_completed
         }
     }
 
-    fn clear_completed(&mut self) {
+    rite clear_completed(&Δ self) {
         self.todos·retain(|t| !t.completed)
     }
 
     // Helpers
-    fn all_completed(&self) -> bool! {
+    rite all_completed(&self) -> bool! {
         !self.todos·is_empty() && self.todos·iter()·all(|t| t.completed)
     }
 
-    fn filtered_todos(&self) -> Vec<&Todo>! {
+    rite filtered_todos(&self) -> Vec<&Todo>! {
         self.todos·iter()
-            ·filter(|t| match self.filter {
-                Filter::All => true,
-                Filter::Active => !t.completed,
-                Filter::Completed => t.completed
+            ·filter(|t| ⌥ self.filter {
+                Filter·All => true,
+                Filter·Active => !t.completed,
+                Filter·Completed => t.completed
             })
             ·collect()
     }
@@ -266,12 +266,12 @@ component TodoApp {
 
 /// Filter state
 #[derive(Clone, Copy, PartialEq)]
-enum Filter {
+ᛈ Filter {
     All,
     Active,
     Completed
 }
 
-fn main() {
-    App::mount("#root", TodoApp::new())
+rite main() {
+    App·mount("#root", TodoApp·new())
 }

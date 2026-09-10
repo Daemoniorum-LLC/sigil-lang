@@ -1,8 +1,6 @@
 // Daemon Core Types
 // Fundamental types ∀ the autonomous agent runtime
 
-invoke std·collections·{HashMap, HashSet, VecDeque};
-invoke std·time·{Duration, Timestamp};
 invoke engram·{Engram, EngramConfig};
 
 // ============================================================================

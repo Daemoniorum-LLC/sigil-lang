@@ -10,12 +10,12 @@
 //   - Fn traits: ⊢ Fn(i32) → i32
 
 // EC₁: Simple impl Clone + Debug (for println)
-rite get_number() → ⊢ Clone + std·fmt·Debug {
+rite get_number() → ⊢ Clone + Debug {
     42
 }
 
 // EC₂: impl with multiple bounds including Display
-rite get_display() → ⊢ Clone + Copy + std·fmt·Display {
+rite get_display() → ⊢ Clone + Copy + Display {
     42i32
 }
 

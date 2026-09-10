@@ -7,8 +7,7 @@
 ☉ scroll plan;
 ☉ scroll causal;
 
-invoke std·collections·HashMap;
-invoke std·time·{Duration, Timestamp};
+invoke HashMap;
 invoke engram·{Engram, Query};
 
 // ============================================================================
@@ -921,8 +920,8 @@ invoke engram·{Engram, Query};
         self
     }
 
-    ☉ rite add_cause(Δ self, from: &str, to: &str) -> Self {
-        self.edges.push((from.to_string(), to.to_string()));
+    ☉ rite add_cause(Δ self, from_: &str, to_: &str) -> Self {
+        self.edges.push((from_.to_string(), to_.to_string()));
         self
     }
 
@@ -1003,7 +1002,7 @@ invoke engram·{Engram, Query};
     ☉ max_depth: usize,
 
     /// Planning timeout
-    ☉ timeout: Duration,
+    ☉ timeout_: Duration,
 }
 
 ⊢ Default ∀ OmenConfig {
@@ -1013,7 +1012,7 @@ invoke engram·{Engram, Query};
             uncertainty_tolerance: 0.3,
             revision_threshold: 0.2,
             max_depth: 20,
-            timeout: Duration·seconds(30),
+            timeout_: Duration·seconds(30),
         }
     }
 }
@@ -1058,7 +1057,7 @@ invoke engram·{Engram, Query};
     ☉ rite now() -> Self { Self { nanos: 0 } }
 }
 
-⊢ std·ops·Add<Duration> ∀ Timestamp {
+⊢ Add<Duration> ∀ Timestamp {
     type Output = Self;
     rite add(self, _d: Duration) -> Self { self }
 }

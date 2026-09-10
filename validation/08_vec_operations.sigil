@@ -1,6 +1,6 @@
 // Vector operations
-fn main() {
-    let mut v = vec![1, 2, 3];
+rite main() {
+    ≔ vary v = vec![1, 2, 3];
 
     // Push
     v.push(4);
@@ -18,7 +18,7 @@ fn main() {
 
     // Iteration
     println("Iteration:");
-    for item in v {
+    ∀ item ∈ v {
         println(item);
     }
 }

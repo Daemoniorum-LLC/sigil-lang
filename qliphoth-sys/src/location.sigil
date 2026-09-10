@@ -3,65 +3,65 @@
 /// Location interface
 #[wasm_bindgen]
 extern "js" {
-    pub type Location;
+    ☉ type Location;
 
     #[wasm_bindgen(method, getter)]
-    pub fn href(this: &Location!) -> String!;
+    ☉ rite href(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_href(this: &Location!, href: &str!);
+    ☉ rite set_href(this: &Location!, href: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn origin(this: &Location!) -> String!;
+    ☉ rite origin(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, getter)]
-    pub fn protocol(this: &Location!) -> String!;
+    ☉ rite protocol(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_protocol(this: &Location!, protocol: &str!);
+    ☉ rite set_protocol(this: &Location!, protocol: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn host(this: &Location!) -> String!;
+    ☉ rite host(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_host(this: &Location!, host: &str!);
+    ☉ rite set_host(this: &Location!, host: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn hostname(this: &Location!) -> String!;
+    ☉ rite hostname(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_hostname(this: &Location!, hostname: &str!);
+    ☉ rite set_hostname(this: &Location!, hostname: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn port(this: &Location!) -> String!;
+    ☉ rite port(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_port(this: &Location!, port: &str!);
+    ☉ rite set_port(this: &Location!, port: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn pathname(this: &Location!) -> String!;
+    ☉ rite pathname(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_pathname(this: &Location!, pathname: &str!);
+    ☉ rite set_pathname(this: &Location!, pathname: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn search(this: &Location!) -> String!;
+    ☉ rite search(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_search(this: &Location!, search: &str!);
+    ☉ rite set_search(this: &Location!, search: &str!);
 
     #[wasm_bindgen(method, getter)]
-    pub fn hash(this: &Location!) -> String!;
+    ☉ rite hash(this: &Location!) -> String!;
 
     #[wasm_bindgen(method, setter)]
-    pub fn set_hash(this: &Location!, hash: &str!);
+    ☉ rite set_hash(this: &Location!, hash: &str!);
 
     #[wasm_bindgen(method)]
-    pub fn assign(this: &Location!, url: &str!);
+    ☉ rite assign(this: &Location!, url: &str!);
 
     #[wasm_bindgen(method)]
-    pub fn replace(this: &Location!, url: &str!);
+    ☉ rite replace(this: &Location!, url: &str!);
 
     #[wasm_bindgen(method)]
-    pub fn reload(this: &Location!);
+    ☉ rite reload(this: &Location!);
 }

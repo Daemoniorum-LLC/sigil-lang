@@ -1,20 +1,23 @@
-// Stdlib Tests: env
-// Environment variable functions with REAL assertions
+// Stdlib Tests: environment access
+// Sigil spells this Sys·getenv. Rust's `env·var` is not Sigil vocabulary, and the
+// binding of that name in stdlib.rs was never reachable: a lowercase path root
+// does not resolve, so `env·var("PATH")` failed with "no method 'var'".
 
 rite main() {
-    println("=== Testing env ===");
+    println("=== Testing Sys·getenv ===");
 
-    // env·var - returns Result type
-    ≔ path_result = env·var("PATH");
-    assert_eq(type_of(path_result), "Result·Ok");
+    // PATH exists on any system that can run this
+    ≔ path = Sys·getenv("PATH");
+    assert_true(path != "");
+    assert_eq(type_of(path), "string");
 
     // HOME should exist on most systems
-    ≔ home_result = env·var("HOME");
-    assert_eq(type_of(home_result), "Result·Ok");
+    ≔ home = Sys·getenv("HOME");
+    assert_eq(type_of(home), "string");
 
-    // Non-existent variable returns Result·Err
-    ≔ nonexist = env·var("TOTALLY_NONEXISTENT_VAR_12345");
-    assert_eq(type_of(nonexist), "Result·Err");
+    // A variable that does not exist reads as the empty string
+    ≔ nonexist = Sys·getenv("TOTALLY_NONEXISTENT_VAR_12345");
+    assert_eq(nonexist, "");
 
     println("ALL ENV TESTS PASSED!");
 }

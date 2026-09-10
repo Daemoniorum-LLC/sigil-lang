@@ -1,52 +1,44 @@
-// Stdlib Tests: std
-// Standard library namespace functions with REAL assertions
+// Stdlib Tests: the collection, sync and path types
+//
+// These are spelled unqualified in Sigil — HashMap, Mutex, Arc, PathBuf — not under
+// Rust's `std·` tree. The `std·collections·HashMap·new` family in stdlib.rs was
+// never reachable from any Sigil program: a lowercase path root does not resolve, so
+// every call failed with "undefined variable: `std`".
 
 rite main() {
-    println("=== Testing std ===");
+    println("=== Testing collections, sync and paths ===");
 
-    // std·collections·HashMap·new
-    ≔ vary hm = std·collections·HashMap·new();
+    ≔ vary hm = HashMap·new();
     assert_eq(hm.len(), 0);
     hm.insert("key", "value");
     assert_eq(hm.len(), 1);
 
-    // std·collections·HashSet·new
-    ≔ hs = std·collections·HashSet·new();
+    ≔ hs = HashSet·new();
     assert_eq(type_of(hs), "set");
     assert_eq(len(hs), 0);
 
-    // std·sync·Mutex·new
-    ≔ m = std·sync·Mutex·new(42);
+    ≔ m = Mutex·new(42);
     assert_eq(type_of(m), "struct:Mutex");
 
-    // std·sync·RwLock·new
-    ≔ rw = std·sync·RwLock·new(42);
+    ≔ rw = RwLock·new(42);
     assert_eq(type_of(rw), "struct:RwLock");
 
-    // std·sync·Arc·new
-    ≔ a = std·sync·Arc·new(42);
+    ≔ a = Arc·new(42);
     assert_eq(type_of(a), "ref");
 
-    // std·path·PathBuf·from (returns string ∈ Sigil)
-    ≔ pb = std·path·PathBuf·from("/tmp/test");
+    ≔ pb = PathBuf·from("/tmp/test");
     assert_eq(type_of(pb), "string");
     assert_true(len(pb) > 0);
 
-    // std·path·Path·new (returns string ∈ Sigil)
-    ≔ p = std·path·Path·new("/tmp/test");
+    ≔ p = Path·new("/tmp/test");
     assert_eq(type_of(p), "string");
 
-    // std·env·temp_dir
-    ≔ td = std·env·temp_dir();
-    assert_true(len(td) > 0);
-
-    // std·env·args
-    ≔ args = std·env·args();
+    ≔ args = Sys·args();
     assert_eq(type_of(args), "array");
 
-    // std·env·var
-    ≔ path = std·env·var("PATH");
-    assert_eq(type_of(path), "Result·Ok");
+    ≔ path = Sys·getenv("PATH");
+    assert_eq(type_of(path), "string");
+    assert_true(path != "");
 
     println("ALL STD TESTS PASSED!");
 }
