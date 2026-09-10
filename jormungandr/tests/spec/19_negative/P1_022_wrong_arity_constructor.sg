@@ -1,0 +1,19 @@
+// Negative Test: Constructor called with wrong number of arguments
+// Should fail with argument count error
+// Priority: P1
+
+sigil Pair {
+    a: i64,
+    b: i64,
+}
+
+⊢ Pair {
+    rite new() → Pair {
+        Pair { a: 0, b: 0 }
+    }
+}
+
+rite main() {
+    ≔ p = Pair·new(1, 2, 3);
+    println(p.a);
+}

@@ -1,0 +1,12 @@
+// Negative Test: Too few arguments to free function
+// Should fail with argument count error
+// Priority: P1
+
+rite add(a: i64, b: i64) → i64 {
+    ⤺ a + b;
+}
+
+rite main() {
+    ≔ r = add(1);
+    println(r);
+}

@@ -1,0 +1,18 @@
+// Negative Test: Wrong number of arguments on static method call
+// Should fail with argument count error
+// Priority: P1
+
+sigil Foo {
+    x: i64,
+}
+
+⊢ Foo {
+    rite bar(x: i64) → i64 {
+        x
+    }
+}
+
+rite main() {
+    ≔ r = Foo·bar(1, 2, 3);
+    println(r);
+}

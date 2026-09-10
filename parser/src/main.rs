@@ -1247,6 +1247,29 @@ fn llvm_file(path: &str) -> ExitCode {
         }
     };
 
+    // Pre-codegen type check
+    {
+        let mut parser = Parser::new(&source);
+        match parser.parse_file() {
+            Ok(ast) => {
+                let mut type_checker = TypeChecker::new();
+                if let Err(type_errors) = type_checker.check_file(&ast) {
+                    for err in &type_errors {
+                        eprintln!("Type error in '{}': {}", path, err.message);
+                        for note in &err.notes {
+                            eprintln!("  note: {}", note);
+                        }
+                    }
+                    return ExitCode::from(1);
+                }
+            }
+            Err(e) => {
+                eprintln!("Parse error in '{}': {}", path, e);
+                return ExitCode::from(1);
+            }
+        }
+    }
+
     // Create LLVM context and compiler
     let context = Context::create();
     let mut compiler = match LlvmCompiler::new(&context, OptLevel::Aggressive) {
@@ -1304,6 +1327,30 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
             return ExitCode::from(1);
         }
     };
+
+    // Pre-codegen type check: parse and run TypeChecker as a gate before LLVM codegen.
+    // This catches arity mismatches, type errors, etc. before they can produce invalid IR.
+    {
+        let mut parser = Parser::new(&source);
+        match parser.parse_file() {
+            Ok(ast) => {
+                let mut type_checker = TypeChecker::new();
+                if let Err(type_errors) = type_checker.check_file(&ast) {
+                    for err in &type_errors {
+                        eprintln!("Type error in '{}': {}", path, err.message);
+                        for note in &err.notes {
+                            eprintln!("  note: {}", note);
+                        }
+                    }
+                    return ExitCode::from(1);
+                }
+            }
+            Err(e) => {
+                eprintln!("Parse error in '{}': {}", path, e);
+                return ExitCode::from(1);
+            }
+        }
+    }
 
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();

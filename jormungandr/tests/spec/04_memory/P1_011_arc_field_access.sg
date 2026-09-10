@@ -1,0 +1,20 @@
+// Test: Field access through Arc<T> wrapper types
+// Spec: 04-MEMORY.md § 4.3 Arc - transparent field access
+// Priority: P1 - Production Ready
+// Regression: G104-FIX - Arc<T> is transparent in i64 ABI, no double-deref
+
+☉ Σ Inner { x: !i64, y: !i64 }
+
+rite main() {
+    ≔ inner = Inner { x: 10, y: 20 };
+    ≔ wrapped: Arc<Inner> = Arc·new(inner);
+
+    // Field access through Arc should work transparently
+    println(wrapped.x);
+    println(wrapped.y);
+
+    // Clone and access through clone
+    ≔ wrapped2 = wrapped.clone();
+    println(wrapped2.x);
+    println(wrapped2.y);
+}

@@ -40,6 +40,10 @@
     ☉ rite tag(&self) → i64 {
         self.tag
     }
+
+    ☉ rite device_id(&self) → i64 {
+        100i64
+    }
 }
 
 // ── Impl for Gpu ──────────────────────────────────────────────────────────────
@@ -51,6 +55,10 @@
 
     ☉ rite tag(&self) → i64 {
         self.tag
+    }
+
+    ☉ rite device_id(&self) → i64 {
+        200i64
     }
 }
 
@@ -67,6 +75,13 @@
 
     // R2: Confirm the values are distinct — not both defaulting to the same impl.
     assert(cpu_buf.tag() != gpu_buf.tag());
+
+    // Gap 1: Method dispatch on constructed values — device_id() returns hardcoded constants,
+    // not field reads. This confirms dispatch uses the binding's type annotation, not just
+    // the last-registered impl for the base struct name.
+    assert_eq(cpu_buf.device_id(), 100i64);
+    assert_eq(gpu_buf.device_id(), 200i64);
+    assert(cpu_buf.device_id() != gpu_buf.device_id());
 
     println!("PASS: generic return type dispatch correct");
     ⤺ 0;

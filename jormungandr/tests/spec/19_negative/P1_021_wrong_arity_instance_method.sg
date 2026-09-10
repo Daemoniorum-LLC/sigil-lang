@@ -1,0 +1,19 @@
+// Negative Test: Wrong number of arguments on instance method call
+// Should fail with argument count error
+// Priority: P1
+
+sigil Foo {
+    x: i64,
+}
+
+⊢ Foo {
+    rite get(&this) → i64 {
+        this.x
+    }
+}
+
+rite main() {
+    ≔ f = Foo { x: 1 };
+    ≔ r = f.get(99);
+    println(r);
+}

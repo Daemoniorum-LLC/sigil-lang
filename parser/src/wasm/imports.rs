@@ -300,6 +300,14 @@ impl ImportRegistry {
         self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
         // Vec::join - concatenate elements with separator
         self.add_import_with_alias("morpheme", "vec_join", "vec_join", vec![I32, I32], vec![I32]);
+        // Vec::remove(index) -> T — remove and return element at index
+        self.add_import("morpheme", "array_remove", vec![I32, I32], vec![I64]);
+        // Vec::insert(index, elem) — insert element at index
+        self.add_import("morpheme", "array_insert", vec![I32, I32, I64], vec![]);
+        // Vec::clear() — remove all elements
+        self.add_import("morpheme", "array_clear", vec![I32], vec![]);
+        // Vec::truncate(len) — shorten vec to len elements
+        self.add_import("morpheme", "array_truncate", vec![I32, I32], vec![]);
     }
 
     fn register_math_imports(&mut self) {

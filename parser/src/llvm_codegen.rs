@@ -7014,28 +7014,10 @@ pub mod llvm {
                     // G63 fix: Check generic structs for field access
                     // Generic structs like Tensor<S, D, Dev> are stored in generic_structs
                     if let Some(ref struct_name) = struct_type_name {
-                        // G104 fix: Check if we need to dereference a wrapper type BEFORE field access
-                        // This handles cases like `self.inner.len` where `inner: Arc<Inner>`
-                        // The expression `self.inner` returns an Arc pointer, but struct_name is "Inner" (unwrapped)
-                        // We need to dereference the Arc to get the actual Inner pointer
-                        let raw_expr_type = self.get_raw_struct_type_from_expr(expr, scope);
-                        let actual_struct_ptr = if let Some(ref raw_type) = raw_expr_type {
-                            let is_wrapper = raw_type == "Arc" || raw_type == "Rc" || raw_type == "Box" || raw_type == "RefCell";
-                            if is_wrapper && raw_type != struct_name {
-                                // Load the inner struct pointer from the wrapper (stored at offset 0)
-                                let inner_struct_ptr_val = self.builder
-                                    .build_load(self.context.i64_type(), struct_ptr, "wrapper_inner_ptr")
-                                    .map_err(|e| e.to_string())?
-                                    .into_int_value();
-                                self.builder
-                                    .build_int_to_ptr(inner_struct_ptr_val, ptr_type, "inner_struct_ptr")
-                                    .map_err(|e| e.to_string())?
-                            } else {
-                                struct_ptr
-                            }
-                        } else {
-                            struct_ptr
-                        };
+                        // G104-FIX: Arc<T>/Rc<T>/Box<T>/RefCell<T> are transparent in Sigil's i64 ABI.
+                        // compile_expr already returns the raw pointer to T (as i64→ptr).
+                        // No double-deref needed — struct_ptr is already the pointer to T.
+                        let actual_struct_ptr = struct_ptr;
 
                         if let Some(generic_def) = self.generic_structs.get(struct_name) {
                             // Find field index in the generic struct definition
