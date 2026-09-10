@@ -2089,6 +2089,10 @@ pub mod llvm {
                 let _ = self.builder.build_return(Some(&result));
             }
 
+            // Math constants: () -> i64
+            let const_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_pi", const_type, None);
+
             // Vec functions - use ptr type (i64 as opaque pointer)
             // Use inttoptr wrappers to bypass MCJIT add_global_mapping issues (JIT only)
             let ptr_type = i64_type; // Using i64 as opaque pointer type
@@ -5740,6 +5744,44 @@ pub mod llvm {
                                 )
                                 .map_err(|e| e.to_string())?;
 
+                            Ok(val)
+                        }
+                        Expr::Deref(inner) => {
+                            // Dereference assignment: *ptr = val or *(ptr + offset) = val
+                            // Check for pointer arithmetic pattern
+                            if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                                let base_addr = self.compile_expr(fn_value, scope, left)?;
+                                let offset = self.compile_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        base_addr,
+                                        i64_type.ptr_type(Default::default()),
+                                        "base_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                // Use GEP for proper pointer arithmetic (scales by element size)
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                                }
+                                .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(elem_ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val);
+                            }
+                            // Simple dereference: *ptr = val
+                            let ptr_val = self.compile_expr(fn_value, scope, inner)?;
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let ptr = self
+                                .builder
+                                .build_int_to_ptr(ptr_val, ptr_type, "deref_ptr")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(ptr, val)
+                                .map_err(|e| e.to_string())?;
                             Ok(val)
                         }
                         Expr::Deref(inner) => {
@@ -11471,7 +11513,13 @@ pub mod llvm {
         ) -> Result<IntValue<'ctx>, String> {
             let i64_type = self.context.i64_type();
 
-            // Check if this is a range index (slice operation)
+            // Check if this is a range index (slice operation).
+            //
+            // The index expression must not be compiled before this test. Hoisting it
+            // above the early return emitted the index's instructions twice -- dead code
+            // for a plain index, and for a side-effecting one such as `arr[next()]` a
+            // second call actually executed at run time. `ptr_type` was hoisted with it
+            // and shadowed by an identical binding in every branch below.
             if let Expr::Range { start, end, inclusive } = index {
                 return self.compile_range_index(fn_value, scope, expr, start.as_deref(), end.as_deref(), *inclusive);
             }
