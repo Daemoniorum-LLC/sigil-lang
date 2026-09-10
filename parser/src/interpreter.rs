@@ -5724,25 +5724,34 @@ impl Interpreter {
                     }
                 }
 
-                // Fallback: search all enums for matching type name suffix and variant
-                for (actual_type_name, type_def) in &self.types {
-                    if let TypeDef::Enum(enum_def) = type_def {
-                        // Check if this enum name ends with our type name
-                        // (handles module·DType matching DType)
-                        let matches = actual_type_name == &type_name_direct
-                            || actual_type_name == &type_name_qualified
-                            || actual_type_name.ends_with(&format!("·{}", type_name_direct));
-
-                        if matches {
-                            for variant in &enum_def.variants {
-                                if &variant.name.name == variant_name {
-                                    if matches!(variant.fields, crate::ast::StructFields::Unit) {
-                                        return Ok(Value::Variant {
-                                            enum_name: actual_type_name.clone(),
-                                            variant_name: variant_name.clone(),
-                                            fields: None,
-                                        });
-                                    }
+                // Fallback: search all enums for matching type name suffix and
+                // variant. Collected and sorted before the search rather than
+                // returning the first hit while walking `self.types`: that is a
+                // HashMap, so the winner among several matching enums varied
+                // from one process to the next.
+                let suffix = format!("·{}", type_name_direct);
+                let mut enum_names: Vec<String> = self
+                    .types
+                    .iter()
+                    .filter(|(name, type_def)| {
+                        matches!(type_def, TypeDef::Enum(_))
+                            && (*name == &type_name_direct
+                                || *name == &type_name_qualified
+                                || name.ends_with(&suffix))
+                    })
+                    .map(|(name, _)| name.clone())
+                    .collect();
+                enum_names.sort();
+                for actual_type_name in &enum_names {
+                    if let Some(TypeDef::Enum(enum_def)) = self.types.get(actual_type_name) {
+                        for variant in &enum_def.variants {
+                            if &variant.name.name == variant_name {
+                                if matches!(variant.fields, crate::ast::StructFields::Unit) {
+                                    return Ok(Value::Variant {
+                                        enum_name: actual_type_name.clone(),
+                                        variant_name: variant_name.clone(),
+                                        fields: None,
+                                    });
                                 }
                             }
                         }
@@ -5963,6 +5972,44 @@ impl Interpreter {
             Value::Array(_) => ty.starts_with('[') || ty.starts_with("Vec"),
             _ => false,
         }
+    }
+
+    /// The struct types a `Self`-named value could have been built from, in a
+    /// stable order.
+    ///
+    /// A value carries the name `Self` when a `Self { .. }` literal is
+    /// evaluated with no `Self` binding in scope, so recovering its type from
+    /// its field names is a guess. It has to be the *same* guess on every run:
+    /// `self.types` is a `HashMap`, and walking it to take the first match
+    /// chose a different type per process, which made any program reaching
+    /// here alternate between working and reporting "Invalid struct
+    /// operation". Exact field-set matches come first, then supersets, each
+    /// group ordered by name.
+    fn struct_types_matching_fields(&self, field_names: &[String]) -> Vec<String> {
+        let mut exact: Vec<&String> = Vec::new();
+        let mut superset: Vec<&String> = Vec::new();
+        for (type_name, type_def) in &self.types {
+            let TypeDef::Struct(struct_def) = type_def else {
+                continue;
+            };
+            let crate::ast::StructFields::Named(def_fields) = &struct_def.fields else {
+                continue;
+            };
+            if !field_names
+                .iter()
+                .all(|f| def_fields.iter().any(|d| &d.name.name == f))
+            {
+                continue;
+            }
+            if def_fields.len() == field_names.len() {
+                exact.push(type_name);
+            } else {
+                superset.push(type_name);
+            }
+        }
+        exact.sort();
+        superset.sort();
+        exact.into_iter().chain(superset).cloned().collect()
     }
 
     /// Find the operator impl that applies to these operands, if any.
@@ -8002,13 +8049,29 @@ impl Interpreter {
         // If calling a qualified function (Type::method), set current_self_type
         let type_name_for_self = if let Expr::Path(path) = func_expr {
             if path.segments.len() >= 2 {
-                // First segment is the type name
-                let first = &path.segments[0].ident.name;
-                // Check if it's a type name (exists in types registry)
-                if self.types.contains_key(first) {
-                    Some(first.clone())
+                // The type is everything before the final segment, which is
+                // `Type` in `Type·assoc` but `module·Type` in
+                // `module·Type·assoc`. Testing only the first segment left
+                // `Self` unbound for the qualified form, so a `Self { .. }` in
+                // the callee produced a struct literally named "Self".
+                let prefix = &path.segments[..path.segments.len() - 1];
+                let bare = &prefix[prefix.len() - 1].ident.name;
+                if self.types.contains_key(bare) {
+                    // The bare name in preference to the qualified one: it is
+                    // what an unqualified call binds, and what impl methods and
+                    // operator impls are filed under.
+                    Some(bare.clone())
                 } else {
-                    None
+                    let qualified = prefix
+                        .iter()
+                        .map(|s| s.ident.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("·");
+                    if self.types.contains_key(&qualified) {
+                        Some(qualified)
+                    } else {
+                        None
+                    }
                 }
             } else {
                 None
@@ -13390,53 +13453,40 @@ impl Interpreter {
                         let field_names: Vec<String> = fields.borrow().keys().cloned().collect();
 
                         // Search through registered types to find a matching struct
-                        for (type_name, type_def) in &self.types {
-                            if let TypeDef::Struct(struct_def) = type_def {
-                                let def_fields: Vec<String> = match &struct_def.fields {
-                                    crate::ast::StructFields::Named(fs) => {
-                                        fs.iter().map(|f| f.name.name.clone()).collect()
-                                    }
-                                    _ => continue,
-                                };
+                        for type_name in self.struct_types_matching_fields(&field_names) {
+                            let qualified_name = format!("{}·{}", type_name, method.name);
+                            let func = self
+                                .globals
+                                .borrow()
+                                .get(&qualified_name)
+                                .map(|v| v.clone());
+                            if let Some(func) = func {
+                                if let Value::Function(f) = func {
+                                    let f = Self::wrap_with_const_generics(&f, fields);
+                                    // Set current Self type for Self { ... } resolution
+                                    let old_self_type = self.current_self_type.take();
+                                    self.current_self_type = Some(type_name.clone());
 
-                                // Match if our fields exist in the definition
-                                let matches = field_names.iter().all(|f| def_fields.contains(f));
-                                if matches {
-                                    let qualified_name = format!("{}·{}", type_name, method.name);
-                                    let func = self
-                                        .globals
-                                        .borrow()
-                                        .get(&qualified_name)
-                                        .map(|v| v.clone());
-                                    if let Some(func) = func {
-                                        if let Value::Function(f) = func {
-                                            let f = Self::wrap_with_const_generics(&f, fields);
-                                            // Set current Self type for Self { ... } resolution
-                                            let old_self_type = self.current_self_type.take();
-                                            self.current_self_type = Some(type_name.clone());
+                                    // Reorder named args to match function params (skip first param which is self)
+                                    let reordered = if f.params.len() > 1 {
+                                        Self::reorder_named_args(
+                                            &f.params[1..].to_vec(),
+                                            arg_entries.clone(),
+                                        )?
+                                    } else {
+                                        arg_values.clone()
+                                    };
+                                    let mut all_args = vec![recv.clone()];
+                                    all_args.extend(reordered);
+                                    let result = self.call_function(&f, all_args);
 
-                                            // Reorder named args to match function params (skip first param which is self)
-                                            let reordered = if f.params.len() > 1 {
-                                                Self::reorder_named_args(
-                                                    &f.params[1..].to_vec(),
-                                                    arg_entries.clone(),
-                                                )?
-                                            } else {
-                                                arg_values.clone()
-                                            };
-                                            let mut all_args = vec![recv.clone()];
-                                            all_args.extend(reordered);
-                                            let result = self.call_function(&f, all_args);
-
-                                            // Restore old Self type
-                                            self.current_self_type = old_self_type;
-                                            return result;
-                                        } else if let Value::BuiltIn(b) = func {
-                                            let mut all_args = vec![recv.clone()];
-                                            all_args.extend(arg_values.clone());
-                                            return (b.func)(self, all_args);
-                                        }
-                                    }
+                                    // Restore old Self type
+                                    self.current_self_type = old_self_type;
+                                    return result;
+                                } else if let Value::BuiltIn(b) = func {
+                                    let mut all_args = vec![recv.clone()];
+                                    all_args.extend(arg_values.clone());
+                                    return (b.func)(self, all_args);
                                 }
                             }
                         }
@@ -17674,54 +17724,40 @@ impl Interpreter {
                     let field_names: Vec<String> = fields.borrow().keys().cloned().collect();
 
                     // Search through registered types to find a matching struct
-                    for (type_name, type_def) in &self.types {
-                        if let TypeDef::Struct(struct_def) = type_def {
-                            // Check if field names match
-                            let def_fields: Vec<String> = match &struct_def.fields {
-                                crate::ast::StructFields::Named(fs) => {
-                                    fs.iter().map(|f| f.name.name.clone()).collect()
-                                }
-                                _ => continue,
-                            };
+                    for type_name in self.struct_types_matching_fields(&field_names) {
+                        let qualified_name = format!("{}·{}", type_name, method.name);
+                        let func = self
+                            .globals
+                            .borrow()
+                            .get(&qualified_name)
+                            .map(|v| v.clone());
+                        if let Some(func) = func {
+                            if let Value::Function(f) = func {
+                                let f = Self::wrap_with_const_generics(&f, fields);
+                                // Set current Self type for Self { ... } resolution
+                                let old_self_type = self.current_self_type.take();
+                                self.current_self_type = Some(type_name.clone());
 
-                            // Rough match - if we have fields that exist in the definition
-                            let matches = field_names.iter().all(|f| def_fields.contains(f));
-                            if matches {
-                                let qualified_name = format!("{}·{}", type_name, method.name);
-                                let func = self
-                                    .globals
-                                    .borrow()
-                                    .get(&qualified_name)
-                                    .map(|v| v.clone());
-                                if let Some(func) = func {
-                                    if let Value::Function(f) = func {
-                                        let f = Self::wrap_with_const_generics(&f, fields);
-                                        // Set current Self type for Self { ... } resolution
-                                        let old_self_type = self.current_self_type.take();
-                                        self.current_self_type = Some(type_name.clone());
+                                // Reorder named args to match function params (skip first param which is self)
+                                let reordered = if f.params.len() > 1 {
+                                    Self::reorder_named_args(
+                                        &f.params[1..].to_vec(),
+                                        arg_entries.clone(),
+                                    )?
+                                } else {
+                                    arg_values.clone()
+                                };
+                                let mut all_args = vec![recv.clone()];
+                                all_args.extend(reordered);
+                                let result = self.call_function(&f, all_args);
 
-                                        // Reorder named args to match function params (skip first param which is self)
-                                        let reordered = if f.params.len() > 1 {
-                                            Self::reorder_named_args(
-                                                &f.params[1..].to_vec(),
-                                                arg_entries.clone(),
-                                            )?
-                                        } else {
-                                            arg_values.clone()
-                                        };
-                                        let mut all_args = vec![recv.clone()];
-                                        all_args.extend(reordered);
-                                        let result = self.call_function(&f, all_args);
-
-                                        // Restore old Self type
-                                        self.current_self_type = old_self_type;
-                                        return result;
-                                    } else if let Value::BuiltIn(b) = func {
-                                        let mut all_args = vec![recv.clone()];
-                                        all_args.extend(arg_values.clone());
-                                        return (b.func)(self, all_args);
-                                    }
-                                }
+                                // Restore old Self type
+                                self.current_self_type = old_self_type;
+                                return result;
+                            } else if let Value::BuiltIn(b) = func {
+                                let mut all_args = vec![recv.clone()];
+                                all_args.extend(arg_values.clone());
+                                return (b.func)(self, all_args);
                             }
                         }
                     }
@@ -26756,6 +26792,57 @@ mod tests {
                 ⤺ p·scaled(2.0);
             }";
         assert!(matches!(run(source), Ok(Value::Float(v)) if v == 6.0));
+    }
+
+    #[test]
+    fn an_associated_function_reached_through_its_scroll_binds_self() {
+        // #104. `Self` was bound only when the *first* path segment named a
+        // type, which is true of `P·new(…)` but not of `geom·P·new(…)`. Left
+        // unbound, the `Self { x }` inside the constructor built a struct
+        // named, literally, "Self" -- and nothing is filed under that name, so
+        // the next operator on the value reported "Invalid struct operation".
+        let source = "\
+            scroll geom {
+                ☉ Σ P { ☉ x: f32 }
+                ⊢ P { ☉ rite new(x: f32) -> Self { Self { x } } }
+                ⊢ Add ∀ P {
+                    type Output = Self;
+                    rite add(self, o: Self) -> Self { Self·new(self.x + o.x) }
+                }
+            }
+            rite main() {
+                ≔ a = geom·P·new(1.5);
+                ⤺ (a + a).x;
+            }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 3.0));
+    }
+
+    #[test]
+    fn a_self_named_value_recovers_the_same_type_on_every_run() {
+        // The other half of #104, and the part that made it a 40%-of-runs
+        // flake rather than an outright failure. A value that still ends up
+        // named `Self` is recovered by matching its field names against every
+        // registered struct; that walked `self.types`, a HashMap, and took the
+        // first hit, so two same-shaped types made the winner a per-process
+        // coin flip -- and only one of them carried the operator impl.
+        //
+        // Exact field-set matches must come first, supersets after, each group
+        // ordered by name.
+        let interp = interp_after(
+            "\
+            ☉ Σ P { ☉ x: f32 }
+            ☉ Σ Q { ☉ x: f32 }
+            ☉ Σ R { ☉ x: f32, ☉ y: f32 }
+            rite main() { ⤺ 0; }",
+        );
+        let matches = interp.struct_types_matching_fields(&["x".to_string()]);
+        assert_eq!(
+            matches
+                .iter()
+                .filter(|n| matches!(n.as_str(), "P" | "Q" | "R"))
+                .collect::<Vec<_>>(),
+            vec!["P", "Q", "R"]
+        );
     }
 
     /// The scroll every #95 test resolves against: a type reached through an
