@@ -3830,17 +3830,18 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    // External module: mod foo; - try to load foo.sigil or foo.sg from same directory
+                    // External module: `scroll foo;` - foo.sigil, foo.sg, or a
+                    // directory of its own carrying foo/mod.sg, the way the
+                    // workspace loader already reads a subdirectory.
                     if let Some(ref source_dir) = self.current_source_dir {
-                        let module_path_sigil =
-                            std::path::Path::new(source_dir).join(format!("{}.sigil", module_name));
-                        let module_path_sg =
-                            std::path::Path::new(source_dir).join(format!("{}.sg", module_name));
-                        let module_path = if module_path_sigil.exists() {
-                            module_path_sigil
-                        } else {
-                            module_path_sg
-                        };
+                        let module_path = Self::resolve_tome_module(
+                            source_dir,
+                            std::slice::from_ref(&module_name),
+                        )
+                        .map(|(_, file)| std::path::PathBuf::from(file))
+                        .unwrap_or_else(|| {
+                            std::path::Path::new(source_dir).join(format!("{}.sg", module_name))
+                        });
 
                         if module_path.exists() {
                             crate::sigil_debug!(
@@ -4124,21 +4125,31 @@ impl Interpreter {
                         {
                             // Load from current source directory
                             if let Some(source_dir) = &self.current_source_dir.clone() {
-                                // Determine module name:
-                                // - invoke tome·module·Item -> prefix=["tome","module"], name=Item -> module_name = prefix[1]
-                                // - invoke tome·module -> prefix=["tome"], name=module -> module_name = name (simple_name)
-                                let module_name = if prefix.len() >= 2 {
-                                    prefix[1].clone()
-                                } else {
-                                    // `invoke tome·analyze;` case: prefix=["tome"], simple_name="analyze"
-                                    simple_name.clone()
-                                };
-                                let module_file_sigil = format!("{}/{}.sigil", source_dir, module_name);
-                                let module_file_sg = format!("{}/{}.sg", source_dir, module_name);
-                                let module_file = if std::path::Path::new(&module_file_sigil).exists() {
-                                    module_file_sigil
-                                } else {
-                                    module_file_sg
+                                // Which of the path's segments name the module,
+                                // and which name the item inside it, is not
+                                // known from the path alone:
+                                //
+                                //   invoke tome·analyze          -> analyze.sg
+                                //   invoke tome·output·Output    -> output.sg
+                                //   invoke tome·tui·greet·{greet} -> tui/greet.sg
+                                //
+                                // So try the longest module path first and give
+                                // up a segment at a time, taking the first that
+                                // names a file. Directories are addressed the
+                                // way the workspace loader already addresses
+                                // them -- `tui/greet.sg` is the module
+                                // `tui·greet`, `tui/mod.sg` is `tui`.
+                                let mut segments: Vec<String> =
+                                    prefix.iter().skip(1).cloned().collect();
+                                segments.push(simple_name.clone());
+                                let Some((module_name, module_file)) =
+                                    Self::resolve_tome_module(source_dir, &segments)
+                                else {
+                                    crate::sigil_debug!(
+                                        "DEBUG process_use_tree: no tome module file for {:?}",
+                                        segments
+                                    );
+                                    return Ok(());
                                 };
                                 crate::sigil_debug!(
                                     "DEBUG process_use_tree: loading tome module '{}' from {}",
@@ -4148,7 +4159,7 @@ impl Interpreter {
                                 // Skip if already loaded (prevent infinite recursion)
                                 if self.loaded_crates.contains(&module_file) {
                                     // Already loaded, skip
-                                } else if std::path::Path::new(&module_file).exists() {
+                                } else {
                                     // Mark as loaded before processing (handle circular deps)
                                     self.loaded_crates.insert(module_file.clone());
 
@@ -5873,6 +5884,33 @@ impl Interpreter {
                 full_name, full_name, last_name
             )))
         }
+    }
+
+    /// Find the file behind `invoke tome·a·b·…`, and the module name to load
+    /// it under.
+    ///
+    /// `segments` is the path with the `tome` root dropped and the final name
+    /// appended, longest-first: the caller cannot tell where the module path
+    /// stops and the imported item begins, so each candidate length is tried
+    /// until one names a file. A directory is spelled the way the workspace
+    /// loader spells it -- `tui/greet.sg` is the module `tui·greet` and
+    /// `tui/mod.sg` is the module `tui`.
+    fn resolve_tome_module(source_dir: &str, segments: &[String]) -> Option<(String, String)> {
+        for len in (1..=segments.len()).rev() {
+            let parts = &segments[..len];
+            let rel = parts.join("/");
+            for candidate in [
+                format!("{}/{}.sigil", source_dir, rel),
+                format!("{}/{}.sg", source_dir, rel),
+                format!("{}/{}/mod.sigil", source_dir, rel),
+                format!("{}/{}/mod.sg", source_dir, rel),
+            ] {
+                if std::path::Path::new(&candidate).is_file() {
+                    return Some((parts.join("·"), candidate));
+                }
+            }
+        }
+        None
     }
 
     /// The trait and method a binary operator dispatches to when the built-in
@@ -26843,6 +26881,123 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["P", "Q", "R"]
         );
+    }
+
+    /// A fresh directory under the system temp dir, removed when the guard
+    /// drops. Module resolution reads the filesystem, so these tests need a
+    /// tome on disk rather than a source string.
+    struct TempTome(std::path::PathBuf);
+
+    impl TempTome {
+        fn new(tag: &str) -> TempTome {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let n = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "sigil-tome-{}-{}-{}",
+                tag,
+                std::process::id(),
+                n
+            ));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            TempTome(path)
+        }
+
+        fn write(&self, rel: &str, contents: &str) -> &TempTome {
+            let path = self.0.join(rel);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
+            std::fs::write(&path, contents).expect("write module");
+            self
+        }
+
+        fn dir(&self) -> String {
+            self.0.to_string_lossy().into_owned()
+        }
+
+        /// Run `source` as the tome's entry point, with the tome on disk as the
+        /// source directory so `invoke tome·…` can reach it.
+        fn run(&self, source: &str) -> Result<Value, RuntimeError> {
+            let file = Parser::new(source)
+                .parse_file()
+                .map_err(|e| RuntimeError::new(e.to_string()))?;
+            let mut interp = Interpreter::new();
+            interp.set_current_source_dir(Some(self.dir()));
+            interp.execute(&file)
+        }
+    }
+
+    impl Drop for TempTome {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_module_in_a_subdirectory_is_reachable_through_its_path() {
+        // #109. `invoke tome·a·b·{…}` took the module name from the *second*
+        // segment alone, so it looked for `a.sg` and never `a/b.sg`. A tome had
+        // to be one flat directory, and the failure said only
+        // `undefined variable`, which points nowhere near the nesting.
+        let tome = TempTome::new("nested");
+        tome.write(
+            "tui/grid.sg",
+            "☉ rite area(w: i32, h: i32) -> i32 { w * h }",
+        );
+        let source = "\
+            invoke tome·tui·grid·{area};
+            rite main() { ⤺ area(4, 5); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(20))));
+    }
+
+    #[test]
+    fn a_subdirectory_speaks_for_itself_through_mod() {
+        // The workspace loader already reads `tui/mod.sg` as the module `tui`;
+        // `invoke tome·tui·{…}` has to reach the same file.
+        let tome = TempTome::new("modfile");
+        tome.write("tui/mod.sg", "☉ rite layer() -> i32 { 7 }");
+        let source = "\
+            invoke tome·tui·{layer};
+            rite main() { ⤺ layer(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(7))));
+    }
+
+    #[test]
+    fn a_flat_module_still_resolves_beside_a_directory_of_the_same_name() {
+        // The module path is tried longest-first, so `tome·output·Output` finds
+        // `output/Output.sg` when there is one. A flat `output.sg` must still
+        // be found when there is not -- that is the spelling every existing
+        // tome uses.
+        let tome = TempTome::new("flat");
+        tome.write("output.sg", "☉ rite width() -> i32 { 3 }");
+        let source = "\
+            invoke tome·output·{width};
+            rite main() { ⤺ width(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(3))));
+    }
+
+    #[test]
+    fn the_longest_module_path_wins() {
+        // `a.sg` and `a/b.sg` can both exist. `tome·a·b·{…}` names the deeper
+        // one; resolution gives up a segment at a time only when nothing
+        // answers.
+        let tome = TempTome::new("longest");
+        tome.write("a.sg", "☉ rite pick() -> i32 { 1 }")
+            .write("a/b.sg", "☉ rite pick() -> i32 { 2 }");
+
+        let deep = Interpreter::resolve_tome_module(
+            &tome.dir(),
+            &["a".to_string(), "b".to_string(), "pick".to_string()],
+        );
+        assert_eq!(deep.as_ref().map(|(name, _)| name.as_str()), Some("a·b"));
+        assert!(deep.unwrap().1.ends_with("a/b.sg"));
+
+        let shallow =
+            Interpreter::resolve_tome_module(&tome.dir(), &["a".to_string(), "pick".to_string()]);
+        assert_eq!(shallow.as_ref().map(|(name, _)| name.as_str()), Some("a"));
+        assert!(shallow.unwrap().1.ends_with("a.sg"));
+
+        assert!(Interpreter::resolve_tome_module(&tome.dir(), &["nope".to_string()]).is_none());
     }
 
     /// The scroll every #95 test resolves against: a type reached through an
