@@ -659,6 +659,16 @@ impl WasmCompiler {
         }
     }
 
+    /// The source files this build actually compiled.
+    ///
+    /// A project build enters through `lib.sigil` and follows module
+    /// resolution, so the set it reaches is the module graph — not everything
+    /// under `src/`. Anything gating a project build has to ask *this* rather
+    /// than walk the directory, or it rejects files the build never looked at.
+    pub fn loaded_modules(&self) -> &std::collections::HashSet<std::path::PathBuf> {
+        &self.loaded_modules
+    }
+
     /// Instruction-level diagnostics for anything the stack checker found.
     pub fn stack_reports(&self) -> &[String] {
         &self.stack_reports
