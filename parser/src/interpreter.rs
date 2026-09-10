@@ -26543,13 +26543,13 @@ mod tests {
     fn impl_inside_a_module_keeps_its_associated_consts() {
         // Module impls registered their methods but dropped every const, so
         // `P·ONE` was not merely wrong but absent: reading `.x` off it yielded
-        // null rather than 1.0. (Still the behaviour on develop today.)
+        // null rather than 1.0.
         //
-        // The const is asserted through the unqualified `P·ONE` alias rather
-        // than `geom·P·ONE` because module-qualified path resolution is
-        // currently broken on develop for *everything* — `geom·P·new(..)`, an
-        // ordinary static method that predates this branch, fails the same way.
-        // See `module_qualified_paths_are_unresolvable`.
+        // Asserted through the module-qualified `geom·P·ONE`, which is how the
+        // const is actually spelled from outside the scroll. #75 had to route
+        // this through the unqualified `P·ONE` alias, because the qualified
+        // form could not be parsed at all; see
+        // `module_qualified_paths_resolve`. Both spellings are pinned here.
         let source = "\
             scroll geom {
                 ☉ Σ P { ☉ x: f32 }
@@ -26558,19 +26558,16 @@ mod tests {
                     ☉ rite new(x: f32) -> Self { Self { x } }
                 }
             }
-            rite main() { ⤺ P·ONE.x; }";
-        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 1.0));
+            rite main() { ⤺ geom·P·ONE.x + P·ONE.x; }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 2.0));
     }
 
     #[test]
-    #[ignore = "pre-existing develop regression, unrelated to operator dispatch"]
-    fn module_qualified_paths_are_unresolvable() {
-        // Regression record, not a claim about this branch. `module·Type·member`
-        // resolves on the merge base and fails on develop with
-        // "undefined variable: `geom`" — for a plain static method, with no
-        // consts and no operator traits involved. Whatever landed in develop
-        // between 7adc3af and 42ee1f0 broke it; fixing that belongs in its own
-        // change. Un-ignore this test when it is fixed.
+    fn module_qualified_paths_resolve() {
+        // `module·Type·member` used to fail with "undefined variable: `geom`":
+        // `parse_type_path` stopped at the first `·` after a lowercase segment,
+        // so the path became a field access on a variable that was never bound.
+        // A plain static method, no consts and no operator traits involved.
         let source = "\
             scroll geom {
                 ☉ Σ P { ☉ x: f32 }
@@ -26578,6 +26575,29 @@ mod tests {
             }
             rite main() { ⤺ geom·P·new(3.0).x; }";
         assert!(matches!(run(source), Ok(Value::Float(v)) if v == 3.0));
+    }
+
+    #[test]
+    fn a_lowercase_receiver_is_still_a_method_call_not_a_path() {
+        // The other half of the same decision, and the reason the qualified
+        // form was broken in the first place: #61 stopped `·` from being
+        // consumed as a path separator after a lowercase segment, because
+        // `tag·to_string()` was being parsed as a call to a path `tag·to_string`
+        // and dispatched to a built-in of the wrong arity. Nothing in the chain
+        // names a type, so it must stay a method call on `tag`.
+        let source = "\
+            scroll geom {
+                ☉ Σ P { ☉ x: f32 }
+                ⊢ P {
+                    ☉ rite new(x: f32) -> Self { Self { x } }
+                    ☉ rite scaled(self, k: f32) -> f32 { self.x * k }
+                }
+            }
+            rite main() {
+                ≔ p = geom·P·new(3.0);
+                ⤺ p·scaled(2.0);
+            }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 6.0));
     }
 
     #[test]
