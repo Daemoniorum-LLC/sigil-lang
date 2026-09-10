@@ -47,6 +47,15 @@ export class SigilRuntime {
 
     // Function table for callbacks
     this.callbacks = new Map();
+
+    // Async state machine continuation tracking
+    // id -> { framePtr, state, promise, promiseId }
+    this.continuations = new Map();
+    this.continuationCounter = 1;
+
+    // Memory allocation tracking (simple bump allocator)
+    this.heapBase = 0x20000; // Start heap after data section
+    this.heapPtr = this.heapBase;
   }
 
   /**
@@ -124,6 +133,135 @@ export class SigilRuntime {
       signal: this._signalImports(),
       async: this._asyncImports(),
       browser: this._browserImports(),
+      env: this._envImports(),
+      crate: this._crateImports(),
+    };
+  }
+
+  // ========== Environment Imports ==========
+  _envImports() {
+    return {
+      document: () => 1, // Placeholder document handle
+      local_storage: () => 1, // Storage handle
+      session_storage: () => 2, // Storage handle
+      location: () => this.allocString(window.location?.href || ''),
+      history: () => 1, // History handle
+      navigator: () => 1, // Navigator handle
+      inner_width: () => BigInt(window.innerWidth || 800),
+      inner_height: () => BigInt(window.innerHeight || 600),
+      outer_width: () => BigInt(window.outerWidth || 800),
+      outer_height: () => BigInt(window.outerHeight || 600),
+      scroll_x: () => BigInt(window.scrollX || 0),
+      scroll_y: () => BigInt(window.scrollY || 0),
+      device_pixel_ratio: () => window.devicePixelRatio || 1,
+      alert: (msgPtr) => {
+        const msg = this.strings.get(Number(msgPtr)) || this.readString(Number(msgPtr));
+        window.alert?.(msg);
+      },
+      confirm: (msgPtr) => {
+        const msg = this.strings.get(Number(msgPtr)) || this.readString(Number(msgPtr));
+        return window.confirm?.(msg) ? 1 : 0;
+      },
+      prompt: (msgPtr, defaultPtr) => {
+        const msg = this.strings.get(Number(msgPtr)) || this.readString(Number(msgPtr));
+        const def = this.strings.get(Number(defaultPtr)) || this.readString(Number(defaultPtr));
+        const result = window.prompt?.(msg, def) || '';
+        return this.allocString(result);
+      },
+      open: (urlPtr, targetPtr, featuresPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        const target = this.strings.get(Number(targetPtr)) || this.readString(Number(targetPtr));
+        const features = this.strings.get(Number(featuresPtr)) || this.readString(Number(featuresPtr));
+        window.open?.(url, target, features);
+        return BigInt(0);
+      },
+      close: () => window.close?.(),
+      match_media: (queryPtr) => {
+        const query = this.strings.get(Number(queryPtr)) || this.readString(Number(queryPtr));
+        return window.matchMedia?.(query).matches ? 1 : 0;
+      },
+      user_agent: () => this.allocString(navigator.userAgent || ''),
+      language: () => this.allocString(navigator.language || 'en'),
+      languages: () => {
+        const arr = ++this.arrayCounter;
+        this.arrays.set(arr, (navigator.languages || ['en']).map(l => this.allocString(l)));
+        return arr;
+      },
+      online: () => navigator.onLine ? 1 : 0,
+      platform: () => this.allocString(navigator.platform || ''),
+      hardware_concurrency: () => BigInt(navigator.hardwareConcurrency || 1),
+      cookie_enabled: () => navigator.cookieEnabled ? 1 : 0,
+      do_not_track: () => navigator.doNotTrack === '1' ? 1 : 0,
+      orientation: () => BigInt(screen.orientation?.angle || 0),
+      screen_width: () => BigInt(screen.width || 800),
+      screen_height: () => BigInt(screen.height || 600),
+      color_depth: () => BigInt(screen.colorDepth || 24),
+      focus: () => window.focus?.(),
+      blur: () => window.blur?.(),
+      print: () => window.print?.(),
+      scroll_to: (x, y) => window.scrollTo?.(Number(x), Number(y)),
+      scroll_by: (x, y) => window.scrollBy?.(Number(x), Number(y)),
+      hostname: () => this.allocString(window.location?.hostname || ''),
+      port: () => this.allocString(window.location?.port || ''),
+      protocol: () => this.allocString(window.location?.protocol || ''),
+      pathname: () => this.allocString(window.location?.pathname || ''),
+      search: () => this.allocString(window.location?.search || ''),
+      hash: () => this.allocString(window.location?.hash || ''),
+      origin: () => this.allocString(window.location?.origin || ''),
+      href: () => this.allocString(window.location?.href || ''),
+      set_href: (urlPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        if (window.location) window.location.href = url;
+      },
+      reload: () => window.location?.reload?.(),
+      back: () => window.history?.back?.(),
+      forward: () => window.history?.forward?.(),
+      go: (delta) => window.history?.go?.(Number(delta)),
+      push_state: (statePtr, titlePtr, urlPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        const title = this.strings.get(Number(titlePtr)) || this.readString(Number(titlePtr));
+        window.history?.pushState?.({}, title, url);
+      },
+      replace_state: (statePtr, titlePtr, urlPtr) => {
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        const title = this.strings.get(Number(titlePtr)) || this.readString(Number(titlePtr));
+        window.history?.replaceState?.({}, title, url);
+      },
+      history_length: () => BigInt(window.history?.length || 0),
+      copy_to_clipboard: (textPtr) => {
+        const text = this.strings.get(Number(textPtr)) || this.readString(Number(textPtr));
+        navigator.clipboard?.writeText?.(text);
+      },
+      read_clipboard: () => {
+        // Async, returns empty string synchronously
+        return this.allocString('');
+      },
+      vibrate: (pattern) => navigator.vibrate?.(Number(pattern)),
+      share: (titlePtr, textPtr, urlPtr) => {
+        const title = this.strings.get(Number(titlePtr)) || this.readString(Number(titlePtr));
+        const text = this.strings.get(Number(textPtr)) || this.readString(Number(textPtr));
+        const url = this.strings.get(Number(urlPtr)) || this.readString(Number(urlPtr));
+        navigator.share?.({ title, text, url });
+      },
+      entry_type: () => BigInt(0), // Navigation type
+      domain: () => this.allocString(window.location?.hostname || ''),
+      time_remaining: () => BigInt(1000), // Idle callback time
+      set_start: (typePtr, namePtr, timePtr) => {}, // Performance mark
+      // Clone operations
+      clone: (ptr) => ptr, // Identity clone for reference types
+      clone_contents: (ptr) => ptr, // Clone contents (shallow)
+      get_item: (collectionPtr, index) => {
+        // Get item from collection - placeholder
+        return BigInt(0);
+      },
+    };
+  }
+
+  // ========== Crate Imports ==========
+  _crateImports() {
+    return {
+      Window: () => BigInt(1), // Window handle placeholder
+      Closure: () => BigInt(1), // Closure handle placeholder
     };
   }
 
@@ -466,18 +604,29 @@ export class SigilRuntime {
   _memoryImports() {
     return {
       alloc: (size) => {
-        // Simple bump allocator - in production would need proper allocator
-        return size; // Placeholder
+        // Simple bump allocator for async state machine frames
+        // Align to 8 bytes for i64 locals
+        const alignedSize = (size + 7) & ~7;
+        const ptr = this.heapPtr;
+        this.heapPtr += alignedSize;
+
+        // Grow memory if needed
+        if (this.memory && this.heapPtr > this.memory.buffer.byteLength) {
+          const pages = Math.ceil((this.heapPtr - this.memory.buffer.byteLength) / 65536);
+          this.memory.grow(pages);
+        }
+
+        return ptr;
       },
       realloc: (ptr, newSize) => {
-        return newSize; // Placeholder
+        // Simple realloc - just allocate new block (no copy for now)
+        return this._memoryImports().alloc(newSize);
       },
       free: (ptr) => {
-        // No-op for now
+        // No-op for bump allocator - frames are short-lived
       },
       heap_alloc: (size) => {
-        // Return size as pointer (simplified allocation)
-        return size;
+        return this._memoryImports().alloc(size);
       },
     };
   }
@@ -578,6 +727,14 @@ export class SigilRuntime {
         const arr = this.arrays.get(arrId);
         if (!arr || arr.length === 0) return BigInt(0);
         return BigInt(arr[Math.floor(Math.random() * arr.length)]);
+      },
+      vec_join: (arrId, sepPtr) => {
+        // Join array of string pointers with separator
+        const arr = this.arrays.get(arrId);
+        if (!arr || arr.length === 0) return this.allocString('');
+        const sep = this.strings.get(Number(sepPtr)) || this.readString(Number(sepPtr));
+        const strings = arr.map(ptr => this.strings.get(Number(ptr)) || this.readString(Number(ptr)));
+        return this.allocString(strings.join(sep));
       },
     };
   }
@@ -954,16 +1111,97 @@ export class SigilRuntime {
       yield_now: () => {
         // No-op in single-threaded JS
       },
+
+      // ========== State Machine Async Support ==========
+      // These functions support explicit state machine transformation
+      // as defined in ASYNC-STATE-MACHINE-SPEC.md §4.4
+
+      /**
+       * Create a continuation for an async state machine suspension.
+       *
+       * @param {number} framePtr - Pointer to the suspension frame in WASM memory
+       * @param {number} state - Next state to resume at
+       * @param {BigInt} promise - The promise/future value being awaited (as i64)
+       * @returns {number} Continuation ID to encode in return value
+       */
+      async_create_continuation: (framePtr, state, promise) => {
+        const contId = ++this.continuationCounter;
+
+        // Convert promise i64 to a JS Promise
+        // The promise value is an ID referencing a tracked promise
+        const promiseId = Number(promise);
+        const promiseEntry = this.fetches.get(promiseId);
+
+        this.continuations.set(contId, {
+          framePtr,
+          state,
+          promiseId,
+          promise: promiseEntry?.promise || Promise.resolve(promise),
+        });
+
+        return contId;
+      },
+
+      /**
+       * Run an async state machine function to completion.
+       *
+       * @param {string} funcName - Name of the exported WASM function
+       * @param {...any} args - Initial arguments to the function
+       * @returns {Promise<BigInt>} The final result value
+       */
+      async_run: async (funcName, ...args) => {
+        const func = this.instance.exports[funcName];
+        if (!func) throw new Error(`Function ${funcName} not found`);
+
+        // Initial call: frame_ptr = 0, resume_value = 0
+        let result = func(0, BigInt(0), ...args);
+
+        // Check for suspension (bit 32 set = SUSPENDED_FLAG)
+        const SUSPENDED_FLAG = BigInt(1) << BigInt(32);
+        const CONT_MASK = BigInt(0xFFFFFFFF);
+
+        while ((result & SUSPENDED_FLAG) !== BigInt(0)) {
+          const contId = Number(result & CONT_MASK);
+          const cont = this.continuations.get(contId);
+
+          if (!cont) {
+            throw new Error(`Continuation ${contId} not found`);
+          }
+
+          // Wait for the promise to resolve
+          let resolvedValue;
+          try {
+            resolvedValue = await cont.promise;
+            // Convert resolved value to i64
+            if (typeof resolvedValue === 'bigint') {
+              // Already BigInt
+            } else if (typeof resolvedValue === 'number') {
+              resolvedValue = BigInt(resolvedValue);
+            } else {
+              resolvedValue = BigInt(0);
+            }
+          } catch (err) {
+            // On error, we could propagate via a different mechanism
+            // For now, just return 0
+            console.error('Async error:', err);
+            resolvedValue = BigInt(0);
+          }
+
+          // Clean up continuation
+          this.continuations.delete(contId);
+
+          // Resume: call with frame_ptr and resolved value
+          result = func(cont.framePtr, resolvedValue);
+        }
+
+        // Complete - result is the final value (bits 31-0)
+        return result & CONT_MASK;
+      },
+
       await_promise: (promiseId) => {
         // Synchronous await not possible in JS - would need Asyncify
         const p = this.fetches.get(promiseId);
         return p && p.result !== undefined ? p.result : BigInt(0);
-      },
-      create_continuation: (smPtr, nextState) => {
-        return ++this.signalCounter;
-      },
-      resume: (smPtr, value) => {
-        // State machine resume - implementation depends on WASM async model
       },
     };
   }

@@ -1,0 +1,9 @@
+//! Minimal test for pure-Sigil runtime
+//! Tests print_int from prelude.sigil
+
+rite main() {
+    println_int(42);
+    println_int(0);
+    println_int(-123);
+    println_int(9876543210);
+}

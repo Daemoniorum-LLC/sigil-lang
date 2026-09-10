@@ -327,33 +327,17 @@ pub enum Token {
     // === Deprecated Rust Syntax ===
     // These tokens capture Rust-like syntax for helpful error messages
     // The parser maps these to Sigil equivalents in error messages
-    #[token("fn", |lex| lex.slice().to_string())]
-    #[token("let", |lex| lex.slice().to_string())]
-    #[token("mut", |lex| lex.slice().to_string())]
-    #[token("struct", |lex| lex.slice().to_string())]
-    #[token("enum", |lex| lex.slice().to_string())]
-    #[token("trait", |lex| lex.slice().to_string())]
-    #[token("impl", |lex| lex.slice().to_string())]
-    #[token("mod", |lex| lex.slice().to_string())]
-    #[token("use", |lex| lex.slice().to_string())]
-    #[token("pub", |lex| lex.slice().to_string())]
-    #[token("if", |lex| lex.slice().to_string())]
-    #[token("else", |lex| lex.slice().to_string())]
-    #[token("match", |lex| lex.slice().to_string())]
-    #[token("while", |lex| lex.slice().to_string())]
-    #[token("for", |lex| lex.slice().to_string())]
-    #[token("in", |lex| lex.slice().to_string())]
-    #[token("break", |lex| lex.slice().to_string())]
-    #[token("continue", |lex| lex.slice().to_string())]
-    #[token("return", |lex| lex.slice().to_string())]
+    // Deprecated Rust keywords - emit as deprecated for error messaging
+    // Note: All common Rust keywords are now handled as aliases for backwards compatibility.
+    // This variant is kept for future deprecation warnings if needed.
     DeprecatedRustKeyword(String),
 
     // Rust mutable reference &mut - use &Δ in Sigil
     #[token("&mut")]
     DeprecatedAmpMut,
 
-    // === Keywords (Native Sigil Syntax Only) ===
-    #[token("rite")]  // Rite - named function declaration (canonical Sigil keyword)
+    // === Keywords (Native Sigil Syntax) ===
+    #[token("rite")]  // Rite - named function declaration
     Fn,
     #[token("async")]
     #[token("⌛")]  // Hourglass - time/waiting (native symbol alternative)
@@ -362,6 +346,7 @@ pub enum Token {
     Let,
     #[token("Δ")]  // Delta - change/mutable
     #[token("vary")]  // Vary - mutable/changing (Sigil prose alternative)
+    #[token("mut")]  // G76: Rust-style mutable keyword for pointer types
     Mut,
     #[token("const")]
     #[token("◆")]  // Diamond - solid, fixed (native symbol alternative)
@@ -403,7 +388,7 @@ pub enum Token {
     #[token("macro_rules")]
     MacroRules,
 
-    // Control flow (Native Sigil Syntax Only)
+    // Control flow (Native Sigil Syntax)
     // Note: ∀ (ForAll token) is used contextually as `for` by parser
     // Note: ∈ (ElementOf token) is used contextually as `in` by parser
     // Note: ⊗ (Tensor token) is used contextually as `break` by parser
@@ -757,6 +742,9 @@ pub enum Token {
     #[token("◊")]
     Lozenge, // Predicted/speculative (U+25CA) - Token◊
 
+    #[token("⁂")]
+    Asterism, // Chaos/entropic (U+2042) - random⁂
+
     #[token("□")]
     BoxSquare, // Necessity/verification (U+25A1) - |□verify
 
@@ -874,7 +862,7 @@ pub enum Token {
     #[token("|")]
     Pipe,
     #[token("·")]
-    MiddleDot, // Incorporation
+    MiddleDot, // Incorporation / Path separator
     #[token("->")]
     #[token("→")]  // Unicode arrow (U+2192) - native Sigil syntax
     Arrow,
@@ -952,9 +940,6 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    // Deprecated Rust operator - use · (middledot) for paths
-    #[token("::")]
-    DeprecatedColonColon,
     #[token(":")]
     Colon,
     #[token(";")]
@@ -1671,12 +1656,12 @@ mod tests {
     #[test]
     fn test_lifetime_labels() {
         // Test loop labels
-        let mut lexer = Lexer::new("'outer: loop { break 'outer }");
+        let mut lexer = Lexer::new("'outer: loop { ⊗ 'outer }");
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::Colon, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Loop, _))));
         assert!(matches!(lexer.next_token(), Some((Token::LBrace, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::DeprecatedRustKeyword(s), _)) if s == "break"));
+        assert!(matches!(lexer.next_token(), Some((Token::Tensor, _))));  // ⊗ is native Sigil break
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::RBrace, _))));
     }

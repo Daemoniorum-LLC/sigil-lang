@@ -1,49 +1,48 @@
-// Simple const generic struct
-struct FixedVec<const N: usize> {
-    data: Vec<i32>,
+struct FixedArray<T, const N: usize> {
+    data: [T; N],
 }
 
-impl<const N: usize> FixedVec<N> {
-    fn new() -> Self {
-        let mut v = Vec::new();
-        for _ in 0..N {
-            v.push(0);
-        }
-        FixedVec { data: v }
+impl<T, const N: usize> FixedArray<T, N> {
+    fn new(default: T) -> Self
+    where
+        T: Copy,
+    {
+        Self { data: [default; N] }
     }
 
     fn len(&self) -> usize {
-        self.data.len()
-    }
-
-    fn capacity(&self) -> usize {
         N
     }
-}
 
-// Multiple const generics
-struct Dims<const ROWS: usize, const COLS: usize> {
-    rows: usize,
-    cols: usize,
-}
-
-impl<const ROWS: usize, const COLS: usize> Dims<ROWS, COLS> {
-    fn new() -> Self {
-        Dims { rows: ROWS, cols: COLS }
+    fn get(&self, index: usize) -> Option<&T> {
+        if index < N {
+            Some(&self.data[index])
+        } else {
+            None
+        }
     }
+}
 
-    fn total(&self) -> usize {
+struct Matrix<T, const ROWS: usize, const COLS: usize> {
+    data: [[T; COLS]; ROWS],
+}
+
+impl<T, const ROWS: usize, const COLS: usize> Matrix<T, ROWS, COLS> {
+    fn rows(&self) -> usize {
+        ROWS
+    }
+    fn cols(&self) -> usize {
+        COLS
+    }
+    fn size(&self) -> usize {
         ROWS * COLS
     }
 }
 
 fn main() {
-    // Const generic constructor
-    let v = FixedVec::<5>::new();
-    println!("{}", v.len());
-    println!("{}", v.capacity());
+    let arr: FixedArray<i32, 5> = FixedArray::new(0);
+    println!("{}", arr.len());
 
-    // Multiple const generics
-    let d = Dims::<3, 4>::new();
-    println!("{}", d.total());
+    let mat: Matrix<f64, 3, 4> = Matrix { data: [[0.0; 4]; 3] };
+    println!("{}", mat.size());
 }

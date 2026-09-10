@@ -132,7 +132,7 @@
 // ============================================================================
 
 /// Macro ∀ defining communicating agents
-#[macro_export]
+// macro_export
 macro_rules! communicating_agent {
     (
         name: $name:expr,

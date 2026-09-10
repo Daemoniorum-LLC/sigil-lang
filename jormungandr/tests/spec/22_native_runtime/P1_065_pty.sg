@@ -1,0 +1,68 @@
+// Test: Pseudo-terminal (PTY) creation and I/O
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - PTY creation
+// Priority: P1
+//
+// Purpose:
+// Validates that Pty·open() creates a master/slave pseudo-terminal pair,
+// that data can be written to the master and read back, and that the PTY
+// can be properly closed. This is the most critical primitive for Morgoth.
+//
+// Expected behavior:
+// - Pty·open() returns {master_fd, slave_fd} with valid fds (>= 0)
+// - Pty·set_size(master_fd, rows, cols) returns 0 on success
+// - Pty·get_name(slave_fd) returns the slave device path (e.g. /dev/pts/N)
+// - Writing to master is readable from slave and vice versa
+
+rite main() {
+    // Test 1: Open a PTY pair
+    ≔ pty = Pty·open();
+    ⎇ pty.master_fd >= 0 ∧ pty.slave_fd >= 0 {
+        println("pty_open: OK");
+    } ⎉ {
+        println("pty_open: FAILED");
+    }
+
+    // Test 2: Master and slave fds should be different
+    ⎇ pty.master_fd != pty.slave_fd {
+        println("pty_fds_distinct: OK");
+    } ⎉ {
+        println("pty_fds_distinct: FAILED");
+    }
+
+    // Test 3: Set PTY window size
+    ≔ size_result = Pty·set_size(pty.master_fd, 24, 80);
+    ⎇ size_result == 0 {
+        println("pty_set_size: OK");
+    } ⎉ {
+        println("pty_set_size: FAILED");
+    }
+
+    // Test 4: Get slave device name
+    ≔ name = Pty·get_name(pty.slave_fd);
+    ⎇ name != "" {
+        println("pty_get_name: OK");
+    } ⎉ {
+        println("pty_get_name: FAILED");
+    }
+
+    // Test 5: PTY I/O roundtrip — write to master, read from slave
+    ≔ pty_msg = "hello pty";
+    ≔ pty_written = Sys·write(pty.master_fd, pty_msg, 9);
+    ⎇ pty_written == 9 {
+        println("pty_write: OK");
+    } ⎉ {
+        println("pty_write: FAILED");
+    }
+
+    // Test 6: Read from slave should get the data written to master
+    ≔ pty_nread = Sys·read(pty.slave_fd, 0, 9);
+    ⎇ pty_nread == 9 {
+        println("pty_read: OK");
+    } ⎉ {
+        println("pty_read: FAILED");
+    }
+
+    // Cleanup
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+}

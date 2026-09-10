@@ -1,0 +1,20 @@
+// Test G24: Nested loop index expressions
+// This triggers "Instruction does not dominate all uses" error
+// when v*outf is computed in outer loop but used in inner loop
+
+rite main() {
+    ≔ nv = 3;
+    ≔ outf = 4;
+    ≔ vary output = vec![0; 12];
+
+    ∀ v ∈ 0..nv {
+        ∀ j ∈ 0..outf {
+            output[v * outf + j] = v * 10 + j;
+        }
+    }
+
+    // Verify output
+    ∀ i ∈ 0..12 {
+        println!("{}", output[i]);
+    }
+}

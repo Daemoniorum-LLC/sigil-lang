@@ -1,0 +1,13 @@
+//! Test Vec<u8> operations
+
+rite main() {
+    ≔ vary bytes: Vec<u8> = vec![];
+    bytes.push(65);  // 'A'
+    bytes.push(66);  // 'B'
+    bytes.push(67);  // 'C'
+
+    println_int(bytes.len() as i64);
+    println_int(bytes[0] as i64);
+    println_int(bytes[1] as i64);
+    println_int(bytes[2] as i64);
+}

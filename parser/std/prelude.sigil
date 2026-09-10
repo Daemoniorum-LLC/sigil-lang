@@ -1,0 +1,101 @@
+//! Sigil Native Runtime Prelude
+//!
+//! Core runtime functionality implemented in pure Sigil.
+//! Uses compiler-recognized intrinsic functions for low-level operations.
+
+// Intrinsic functions - implemented directly by LLVM backend
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+    rite __intrinsic_exit(code: i64);
+    rite __intrinsic_sqrt(x: f64) -> f64;
+    rite __intrinsic_sin(x: f64) -> f64;
+    rite __intrinsic_cos(x: f64) -> f64;
+    rite __intrinsic_exp(x: f64) -> f64;
+    rite __intrinsic_log(x: f64) -> f64;
+    rite __intrinsic_pow(x: f64, y: f64) -> f64;
+    rite __intrinsic_floor(x: f64) -> f64;
+    rite __intrinsic_ceil(x: f64) -> f64;
+    rite __intrinsic_fabs(x: f64) -> f64;
+}
+
+// I/O Functions
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() {
+    write_byte(10);
+}
+
+rite print_int(n: i64) {
+    ⎇ n == 0 {
+        write_byte(48);
+        ⤺
+    } ⎉ {}
+
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+
+    ⎇ num < 0 {
+        negative = true;
+        num = 0 - num;
+    } ⎉ {}
+
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+
+    ⎇ negative {
+        write_byte(45);
+    } ⎉ {}
+
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) {
+    print_int(n);
+    print_newline();
+}
+
+// Math Functions (wrappers around intrinsics)
+rite sqrt(x: f64) → f64 { __intrinsic_sqrt(x) }
+rite sin(x: f64) → f64 { __intrinsic_sin(x) }
+rite cos(x: f64) → f64 { __intrinsic_cos(x) }
+rite exp(x: f64) → f64 { __intrinsic_exp(x) }
+rite ln(x: f64) → f64 { __intrinsic_log(x) }
+rite pow(x: f64, y: f64) → f64 { __intrinsic_pow(x, y) }
+rite floor(x: f64) → f64 { __intrinsic_floor(x) }
+rite ceil(x: f64) → f64 { __intrinsic_ceil(x) }
+rite abs_f64(x: f64) → f64 { __intrinsic_fabs(x) }
+
+rite abs(x: i64) → i64 {
+    ⎇ x < 0 { 0 - x } ⎉ { x }
+}
+
+rite min(a: i64, b: i64) → i64 {
+    ⎇ a < b { a } ⎉ { b }
+}
+
+rite max(a: i64, b: i64) → i64 {
+    ⎇ a > b { a } ⎉ { b }
+}

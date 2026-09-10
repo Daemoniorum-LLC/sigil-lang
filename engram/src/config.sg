@@ -1,491 +1,97 @@
 // Engram Configuration
-// Configuration types ∀ all memory subsystems
-
-module engram·config
-
-invoke engram·types·*
+// Configuration types for all memory subsystems
 
 // ============================================================================
 // Main Configuration
 // ============================================================================
 
-/// Complete configuration ∀ an Engram instance
+/// Complete configuration for an Engram instance
 ☉ Σ EngramConfig {
-    /// Agent identity (auto-generated ⎇ not provided)
-    ☉ agent_id: Option<AgentId>,
+    /// Storage path
+    path: String,
 
-    /// Instant memory configuration
-    ☉ instant: InstantConfig,
+    /// Maximum episodes to retain
+    max_episodes: Int,
 
-    /// Episodic memory configuration
-    ☉ episodic: EpisodicConfig,
+    /// Decay rate per hour
+    decay_rate: Float,
 
-    /// Semantic memory configuration
-    ☉ semantic: SemanticConfig,
-
-    /// Procedural memory configuration
-    ☉ procedural: ProceduralConfig,
-
-    /// Vector index configuration
-    ☉ vector: VectorConfig,
-
-    /// Storage configuration
-    ☉ storage: StorageConfig,
-
-    /// Embedding configuration
-    ☉ embedding: EmbeddingConfig,
-
-    /// Distribution configuration
-    ☉ distribution: DistributionConfig,
-
-    /// Background process configuration
-    ☉ consolidation: ConsolidationConfig,
+    /// Auto-consolidation enabled
+    consolidation_enabled: Bool,
 }
 
 ⊢ EngramConfig {
-    /// Default configuration suitable ∀ most invoke cases
-    ☉ rite default() -> Self {
-        Self {
-            agent_id: None,
-            instant: InstantConfig·default(),
-            episodic: EpisodicConfig·default(),
-            semantic: SemanticConfig·default(),
-            procedural: ProceduralConfig·default(),
-            vector: VectorConfig·default(),
-            storage: StorageConfig·default(),
-            embedding: EmbeddingConfig·default(),
-            distribution: DistributionConfig·default(),
-            consolidation: ConsolidationConfig·default(),
+    /// Default configuration suitable for most use cases
+    ☉ rite default() {
+        EngramConfig {
+            path: env("HOME") + "/.morgoth/engram",
+            max_episodes: 10000,
+            decay_rate: 0.1,
+            consolidation_enabled: true,
         }
     }
 
-    /// Configuration ∀ agents with large context windows
-    ☉ rite high_memory() -> Self {
-        Self {
-            instant: InstantConfig {
-                capacity: TokenCount(128000),
-                ..InstantConfig·default()
-            },
-            ..Self·default()
-        }
-    }
-
-    /// Configuration ∀ resource-constrained environments
-    ☉ rite low_memory() -> Self {
-        Self {
-            instant: InstantConfig {
-                capacity: TokenCount(2000),
-                compression_strategy: CompressionStrategy·Aggressive,
-                ..InstantConfig·default()
-            },
-            episodic: EpisodicConfig {
-                max_active_episodes: 1000,
-                ..EpisodicConfig·default()
-            },
-            ..Self·default()
-        }
-    }
-
-    /// Configuration ∀ multi-agent deployments
-    ☉ rite distributed() -> Self {
-        Self {
-            distribution: DistributionConfig {
-                enabled: true,
-                scope_defaults: ScopeDefaults·agent_shared(),
-                sync: SyncSettings {
-                    strategy: SyncStrategy·CRDT,
-                    interval: Duration·from_secs(60),
-                    on_change: true,
-                },
-                ..DistributionConfig·default()
-            },
-            ..Self·default()
+    /// Configuration with a custom path
+    ☉ rite new(path) {
+        EngramConfig {
+            path: path,
+            max_episodes: 10000,
+            decay_rate: 0.1,
+            consolidation_enabled: true,
         }
     }
 
     /// Configuration with no persistence (memory only)
-    ☉ rite ephemeral() -> Self {
-        Self {
-            storage: StorageConfig {
-                backend: StorageBackend·Memory,
-                ..StorageConfig·default()
-            },
-            ..Self·default()
+    ☉ rite ephemeral() {
+        EngramConfig {
+            path: "",
+            max_episodes: 1000,
+            decay_rate: 0.5,
+            consolidation_enabled: false,
         }
     }
 }
 
 // ============================================================================
-// Instant Memory Configuration
+// Storage Backend
 // ============================================================================
 
-/// Configuration ∀ instant (working) memory
-☉ Σ InstantConfig {
-    /// Maximum token capacity
-    ☉ capacity: TokenCount,
-
-    /// Decay rate per tick (0.0 - 1.0)
-    ☉ decay_rate: f64,
-
-    /// Threshold below which items are evicted
-    ☉ eviction_threshold: f64,
-
-    /// Strategy ∀ handling capacity overflow
-    ☉ compression_strategy: CompressionStrategy,
-
-    /// Token counter implementation
-    ☉ token_counter: TokenCounterType,
+/// Storage backend for engram data
+☉ Σ FileBackend {
+    path: String,
+    max_file_size: Int,
 }
 
-⊢ InstantConfig {
-    ☉ rite default() -> Self {
-        Self {
-            capacity: TokenCount(8000),
-            decay_rate: 0.05,
-            eviction_threshold: 0.1,
-            compression_strategy: CompressionStrategy·EvictLowest,
-            token_counter: TokenCounterType·Approximate,
+⊢ FileBackend {
+    ☉ rite new(path) {
+        FileBackend {
+            path: path,
+            max_file_size: 104857600,
         }
     }
-}
 
-☉ ᛈ CompressionStrategy {
-    /// Simply evict the lowest priority item
-    EvictLowest,
-
-    /// Compress lowest priority items
-    Compress { target_ratio: f64 },
-
-    /// Summarize batches of low-priority items
-    SummarizeBatch { batch_size: usize, target_tokens: TokenCount },
-
-    /// Aggressive compression ∀ constrained environments
-    Aggressive,
-}
-
-☉ ᛈ TokenCounterType {
-    /// Fast approximation (~4 chars per token)
-    Approximate,
-
-    /// Use tiktoken ∀ accurate counting
-    Tiktoken { model: String },
-
-    /// Custom counter function
-    Custom { counter: rite(&str) -> usize },
-}
-
-// ============================================================================
-// Episodic Memory Configuration
-// ============================================================================
-
-/// Configuration ∀ episodic memory
-☉ Σ EpisodicConfig {
-    /// Decay function ∀ memory strength
-    ☉ decay_function: DecayFunction,
-
-    /// Strength threshold ∀ consolidation eligibility
-    ☉ consolidation_threshold: f64,
-
-    /// Interval between consolidation runs
-    ☉ consolidation_interval: Duration,
-
-    /// Maximum number of active (non-archived) episodes
-    ☉ max_active_episodes: usize,
-
-    /// Minimum significance to prevent automatic archival
-    ☉ min_significance_to_keep: f64,
-}
-
-⊢ EpisodicConfig {
-    ☉ rite default() -> Self {
-        Self {
-            decay_function: DecayFunction·Exponential { lambda: 0.1 },
-            consolidation_threshold: 0.3,
-            consolidation_interval: Duration·from_hours(6),
-            max_active_episodes: 10000,
-            min_significance_to_keep: 0.1,
+    ☉ rite default() {
+        FileBackend {
+            path: env("HOME") + "/.morgoth/engram",
+            max_file_size: 104857600,
         }
     }
-}
-
-☉ ᛈ DecayFunction {
-    /// Exponential decay: strength *= e^(-ritet)
-    Exponential { lambda: f64 },
-
-    /// Linear decay: strength -= rate * t
-    Linear { rate: f64 },
-
-    /// Power law decay: strength *= t^(-α)
-    PowerLaw { alpha: f64 },
-
-    /// No decay
-    None,
-}
-
-⊢ DecayFunction {
-    ☉ rite apply(strength: f64, elapsed_hours: f64) -> f64 {
-        ⌥ self {
-            DecayFunction·Exponential { lambda } => {
-                strength * (-lambda * elapsed_hours).exp()
-            },
-            DecayFunction·Linear { rate } => {
-                (strength - rate * elapsed_hours).max(0.0)
-            },
-            DecayFunction·PowerLaw { alpha } => {
-                strength * (1.0 + elapsed_hours).powf(-alpha)
-            },
-            DecayFunction·None => strength,
-        }
-    }
-}
-
-// ============================================================================
-// Semantic Memory Configuration
-// ============================================================================
-
-/// Configuration ∀ semantic memory
-☉ Σ SemanticConfig {
-    /// Maximum number of nodes (None ∀ unlimited)
-    ☉ max_nodes: Option<usize>,
-
-    /// Maximum edges per node
-    ☉ max_edges_per_node: usize,
-
-    /// Strategy ∀ handling belief conflicts
-    ☉ belief_conflict_strategy: ConflictStrategy,
-
-    /// Threshold ∀ automatic linking of similar nodes
-    ☉ auto_link_threshold: f64,
-}
-
-⊢ SemanticConfig {
-    ☉ rite default() -> Self {
-        Self {
-            max_nodes: None,
-            max_edges_per_node: 100,
-            belief_conflict_strategy: ConflictStrategy·MarkContested,
-            auto_link_threshold: 0.8,
-        }
-    }
-}
-
-☉ ᛈ ConflictStrategy {
-    /// Keep newest version
-    TakeNewest,
-
-    /// Keep highest confidence version
-    TakeHighestConfidence,
-
-    /// Mark as contested, keep both
-    MarkContested,
-
-    /// Attempt to merge
-    Merge,
-
-    /// Custom resolution function
-    Custom { resolver: rite(old: &Node, new: &Node) -> Node },
-}
-
-// ============================================================================
-// Procedural Memory Configuration
-// ============================================================================
-
-/// Configuration ∀ procedural memory
-☉ Σ ProceduralConfig {
-    /// Minimum episodes needed to extract a skill
-    ☉ min_episodes_for_skill: usize,
-
-    /// Minimum success rate ∀ skill retention
-    ☉ skill_success_threshold: f64,
-
-    /// Threshold ∀ pattern matching
-    ☉ pattern_match_threshold: f64,
-
-    /// Maximum number of skills (None ∀ unlimited)
-    ☉ max_skills: Option<usize>,
-}
-
-⊢ ProceduralConfig {
-    ☉ rite default() -> Self {
-        Self {
-            min_episodes_for_skill: 3,
-            skill_success_threshold: 0.5,
-            pattern_match_threshold: 0.6,
-            max_skills: None,
-        }
-    }
-}
-
-// ============================================================================
-// Vector Index Configuration
-// ============================================================================
-
-/// Configuration ∀ HNSW vector index
-☉ Σ VectorConfig {
-    /// Embedding dimensions
-    ☉ dimensions: usize,
-
-    /// Max connections per node per layer
-    ☉ m: usize,
-
-    /// Build-time search beam width
-    ☉ ef_construction: usize,
-
-    /// Query-time search beam width
-    ☉ ef_search: usize,
-
-    /// Distance metric
-    ☉ metric: DistanceMetric,
-}
-
-⊢ VectorConfig {
-    ☉ rite default() -> Self {
-        Self {
-            dimensions: 384,  // MiniLM-L6 default
-            m: 16,
-            ef_construction: 200,
-            ef_search: 50,
-            metric: DistanceMetric·Cosine,
-        }
-    }
-}
-
-☉ ᛈ DistanceMetric {
-    Cosine,
-    Euclidean,
-    DotProduct,
-}
-
-// ============================================================================
-// Storage Configuration
-// ============================================================================
-
-/// Configuration ∀ storage layer
-☉ Σ StorageConfig {
-    /// Storage backend
-    ☉ backend: StorageBackend,
-
-    /// Hot store configuration
-    ☉ hot: HotStoreConfig,
-
-    /// Warm store configuration
-    ☉ warm: WarmStoreConfig,
-
-    /// Cold store configuration
-    ☉ cold: ColdStoreConfig,
-}
-
-⊢ StorageConfig {
-    ☉ rite default() -> Self {
-        Self {
-            backend: StorageBackend·File { path: "./engram_data".to_string() },
-            hot: HotStoreConfig·default(),
-            warm: WarmStoreConfig·default(),
-            cold: ColdStoreConfig·default(),
-        }
-    }
-}
-
-☉ ᛈ StorageBackend {
-    /// In-memory only (no persistence)
-    Memory,
-
-    /// File-based storage
-    File { path: String },
-
-    /// SQLite database
-    SQLite { path: String },
-
-    /// Redis
-    Redis { url: String },
-
-    /// Custom backend
-    Custom { name: String, config: Value },
-}
-
-☉ Σ HotStoreConfig {
-    ☉ capacity: ByteSize,
-    ☉ eviction_policy: EvictionPolicy,
-}
-
-⊢ HotStoreConfig {
-    ☉ rite default() -> Self {
-        Self {
-            capacity: ByteSize·mb(256),
-            eviction_policy: EvictionPolicy·LRU,
-        }
-    }
-}
-
-☉ Σ WarmStoreConfig {
-    ☉ memtable_size: ByteSize,
-    ☉ level_size_multiplier: usize,
-    ☉ bloom_filter_fp_rate: f64,
-}
-
-⊢ WarmStoreConfig {
-    ☉ rite default() -> Self {
-        Self {
-            memtable_size: ByteSize·mb(64),
-            level_size_multiplier: 10,
-            bloom_filter_fp_rate: 0.01,
-        }
-    }
-}
-
-☉ Σ ColdStoreConfig {
-    ☉ segment_size: ByteSize,
-    ☉ compression_level: u32,
-    ☉ sparse_index_interval: usize,
-}
-
-⊢ ColdStoreConfig {
-    ☉ rite default() -> Self {
-        Self {
-            segment_size: ByteSize·mb(256),
-            compression_level: 19,  // Max zstd
-            sparse_index_interval: 1000,
-        }
-    }
-}
-
-☉ ᛈ EvictionPolicy {
-    LRU,
-    LFU,
-    FIFO,
-}
-
-☉ Σ ByteSize(☉ usize)
-
-⊢ ByteSize {
-    ☉ rite kb(n: usize) -> Self { ByteSize(n * 1024) }
-    ☉ rite mb(n: usize) -> Self { ByteSize(n * 1024 * 1024) }
-    ☉ rite gb(n: usize) -> Self { ByteSize(n * 1024 * 1024 * 1024) }
 }
 
 // ============================================================================
 // Embedding Configuration
 // ============================================================================
 
-/// Configuration ∀ embedding generation
+/// Configuration for embedding generation
 ☉ Σ EmbeddingConfig {
-    /// Embedding model to use
-    ☉ model: EmbeddingModel,
-
-    /// Output dimensions
-    ☉ dimensions: usize,
-
-    /// Whether to normalize embeddings
-    ☉ normalize: bool,
-
-    /// Batch size ∀ embedding generation
-    ☉ batch_size: usize,
+    dimensions: Int,
+    normalize: Bool,
+    batch_size: Int,
 }
 
 ⊢ EmbeddingConfig {
-    ☉ rite default() -> Self {
-        Self {
-            model: EmbeddingModel·MiniLM_L6,
+    ☉ rite default() {
+        EmbeddingConfig {
             dimensions: 384,
             normalize: true,
             batch_size: 32,
@@ -493,149 +99,46 @@ invoke engram·types·*
     }
 }
 
-☉ ᛈ EmbeddingModel {
-    /// Fast, good quality
-    MiniLM_L6,
-
-    /// Better quality, slower
-    BGE_Small,
-
-    /// External OpenAI API
-    OpenAI { model: String },
-
-    /// External API
-    External { url: String, model: String },
-
-    /// Custom ONNX model
-    Custom { path: String },
-}
-
 // ============================================================================
 // Distribution Configuration
 // ============================================================================
 
-/// Configuration ∀ distribution and synchronization
+/// Configuration for distribution and synchronization
 ☉ Σ DistributionConfig {
-    /// Enable distribution features
-    ☉ enabled: bool,
-
-    /// Default scopes ∀ different memory types
-    ☉ scope_defaults: ScopeDefaults,
-
-    /// Sync settings
-    ☉ sync: SyncSettings,
-
-    /// Authentication configuration
-    ☉ auth: Option<AuthConfig>,
-
-    /// Encryption configuration
-    ☉ encryption: Option<EncryptionConfig>,
+    enabled: Bool,
+    sync_interval_secs: Int,
+    on_change: Bool,
 }
 
 ⊢ DistributionConfig {
-    ☉ rite default() -> Self {
-        Self {
+    ☉ rite default() {
+        DistributionConfig {
             enabled: false,
-            scope_defaults: ScopeDefaults·default(),
-            sync: SyncSettings·default(),
-            auth: None,
-            encryption: None,
-        }
-    }
-}
-
-☉ Σ ScopeDefaults {
-    ☉ instant: Scope,
-    ☉ episodic: Scope,
-    ☉ semantic: Scope,
-    ☉ procedural: Scope,
-}
-
-⊢ ScopeDefaults {
-    ☉ rite default() -> Self {
-        Self {
-            instant: Scope·Instance { instance_id: "".to_string() },
-            episodic: Scope·Instance { instance_id: "".to_string() },
-            semantic: Scope·Instance { instance_id: "".to_string() },
-            procedural: Scope·Instance { instance_id: "".to_string() },
-        }
-    }
-
-    ☉ rite agent_shared() -> Self {
-        Self {
-            instant: Scope·Instance { instance_id: "".to_string() },
-            episodic: Scope·Instance { instance_id: "".to_string() },
-            semantic: Scope·Agent { agent_id: "".to_string() },
-            procedural: Scope·Agent { agent_id: "".to_string() },
-        }
-    }
-}
-
-☉ Σ SyncSettings {
-    ☉ strategy: SyncStrategy,
-    ☉ interval: Duration,
-    ☉ on_change: bool,
-}
-
-⊢ SyncSettings {
-    ☉ rite default() -> Self {
-        Self {
-            strategy: SyncStrategy·CRDT,
-            interval: Duration·from_secs(300),
+            sync_interval_secs: 300,
             on_change: false,
         }
     }
-}
-
-☉ ᛈ SyncStrategy {
-    CRDT,
-    Consensus,
-    Manual,
-}
-
-☉ Σ AuthConfig {
-    ☉ method: AuthMethod,
-    ☉ token_ttl: Duration,
-}
-
-☉ ᛈ AuthMethod {
-    SharedKey { key: String },
-    PKI { cert_path: String, key_path: String },
-    OAuth { provider: String, client_id: String },
-}
-
-☉ Σ EncryptionConfig {
-    ☉ at_rest: bool,
-    ☉ in_transit: bool,
-    ☉ algorithm: String,
 }
 
 // ============================================================================
 // Consolidation Configuration
 // ============================================================================
 
-/// Configuration ∀ background consolidation process
+/// Configuration for background consolidation process
 ☉ Σ ConsolidationConfig {
-    /// Enable automatic consolidation
-    ☉ enabled: bool,
-
-    /// Interval between consolidation runs
-    ☉ interval: Duration,
-
-    /// Run consolidation on low activity
-    ☉ on_idle: bool,
-
-    /// Maximum duration ∀ a single consolidation run
-    ☉ max_duration: Duration,
+    enabled: Bool,
+    interval_hours: Int,
+    on_idle: Bool,
+    max_duration_secs: Int,
 }
 
 ⊢ ConsolidationConfig {
-    ☉ rite default() -> Self {
-        Self {
+    ☉ rite default() {
+        ConsolidationConfig {
             enabled: true,
-            interval: Duration·from_hours(6),
+            interval_hours: 6,
             on_idle: true,
-            max_duration: Duration·from_secs(60),
+            max_duration_secs: 60,
         }
     }
 }

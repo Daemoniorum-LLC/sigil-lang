@@ -1143,6 +1143,25 @@ impl WasmCompiler {
             Stmt::Let {
                 pattern, init, ..
             } => {
+                // Extract type information from init expression
+                // This is used to resolve method calls like app·view()
+                let init_type = init.as_ref().and_then(|val| {
+                    match val {
+                        crate::ast::Expr::Struct { path, .. } => {
+                            // Struct initialization: PlatformApp { ... } -> "PlatformApp"
+                            path.segments.last().map(|s| s.ident.name.clone())
+                        }
+                        _ => None,
+                    }
+                });
+
+                // Record variable type if we have pattern name and type
+                if let Some(ref type_name) = init_type {
+                    if let crate::ast::Pattern::Ident { name, .. } = pattern {
+                        self.var_types.insert(name.name.clone(), type_name.clone());
+                    }
+                }
+
                 // Compile init value
                 if let Some(val) = init {
                     self.compile_expr(val)?;

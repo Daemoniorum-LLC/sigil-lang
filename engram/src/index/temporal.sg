@@ -1,7 +1,6 @@
 // Temporal Index
 // B+ Tree based index ∀ time-range queries
 
-module engram·index·temporal
 
 invoke engram·types·*
 invoke std·collections·BTreeMap
@@ -229,11 +228,11 @@ invoke std·collections·BTreeMap
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_insert_and_range() {
         ≔ Δ index = TemporalIndex·new();
 
@@ -249,7 +248,7 @@ scroll tests {
         assert_eq!(range.len(), 3);
     }
 
-    #[test]
+    //@ rune: test
     rite test_recent() {
         ≔ Δ index = TemporalIndex·with_bucket_duration(Duration·from_secs(1));
 

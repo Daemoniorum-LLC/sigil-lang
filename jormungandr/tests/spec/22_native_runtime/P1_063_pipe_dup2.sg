@@ -1,0 +1,60 @@
+// Test: Pipe creation and fd duplication
+// Spec: MORGOTH-SPEC.md § 2.2 Required Primitives - Pipe creation
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·pipe() creates a unidirectional pipe (read_fd, write_fd)
+// and Sys·dup2() duplicates file descriptors. These are prerequisites for
+// process spawning with I/O redirection.
+//
+// Expected behavior:
+// - Sys·pipe() returns {read_fd, write_fd} with valid fds (>= 0)
+// - Writing to write_fd and reading from read_fd transfers data
+// - Sys·dup2(old_fd, new_fd) returns new_fd on success
+
+rite main() {
+    // Test 1: Create pipe
+    ≔ pipe = Sys·pipe();
+    ⎇ pipe.read_fd >= 0 ∧ pipe.write_fd >= 0 {
+        println("pipe_create: OK");
+    } ⎉ {
+        println("pipe_create: FAILED");
+    }
+
+    // Test 2: Read and write fds should be different
+    ⎇ pipe.read_fd != pipe.write_fd {
+        println("pipe_fds_distinct: OK");
+    } ⎉ {
+        println("pipe_fds_distinct: FAILED");
+    }
+
+    // Test 3: Write to pipe then read back
+    ≔ msg = "hello pipe";
+    ≔ written = Sys·write(pipe.write_fd, msg, 10);
+    ⎇ written == 10 {
+        println("pipe_write: OK");
+    } ⎉ {
+        println("pipe_write: FAILED");
+    }
+
+    // Test 4: Read back from pipe — roundtrip validation
+    ≔ nread = Sys·read(pipe.read_fd, 0, 10);
+    ⎇ nread == 10 {
+        println("pipe_read: OK");
+    } ⎉ {
+        println("pipe_read: FAILED");
+    }
+
+    // Test 5: Dup2 - duplicate a fd
+    ≔ new_fd = Sys·dup2(pipe.read_fd, 50);
+    ⎇ new_fd == 50 {
+        println("dup2: OK");
+    } ⎉ {
+        println("dup2: FAILED");
+    }
+
+    // Cleanup
+    Sys·close(pipe.read_fd);
+    Sys·close(pipe.write_fd);
+    Sys·close(new_fd);
+}

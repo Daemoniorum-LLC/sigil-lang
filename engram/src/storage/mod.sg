@@ -1,7 +1,6 @@
 // Storage Module
 // Persistence layer ∀ Engram
 
-module engram·storage
 
 invoke engram·types·*
 invoke std·collections·HashMap
@@ -37,7 +36,7 @@ invoke std·path·{Path, PathBuf}
     rite close() -> Result<(), StorageError>;
 }
 
-#[derive(Debug)]
+//@ rune: derive(Debug)
 ☉ ᛈ StorageError {
     IoError(String),
     SerializationError(String),
@@ -312,7 +311,7 @@ invoke std·path·{Path, PathBuf}
             ≔ Δ header = [0u8; 9];
             ⌥ reader.read_exact(&Δ header) {
                 Ok(_) => {}
-                Err(e) ⎇ e.kind() == std·io·ErrorKind·UnexpectedEof => break,
+                Err(e) ⎇ e.kind() == std·io·ErrorKind·UnexpectedEof => ⊗,
                 Err(e) => ⤺ Err(StorageError·IoError(e.to_string())),
             }
 
@@ -530,13 +529,13 @@ invoke std·path·{Path, PathBuf}
     invoke super·*;
 
     /// Serialize a value to bytes (simple JSON)
-    ☉ rite serialize<T: serde·Serialize>(value: &T) -> Result<Vec<u8>, StorageError> {
+    rite serialize(value) {
         serde_json·to_vec(value)
             .map_err(|e| StorageError·SerializationError(e.to_string()))
     }
 
     /// Deserialize bytes to a value
-    ☉ rite deserialize<T: serde·de·DeserializeOwned>(bytes: &[u8]) -> Result<T, StorageError> {
+    rite deserialize(bytes) {
         serde_json·from_slice(bytes)
             .map_err(|e| StorageError·SerializationError(e.to_string()))
     }
@@ -546,11 +545,11 @@ invoke std·path·{Path, PathBuf}
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_memory_backend() {
         ≔ Δ backend = MemoryBackend·new();
 
@@ -564,7 +563,7 @@ scroll tests {
         assert!(!backend.exists("key1"));
     }
 
-    #[test]
+    //@ rune: test
     rite test_memory_backend_list_prefix() {
         ≔ Δ backend = MemoryBackend·new();
 

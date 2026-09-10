@@ -1,0 +1,26 @@
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn multiply(x: f64, y: f64) -> f64 {
+    x * y
+}
+
+fn identity<T>(value: T) -> T {
+    value
+}
+
+fn greet(name: String) -> String {
+    "Hello, ".to_string() + &name
+}
+
+fn is_positive(n: i32) -> bool {
+    n > 0
+}
+
+fn main() {
+    let sum = add(2, 3);
+    let product = multiply(2.5, 4.0);
+    println!("{}", sum);
+    println!("{}", product);
+}

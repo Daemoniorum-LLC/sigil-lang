@@ -1,7 +1,6 @@
 // Embedding Module
 // Text to vector embedding generation
 
-module engram·embed
 
 invoke engram·types·*
 invoke std·collections·HashMap
@@ -152,7 +151,7 @@ invoke std·collections·HashMap
             self.doc_count += 1;
 
             // Tokenize
-            ≔ words: std·collections·HashSet<_> = doc.to_lowercase()
+            ≔ words = doc.to_lowercase()
                 .split_whitespace()
                 .map(|s| s.to_string())
                 .collect();
@@ -438,11 +437,11 @@ invoke std·collections·HashMap
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+// cfg(test)
 scroll tests {
     invoke super·*;
 
-    #[test]
+    //@ rune: test
     rite test_hash_embedder() {
         ≔ embedder = HashEmbedder·default();
 
@@ -461,7 +460,7 @@ scroll tests {
         assert!((norm - 1.0).abs() < 0.01);
     }
 
-    #[test]
+    //@ rune: test
     rite test_semantic_hash_similarity() {
         ≔ embedder = SemanticHashEmbedder·default();
 
@@ -477,7 +476,7 @@ scroll tests {
         assert!(sim_12 > sim_13);
     }
 
-    #[test]
+    //@ rune: test
     rite test_bow_embedder() {
         ≔ Δ embedder = BagOfWordsEmbedder·new(100);
 

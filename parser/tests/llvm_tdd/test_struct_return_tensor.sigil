@@ -1,0 +1,62 @@
+//! TDD Test: Tensor struct return bug (GAP-2026-02-18)
+//!
+//! This test isolates the exact failure mode:
+//! - Tensor returned from method/function has corrupted fields
+//! - Simple structs work, Tensor does not
+//!
+//! Expected: All assertions pass
+//! Actual: Tensor return fails (numel = 0 instead of expected value)
+
+invoke nihil_core·{Tensor, DynShape, Cpu};
+
+// Test 1: Simple struct return (baseline - should work)
+Σ Point { x: i64, y: i64 }
+
+rite make_point() → Point {
+    Point { x: 42, y: 99 }
+}
+
+// Test 2: Tensor return from standalone function
+rite make_tensor() → Tensor<DynShape, f32, Cpu> {
+    Tensor·randn([2, 3])?
+}
+
+// Test 3: Tensor return from method
+⊢ Tensor<S, D, Dev> {
+    rite clone_as_dyn(&this) → Tensor<DynShape, D, Dev> {
+        // Create new tensor with same shape
+        ≔ shape = this.shape_runtime();
+        Tensor·randn(shape)?
+    }
+}
+
+rite main() {
+    println!("=== TDD: Tensor Struct Return ===");
+
+    // Test 1: Simple struct (baseline)
+    println!("[TEST 1] Simple struct return...");
+    ≔ p = make_point();
+    assert_eq!(p.x, 42, "Point.x should be 42");
+    assert_eq!(p.y, 99, "Point.y should be 99");
+    println!("[PASS] Simple struct works");
+
+    // Test 2: Tensor from function
+    println!("[TEST 2] Tensor from function...");
+    ≔ t = make_tensor();
+    ≔ n = t.numel();
+    println!("  numel = {} (expected 6)", n);
+    assert_eq!(n, 6, "Tensor numel should be 6 (2*3)");
+    println!("[PASS] Tensor from function works");
+
+    // Test 3: Tensor from method
+    println!("[TEST 3] Tensor from method...");
+    ≔ orig = Tensor·randn([4, 5])?;
+    println!("  orig.numel = {}", orig.numel());
+    ≔ cloned = orig.clone_as_dyn();
+    ≔ cloned_n = cloned.numel();
+    println!("  cloned.numel = {} (expected 20)", cloned_n);
+    assert_eq!(cloned_n, 20, "Cloned tensor numel should be 20 (4*5)");
+    println!("[PASS] Tensor from method works");
+
+    println!("=== ALL TESTS PASSED ===");
+}

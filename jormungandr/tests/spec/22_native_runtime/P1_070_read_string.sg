@@ -1,0 +1,75 @@
+// Test: Sys·read_string — read data from fd as a string
+// Spec: MORGOTH-SPEC.md § Phase 1.0 Gap 1 - read_string
+// Priority: P1
+//
+// Purpose:
+// Validates that Sys·read_string(fd, max_len) returns the actual data
+// from a file descriptor as a Value::String, unlike Sys·read which only
+// returns byte count and stores data in FAKE_PTR_MAP.
+//
+// Expected behavior:
+// - Sys·read_string from pipe after write returns the written data
+// - Sys·read_string from PTY after write returns the written data
+// - Sys·read_string from empty pipe/PTY returns ""
+// - Sys·read_string from invalid fd returns ""
+
+rite main() {
+    // Test 1: Read string from pipe after write
+    ≔ pipe = Sys·pipe();
+    ≔ msg = "hello morgoth";
+    Sys·write(pipe.write_fd, msg, 13);
+    ≔ result = Sys·read_string(pipe.read_fd, 256);
+    ⎇ result == "hello morgoth" {
+        println("read_string_pipe: OK");
+    } ⎉ {
+        println("read_string_pipe: FAILED");
+    }
+
+    // Test 2: Read string from PTY after write
+    ≔ pty = Pty·open();
+    ≔ pty_msg = "pty data";
+    Sys·write(pty.master_fd, pty_msg, 8);
+    ≔ pty_result = Sys·read_string(pty.slave_fd, 256);
+    ⎇ pty_result == "pty data" {
+        println("read_string_pty: OK");
+    } ⎉ {
+        println("read_string_pty: FAILED");
+    }
+
+    // Test 3: Read from empty pipe returns ""
+    ≔ pipe2 = Sys·pipe();
+    ≔ empty_result = Sys·read_string(pipe2.read_fd, 256);
+    ⎇ empty_result == "" {
+        println("read_string_empty: OK");
+    } ⎉ {
+        println("read_string_empty: FAILED");
+    }
+
+    // Test 4: Read from invalid fd returns ""
+    ≔ bad_result = Sys·read_string(99999, 256);
+    ⎇ bad_result == "" {
+        println("read_string_invalid_fd: OK");
+    } ⎉ {
+        println("read_string_invalid_fd: FAILED");
+    }
+
+    // Test 5: Partial read respects max_len
+    ≔ pipe3 = Sys·pipe();
+    Sys·write(pipe3.write_fd, "abcdefghij", 10);
+    ≔ partial = Sys·read_string(pipe3.read_fd, 5);
+    ⎇ partial == "abcde" {
+        println("read_string_partial: OK");
+    } ⎉ {
+        println("read_string_partial: FAILED");
+    }
+
+    // Cleanup
+    Sys·close(pipe.read_fd);
+    Sys·close(pipe.write_fd);
+    Sys·close(pty.master_fd);
+    Sys·close(pty.slave_fd);
+    Sys·close(pipe2.read_fd);
+    Sys·close(pipe2.write_fd);
+    Sys·close(pipe3.read_fd);
+    Sys·close(pipe3.write_fd);
+}

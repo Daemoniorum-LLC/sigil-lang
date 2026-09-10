@@ -1,0 +1,49 @@
+// G51: Debug method call on Vec element
+
+Σ Item {
+    val: i64,
+}
+
+⊢ Item {
+    rite new(v: i64) → Self {
+        println!("    Item.new called with {}", v);
+        Self { val: v }
+    }
+
+    rite get_val(&this) → i64 {
+        println!("    get_val: entered");
+        ≔ result = this.val;
+        println!("    get_val: got val = {}", result);
+        result
+    }
+}
+
+rite main() {
+    println!("=== Creating single item ===");
+    ≔ single = Item·new(42);
+    println!("Single item created");
+    ≔ v1 = single.get_val();
+    println!("Single item val = {}", v1);
+
+    println!("");
+    println!("=== Creating vec ===");
+    ≔ items = vec![Item·new(10)];
+    println!("Vec created");
+
+    println!("");
+    println!("=== Index access ===");
+    ≔ first = items[0];
+    println!("Got first item");
+    ≔ v2 = first.get_val();
+    println!("First item val = {}", v2);
+
+    println!("");
+    println!("=== Iteration ===");
+    ∀ item ∈ &items {
+        println!("In loop, about to call get_val...");
+        ≔ v = item.get_val();
+        println!("val = {}", v);
+    }
+
+    println!("All done!");
+}

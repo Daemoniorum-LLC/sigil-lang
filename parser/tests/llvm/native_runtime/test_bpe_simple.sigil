@@ -1,0 +1,96 @@
+//! Test BPE-like pair counting
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+Σ PairCount { left: i64, right: i64, count: i64 }
+
+rite add_pair(pairs: &vary Vec<PairCount>, l: i64, r: i64) {
+    ∀ i ∈ 0..pairs.len() {
+        ⎇ pairs[i].left == l && pairs[i].right == r {
+            pairs[i].count += 1;
+            ⤺;
+        } ⎉ {}
+    }
+    pairs.push(PairCount { left: l, right: r, count: 1 });
+}
+
+rite best_pair(pairs: &[PairCount]) → (i64, i64, i64) {
+    ⎇ pairs.len() == 0 { ⤺ (-1, -1, 0); } ⎉ {}
+    ≔ vary best_idx = 0;
+    ≔ vary best_count = pairs[0].count;
+    ∀ i ∈ 1..pairs.len() {
+        ⎇ pairs[i].count > best_count {
+            best_idx = i;
+            best_count = pairs[i].count;
+        } ⎉ {}
+    }
+    (pairs[best_idx].left, pairs[best_idx].right, pairs[best_idx].count)
+}
+
+rite main() {
+    // Create some sample tokens (small corpus)
+    ≔ vary tokens: Vec<i64> = vec![];
+    ∀ i ∈ 0..100 {
+        tokens.push((i % 26) + 65);  // A-Z repeating
+    }
+    println_int(1000);
+    println_int(tokens.len() as i64);
+
+    // Count pairs
+    ≔ vary pairs: Vec<PairCount> = vec![];
+    ⎇ tokens.len() >= 2 {
+        ∀ i ∈ 0..(tokens.len() - 1) {
+            add_pair(&vary pairs, tokens[i], tokens[i + 1]);
+        }
+    } ⎉ {}
+
+    println_int(2000);
+    println_int(pairs.len() as i64);
+
+    // Find best pair
+    ≔ (bl, br, bc) = best_pair(&pairs);
+    println_int(3000);
+    println_int(bl);
+    println_int(br);
+    println_int(bc);
+}

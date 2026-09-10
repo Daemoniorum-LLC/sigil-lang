@@ -91,6 +91,10 @@ pub struct Parser<'a> {
     current: Option<(Token, Span)>,
     /// Tracks whether we're parsing a condition (if/while/for) where < is comparison not generics
     in_condition: bool,
+    /// Tracks whether we're parsing a type, where `·` is unambiguously a path separator.
+    /// A type position contains no variables, so the lowercase-means-method-call heuristic in
+    /// `parse_type_path` does not apply there -- see the comment in that function.
+    in_type_position: bool,
     /// Tracks if we have a pending `>` from splitting `>>` (Shr) in generic contexts
     pending_gt: Option<Span>,
 }
@@ -103,6 +107,7 @@ impl<'a> Parser<'a> {
             lexer,
             current,
             in_condition: false,
+            in_type_position: false,
             pending_gt: None,
         }
     }
@@ -946,13 +951,6 @@ impl<'a> Parser<'a> {
                     span: *span,
                 })
             }
-            Some((Token::DeprecatedColonColon, span)) => {
-                Err(ParseError::DeprecatedRustSyntax {
-                    rust: "::".to_string(),
-                    sigil: "· (middledot) for path separator".to_string(),
-                    span: *span,
-                })
-            }
             Some((token, span)) => Err(ParseError::UnexpectedToken {
                 expected: format!("{:?}", expected),
                 found: token.clone(),
@@ -970,13 +968,6 @@ impl<'a> Parser<'a> {
                 Err(ParseError::DeprecatedRustSyntax {
                     rust: kw.clone(),
                     sigil: rust_to_sigil(kw).to_string(),
-                    span: *span,
-                })
-            }
-            Some((Token::DeprecatedColonColon, span)) => {
-                Err(ParseError::DeprecatedRustSyntax {
-                    rust: "::".to_string(),
-                    sigil: "· (middledot) for path separator".to_string(),
                     span: *span,
                 })
             }
@@ -1016,6 +1007,7 @@ impl<'a> Parser<'a> {
 
     /// Check for deprecated Rust syntax and emit helpful error.
     /// Returns Err if deprecated syntax is found, Ok(()) otherwise.
+    /// Note: Most Rust syntax is now backwards-compatible (use, ::, fn, let, struct, &mut, etc.).
     pub(crate) fn check_deprecated(&self) -> ParseResult<()> {
         match &self.current {
             Some((Token::DeprecatedRustKeyword(kw), span)) => {
@@ -1025,20 +1017,7 @@ impl<'a> Parser<'a> {
                     span: *span,
                 })
             }
-            Some((Token::DeprecatedColonColon, span)) => {
-                Err(ParseError::DeprecatedRustSyntax {
-                    rust: "::".to_string(),
-                    sigil: "· (middledot) for path separator".to_string(),
-                    span: *span,
-                })
-            }
-            Some((Token::DeprecatedAmpMut, span)) => {
-                Err(ParseError::DeprecatedRustSyntax {
-                    rust: "&mut".to_string(),
-                    sigil: "&Δ (reference to mutable) or just Δ for mutable binding".to_string(),
-                    span: *span,
-                })
-            }
+            // Note: DeprecatedAmpMut (&mut) is now handled as valid syntax in parse_type_base
             _ => Ok(()),
         }
     }
@@ -1055,6 +1034,21 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn consume_if(&mut self, expected: &Token) -> bool {
         if self.check(expected) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if the current token is an identifier with a specific name.
+    pub(crate) fn check_ident_named(&self, name: &str) -> bool {
+        matches!(&self.current, Some((Token::Ident(s), _)) if s == name)
+    }
+
+    /// Consume an identifier with a specific name if present.
+    pub(crate) fn consume_ident_named(&mut self, name: &str) -> bool {
+        if self.check_ident_named(name) {
             self.advance();
             true
         } else {
@@ -1293,6 +1287,7 @@ impl<'a> Parser<'a> {
                     | Token::Extern
                     | Token::Hash
                     | Token::At
+                    | Token::RuneAnnotation(_)  // //@ rune: ... can start an item
                     | Token::Naked
                     | Token::Packed
                     | Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)
@@ -1593,6 +1588,14 @@ impl<'a> Parser<'a> {
         self.expect(Token::Fn)?;
 
         let mut name = self.parse_ident()?;
+
+        // Parse optional middledot-separated compound name: rite Cell·new(...)
+        // Produces a single function named "Cell·new"
+        while self.consume_if(&Token::MiddleDot) {
+            let part = self.parse_ident()?;
+            name.name = format!("{}·{}", name.name, part.name);
+            name.span = Span { start: name.span.start, end: part.span.end };
+        }
 
         // Parse optional evidentiality marker on function name: fn load~<T>() or fn predict◊()
         // parse_ident only consumes unambiguous markers (~, ◊, ‽), so we also check for ! and ?
@@ -2155,8 +2158,10 @@ impl<'a> Parser<'a> {
         let first_type = self.parse_type()?;
 
         // Support both `⊢ Trait ∀ Type` and `⊢ Type : Trait` syntax
+        // Also accept `for` keyword for Rust backwards compatibility
         let (trait_, self_ty) = if self.consume_if(&Token::ForAll) {
             // Traditional syntax: ⊢ Trait ∀ Type (impl Trait for Type)
+            // Or Rust-style: impl Trait for Type
             let self_ty = self.parse_type()?;
             let trait_path = match first_type {
                 TypeExpr::Path(p) => p,
@@ -2184,7 +2189,7 @@ impl<'a> Parser<'a> {
             // Skip doc comments, line comments, and attributes before impl items
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash) | Some(Token::RuneAnnotation(_))
             ) {
                 if self.check(&Token::Hash) {
                     // Skip attribute: #[...] or #![...]
@@ -2201,6 +2206,9 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                     }
+                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    // Skip rune annotations (like //@ rune: cfg(...))
+                    self.advance();
                 } else {
                     self.advance();
                 }
@@ -2224,10 +2232,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_impl_item(&mut self) -> ParseResult<ImplItem> {
-        // Parse outer attributes (#[...] or @[...])
+        // Parse outer attributes (#[...] or @[...]) and rune annotations
         let mut outer_attrs = Vec::new();
-        while self.check(&Token::Hash) || self.check(&Token::At) {
-            outer_attrs.push(self.parse_outer_attribute()?);
+        while self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+            if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                outer_attrs.push(self.parse_rune_annotation()?);
+            } else {
+                outer_attrs.push(self.parse_outer_attribute()?);
+            }
         }
 
         let visibility = self.parse_visibility()?;
@@ -2488,8 +2500,11 @@ impl<'a> Parser<'a> {
     fn parse_const(&mut self, visibility: Visibility) -> ParseResult<ConstDef> {
         self.expect(Token::Const)?;
         let name = self.parse_ident()?;
-        self.expect(Token::Colon)?;
-        let ty = self.parse_type()?;
+        let ty = if self.consume_if(&Token::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
         // Semicolon is optional in Sigil's advanced syntax
@@ -2513,8 +2528,11 @@ impl<'a> Parser<'a> {
     ) -> ParseResult<ConstDef> {
         self.expect(Token::Let)?; // consume ≔
         let name = self.parse_ident()?;
-        self.expect(Token::Colon)?;
-        let ty = self.parse_type()?;
+        let ty = if self.consume_if(&Token::Colon) {
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
         self.expect(Token::Eq)?;
         let value = self.parse_expr()?;
         self.expect_semi_or_item_start()?;
@@ -2925,12 +2943,50 @@ impl<'a> Parser<'a> {
 
         let mut state = Vec::new();
         let mut handlers = Vec::new();
+        let mut methods = Vec::new();
 
         while !self.check(&Token::RBrace) && !self.is_eof() {
+            // Skip doc comments
+            let doc_comments = self.collect_doc_comments();
+
             if self.check(&Token::On) {
                 handlers.push(self.parse_message_handler()?);
-            } else {
-                // Parse state field
+            } else if self.check(&Token::Fn) {
+                // Parse method (rite/fn)
+                let vis = Visibility::Private;
+                let func = self.parse_function_with_doc_comments(vis, vec![], doc_comments)?;
+                methods.push(func);
+            } else if self.check(&Token::Pub) {
+                // Could be a visibility for a method or a field
+                let vis = self.parse_visibility()?;
+                if self.check(&Token::Fn) {
+                    let func = self.parse_function_with_doc_comments(vis, vec![], doc_comments)?;
+                    methods.push(func);
+                } else {
+                    // It's a field
+                    self.consume_ident_named("state");
+                    let field_name = self.parse_ident()?;
+                    self.expect(Token::Colon)?;
+                    let ty = self.parse_type()?;
+                    let default = if self.consume_if(&Token::Eq) {
+                        Some(self.parse_expr()?)
+                    } else {
+                        None
+                    };
+                    if !self.check(&Token::RBrace) && !self.check(&Token::On) && !self.check(&Token::Fn) {
+                        self.consume_if(&Token::Comma);
+                    }
+                    state.push(FieldDef {
+                        attributes: vec![],
+                        visibility: vis,
+                        name: field_name,
+                        ty,
+                        default,
+                    });
+                }
+            } else if self.check_ident_named("state") || !self.check(&Token::RBrace) {
+                // Parse state field (optionally prefixed with 'state' keyword)
+                self.consume_ident_named("state"); // Optional 'state' prefix
                 let vis = self.parse_visibility()?;
                 let field_name = self.parse_ident()?;
                 self.expect(Token::Colon)?;
@@ -2943,7 +2999,7 @@ impl<'a> Parser<'a> {
                     None
                 };
 
-                if !self.check(&Token::RBrace) && !self.check(&Token::On) {
+                if !self.check(&Token::RBrace) && !self.check(&Token::On) && !self.check(&Token::Fn) {
                     self.consume_if(&Token::Comma);
                 }
 
@@ -2954,6 +3010,8 @@ impl<'a> Parser<'a> {
                     ty,
                     default,
                 });
+            } else {
+                break;
             }
         }
 
@@ -2965,6 +3023,7 @@ impl<'a> Parser<'a> {
             generics,
             state,
             handlers,
+            methods,
         })
     }
 
@@ -3309,9 +3368,14 @@ impl<'a> Parser<'a> {
         self.expect(Token::On)?;
         let message = self.parse_ident()?;
 
-        self.expect(Token::LParen)?;
-        let params = self.parse_params()?;
-        self.expect(Token::RParen)?;
+        // Parameters are optional - can be `on Message { }` or `on Message(params) { }`
+        let params = if self.consume_if(&Token::LParen) {
+            let p = self.parse_params()?;
+            self.expect(Token::RParen)?;
+            p
+        } else {
+            Vec::new()
+        };
 
         let return_type = if self.consume_if(&Token::Arrow) {
             Some(self.parse_type()?)
@@ -3455,6 +3519,14 @@ impl<'a> Parser<'a> {
                     None
                 }
             }
+            Some(Token::Asterism) => {
+                if self.peek_is_type_start() {
+                    self.advance();
+                    Some(Evidentiality::Chaos)
+                } else {
+                    None
+                }
+            }
             Some(Token::Interrobang) => {
                 if self.peek_is_type_start() {
                     self.advance();
@@ -3491,13 +3563,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_base(&mut self) -> ParseResult<TypeExpr> {
-        // Check for deprecated Rust syntax first
+        // Handle &mut as backwards-compatible alias for mutable reference
         if let Some(Token::DeprecatedAmpMut) = self.current_token() {
-            let span = self.current_span();
-            return Err(ParseError::DeprecatedRustSyntax {
-                rust: "&mut".to_string(),
-                sigil: "&Δ (reference to mutable) or just Δ for mutable binding".to_string(),
-                span,
+            self.advance();
+            let inner = self.parse_type()?;
+            return Ok(TypeExpr::Reference {
+                lifetime: None,
+                mutable: true,
+                inner: Box::new(inner),
             });
         }
 
@@ -3560,6 +3633,35 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::Pointer {
                     mutable,
                     inner: Box::new(inner),
+                })
+            }
+            Some(Token::StarStar) => {
+                // G76: Pointer-to-pointer: **T, **const T, **mut T, **vary T
+                // Handle ** as two nested raw pointers: **T = *(*T)
+                self.advance(); // consume **
+
+                // Check for mutability of the INNER pointer: **const T, **mut T
+                let inner_mutable = if self.consume_if(&Token::Const) {
+                    false
+                } else if self.consume_if(&Token::Mut) {
+                    true
+                } else {
+                    false // Default: immutable inner pointer
+                };
+
+                // Parse the innermost type (e.g., u8, i64, CustomType)
+                let innermost = self.parse_type()?;
+
+                // Build the inner pointer: *T or *mut T
+                let inner_ptr = TypeExpr::Pointer {
+                    mutable: inner_mutable,
+                    inner: Box::new(innermost),
+                };
+
+                // Wrap in outer pointer (immutable by default)
+                Ok(TypeExpr::Pointer {
+                    mutable: false,
+                    inner: Box::new(inner_ptr),
                 })
             }
             Some(Token::LBracket) => {
@@ -3754,7 +3856,7 @@ impl<'a> Parser<'a> {
 
                 // Check for "as Trait" clause
                 let trait_path = if self.consume_if(&Token::As) {
-                    Some(self.parse_type_path()?)
+                    Some(self.parse_type_path_in_type_position()?)
                 } else {
                     None
                 };
@@ -4033,13 +4135,30 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::Path(TypePath { segments }))
             }
             _ => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path_in_type_position()?;
                 Ok(TypeExpr::Path(path))
             }
         }
     }
 
+    /// `parse_type_path` with `·` treated as a path separator regardless of case.
+    ///
+    /// Only type positions call this. Expression positions keep the uppercase heuristic,
+    /// because there `lhs·method()` really is a method call.
+    fn parse_type_path_in_type_position(&mut self) -> ParseResult<TypePath> {
+        let was_in_type_position = self.in_type_position;
+        self.in_type_position = true;
+        let result = self.parse_type_path();
+        self.in_type_position = was_in_type_position;
+        result
+    }
+
     fn parse_type_path(&mut self) -> ParseResult<TypePath> {
+        // Read-once: the flag applies to this path and nothing reached from it. A type can
+        // contain an expression (a const generic argument, an array length), and that
+        // expression is expression position again -- `·` there is a method call.
+        let in_type_position = std::mem::replace(&mut self.in_type_position, false);
+
         let mut segments = Vec::new();
         segments.push(self.parse_path_segment()?);
 
@@ -4051,16 +4170,22 @@ impl<'a> Parser<'a> {
         // - For type paths starting with uppercase (HashMap·new), allow · as separator
         // - For variable paths starting with lowercase (tag·to_string), DON'T consume ·
         //   because those are method calls handled by postfix expression parsing
-        let first_segment_is_type = segments
-            .first()
-            .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
-            .unwrap_or(false);
+        //
+        // The uppercase test is a heuristic for *expression* position, where `tag·to_string`
+        // is a method call. It does not apply in a type position: a type contains no
+        // variables, so every `·` there is a path separator. Without this, a lowercase module
+        // path in a type -- `std·fmt·Formatter<'_>` -- is rejected, which is #61's regression.
+        let first_segment_is_type = in_type_position
+            || segments
+                .first()
+                .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
+                .unwrap_or(false);
 
         while !self.pending_gt.is_some() {
-            // Always allow :: as path separator
-            // Only allow · for type paths (uppercase first letter)
-            let is_path_sep = self.consume_if(&Token::MiddleDot)
-                || (first_segment_is_type && self.consume_if(&Token::MiddleDot));
+            // Only allow · as a path separator for type paths (uppercase first letter).
+            // For lowercase identifiers (variables), · is a method-call operator and
+            // must be left for postfix expression parsing (parse_postfix_expr MiddleDot arm).
+            let is_path_sep = first_segment_is_type && self.consume_if(&Token::MiddleDot);
             if !is_path_sep {
                 break;
             }
@@ -4568,11 +4693,51 @@ impl<'a> Parser<'a> {
             return Ok(bounds);
         }
 
-        bounds.push(self.parse_type_or_lifetime()?);
+        // G78: Stop before `=` since in generic params context, `T: Bound = Default` means
+        // Bound is the trait bound and Default is the default type value, not an associated type binding
+        bounds.push(self.parse_type_for_bound()?);
         while self.consume_if(&Token::Plus) {
-            bounds.push(self.parse_type_or_lifetime()?);
+            bounds.push(self.parse_type_for_bound()?);
         }
         Ok(bounds)
+    }
+
+    /// G78: Parse a type for a bound context, stopping before `=` to allow default type params
+    fn parse_type_for_bound(&mut self) -> ParseResult<TypeExpr> {
+        // Check for lifetime
+        if let Some(Token::Lifetime(name)) = self.current_token().cloned() {
+            self.advance();
+            return Ok(TypeExpr::Lifetime(name));
+        }
+
+        // Check for HRTB
+        if self.check(&Token::ForAll) {
+            self.advance();
+            self.expect(Token::Lt)?;
+            let mut lifetimes = Vec::new();
+            if let Some(Token::Lifetime(lt)) = self.current_token().cloned() {
+                lifetimes.push(lt);
+                self.advance();
+                while self.consume_if(&Token::Comma) {
+                    if let Some(Token::Lifetime(lt)) = self.current_token().cloned() {
+                        lifetimes.push(lt);
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            self.expect_gt()?;
+            let bound = self.parse_type()?;
+            return Ok(TypeExpr::Hrtb {
+                lifetimes,
+                bound: Box::new(bound),
+            });
+        }
+
+        // Parse as regular type - do NOT treat `Ident =` as associated type binding here
+        // since that would consume `T: Trait = Default` incorrectly
+        self.parse_type()
     }
 
     /// Parse either a type or a lifetime (for trait bounds like `T: Trait + 'static`)
@@ -4874,7 +5039,7 @@ impl<'a> Parser<'a> {
                 Some(Token::LogicOr) => BinOp::Or,   // ∨ (vee/logical disjunction, parsed as Or)
                 // Tensor/array operators
                 Some(Token::CircledDot) => BinOp::Hadamard,     // ⊙ element-wise multiply
-                Some(Token::Tensor) => BinOp::TensorProd,       // ⊗ tensor product
+                Some(Token::Tensor) if !Self::is_non_callable_expr(&lhs) => BinOp::TensorProd,  // ⊗ tensor product (contextual: not after control-flow)
                 Some(Token::Convolve) => BinOp::Convolve,       // ⊛ convolution/merge
                 // Legion operators handled specially below
                 Some(Token::Interfere) | Some(Token::Distribute) | Some(Token::Broadcast)
@@ -5212,28 +5377,28 @@ impl<'a> Parser<'a> {
                     // Keywords
                     Token::SelfLower => "self".to_string(),
                     Token::SelfUpper => "Self".to_string(),
-                    Token::Let => "let".to_string(),
-                    Token::Mut => "mut".to_string(),
-                    Token::Fn => "fn".to_string(),
-                    Token::If => "if".to_string(),
-                    Token::Else => "else".to_string(),
-                    Token::Match => "match".to_string(),
-                    Token::ForAll => "for".to_string(),
-                    Token::While => "while".to_string(),
+                    Token::Let => "≔".to_string(),
+                    Token::Mut => "Δ".to_string(),
+                    Token::Fn => "rite".to_string(),
+                    Token::If => "⎇".to_string(),
+                    Token::Else => "⎉".to_string(),
+                    Token::Match => "⌥".to_string(),
+                    Token::ForAll => "∀".to_string(),
+                    Token::While => "⟳".to_string(),
                     Token::Loop => "loop".to_string(),
-                    Token::Tensor => "break".to_string(),
-                    Token::CycleArrow => "continue".to_string(),
-                    Token::Return => "return".to_string(),
-                    Token::Struct => "struct".to_string(),
-                    Token::Enum => "enum".to_string(),
-                    Token::Impl => "impl".to_string(),
-                    Token::Trait => "trait".to_string(),
+                    Token::Tensor => "⊗".to_string(),
+                    Token::CycleArrow => "↻".to_string(),
+                    Token::Return => "⤺".to_string(),
+                    Token::Struct => "sigil".to_string(),
+                    Token::Enum => "ᛈ".to_string(),
+                    Token::Impl => "⊢".to_string(),
+                    Token::Trait => "aspect".to_string(),
                     Token::Type => "type".to_string(),
-                    Token::Pub => "pub".to_string(),
-                    Token::Mod => "mod".to_string(),
-                    Token::Use => "use".to_string(),
+                    Token::Pub => "☉".to_string(),
+                    Token::Mod => "scroll".to_string(),
+                    Token::Use => "invoke".to_string(),
                     Token::As => "as".to_string(),
-                    Token::ElementOf => "in".to_string(),
+                    Token::ElementOf => "∈".to_string(),
                     Token::True => "true".to_string(),
                     Token::False => "false".to_string(),
                     Token::Null => "null".to_string(),
@@ -5420,9 +5585,9 @@ impl<'a> Parser<'a> {
                     } else {
                         self.parse_ident()?
                     };
-                    // Check for turbofish syntax: method::<Type>(args)
-                    if self.check(&Token::MiddleDot) {
-                        self.advance(); // consume ::
+                    // Check for turbofish syntax: method·<Type>(args)
+                    if self.check(&Token::MiddleDot) && self.peek_next() == Some(&Token::Lt) {
+                        self.advance(); // consume ·
                         self.expect(Token::Lt)?;
                         // Temporarily exit condition context - turbofish is type context
                         let was_in_condition = self.in_condition;
@@ -5438,6 +5603,13 @@ impl<'a> Parser<'a> {
                             method: field,
                             type_args: Some(type_args),
                             args,
+                        };
+                    } else if self.check(&Token::MiddleDot) {
+                        // Chain continues: expr.field·another_field or expr.field·method()
+                        // Don't consume the MiddleDot - let it be handled by the MiddleDot case
+                        expr = Expr::Field {
+                            expr: Box::new(expr),
+                            field,
                         };
                     } else if self.check(&Token::LParen) {
                         self.advance();
@@ -5567,13 +5739,21 @@ impl<'a> Parser<'a> {
                     }
 
                     let method = self.parse_ident()?;
-                    // Check for turbofish on method: Type::method::<T>()
-                    let type_args = if self.check(&Token::MiddleDot) {
-                        self.advance();
+                    // Check for turbofish on method: Type·method·<T>()
+                    let type_args = if self.check(&Token::MiddleDot) && self.peek_next() == Some(&Token::Lt) {
+                        self.advance(); // consume ·
                         self.expect(Token::Lt)?;
                         let types = self.parse_type_list()?;
                         self.expect_gt()?;
                         Some(types)
+                    } else if self.check(&Token::MiddleDot) {
+                        // Chain continues: Type·field·another_field or Type·field·method()
+                        // Treat current method as field access, let MiddleDot case handle next
+                        expr = Expr::Field {
+                            expr: Box::new(expr),
+                            field: method,
+                        };
+                        continue; // Back to main loop to handle the MiddleDot
                     } else {
                         None
                     };
@@ -5921,9 +6101,17 @@ impl<'a> Parser<'a> {
             Some(Token::Match) => self.parse_match_expr(),
             Some(Token::ForAll) => {
                 // ∀ is contextually a for-loop: ∀ pattern ∈ iter { ... }
+                // Also accept Rust-style `for pattern in iter { ... }`
                 self.advance();
                 let pattern = self.parse_pattern()?;
-                self.expect(Token::ElementOf)?;
+                // Accept both ∈ (ElementOf) and `in` (In token) for backwards compatibility
+                if !self.consume_if(&Token::ElementOf) {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "∈ or in".to_string(),
+                        found: self.current_token().cloned().unwrap_or(Token::Semi),
+                        span: self.current_span(),
+                    });
+                }
                 let iter = self.parse_condition()?;
                 let body = self.parse_block()?;
                 Ok(Expr::For {
@@ -6004,10 +6192,17 @@ impl<'a> Parser<'a> {
                             body,
                         })
                     }
-                    Some(Token::ForAll) | Some(Token::ForAll) => {
+                    Some(Token::ForAll) => {
                         self.advance();
                         let pattern = self.parse_pattern()?;
-                        self.expect(Token::ElementOf)?;
+                        // Accept both ∈ (ElementOf) and `in` (In token)
+                        if !self.consume_if(&Token::ElementOf) {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "∈ or in".to_string(),
+                                found: self.current_token().cloned().unwrap_or(Token::Semi),
+                                span: self.current_span(),
+                            });
+                        }
                         let iter = self.parse_condition()?;
                         let body = self.parse_block()?;
                         Ok(Expr::For {
@@ -6050,19 +6245,6 @@ impl<'a> Parser<'a> {
                     body,
                 })
             }
-            Some(Token::ForAll) | Some(Token::ForAll) => {
-                self.advance();
-                let pattern = self.parse_pattern()?;
-                self.expect(Token::ElementOf)?;
-                let iter = self.parse_condition()?;
-                let body = self.parse_block()?;
-                Ok(Expr::For {
-                    label: None,
-                    pattern,
-                    iter: Box::new(iter),
-                    body,
-                })
-            }
             Some(Token::Return) => {
                 self.advance();
                 // Check for terminators: ; } or , (in match arms)
@@ -6076,7 +6258,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Return(value))
             }
-            Some(Token::Tensor) | Some(Token::Tensor) => {
+            Some(Token::Tensor) => {
                 // ⊗ (Tensor) is contextually break at statement start, tensor product in binary position
                 self.advance();
                 // Check for optional label: break 'label or break 'label value
@@ -6104,7 +6286,7 @@ impl<'a> Parser<'a> {
                 };
                 Ok(Expr::Break { label, value })
             }
-            Some(Token::CycleArrow) | Some(Token::CycleArrow) => {
+            Some(Token::CycleArrow) => {
                 // ↻ (CycleArrow) is contextually continue at statement start
                 self.advance();
                 // Check for optional label: continue 'label
@@ -6273,6 +6455,17 @@ impl<'a> Parser<'a> {
             Some(Token::Volatile) => self.parse_volatile_expr(),
             Some(Token::Simd) => self.parse_simd_expr(),
             Some(Token::Atomic) => self.parse_atomic_expr(),
+            // RuneAnnotation in expression context: `//@ rune: cfg(...) { ... }`
+            // Parses as an attributed expression
+            Some(Token::RuneAnnotation(_)) => {
+                let attr = self.parse_rune_annotation()?;
+                // Parse the following expression (usually a block)
+                let expr = self.parse_prefix_expr()?;
+                Ok(Expr::Attributed {
+                    attrs: vec![attr],
+                    expr: Box::new(expr),
+                })
+            }
             // Implicit self field access: `.field` desugars to `self.field`
             // This allows more concise method bodies:
             //   fn increment(mut self) { .count += 1; }
@@ -6983,8 +7176,9 @@ impl<'a> Parser<'a> {
                     } else {
                         self.parse_ident()?
                     };
-                    if self.check(&Token::MiddleDot) {
-                        self.advance();
+                    if self.check(&Token::MiddleDot) && self.peek_next() == Some(&Token::Lt) {
+                        // Turbofish syntax: expr.method·<Type>()
+                        self.advance(); // consume ·
                         self.expect(Token::Lt)?;
                         let type_args = self.parse_type_list()?;
                         self.expect_gt()?;
@@ -6996,6 +7190,13 @@ impl<'a> Parser<'a> {
                             method: field,
                             type_args: Some(type_args),
                             args,
+                        };
+                    } else if self.check(&Token::MiddleDot) {
+                        // Chain continues: expr.field·another_field or expr.field·method()
+                        // Don't consume the MiddleDot - let it be handled by the MiddleDot case below
+                        expr = Expr::Field {
+                            expr: Box::new(expr),
+                            field,
                         };
                     } else if self.check(&Token::LParen) {
                         self.advance();
@@ -7967,6 +8168,10 @@ impl<'a> Parser<'a> {
 
     /// Check if current position looks like a morpheme closure: ident => or (pattern) =>
     fn looks_like_morpheme_closure(&mut self) -> bool {
+        // Rust-style closure: |params| body
+        if matches!(self.current_token(), Some(Token::Pipe)) {
+            return true;
+        }
         // Simple closure: x => or _ => (may have evidentiality: x~ => or x◊ =>)
         if matches!(self.current_token(), Some(Token::Ident(_)) | Some(Token::Underscore)) {
             // Check next token - could be => directly or evidentiality marker first
@@ -8014,11 +8219,35 @@ impl<'a> Parser<'a> {
         false
     }
 
-    /// Parse a morpheme closure: x => expr, (a, b) => expr, &x => expr, or a, b => expr
+    /// Parse a morpheme closure: x => expr, (a, b) => expr, &x => expr, a, b => expr, or |a, b| expr
     /// For morphemes, (a, b) is a SINGLE tuple parameter pattern, not multiple parameters
     /// Multi-param: a, b => expr creates multiple ClosureParam entries
+    /// Rust-style: |a, b| expr also creates multiple ClosureParam entries
     fn parse_morpheme_closure(&mut self) -> ParseResult<Expr> {
-        let params = if self.check(&Token::LParen) {
+        // Track if we're using Rust-style |params| syntax (already consumed the delimiter)
+        let is_rust_style = self.check(&Token::Pipe);
+
+        let params = if is_rust_style {
+            // Rust-style closure: |a, b| expr
+            self.advance(); // consume opening |
+            let mut params = Vec::new();
+            while !self.check(&Token::Pipe) {
+                let name = self.parse_ident()?;
+                params.push(ClosureParam {
+                    pattern: Pattern::Ident {
+                        mutable: false,
+                        name,
+                        evidentiality: None,
+                    },
+                    ty: None,
+                });
+                if !self.consume_if(&Token::Comma) {
+                    break;
+                }
+            }
+            self.expect(Token::Pipe)?; // consume closing |
+            params
+        } else if self.check(&Token::LParen) {
             // Tuple pattern: (a, b) => expr - treated as single parameter with tuple pattern
             self.advance();
             let mut patterns = Vec::new();
@@ -8066,8 +8295,11 @@ impl<'a> Parser<'a> {
             params
         };
         // Accept either => or | as the arrow (for closure-style syntax)
-        if !self.consume_if(&Token::FatArrow) {
-            self.expect(Token::Pipe)?;
+        // Skip this for Rust-style closures since we already consumed both |s
+        if !is_rust_style {
+            if !self.consume_if(&Token::FatArrow) {
+                self.expect(Token::Pipe)?;
+            }
         }
         // Skip comments before body (e.g., // explanation after =>)
         self.skip_comments();
@@ -8236,12 +8468,16 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            // Handle statement-level attributes: #[cfg(...)] { ... } or #[attr] let x = ...
-            if self.check(&Token::Hash) || self.check(&Token::At) {
+            // Handle statement-level attributes: #[cfg(...)] { ... } or #[attr] let x = ... or //@ rune: ...
+            if self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
                 // Parse and collect attributes
                 let mut attrs = Vec::new();
-                while self.check(&Token::Hash) || self.check(&Token::At) {
-                    attrs.push(self.parse_outer_attribute()?);
+                while self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                        attrs.push(self.parse_rune_annotation()?);
+                    } else {
+                        attrs.push(self.parse_outer_attribute()?);
+                    }
                     self.skip_comments();
                 }
 
@@ -8609,6 +8845,15 @@ impl<'a> Parser<'a> {
                 let inner = self.parse_pattern()?;
                 Ok(Pattern::Ref {
                     mutable,
+                    pattern: Box::new(inner),
+                })
+            }
+            // &mut pattern (backwards compatibility)
+            Some(Token::DeprecatedAmpMut) => {
+                self.advance();
+                let inner = self.parse_pattern()?;
+                Ok(Pattern::Ref {
+                    mutable: true,
                     pattern: Box::new(inner),
                 })
             }
@@ -9473,6 +9718,10 @@ impl<'a> Parser<'a> {
                     self.advance();
                     ev = Some(Evidentiality::Predicted);
                 }
+                Some(Token::Asterism) => {
+                    self.advance();
+                    ev = Some(Evidentiality::Chaos);
+                }
                 Some(Token::Interrobang) => {
                     self.advance();
                     ev = Some(Evidentiality::Paradox);
@@ -9483,7 +9732,7 @@ impl<'a> Parser<'a> {
         ev
     }
 
-    /// Parse UNAMBIGUOUS evidentiality markers only: ~, ◊, ‽
+    /// Parse UNAMBIGUOUS evidentiality markers only: ~, ◊, ⁂, ‽
     /// Does NOT consume ! or ? as they have other meanings (macro!/try?)
     fn parse_unambiguous_evidentiality_opt(&mut self) -> Option<Evidentiality> {
         let mut ev = None;
@@ -9496,6 +9745,10 @@ impl<'a> Parser<'a> {
                 Some(Token::Lozenge) => {
                     self.advance();
                     ev = Some(Evidentiality::Predicted);
+                }
+                Some(Token::Asterism) => {
+                    self.advance();
+                    ev = Some(Evidentiality::Chaos);
                 }
                 Some(Token::Interrobang) => {
                     self.advance();
@@ -9890,9 +10143,8 @@ impl<'a> Parser<'a> {
                 ty,
                 default,
             });
-            if !self.consume_if(&Token::Comma) {
-                break;
-            }
+            // Comma is optional in Sigil syntax (comma-less field separation)
+            self.consume_if(&Token::Comma);
         }
         Ok(fields)
     }
@@ -9944,10 +10196,10 @@ impl<'a> Parser<'a> {
         let mut rest = None;
 
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Skip comments and attributes before field
+            // Skip comments, attributes, and rune annotations before field
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash)
+                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash) | Some(Token::RuneAnnotation(_))
             ) {
                 if self.check(&Token::Hash) {
                     // Skip attribute: #[...] or #![...]
@@ -9964,6 +10216,9 @@ impl<'a> Parser<'a> {
                             self.advance();
                         }
                     }
+                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    // Skip rune annotations (like //@ rune: cfg(...))
+                    self.advance();
                 } else {
                     self.advance();
                 }
