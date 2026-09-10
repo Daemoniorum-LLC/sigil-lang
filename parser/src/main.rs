@@ -2337,6 +2337,7 @@ fn report_unresolved(compiler: &WasmCompiler) {
     eprintln!("  This module does NOT do what its source says. Survey only.");
 }
 
+#[cfg(feature = "wasm")]
 fn report_stubbed_calls(compiler: &WasmCompiler) {
     let stubbed = compiler.stubbed_calls();
     if stubbed.is_empty() {
