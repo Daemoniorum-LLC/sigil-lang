@@ -2089,6 +2089,10 @@ pub mod llvm {
                 let _ = self.builder.build_return(Some(&result));
             }
 
+            // Math constants: () -> i64
+            let const_type = i64_type.fn_type(&[], false);
+            self.module.add_function("sigil_pi", const_type, None);
+
             // Vec functions - use ptr type (i64 as opaque pointer)
             // Use inttoptr wrappers to bypass MCJIT add_global_mapping issues (JIT only)
             let ptr_type = i64_type; // Using i64 as opaque pointer type
@@ -5740,6 +5744,44 @@ pub mod llvm {
                                 )
                                 .map_err(|e| e.to_string())?;
 
+                            Ok(val)
+                        }
+                        Expr::Deref(inner) => {
+                            // Dereference assignment: *ptr = val or *(ptr + offset) = val
+                            // Check for pointer arithmetic pattern
+                            if let Expr::Binary { op: BinOp::Add, left, right } = inner.as_ref() {
+                                let base_addr = self.compile_expr(fn_value, scope, left)?;
+                                let offset = self.compile_expr(fn_value, scope, right)?;
+                                let i64_type = self.context.i64_type();
+                                let base_ptr = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        base_addr,
+                                        i64_type.ptr_type(Default::default()),
+                                        "base_ptr",
+                                    )
+                                    .map_err(|e| e.to_string())?;
+                                // Use GEP for proper pointer arithmetic (scales by element size)
+                                let elem_ptr = unsafe {
+                                    self.builder
+                                        .build_gep(i64_type, base_ptr, &[offset], "elem_ptr")
+                                }
+                                .map_err(|e| e.to_string())?;
+                                self.builder
+                                    .build_store(elem_ptr, val)
+                                    .map_err(|e| e.to_string())?;
+                                return Ok(val);
+                            }
+                            // Simple dereference: *ptr = val
+                            let ptr_val = self.compile_expr(fn_value, scope, inner)?;
+                            let ptr_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                            let ptr = self
+                                .builder
+                                .build_int_to_ptr(ptr_val, ptr_type, "deref_ptr")
+                                .map_err(|e| e.to_string())?;
+                            self.builder
+                                .build_store(ptr, val)
+                                .map_err(|e| e.to_string())?;
                             Ok(val)
                         }
                         Expr::Deref(inner) => {
@@ -11469,7 +11511,9 @@ pub mod llvm {
             expr: &Expr,
             index: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
+            let idx = self.compile_expr(fn_value, scope, index)?;
             let i64_type = self.context.i64_type();
+            let ptr_type = self.context.ptr_type(AddressSpace::default());
 
             // Check if this is a range index (slice operation)
             if let Expr::Range { start, end, inclusive } = index {
@@ -18979,6 +19023,13 @@ pub mod llvm {
                 OptLevel::Aggressive => "default<O2>",
             };
             eprintln!("[DEBUG] run_llvm_optimizations: running passes {}", passes);
+
+            // Configure pass builder with explicit vectorization options
+            let pass_options = PassBuilderOptions::create();
+            pass_options.set_loop_vectorization(true);
+            pass_options.set_loop_slp_vectorization(true);
+            pass_options.set_loop_interleaving(true);
+            pass_options.set_loop_unrolling(true);
 
             // Configure pass builder with explicit vectorization options
             let pass_options = PassBuilderOptions::create();

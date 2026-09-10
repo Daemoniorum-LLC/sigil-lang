@@ -1835,6 +1835,8 @@ impl Interpreter {
                             let f = fields.borrow();
                             let shape = tensor_shape_from_fields(&f)
                                 .ok_or_else(|| RuntimeError::new("logits has no shape"))?;
+                            let data = tensor_data_from_fields(&f)
+                                .ok_or_else(|| RuntimeError::new("logits has no data"))?;
 
                             if shape.len() != 2 {
                                 return Err(RuntimeError::new(format!(
