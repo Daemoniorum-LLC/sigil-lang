@@ -5357,22 +5357,38 @@ fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
 ///
 /// The question asked is whether the **parser** accepts the name in the
 /// position it was found, not whether the **lexer** returns a keyword token
-/// for it. Those are very different: of the word-shaped tokens in the lexer's
-/// table, most are accepted as names in most positions, so a lexer test
-/// reports `body`, `layer`, `location` and `header` — all of which parse
-/// perfectly well — and tells the reader to rename them.
+/// for it. Those are very different. Of the 93 word-shaped tokens in the
+/// lexer's table, measured against an ordinary identifier as a control in
+/// every position:
+///
+/// | verdict | count | examples |
+/// |---|---|---|
+/// | accepted everywhere | 58 | `body` `layer` `location` `header` `scope` `anima` |
+/// | refused everywhere | 15 | `aspect` `of` `alter` `each` `vary` `switch` |
+/// | refused as a field, accepted as a binding | 10 | `self` `Self` `this` `true` `yay` |
+/// | accepted as a field, refused as a binding | 10 | `tome` `ref` `super` `const` `simd` |
+///
+/// So a lexer test reports `body`, `layer`, `location` and `header` — all of
+/// which parse perfectly well — and tells the reader to rename them.
 ///
 /// Position matters in both directions, which is why one verdict per word
 /// cannot be right: `tome` is a valid field name and an invalid parameter
 /// name, and `true` is the other way round. A name whose position this cannot
 /// determine is left alone; guessing is the defect being fixed.
+///
+/// Deriving the set from the lexer rather than a hand-written list is what
+/// keeps it from drifting from the language, but the lexer only supplies the
+/// candidates — the parser supplies every verdict.
 fn collect_keyword_collisions(source: &str) -> Vec<(String, usize)> {
     let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+    // One scanner across every span, so a comment between a struct's brace and
+    // its fields does not lose the brace.
+    let mut state = CollisionScan::default();
     // Code only. Prose ends sentences with a colon too — "Continue mobbing if:"
     // and "Implementation based on:" both look like a field named after a
     // reserved word if the scan reads comments.
     map_rust_code_spans(source, |code| {
-        collect_in_code(code, &mut counts);
+        collect_in_code(&mut state, code, &mut counts);
         code.to_string()
     });
     counts.into_iter().collect()
@@ -5393,18 +5409,33 @@ enum NamePosition {
 impl NamePosition {
     /// A minimal Sigil program placing `name` in this position.
     ///
-    /// The local case both binds and reads the name back: `const`, `async`,
-    /// `move`, `unsafe`, `volatile`, `atomic` and `simd` all bind cleanly and
-    /// fail only on use, so a probe that binds alone declares them fine.
+    /// Every probe both **binds** the name and **reads it back**, because the
+    /// two can disagree: `const`, `async`, `move`, `unsafe`, `volatile`,
+    /// `atomic` and `simd` all bind cleanly and fail only on use, so a probe
+    /// that binds alone calls them fine.
+    ///
+    /// The read is deliberately placed somewhere **neutral** — after `≔ … =`,
+    /// or after a `.` — and never at the start of a statement. A word that
+    /// introduces an item form (`actor`, `invoke`, `rite`, `scroll`, `sigil`,
+    /// `static`, `type`, `extern`) is ambiguous with that form when it opens a
+    /// statement, so a probe reading it there reports eight usable names as
+    /// refused. That ambiguity is a property of the *use site*, not of the
+    /// name being declared, and every one of those eight is a perfectly good
+    /// field, parameter and local.
     fn probe(self, name: &str) -> String {
         match self {
-            NamePosition::Field => format!("☉ Σ CollisionProbe {{ ☉ {name}: i64 }}"),
-            NamePosition::Parameter => {
-                format!("☉ rite collision_probe({name}: i64) -> i64 {{ {name} }}")
-            }
-            NamePosition::Local => {
-                format!("☉ rite collision_probe() -> i64 {{ ≔ {name} = 1; {name} + 1 }}")
-            }
+            NamePosition::Field => format!(
+                "☉ Σ CollisionProbe {{ ☉ {name}: i64 }}\n\
+                 ☉ rite collision_probe(c: CollisionProbe) -> i64 {{ c.{name} }}"
+            ),
+            NamePosition::Parameter => format!(
+                "☉ rite collision_probe({name}: i64) -> i64 \
+                 {{ ≔ probe_sink = {name}; probe_sink }}"
+            ),
+            NamePosition::Local => format!(
+                "☉ rite collision_probe() -> i64 \
+                 {{ ≔ {name} = 1; ≔ probe_sink = {name}; probe_sink }}"
+            ),
         }
     }
 }
@@ -5447,8 +5478,17 @@ fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePos
     if prev_words[1] == "where" {
         return None;
     }
-    // `let x: T` and `let mut x: T` are locals whatever encloses them.
-    if prev_words[1] == "let" || (prev_words[1] == "mut" && prev_words[0] == "let") {
+    // `let x: T`, `let mut x: T`, `const X: T` and `static X: T` all bind a
+    // name rather than declare a field, wherever they appear. An item inside a
+    // function body is enclosed by that body's `{` and would otherwise be
+    // judged as a struct field, which is the wrong question for it — the two
+    // disagree for `tome`, `ref`, `super` and every word that binds but cannot
+    // be read back.
+    if prev_words[1] == "let"
+        || prev_words[1] == "const"
+        || prev_words[1] == "static"
+        || (prev_words[1] == "mut" && (prev_words[0] == "let" || prev_words[0] == "static"))
+    {
         return Some(NamePosition::Local);
     }
     match enclosing {
@@ -5461,36 +5501,85 @@ fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePos
     }
 }
 
+/// The scanner's state, which must survive from one code span to the next.
+///
+/// A file reaches this as an alternating sequence of code and non-code spans,
+/// and a comment can fall anywhere — including between a struct's opening
+/// brace and its fields, which is where Rust puts field documentation. Holding
+/// the bracket stack in a local of the per-span routine therefore emptied it at
+/// every doc comment, so `pub each: Option<Each>` one line under `/// Emit
+/// extend method.` had no enclosing bracket, took no position, and was passed
+/// over. That is the common shape of a documented field, so the diagnostic saw
+/// almost none of them.
+#[derive(Default)]
+struct CollisionScan {
+    /// `(bracket, opened a macro invocation, in_where to restore on close)`.
+    ///
+    /// The innermost unclosed bracket distinguishes a parameter list from a
+    /// struct body — the two contexts a bare `name:` is otherwise ambiguous
+    /// between, and the two whose answers differ for `ref`, `super` and `tome`.
+    ///
+    /// Names inside a macro invocation's arguments are not declarations:
+    /// `test_bake!(T, const: …)` puts a reserved word in front of a colon in
+    /// what is really a macro argument. A struct literal nested inside the
+    /// invocation pushes its own `{`, so it is still judged — only the
+    /// innermost bracket decides.
+    brackets: Vec<(u8, bool, bool)>,
+    /// The two words before the current one, for `let` and `let mut`.
+    prev_words: [String; 2],
+    /// Inside a `where` clause, where every `name:` is a bound rather than a
+    /// declaration. It runs from the keyword to the body or semicolon that
+    /// ends it, and may carry several comma-separated bounds.
+    in_where: bool,
+    /// The last non-whitespace byte, for `!` before a bracket and `$` before a
+    /// word.
+    prev_byte: u8,
+}
+
 /// Tally names in one span of code that the parser refuses where they stand.
-fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String, usize>) {
+fn collect_in_code(
+    state: &mut CollisionScan,
+    source: &str,
+    counts: &mut std::collections::BTreeMap<String, usize>,
+) {
     let bytes = source.as_bytes();
-    // Innermost unclosed bracket, which distinguishes a parameter list from a
-    // struct body — the two contexts a bare `name:` is otherwise ambiguous
-    // between, and the two whose answers differ for `ref`, `super` and `tome`.
-    let mut brackets: Vec<u8> = Vec::new();
-    // The two words before the current one, for `let` and `let mut`.
-    let mut prev_words: [&str; 2] = [""; 2];
-    // Inside a `where` clause, where every `name:` is a bound rather than a
-    // declaration. It runs from the keyword to the body or semicolon that
-    // ends it, and may carry several comma-separated bounds.
-    let mut in_where = false;
+    let CollisionScan {
+        brackets,
+        prev_words,
+        in_where,
+        prev_byte,
+    } = state;
+    // Everything above carries over from the previous span deliberately: a
+    // comment is not a syntactic break, so `let /* why */ x: T` is still a
+    // local and a field under its doc comment is still inside the struct.
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
         if matches!(b, b'(' | b'{' | b'[') {
-            brackets.push(b);
-            prev_words = [""; 2];
-            in_where = false;
+            // A brace ends a `where` clause — it is the body the clause
+            // qualifies — and the clause must not resume when the body closes.
+            // A parenthesis does not end it: `F: FnMut(Self::Item) -> T,` is a
+            // single bound, and clearing the flag there left the `Self: Sized`
+            // on the next line reading as a struct field.
+            let resume = if b == b'{' { false } else { *in_where };
+            brackets.push((b, *prev_byte == b'!', resume));
+            *prev_words = Default::default();
+            if b == b'{' {
+                *in_where = false;
+            }
+            *prev_byte = b;
             i += 1;
             continue;
         }
         if matches!(b, b')' | b'}' | b']') {
-            brackets.pop();
-            prev_words = [""; 2];
+            *in_where = brackets.pop().is_some_and(|(_, _, resume)| resume);
+            *prev_words = Default::default();
+            *prev_byte = b;
             i += 1;
             continue;
         }
         if (b as char).is_ascii_alphabetic() || b == b'_' {
+            let before = *prev_byte;
             let start = i;
             while i < bytes.len()
                 && ((bytes[i] as char).is_ascii_alphanumeric() || bytes[i] == b'_')
@@ -5501,24 +5590,42 @@ fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String,
             // Only a word introducing a name is a candidate. `::` excludes
             // path segments, where a reserved word is fine.
             let rest = source[i..].trim_start_matches([' ', '\t']);
-            if rest.starts_with(':') && !rest.starts_with("::") && !in_where {
-                if let Some(position) = name_position(prev_words, brackets.last().copied()) {
+            // `$name:fragment` is a `macro_rules!` fragment specifier, not a
+            // declaration — `$macro:ident`, `$super:path`, `$unsafe:ident` all
+            // occur in real code and none of them names a field.
+            let macro_fragment = before == b'$';
+            let in_macro_args = brackets.last().is_some_and(|&(_, m, _)| m);
+            // `_` is a discard, never a name anyone chose: `fn f(_: T)`,
+            // `|_: &_|`, `const _: () = assert!(…)`. There is nothing to
+            // rename, so reporting it gives the reader no action to take.
+            let discard = word == "_";
+            if rest.starts_with(':')
+                && !rest.starts_with("::")
+                && !*in_where
+                && !macro_fragment
+                && !in_macro_args
+                && !discard
+            {
+                let prev = [prev_words[0].as_str(), prev_words[1].as_str()];
+                if let Some(position) = name_position(prev, brackets.last().map(|&(b, _, _)| b)) {
                     if !parser_accepts(word, position) {
                         *counts.entry(word.to_string()).or_default() += 1;
                     }
                 }
             }
+            *prev_byte = bytes[i - 1];
             if word == "where" {
-                in_where = true;
+                *in_where = true;
             }
-            prev_words = [prev_words[1], word];
+            *prev_words = [std::mem::take(&mut prev_words[1]), word.to_string()];
             continue;
         }
         // Punctuation separates words; whitespace does not.
         if !(b as char).is_whitespace() {
-            prev_words = [""; 2];
+            *prev_words = Default::default();
+            *prev_byte = b;
             if b == b';' {
-                in_where = false;
+                *in_where = false;
             }
         }
         i += 1;
@@ -6109,6 +6216,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         println!("{}", result);
         println!();
         println!("Run without --dry-run to apply changes.");
+        report_keyword_collisions(&keyword_collisions);
         return ExitCode::SUCCESS;
     }
 
@@ -6157,22 +6265,42 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         println!("  ◊ (Predicted) - ML models, LLM completions");
     }
 
-    if !keyword_collisions.is_empty() {
-        let total: usize = keyword_collisions.iter().map(|(_, n)| n).sum();
-        eprintln!();
-        eprintln!(
-            "warning: {} name{} in this file {} refused by the Sigil parser where they stand:",
-            total,
-            if total == 1 { "" } else { "s" },
-            if total == 1 { "is" } else { "are" },
-        );
-        for (word, count) in &keyword_collisions {
-            eprintln!("    {:<16} {} use{}", word, count, if *count == 1 { "" } else { "s" });
-        }
-        eprintln!("  Rename them in the Rust source, or in the migrated output.");
-    }
+    report_keyword_collisions(&keyword_collisions);
 
     ExitCode::SUCCESS
+}
+
+/// Print the collision warning, if there is anything to warn about.
+///
+/// Called from both exits of `migrate_file`. `--dry-run` returns early, and it
+/// is the mode someone uses to see what a migration would do to a file, so it
+/// is the run that most wants this warning — leaving it on the write path only
+/// meant the preview was silent and the applied migration was not.
+fn report_keyword_collisions(collisions: &[(String, usize)]) {
+    if collisions.is_empty() {
+        return;
+    }
+    // Count the distinct names, which is what the list below shows. The
+    // earlier wording totalled the uses and still called them names, so a
+    // file with two uses of one name announced two names and then listed one.
+    let names = collisions.len();
+    eprintln!();
+    eprintln!(
+        "warning: {} name{} in this file {} refused by the Sigil parser where {} stand:",
+        names,
+        if names == 1 { "" } else { "s" },
+        if names == 1 { "is" } else { "are" },
+        if names == 1 { "it" } else { "they" },
+    );
+    for (word, count) in collisions {
+        eprintln!(
+            "    {:<16} {} use{}",
+            word,
+            count,
+            if *count == 1 { "" } else { "s" }
+        );
+    }
+    eprintln!("  Rename them in the Rust source, or in the migrated output.");
 }
 
 fn repl() -> ExitCode {
@@ -7062,6 +7190,121 @@ mod migrate_span_tests {
     }
 
     #[test]
+    fn a_word_that_introduces_an_item_form_is_not_reported() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // These eight open an item form, so reading one at the start of a
+        // statement is ambiguous with that form. That is a property of the use
+        // site, not of the name: each is a perfectly good parameter and local,
+        // and a probe that reads the name back at statement start reports all
+        // eight. `actor`, `invoke`, `scroll` and `sigil` are ordinary Rust
+        // identifiers that real code does use.
+        for word in [
+            "actor", "extern", "invoke", "rite", "scroll", "sigil", "static", "type",
+        ] {
+            assert!(
+                f(&format!("fn g({word}: u32) {{}}")).is_empty(),
+                "{word} is a usable parameter name and must not be reported"
+            );
+            assert!(
+                f(&format!("let {word}: u32 = 1;")).is_empty(),
+                "{word} is a usable local name and must not be reported"
+            );
+            assert!(
+                f(&format!("struct C {{ {word}: u32 }}")).is_empty(),
+                "{word} is a usable field name and must not be reported"
+            );
+        }
+
+        // The distinction is real: these seven are refused wherever they are
+        // read, not just at statement start, and must still be caught.
+        for word in [
+            "async", "atomic", "const", "move", "simd", "unsafe", "volatile",
+        ] {
+            assert_eq!(
+                f(&format!("fn g({word}: u32) {{}}")),
+                vec![(word.to_string(), 1)],
+                "{word} is unusable as a parameter and must be reported"
+            );
+        }
+    }
+
+    #[test]
+    fn a_comment_does_not_lose_the_enclosing_brace() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // Rust documents fields with a doc comment directly above them, which
+        // splits the file into separate code spans. A scanner that restarts
+        // its bracket stack per span sees no enclosing brace here, takes no
+        // position, and reports nothing — so it misses the documented field,
+        // which is the ordinary shape of the thing this diagnostic is for.
+        assert_eq!(
+            f("pub struct S {\n    /// Emit extend method.\n    pub each: Option<Each>,\n}"),
+            vec![("each".into(), 1)]
+        );
+        assert_eq!(
+            f("struct S {\n    pub n: u8, // trailing\n    pub aspect: f32,\n}"),
+            vec![("aspect".into(), 1)]
+        );
+        // A block comment mid-declaration likewise does not break the `let`.
+        assert_eq!(
+            f("fn g() { let /* why */ aspect: f32 = 1.0; }"),
+            vec![("aspect".into(), 1)]
+        );
+        // A string literal splits spans the same way a comment does.
+        assert_eq!(
+            f("struct S {\n    pub n: &'static str, // \"of:\"\n    pub alter: u8,\n}"),
+            vec![("alter".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_macro_fragment_specifier_is_not_a_declaration() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `$name:fragment` inside a `macro_rules!` body binds a fragment, not
+        // a field. All four of these appear verbatim in published crates.
+        assert!(f("macro_rules! m { ($macro:ident) => {} }").is_empty());
+        assert!(f("macro_rules! m { ($super:path: $($sub:path),+) => {} }").is_empty());
+        assert!(f("macro_rules! m { ($atomic:ty [$prim:ty]) => {} }").is_empty());
+        assert!(f("macro_rules! m { (@ alloc $($unsafe:ident)?) => {} }").is_empty());
+
+        // A macro invocation's arguments are not declarations either.
+        assert!(f("test_bake!(Char, const: crate::from_char('b'), zerovec);").is_empty());
+
+        // But a struct literal nested inside an invocation still is, because
+        // it opens its own brace.
+        assert_eq!(
+            f("let v = vec![Point { aspect: 1 }];"),
+            vec![("aspect".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_const_or_static_item_binds_rather_than_declares_a_field() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `const _: () = assert!(…)` is the usual compile-time assertion. It
+        // sits inside a function body, so the enclosing bracket is `{` and it
+        // reads as a struct field unless `const` is recognised — and `_` is
+        // not a valid field name in Sigil.
+        assert!(f("fn g() { const _: () = assert!(true); }").is_empty());
+        assert!(f("fn g() { static _: u8 = 0; }").is_empty());
+        assert!(f("fn g() { static mut _: u8 = 0; }").is_empty());
+        // `_` is a discard wherever it appears, so there is nothing to rename.
+        assert!(f("fn is_cie(_: Format, id: u64) -> bool { true }").is_empty());
+        assert!(f("let get_cie = |_: &_, _: &_, offset| offset;").is_empty());
+        assert!(f("seq!(Color { _: '#', red: hex })").is_empty());
+
+        // A genuinely unusable name in the same position is still caught:
+        // `aspect` is refused as a binding as well as a field.
+        assert_eq!(
+            f("fn g() { const aspect: u8 = 0; }"),
+            vec![("aspect".into(), 1)]
+        );
+    }
+
+    #[test]
     fn a_where_bound_is_not_a_declaration() {
         let f = |src: &str| super::collect_keyword_collisions(src);
 
@@ -7070,6 +7313,21 @@ mod migrate_span_tests {
         assert!(f("trait W {\n    fn q() -> I\n    where\n        Self: Sized;\n}").is_empty());
         // The clause can carry several bounds, and ends at the body.
         assert!(f("fn g<T, U>() where T: A, U: B { }").is_empty());
+        // A parenthesis inside a bound does not end the clause. `FnMut(..)`
+        // bounds are common, and clearing the flag at the `(` left the next
+        // line's `Self: Sized` reading as a struct field.
+        assert!(f(
+            "trait I {\n    fn r<F>(self, f: F) -> Option<Self::Item>\n    \
+             where\n        F: FnMut(Self::Item, Self::Item) -> Self::Item,\n        \
+             Self: Sized,\n    {\n        0\n    }\n}"
+        )
+        .is_empty());
+        // The clause really does end at the body brace, and does not resume
+        // when that body closes.
+        assert_eq!(
+            f("fn g<T>() where T: Fn(u8) -> u8 {\n    let aspect: u8 = 1;\n}"),
+            vec![("aspect".into(), 1)]
+        );
         // A field after the clause has ended is still judged.
         assert_eq!(
             f("fn g<T>() where T: A { }\nstruct C { aspect: f32 }"),
