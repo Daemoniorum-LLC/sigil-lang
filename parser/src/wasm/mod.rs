@@ -29,9 +29,15 @@
 //! ```
 
 pub mod async_sm;
+pub mod async_sm_ir;
 pub mod closures;
+pub mod coerce;
+pub mod stackcheck;
 pub mod constants;
 pub mod control_flow;
+pub mod deps;
+pub mod collections;
+pub mod strings;
 pub mod error;
 pub mod expressions;
 pub mod imports;
@@ -56,6 +62,30 @@ use wasm_encoder::ValType;
 use crate::optimize::OptLevel;
 use crate::parser::Parser;
 
+/// The value of `None` and `\u{2205}`.
+///
+/// An Option is TRANSPARENT in this backend — `Some(x)` compiles to `x` and
+/// nothing wraps it — so "nothing" has to be a value no real one can be. It
+/// used to be 0, which is also `false`, also the integer zero, and also every
+/// host function's "absent": `conn_row` reads `up: boolean | null` and could
+/// not tell a service that is DOWN from one it has not checked yet.
+///
+/// Before that it was a fresh 16-byte heap allocation at every mention, with
+/// equality on the pointer, so `None == None` was false and no `x == None`
+/// guard could ever be true.
+///
+/// `i64::MIN` is not a number any interface computes, not a pointer into a
+/// 32-bit linear memory, and not a handle. The host knows the same value —
+/// `sigil_runtime.js` calls it `NONE`, and a test pins the two together.
+pub const NONE: i64 = i64::MIN;
+
+/// The type name the parser gives every anonymous object literal.
+///
+/// Kept next to the compiler that special-cases it, and pinned by a test, so a
+/// rename in the parser cannot quietly turn every `{ a: 1 }` back into a
+/// same-named struct sharing one layout.
+pub(crate) const ANON_STRUCT: &str = "__anonymous__";
+
 /// WASM Compiler for Sigil.
 ///
 /// Compiles Sigil source code to WASM bytecode.
@@ -69,6 +99,63 @@ pub struct WasmCompiler {
 
     /// Function name -> index mapping
     pub(crate) func_map: HashMap<String, u32>,
+
+    /// Declared parameter count per function index.
+    ///
+    /// Every user function takes i64 parameters, so arity is the only way a
+    /// call can disagree with its callee — and nothing checked it. `sigil
+    /// check` does not resolve names (S23), so `VNode·div()·child()` passed and
+    /// the backend emitted a `call` with one operand for a function that takes
+    /// two: "not enough arguments on the stack", reported by the browser rather
+    /// than the compiler. Too many arguments is the same defect the other way,
+    /// and shows up as a fallthru with an extra value.
+    pub(crate) func_arity: HashMap<u32, usize>,
+
+    /// `extern "js" { static NAME: T; }` — a value the host supplies, by the
+    /// index of the import that fetches it.
+    ///
+    /// These were dropped on the floor ("not yet supported"), so every
+    /// reference to one was an undefined variable — `WINDOW` in
+    /// `qliphoth-sys`, which is how that package reaches the browser's window
+    /// object at all. A host value has to be fetched rather than read, because
+    /// an imported global cannot be typed as the opaque handle these are.
+    pub(crate) extern_statics: HashMap<String, u32>,
+
+    /// Every function index a simple name could mean.
+    ///
+    /// `func_map` holds one index per name and is last-writer-wins, so an impl's
+    /// associated function registered under its simple name silently replaced an
+    /// `extern "js"` declaration of the same name — `⊢ LocalStorage { rite
+    /// clear() }` over `extern "js" { rite clear(this: &Storage) }`, which is
+    /// the one name that stopped the whole `qliphoth-sys` package compiling.
+    /// When a call cannot be resolved by type, the arity decides between these.
+    pub(crate) func_candidates: HashMap<String, Vec<u32>>,
+    /// Every function index registered under a qualified name, in the order
+    /// the signature pass met them. Two impl blocks on the same type may
+    /// define the same method name; each definition needs its own body.
+    /// Names that hold a string in the function being compiled. See
+    /// `wasm::strings` — the backend had no notion of this at all.
+    /// The actor whose methods are being registered, so they export under
+    /// `<Actor>_<method>` rather than colliding on a bare name.
+    pub(crate) registering_actor: Option<String>,
+    pub(crate) string_locals: std::collections::HashSet<String>,
+    /// Declared types of the current function's parameters and annotated
+    /// locals, for the questions a bare name cannot answer.
+    pub(crate) decl_types: HashMap<String, crate::ast::TypeExpr>,
+    /// Per enum variant, the declared type of each payload slot.
+    pub(crate) enum_payload_types: HashMap<String, Vec<Option<String>>>,
+    /// Functions whose declared return type is a string.
+    pub(crate) string_returning: std::collections::HashSet<String>,
+    /// Per struct, the fields declared as strings.
+    pub(crate) string_fields: HashMap<String, std::collections::HashSet<String>>,
+    pub(crate) def_slots: HashMap<String, Vec<u32>>,
+    /// How many definitions of a qualified name the body pass has consumed.
+    /// The two passes walk the same items in the same order, so the Nth body
+    /// belongs to the Nth registered slot.
+    pub(crate) def_cursor: HashMap<String, usize>,
+
+    /// Diagnostics from the stack checker, filled in as the module is encoded.
+    pub(crate) stack_reports: Vec<String>,
 
     /// Global variables: (type, mutable, initial_value)
     pub(crate) globals: Vec<(ValType, bool, i64)>,
@@ -99,6 +186,20 @@ pub struct WasmCompiler {
 
     /// Struct layouts
     pub(crate) struct_layouts: HashMap<String, StructLayout>,
+    /// Field slots for anonymous object literals (`{ a: 1, b: 2 }`).
+    ///
+    /// The parser names every anonymous literal `__anonymous__`, so they all
+    /// used to share ONE `StructLayout` — the first shape compiled. Every field
+    /// name that shape did not have fell to `unwrap_or(0)`, so a second literal
+    /// wrote all of its fields over each other at offset 0 and read them back
+    /// as whatever landed there last. Anonymous objects are how untyped props
+    /// bags are passed, so this silently flattened them.
+    ///
+    /// Instead: one program-wide slot per distinct field name, assigned in
+    /// first-seen order. Offsets are then stable no matter which literal is
+    /// compiled first, and each literal allocates only up to its own highest
+    /// slot.
+    pub(crate) anon_field_slots: Vec<String>,
 
     /// Enum layouts
     pub(crate) enum_layouts: HashMap<String, EnumLayout>,
@@ -133,6 +234,14 @@ pub struct WasmCompiler {
     /// Maps "vdom::Element" -> function/type index
     pub(crate) qualified_items: HashMap<String, QualifiedItem>,
 
+    /// Extern type names (from extern blocks)
+    /// Used to resolve method calls like Node::append_child
+    pub(crate) extern_types: std::collections::HashSet<String>,
+
+    /// Variable types: maps variable name to its type name
+    /// Used to resolve method calls like app·view() where app has type PlatformApp
+    pub(crate) var_types: HashMap<String, String>,
+
     /// Optimization level
     pub(crate) opt_level: OptLevel,
 
@@ -160,7 +269,40 @@ pub struct WasmCompiler {
 
     /// Start function index (for __wasm_start if we have deferred inits)
     pub(crate) start_function_idx: Option<u32>,
+
+    /// Current actor being compiled (for self.field resolution)
+    pub(crate) current_actor: Option<String>,
+
+    /// Functions that were called but never resolved, and were compiled to a
+    /// constant `0` instead. See `stubbed_calls()` — this is silent wrong
+    /// behaviour, not a compile error, and callers must be able to see it.
+    pub(crate) stubbed_calls: std::collections::BTreeSet<String>,
+    /// Names stubbed under `SIGIL_WASM_STUB_UNRESOLVED`. See `stubbing_unresolved`.
+    pub(crate) unresolved: std::collections::BTreeSet<String>,
+
+    /// Actor methods declared with a `self` receiver, by `Actor::method`. Actor
+    /// state lives in globals, so the receiver is a placeholder — but it is part
+    /// of the WASM signature, and a call through the actor's name has to push it.
+    pub(crate) actor_self_methods: std::collections::HashSet<String>,
 }
+
+/// Base for function indices while compiling.
+///
+/// A WebAssembly function index space puts imports first, so a defined
+/// function's real index is `import_count + position`. Indices used to be
+/// assigned that way at registration — and `import_count` keeps growing, because
+/// an `extern` block in a later file, or a later crate in the same project, adds
+/// imports after earlier functions were already numbered. Every call to one of
+/// those earlier functions then pointed one slot too low, silently, at whatever
+/// function happened to sit there: 96 of qliphoth's 353 functions were numbered
+/// against a stale count, and the module still validated.
+///
+/// Function indices are therefore assigned from this base and are stable for the
+/// whole compilation. `resolve_function_indices`, the first thing
+/// `generate_module` does, rewrites them to `import_count + position` once the
+/// import count is final. It also keeps "is this an import?" a question about
+/// the index alone, rather than about a number that moves.
+pub(crate) const FUNC_BASE: u32 = 0x4000_0000;
 
 impl WasmCompiler {
     /// Create a new WASM compiler.
@@ -169,6 +311,18 @@ impl WasmCompiler {
             imports: ImportRegistry::new(),
             functions: Vec::new(),
             func_map: HashMap::new(),
+            func_arity: HashMap::new(),
+            extern_statics: HashMap::new(),
+            func_candidates: HashMap::new(),
+            registering_actor: None,
+            string_locals: std::collections::HashSet::new(),
+            decl_types: HashMap::new(),
+            enum_payload_types: HashMap::new(),
+            string_returning: std::collections::HashSet::new(),
+            string_fields: HashMap::new(),
+            def_slots: HashMap::new(),
+            def_cursor: HashMap::new(),
+            stack_reports: Vec::new(),
             globals: Vec::new(),
             global_map: HashMap::new(),
             data_segments: Vec::new(),
@@ -179,6 +333,7 @@ impl WasmCompiler {
             closure_map: HashMap::new(),
             closure_counter: 0,
             struct_layouts: HashMap::new(),
+            anon_field_slots: Vec::new(),
             enum_layouts: HashMap::new(),
             current_fn_idx: None,
             loop_stack: Vec::new(),
@@ -189,6 +344,8 @@ impl WasmCompiler {
             external_imports: HashMap::new(),
             module_path: Vec::new(),
             qualified_items: HashMap::new(),
+            extern_types: std::collections::HashSet::new(),
+            var_types: HashMap::new(),
             opt_level: OptLevel::Standard,
             debug_info: false,
             source_map: None,
@@ -198,6 +355,10 @@ impl WasmCompiler {
             module_cache: std::collections::HashMap::new(),
             deferred_static_inits: Vec::new(),
             start_function_idx: None,
+            current_actor: None,
+            stubbed_calls: std::collections::BTreeSet::new(),
+            unresolved: std::collections::BTreeSet::new(),
+            actor_self_methods: std::collections::HashSet::new(),
         };
 
         // Add heap pointer global
@@ -218,6 +379,103 @@ impl WasmCompiler {
     pub fn with_debug_info(mut self) -> Self {
         self.debug_info = true;
         self
+    }
+
+    /// Names that were called but never resolved to a function or import.
+    ///
+    /// The call compiler stubs any unresolved lowercase name — which is every
+    /// Sigil function name — to `i64.const 0`, so `json_parse("…")` and
+    /// `totally_undefined_function_xyz(1)` both compile to a valid module that
+    /// returns 0 and calls nothing. That fallback is load-bearing for code with
+    /// un-hoisted local helpers, so it is not an error; but a build that silently
+    /// dropped calls has to be able to say which ones.
+    pub fn stubbed_calls(&self) -> &std::collections::BTreeSet<String> {
+        &self.stubbed_calls
+    }
+
+    /// Whether to stub every unresolved name instead of stopping at the first.
+    ///
+    /// A port surfaces missing names one rebuild at a time, which is the slow
+    /// way to learn what a codebase needs. With `SIGIL_WASM_STUB_UNRESOLVED`
+    /// set, one build lists all of them. Off by default: a stubbed call is
+    /// silently wrong at run time, so this is a survey aid, never a build mode.
+    pub fn stubbing_unresolved() -> bool {
+        std::env::var("SIGIL_WASM_STUB_UNRESOLVED").is_ok()
+    }
+
+    /// Names stubbed only because `SIGIL_WASM_STUB_UNRESOLVED` was set.
+    pub fn unresolved(&self) -> &std::collections::BTreeSet<String> {
+        &self.unresolved
+    }
+
+    /// Record an unresolved name and leave a unit in its place.
+    pub(crate) fn stub_unresolved(&mut self, name: &str) -> WasmResult<()> {
+        // Name the function it appears in: `new` says nothing on its own.
+        let where_ = self
+            .current_function()
+            .map(|f| f.name.clone())
+            .unwrap_or_else(|| "<module scope>".to_string());
+        self.unresolved.insert(format!("{}  (in {})", name, where_));
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(wasm_encoder::Instruction::I64Const(0));
+        Ok(())
+    }
+
+    /// Every host function the compiler can import, as `module.name`, sorted.
+    ///
+    /// This is the contract a JS runtime has to satisfy. It is not a subset
+    /// question: a module importing a function the host does not provide fails
+    /// at `WebAssembly.instantiate`, so one missing name takes the whole page
+    /// down. Exposed through `sigil wasm --list-imports` so a runtime can be
+    /// checked against the compiler that will target it, rather than against a
+    /// grep of this file.
+    pub fn host_imports(&self) -> Vec<String> {
+        // With the signature, not just the name. A runtime can supply every
+        // name and still be wrong: `value.to_fixed` and `value.type_of` are
+        // declared to return i64 and returned a plain JavaScript Number, which
+        // WebAssembly rejects as "Cannot convert N to a BigInt" — and only on
+        // the call, so it was invisible until a component that formatted a
+        // number happened to run. An i64 parameter or result is a BigInt on the
+        // JavaScript side; an i32 or f64 is a Number.
+        let types = self.imports.types();
+        let mut names: Vec<String> = self
+            .imports
+            .imports()
+            .iter()
+            .map(|i| {
+                let sig = types.get(i.type_idx as usize);
+                let render = |ts: &[wasm_encoder::ValType]| {
+                    ts.iter()
+                        .map(|t| match t {
+                            wasm_encoder::ValType::I32 => "i32",
+                            wasm_encoder::ValType::I64 => "i64",
+                            wasm_encoder::ValType::F32 => "f32",
+                            wasm_encoder::ValType::F64 => "f64",
+                            _ => "?",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                match sig {
+                    Some((params, results)) if results.is_empty() => {
+                        format!("{}.{}({})", i.module, i.name, render(params))
+                    }
+                    Some((params, results)) => format!(
+                        "{}.{}({}) -> {}",
+                        i.module,
+                        i.name,
+                        render(params),
+                        render(results)
+                    ),
+                    None => format!("{}.{}", i.module, i.name),
+                }
+            })
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     /// Compile source code to WASM bytes.
@@ -250,6 +508,15 @@ impl WasmCompiler {
         if !self.deferred_static_inits.is_empty() {
             self.generate_start_function()?;
         }
+
+        // Fix invalid call wrappers (functions with 0 params that call imports expecting params)
+        self.fix_invalid_call_wrappers();
+
+        // Fix control flow stack imbalance (spurious initial values)
+        self.fix_control_flow_stack();
+
+        // Every name that resolved to nothing, in one report.
+        self.finish_unresolved()?;
 
         // Generate WASM module
         self.generate_module()
@@ -286,9 +553,115 @@ impl WasmCompiler {
         self.compile(&source)
     }
 
+    /// Compile a project with dependencies from sigil.toml.
+    ///
+    /// This resolves all dependencies, compiles them in order, and bundles
+    /// everything into a single WASM module.
+    pub fn compile_project(project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
+        let mut compiler = Self::new();
+        compiler.compile_project_into(project_dir)
+    }
+
+    /// As `compile_project`, but on an existing compiler, so the caller keeps
+    /// it afterwards — `sigil wasm` reports the calls that did not resolve, and
+    /// the project path was silently dropping that report on the floor.
+    pub fn compile_project_into(&mut self, project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
+        use deps::{DependencyGraph, ProjectManifest};
+
+        // Build dependency graph
+        let graph = DependencyGraph::from_project(project_dir)?;
+
+        let compiler = self;
+
+        // Compile each dependency in order (dependencies first)
+        for manifest in graph.iter_in_order() {
+            compiler.compile_crate(&manifest)?;
+        }
+
+        // Fix invalid call wrappers (functions with 0 params that call imports expecting params)
+        compiler.fix_invalid_call_wrappers();
+
+        // Fix control flow stack imbalance (spurious initial values)
+        compiler.fix_control_flow_stack();
+
+        // Every name that resolved to nothing, in one report.
+        compiler.finish_unresolved()?;
+
+        // Generate the final WASM module
+        compiler.generate_module()
+    }
+
+    /// Compile a single crate into the current compiler state.
+    fn compile_crate(&mut self, manifest: &deps::ProjectManifest) -> WasmResult<()> {
+        use std::fs;
+
+        // Set source directory for module resolution
+        self.source_dir = manifest.root_dir.join("src");
+
+        // Read the lib entry point
+        let lib_path = &manifest.lib_path;
+        if !lib_path.exists() {
+            // No lib.sigil - might be a binary-only crate, skip
+            return Ok(());
+        }
+
+        let canonical = lib_path.canonicalize()
+            .map_err(|e| WasmError::io(format!(
+                "cannot resolve {}: {}",
+                lib_path.display(),
+                e
+            )))?;
+
+        // Skip if already compiled
+        if self.loaded_modules.contains(&canonical) {
+            return Ok(());
+        }
+        self.loaded_modules.insert(canonical);
+
+        let source = fs::read_to_string(lib_path)
+            .map_err(|e| WasmError::io(format!(
+                "cannot read {}: {}",
+                lib_path.display(),
+                e
+            )))?;
+
+        self.source_file = lib_path.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "lib.sigil".to_string());
+
+        // Push crate name to module path for qualified names
+        let crate_name = manifest.name.replace('-', "_");
+        self.module_path.push(crate_name);
+
+        // Parse and compile
+        let mut parser = Parser::new(&source);
+        let ast = parser.parse_file()
+            .map_err(|e| WasmError::parse(e.to_string()))?;
+
+        self.compile_file(&ast)?;
+
+        // Pop crate name
+        self.module_path.pop();
+
+        Ok(())
+    }
+
     /// Get or create a type index.
     pub fn get_or_create_type(&mut self, params: Vec<ValType>, results: Vec<ValType>) -> u32 {
         self.imports.get_or_create_type(params, results)
+    }
+
+    /// Record that `name` may mean `idx`, keeping any earlier meaning.
+    pub(crate) fn note_candidate(&mut self, name: &str, idx: u32) {
+        let slot = self.func_candidates.entry(name.to_string()).or_default();
+        if !slot.contains(&idx) {
+            slot.push(idx);
+        }
+    }
+
+    /// Instruction-level diagnostics for anything the stack checker found.
+    pub fn stack_reports(&self) -> &[String] {
+        &self.stack_reports
     }
 
     /// Look up a function by name.
@@ -351,15 +724,84 @@ impl WasmCompiler {
             .and_then(move |idx| self.functions.get_mut(idx))
     }
 
+    /// The index the next registered function gets. Stable for the whole
+    /// compilation — see `FUNC_BASE`.
+    pub(crate) fn next_func_idx(&self) -> u32 {
+        FUNC_BASE + self.functions.len() as u32
+    }
+
+    /// Position in `self.functions` of a compile-time function index, or `None`
+    /// when the index names an import.
+    pub(crate) fn func_list_index(idx: u32) -> Option<usize> {
+        idx.checked_sub(FUNC_BASE).map(|i| i as usize)
+    }
+
+    /// Whether a compile-time index names an import rather than a defined
+    /// function.
+    pub(crate) fn is_import_idx(idx: u32) -> bool {
+        idx < FUNC_BASE
+    }
+
+    /// Rewrite every compile-time function index to its final WebAssembly index.
+    ///
+    /// Called once, at the top of `generate_module`, when the import count can
+    /// no longer change. After this the whole module speaks final indices, so
+    /// the encoder, the validator and every diagnostic agree on what a `call`
+    /// names.
+    fn resolve_function_indices(&mut self) {
+        use wasm_encoder::Instruction;
+        let base = self.imports.import_count();
+        let resolve = |idx: u32| -> u32 {
+            match Self::func_list_index(idx) {
+                Some(pos) => base + pos as u32,
+                None => idx,
+            }
+        };
+        for func in &mut self.functions {
+            for instr in &mut func.instructions {
+                match instr {
+                    Instruction::Call(idx) => *idx = resolve(*idx),
+                    Instruction::RefFunc(idx) => *idx = resolve(*idx),
+                    _ => {}
+                }
+            }
+        }
+        for (i, func) in self.functions.iter_mut().enumerate() {
+            func.func_idx = base + i as u32;
+        }
+        for idx in &mut self.table_elements {
+            *idx = resolve(*idx);
+        }
+        if let Some(idx) = self.start_function_idx.as_mut() {
+            *idx = resolve(*idx);
+        }
+    }
+
+    /// How many operands a call to `func_idx` takes.
+    ///
+    /// `func_arity` records user functions and `extern` blocks only, so an
+    /// arity check that consulted it alone waved through every builtin host
+    /// import — which is how a four-argument `remove_event_listener` bound to
+    /// the two-parameter `browser.remove_event_listener` and emitted a call
+    /// that left two operands stranded.
+    pub(crate) fn arity_of(&self, func_idx: u32) -> Option<usize> {
+        if let Some(&declared) = self.func_arity.get(&func_idx) {
+            return Some(declared);
+        }
+        if Self::is_import_idx(func_idx) {
+            return self.imports.get_param_types(func_idx).map(|p| p.len());
+        }
+        None
+    }
+
     /// Check if a user-defined function returns void (no results).
     pub fn func_returns_void(&self, func_idx: u32) -> bool {
-        let import_count = self.imports.import_count();
-        if func_idx < import_count {
+        if Self::is_import_idx(func_idx) {
             // Import function - check via imports
             self.imports.get_return_type(func_idx).is_none()
         } else {
             // User-defined function
-            let local_idx = (func_idx - import_count) as usize;
+            let local_idx = Self::func_list_index(func_idx).unwrap_or(usize::MAX);
             self.functions
                 .get(local_idx)
                 .map(|f| f.results.is_empty())
@@ -420,35 +862,93 @@ impl WasmCompiler {
     /// Resolve a path that may start with "tome" (crate root).
     /// Returns the resolved path segments.
     pub fn resolve_path(&self, segments: &[String]) -> Vec<String> {
-        if segments.first().map(|s| s.as_str()) == Some("tome") {
+        let mut out = if segments.first().map(|s| s.as_str()) == Some("tome") {
             // tome:: means crate root - skip the "tome" prefix
             segments[1..].to_vec()
         } else {
             segments.to_vec()
+        };
+
+        // `Self·get(key)` inside `⊢ LocalStorage` names `LocalStorage::get`.
+        // The impl's type is on `module_path` while its methods compile, and
+        // nothing consulted it — so `Self` as a path qualifier was an undefined
+        // variable, which is most of how `qliphoth-sys`'s storage module calls
+        // its own associated functions.
+        if out.first().map(|s| s.as_str()) == Some("Self") {
+            if let Some(ty) = self.module_path.last() {
+                out[0] = ty.clone();
+            }
         }
+        out
     }
 
     /// Look up a function by qualified path.
     /// Handles tome:: prefix and module-relative paths.
     pub fn get_func_by_path(&self, segments: &[String]) -> Option<u32> {
+        self.get_func_by_path_arity(segments, None)
+    }
+
+    /// As `get_func_by_path`, but a fallback that would bind a differently
+    /// shaped function is refused.
+    pub fn get_func_by_path_arity(&self, segments: &[String], argc: Option<usize>) -> Option<u32> {
         let resolved = self.resolve_path(segments);
+
+        // Every lookup below has to fit the call. A name can mean several
+        // things — six `extern "js"` types in `qliphoth-sys` declare a `get`,
+        // and so does `⊢ Window`, with a different arity — and returning the
+        // first match made the caller reject a call that was resolvable.
+        let fits = |idx: u32| {
+            argc.is_none_or(|n| self.arity_of(idx).is_none_or(|a| a == n))
+        };
 
         // If it's a single-segment path, check simple name first
         if resolved.len() == 1 {
-            if let Some(idx) = self.func_map.get(&resolved[0]) {
-                return Some(*idx);
+            if let Some(&idx) = self.func_map.get(&resolved[0]) {
+                if fits(idx) {
+                    return Some(idx);
+                }
             }
         }
 
         // Try qualified lookup
         let qualified = resolved.join("::");
-        if let Some(idx) = self.func_map.get(&qualified) {
-            return Some(*idx);
+        if let Some(&idx) = self.func_map.get(&qualified) {
+            if fits(idx) {
+                return Some(idx);
+            }
         }
 
         // Check in qualified_items
         if let Some(QualifiedItem::Function(idx)) = self.qualified_items.get(&qualified) {
-            return Some(*idx);
+            if fits(*idx) {
+                return Some(*idx);
+            }
+        }
+
+        // Try just the last segment (simple name) for module-qualified calls
+        // e.g., components::nav_view -> try just "nav_view"
+        //
+        // Only when the arity agrees. `Type·method()` reaches here too, and the
+        // last segment of one type's method is very often the name of another's
+        // — `view` is what every generated Qliphoth component calls its render
+        // method, so `ConnRow·view()` bound to whichever `view` was in scope,
+        // usually the enclosing one, and the call went out a `self` short.
+        if resolved.len() > 1 {
+            let simple_name = resolved.last().unwrap();
+            if let Some(&idx) = self.func_map.get(simple_name) {
+                if fits(idx) {
+                    return Some(idx);
+                }
+            }
+            // `func_map` keeps one index per name; a name can mean several
+            // things. Ask the rest before giving up. See `func_candidates`.
+            if let Some(idx) = self
+                .func_candidates
+                .get(simple_name)
+                .and_then(|c| c.iter().copied().find(|i| fits(*i)))
+            {
+                return Some(idx);
+            }
         }
 
         // Check imports
@@ -456,6 +956,301 @@ impl WasmCompiler {
     }
 
     // compile_file is implemented in statements.rs
+
+    /// Fix control flow stack imbalance: functions with extra values on the stack.
+    /// This handles several cases:
+    /// 1. Spurious i64.const 0 at the start
+    /// 2. LocalTee leaving values on stack before if blocks
+    fn fix_control_flow_stack(&mut self) {
+        use wasm_encoder::Instruction;
+
+        for func in self.functions.iter_mut() {
+            // Only check functions that return exactly 1 value
+            if func.results.len() != 1 {
+                continue;
+            }
+
+            // Need at least 3 instructions
+            if func.instructions.len() < 3 {
+                continue;
+            }
+
+            // Case 1: i64.const 0 followed by local.get (spurious initial push)
+            let first_is_const_0 = matches!(&func.instructions[0], Instruction::I64Const(0));
+            let second_is_local_get = matches!(&func.instructions[1], Instruction::LocalGet(_));
+
+            if first_is_const_0 && second_is_local_get {
+                let third = func.instructions.get(2);
+                let third_is_wrap = matches!(third, Some(Instruction::I32WrapI64));
+                let third_is_local_set = matches!(
+                    third,
+                    Some(Instruction::LocalSet(_)) | Some(Instruction::LocalTee(_))
+                );
+                let third_is_drop = matches!(third, Some(Instruction::Drop));
+
+                if third_is_wrap || third_is_local_set {
+                    let has_early_store_of_initial = func.instructions[2..8.min(func.instructions.len())]
+                        .iter()
+                        .any(|i| matches!(i, Instruction::LocalSet(0)));
+
+                    if !has_early_store_of_initial {
+                        func.instructions.remove(0);
+                    }
+                } else if !third_is_drop {
+                    let last_before_end = func.instructions.len().saturating_sub(2);
+                    if let Some(Instruction::Call(_)) = func.instructions.get(last_before_end) {
+                        func.instructions.remove(0);
+                    }
+                }
+            }
+
+            // Case 2: LocalTee before If leaves value on stack
+            // Pattern: ..., call X, local.tee Y, local.get Z, ..., if
+            // The local.tee leaves a value that goes through the if block unused
+            // Fix: Replace local.tee with local.set
+            for i in 0..func.instructions.len().saturating_sub(3) {
+                if let Instruction::LocalTee(local_idx) = &func.instructions[i] {
+                    let local_idx = *local_idx;
+                    // Check if followed by local.get (not of same local), then eventually if
+                    if let Some(Instruction::LocalGet(get_idx)) = func.instructions.get(i + 1) {
+                        if *get_idx != local_idx {
+                            // Look ahead for an if within a few instructions
+                            let has_if_soon = func.instructions[i + 2..((i + 8).min(func.instructions.len()))]
+                                .iter()
+                                .any(|instr| matches!(instr, Instruction::If(_)));
+
+                            if has_if_soon {
+                                // Replace local.tee with local.set to not leave value on stack
+                                func.instructions[i] = Instruction::LocalSet(local_idx);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 3: Spurious i64.const 0 before a call that expects i32 args
+            // Pattern: ..., i32.wrap_i64, i64.const 0, call(import)
+            // The i64.const 0 is spurious - remove it
+            let mut i = 0;
+            while i + 2 < func.instructions.len() {
+                if let Instruction::I64Const(0) = &func.instructions[i] {
+                    if let Instruction::Call(call_idx) = &func.instructions[i + 1] {
+                        let call_idx = *call_idx;
+                        // Check if it's an import
+                        if Self::is_import_idx(call_idx) {
+                            if let Some(params) = self.imports.get_param_types(call_idx) {
+                                // The i64.const 0 is spurious if:
+                                // 1. All params are i32 (classic case), OR
+                                // 2. Last param is i32 (i64.const 0 can't be for it)
+                                let all_i32 = !params.is_empty()
+                                    && params.iter().all(|p| *p == ValType::I32);
+                                let last_is_i32 = params.last() == Some(&ValType::I32);
+
+                                if all_i32 || last_is_i32 {
+                                    // Check if previous instruction produces an i32
+                                    if i > 0 {
+                                        let prev = &func.instructions[i - 1];
+                                        if matches!(prev, Instruction::I32WrapI64 | Instruction::I32Const(_)) {
+                                            // Remove the spurious i64.const 0
+                                            func.instructions.remove(i);
+                                            continue; // Don't increment i since we removed an instruction
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+
+    /// Fix invalid call wrappers: functions that call imports without proper stack setup.
+    /// This handles two cases:
+    /// 1. Functions with 0 params that call imports expecting params (replace with constant)
+    /// 2. Functions with params that immediately call imports without pushing params first
+    fn fix_invalid_call_wrappers(&mut self) {
+        use wasm_encoder::Instruction;
+
+        let import_count = self.imports.import_count();
+
+        // Get a snapshot of import param info before iterating
+        let import_param_counts: Vec<usize> = (0..import_count)
+            .map(|idx| {
+                self.imports
+                    .get_param_types(idx)
+                    .map(|p| p.len())
+                    .unwrap_or(0)
+            })
+            .collect();
+
+        // Pre-calculate local function param counts (to avoid borrow conflicts in loop)
+        let local_func_param_counts: Vec<usize> = self
+            .functions
+            .iter()
+            .map(|f| f.params.len())
+            .collect();
+
+        for func in self.functions.iter_mut() {
+            // Case 1: Functions with 0 parameters that call imports expecting params
+            if func.params.is_empty() {
+                // Find the first call instruction
+                let first_call_idx = func.instructions.iter().position(|i| matches!(i, Instruction::Call(_)));
+
+                if let Some(idx) = first_call_idx {
+                    if let Instruction::Call(call_idx) = &func.instructions[idx] {
+                        let call_idx = *call_idx;
+                        // Check if it's calling an import
+                        if Self::is_import_idx(call_idx) {
+                            // Get the import's param count
+                            let param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
+                            // If import expects params but we have 0, need to push a default value
+                            if param_count > 0 {
+                                // Check if there's anything on the stack before the call
+                                // A simple heuristic: if idx == 0, stack is definitely empty
+                                // Otherwise check if previous instructions push values
+                                let stack_empty = idx == 0 || !func.instructions[0..idx]
+                                    .iter()
+                                    .any(|i| matches!(i,
+                                        Instruction::I64Const(_) |
+                                        Instruction::I32Const(_) |
+                                        Instruction::LocalGet(_) |
+                                        Instruction::GlobalGet(_) |
+                                        Instruction::Call(_)
+                                    ));
+
+                                if stack_empty {
+                                    // Insert i64.const 0 before the call for each required param
+                                    for _ in 0..param_count {
+                                        func.instructions.insert(idx, Instruction::I64Const(0));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Case 2: ANY function with a call to import early that doesn't have enough values on stack
+            // Scan through early instructions looking for calls to imports
+            for i in 0..func.instructions.len().min(20) {
+                if let Instruction::Call(call_idx) = &func.instructions[i] {
+                    let call_idx = *call_idx;
+                    if Self::is_import_idx(call_idx) {
+                        let import_param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
+                        if import_param_count == 0 {
+                            continue;
+                        }
+
+                        // Count how many values are pushed before this call
+                        let mut stack_depth: i32 = 0;
+                        for j in 0..i {
+                            match &func.instructions[j] {
+                                Instruction::LocalGet(_) | Instruction::GlobalGet(_) |
+                                Instruction::I32Const(_) | Instruction::I64Const(_) |
+                                Instruction::F32Const(_) | Instruction::F64Const(_) => {
+                                    stack_depth += 1;
+                                }
+                                Instruction::LocalSet(_) | Instruction::GlobalSet(_) |
+                                Instruction::Drop => {
+                                    stack_depth -= 1;
+                                }
+                                Instruction::LocalTee(_) => {
+                                    // Tee doesn't change stack depth (pops and pushes)
+                                }
+                                Instruction::Call(idx) => {
+                                    // For calls, track stack effect
+                                    if Self::is_import_idx(*idx) {
+                                        // Import function: use known param count
+                                        let params = import_param_counts.get(*idx as usize).copied().unwrap_or(0);
+                                        stack_depth -= params as i32;
+                                        stack_depth += 1; // Assume 1 return value
+                                    } else {
+                                        // Local function: look up param count from pre-calculated vector
+                                        let local_idx = Self::func_list_index(*idx).unwrap_or(usize::MAX);
+                                        if let Some(&param_count) = local_func_param_counts.get(local_idx) {
+                                            stack_depth -= param_count as i32;
+                                        }
+                                        // All Sigil functions return i64
+                                        stack_depth += 1;
+                                    }
+                                }
+                                // Binary operations: consume 2, produce 1 → net -1
+                                Instruction::I32Add | Instruction::I32Sub |
+                                Instruction::I32Mul | Instruction::I32DivS | Instruction::I32DivU |
+                                Instruction::I32RemS | Instruction::I32RemU |
+                                Instruction::I32And | Instruction::I32Or | Instruction::I32Xor |
+                                Instruction::I32Shl | Instruction::I32ShrS | Instruction::I32ShrU |
+                                Instruction::I64Add | Instruction::I64Sub |
+                                Instruction::I64Mul | Instruction::I64DivS | Instruction::I64DivU |
+                                Instruction::I64RemS | Instruction::I64RemU |
+                                Instruction::I64And | Instruction::I64Or | Instruction::I64Xor |
+                                Instruction::I64Shl | Instruction::I64ShrS | Instruction::I64ShrU |
+                                Instruction::F32Add | Instruction::F32Sub |
+                                Instruction::F32Mul | Instruction::F32Div |
+                                Instruction::F64Add | Instruction::F64Sub |
+                                Instruction::F64Mul | Instruction::F64Div |
+                                // Comparison operations also consume 2, produce 1
+                                Instruction::I32Eq | Instruction::I32Ne |
+                                Instruction::I32LtS | Instruction::I32LtU |
+                                Instruction::I32GtS | Instruction::I32GtU |
+                                Instruction::I32LeS | Instruction::I32LeU |
+                                Instruction::I32GeS | Instruction::I32GeU |
+                                Instruction::I64Eq | Instruction::I64Ne |
+                                Instruction::I64LtS | Instruction::I64LtU |
+                                Instruction::I64GtS | Instruction::I64GtU |
+                                Instruction::I64LeS | Instruction::I64LeU |
+                                Instruction::I64GeS | Instruction::I64GeU |
+                                Instruction::F32Eq | Instruction::F32Ne |
+                                Instruction::F32Lt | Instruction::F32Gt |
+                                Instruction::F32Le | Instruction::F32Ge |
+                                Instruction::F64Eq | Instruction::F64Ne |
+                                Instruction::F64Lt | Instruction::F64Gt |
+                                Instruction::F64Le | Instruction::F64Ge => {
+                                    stack_depth -= 1; // Net effect: -2 + 1 = -1
+                                }
+                                // Unary operations: consume 1, produce 1 → net 0
+                                Instruction::I32Eqz | Instruction::I64Eqz |
+                                Instruction::I32Clz | Instruction::I32Ctz | Instruction::I32Popcnt |
+                                Instruction::I64Clz | Instruction::I64Ctz | Instruction::I64Popcnt |
+                                Instruction::F32Abs | Instruction::F32Neg |
+                                Instruction::F32Sqrt | Instruction::F32Ceil | Instruction::F32Floor |
+                                Instruction::F64Abs | Instruction::F64Neg |
+                                Instruction::F64Sqrt | Instruction::F64Ceil | Instruction::F64Floor |
+                                // Conversions: consume 1, produce 1
+                                Instruction::I32WrapI64 | Instruction::I64ExtendI32S | Instruction::I64ExtendI32U |
+                                Instruction::F32ConvertI32S | Instruction::F32ConvertI32U |
+                                Instruction::F32ConvertI64S | Instruction::F32ConvertI64U |
+                                Instruction::F64ConvertI32S | Instruction::F64ConvertI32U |
+                                Instruction::F64ConvertI64S | Instruction::F64ConvertI64U |
+                                Instruction::I32TruncF32S | Instruction::I32TruncF32U |
+                                Instruction::I32TruncF64S | Instruction::I32TruncF64U |
+                                Instruction::I64TruncF32S | Instruction::I64TruncF32U |
+                                Instruction::I64TruncF64S | Instruction::I64TruncF64U |
+                                Instruction::F32DemoteF64 | Instruction::F64PromoteF32 |
+                                Instruction::I32ReinterpretF32 | Instruction::I64ReinterpretF64 |
+                                Instruction::F32ReinterpretI32 | Instruction::F64ReinterpretI64 => {
+                                    // Net 0 - no change to stack depth
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        // If stack depth is less than needed, add default values
+                        let missing = (import_param_count as i32) - stack_depth;
+                        if missing > 0 {
+                            for _ in 0..missing {
+                                func.instructions.insert(i, Instruction::I64Const(0));
+                            }
+                            // After inserting, break to avoid re-processing shifted instructions
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /// Generate the __wasm_start function for deferred static initialization.
     /// This function runs automatically when the WASM module is instantiated.
@@ -465,7 +1260,7 @@ impl WasmCompiler {
 
         // Create __wasm_start function: () -> ()
         let type_idx = self.get_or_create_type(vec![], vec![]);
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         let mut start_func = CompiledFunction::new(
             "__wasm_start".to_string(),
@@ -513,7 +1308,44 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// Fail the build with every unresolved name, not the first one.
+    ///
+    /// Each unresolved name used to raise on the spot, so a port learned about
+    /// them one two-minute rebuild at a time. They are recorded as they are met
+    /// and reported together here — unless `SIGIL_WASM_STUB_UNRESOLVED` says
+    /// this is a survey build, which wants the module anyway.
+    #[cfg(test)]
+    pub(crate) fn finish_unresolved_for_test(&self) -> WasmResult<()> {
+        self.finish_unresolved()
+    }
+
+    fn finish_unresolved(&self) -> WasmResult<()> {
+        if self.unresolved.is_empty() || Self::stubbing_unresolved() {
+            return Ok(());
+        }
+        let mut lines = vec![format!(
+            "{} name(s) resolved to nothing (each compiles to a constant 0):",
+            self.unresolved.len()
+        )];
+        for name in &self.unresolved {
+            lines.push(format!("  {}", name));
+        }
+        lines.push(
+            "  Set SIGIL_WASM_STUB_UNRESOLVED=1 to build anyway and survey.".to_string(),
+        );
+        Err(WasmError::new(
+            crate::wasm::error::WasmErrorKind::Undefined,
+            lines.join("\n"),
+        ))
+    }
+
     fn generate_module(&mut self) -> WasmResult<Vec<u8>> {
+        // Function indices were assigned from `FUNC_BASE` while the import count
+        // was still moving. Settle them first: everything below — the encoder,
+        // the repair passes, the stack checker, the exports — speaks final
+        // WebAssembly indices from here on.
+        self.resolve_function_indices();
+
         // TODO: Implement in codegen.rs
         use wasm_encoder::{
             CodeSection, DataSection, DataSegment, DataSegmentMode, ElementSection, Elements,
@@ -549,8 +1381,15 @@ impl WasmCompiler {
         }
         module.section(&functions);
 
-        // Table section (for indirect calls)
-        if !self.table_elements.is_empty() {
+        // Table section (for indirect calls).
+        //
+        // Always emitted, even empty. A `call_indirect` can be reached with no
+        // closure ever added to the table — calling a local bound to `∅`, for
+        // one — and a module with a `call_indirect` and no table is invalid:
+        // "unknown table 0", which reads as a compiler bug rather than as the
+        // missing callback it is. An empty table traps at the call instead,
+        // which is the honest answer.
+        {
             let mut tables = TableSection::new();
             tables.table(TableType {
                 element_type: RefType::FUNCREF,
@@ -575,6 +1414,19 @@ impl WasmCompiler {
 
         // Global section
         if !self.globals.is_empty() {
+            // The runtime heap must start ABOVE the string literals. Both
+            // used to start at `HEAP_START`, so the first allocation in a
+            // function overwrote the literals it was about to read:
+            // `format!("x={}", x)` inside a match arm allocated the enum, wrote
+            // a zero length over "x=", and produced "7". `outside` the arm, with
+            // nothing to allocate, the same `format!` was correct — which is
+            // why this survived every test that did not allocate first.
+            if let Some(heap_ptr) = self.global_map.get("__heap_ptr").copied() {
+                if let Some(slot) = self.globals.get_mut(heap_ptr as usize) {
+                    slot.2 = self.data_offset.max(memory::HEAP_START) as i64;
+                }
+            }
+
             let mut globals = GlobalSection::new();
             for (ty, mutable, init) in &self.globals {
                 globals.global(
@@ -599,13 +1451,38 @@ impl WasmCompiler {
         let mut exports = ExportSection::new();
         exports.export("memory", wasm_encoder::ExportKind::Memory, 0);
 
+        // The module's bump pointer, so the host can share it.
+        //
+        // There were two allocators over one linear memory: enum construction
+        // bumps this global inline, everything else calls `memory.heap_alloc`
+        // on the host, and the host kept its own pointer starting at a constant
+        // 65536. They handed out the same addresses, so a VNode's tag was
+        // overwritten by whatever was allocated next — `createElement('')`,
+        // from the largest component only, because the small ones never
+        // allocated enough to collide. Exported, there is one pointer.
+        if let Some(heap_ptr) = self.global_map.get("__heap_ptr").copied() {
+            exports.export("__heap_ptr", wasm_encoder::ExportKind::Global, heap_ptr);
+        }
+
         if !self.table_elements.is_empty() {
             exports.export("__indirect_function_table", wasm_encoder::ExportKind::Table, 0);
         }
 
+        // Track seen export names to avoid duplicates (WASM requires unique export names)
+        let mut seen_exports = std::collections::HashSet::new();
+        seen_exports.insert("memory".to_string());
+        seen_exports.insert("__indirect_function_table".to_string());
+
         for func in &self.functions {
             if func.is_exported {
-                exports.export(&func.name, wasm_encoder::ExportKind::Func, func.func_idx);
+                let export_name = if seen_exports.contains(&func.name) {
+                    // Use qualified name for duplicates
+                    format!("{}_{}", func.name, func.func_idx)
+                } else {
+                    func.name.clone()
+                };
+                seen_exports.insert(export_name.clone());
+                exports.export(&export_name, wasm_encoder::ExportKind::Func, func.func_idx);
             }
         }
         module.section(&exports);
@@ -625,6 +1502,134 @@ impl WasmCompiler {
                 Elements::Functions(std::borrow::Cow::Borrowed(&self.table_elements)),
             );
             module.section(&elements);
+        }
+
+        // Every call agrees with its callee before anything is encoded. See
+        // `coerce`: the backend has 66 hand-rolled import call sites and no
+        // shared coercion, so validity used to be decided per site.
+        {
+            let import_count = self.imports.import_count();
+            let import_sigs: Vec<Option<(Vec<ValType>, Vec<ValType>)>> = (0..import_count)
+                .map(|i| {
+                    self.imports
+                        .get_func_type(i)
+                        .and_then(|t| self.imports.types().get(t as usize).cloned())
+                })
+                .collect();
+            let local_sigs: Vec<(Vec<ValType>, Vec<ValType>)> = self
+                .functions
+                .iter()
+                .map(|f| {
+                    (
+                        f.params.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+                        f.results.clone(),
+                    )
+                })
+                .collect();
+            let global_types: Vec<ValType> = self.globals.iter().map(|(t, _, _)| *t).collect();
+
+            let call_sig = move |idx: u32| -> Option<(Vec<ValType>, Vec<ValType>)> {
+                if (idx as usize) < import_sigs.len() {
+                    import_sigs[idx as usize].clone()
+                } else {
+                    local_sigs.get(idx as usize - import_sigs.len()).cloned()
+                }
+            };
+            let global_ty = move |idx: u32| -> Option<ValType> {
+                global_types.get(idx as usize).copied()
+            };
+            let all_types: Vec<(Vec<ValType>, Vec<ValType>)> = self.imports.types().to_vec();
+            let type_sig = move |idx: u32| -> Option<(Vec<ValType>, Vec<ValType>)> {
+                all_types.get(idx as usize).cloned()
+            };
+
+            for func in &mut self.functions {
+                let params: Vec<ValType> = func.params.iter().map(|(_, t)| *t).collect();
+                let locals = func.local_types.clone();
+                let nparams = params.len();
+                let local_ty = move |idx: u32| -> Option<ValType> {
+                    let i = idx as usize;
+                    if i < nparams {
+                        params.get(i).copied()
+                    } else {
+                        locals.get(i - nparams).copied()
+                    }
+                };
+                let results = func.results.clone();
+                coerce::normalise_call_results(
+                    &mut func.instructions,
+                    import_count,
+                    &call_sig,
+                );
+                coerce::repair_operand_types(
+                    &mut func.instructions,
+                    &results,
+                    &call_sig,
+                    &type_sig,
+                    &local_ty,
+                    &global_ty,
+                );
+            }
+
+            // Say what is wrong with the instructions we emitted, in terms of
+            // the instructions we emitted. `wasmparser` gives a byte offset into
+            // the encoded binary, which names nothing anyone can act on.
+            // The forward model repairs what the backward scan could not reach —
+            // an operand pushed on the far side of an `if`/`end`, which is where
+            // the remaining invalid modules were. Repeat until it settles: one
+            // conversion can expose the next.
+            self.stack_reports.clear();
+            for func in &mut self.functions {
+                let mut repairs: Vec<(usize, wasm_encoder::Instruction<'static>)> = Vec::new();
+                for _ in 0..8 {
+                    let report =
+                        stackcheck::check_function(func, &mut repairs, &call_sig, &type_sig, &global_ty);
+                    if repairs.is_empty() {
+                        if let Some(r) = report {
+                            self.stack_reports.push(r.render());
+                        }
+                        break;
+                    }
+                    repairs.sort_by(|a, b| b.0.cmp(&a.0));
+                    for (at, instr) in repairs.drain(..) {
+                        func.instructions.insert(at.min(func.instructions.len()), instr);
+                    }
+                }
+            }
+        }
+
+        // `WebAssembly.Module()` reports a failure as "Compiling function #N",
+        // and N counts imports first. SIGIL_WASM_FUNCS prints the map.
+        if std::env::var("SIGIL_WASM_FUNCS").is_ok() {
+            let base = self.imports.import_count();
+            for (i, f) in self.functions.iter().enumerate() {
+                eprintln!("func #{} = {}", base as usize + i, f.name);
+            }
+        }
+
+        // `GlobalGet(512)` says nothing on its own, and a closure held in the
+        // wrong global is invisible without the map.
+        if std::env::var("SIGIL_WASM_GLOBALS").is_ok() {
+            let mut by_index: Vec<(u32, &String)> =
+                self.global_map.iter().map(|(n, i)| (*i, n)).collect();
+            by_index.sort();
+            for (idx, name) in by_index {
+                eprintln!("global #{} = {}", idx, name);
+            }
+        }
+
+        // SIGIL_WASM_DUMP=<name> prints a function's final instruction list.
+        // The stack checker only speaks up when a module is invalid; a module
+        // that validates and computes the wrong thing had nothing to show.
+        if let Ok(want) = std::env::var("SIGIL_WASM_DUMP") {
+            for func in &self.functions {
+                if func.name == want {
+                    eprintln!("== {} ({} instructions) ==", func.name, func.instructions.len());
+                    for (i, instr) in func.instructions.iter().enumerate() {
+                        eprintln!("{:>5}  {:?}", i, instr);
+                    }
+                }
+            }
         }
 
         // Code section
@@ -814,7 +1819,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn answer() -> i64 {
+            ☉ rite answer() -> i64 {
                 42
             }
         "#);
@@ -826,12 +1831,141 @@ mod validation_tests {
         assert!(validation.is_ok(), "Validation failed: {:?}", validation);
     }
 
+    /// An actor message handler is the core construct of every Qliphoth
+    /// component, and none of the 21 validation tests above compiled one. Every
+    /// `on Msg { … }` produced a function that failed WebAssembly validation
+    /// while `sigil wasm` reported success and wrote the file — an empty handler
+    /// included, because `compile_block` always leaves one value on the stack and
+    /// `compile_handler` only dropped it when the body had a trailing expression.
+    #[test]
+    fn test_validate_actor_message_handler() {
+        // Void handler, empty body: the block's unit value must be dropped.
+        for src in [
+            r#"☉ actor A { on Bump { } }"#,
+            r#"☉ actor A { state c: i64! = 0, on Bump { self.c = 1; } }"#,
+            // Two handlers, so the second one's function index is also exercised.
+            r#"☉ actor A { state c: i64! = 0, on Bump { self.c = 1; } on Zap { } }"#,
+            // Returning handler with no trailing expression: the block already
+            // pushed the unit value, so a second push would leave two.
+            r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { } }"#,
+            // Returning handler WITH a trailing expression: exactly one value.
+            r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { self.c } }"#,
+        ] {
+            let mut compiler = WasmCompiler::new();
+            let bytes = compiler
+                .compile(src)
+                .unwrap_or_else(|e| panic!("compilation failed for {src}: {e:?}"));
+            let validation = validate_wasm(&bytes);
+            assert!(
+                validation.is_ok(),
+                "validation failed for {src}: {validation:?}"
+            );
+        }
+    }
+
+    /// An actor method reached through the actor's name — `Counter·value()`,
+    /// which is how anything outside the actor calls it. The `self` receiver is
+    /// part of the method's WASM signature, and only the `self·method()` path
+    /// pushed it, so these calls were one argument short.
+    /// A message handler used to compile to a function nothing could call: not
+    /// exported, no dispatcher, no mailbox, and `Actor ! Message` is not a
+    /// construct the parser has (it lexes as `Actor` marked known, then `Message`
+    /// — two statements). Handlers are now exported as `<Actor>_on_<Message>`
+    /// and reachable by message id through `<Actor>_dispatch`.
+    #[test]
+    fn test_actor_handlers_are_reachable() {
+        let src = r#"
+            ☉ ᛈ CounterMsg { Increment, Decrement, SetTo(i64), }
+            ☉ actor Counter {
+                state count: i64! = 0,
+                on Increment { self.count = self.count + 1; }
+                on Decrement { self.count = self.count - 1; }
+                on SetTo { self.count = msg.0; }
+                ☉ rite value(self) -> i64! { self.count }
+            }
+            ☉ rite main() -> i64! { 0 }
+        "#;
+        let mut compiler = WasmCompiler::new();
+        let bytes = compiler.compile(src).expect("compilation failed");
+        assert!(validate_wasm(&bytes).is_ok(), "{:?}", validate_wasm(&bytes));
+
+        let exports = exported_names(&bytes);
+        for expected in [
+            "Counter_on_Increment",
+            "Counter_on_Decrement",
+            "Counter_on_SetTo",
+            "Counter_dispatch",
+        ] {
+            assert!(
+                exports.contains(&expected.to_string()),
+                "missing export {expected}; have {exports:?}"
+            );
+        }
+    }
+
+    /// `msg.0` is how every handler the React migrator generates reads its
+    /// payload, and `msg` was bound nowhere — those bodies failed to compile
+    /// with "undefined variable: msg".
+    #[test]
+    fn test_handler_payload_binding_compiles() {
+        let mut compiler = WasmCompiler::new();
+        let bytes = compiler
+            .compile(
+                r#"☉ ᛈ M { SetTo(i64), }
+                   ☉ actor A { state c: i64! = 0, on SetTo { self.c = msg.0; } }
+                   ☉ rite main() -> i64! { 0 }"#,
+            )
+            .expect("compilation failed");
+        assert!(validate_wasm(&bytes).is_ok(), "{:?}", validate_wasm(&bytes));
+    }
+
+    fn exported_names(bytes: &[u8]) -> Vec<String> {
+        use wasmparser::{Parser, Payload};
+        let mut out = Vec::new();
+        for payload in Parser::new(0).parse_all(bytes).flatten() {
+            if let Payload::ExportSection(reader) = payload {
+                for export in reader.into_iter().flatten() {
+                    out.push(export.name.to_string());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn test_validate_actor_method_call_through_type_name() {
+        for src in [
+            r#"☉ actor Counter { state c: i64! = 7, ☉ rite value(self) -> i64! { self.c } }
+               ☉ rite main() -> i64! { Counter·value() }"#,
+            // Nested as an argument, which is where it first showed up.
+            r#"☉ actor Counter { state c: i64! = 7, ☉ rite value(self) -> i64! { self.c } }
+               rite twice(a: i64, b: i64) -> i64! { a + b }
+               ☉ rite main() -> i64! { twice(1, Counter·value()) }"#,
+            // A method that also takes explicit arguments.
+            r#"☉ actor Counter { state c: i64! = 0, ☉ rite add(self, n: i64) -> i64! { self.c + n } }
+               ☉ rite main() -> i64! { Counter·add(5) }"#,
+            // A void method: the call site pushes a unit value for consistency.
+            r#"☉ actor Counter { state c: i64! = 0, ☉ rite reset(self) { self.c = 0; } }
+               ☉ rite main() -> i64! { Counter·reset(); 0 }"#,
+        ] {
+            let mut compiler = WasmCompiler::new();
+            let bytes = compiler
+                .compile(src)
+                .unwrap_or_else(|e| panic!("compilation failed for {src}: {e:?}"));
+            let validation = validate_wasm(&bytes);
+            assert!(
+                validation.is_ok(),
+                "validation failed for {src}: {validation:?}"
+            );
+        }
+    }
+
     #[test]
     fn test_validate_function_with_params() {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn add(a: i64, b: i64) -> i64 {
+            ☉ rite add(a: i64, b: i64) -> i64 {
                 a + b
             }
         "#);
@@ -848,10 +1982,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn compute() -> i64 {
-                let x = 10;
-                let y = 20;
-                let z = x + y;
+            ☉ rite compute() -> i64 {
+                ≔ x = 10;
+                ≔ y = 20;
+                ≔ z = x + y;
                 z * 2
             }
         "#);
@@ -868,8 +2002,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn max(a: i64, b: i64) -> i64 {
-                if a > b { a } else { b }
+            ☉ rite max(a: i64, b: i64) -> i64 {
+                ⎇ a > b { a } ⎉ { b }
             }
         "#);
 
@@ -885,10 +2019,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn sum_to_n(n: i64) -> i64 {
-                let mut sum = 0;
-                let mut i = 1;
-                while i <= n {
+            ☉ rite sum_to_n(n: i64) -> i64 {
+                ≔ Δ sum = 0;
+                ≔ Δ i = 1;
+                ⟳ i <= n {
                     sum = sum + i;
                     i = i + 1;
                 }
@@ -908,11 +2042,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn double(x: i64) -> i64 {
+            ☉ rite double(x: i64) -> i64 {
                 x * 2
             }
 
-            pub fn quadruple(x: i64) -> i64 {
+            ☉ rite quadruple(x: i64) -> i64 {
                 double(double(x))
             }
         "#);
@@ -929,8 +2063,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn greeting() -> i64 {
-                let s = "Hello, World!";
+            ☉ rite greeting() -> i64 {
+                ≔ s = "Hello, World!";
                 42
             }
         "#);
@@ -947,9 +2081,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn nested(x: i64) -> i64 {
-                let a = {
-                    let b = x + 1;
+            ☉ rite nested(x: i64) -> i64 {
+                ≔ a = {
+                    ≔ b = x + 1;
                     b * 2
                 };
                 a + 10
@@ -968,10 +2102,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn compare(a: i64, b: i64) -> i64 {
-                if a == b { 0 }
-                else if a < b { -1 }
-                else { 1 }
+            ☉ rite compare(a: i64, b: i64) -> i64 {
+                ⎇ a == b { 0 }
+                ⎉ ⎇ a < b { -1 }
+                ⎉ { 1 }
             }
         "#);
 
@@ -987,7 +2121,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn check(a: bool, b: bool) -> bool {
+            ☉ rite check(a: bool, b: bool) -> bool {
                 (a && b) || (!a && !b)
             }
         "#);
@@ -1006,11 +2140,11 @@ mod validation_tests {
         // Note: Using decimal literals to avoid parser issues with hex
         // Testing bitwise AND, XOR, shift operators
         let result = compiler.compile(r#"
-            pub fn bits(x: i64) -> i64 {
-                let a = x & 255;
-                let c = x ^ 85;
-                let d = x << 4;
-                let e = x >> 2;
+            ☉ rite bits(x: i64) -> i64 {
+                ≔ a = x & 255;
+                ≔ c = x ^ 85;
+                ≔ d = x << 4;
+                ≔ e = x >> 2;
                 a + c + d + e
             }
         "#);
@@ -1029,7 +2163,7 @@ mod validation_tests {
         let result = compiler.compile(r#"
             const MAX: i64 = 100;
 
-            pub fn get_max() -> i64 {
+            ☉ rite get_max() -> i64 {
                 MAX
             }
         "#);
@@ -1046,9 +2180,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            static mut COUNTER: i64 = 0;
+            static Δ COUNTER: i64 = 0;
 
-            pub fn get_counter() -> i64 {
+            ☉ rite get_counter() -> i64 {
                 COUNTER
             }
         "#);
@@ -1065,9 +2199,9 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn early(x: i64) -> i64 {
-                if x < 0 {
-                    return -1;
+            ☉ rite early(x: i64) -> i64 {
+                ⎇ x < 0 {
+                    ⤺ -1;
                 }
                 x * 2
             }
@@ -1085,14 +2219,14 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn find_first_even(n: i64) -> i64 {
-                let mut i = 0;
-                while i < n {
-                    if i % 2 == 0 {
-                        break;
+            ☉ rite find_first_even(n: i64) -> i64 {
+                ≔ Δ i = 0;
+                ⟳ i < n {
+                    ⎇ i % 2 == 0 {
+                        ⊗;
                     }
                     i = i + 1;
-                    continue;
+                    ↻;
                 }
                 i
             }
@@ -1146,8 +2280,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         compiler.compile(r#"
-            pub fn public_fn() -> i64 { 1 }
-            fn private_fn() -> i64 { 2 }
+            ☉ rite public_fn() -> i64 { 1 }
+            rite private_fn() -> i64 { 2 }
         "#).unwrap();
 
         let bytes = compiler.generate_module().unwrap();
@@ -1178,11 +2312,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn negate(x: i64) -> i64 {
+            ☉ rite negate(x: i64) -> i64 {
                 -x
             }
 
-            pub fn logical_not(x: bool) -> bool {
+            ☉ rite logical_not(x: bool) -> bool {
                 !x
             }
         "#);
@@ -1199,7 +2333,7 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn complex(a: i64, b: i64, c: i64) -> i64 {
+            ☉ rite complex(a: i64, b: i64, c: i64) -> i64 {
                 ((a + b) * c - a / b) % (c + 1)
             }
         "#);
@@ -1217,9 +2351,9 @@ mod validation_tests {
 
         // For loop iterates over an array
         let result = compiler.compile(r#"
-            pub fn sum_array(arr: [i64]) -> i64 {
-                let mut sum = 0;
-                for x in arr {
+            ☉ rite sum_array(arr: [i64]) -> i64 {
+                ≔ Δ sum = 0;
+                ∀ x ∈ arr {
                     sum = sum + x;
                 }
                 sum
@@ -1238,8 +2372,8 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn describe(x: i64) -> i64 {
-                match x {
+            ☉ rite describe(x: i64) -> i64 {
+                ⌥ x {
                     0 => 100,
                     1 => 200,
                     _ => 300
@@ -1263,7 +2397,7 @@ mod validation_tests {
 
         // Test function parameter that accesses struct-like data
         let result = compiler.compile(r#"
-            pub fn identity(x: i64) -> i64 {
+            ☉ rite identity(x: i64) -> i64 {
                 x
             }
         "#);
@@ -1280,10 +2414,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn factorial(n: i64) -> i64 {
-                if n <= 1 {
+            ☉ rite factorial(n: i64) -> i64 {
+                ⎇ n <= 1 {
                     1
-                } else {
+                } ⎉ {
                     n * factorial(n - 1)
                 }
             }
@@ -1301,14 +2435,14 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn classify(x: i64) -> i64 {
-                if x < 0 {
+            ☉ rite classify(x: i64) -> i64 {
+                ⎇ x < 0 {
                     -1
-                } else if x == 0 {
+                } ⎉ ⎇ x == 0 {
                     0
-                } else if x < 10 {
+                } ⎉ ⎇ x < 10 {
                     1
-                } else {
+                } ⎉ {
                     2
                 }
             }
@@ -1326,10 +2460,10 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new();
 
         let result = compiler.compile(r#"
-            pub fn count_up(n: i64) -> i64 {
-                let mut count = 0;
-                let mut i = 0;
-                while i < n {
+            ☉ rite count_up(n: i64) -> i64 {
+                ≔ Δ count = 0;
+                ≔ Δ i = 0;
+                ⟳ i < n {
                     count = count + 1;
                     i = i + 1;
                 }
@@ -1349,11 +2483,11 @@ mod validation_tests {
         let mut compiler = WasmCompiler::new().with_debug_info();
 
         let result = compiler.compile(r#"
-            pub fn add(a: i64, b: i64) -> i64 {
+            ☉ rite add(a: i64, b: i64) -> i64 {
                 a + b
             }
 
-            pub fn multiply(x: i64, y: i64) -> i64 {
+            ☉ rite multiply(x: i64, y: i64) -> i64 {
                 x * y
             }
         "#);
@@ -1402,9 +2536,9 @@ mod validation_tests {
 
         // Compile code that imports from an external module
         let result = compiler.compile(r#"
-            invoke math_utils::helper;
+            invoke math_utils·helper;
 
-            pub fn caller() -> i64 {
+            ☉ rite caller() -> i64 {
                 helper(10, 20)
             }
         "#);
@@ -1443,9 +2577,9 @@ mod validation_tests {
 
         // Compile code that imports with a rename
         let result = compiler.compile(r#"
-            invoke external::original as renamed;
+            invoke external·original as renamed;
 
-            pub fn use_renamed() -> i64 {
+            ☉ rite use_renamed() -> i64 {
                 renamed(42)
             }
         "#);
@@ -1463,9 +2597,9 @@ mod validation_tests {
 
         // Compile code with nested module path
         let result = compiler.compile(r#"
-            invoke deeply::nested::module::function;
+            invoke deeply·nested·module·function;
 
-            pub fn call_nested() -> i64 {
+            ☉ rite call_nested() -> i64 {
                 function()
             }
         "#);
@@ -1495,5 +2629,135 @@ mod validation_tests {
         }
 
         assert!(found_import, "Should have imported 'function' from 'deeply' module");
+    }
+
+    #[test]
+    fn test_vec_join_method() {
+        let mut compiler = WasmCompiler::new();
+
+        let result = compiler.compile(r#"
+            ☉ rite format_parts() -> i64 {
+                ≔ arr = [1, 2, 3];
+                ≔ joined = arr.join(", ");
+                42
+            }
+        "#);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+
+        // Verify vec_join import exists
+        use wasmparser::{Parser, Payload};
+
+        let parser = Parser::new(0);
+        let mut found_join_import = false;
+
+        for payload in parser.parse_all(&bytes) {
+            if let Ok(Payload::ImportSection(reader)) = payload {
+                for import in reader {
+                    if let Ok(imp) = import {
+                        if imp.module == "morpheme" && imp.name == "vec_join" {
+                            found_join_import = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert!(found_join_import, "Should have imported 'vec_join' from 'morpheme' module");
+    }
+
+    /// Regression test for local-function-call-before-import bug.
+    ///
+    /// Bug: When a local function call preceded an import call, the stack depth
+    /// calculation in fix_invalid_call_wrappers didn't account for the local
+    /// function's return value, causing it to spuriously insert i64.const 0
+    /// before the import call, leading to type mismatch errors.
+    ///
+    /// This specifically tests the pattern:
+    ///   let val = local_func();
+    ///   import_func(val, other_arg);
+    ///
+    /// Where import_func has mixed param types (e.g., i32, i64).
+    #[test]
+    fn test_local_function_before_import_call() {
+        let mut compiler = WasmCompiler::new();
+
+        // This pattern triggered the bug:
+        // 1. wrapper() is a local function returning i64
+        // 2. Its result is stored in `val`
+        // 3. vdom·mount_vnode expects (i32, i64) - mixed types
+        // 4. The stack tracker didn't count wrapper()'s return value,
+        //    causing spurious i64.const 0 insertion before mount_vnode
+        let result = compiler.compile(
+r##"rite wrapper() -> i64 {
+    42
+}
+
+rite main() {
+    ≔ val = wrapper();
+    vdom·mount_vnode(val, "#app");
+}"##);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(
+            validation.is_ok(),
+            "Validation failed (likely spurious i64.const 0 before import): {:?}",
+            validation
+        );
+    }
+
+    /// Test variant: multiple local function calls before import
+    #[test]
+    fn test_multiple_local_calls_before_import() {
+        let mut compiler = WasmCompiler::new();
+
+        let result = compiler.compile(
+r##"rite get_id() -> i64 {
+    100
+}
+
+rite get_selector() -> i64 {
+    200
+}
+
+rite main() {
+    ≔ id = get_id();
+    ≔ sel = get_selector();
+    vdom·mount_vnode(id, "#root");
+}"##);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    /// Test variant: local function call result used directly (no let binding)
+    #[test]
+    fn test_local_call_inline_in_import() {
+        let mut compiler = WasmCompiler::new();
+
+        let result = compiler.compile(
+r##"rite create_vnode() -> i64 {
+    42
+}
+
+rite main() {
+    vdom·mount_vnode(create_vnode(), "#app");
+}"##);
+
+        assert!(result.is_ok(), "Compilation failed: {:?}", result);
+        let bytes = result.unwrap();
+
+        let validation = validate_wasm(&bytes);
+        assert!(validation.is_ok(), "Validation failed: {:?}", validation);
     }
 }

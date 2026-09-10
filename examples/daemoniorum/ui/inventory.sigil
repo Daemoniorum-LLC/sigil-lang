@@ -6,14 +6,14 @@
 //! - Item details on hover/selection
 //! - Use and drop actions
 
-use super::tokens::colors;
+invoke super·tokens·colors;
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 /// Item rarity levels
-type ItemRarity = enum {
+type ItemRarity = ᛈ {
     Common,
     Uncommon,
     Rare,
@@ -22,7 +22,7 @@ type ItemRarity = enum {
 }
 
 /// Item category
-type ItemCategory = enum {
+type ItemCategory = ᛈ {
     Consumable,
     KeyItem,
     Memory,
@@ -32,7 +32,7 @@ type ItemCategory = enum {
 }
 
 /// Inventory item
-type Item = struct {
+type Item = Σ {
     id: String!,
     name: String!,
     description: String!,
@@ -49,14 +49,14 @@ type Item = struct {
 }
 
 /// Item effect
-type ItemEffect = struct {
+type ItemEffect = Σ {
     effect_type: EffectType!,
     value: i32!,
     stat: Option<String>?,
     status: Option<String>?,
 }
 
-type EffectType = enum {
+type EffectType = ᛈ {
     Heal,
     RestoreEnergy,
     RemoveStatus,
@@ -66,7 +66,7 @@ type EffectType = enum {
 }
 
 /// Inventory state
-type InventoryState = struct {
+type InventoryState = Σ {
     items: Vec<Item>!,
     key_items: Vec<Item>!,
     max_slots: u32!,
@@ -78,32 +78,32 @@ type InventoryState = struct {
 // ============================================================================
 
 /// Props for inventory panel
-type InventoryPanelProps = struct {
+type InventoryPanelProps = Σ {
     inventory: InventoryState!,
-    on_use_item: Option<fn(Item)>?,
-    on_drop_item: Option<fn(Item)>?,
-    on_close: Option<fn()>?,
+    on_use_item: Option<rite(Item)>?,
+    on_drop_item: Option<rite(Item)>?,
+    on_close: Option<rite()>?,
 }
 
 /// Props for item card
-type ItemCardProps = struct {
+type ItemCardProps = Σ {
     item: Item!,
     is_selected: bool!,
-    on_click: fn()!,
+    on_click: rite()!,
 }
 
 /// Props for item details panel
-type ItemDetailsPanelProps = struct {
+type ItemDetailsPanelProps = Σ {
     item: Item!,
-    on_use: Option<fn(Item)>?,
-    on_drop: Option<fn(Item)>?,
-    on_close: fn()!,
+    on_use: Option<rite(Item)>?,
+    on_drop: Option<rite(Item)>?,
+    on_close: rite()!,
 }
 
 /// Props for compact inventory
-type CompactInventoryProps = struct {
+type CompactInventoryProps = Σ {
     inventory: InventoryState!,
-    on_open: Option<fn()>?,
+    on_open: Option<rite()>?,
 }
 
 // ============================================================================
@@ -111,37 +111,37 @@ type CompactInventoryProps = struct {
 // ============================================================================
 
 /// Get color for rarity
-fn get_rarity_color(rarity: ItemRarity!) -> String! {
-    match rarity {
-        ItemRarity::Common => colors::RARITY_COMMON.to_string(),
-        ItemRarity::Uncommon => colors::RARITY_UNCOMMON.to_string(),
-        ItemRarity::Rare => colors::RARITY_RARE.to_string(),
-        ItemRarity::Legendary => colors::RARITY_LEGENDARY.to_string(),
-        ItemRarity::Unique => colors::RARITY_UNIQUE.to_string(),
+rite get_rarity_color(rarity: ItemRarity!) -> String! {
+    ⌥ rarity {
+        ItemRarity·Common => colors·RARITY_COMMON.to_string(),
+        ItemRarity·Uncommon => colors·RARITY_UNCOMMON.to_string(),
+        ItemRarity·Rare => colors·RARITY_RARE.to_string(),
+        ItemRarity·Legendary => colors·RARITY_LEGENDARY.to_string(),
+        ItemRarity·Unique => colors·RARITY_UNIQUE.to_string(),
     }
 }
 
 /// Format effect for display
-fn format_effect(effect: ItemEffect!) -> String! {
-    match effect.effect_type {
-        EffectType::Heal => format!("Restores {} HP", effect.value),
-        EffectType::RestoreEnergy => format!("Restores {} Energy", effect.value),
-        EffectType::RemoveStatus => format!("Removes {}", effect.status·unwrap_or("status".to_string())),
-        EffectType::ApplyStatus => format!("Applies {}", effect.status·unwrap_or("status".to_string())),
-        EffectType::BoostStat => format!("+{} {}", effect.value, effect.stat·unwrap_or("stat".to_string())),
-        EffectType::RestoreStability => format!("Restores {} Stability", effect.value),
+rite format_effect(effect: ItemEffect!) -> String! {
+    ⌥ effect.effect_type {
+        EffectType·Heal => format!("Restores {} HP", effect.value),
+        EffectType·RestoreEnergy => format!("Restores {} Energy", effect.value),
+        EffectType·RemoveStatus => format!("Removes {}", effect.status·unwrap_or("status".to_string())),
+        EffectType·ApplyStatus => format!("Applies {}", effect.status·unwrap_or("status".to_string())),
+        EffectType·BoostStat => format!("+{} {}", effect.value, effect.stat·unwrap_or("stat".to_string())),
+        EffectType·RestoreStability => format!("Restores {} Stability", effect.value),
     }
 }
 
 /// Category to display string
-fn category_to_string(category: ItemCategory!) -> String! {
-    match category {
-        ItemCategory::Consumable => "Consumable".to_string(),
-        ItemCategory::KeyItem => "Key Item".to_string(),
-        ItemCategory::Memory => "Memory".to_string(),
-        ItemCategory::Equipment => "Equipment".to_string(),
-        ItemCategory::Material => "Material".to_string(),
-        ItemCategory::Document => "Document".to_string(),
+rite category_to_string(category: ItemCategory!) -> String! {
+    ⌥ category {
+        ItemCategory·Consumable => "Consumable".to_string(),
+        ItemCategory·KeyItem => "Key Item".to_string(),
+        ItemCategory·Memory => "Memory".to_string(),
+        ItemCategory·Equipment => "Equipment".to_string(),
+        ItemCategory·Material => "Material".to_string(),
+        ItemCategory·Document => "Document".to_string(),
     }
 }
 
@@ -150,33 +150,33 @@ fn category_to_string(category: ItemCategory!) -> String! {
 // ============================================================================
 
 #[component]
-pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
-    let (selected_category, set_selected_category) = use_signal::<Option<ItemCategory>>(None);
-    let (selected_item, set_selected_item) = use_signal::<Option<Item>>(None);
-    let (search_query, set_search_query) = use_signal(String::new());
+☉ rite InventoryPanel(props: InventoryPanelProps!) -> Element! {
+    ≔ (selected_category, set_selected_category) = use_signal·<Option<ItemCategory>>(None);
+    ≔ (selected_item, set_selected_item) = use_signal·<Option<Item>>(None);
+    ≔ (search_query, set_search_query) = use_signal(String·new());
 
-    let categories = ["All", "Consumable", "KeyItem", "Memory", "Equipment", "Material", "Document"];
+    ≔ categories = ["All", "Consumable", "KeyItem", "Memory", "Equipment", "Material", "Document"];
 
     // Filter items based on category and search
-    let filtered_items = props.inventory.items·iter()
+    ≔ filtered_items = props.inventory.items·iter()
         ·|φ|item| {
             // Category filter
-            let category_match = match &selected_category() {
+            ≔ category_match = ⌥ &selected_category() {
                 None => true,
                 Some(cat) => item.category == *cat,
             };
 
             // Search filter
-            let query = search_query()·to_lowercase();
-            let search_match = query·is_empty() ||
+            ≔ query = search_query()·to_lowercase();
+            ≔ search_match = query·is_empty() ||
                 item.name·to_lowercase()·contains(&query) ||
                 item.description·to_lowercase()·contains(&query);
 
             category_match && search_match
         }
-        ·collect::<Vec<_>>();
+        ·collect·<Vec<_>>();
 
-    let item_count = props.inventory.items·iter()·|τ|i| i.quantity·sum::<u32>();
+    ≔ item_count = props.inventory.items·iter()·|τ|i| i.quantity·sum·<u32>();
 
     html! {
         <div style="display: flex; flex-direction: column; height: 100%; border-radius: 0.75rem; overflow: hidden; \
@@ -205,7 +205,7 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                     </div>
 
                     // Close button
-                    {if let Some(on_close) = &props.on_close {
+                    {⎇ ≔ Some(on_close) = &props.on_close {
                         html! {
                             <button
                                 onclick={on_close·clone()}
@@ -216,7 +216,7 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                                 <span style="font-size: 1.25rem;">{"×"}</span>
                             </button>
                         }
-                    } else { html! {} }}
+                    } ⎉ { html! {} }}
                 </div>
             </div>
 
@@ -233,39 +233,39 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                                background: rgba(0,0,0,0.4); color: white; \
                                border: 1px solid rgba(255,255,255,0.1); outline: none;"
                     />
-                    {if !search_query()·is_empty() {
+                    {⎇ !search_query()·is_empty() {
                         html! {
                             <button
-                                onclick={move || set_search_query(String::new())}
+                                onclick={move || set_search_query(String·new())}
                                 style="position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); \
                                        color: rgba(255,255,255,0.4); cursor: pointer; background: transparent;"
                             >
                                 {"×"}
                             </button>
                         }
-                    } else { html! {} }}
+                    } ⎉ { html! {} }}
                 </div>
 
                 // Category tabs
                 <div style="display: flex; gap: 0.25rem; overflow-x: auto; padding-bottom: 0.25rem;">
                     {categories·iter()·|τ|cat| {
-                        let is_selected = (*cat == "All" && selected_category()·is_none()) ||
+                        ≔ is_selected = (*cat == "All" && selected_category()·is_none()) ||
                             (selected_category()·map(|c| category_to_string(c) == *cat)·unwrap_or(false));
 
                         html! {
                             <button
                                 onclick={move || {
-                                    if *cat == "All" {
+                                    ⎇ *cat == "All" {
                                         set_selected_category(None);
-                                    } else {
+                                    } ⎉ {
                                         // Map string to category
-                                        let category = match *cat {
-                                            "Consumable" => Some(ItemCategory::Consumable),
-                                            "KeyItem" => Some(ItemCategory::KeyItem),
-                                            "Memory" => Some(ItemCategory::Memory),
-                                            "Equipment" => Some(ItemCategory::Equipment),
-                                            "Material" => Some(ItemCategory::Material),
-                                            "Document" => Some(ItemCategory::Document),
+                                        ≔ category = ⌥ *cat {
+                                            "Consumable" => Some(ItemCategory·Consumable),
+                                            "KeyItem" => Some(ItemCategory·KeyItem),
+                                            "Memory" => Some(ItemCategory·Memory),
+                                            "Equipment" => Some(ItemCategory·Equipment),
+                                            "Material" => Some(ItemCategory·Material),
+                                            "Document" => Some(ItemCategory·Document),
                                             _ => None,
                                         };
                                         set_selected_category(category);
@@ -276,14 +276,14 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                                      font-size: 0.75rem; font-weight: 500; white-space: nowrap; \
                                      cursor: pointer; transition: all 0.2s; \
                                      background: {}; color: {};",
-                                    if is_selected { "rgba(255,255,255,0.2)" } else { "rgba(255,255,255,0.05)" },
-                                    if is_selected { "white" } else { "rgba(255,255,255,0.6)" }
+                                    ⎇ is_selected { "rgba(255,255,255,0.2)" } ⎉ { "rgba(255,255,255,0.05)" },
+                                    ⎇ is_selected { "white" } ⎉ { "rgba(255,255,255,0.6)" }
                                 )}
                             >
                                 {*cat}
                             </button>
                         }
-                    }·collect::<Vec<_>>()}
+                    }·collect·<Vec<_>>()}
                 </div>
             </div>
 
@@ -291,7 +291,7 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
             <div style="flex: 1; display: flex; overflow: hidden;">
                 // Item grid
                 <div style="flex: 1; padding: 1rem; overflow-y: auto;">
-                    {if filtered_items·is_empty() {
+                    {⎇ filtered_items·is_empty() {
                         html! {
                             <div style="display: flex; flex-direction: column; align-items: center; \
                                         justify-content: center; height: 100%; color: rgba(255,255,255,0.4);">
@@ -299,7 +299,7 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                                 <span style="font-size: 0.875rem;">{"No items found"}</span>
                             </div>
                         }
-                    } else {
+                    } ⎉ {
                         html! {
                             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
                                 {filtered_items·iter()·|τ|item| {
@@ -310,14 +310,14 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                                             on_click={move || set_selected_item(Some(item·clone()))}
                                         />
                                     }
-                                }·collect::<Vec<_>>()}
+                                }·collect·<Vec<_>>()}
                             </div>
                         }
                     }}
                 </div>
 
                 // Item details panel (shown when item selected)
-                {if let Some(item) = selected_item() {
+                {⎇ ≔ Some(item) = selected_item() {
                     html! {
                         <ItemDetailsPanel
                             item={item}
@@ -326,11 +326,11 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                             on_close={move || set_selected_item(None)}
                         />
                     }
-                } else { html! {} }}
+                } ⎉ { html! {} }}
             </div>
 
             // Key Items section
-            {if !props.inventory.key_items·is_empty() {
+            {⎇ !props.inventory.key_items·is_empty() {
                 html! {
                     <div style="padding: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
                         <div style="font-size: 0.75rem; font-weight: 500; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">
@@ -344,11 +344,11 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
                                         on_click={move || set_selected_item(Some(item·clone()))}
                                     />
                                 }
-                            }·collect::<Vec<_>>()}
+                            }·collect·<Vec<_>>()}
                         </div>
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
         </div>
     }
 }
@@ -358,9 +358,9 @@ pub fn InventoryPanel(props: InventoryPanelProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn ItemCard(props: ItemCardProps!) -> Element! {
-    let item! = &props.item;
-    let rarity_color! = get_rarity_color(item.rarity);
+☉ rite ItemCard(props: ItemCardProps!) -> Element! {
+    ≔ item! = &props.item;
+    ≔ rarity_color! = get_rarity_color(item.rarity);
 
     html! {
         <button
@@ -369,11 +369,11 @@ pub fn ItemCard(props: ItemCardProps!) -> Element! {
                 "position: relative; display: flex; flex-direction: column; align-items: center; \
                  padding: 0.75rem; border-radius: 0.5rem; cursor: pointer; transition: all 0.2s; \
                  background: {}; border: 1px solid {}; {}",
-                if props.is_selected { format!("linear-gradient(135deg, {}30, rgba(0,0,0,0.4))", rarity_color) }
-                else { "rgba(0,0,0,0.4)".to_string() },
-                if props.is_selected { &rarity_color } else { "rgba(255,255,255,0.1)" },
-                if props.is_selected { format!("box-shadow: 0 0 15px {}30; outline: 2px solid {};", rarity_color, rarity_color) }
-                else { "".to_string() }
+                ⎇ props.is_selected { format!("linear-gradient(135deg, {}30, rgba(0,0,0,0.4))", rarity_color) }
+                ⎉ { "rgba(0,0,0,0.4)".to_string() },
+                ⎇ props.is_selected { &rarity_color } ⎉ { "rgba(255,255,255,0.1)" },
+                ⎇ props.is_selected { format!("box-shadow: 0 0 15px {}30; outline: 2px solid {};", rarity_color, rarity_color) }
+                ⎉ { "".to_string() }
             )}
         >
             // Rarity indicator dot
@@ -399,7 +399,7 @@ pub fn ItemCard(props: ItemCardProps!) -> Element! {
             </div>
 
             // Quantity badge (for stackable items)
-            {if item.stackable && item.quantity > 1 {
+            {⎇ item.stackable && item.quantity > 1 {
                 html! {
                     <div style={format!(
                         "position: absolute; bottom: 0.25rem; right: 0.25rem; \
@@ -411,7 +411,7 @@ pub fn ItemCard(props: ItemCardProps!) -> Element! {
                         {item.quantity}
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
         </button>
     }
 }
@@ -421,9 +421,9 @@ pub fn ItemCard(props: ItemCardProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
-    let item! = &props.item;
-    let rarity_color! = get_rarity_color(item.rarity);
+☉ rite ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
+    ≔ item! = &props.item;
+    ≔ rarity_color! = get_rarity_color(item.rarity);
 
     html! {
         <div style={format!(
@@ -477,7 +477,7 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
             </p>
 
             // Flavor text
-            {if let Some(ref flavor) = item.flavor_text {
+            {⎇ ≔ Some(ref flavor) = item.flavor_text {
                 html! {
                     <p style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-style: italic; \
                               margin-bottom: 1rem; border-left: 2px solid rgba(255,255,255,0.2); \
@@ -485,11 +485,11 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
                         {"\""}{flavor}{"\""}
                     </p>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Effects
-            {if let Some(ref effects) = item.effects {
-                if !effects·is_empty() {
+            {⎇ ≔ Some(ref effects) = item.effects {
+                ⎇ !effects·is_empty() {
                     html! {
                         <div style="margin-bottom: 1rem;">
                             <div style="font-size: 0.75rem; font-weight: 500; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">
@@ -504,33 +504,33 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
                                             {format_effect(effect·clone())}
                                         </div>
                                     }
-                                }·collect::<Vec<_>>()}
+                                }·collect·<Vec<_>>()}
                             </div>
                         </div>
                     }
-                } else { html! {} }
-            } else { html! {} }}
+                } ⎉ { html! {} }
+            } ⎉ { html! {} }}
 
             // Alter restriction warning
-            {if let Some(ref restriction) = item.alter_restriction {
+            {⎇ ≔ Some(ref restriction) = item.alter_restriction {
                 html! {
                     <div style="font-size: 0.75rem; color: rgba(251,191,36,0.8); margin-bottom: 1rem;">
                         {"⚠ Can only be used by "}{restriction}
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Quantity display
-            {if item.stackable {
+            {⎇ item.stackable {
                 html! {
                     <div style="font-size: 0.875rem; color: rgba(255,255,255,0.6); margin-bottom: 1rem;">
                         {"Quantity: "}<span style="color: white; font-weight: 500;">{item.quantity}</span>
-                        {if item.max_stack > 1 {
+                        {⎇ item.max_stack > 1 {
                             html! { <span style="color: rgba(255,255,255,0.4);">{"/"}{item.max_stack}</span> }
-                        } else { html! {} }}
+                        } ⎉ { html! {} }}
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Spacer
             <div style="flex: 1;"></div>
@@ -538,8 +538,8 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
             // Action buttons
             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                 // Use button
-                {if item.usable {
-                    if let Some(on_use) = &props.on_use {
+                {⎇ item.usable {
+                    ⎇ ≔ Some(on_use) = &props.on_use {
                         html! {
                             <button
                                 onclick={move || on_use(item·clone())}
@@ -554,12 +554,12 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
                                 {"Use"}
                             </button>
                         }
-                    } else { html! {} }
-                } else { html! {} }}
+                    } ⎉ { html! {} }
+                } ⎉ { html! {} }}
 
                 // Drop button (not for key items)
-                {if item.category != ItemCategory::KeyItem {
-                    if let Some(on_drop) = &props.on_drop {
+                {⎇ item.category != ItemCategory·KeyItem {
+                    ⎇ ≔ Some(on_drop) = &props.on_drop {
                         html! {
                             <button
                                 onclick={move || on_drop(item·clone())}
@@ -570,8 +570,8 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
                                 {"Drop"}
                             </button>
                         }
-                    } else { html! {} }
-                } else { html! {} }}
+                    } ⎉ { html! {} }
+                } ⎉ { html! {} }}
             </div>
         </div>
     }
@@ -581,14 +581,14 @@ pub fn ItemDetailsPanel(props: ItemDetailsPanelProps!) -> Element! {
 // KEY ITEM BADGE
 // ============================================================================
 
-type KeyItemBadgeProps = struct {
+type KeyItemBadgeProps = Σ {
     item: Item!,
-    on_click: fn()!,
+    on_click: rite()!,
 }
 
 #[component]
-pub fn KeyItemBadge(props: KeyItemBadgeProps!) -> Element! {
-    let item! = &props.item;
+☉ rite KeyItemBadge(props: KeyItemBadgeProps!) -> Element! {
+    ≔ item! = &props.item;
 
     html! {
         <button
@@ -612,9 +612,9 @@ pub fn KeyItemBadge(props: KeyItemBadgeProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn CompactInventory(props: CompactInventoryProps!) -> Element! {
-    let recent_items = props.inventory.items·iter()·take(4)·collect::<Vec<_>>();
-    let total_items = props.inventory.items·iter()·|τ|i| i.quantity·sum::<u32>();
+☉ rite CompactInventory(props: CompactInventoryProps!) -> Element! {
+    ≔ recent_items = props.inventory.items·iter()·take(4)·collect·<Vec<_>>();
+    ≔ total_items = props.inventory.items·iter()·|τ|i| i.quantity·sum·<u32>();
 
     html! {
         <button
@@ -634,13 +634,13 @@ pub fn CompactInventory(props: CompactInventoryProps!) -> Element! {
                              justify-content: center; font-size: 0.75rem; \
                              border: 1px solid rgba(255,255,255,0.1); \
                              margin-left: {}; z-index: {};",
-                            if i > 0 { "-0.25rem" } else { "0" },
+                            ⎇ i > 0 { "-0.25rem" } ⎉ { "0" },
                             4 - i
                         )}>
                             {&item.icon}
                         </div>
                     }
-                }·collect::<Vec<_>>()}
+                }·collect·<Vec<_>>()}
             </div>
 
             // Count

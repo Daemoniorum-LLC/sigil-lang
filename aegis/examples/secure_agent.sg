@@ -407,7 +407,7 @@ rite secure_daemon_example() {
     ≔ action = Action {
         id: ActionId·new(),
         action_type: ActionType·Communicate {
-            to: AgentId·new(),
+            to_: AgentId·new(),
             message: "Machine learning is...".to_string(),
         },
         params: Value·empty(),

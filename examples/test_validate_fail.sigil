@@ -1,8 +1,8 @@
-fn main() {
-    let data = -5;
+rite main() {
+    ≔ data = -5;
 
     // This should fail validation
-    let result = data|validate!{x => x > 0};
+    ≔ result = data|validate!{x => x > 0};
 
     println(result);
 }

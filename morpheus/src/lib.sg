@@ -6,7 +6,6 @@
 // Where creativity happens without intention.
 // Where the forbidden connections form.
 
-invoke std·collections·{HashMap, VecDeque};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

@@ -1,25 +1,25 @@
 // Components Module
 // Reusable UI components for the documentation platform
 
-use sigil_web::prelude::*
-use crate::main::{use_theme, Theme}
-use crate::layouts::{SidebarItem, TocItem, PageLink}
+invoke sigil_web·prelude·*
+invoke tome·main·{use_theme, Theme}
+invoke tome·layouts·{SidebarItem, TocItem, PageLink}
 
 // ============================================================================
 // Navigation Components
 // ============================================================================
 
 /// Site header with navigation
-pub fn Header(props: HeaderProps) -> VNode! {
-    let theme! = use_theme()
-    let (search_open, set_search_open) = use_state(false)
+☉ rite Header(props: HeaderProps) -> VNode! {
+    ≔ theme! = use_theme()
+    ≔ (search_open, set_search_open) = use_state(false)
 
     header()
         ·class("site-header")
         ·children(vec![
             // Logo
             Link(LinkProps {
-                to: "/".to_string(),
+                to_: "/".to_string(),
                 replace: false,
                 class: Some("site-logo".to_string()),
                 active_class: None
@@ -33,31 +33,31 @@ pub fn Header(props: HeaderProps) -> VNode! {
                 ·class("site-nav")
                 ·children(vec![
                     NavLink(NavLinkProps {
-                        to: "/docs".to_string(),
+                        to_: "/docs".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Documentation")]),
 
                     NavLink(NavLinkProps {
-                        to: "/api".to_string(),
+                        to_: "/api".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("API Reference")]),
 
                     NavLink(NavLinkProps {
-                        to: "/guides".to_string(),
+                        to_: "/guides".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Guides")]),
 
                     NavLink(NavLinkProps {
-                        to: "/examples".to_string(),
+                        to_: "/examples".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Examples")]),
 
                     NavLink(NavLinkProps {
-                        to: "/playground".to_string(),
+                        to_: "/playground".to_string(),
                         class: Some("nav-link".to_string()),
                         active_class: Some("nav-link--active".to_string())
                     }, vec![text("Playground")])
@@ -83,10 +83,10 @@ pub fn Header(props: HeaderProps) -> VNode! {
                         ·class("theme-toggle")
                         ·onclick(props.on_theme_toggle)
                         ·child(Icon {
-                            name: match theme {
-                                Theme::Light => "moon",
-                                Theme::Dark => "sun",
-                                Theme::System => "monitor"
+                            name: ⌥ theme {
+                                Theme·Light => "moon",
+                                Theme·Dark => "sun",
+                                Theme·System => "monitor"
                             }
                         })
                         ·build(),
@@ -118,13 +118,13 @@ pub fn Header(props: HeaderProps) -> VNode! {
         ·build()
 }
 
-pub struct HeaderProps {
-    pub on_menu_toggle: fn()
-    pub on_theme_toggle: fn()
+☉ Σ HeaderProps {
+    ☉ on_menu_toggle: rite()
+    ☉ on_theme_toggle: rite()
 }
 
 /// Sidebar navigation
-pub fn Sidebar(props: SidebarProps) -> VNode! {
+☉ rite Sidebar(props: SidebarProps) -> VNode! {
     aside()
         ·class("docs-sidebar")
         ·children(vec![
@@ -144,18 +144,18 @@ pub fn Sidebar(props: SidebarProps) -> VNode! {
         ·build()
 }
 
-pub struct SidebarProps {
-    pub items: Vec<SidebarItem>!
-    pub current_path: String!
-    pub on_navigate: fn()
+☉ Σ SidebarProps {
+    ☉ items: Vec<SidebarItem>!
+    ☉ current_path: String!
+    ☉ on_navigate: rite()
 }
 
-fn SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigate: fn() }) -> VNode! {
-    let (expanded, set_expanded) = use_state(
+rite SidebarNavItem(props: Any) -> VNode! {
+    ≔ (expanded, set_expanded) = use_state(
         props.current_path·starts_with(&props.item.path)
     )
-    let has_children! = !props.item.children·is_empty()
-    let is_active! = props.current_path == props.item.path
+    ≔ has_children! = !props.item.children·is_empty()
+    ≔ is_active! = props.current_path == props.item.path
 
     div()
         ·class(classes()
@@ -165,7 +165,7 @@ fn SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigate:
             ·to_string())
         ·children(vec![
             // Item link or button
-            if has_children {
+            ⎇ has_children {
                 button()
                     ·class("sidebar-item-toggle")
                     ·onclick(|| set_expanded(!expanded))
@@ -174,12 +174,12 @@ fn SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigate:
                             Icon { name: &props.item.icon·clone()·unwrap() }
                         }),
                         span()·class("sidebar-item-title")·text(&props.item.title)·build(),
-                        Icon { name: if expanded { "chevron-down" } else { "chevron-right" } }
+                        Icon { name: ⎇ expanded { "chevron-down" } ⎉ { "chevron-right" } }
                     ])
                     ·build()
-            } else {
+            } ⎉ {
                 Link(LinkProps {
-                    to: props.item.path·clone(),
+                    to_: props.item.path·clone(),
                     replace: false,
                     class: Some("sidebar-item-link".to_string()),
                     active_class: Some("sidebar-item-link--active".to_string())
@@ -214,10 +214,10 @@ fn SidebarNavItem(props: { item: SidebarItem, current_path: String, on_navigate:
 }
 
 /// Breadcrumb navigation
-pub fn Breadcrumbs(props: { path: String }) -> VNode! {
-    let segments! = props.path·split('/')
+☉ rite Breadcrumbs(props: Any) -> VNode! {
+    ≔ segments! = props.path·split('/')
         ·filter(|s| !s·is_empty())
-        ·collect::<Vec<_>>()
+        ·collect·<Vec<_>>()
 
     nav()
         ·class("breadcrumbs")
@@ -226,11 +226,11 @@ pub fn Breadcrumbs(props: { path: String }) -> VNode! {
             ol()
                 ·class("breadcrumb-list")
                 ·children({
-                    let mut items! = vec![
+                    ≔ vary items! = vec![
                         li()
                             ·class("breadcrumb-item")
                             ·child(Link(LinkProps {
-                                to: "/".to_string(),
+                                to_: "/".to_string(),
                                 replace: false,
                                 class: Some("breadcrumb-link".to_string()),
                                 active_class: None
@@ -238,24 +238,24 @@ pub fn Breadcrumbs(props: { path: String }) -> VNode! {
                             ·build()
                     ]
 
-                    let mut path_acc! = String::new()
-                    for (i, segment) in segments·iter()·enumerate() {
+                    ≔ vary path_acc! = String·new()
+                    ∀ (i, segment) ∈ segments·iter()·enumerate() {
                         path_acc·push('/')
                         path_acc·push_str(segment)
 
-                        let is_last! = i == segments·len() - 1
-                        let title! = segment·replace('-', " ")·to_title_case()
+                        ≔ is_last! = i == segments·len() - 1
+                        ≔ title! = segment·replace('-', " ")·to_title_case()
 
                         items·push(
                             li()
                                 ·class("breadcrumb-item")
                                 ·children(vec![
                                     span()·class("breadcrumb-separator")·text("/")·build(),
-                                    if is_last {
+                                    ⎇ is_last {
                                         span()·class("breadcrumb-current")·text(&title)·build()
-                                    } else {
+                                    } ⎉ {
                                         Link(LinkProps {
-                                            to: path_acc·clone(),
+                                            to_: path_acc·clone(),
                                             replace: false,
                                             class: Some("breadcrumb-link".to_string()),
                                             active_class: None
@@ -274,20 +274,20 @@ pub fn Breadcrumbs(props: { path: String }) -> VNode! {
 }
 
 /// Table of contents
-pub fn TableOfContents(props: { headings: Vec<TocItem> }) -> VNode! {
-    let (active_id, set_active_id) = use_state("")
+☉ rite TableOfContents(props: Any) -> VNode! {
+    ≔ (active_id, set_active_id) = use_state("")
 
     // Track scroll position to highlight current section
     use_effect(|| {
-        let observer! = IntersectionObserver::new(|entries| {
-            for entry in entries {
-                if entry·is_intersecting() {
+        ≔ observer! = IntersectionObserver·new(|entries| {
+            ∀ entry ∈ entries {
+                ⎇ entry·is_intersecting() {
                     set_active_id(entry·target_id())
                 }
             }
         }, IntersectionOptions {
             root_margin: "-100px 0px -66%".to_string(),
-            ..IntersectionOptions::default()
+            ..IntersectionOptions·default()
         })
 
         // Observe all headings
@@ -314,8 +314,8 @@ pub fn TableOfContents(props: { headings: Vec<TocItem> }) -> VNode! {
         ·build()
 }
 
-fn TocLink(props: { item: TocItem, active_id: String }) -> VNode! {
-    let is_active! = props.active_id == props.item.anchor
+rite TocLink(props: Any) -> VNode! {
+    ≔ is_active! = props.active_id == props.item.anchor
 
     li()
         ·class(classes()
@@ -347,14 +347,14 @@ fn TocLink(props: { item: TocItem, active_id: String }) -> VNode! {
 }
 
 /// Previous/Next page navigation
-pub fn PageNavigation(props: { prev: Option<PageLink>?, next: Option<PageLink>? }) -> VNode! {
+☉ rite PageNavigation(props: Any) -> VNode! {
     nav()
         ·class("page-nav")
         ·children(vec![
             when(props.prev·is_some(), || {
-                let prev! = props.prev·clone()·unwrap()
+                ≔ prev! = props.prev·clone()·unwrap()
                 Link(LinkProps {
-                    to: prev.path,
+                    to_: prev.path,
                     replace: false,
                     class: Some("page-nav-link page-nav-prev".to_string()),
                     active_class: None
@@ -371,9 +371,9 @@ pub fn PageNavigation(props: { prev: Option<PageLink>?, next: Option<PageLink>? 
             }),
 
             when(props.next·is_some(), || {
-                let next! = props.next·clone()·unwrap()
+                ≔ next! = props.next·clone()·unwrap()
                 Link(LinkProps {
-                    to: next.path,
+                    to_: next.path,
                     replace: false,
                     class: Some("page-nav-link page-nav-next".to_string()),
                     active_class: None
@@ -393,7 +393,7 @@ pub fn PageNavigation(props: { prev: Option<PageLink>?, next: Option<PageLink>? 
 }
 
 /// Site footer
-pub fn Footer() -> VNode! {
+☉ rite Footer() -> VNode! {
     footer()
         ·class("site-footer")
         ·children(vec![
@@ -467,7 +467,7 @@ pub fn Footer() -> VNode! {
         ·build()
 }
 
-fn FooterColumn(props: { title: &str, links: Vec<(&str, &str)> }) -> VNode! {
+rite FooterColumn(props: Any) -> VNode! {
     div()
         ·class("footer-column")
         ·children(vec![
@@ -479,11 +479,11 @@ fn FooterColumn(props: { title: &str, links: Vec<(&str, &str)> }) -> VNode! {
                         ·map(|(label, url)| {
                             li()
                                 ·child(
-                                    if url·starts_with("http") {
+                                    ⎇ url·starts_with("http") {
                                         a()·attr("href", url)·attr("target", "_blank")·text(label)·build()
-                                    } else {
+                                    } ⎉ {
                                         Link(LinkProps {
-                                            to: url.to_string(),
+                                            to_: url.to_string(),
                                             replace: false,
                                             class: None,
                                             active_class: None
@@ -499,7 +499,7 @@ fn FooterColumn(props: { title: &str, links: Vec<(&str, &str)> }) -> VNode! {
         ·build()
 }
 
-fn SocialLink(props: { icon: &str, url: &str }) -> VNode! {
+rite SocialLink(props: Any) -> VNode! {
     a()
         ·attr("href", props.url)
         ·attr("target", "_blank")
@@ -514,10 +514,10 @@ fn SocialLink(props: { icon: &str, url: &str }) -> VNode! {
 // ============================================================================
 
 /// Code block with syntax highlighting
-pub fn CodeBlock(props: CodeBlockProps) -> VNode! {
-    let (copied, set_copied) = use_state(false)
+☉ rite CodeBlock(props: CodeBlockProps) -> VNode! {
+    ≔ (copied, set_copied) = use_state(false)
 
-    let copy_code! = || {
+    ≔ copy_code! = || {
         // Copy to clipboard
         clipboard·write_text(&props.code)
         set_copied(true)
@@ -545,9 +545,9 @@ pub fn CodeBlock(props: CodeBlockProps) -> VNode! {
                             ·class("code-block-copy")
                             ·onclick(copy_code)
                             ·child(
-                                if copied {
+                                ⎇ copied {
                                     Icon { name: "check" }
-                                } else {
+                                } ⎉ {
                                     Icon { name: "copy" }
                                 }
                             )
@@ -567,22 +567,22 @@ pub fn CodeBlock(props: CodeBlockProps) -> VNode! {
         ·build()
 }
 
-pub struct CodeBlockProps {
-    pub code: String!
-    pub language: Option<String>? = None
-    pub filename: Option<String>? = None
-    pub highlight_lines: Vec<u32>! = Vec::new()
-    pub show_line_numbers: bool! = true
+☉ Σ CodeBlockProps {
+    ☉ code: String!
+    ☉ language: Option<String>? = None
+    ☉ filename: Option<String>? = None
+    ☉ highlight_lines: Vec<u32>! = Vec·new()
+    ☉ show_line_numbers: bool! = true
 }
 
 /// Callout/admonition component
-pub fn Callout(props: CalloutProps) -> VNode! {
-    let icon! = match props.variant {
-        CalloutVariant::Note => "info",
-        CalloutVariant::Tip => "lightbulb",
-        CalloutVariant::Warning => "alert-triangle",
-        CalloutVariant::Danger => "alert-circle",
-        CalloutVariant::Info => "info"
+☉ rite Callout(props: CalloutProps) -> VNode! {
+    ≔ icon! = ⌥ props.variant {
+        CalloutVariant·Note => "info",
+        CalloutVariant·Tip => "lightbulb",
+        CalloutVariant·Warning => "alert-triangle",
+        CalloutVariant·Danger => "alert-circle",
+        CalloutVariant·Info => "info"
     }
 
     div()
@@ -608,13 +608,13 @@ pub fn Callout(props: CalloutProps) -> VNode! {
         ·build()
 }
 
-pub struct CalloutProps {
-    pub variant: CalloutVariant! = CalloutVariant::Note
-    pub title: Option<String>? = None
-    pub children: Vec<VNode>!
+☉ Σ CalloutProps {
+    ☉ variant: CalloutVariant! = CalloutVariant·Note
+    ☉ title: Option<String>? = None
+    ☉ children: Vec<VNode>!
 }
 
-pub enum CalloutVariant {
+☉ ᛈ CalloutVariant {
     Note,
     Tip,
     Warning,
@@ -622,28 +622,28 @@ pub enum CalloutVariant {
     Info
 }
 
-impl CalloutVariant {
-    fn to_string(&self) -> &'static str! {
-        match self {
-            CalloutVariant::Note => "note",
-            CalloutVariant::Tip => "tip",
-            CalloutVariant::Warning => "warning",
-            CalloutVariant::Danger => "danger",
-            CalloutVariant::Info => "info"
+⊢ CalloutVariant {
+    rite to_string(&self) -> &'static str {
+        ⌥ self {
+            CalloutVariant·Note => "note",
+            CalloutVariant·Tip => "tip",
+            CalloutVariant·Warning => "warning",
+            CalloutVariant·Danger => "danger",
+            CalloutVariant·Info => "info"
         }
     }
 }
 
 /// Card component
-pub fn Card(props: CardProps) -> VNode! {
-    let wrapper! = if props.href·is_some() {
+☉ rite Card(props: CardProps) -> VNode! {
+    ≔ wrapper! = ⎇ props.href·is_some() {
         Link(LinkProps {
-            to: props.href·clone()·unwrap(),
+            to_: props.href·clone()·unwrap(),
             replace: false,
             class: Some("card card--clickable".to_string()),
             active_class: None
         }, vec![])
-    } else {
+    } ⎉ {
         div()·class("card")·build()
     }
 
@@ -670,11 +670,11 @@ pub fn Card(props: CardProps) -> VNode! {
         ·build()
 }
 
-pub struct CardProps {
-    pub title: String!
-    pub description: Option<String>? = None
-    pub icon: Option<String>? = None
-    pub href: Option<String>? = None
+☉ Σ CardProps {
+    ☉ title: String!
+    ☉ description: Option<String>? = None
+    ☉ icon: Option<String>? = None
+    ☉ href: Option<String>? = None
 }
 
 /// Tabs component
@@ -682,7 +682,7 @@ component Tabs {
     state active_tab: usize! = 0
     props tabs: Vec<TabItem>!
 
-    fn render(self) -> VNode {
+    rite render(self) -> VNode {
         div()
             ·class("tabs")
             ·children(vec![
@@ -699,7 +699,7 @@ component Tabs {
                                         ·add_if(i == self.active_tab, "tab-button--active")
                                         ·to_string())
                                     ·attr("role", "tab")
-                                    ·attr("aria-selected", if i == self.active_tab { "true" } else { "false" })
+                                    ·attr("aria-selected", ⎇ i == self.active_tab { "true" } ⎉ { "false" })
                                     ·onclick(|| self.active_tab = i)
                                     ·text(&tab.label)
                                     ·build()
@@ -731,9 +731,9 @@ component Tabs {
     }
 }
 
-pub struct TabItem {
-    pub label: String!
-    pub content: Vec<VNode>!
+☉ Σ TabItem {
+    ☉ label: String!
+    ☉ content: Vec<VNode>!
 }
 
 // ============================================================================
@@ -741,7 +741,7 @@ pub struct TabItem {
 // ============================================================================
 
 /// Search input
-pub fn SearchInput(props: SearchInputProps) -> VNode! {
+☉ rite SearchInput(props: SearchInputProps) -> VNode! {
     input()
         ·attr("type", "search")
         ·attr("placeholder", &props.placeholder)
@@ -751,21 +751,21 @@ pub fn SearchInput(props: SearchInputProps) -> VNode! {
         ·build()
 }
 
-pub struct SearchInputProps {
-    pub value: String!
-    pub on_change: fn(String)
-    pub placeholder: String! = "Search..."
+☉ Σ SearchInputProps {
+    ☉ value: String!
+    ☉ on_change: rite(String)
+    ☉ placeholder: String! = "Search..."
 }
 
 /// Search modal (⌘K)
-pub fn SearchModal(props: { on_close: fn() }) -> VNode! {
-    let (query, set_query) = use_state("")
-    let results~ = use_fetch::<Vec<SearchResult>>(&format!("/api/search?q={}", query))
+☉ rite SearchModal(props: Any) -> VNode! {
+    ≔ (query, set_query) = use_state("")
+    ≔ results~ = use_fetch·<Vec<SearchResult>>(&format!("/api/search?q={}", query))
 
     // Close on escape
     use_effect(|| {
-        let handler! = |e: KeyboardEventData| {
-            if e·is_escape() {
+        ≔ handler! = |e: KeyboardEventData| {
+            ⎇ e·is_escape() {
                 (props.on_close)()
             }
         }
@@ -805,13 +805,13 @@ pub fn SearchModal(props: { on_close: fn() }) -> VNode! {
                         // Results
                         div()
                             ·class("search-modal-results")
-                            ·child(match results~ {
-                                AsyncState::Loading => div()·class("search-loading")·child(Spinner {})·build(),
-                                AsyncState::Error(e~) => div()·class("search-error")·text(&e~)·build(),
-                                AsyncState::Success(items~) => {
-                                    if items~·is_empty() && !query·is_empty() {
+                            ·child(⌥ results~ {
+                                AsyncState·Loading => div()·class("search-loading")·child(Spinner {})·build(),
+                                AsyncState·Error(e~) => div()·class("search-error")·text(&e~)·build(),
+                                AsyncState·Success(items~) => {
+                                    ⎇ items~·is_empty() && !query·is_empty() {
                                         div()·class("search-empty")·text("No results found")·build()
-                                    } else {
+                                    } ⎉ {
                                         ul()
                                             ·class("search-results-list")
                                             ·children(
@@ -835,16 +835,16 @@ pub fn SearchModal(props: { on_close: fn() }) -> VNode! {
     ])
 }
 
-pub struct SearchResult {
-    pub title: String!
-    pub path: String!
-    pub excerpt: String!
-    pub section: String!
-    pub score: f64!
+☉ Σ SearchResult {
+    ☉ title: String!
+    ☉ path: String!
+    ☉ excerpt: String!
+    ☉ section: String!
+    ☉ score: f64!
 }
 
-fn SearchResultItem(props: { result: SearchResult, on_select: fn() }) -> VNode! {
-    let navigate! = use_navigate()
+rite SearchResultItem(props: Any) -> VNode! {
+    ≔ navigate! = use_navigate()
 
     li()
         ·class("search-result-item")
@@ -865,7 +865,7 @@ fn SearchResultItem(props: { result: SearchResult, on_select: fn() }) -> VNode! 
 // ============================================================================
 
 /// Icon component (using Lucide icons)
-pub fn Icon(props: { name: &str }) -> VNode! {
+☉ rite Icon(props: Any) -> VNode! {
     svg()
         ·class(&format!("icon icon-{}", props.name))
         ·attr("aria-hidden", "true")
@@ -873,12 +873,12 @@ pub fn Icon(props: { name: &str }) -> VNode! {
 }
 
 /// Badge component
-pub fn Badge(props: { text: &str }) -> VNode! {
+☉ rite Badge(props: Any) -> VNode! {
     span()·class("badge")·text(props.text)·build()
 }
 
 /// Loading spinner
-pub fn Spinner() -> VNode! {
+☉ rite Spinner() -> VNode! {
     div()
         ·class("spinner")
         ·attr("role", "status")
@@ -887,44 +887,44 @@ pub fn Spinner() -> VNode! {
 }
 
 /// Version badge with link
-pub fn VersionBadge(props: { version: &str, href: Option<&str>? }) -> VNode! {
-    let content! = span()·class("version-badge")·text(props.version)·build()
+☉ rite VersionBadge(props: Any) -> VNode! {
+    ≔ content! = span()·class("version-badge")·text(props.version)·build()
 
-    if let Some(href) = props.href {
+    ⎇ ≔ Some(href) = props.href {
         a()·attr("href", href)·child(content)·build()
-    } else {
+    } ⎉ {
         content
     }
 }
 
 // Platform bindings
-mod clipboard {
-    pub fn write_text(text: &str) {}
+scroll clipboard {
+    ☉ rite write_text(text: &str) {}
 }
 
-mod window {
-    pub fn add_event_listener(event: &str, handler: fn(crate::core::events::KeyboardEventData)) {}
-    pub fn remove_event_listener(event: &str, handler: fn(crate::core::events::KeyboardEventData)) {}
+scroll window {
+    ☉ rite add_event_listener(event: &str, handler: rite(tome·core·events·KeyboardEventData)) {}
+    ☉ rite remove_event_listener(event: &str, handler: rite(tome·core·events·KeyboardEventData)) {}
 }
 
-fn set_timeout(ms: u64, callback: fn()) {}
+rite set_timeout(ms: u64, callback: rite()) {}
 
 // String extension
-trait StringExt {
-    fn to_title_case(&self) -> String!;
+aspect StringExt {
+    rite to_title_case(&self) -> String!;
 }
 
-impl StringExt for str {
-    fn to_title_case(&self) -> String! {
+⊢ StringExt ∀ str {
+    rite to_title_case(&self) -> String! {
         self·split_whitespace()
             ·map(|word| {
-                let mut chars! = word·chars()
-                match chars·next() {
-                    None => String::new(),
+                ≔ vary chars! = word·chars()
+                ⌥ chars·next() {
+                    None => String·new(),
                     Some(c) => c·to_uppercase()·chain(chars)·collect()
                 }
             })
-            ·collect::<Vec<_>>()
+            ·collect·<Vec<_>>()
             ·join(" ")
     }
 }

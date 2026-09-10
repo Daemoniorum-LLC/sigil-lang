@@ -58,6 +58,13 @@ fn main() -> ExitCode {
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        // The wasm command exists but is feature-gated, and was missing from this
+        // list either way — so the one output format Qliphoth is built on was
+        // invisible to anyone reading --help.
+        #[cfg(feature = "wasm")]
+        eprintln!("  wasm <file>     Compile to WebAssembly (-o output.wasm)");
+        #[cfg(not(feature = "wasm"))]
+        eprintln!("  wasm <file>     Compile to WebAssembly (requires --features wasm)");
         eprintln!("  rust <file>     Transpile to Rust source code");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
@@ -186,9 +193,11 @@ fn main() -> ExitCode {
                 OptLevel::Standard
             } else if args.iter().any(|a| a == "-Os" || a == "-Osize") {
                 OptLevel::Size
-            } else {
-                // Default: Aggressive (-O3)
+            } else if args.iter().any(|a| a == "-O3" || a == "-Oaggressive") {
                 OptLevel::Aggressive
+            } else {
+                // Default: Standard (-O2) - O3 can crash LLVM on complex nested loops
+                OptLevel::Standard
             };
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
@@ -215,26 +224,34 @@ fn main() -> ExitCode {
         }
         #[cfg(feature = "wasm")]
         "wasm" => {
+            // The host import surface, as the compiler defines it. A JS runtime
+            // that is missing one of these does not degrade: a WASM module
+            // importing a function the host does not provide makes
+            // `WebAssembly.instantiate` throw, and nothing runs at all. Both
+            // shipped copies of `sigil_runtime.js` were short by five, and
+            // nothing could have told them so.
+            if args.iter().any(|a| a == "--list-imports") {
+                for import in WasmCompiler::new().host_imports() {
+                    println!("{}", import);
+                }
+                return ExitCode::SUCCESS;
+            }
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
                 eprintln!("Usage: sigil wasm <file.sigil> [-o output.wasm]");
+                eprintln!("       sigil wasm --list-imports");
                 return ExitCode::from(1);
             }
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
                 } else {
-                    args[2]
-                        .trim_end_matches(".sigil")
-                        .trim_end_matches(".sg")
-                        .to_string() + ".wasm"
+                    default_wasm_output(&args[2])
                 }
             } else {
-                args[2]
-                    .trim_end_matches(".sigil")
-                    .trim_end_matches(".sg")
-                    .to_string() + ".wasm"
+                default_wasm_output(&args[2])
             };
+            set_wasm_cfg(std::path::Path::new(&args[2]), &parse_feature_flags(&args));
             wasm_compile_file(&args[2], &output)
         }
         #[cfg(not(feature = "wasm"))]
@@ -274,7 +291,7 @@ fn main() -> ExitCode {
         "check" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--apply-suggestions]");
+                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--strict] [--apply-suggestions]");
                 return ExitCode::from(1);
             }
             // Parse format option
@@ -286,10 +303,11 @@ fn main() -> ExitCode {
                 OutputFormat::Human
             };
             let quiet = args.iter().any(|a| a == "--quiet");
+            let strict = args.iter().any(|a| a == "--strict");
             let apply_fixes = args
                 .iter()
                 .any(|a| a == "--apply-suggestions" || a == "--fix");
-            check_file(&args[2], format, quiet, apply_fixes)
+            check_file(&args[2], format, quiet, apply_fixes, strict)
         }
         "lint" => {
             // Handle --init flag to generate default config
@@ -466,11 +484,22 @@ fn main() -> ExitCode {
             let backup = args.iter().any(|a| a == "--backup");
             let evidentiality = args.iter().any(|a| a == "--evidentiality");
             let workspace = args.iter().any(|a| a == "--workspace");
-
             // Parse output directory option: -o <dir> or --output <dir>
             let output_dir: Option<String> = args.iter()
                 .position(|a| a == "-o" || a == "--output")
                 .and_then(|pos| args.get(pos + 1).cloned());
+
+            // React migration (feature-gated)
+            #[cfg(feature = "react-migrate")]
+            if args.iter().any(|a| a == "--from-react") {
+                return match sigil_parser::migrate::react::run_react_migrate(&args[2..]) {
+                    Ok(()) => ExitCode::SUCCESS,
+                    Err(e) => {
+                        eprintln!("React migration error: {}", e);
+                        ExitCode::from(1)
+                    }
+                };
+            }
 
             if workspace {
                 // Migrate entire workspace from Sigil.toml
@@ -479,6 +508,8 @@ fn main() -> ExitCode {
                 eprintln!("Usage: sigil migrate <file|directory> [options]");
                 eprintln!("       sigil migrate <file|directory> -o <output_dir> [options]");
                 eprintln!("       sigil migrate --workspace [options]");
+                #[cfg(feature = "react-migrate")]
+                eprintln!("       sigil migrate --from-react <dir> [options]");
                 eprintln!();
                 eprintln!("Options:");
                 eprintln!("  -o, --output     Output directory (writes .sg files, preserves structure)");
@@ -486,6 +517,8 @@ fn main() -> ExitCode {
                 eprintln!("  --backup         Create .bak backup before modifying");
                 eprintln!("  --evidentiality  Add evidentiality markers to external data sources");
                 eprintln!("  --workspace      Migrate all files in workspace (reads Sigil.toml)");
+                #[cfg(feature = "react-migrate")]
+                eprintln!("  --from-react     Migrate React/TSX to Qliphoth actors");
                 eprintln!();
                 eprintln!("When -o is specified, .rs files are converted to .sg files in output dir.");
                 eprintln!("Without -o, files are modified in-place (must be .sg or .sigil).");
@@ -942,56 +975,120 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
             }
         }
 
-        // Find all .sigil files in src/
-        let src_dir = match fs::read_dir(&src_path) {
-            Ok(d) => d,
-            Err(_) => {
-                eprintln!("  Warning: Could not read {}/src/", member);
-                continue;
+        // Find all .sigil files in src/ (including subdirectories)
+        fn collect_sigil_files(dir: &std::path::Path, files: &mut Vec<String>) {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        // Recurse into subdirectories
+                        collect_sigil_files(&path, files);
+                    } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                        files.push(path.to_string_lossy().to_string());
+                    }
+                }
             }
-        };
+        }
 
-        let mut files: Vec<String> = src_dir
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "sigil" || ext == "sg"))
-            .map(|e| e.path().to_string_lossy().to_string())
-            .collect();
+        let mut files: Vec<String> = Vec::new();
+        collect_sigil_files(&src_path, &mut files);
+
+        if files.is_empty() {
+            eprintln!("  Warning: No .sigil files found in {}/src/", member);
+            continue;
+        }
 
         // Sort files to ensure proper load order:
-        // 1. lib.sigil first (defines the crate's public interface)
-        // 2. Other modules in alphabetical order
-        // 3. main.sigil last (uses definitions from other modules)
+        // 1. Root lib.sigil first (defines the crate's public interface)
+        // 2. Root-level non-lib/main files
+        // 3. Subdirectory mod.sigil files (in order of depth, then alphabetically)
+        // 4. Subdirectory non-mod files
+        // 5. main.sigil last (uses definitions from other modules)
         files.sort_by(|a, b| {
-            let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
-            match (a_name, b_name) {
-                ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
-                (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
-                ("main.sigil", _) | ("main.sg", _) => std::cmp::Ordering::Greater,
-                (_, "main.sigil") | (_, "main.sg") => std::cmp::Ordering::Less,
-                _ => a_name.cmp(b_name),
-            }
+            let a_path = Path::new(a);
+            let b_path = Path::new(b);
+            let a_name = a_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let b_name = b_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+            // Count directory depth relative to src/
+            let a_depth = a.matches('/').count();
+            let b_depth = b.matches('/').count();
+
+            // Root-level lib.sigil always first
+            let a_is_root_lib = a_depth <= 3 && (a_name == "lib.sigil" || a_name == "lib.sg");
+            let b_is_root_lib = b_depth <= 3 && (b_name == "lib.sigil" || b_name == "lib.sg");
+            if a_is_root_lib && !b_is_root_lib { return std::cmp::Ordering::Less; }
+            if b_is_root_lib && !a_is_root_lib { return std::cmp::Ordering::Greater; }
+
+            // main.sigil always last
+            let a_is_main = a_name == "main.sigil" || a_name == "main.sg";
+            let b_is_main = b_name == "main.sigil" || b_name == "main.sg";
+            if a_is_main && !b_is_main { return std::cmp::Ordering::Greater; }
+            if b_is_main && !a_is_main { return std::cmp::Ordering::Less; }
+
+            // Sort by depth first (shallower files first)
+            if a_depth != b_depth { return a_depth.cmp(&b_depth); }
+
+            // Within same depth, mod.sigil comes first
+            let a_is_mod = a_name == "mod.sigil" || a_name == "mod.sg";
+            let b_is_mod = b_name == "mod.sigil" || b_name == "mod.sg";
+            if a_is_mod && !b_is_mod { return std::cmp::Ordering::Less; }
+            if b_is_mod && !a_is_mod { return std::cmp::Ordering::Greater; }
+
+            // Otherwise alphabetical by full path
+            a.cmp(b)
         });
 
         eprintln!("  Loading {} ({} files)...", crate_name, files.len());
 
         // Load each file in the crate
         for file_path in &files {
-            let file_name = Path::new(file_path)
+            let file_path_obj = Path::new(file_path);
+            let file_name = file_path_obj
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("?");
-            eprintln!("    - {}", file_name);
 
-            // Set current module based on file name (for module-qualified function names)
+            // Get relative path from src/ for subdirectory files
+            let relative_display = file_path_obj
+                .strip_prefix(&src_path)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| file_name.to_string());
+            eprintln!("    - {}", relative_display);
+
+            // Set current module based on file path (for module-qualified function names)
             // e.g., "analyze.sigil" -> module name "analyze"
+            //       "router/mod.sigil" -> module name "router"
+            //       "router/types.sigil" -> module name "router·types"
             // Skip for lib.sigil and main.sigil as they are the crate root
             let module_name = if file_name != "lib.sigil" && file_name != "main.sigil"
                 && file_name != "lib.sg" && file_name != "main.sg" {
-                Path::new(file_name)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
+                // Build module path from relative directory path + file stem
+                let relative_path = file_path_obj.strip_prefix(&src_path).ok();
+                let module_parts: Vec<String> = if let Some(rel) = relative_path {
+                    let parent_parts: Vec<&str> = rel.parent()
+                        .map(|p| p.iter().filter_map(|c| c.to_str()).collect())
+                        .unwrap_or_default();
+                    let stem = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+
+                    // For mod.sigil files, use just the parent directory path
+                    if stem == "mod" {
+                        parent_parts.iter().map(|s| s.to_string()).collect()
+                    } else {
+                        // For other files, include parent path + file stem
+                        let mut parts: Vec<String> = parent_parts.iter().map(|s| s.to_string()).collect();
+                        parts.push(stem.to_string());
+                        parts
+                    }
+                } else {
+                    vec![file_path_obj.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()]
+                };
+
+                if module_parts.is_empty() || (module_parts.len() == 1 && module_parts[0].is_empty()) {
+                    None
+                } else {
+                    Some(module_parts.join("·"))
+                }
             } else {
                 None
             };
@@ -1147,6 +1244,14 @@ fn llvm_file(path: &str) -> ExitCode {
         }
     };
 
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
     // Compile
     if let Err(e) = compiler.compile(&source) {
         eprintln!("Compilation error in '{}': {}", path, e);
@@ -1197,6 +1302,14 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
                 return ExitCode::from(1);
             }
         };
+
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
 
     // Compile
     if let Err(e) = compiler.compile(&source) {
@@ -2015,39 +2128,283 @@ codegen-units = 1
     )
 }
 
-/// Compile a Sigil source file to WebAssembly.
+/// Default output path for `sigil wasm <input>`.
+///
+/// Stripping the source extension is right for a file and wrong for a
+/// directory: a project built as `.` used to be written to `..wasm`. A
+/// directory is named after itself, resolved so that `.` and `..` name the
+/// directory they point at.
+#[cfg(feature = "wasm")]
+fn default_wasm_output(input: &str) -> String {
+    let path = std::path::Path::new(input);
+    if path.is_dir() {
+        let name = std::fs::canonicalize(path)
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "project".to_string());
+        return format!("{}.wasm", name);
+    }
+    format!(
+        "{}.wasm",
+        input.trim_end_matches(".sigil").trim_end_matches(".sg")
+    )
+}
+
+/// Feature selection from the command line.
+///
+/// `--features a,b` (repeatable, comma- or space-separated),
+/// `--no-default-features`, `--all-features`. The names are resolved against
+/// the project's `[features]` table; a single file has no table, so its
+/// requested names are taken at face value.
+#[cfg(feature = "wasm")]
+struct FeatureFlags {
+    requested: Vec<String>,
+    no_default: bool,
+    all: bool,
+}
+
+#[cfg(feature = "wasm")]
+fn parse_feature_flags(args: &[String]) -> FeatureFlags {
+    let mut requested = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--features" || args[i] == "-F" {
+            if let Some(list) = args.get(i + 1) {
+                requested.extend(
+                    list.split([',', ' '])
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string),
+                );
+                i += 1;
+            }
+        } else if let Some(list) = args[i].strip_prefix("--features=") {
+            requested.extend(
+                list.split([',', ' '])
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            );
+        }
+        i += 1;
+    }
+    FeatureFlags {
+        requested,
+        no_default: args.iter().any(|a| a == "--no-default-features"),
+        all: args.iter().any(|a| a == "--all-features"),
+    }
+}
+
+/// Select the target `@[cfg(…)]` is evaluated against for a WebAssembly build.
+///
+/// Without this the target was the machine running the compiler, so
+/// `@[cfg(target_arch = "wasm32")]` was false while compiling to WebAssembly
+/// and a platform module gated on `not(wasm)` was compiled in anyway.
+#[cfg(feature = "wasm")]
+fn set_wasm_cfg(input: &std::path::Path, flags: &FeatureFlags) {
+    use sigil_parser::cfg::CfgContext;
+    use sigil_parser::wasm::deps::{resolve_features, ProjectManifest};
+
+    let project_dir = if input.is_dir() {
+        Some(input.to_path_buf())
+    } else {
+        input.parent().map(|p| p.to_path_buf())
+    };
+    let features: std::collections::BTreeSet<String> = project_dir
+        .as_deref()
+        .and_then(|dir| ProjectManifest::from_dir(dir).ok())
+        .map(|m| {
+            resolve_features(&m, &flags.requested, flags.no_default, flags.all)
+                .into_iter()
+                .collect()
+        })
+        .unwrap_or_else(|| flags.requested.iter().cloned().collect());
+
+    let mut cfg = CfgContext::wasm32();
+    cfg.features = features;
+    sigil_parser::cfg::set_active(cfg);
+}
+
+/// Compile a Sigil source file or project to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
     use std::path::Path;
 
-    println!("Compiling {} -> {} (WebAssembly)", path, output);
+    let path = Path::new(path);
 
-    // Create WASM compiler and compile from path (enables multi-file module resolution)
-    let mut compiler = WasmCompiler::new();
-    match compiler.compile_from_path(Path::new(path)) {
-        Ok(wasm_bytes) => {
-            // Write the WASM bytes to output file
-            if let Err(e) = fs::write(output, &wasm_bytes) {
-                eprintln!("Error writing output file '{}': {}", output, e);
-                return ExitCode::from(1);
+    // Check if this is a directory with sigil.toml or Sigil.toml (project compilation)
+    let is_project = if path.is_dir() {
+        path.join("sigil.toml").exists() || path.join("Sigil.toml").exists()
+    } else if let Some(parent) = path.parent() {
+        parent.join("sigil.toml").exists() || parent.join("Sigil.toml").exists()
+    } else {
+        false
+    };
+
+    if is_project {
+        // Project compilation with dependencies
+        let project_dir = if path.is_dir() {
+            path.to_path_buf()
+        } else {
+            path.parent().unwrap().to_path_buf()
+        };
+
+        println!("Compiling project {} -> {} (WebAssembly with dependencies)",
+                 project_dir.display(), output);
+
+        let mut compiler = WasmCompiler::new();
+        match compiler.compile_project_into(&project_dir) {
+            Ok(wasm_bytes) => {
+                if let Err(e) = fs::write(output, &wasm_bytes) {
+                    eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                if let Err(e) = validate_wasm_module(&wasm_bytes, &project_dir.display().to_string()) {
+                    report_invalid_module(&e, compiler.stack_reports(), output);
+                    return ExitCode::from(1);
+                }
+
+                let size = wasm_bytes.len();
+                let size_str = format_size(size);
+                println!("Successfully compiled to: {} ({})", output, size_str);
+                report_stubbed_calls(&compiler);
+                report_unresolved(&compiler);
+                ExitCode::SUCCESS
             }
-
-            let size = wasm_bytes.len();
-            let size_str = if size < 1024 {
-                format!("{} bytes", size)
-            } else if size < 1024 * 1024 {
-                format!("{:.1} KB", size as f64 / 1024.0)
-            } else {
-                format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
-            };
-
-            println!("Successfully compiled to: {} ({})", output, size_str);
-            ExitCode::SUCCESS
+            Err(e) => {
+                eprintln!("Compilation error: {}", e);
+                ExitCode::from(1)
+            }
         }
-        Err(e) => {
-            eprintln!("Compilation error in '{}': {}", path, e);
-            ExitCode::from(1)
+    } else {
+        // Single file compilation
+        println!("Compiling {} -> {} (WebAssembly)", path.display(), output);
+
+        let mut compiler = WasmCompiler::new();
+        match compiler.compile_from_path(path) {
+            Ok(wasm_bytes) => {
+                if let Err(e) = fs::write(output, &wasm_bytes) {
+                    eprintln!("Error writing output file '{}': {}", output, e);
+                    return ExitCode::from(1);
+                }
+
+                if let Err(e) = validate_wasm_module(&wasm_bytes, &path.display().to_string()) {
+                    report_invalid_module(&e, compiler.stack_reports(), output);
+                    return ExitCode::from(1);
+                }
+
+                let size = wasm_bytes.len();
+                let size_str = format_size(size);
+                println!("Successfully compiled to: {} ({})", output, size_str);
+                report_stubbed_calls(&compiler);
+                report_unresolved(&compiler);
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("Compilation error in '{}': {}", path.display(), e);
+                ExitCode::from(1)
+            }
         }
+    }
+}
+
+/// Warn about calls the WASM backend silently compiled to a constant `0`.
+///
+/// The call compiler stubs any unresolved lowercase name, and every Sigil
+/// function name is lowercase, so a typo, a missing import and a stdlib function
+/// the WASM backend has no binding for all produce a module that compiles, passes
+/// WebAssembly validation, returns 0 and calls nothing. Printing the names does
+/// not fix that, but it is the difference between a wrong answer and a wrong
+/// answer nobody can see.
+#[cfg(feature = "wasm")]
+/// List the names a survey build stubbed. Only reachable with
+/// `SIGIL_WASM_STUB_UNRESOLVED` set — see `WasmCompiler::stubbing_unresolved`.
+#[cfg(feature = "wasm")]
+fn report_unresolved(compiler: &WasmCompiler) {
+    let unresolved = compiler.unresolved();
+    if unresolved.is_empty() {
+        return;
+    }
+    eprintln!(
+        "SIGIL_WASM_STUB_UNRESOLVED: {} name(s) resolved to nothing and were \
+         compiled to a constant 0:",
+        unresolved.len()
+    );
+    for name in unresolved {
+        eprintln!("  {}", name);
+    }
+    eprintln!("  This module does NOT do what its source says. Survey only.");
+}
+
+#[cfg(feature = "wasm")]
+fn report_stubbed_calls(compiler: &WasmCompiler) {
+    let stubbed = compiler.stubbed_calls();
+    if stubbed.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: {} call{} did not resolve and compiled to a constant 0:",
+        stubbed.len(),
+        if stubbed.len() == 1 { "" } else { "s" }
+    );
+    for name in stubbed {
+        eprintln!("  {}()", name);
+    }
+    eprintln!("  These do nothing at run time. The module is valid WebAssembly regardless.");
+}
+
+/// Format file size for display.
+#[cfg(feature = "wasm")]
+/// Validate emitted WebAssembly before calling it a success.
+///
+/// The compiler could report "Successfully compiled" for a module no runtime
+/// would load, and did — for all 93 generated Lares components, and for
+/// Qliphoth's own `core/vdom.sigil` (S46). `wasmparser` was a dev-dependency,
+/// so the validator was reachable from 21 hand-written tests and from nothing
+/// that ran on real input. A module that does not validate is a compiler bug,
+/// and saying so at the point it is produced is the difference between one
+/// diagnostic and a browser console.
+/// Report a module the validator rejected.
+///
+/// `wasmparser` gives a byte offset into the encoded binary, which names
+/// nothing anyone can act on. The stack checker names the instruction, the
+/// function that emitted it, and the operands around it. Both compilation
+/// paths — single file and project — report through here, so a project build
+/// cannot lose the diagnosis the single-file build would have printed.
+fn report_invalid_module(error: &str, reports: &[String], output: &str) {
+    eprintln!("Compilation error: {}", error);
+    if reports.is_empty() {
+        eprintln!(
+            "  (the stack checker found nothing — the construct is outside \
+             the subset it models)"
+        );
+    } else {
+        for r in reports {
+            eprint!("{}", r);
+        }
+    }
+    eprintln!(
+        "  The output was written to '{}' so it can be inspected, but it \
+         will not load.",
+        output
+    );
+}
+
+fn validate_wasm_module(bytes: &[u8], source: &str) -> Result<(), String> {
+    wasmparser::Validator::new()
+        .validate_all(bytes)
+        .map(|_| ())
+        .map_err(|e| format!("emitted invalid WebAssembly for '{}': {}", source, e))
+}
+
+fn format_size(size: usize) -> String {
+    if size < 1024 {
+        format!("{} bytes", size)
+    } else if size < 1024 * 1024 {
+        format!("{:.1} KB", size as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
     }
 }
 
@@ -2058,7 +2415,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
 ///
 /// With `--apply-suggestions`, automatically applies fix suggestions
 /// and rewrites the file.
-fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) -> ExitCode {
+fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -2097,6 +2454,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
         Ok(ast) => {
             // Run type checker with evidence enforcement
             let mut type_checker = TypeChecker::new();
+            type_checker.set_strict(strict);
             if let Err(type_errors) = type_checker.check_file(&ast) {
                 for err in type_errors {
                     let mut diag =
@@ -2177,7 +2535,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
                 }
 
                 // Re-check with fixed source
-                return check_file(path, format, quiet, false);
+                return check_file(path, format, quiet, false, strict);
             }
             source // No fixes applied, use original
         } else {
@@ -2687,6 +3045,7 @@ fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode 
             Evidentiality::Reported => "reported",
             Evidentiality::Uncertain => "uncertain",
             Evidentiality::Predicted => "predicted",
+            Evidentiality::Chaos => "chaotic",
             Evidentiality::Paradox => "paradox",
         }
     }
@@ -4745,6 +5104,14 @@ fn compile_file_with_deps(path: &str, output: &str, dep_libs: &[std::path::PathB
             }
         };
 
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
+
     // Compile
     if let Err(e) = compiler.compile(&source) {
         eprintln!("Compilation error in '{}': {}", path, e);
@@ -4839,6 +5206,14 @@ fn compile_library(path: &str, name: &str, target_dir: &std::path::Path) -> Exit
             return ExitCode::from(1);
         }
     };
+
+    // Set source path to enable tome loading
+    let source_path = std::path::Path::new(path);
+    if let Ok(abs_path) = source_path.canonicalize() {
+        if let Err(e) = compiler.set_source_path(&abs_path) {
+            eprintln!("Warning: failed to set source path: {}", e);
+        }
+    }
 
     // Compile (generates LLVM IR without requiring main)
     if let Err(e) = compiler.compile(&source) {
@@ -5187,6 +5562,360 @@ fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
     (out, dropped)
 }
 
+/// Report names in `source` that the Sigil parser will refuse where they stand.
+///
+/// Sigil reserves some ordinary English words as prose spellings of glyphs —
+/// `aspect` for `Θ`, `of` for `∈` — so Rust code using one as a field or
+/// parameter name migrates into something that will not parse, and the
+/// eventual error names the token rather than the field. Reporting it at
+/// migration time turns that into a diagnostic the reader can act on, while
+/// the name is still visible.
+///
+/// The question asked is whether the **parser** accepts the name in the
+/// position it was found, not whether the **lexer** returns a keyword token
+/// for it. Those are very different. Of the 93 word-shaped tokens in the
+/// lexer's table, measured against an ordinary identifier as a control in
+/// every position:
+///
+/// | verdict | count | examples |
+/// |---|---|---|
+/// | accepted everywhere | 58 | `body` `layer` `location` `header` `scope` `anima` |
+/// | refused everywhere | 15 | `aspect` `of` `alter` `each` `vary` `switch` |
+/// | refused as a field, accepted as a binding | 10 | `self` `Self` `this` `true` `yay` |
+/// | accepted as a field, refused as a binding | 10 | `tome` `ref` `super` `const` `simd` |
+///
+/// So a lexer test reports `body`, `layer`, `location` and `header` — all of
+/// which parse perfectly well — and tells the reader to rename them.
+///
+/// Position matters in both directions, which is why one verdict per word
+/// cannot be right: `tome` is a valid field name and an invalid parameter
+/// name, and `true` is the other way round. A name whose position this cannot
+/// determine is left alone; guessing is the defect being fixed.
+///
+/// Deriving the set from the lexer rather than a hand-written list is what
+/// keeps it from drifting from the language, but the lexer only supplies the
+/// candidates — the parser supplies every verdict.
+fn collect_keyword_collisions(source: &str) -> Vec<(String, usize)> {
+    let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+    // One scanner across every span, so a comment between a struct's brace and
+    // its fields does not lose the brace.
+    let mut state = CollisionScan::default();
+    // Code only. Prose ends sentences with a colon too — "Continue mobbing if:"
+    // and "Implementation based on:" both look like a field named after a
+    // reserved word if the scan reads comments.
+    map_rust_code_spans(source, |code| {
+        collect_in_code(&mut state, code, &mut counts);
+        code.to_string()
+    });
+    counts.into_iter().collect()
+}
+
+/// Where a name sits. The parser's answer depends on it, so this is carried
+/// alongside the name rather than collapsed into a single reserved-word set.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum NamePosition {
+    /// A struct field, in a declaration or a literal.
+    Field,
+    /// A function parameter.
+    Parameter,
+    /// A `let` binding.
+    Local,
+}
+
+impl NamePosition {
+    /// A minimal Sigil program placing `name` in this position.
+    ///
+    /// Every probe both **binds** the name and **reads it back**, because the
+    /// two can disagree: `const`, `async`, `move`, `unsafe`, `volatile`,
+    /// `atomic` and `simd` all bind cleanly and fail only on use, so a probe
+    /// that binds alone calls them fine.
+    ///
+    /// The read is deliberately placed somewhere **neutral** — after `≔ … =`,
+    /// or after a `.` — and never at the start of a statement. A word that
+    /// introduces an item form (`actor`, `invoke`, `rite`, `scroll`, `sigil`,
+    /// `static`, `type`, `extern`) is ambiguous with that form when it opens a
+    /// statement, so a probe reading it there reports eight usable names as
+    /// refused. That ambiguity is a property of the *use site*, not of the
+    /// name being declared, and every one of those eight is a perfectly good
+    /// field, parameter and local.
+    fn probe(self, name: &str) -> String {
+        match self {
+            NamePosition::Field => format!(
+                "☉ Σ CollisionProbe {{ ☉ {name}: i64 }}\n\
+                 ☉ rite collision_probe(c: CollisionProbe) -> i64 {{ c.{name} }}"
+            ),
+            NamePosition::Parameter => format!(
+                "☉ rite collision_probe({name}: i64) -> i64 \
+                 {{ ≔ probe_sink = {name}; probe_sink }}"
+            ),
+            NamePosition::Local => format!(
+                "☉ rite collision_probe() -> i64 \
+                 {{ ≔ {name} = 1; ≔ probe_sink = {name}; probe_sink }}"
+            ),
+        }
+    }
+}
+
+/// Whether the Sigil parser accepts `name` in `position`.
+///
+/// Memoised: migration runs over whole trees, and the answer depends only on
+/// the pair. The cache is per thread, so it needs no synchronisation.
+fn parser_accepts(name: &str, position: NamePosition) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static CACHE: RefCell<HashMap<(String, NamePosition), bool>> =
+            RefCell::new(HashMap::new());
+    }
+    CACHE.with(|cache| {
+        if let Some(&known) = cache.borrow().get(&(name.to_string(), position)) {
+            return known;
+        }
+        let accepted = sigil_parser::Parser::new(&position.probe(name))
+            .parse_file()
+            .is_ok();
+        cache
+            .borrow_mut()
+            .insert((name.to_string(), position), accepted);
+        accepted
+    })
+}
+
+/// The position of a name from the two words before it and the bracket
+/// enclosing it.
+///
+/// `None` means the context is not one of the three that can be judged — a
+/// closure parameter, a match arm, a type ascription somewhere unusual. Those
+/// are passed over rather than guessed at.
+fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePosition> {
+    // A `where` bound is not a name being declared. `where Self: Sized` puts
+    // `Self` in front of a colon inside a trait body, which otherwise reads as
+    // a field.
+    if prev_words[1] == "where" {
+        return None;
+    }
+    // `let x: T`, `let mut x: T`, `const X: T` and `static X: T` all bind a
+    // name rather than declare a field, wherever they appear. An item inside a
+    // function body is enclosed by that body's `{` and would otherwise be
+    // judged as a struct field, which is the wrong question for it — the two
+    // disagree for `tome`, `ref`, `super` and every word that binds but cannot
+    // be read back.
+    if prev_words[1] == "let"
+        || prev_words[1] == "const"
+        || prev_words[1] == "static"
+        || (prev_words[1] == "mut" && (prev_words[0] == "let" || prev_words[0] == "static"))
+    {
+        return Some(NamePosition::Local);
+    }
+    match enclosing {
+        // A parameter list. `fn f(mut x: T)` lands here too, since `mut`
+        // alone did not make it a local above.
+        Some(b'(') => Some(NamePosition::Parameter),
+        // A struct declaration or literal body.
+        Some(b'{') => Some(NamePosition::Field),
+        _ => None,
+    }
+}
+
+/// The scanner's state, which must survive from one code span to the next.
+///
+/// A file reaches this as an alternating sequence of code and non-code spans,
+/// and a comment can fall anywhere — including between a struct's opening
+/// brace and its fields, which is where Rust puts field documentation. Holding
+/// the bracket stack in a local of the per-span routine therefore emptied it at
+/// every doc comment, so `pub each: Option<Each>` one line under `/// Emit
+/// extend method.` had no enclosing bracket, took no position, and was passed
+/// over. That is the common shape of a documented field, so the diagnostic saw
+/// almost none of them.
+#[derive(Default)]
+struct CollisionScan {
+    /// `(bracket, opened a macro invocation, in_where to restore on close)`.
+    ///
+    /// The innermost unclosed bracket distinguishes a parameter list from a
+    /// struct body — the two contexts a bare `name:` is otherwise ambiguous
+    /// between, and the two whose answers differ for `ref`, `super` and `tome`.
+    ///
+    /// Names inside a macro invocation's arguments are not declarations:
+    /// `test_bake!(T, const: …)` puts a reserved word in front of a colon in
+    /// what is really a macro argument. A struct literal nested inside the
+    /// invocation pushes its own `{`, so it is still judged — only the
+    /// innermost bracket decides.
+    brackets: Vec<(u8, bool, bool)>,
+    /// The two words before the current one, for `let` and `let mut`.
+    prev_words: [String; 2],
+    /// Inside a `where` clause, where every `name:` is a bound rather than a
+    /// declaration. It runs from the keyword to the body or semicolon that
+    /// ends it, and may carry several comma-separated bounds.
+    in_where: bool,
+    /// The last non-whitespace byte, for `!` before a bracket and `$` before a
+    /// word.
+    prev_byte: u8,
+}
+
+/// Tally names in one span of code that the parser refuses where they stand.
+fn collect_in_code(
+    state: &mut CollisionScan,
+    source: &str,
+    counts: &mut std::collections::BTreeMap<String, usize>,
+) {
+    let bytes = source.as_bytes();
+    let CollisionScan {
+        brackets,
+        prev_words,
+        in_where,
+        prev_byte,
+    } = state;
+    // Everything above carries over from the previous span deliberately: a
+    // comment is not a syntactic break, so `let /* why */ x: T` is still a
+    // local and a field under its doc comment is still inside the struct.
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if matches!(b, b'(' | b'{' | b'[') {
+            // A brace ends a `where` clause — it is the body the clause
+            // qualifies — and the clause must not resume when the body closes.
+            // A parenthesis does not end it: `F: FnMut(Self::Item) -> T,` is a
+            // single bound, and clearing the flag there left the `Self: Sized`
+            // on the next line reading as a struct field.
+            let resume = if b == b'{' { false } else { *in_where };
+            brackets.push((b, *prev_byte == b'!', resume));
+            *prev_words = Default::default();
+            if b == b'{' {
+                *in_where = false;
+            }
+            *prev_byte = b;
+            i += 1;
+            continue;
+        }
+        if matches!(b, b')' | b'}' | b']') {
+            *in_where = brackets.pop().is_some_and(|(_, _, resume)| resume);
+            *prev_words = Default::default();
+            *prev_byte = b;
+            i += 1;
+            continue;
+        }
+        if (b as char).is_ascii_alphabetic() || b == b'_' {
+            let before = *prev_byte;
+            let start = i;
+            while i < bytes.len()
+                && ((bytes[i] as char).is_ascii_alphanumeric() || bytes[i] == b'_')
+            {
+                i += 1;
+            }
+            let word = &source[start..i];
+            // Only a word introducing a name is a candidate. `::` excludes
+            // path segments, where a reserved word is fine.
+            let rest = source[i..].trim_start_matches([' ', '\t']);
+            // `$name:fragment` is a `macro_rules!` fragment specifier, not a
+            // declaration — `$macro:ident`, `$super:path`, `$unsafe:ident` all
+            // occur in real code and none of them names a field.
+            let macro_fragment = before == b'$';
+            let in_macro_args = brackets.last().is_some_and(|&(_, m, _)| m);
+            // `_` is a discard, never a name anyone chose: `fn f(_: T)`,
+            // `|_: &_|`, `const _: () = assert!(…)`. There is nothing to
+            // rename, so reporting it gives the reader no action to take.
+            let discard = word == "_";
+            if rest.starts_with(':')
+                && !rest.starts_with("::")
+                && !*in_where
+                && !macro_fragment
+                && !in_macro_args
+                && !discard
+            {
+                let prev = [prev_words[0].as_str(), prev_words[1].as_str()];
+                if let Some(position) = name_position(prev, brackets.last().map(|&(b, _, _)| b)) {
+                    if !parser_accepts(word, position) {
+                        *counts.entry(word.to_string()).or_default() += 1;
+                    }
+                }
+            }
+            *prev_byte = bytes[i - 1];
+            if word == "where" {
+                *in_where = true;
+            }
+            *prev_words = [std::mem::take(&mut prev_words[1]), word.to_string()];
+            continue;
+        }
+        // Punctuation separates words; whitespace does not.
+        if !(b as char).is_whitespace() {
+            *prev_words = Default::default();
+            *prev_byte = b;
+            if b == b';' {
+                *in_where = false;
+            }
+        }
+        i += 1;
+    }
+}
+
+/// Rewrite `from` to `to` where `from` begins a path, returning the new text
+/// and how many roots were rewritten.
+///
+/// "Begins a path" means the preceding character is neither an identifier
+/// character nor `·`. That second exclusion is what keeps `std·alloc·Layout`
+/// intact while rewriting a bare `alloc·Layout`: `std::alloc` is a real `std`
+/// path, and rewriting its second segment would produce `std·std·Layout`.
+fn rewrite_path_root(text: &str, from: &str, to: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut rewritten = 0;
+    for (idx, _) in text.match_indices(from) {
+        if idx < last {
+            continue;
+        }
+        let at_root = text[..idx]
+            .chars()
+            .last()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '·'));
+        if at_root {
+            out.push_str(&text[last..idx]);
+            out.push_str(to);
+            last = idx + from.len();
+            rewritten += 1;
+        }
+    }
+    out.push_str(&text[last..]);
+    (out, rewritten)
+}
+
+/// Collapse a qualified path ending in `suffix` to `to`, dropping any crate
+/// qualifier in front of it. Returns the new text and how many were collapsed.
+///
+/// Generated code rarely names the no_std prelude paths directly: prost emits
+/// `::prost::alloc::string::String`, its own re-export for no_std builds. That
+/// is the same `String`, so the qualifier is noise once the path is no longer
+/// Rust's.
+fn collapse_qualified_path(text: &str, suffix: &str, to: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut collapsed = 0;
+    for (idx, _) in text.match_indices(suffix) {
+        if idx < last {
+            continue;
+        }
+        // Walk back over any `ident·` segments qualifying this path.
+        let mut start = idx;
+        loop {
+            let head = &text[last..start];
+            let Some(before_dot) = head.strip_suffix('·') else {
+                break;
+            };
+            let trimmed = before_dot.trim_end_matches(|c: char| c.is_alphanumeric() || c == '_');
+            if trimmed.len() == before_dot.len() {
+                // A `·` with no identifier in front of it is not a qualifier.
+                break;
+            }
+            start = last + trimmed.len();
+        }
+        out.push_str(&text[last..start]);
+        out.push_str(to);
+        last = idx + suffix.len();
+        collapsed += 1;
+    }
+    out.push_str(&text[last..]);
+    (out, collapsed)
+}
+
 /// Split Rust source into code and non-code regions, applying `f` to the code
 /// only and copying comments and literals through untouched.
 ///
@@ -5386,6 +6115,8 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
             return ExitCode::from(1);
         }
     };
+
+    let keyword_collisions = collect_keyword_collisions(&source);
 
     // Compute output path
     let output_path = if let Some(out_dir) = output_dir {
@@ -5591,6 +6322,33 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
             }
         }
 
+        // `core` and `alloc` are Rust's no_std subsets of `std`. Sigil
+        // registers neither, so a migrated `core·option·Option` names a module
+        // that does not exist — it parses, and resolves to nothing. Everything
+        // those two expose is re-exported from `std`, so rewrite the root onto
+        // it. The three prelude types that dominate generated protobuf output
+        // collapse to the bare names a Sigil programmer would write.
+        // The three prelude types collapse to their bare names wherever they
+        // appear, qualifier and all: prost writes
+        // `::prost::alloc::string::String`, which is still just `String`.
+        for (suffix, to) in [
+            ("core·option·Option", "Option"),
+            ("alloc·string·String", "String"),
+            ("alloc·vec·Vec", "Vec"),
+        ] {
+            let (collapsed, count) = collapse_qualified_path(&piece, suffix, to);
+            piece = collapsed;
+            changes += count;
+        }
+
+        // Anything else under those roots moves onto `std`, but only at a path
+        // root: `std·alloc·Layout` is a real std path.
+        for (from, to) in [("core·", "std·"), ("alloc·", "std·")] {
+            let (rewritten, count) = rewrite_path_root(&piece, from, to);
+            piece = rewritten;
+            changes += count;
+        }
+
         for (keyword, replacement, suffixes) in keyword_replacements {
             for suffix in *suffixes {
                 let pattern = format!("{}{}", keyword, suffix);
@@ -5769,6 +6527,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         println!("{}", result);
         println!();
         println!("Run without --dry-run to apply changes.");
+        report_keyword_collisions(&keyword_collisions);
         return ExitCode::SUCCESS;
     }
 
@@ -5817,7 +6576,43 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         println!("  ◊ (Predicted) - ML models, LLM completions");
     }
 
+    report_keyword_collisions(&keyword_collisions);
+
     ExitCode::SUCCESS
+}
+
+/// Print the collision warning, if there is anything to warn about.
+///
+/// Called from both exits of `migrate_file`. `--dry-run` returns early, and it
+/// is the mode someone uses to see what a migration would do to a file, so it
+/// is the run that most wants this warning — leaving it on the write path only
+/// meant the preview was silent and the applied migration was not.
+fn report_keyword_collisions(collisions: &[(String, usize)]) {
+    if collisions.is_empty() {
+        return;
+    }
+    // Count the distinct names, which is what the list below shows. The
+    // earlier wording totalled the uses and still called them names, so a
+    // file with two uses of one name announced two names and then listed one.
+    let names = collisions.len();
+    eprintln!();
+    eprintln!(
+        "warning: {} name{} in this file {} refused by the Sigil parser where {} stand{}:",
+        names,
+        if names == 1 { "" } else { "s" },
+        if names == 1 { "is" } else { "are" },
+        if names == 1 { "it" } else { "they" },
+        if names == 1 { "s" } else { "" },
+    );
+    for (word, count) in collisions {
+        eprintln!(
+            "    {:<16} {} use{}",
+            word,
+            count,
+            if *count == 1 { "" } else { "s" }
+        );
+    }
+    eprintln!("  Rename them in the Rust source, or in the migrated output.");
 }
 
 fn repl() -> ExitCode {
@@ -6642,6 +7437,257 @@ mod migrate_span_tests {
         let (out, n) = super::drop_absolute_path_prefix("d(::a::B, ::c::D)");
         assert_eq!(out, "d(a::B, c::D)");
         assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn keyword_collisions_are_reported_from_code_only() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // A word the parser refuses in every position is the clear case:
+        // `aspect` is Sigil's prose spelling of `Θ`.
+        assert_eq!(f("pub struct C { pub aspect: f32 }"), vec![("aspect".into(), 1)]);
+        // Counted per use, across positions.
+        assert_eq!(
+            f("struct C { aspect: f32, other: u8 }\nfn g(aspect: f32) {}"),
+            vec![("aspect".into(), 2)]
+        );
+
+        // Prose ends sentences with colons too. Neither of these is a field,
+        // and both appear verbatim in the corpus this was built against.
+        assert!(f("// Continue mobbing if:\nlet x = 1;").is_empty());
+        assert!(f("//! Implementation based on:\nlet y = 2;").is_empty());
+        assert!(f("let s = \"named location:\"; let z = 3;").is_empty());
+
+        // A path segment is not a name being declared.
+        assert!(f("let v = std::from::x;").is_empty());
+        // An ordinary identifier is not reserved.
+        assert!(f("struct C { velocity: f32 }").is_empty());
+    }
+
+    #[test]
+    fn a_word_the_parser_accepts_is_not_reported() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // These four lex as keyword tokens but the parser takes them as field
+        // names without complaint. A lexer-based test reports all of them.
+        for word in ["body", "location", "layer", "header"] {
+            let src = format!("struct C {{ {word}: u32 }}");
+            assert!(
+                f(&src).is_empty(),
+                "{word} parses as a field name and must not be reported"
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_word_is_judged_by_where_it_sits() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `tome` is a valid field name and an invalid parameter name.
+        assert!(f("struct C { tome: u32 }").is_empty());
+        assert_eq!(f("fn g(tome: u32) {}"), vec![("tome".into(), 1)]);
+
+        // `true` is the other way round, so no single verdict per word works.
+        assert_eq!(f("struct C { true: u32 }"), vec![("true".into(), 1)]);
+        assert!(f("fn g(true: u32) {}").is_empty());
+    }
+
+    #[test]
+    fn a_name_that_only_fails_when_read_back_is_reported() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `≔ const = 1;` parses on its own; `const + 1` does not. A probe that
+        // binds without reading would call this fine.
+        assert_eq!(f("let const: u32 = 1;"), vec![("const".into(), 1)]);
+    }
+
+    #[test]
+    fn a_word_that_introduces_an_item_form_is_not_reported() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // These eight open an item form, so reading one at the start of a
+        // statement is ambiguous with that form. That is a property of the use
+        // site, not of the name: each is a perfectly good parameter and local,
+        // and a probe that reads the name back at statement start reports all
+        // eight. `actor`, `invoke`, `scroll` and `sigil` are ordinary Rust
+        // identifiers that real code does use.
+        for word in [
+            "actor", "extern", "invoke", "rite", "scroll", "sigil", "static", "type",
+        ] {
+            assert!(
+                f(&format!("fn g({word}: u32) {{}}")).is_empty(),
+                "{word} is a usable parameter name and must not be reported"
+            );
+            assert!(
+                f(&format!("let {word}: u32 = 1;")).is_empty(),
+                "{word} is a usable local name and must not be reported"
+            );
+            assert!(
+                f(&format!("struct C {{ {word}: u32 }}")).is_empty(),
+                "{word} is a usable field name and must not be reported"
+            );
+        }
+
+        // The distinction is real: these seven are refused wherever they are
+        // read, not just at statement start, and must still be caught.
+        for word in [
+            "async", "atomic", "const", "move", "simd", "unsafe", "volatile",
+        ] {
+            assert_eq!(
+                f(&format!("fn g({word}: u32) {{}}")),
+                vec![(word.to_string(), 1)],
+                "{word} is unusable as a parameter and must be reported"
+            );
+        }
+    }
+
+    #[test]
+    fn a_comment_does_not_lose_the_enclosing_brace() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // Rust documents fields with a doc comment directly above them, which
+        // splits the file into separate code spans. A scanner that restarts
+        // its bracket stack per span sees no enclosing brace here, takes no
+        // position, and reports nothing — so it misses the documented field,
+        // which is the ordinary shape of the thing this diagnostic is for.
+        assert_eq!(
+            f("pub struct S {\n    /// Emit extend method.\n    pub each: Option<Each>,\n}"),
+            vec![("each".into(), 1)]
+        );
+        assert_eq!(
+            f("struct S {\n    pub n: u8, // trailing\n    pub aspect: f32,\n}"),
+            vec![("aspect".into(), 1)]
+        );
+        // A block comment mid-declaration likewise does not break the `let`.
+        assert_eq!(
+            f("fn g() { let /* why */ aspect: f32 = 1.0; }"),
+            vec![("aspect".into(), 1)]
+        );
+        // A string literal splits spans the same way a comment does.
+        assert_eq!(
+            f("struct S {\n    pub n: &'static str, // \"of:\"\n    pub alter: u8,\n}"),
+            vec![("alter".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_macro_fragment_specifier_is_not_a_declaration() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `$name:fragment` inside a `macro_rules!` body binds a fragment, not
+        // a field. All four of these appear verbatim in published crates.
+        assert!(f("macro_rules! m { ($macro:ident) => {} }").is_empty());
+        assert!(f("macro_rules! m { ($super:path: $($sub:path),+) => {} }").is_empty());
+        assert!(f("macro_rules! m { ($atomic:ty [$prim:ty]) => {} }").is_empty());
+        assert!(f("macro_rules! m { (@ alloc $($unsafe:ident)?) => {} }").is_empty());
+
+        // A macro invocation's arguments are not declarations either.
+        assert!(f("test_bake!(Char, const: crate::from_char('b'), zerovec);").is_empty());
+
+        // But a struct literal nested inside an invocation still is, because
+        // it opens its own brace.
+        assert_eq!(
+            f("let v = vec![Point { aspect: 1 }];"),
+            vec![("aspect".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_const_or_static_item_binds_rather_than_declares_a_field() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `const _: () = assert!(…)` is the usual compile-time assertion. It
+        // sits inside a function body, so the enclosing bracket is `{` and it
+        // reads as a struct field unless `const` is recognised — and `_` is
+        // not a valid field name in Sigil.
+        assert!(f("fn g() { const _: () = assert!(true); }").is_empty());
+        assert!(f("fn g() { static _: u8 = 0; }").is_empty());
+        assert!(f("fn g() { static mut _: u8 = 0; }").is_empty());
+        // `_` is a discard wherever it appears, so there is nothing to rename.
+        assert!(f("fn is_cie(_: Format, id: u64) -> bool { true }").is_empty());
+        assert!(f("let get_cie = |_: &_, _: &_, offset| offset;").is_empty());
+        assert!(f("seq!(Color { _: '#', red: hex })").is_empty());
+
+        // A genuinely unusable name in the same position is still caught:
+        // `aspect` is refused as a binding as well as a field.
+        assert_eq!(
+            f("fn g() { const aspect: u8 = 0; }"),
+            vec![("aspect".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn a_where_bound_is_not_a_declaration() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `Self: Sized` sits in front of a colon inside a trait body, which
+        // otherwise reads as a field name — and `Self` is not a valid one.
+        assert!(f("trait W {\n    fn q() -> I\n    where\n        Self: Sized;\n}").is_empty());
+        // The clause can carry several bounds, and ends at the body.
+        assert!(f("fn g<T, U>() where T: A, U: B { }").is_empty());
+        // A parenthesis inside a bound does not end the clause. `FnMut(..)`
+        // bounds are common, and clearing the flag at the `(` left the next
+        // line's `Self: Sized` reading as a struct field.
+        assert!(f(
+            "trait I {\n    fn r<F>(self, f: F) -> Option<Self::Item>\n    \
+             where\n        F: FnMut(Self::Item, Self::Item) -> Self::Item,\n        \
+             Self: Sized,\n    {\n        0\n    }\n}"
+        )
+        .is_empty());
+        // The clause really does end at the body brace, and does not resume
+        // when that body closes.
+        assert_eq!(
+            f("fn g<T>() where T: Fn(u8) -> u8 {\n    let aspect: u8 = 1;\n}"),
+            vec![("aspect".into(), 1)]
+        );
+        // A field after the clause has ended is still judged.
+        assert_eq!(
+            f("fn g<T>() where T: A { }\nstruct C { aspect: f32 }"),
+            vec![("aspect".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn an_undeterminable_position_is_left_alone() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // Not inside a parameter list or a struct body, and not a `let`.
+        // Guessing here is what produced the false positives.
+        assert!(f("aspect: u32").is_empty());
+    }
+
+    #[test]
+    fn no_std_roots_are_rewritten_onto_std() {
+        let f = |t: &str| {
+            let mut s = t.to_string();
+            for (suffix, to) in [
+                ("core·option·Option", "Option"),
+                ("alloc·string·String", "String"),
+                ("alloc·vec·Vec", "Vec"),
+            ] {
+                s = super::collapse_qualified_path(&s, suffix, to).0;
+            }
+            for (from, to) in [("core·", "std·"), ("alloc·", "std·")] {
+                s = super::rewrite_path_root(&s, from, to).0;
+            }
+            s
+        };
+        // Prelude types collapse to bare names.
+        assert_eq!(f("a: core·option·Option<u32>"), "a: Option<u32>");
+        assert_eq!(f("b: alloc·string·String"), "b: String");
+        assert_eq!(f("c: alloc·vec·Vec<u8>"), "c: Vec<u8>");
+        // Including through a crate's own no_std re-export, as prost emits.
+        assert_eq!(f("d: prost·alloc·string·String"), "d: String");
+        assert_eq!(f("e: prost·alloc·vec·Vec<u8>"), "e: Vec<u8>");
+        assert_eq!(f("f: core·option·Option<prost·alloc·string·String>"), "f: Option<String>");
+        // Anything else moves onto std.
+        assert_eq!(f("core·sync·atomic·Ordering"), "std·sync·atomic·Ordering");
+        // `std::alloc` is a real std path and must survive untouched — the
+        // reason the root guard excludes a preceding `·`.
+        assert_eq!(f("std·alloc·Layout"), "std·alloc·Layout");
+        assert_eq!(f("invoke std·alloc·{alloc, dealloc}"), "invoke std·alloc·{alloc, dealloc}");
+        // An identifier that merely ends in the root is not a root.
+        assert_eq!(f("mycore·x"), "mycore·x");
     }
 
     #[test]

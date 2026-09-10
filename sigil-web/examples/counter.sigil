@@ -11,46 +11,46 @@ static mut ROOT_VNODE: i32 = 0;
 static mut MOUNTED: bool = false;
 
 /// Create the counter UI
-fn render_counter() -> i32 {
+rite render_counter() -> i32 {
     // Create container div
-    let container = vdom_create_vnode("div");
+    ≔ container = vdom_create_vnode("div");
     vdom_set_vnode_str_prop(container, "className", "counter-container");
 
     // Create title
-    let title = vdom_create_vnode("h2");
-    let title_text = vdom_create_text_vnode("Sigil Counter");
+    ≔ title = vdom_create_vnode("h2");
+    ≔ title_text = vdom_create_text_vnode("Sigil Counter");
     vdom_append_vnode_child(title, title_text);
     vdom_append_vnode_child(container, title);
 
     // Create count display
-    let display = vdom_create_vnode("div");
+    ≔ display = vdom_create_vnode("div");
     vdom_set_vnode_str_prop(display, "className", "count-display");
-    let count_text = vdom_create_text_vnode(f"Count: {COUNT}");
+    ≔ count_text = vdom_create_text_vnode(f"Count: {COUNT}");
     vdom_append_vnode_child(display, count_text);
     vdom_append_vnode_child(container, display);
 
     // Create button container
-    let buttons = vdom_create_vnode("div");
+    ≔ buttons = vdom_create_vnode("div");
     vdom_set_vnode_str_prop(buttons, "className", "button-container");
 
     // Decrement button
-    let dec_btn = vdom_create_vnode("button");
+    ≔ dec_btn = vdom_create_vnode("button");
     vdom_set_vnode_str_prop(dec_btn, "id", "dec-btn");
-    let dec_text = vdom_create_text_vnode("-");
+    ≔ dec_text = vdom_create_text_vnode("-");
     vdom_append_vnode_child(dec_btn, dec_text);
     vdom_append_vnode_child(buttons, dec_btn);
 
     // Increment button
-    let inc_btn = vdom_create_vnode("button");
+    ≔ inc_btn = vdom_create_vnode("button");
     vdom_set_vnode_str_prop(inc_btn, "id", "inc-btn");
-    let inc_text = vdom_create_text_vnode("+");
+    ≔ inc_text = vdom_create_text_vnode("+");
     vdom_append_vnode_child(inc_btn, inc_text);
     vdom_append_vnode_child(buttons, inc_btn);
 
     // Reset button
-    let reset_btn = vdom_create_vnode("button");
+    ≔ reset_btn = vdom_create_vnode("button");
     vdom_set_vnode_str_prop(reset_btn, "id", "reset-btn");
-    let reset_text = vdom_create_text_vnode("Reset");
+    ≔ reset_text = vdom_create_text_vnode("Reset");
     vdom_append_vnode_child(reset_btn, reset_text);
     vdom_append_vnode_child(buttons, reset_btn);
 
@@ -60,31 +60,31 @@ fn render_counter() -> i32 {
 }
 
 /// Increment the count
-pub fn increment() {
+☉ rite increment() {
     COUNT = COUNT + 1;
     print(f"Incremented to {COUNT}");
     update_ui();
 }
 
 /// Decrement the count
-pub fn decrement() {
+☉ rite decrement() {
     COUNT = COUNT - 1;
     print(f"Decremented to {COUNT}");
     update_ui();
 }
 
 /// Reset the count
-pub fn reset() {
+☉ rite reset() {
     COUNT = 0;
     print("Reset to 0");
     update_ui();
 }
 
 /// Update the UI after state change
-fn update_ui() {
-    if MOUNTED {
+rite update_ui() {
+    ⎇ MOUNTED {
         // Create new VDOM
-        let new_vnode = render_counter();
+        ≔ new_vnode = render_counter();
         // Diff and patch
         vdom_diff_and_patch(ROOT_VNODE, new_vnode, 1);
         ROOT_VNODE = new_vnode;
@@ -92,7 +92,7 @@ fn update_ui() {
 }
 
 /// Initialize and mount the counter
-pub fn main() {
+☉ rite main() {
     print("=== Sigil Counter Demo ===");
     print("");
 
@@ -100,7 +100,7 @@ pub fn main() {
     ROOT_VNODE = render_counter();
 
     // Mount to #app
-    let dom_id = vdom_mount_vnode(ROOT_VNODE, "#app");
+    ≔ dom_id = vdom_mount_vnode(ROOT_VNODE, "#app");
     MOUNTED = true;
 
     print(f"Counter mounted (DOM ID: {dom_id})");
@@ -115,10 +115,10 @@ pub fn main() {
 
 // VDOM extern declarations (provided by runtime)
 extern "wasm" {
-    fn vdom_create_vnode(tag: &str) -> i32;
-    fn vdom_create_text_vnode(text: &str) -> i32;
-    fn vdom_set_vnode_str_prop(vnode: i32, name: &str, value: &str);
-    fn vdom_append_vnode_child(parent: i32, child: i32);
-    fn vdom_mount_vnode(vnode: i32, selector: &str) -> i32;
-    fn vdom_diff_and_patch(old: i32, new: i32, parent: i32);
+    rite vdom_create_vnode(tag: &str) -> i32;
+    rite vdom_create_text_vnode(text: &str) -> i32;
+    rite vdom_set_vnode_str_prop(vnode: i32, name: &str, value: &str);
+    rite vdom_append_vnode_child(parent: i32, child: i32);
+    rite vdom_mount_vnode(vnode: i32, selector: &str) -> i32;
+    rite vdom_diff_and_patch(old: i32, new: i32, parent: i32);
 }

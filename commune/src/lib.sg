@@ -132,7 +132,7 @@
 // ============================================================================
 
 /// Macro ∀ defining communicating agents
-#[macro_export]
+// macro_export
 macro_rules! communicating_agent {
     (
         name: $name:expr,
@@ -155,7 +155,7 @@ macro_rules! communicating_agent {
 // Helper Types
 // ============================================================================
 
-invoke std·time·Duration as StdDuration;
+invoke Duration as StdDuration;
 
 ☉ Σ Duration {
     nanos: u64,

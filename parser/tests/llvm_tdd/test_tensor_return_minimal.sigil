@@ -1,0 +1,31 @@
+//! TDD: Minimal Tensor return test
+
+invoke nihil_core·{Tensor, DynShape, Cpu};
+
+rite make_tensor() → Tensor<DynShape, f32, Cpu> {
+    println!("[make_tensor] Creating tensor [2, 3]...");
+    ≔ t = Tensor·randn([2, 3])?;
+    println!("[make_tensor] Inside: numel = {}", t.numel());
+    t
+}
+
+rite main() {
+    println!("=== Minimal Tensor Return Test ===");
+
+    // First, verify tensor creation works in main
+    println!("[main] Creating local tensor...");
+    ≔ local = Tensor·randn([2, 3])?;
+    println!("[main] Local numel = {}", local.numel());
+
+    // Now call function that returns tensor
+    println!("[main] Calling make_tensor()...");
+    ≔ returned = make_tensor();
+    println!("[main] Returned numel = {}", returned.numel());
+
+    // Check if they match
+    ⎇ returned.numel() == 6 {
+        println!("[PASS] Tensor return works correctly!");
+    } ⎉ {
+        println!("[FAIL] Tensor return is broken: expected 6, got {}", returned.numel());
+    }
+}

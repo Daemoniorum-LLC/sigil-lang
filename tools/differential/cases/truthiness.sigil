@@ -1,0 +1,59 @@
+// `⎇ x·to_bool()` is how every migrated guard is spelled: React's `if (xs.length)`
+// and `if (s)` become a truthiness test on a value of unknown type. A guard that
+// fails open runs the branch it was there to prevent.
+
+☉ rite t_zero() -> i64! {
+    ⤺ ⎇ (0)·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_one() -> i64! {
+    ⤺ ⎇ (1)·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_negative() -> i64! {
+    ⤺ ⎇ (-1)·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_empty_len() -> i64! {
+    ≔ xs = [];
+    ⤺ ⎇ xs·len()·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_nonempty_len() -> i64! {
+    ≔ xs = [1, 2];
+    ⤺ ⎇ xs·len()·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_filtered_empty_len() -> i64! {
+    ≔ xs = [1, 2, 3]·filter(|x| x > 99);
+    ⤺ ⎇ xs·len()·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_empty_string() -> i64! {
+    ⤺ ⎇ ""·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_nonempty_string() -> i64! {
+    ⤺ ⎇ "x"·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_none() -> i64! {
+    ⤺ ⎇ (∅)·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_not_zero() -> i64! {
+    ⤺ ⎇ ¬(0)·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_not_one() -> i64! {
+    ⤺ ⎇ ¬(1)·to_bool() { 1 } ⎉ { 0 };
+}
+☉ rite t_guarded_divide() -> i64! {
+    ≔ xs = [1, 2, 3]·filter(|x| x > 99);
+    ⤺ ⎇ xs·len()·to_bool() { 100 / xs·len() } ⎉ { -1 };
+}
+
+☉ rite main() {
+    println((t_zero())·to_string());
+    println((t_one())·to_string());
+    println((t_negative())·to_string());
+    println((t_empty_len())·to_string());
+    println((t_nonempty_len())·to_string());
+    println((t_filtered_empty_len())·to_string());
+    println((t_empty_string())·to_string());
+    println((t_nonempty_string())·to_string());
+    println((t_none())·to_string());
+    println((t_not_zero())·to_string());
+    println((t_not_one())·to_string());
+    println((t_guarded_divide())·to_string());
+}

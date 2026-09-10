@@ -1,0 +1,20 @@
+// S14 — Map<K,V>::get leaves the value type unresolved through an if-let binding.
+//
+// Expected: no errors. `strings` is fully annotated !Map<String, u32>, so
+// `get` should yield Option<u32> and `?id` should bind a u32.
+//
+// Actual:  [E0003] type mismatch in return: expected U32!, found Option<?1..>
+//
+// Contrast: the identical shape over a plain Option field checks clean, so the
+// gap is specifically in resolving a generic Map's value type, not in if-let.
+
+☉ Σ I { strings: !Map<String, u32> }
+
+⊢ I {
+    ☉ rite intern(Δ self, s: !&str) -> !u32 {
+        ⎇ ≔ ?id = self.strings.get(s) {
+            ⤺ id;
+        }
+        ↩ 0;
+    }
+}

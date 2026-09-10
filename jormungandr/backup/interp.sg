@@ -20,8 +20,8 @@
 //! - Reported (~) values are tagged ∀ provenance tracking
 //! - Paradox (‽) values halt execution with an error
 
-invoke crate·ir·*;
-invoke crate·typeck·EvidenceLevel;
+invoke tome·ir·*;
+invoke tome·typeck·EvidenceLevel;
 
 // ============================================================================
 // Runtime Values
@@ -69,7 +69,7 @@ invoke crate·typeck·EvidenceLevel;
     /// Closure (captured environment + function)
     Closure {
         params: ![String],
-        body: !Box<IrOperation>,
+        body_: !Box<IrOperation>,
         env: !Environment,
     },
 
@@ -91,7 +91,7 @@ invoke crate·typeck·EvidenceLevel;
 
 ⊢ Value {
     /// Check ⎇ this is a truthy value
-    ☉ λ is_truthy(self) -> !bool {
+    ☉ rite is_truthy(self) -> !bool {
         ⌥ self {
             Value·Bool(b) => b,
             Value·Int(n) => n != 0,
@@ -105,7 +105,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Convert to string representation
-    ☉ λ to_string(self) -> !String {
+    ☉ rite to_string(self) -> !String {
         ⌥ self {
             Value·Unit => "()",
             Value·Bool(b) => ⎇ b { "true" } ⎉ { "false" },
@@ -143,7 +143,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Get type name ∀ error messages
-    ☉ λ type_name(self) -> !&str {
+    ☉ rite type_name(self) -> !&str {
         ⌥ self {
             Value·Unit => "()",
             Value·Bool(_) => "bool",
@@ -172,15 +172,15 @@ invoke crate·typeck·EvidenceLevel;
 }
 
 ⊢ EvidentialValue {
-    ☉ λ known(value: !Value) -> !EvidentialValue {
+    ☉ rite known(value: !Value) -> !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Known }
     }
 
-    ☉ λ uncertain(value: !Value) -> !EvidentialValue {
+    ☉ rite uncertain(value: !Value) -> !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Uncertain }
     }
 
-    ☉ λ reported(value: !Value) -> !EvidentialValue {
+    ☉ rite reported(value: !Value) -> !EvidentialValue {
         EvidentialValue { value, evidence: IrEvidence·Reported }
     }
 }
@@ -199,7 +199,7 @@ invoke crate·typeck·EvidenceLevel;
 
 ⊢ Environment {
     /// Create a new empty environment
-    ☉ λ new() -> !Environment {
+    ☉ rite new() -> !Environment {
         Environment {
             bindings: Map·new(),
             parent: null,
@@ -207,7 +207,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Create a child environment
-    ☉ λ child(parent: !Environment) -> !Environment {
+    ☉ rite child(parent: !Environment) -> !Environment {
         Environment {
             bindings: Map·new(),
             parent: ?Box·new(parent),
@@ -215,12 +215,12 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Define a variable
-    ☉ λ define(Δ self, name: !String, value: !EvidentialValue) {
+    ☉ rite define(Δ self, name: !String, value: !EvidentialValue) {
         self.bindings.insert(name, value);
     }
 
     /// Look up a variable
-    ☉ λ get(self, name: !&str) -> ?EvidentialValue {
+    ☉ rite get(self, name: !&str) -> ?EvidentialValue {
         ⎇ ≔ ?val = self.bindings.get(name) {
             ⤺ ?val.clone();
         }
@@ -231,7 +231,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Update an existing variable
-    ☉ λ set(Δ self, name: !&str, value: !EvidentialValue) -> !bool {
+    ☉ rite set(Δ self, name: !&str, value: !EvidentialValue) -> !bool {
         ⎇ self.bindings.contains_key(name) {
             self.bindings.insert(name.to_string(), value);
             ⤺ true;
@@ -284,7 +284,7 @@ invoke crate·typeck·EvidenceLevel;
 
 ⊢ Interpreter {
     /// Create a new interpreter
-    ☉ λ new() -> !Interpreter {
+    ☉ rite new() -> !Interpreter {
         ≔ Δ interp = Interpreter {
             globals: Environment·new(),
             call_stack: [],
@@ -300,7 +300,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Register built-in functions
-    λ register_builtins(Δ self) {
+    rite register_builtins(Δ self) {
         // I/O
         self.globals.define("print", EvidentialValue·known(Value·Function("print")));
         self.globals.define("println", EvidentialValue·known(Value·Function("println")));
@@ -347,7 +347,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Load an IR module
-    ☉ λ load_module(Δ self, module: !IrModule) {
+    ☉ rite load_module(Δ self, module: !IrModule) {
         // Register all functions
         ∀ func ∈ module.functions {
             self.functions.insert(func.name.clone(), func);
@@ -358,7 +358,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Execute the main function
-    ☉ λ run(Δ self) -> !Result<EvidentialValue, RuntimeError> {
+    ☉ rite run(Δ self) -> !Result<EvidentialValue, RuntimeError> {
         // Find main function
         ⎇ ≔ ?main_fn = self.functions.get("main") {
             self.call_function("main", [])
@@ -368,7 +368,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Call a function by name
-    ☉ λ call_function(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+    ☉ rite call_function(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
         // Check stack depth
         ⎇ self.call_stack.len() >= self.max_stack_depth {
             ⤺ Result·Err(RuntimeError·new("stack overflow"));
@@ -416,8 +416,8 @@ invoke crate·typeck·EvidenceLevel;
         });
 
         // Execute body
-        ≔ result = ⌥ func.body {
-            ?body => self.eval_with_env(body, env),
+        ≔ result = ⌥ func.body_ {
+            ?body_ => self.eval_with_env(body_, env),
             null => Result·Ok(EvidentialValue·known(Value·Unit)),
         };
 
@@ -428,7 +428,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Check ⎇ evidence satisfies requirement
-    λ check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
+    rite check_evidence(self, required: !IrEvidence, actual: !IrEvidence) -> !bool {
         ≔ rank = |ev: !IrEvidence| {
             ⌥ ev {
                 IrEvidence·Known => 0,
@@ -442,7 +442,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Check ⎇ a function is built-in
-    λ is_builtin(self, name: !&str) -> !bool {
+    rite is_builtin(self, name: !&str) -> !bool {
         ⌥ name {
             "print" | "println" | "input" |
             "int" | "float" | "str" | "bool" |
@@ -456,7 +456,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Call a built-in function
-    λ call_builtin(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
+    rite call_builtin(Δ self, name: !&str, args: ![EvidentialValue]) -> !Result<EvidentialValue, RuntimeError> {
         ⌥ name {
             "print" => {
                 ∀ arg ∈ args {
@@ -688,7 +688,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Check value equality
-    λ values_equal(self, a: !Value, b: !Value) -> !bool {
+    rite values_equal(self, a: !Value, b: !Value) -> !bool {
         ⌥ (a, b) {
             (Value·Unit, Value·Unit) => true,
             (Value·Bool(a), Value·Bool(b)) => a == b,
@@ -706,7 +706,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Evaluate an operation ∈ a given environment
-    λ eval_with_env(Δ self, op: !IrOperation, Δ env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+    rite eval_with_env(Δ self, op: !IrOperation, Δ env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
         ⌥ op {
             IrOperation·Literal { value, evidence, .. } => {
                 ≔ val = ⌥ value {
@@ -856,12 +856,12 @@ invoke crate·typeck·EvidenceLevel;
                 }
             },
 
-            IrOperation·Closure { params, body, evidence, .. } => {
+            IrOperation·Closure { params, body_, evidence, .. } => {
                 ≔ param_names = params|τ{p => p.name}|collect();
                 Result·Ok(EvidentialValue {
                     value: Value·Closure {
                         params: param_names,
-                        body: Box·new(*body),
+                        body_: Box·new(*body_),
                         env: env.clone(),
                     },
                     evidence,
@@ -893,18 +893,18 @@ invoke crate·typeck·EvidenceLevel;
                             }
                         }
 
-                        ⤺ self.eval_with_env(arm.body, arm_env);
+                        ⤺ self.eval_with_env(arm.body_, arm_env);
                     }
                 }
 
                 Result·Err(RuntimeError·new("non-exhaustive match"))
             },
 
-            IrOperation·Loop { variant, condition, iterator, body, .. } => {
+            IrOperation·Loop { variant, condition, iterator, body_, .. } => {
                 ⌥ variant {
                     LoopVariant·Infinite => {
                         loop {
-                            ≔ result = self.eval_with_env(*body.clone(), env);
+                            ≔ result = self.eval_with_env(*body_.clone(), env);
                             ⌥ result {
                                 Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
                                     ⤺ Result·Ok(v);
@@ -923,7 +923,7 @@ invoke crate·typeck·EvidenceLevel;
                             };
                             cond.value.is_truthy()
                         } {
-                            ≔ result = self.eval_with_env(*body.clone(), env);
+                            ≔ result = self.eval_with_env(*body_.clone(), env);
                             ⌥ result {
                                 Result·Err(RuntimeError { is_break: true, value: ?v, .. }) => {
                                     ⤺ Result·Ok(v);
@@ -992,7 +992,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Evaluate binary operation
-    λ eval_binary(self, op: !BinaryOp, left: !Value, right: !Value) -> !Result<Value, RuntimeError> {
+    rite eval_binary(self, op: !BinaryOp, left: !Value, right: !Value) -> !Result<Value, RuntimeError> {
         ⌥ op {
             BinaryOp·Add => ⌥ (left, right) {
                 (Value·Int(a), Value·Int(b)) => Result·Ok(Value·Int(a + b)),
@@ -1095,7 +1095,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Evaluate unary operation
-    λ eval_unary(self, op: !UnaryOp, val: !Value) -> !Result<Value, RuntimeError> {
+    rite eval_unary(self, op: !UnaryOp, val: !Value) -> !Result<Value, RuntimeError> {
         ⌥ op {
             UnaryOp·Neg => ⌥ val {
                 Value·Int(n) => Result·Ok(Value·Int(-n)),
@@ -1117,10 +1117,10 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Evaluate a pipeline step
-    λ eval_pipeline_step(Δ self, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+    rite eval_pipeline_step(Δ self, step: !IrPipelineStep, input: !EvidentialValue, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
         ⌥ step {
-            IrPipelineStep·Morpheme { morpheme, body, .. } => {
-                self.eval_morpheme(morpheme, input, body, env)
+            IrPipelineStep·Morpheme { morpheme, body_, .. } => {
+                self.eval_morpheme(morpheme, input, body_, env)
             },
             IrPipelineStep·Call { function, args } => {
                 ≔ Δ all_args = [input];
@@ -1143,7 +1143,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Evaluate a morpheme operation
-    λ eval_morpheme(Δ self, kind: !MorphemeKind, input: !EvidentialValue, body: ?Box<IrOperation>, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
+    rite eval_morpheme(Δ self, kind: !MorphemeKind, input: !EvidentialValue, body_: ?Box<IrOperation>, env: !Environment) -> !Result<EvidentialValue, RuntimeError> {
         ≔ arr = ⌥ input.value {
             Value·Array(a) => a,
             _ => ⤺ Result·Err(RuntimeError·new("morpheme requires array input")),
@@ -1152,7 +1152,7 @@ invoke crate·typeck·EvidenceLevel;
         ⌥ kind {
             MorphemeKind·Transform => {
                 // τ{expr} - map over array
-                ≔ body = ⌥ body {
+                ≔ body_ = ⌥ body_ {
                     ?b => *b,
                     null => ⤺ Result·Err(RuntimeError·new("transform requires body")),
                 };
@@ -1168,7 +1168,7 @@ invoke crate·typeck·EvidenceLevel;
             },
             MorphemeKind·Filter => {
                 // φ{predicate} - filter array
-                ≔ body = ⌥ body {
+                ≔ body_ = ⌥ body_ {
                     ?b => *b,
                     null => ⤺ Result·Err(RuntimeError·new("filter requires body")),
                 };
@@ -1186,7 +1186,7 @@ invoke crate·typeck·EvidenceLevel;
             },
             MorphemeKind·Reduce => {
                 // ρ{accumulator} - fold array
-                ≔ body = ⌥ body {
+                ≔ body_ = ⌥ body_ {
                     ?b => *b,
                     null => ⤺ Result·Err(RuntimeError·new("reduce requires body")),
                 };
@@ -1295,7 +1295,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Check ⎇ a pattern matches a value
-    λ pattern_matches(self, pattern: !IrPattern, value: !Value, env: !Environment) -> !Result<bool, RuntimeError> {
+    rite pattern_matches(self, pattern: !IrPattern, value: !Value, env: !Environment) -> !Result<bool, RuntimeError> {
         ⌥ pattern {
             IrPattern·Wildcard => Result·Ok(true),
             IrPattern·Ident { .. } => Result·Ok(true),
@@ -1377,7 +1377,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Bind pattern variables to values ∈ environment
-    λ bind_pattern(Δ self, pattern: !IrPattern, value: !EvidentialValue, Δ env: !Environment) -> !Result<(), RuntimeError> {
+    rite bind_pattern(Δ self, pattern: !IrPattern, value: !EvidentialValue, Δ env: !Environment) -> !Result<(), RuntimeError> {
         ⌥ pattern {
             IrPattern·Ident { name, evidence, .. } => {
                 ≔ ev = ⌥ evidence {
@@ -1433,7 +1433,7 @@ invoke crate·typeck·EvidenceLevel;
     }
 
     /// Get interpreter output
-    ☉ λ get_output(self) -> !String {
+    ☉ rite get_output(self) -> !String {
         self.output.join("")
     }
 }
@@ -1452,7 +1452,7 @@ invoke crate·typeck·EvidenceLevel;
 }
 
 ⊢ RuntimeError {
-    ☉ λ new(message: !String) -> !RuntimeError {
+    ☉ rite new(message: !String) -> !RuntimeError {
         RuntimeError {
             message,
             stack_trace: [],
@@ -1462,7 +1462,7 @@ invoke crate·typeck·EvidenceLevel;
         }
     }
 
-    ☉ λ break_with(value: ?EvidentialValue) -> !RuntimeError {
+    ☉ rite break_with(value: ?EvidentialValue) -> !RuntimeError {
         RuntimeError {
             message: "break",
             stack_trace: [],
@@ -1472,7 +1472,7 @@ invoke crate·typeck·EvidenceLevel;
         }
     }
 
-    ☉ λ continue_loop() -> !RuntimeError {
+    ☉ rite continue_loop() -> !RuntimeError {
         RuntimeError {
             message: "continue",
             stack_trace: [],
@@ -1492,7 +1492,7 @@ scroll tests {
     invoke super·*;
 
     #[test]
-    λ test_value_to_string() {
+    rite test_value_to_string() {
         assert_eq!(Value·Int(42).to_string(), "42");
         assert_eq!(Value·Bool(true).to_string(), "true");
         assert_eq!(Value·String("hello").to_string(), "hello");
@@ -1500,7 +1500,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_value_is_truthy() {
+    rite test_value_is_truthy() {
         assert!(Value·Bool(true).is_truthy());
         assert!(!Value·Bool(false).is_truthy());
         assert!(Value·Int(1).is_truthy());
@@ -1509,7 +1509,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_evidence_check() {
+    rite test_evidence_check() {
         ≔ interp = Interpreter·new();
         assert!(interp.check_evidence(IrEvidence·Reported, IrEvidence·Known));
         assert!(interp.check_evidence(IrEvidence·Uncertain, IrEvidence·Known));
@@ -1517,7 +1517,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_builtin_len() {
+    rite test_builtin_len() {
         ≔ Δ interp = Interpreter·new();
         ≔ args = [EvidentialValue·known(Value·String("hello"))];
         ≔ result = interp.call_builtin("len", args);
@@ -1529,7 +1529,7 @@ scroll tests {
     }
 
     #[test]
-    λ test_binary_ops() {
+    rite test_binary_ops() {
         ≔ interp = Interpreter·new();
         assert_eq!(interp.eval_binary(BinaryOp·Add, Value·Int(2), Value·Int(3)).unwrap(), Value·Int(5));
         assert_eq!(interp.eval_binary(BinaryOp·Mul, Value·Int(4), Value·Int(5)).unwrap(), Value·Int(20));

@@ -1,0 +1,97 @@
+//! Test &Struct reference parameters
+
+extern "C" {
+    rite __intrinsic_malloc(size: i64) -> i64;
+    rite __intrinsic_free(ptr: i64);
+    rite __intrinsic_write(fd: i64, buf: i64, len: i64) -> i64;
+}
+
+rite write_byte(b: i64) {
+    ≔ buf = __intrinsic_malloc(1);
+    *(buf as *vary u8) = b as u8;
+    __intrinsic_write(1, buf, 1);
+    __intrinsic_free(buf);
+}
+
+rite print_newline() { write_byte(10); }
+
+rite print_int(n: i64) {
+    ⎇ n == 0 { write_byte(48); ⤺ } ⎉ {}
+    ≔ buf = __intrinsic_malloc(20);
+    ≔ vary end = 0;
+    ≔ vary num = n;
+    ≔ vary negative = false;
+    ⎇ num < 0 { negative = true; num = 0 - num; } ⎉ {}
+    ⟳ num > 0 {
+        ≔ digit = num % 10;
+        ≔ addr = buf + end;
+        *(addr as *vary u8) = (48 + digit) as u8;
+        end += 1;
+        num = num / 10;
+    }
+    ⎇ negative { write_byte(45); } ⎉ {}
+    ≔ vary i = end - 1;
+    ⟳ i >= 0 {
+        ≔ addr = buf + i;
+        ≔ digit = *(addr as *u8);
+        write_byte(digit as i64);
+        i -= 1;
+    }
+    __intrinsic_free(buf);
+}
+
+rite println_int(n: i64) { print_int(n); print_newline(); }
+
+// Simple struct
+Σ Point { x: i64, y: i64 }
+
+⊢ Point {
+    rite new(x: i64, y: i64) → Point {
+        Point { x: x, y: y }
+    }
+
+    // Method using &this (reference receiver)
+    rite get_x(&this) → i64 {
+        println_int(100);  // Marker
+        println_int(this.x);
+        this.x
+    }
+
+    rite get_y(&this) → i64 {
+        this.y
+    }
+}
+
+// Function that takes &Point
+rite get_point_x(p: &Point) → i64 {
+    println_int(200);  // Marker
+    println_int(p.x);  // Direct field access
+    p.x
+}
+
+// Function that calls method on &Point
+rite call_point_method(p: &Point) → i64 {
+    println_int(300);  // Marker
+    p.get_x()          // Method call on reference param
+}
+
+rite main() {
+    // Test 1: Method call on local variable
+    println_int(1);
+    ≔ pt = Point·new(42, 99);
+    ≔ x1 = pt.get_x();
+    println_int(2);
+    println_int(x1);  // Should be 42
+
+    // Test 2: Function with &Point, direct field access
+    println_int(3);
+    ≔ x2 = get_point_x(&pt);
+    println_int(4);
+    println_int(x2);  // Should be 42
+
+    // Test 3: Function with &Point, method call on ref param
+    println_int(5);
+    ≔ x3 = call_point_method(&pt);
+    println_int(6);
+    println_int(x3);  // Should be 42
+}

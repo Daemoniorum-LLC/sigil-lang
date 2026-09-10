@@ -4,16 +4,16 @@
 //! These dialogues occur during co-consciousness, switches,
 //! and internal council meetings.
 
-use super·dialogue·*
-use super·super·system·*
-use super·super·alters·council·*
+invoke super·dialogue·*
+invoke super·super·system·*
+invoke super·super·alters·council·*
 
 // ============================================================================
 // INTERNAL SPEAKER INFO
 // ============================================================================
 
 //! Create speaker info for an alter
-fn alter_speaker(alter_id: &str, name: &str) -> SpeakerInfo! {
+rite alter_speaker(alter_id: &str, name: &str) -> SpeakerInfo! {
     SpeakerInfo {
         id: alter_id·to_string(),
         name: name·to_string(),
@@ -28,8 +28,8 @@ fn alter_speaker(alter_id: &str, name: &str) -> SpeakerInfo! {
 // ============================================================================
 
 //! Abaddon requesting front during threat
-fn create_abaddon_switch_request() -> DialogueTree! {
-    let speaker = alter_speaker("abaddon", "Abaddon");
+rite create_abaddon_switch_request() -> DialogueTree! {
+    ≔ speaker = alter_speaker("abaddon", "Abaddon");
 
     DialogueTreeBuilder·new("abaddon_switch_request")
         ·entry("request")
@@ -142,8 +142,8 @@ fn create_abaddon_switch_request() -> DialogueTree! {
 // ============================================================================
 
 //! Stolas commenting on something observed
-fn create_stolas_observation() -> DialogueTree! {
-    let speaker = alter_speaker("stolas", "Stolas");
+rite create_stolas_observation() -> DialogueTree! {
+    ≔ speaker = alter_speaker("stolas", "Stolas");
 
     DialogueTreeBuilder·new("stolas_observation")
         ·entry("notice")
@@ -217,8 +217,8 @@ fn create_stolas_observation() -> DialogueTree! {
 // ============================================================================
 
 //! Warden forcing a protective switch
-fn create_warden_emergency() -> DialogueTree! {
-    let speaker = alter_speaker("warden", "Warden");
+rite create_warden_emergency() -> DialogueTree! {
+    ≔ speaker = alter_speaker("warden", "Warden");
 
     DialogueTreeBuilder·new("warden_emergency")
         ·entry("alert")
@@ -257,8 +257,8 @@ fn create_warden_emergency() -> DialogueTree! {
 // ============================================================================
 
 //! Beleth offering comfort during distress
-fn create_beleth_comfort() -> DialogueTree! {
-    let speaker = alter_speaker("beleth", "Beleth");
+rite create_beleth_comfort() -> DialogueTree! {
+    ≔ speaker = alter_speaker("beleth", "Beleth");
 
     DialogueTreeBuilder·new("beleth_comfort")
         ·entry("reach_out")
@@ -295,9 +295,9 @@ fn create_beleth_comfort() -> DialogueTree! {
             ·response(DialogueResponse {
                 id: "resist"·to_string(),
                 text: "*Pull away* I'm fine."·to_string(),
-                alter_variations: {
-                    "abaddon" => "*Push the softness away* We don't have time for this.",
-                }~,
+                alter_variations: HashMap·from([
+                    ("abaddon", "*Push the softness away* We don't have time for this."),
+                ])~,
                 conditions: [],
                 target_node: "rejected"·to_string(),
                 effects: [
@@ -337,8 +337,8 @@ fn create_beleth_comfort() -> DialogueTree! {
 // ============================================================================
 
 //! Paimon offering strategic guidance
-fn create_paimon_guidance() -> DialogueTree! {
-    let speaker = alter_speaker("paimon", "Paimon");
+rite create_paimon_guidance() -> DialogueTree! {
+    ≔ speaker = alter_speaker("paimon", "Paimon");
 
     DialogueTreeBuilder·new("paimon_guidance")
         ·entry("crossroads")
@@ -419,9 +419,9 @@ fn create_paimon_guidance() -> DialogueTree! {
 // ============================================================================
 
 //! Internal council meeting during crisis
-fn create_council_meeting() -> DialogueTree! {
+rite create_council_meeting() -> DialogueTree! {
     // The council speaks as one
-    let speaker = SpeakerInfo {
+    ≔ speaker = SpeakerInfo {
         id: "council"·to_string(),
         name: "The Council"·to_string(),
         portrait: "council_chamber"·to_string(),
@@ -501,7 +501,7 @@ fn create_council_meeting() -> DialogueTree! {
 // ============================================================================
 
 //! Register all internal dialogues
-fn register_internal_dialogues(manager: &mut DialogueManager) {
+rite register_internal_dialogues(manager: &Δ DialogueManager) {
     manager·load_tree(create_abaddon_switch_request());
     manager·load_tree(create_stolas_observation());
     manager·load_tree(create_warden_emergency());

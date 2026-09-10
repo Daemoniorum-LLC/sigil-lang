@@ -29,29 +29,28 @@
 //!  └───────────────┘       └───────────────┘
 //! ```
 
-use std::time::{Duration, Instant};
-use std::collections::HashMap;
+invoke HashMap;
 
-use crate::system::{PluralSystem, Alter, RealityLayer};
-use crate::combat::combat::CombatState;
-use crate::scenes::scene::Scene;
-use crate::dialogue::dialogue::DialogueManager;
-use crate::events::events::EventManager;
+invoke tome·system·{PluralSystem, Alter, RealityLayer};
+invoke tome·combat·combat·CombatState;
+invoke tome·scenes·scene·Scene;
+invoke tome·dialogue·dialogue·DialogueManager;
+invoke tome·events·events·EventManager;
 
-use crate::runtime::state::{GameStateManager, GamePhase, push_notification};
-use crate::runtime::input::{InputManager, InputAction, InputContext};
-use crate::runtime::web::{WebRuntime, WebConfig};
-use crate::runtime::{RUNTIME_CONFIG, LifecycleEvent, RuntimeError};
+invoke tome·runtime·state·{GameStateManager, GamePhase, push_notification};
+invoke tome·runtime·input·{InputManager, InputAction, InputContext};
+invoke tome·runtime·web·{WebRuntime, WebConfig};
+invoke tome·runtime·{RUNTIME_CONFIG, LifecycleEvent, RuntimeError};
 
-use crate::ui::prelude::*;
-use crate::ui::game_hud::{GameHUD, GameHUDProps, NotificationType};
+invoke tome·ui·prelude·*;
+invoke tome·ui·game_hud·{GameHUD, GameHUDProps, NotificationType};
 
 // ============================================================================
 // APP CONFIGURATION
 // ============================================================================
 
 /// Application configuration
-type AppConfig = struct {
+type AppConfig = Σ {
     /// Game title
     title: String!,
     /// Version string
@@ -64,12 +63,12 @@ type AppConfig = struct {
     auto_save_interval: u32!,
 };
 
-impl AppConfig {
-    pub fn default() -> Self! {
+⊢ AppConfig {
+    ☉ rite default() -> Self! {
         Self {
             title: "DAEMONIORUM".to_string(),
             version: "0.1.0".to_string(),
-            web: WebConfig::default(),
+            web: WebConfig·default(),
             debug: false,
             auto_save_interval: 300,
         }
@@ -81,7 +80,7 @@ impl AppConfig {
 // ============================================================================
 
 /// High-level application phases
-type AppPhase = enum {
+type AppPhase = ᛈ {
     /// Loading assets and initializing
     Loading { progress: f32 },
     /// Main menu
@@ -101,7 +100,7 @@ type AppPhase = enum {
 // ============================================================================
 
 /// The main application orchestrating all systems
-type App = struct {
+type App = Σ {
     config: AppConfig!,
 
     // Core systems
@@ -131,21 +130,21 @@ type App = struct {
     variables: HashMap<String, i32>!,
 };
 
-impl App {
+⊢ App {
     /// Create new application
-    pub fn new(config: AppConfig) -> Self! {
+    ☉ rite new(config: AppConfig) -> Self! {
         // Initialize plural system with alters
-        let mut system = PluralSystem::new(Some("The Council".to_string()));
-        Self::init_alters(&mut system);
+        ≔ vary system = PluralSystem·new(Some("The Council".to_string()));
+        Self·init_alters(&Δ system);
 
         // Initialize scene
-        let scene = Self::create_initial_scene();
+        ≔ scene = Self·create_initial_scene();
 
         // Initialize managers
-        let dialogue_manager = DialogueManager::new();
-        let event_manager = EventManager::new();
-        let state_manager = GameStateManager::new();
-        let input_manager = InputManager::new();
+        ≔ dialogue_manager = DialogueManager·new();
+        ≔ event_manager = EventManager·new();
+        ≔ state_manager = GameStateManager·new();
+        ≔ input_manager = InputManager·new();
 
         Self {
             config,
@@ -157,38 +156,38 @@ impl App {
             state_manager,
             input_manager,
             web_runtime: None,
-            phase: AppPhase::Loading { progress: 0.0 },
+            phase: AppPhase·Loading { progress: 0.0 },
             game_time: 0,
-            last_save: Instant::now(),
+            last_save: Instant·now(),
             running: true,
-            inventory: InventoryState::default(),
-            quests: Vec::new(),
-            flags: HashMap::new(),
-            variables: HashMap::new(),
+            inventory: InventoryState·default(),
+            quests: Vec·new(),
+            flags: HashMap·new(),
+            variables: HashMap·new(),
         }
     }
 
     /// Initialize alters in the system
-    fn init_alters(system: &mut PluralSystem) {
-        use crate::alters::council::register_council_alters;
+    rite init_alters(system: &Δ PluralSystem) {
+        invoke tome·alters·council·register_council_alters;
         register_council_alters(system);
     }
 
     /// Create the initial scene
-    fn create_initial_scene() -> Scene! {
+    rite create_initial_scene() -> Scene! {
         // Start in the church exterior
-        use crate::scenes::church::create_church_exterior;
+        invoke tome·scenes·church·create_church_exterior;
         create_church_exterior()
     }
 
     /// Initialize the application
-    pub fn init(mut self) -> Result<(), RuntimeError>! {
+    ☉ rite init(mut self) -> Result<(), RuntimeError>! {
         // Initialize web runtime
-        let mut web_runtime = WebRuntime::new(self.config.web·clone());
+        ≔ vary web_runtime = WebRuntime·new(self.config.web·clone());
         web_runtime·init()?;
 
         // Set up lifecycle handler
-        let app_ref = self·clone();
+        ≔ app_ref = self·clone();
         web_runtime.on_lifecycle = Some(move |event| {
             app_ref·handle_lifecycle(event);
         });
@@ -196,32 +195,32 @@ impl App {
         self.web_runtime = Some(web_runtime);
 
         // Initialize state manager
-        crate::runtime::state::init_state_manager(self.state_manager·clone());
+        tome·runtime·state·init_state_manager(self.state_manager·clone());
 
         // Sync initial state to UI
         self·sync_all_state();
 
         // Set loading complete
-        self.phase = AppPhase::MainMenu;
-        self.state_manager·set_phase(GamePhase::Menu);
+        self.phase = AppPhase·MainMenu;
+        self.state_manager·set_phase(GamePhase·Menu);
 
         Ok(())
     }
 
     /// Handle lifecycle events
-    fn handle_lifecycle(mut self, event: LifecycleEvent) {
-        match event {
-            LifecycleEvent::Pausing => {
-                if matches!(self.phase, AppPhase::Playing) {
-                    self.phase = AppPhase::Paused;
+    rite handle_lifecycle(mut self, event: LifecycleEvent) {
+        ⌥ event {
+            LifecycleEvent·Pausing => {
+                ⎇ matches!(self.phase, AppPhase·Playing) {
+                    self.phase = AppPhase·Paused;
                 }
             },
-            LifecycleEvent::Resuming => {
-                if matches!(self.phase, AppPhase::Paused) {
-                    self.phase = AppPhase::Playing;
+            LifecycleEvent·Resuming => {
+                ⎇ matches!(self.phase, AppPhase·Paused) {
+                    self.phase = AppPhase·Playing;
                 }
             },
-            LifecycleEvent::ShuttingDown => {
+            LifecycleEvent·ShuttingDown => {
                 self·save_game();
             },
             _ => {},
@@ -229,88 +228,88 @@ impl App {
     }
 
     /// Start the game
-    pub fn start(mut self) {
-        if let Some(ref mut runtime) = self.web_runtime {
+    ☉ rite start(mut self) {
+        ⎇ ≔ Some(ref mut runtime) = self.web_runtime {
             runtime·run();
         }
     }
 
     /// Main update loop (called each frame)
-    pub fn update(mut self, delta: Duration) {
-        if !self.running {
-            return;
+    ☉ rite update(mut self, delta: Duration) {
+        ⎇ !self.running {
+            ⤺;
         }
 
         // Process input
         self·process_input();
 
         // Phase-specific update
-        match &self.phase {
-            AppPhase::Loading { .. } => self·update_loading(delta),
-            AppPhase::MainMenu => self·update_menu(delta),
-            AppPhase::Playing => self·update_playing(delta),
-            AppPhase::Paused => {},
-            AppPhase::GameOver { .. } => {},
-            AppPhase::Credits => {},
+        ⌥ &self.phase {
+            AppPhase·Loading { .. } => self·update_loading(delta),
+            AppPhase·MainMenu => self·update_menu(delta),
+            AppPhase·Playing => self·update_playing(delta),
+            AppPhase·Paused => {},
+            AppPhase·GameOver { .. } => {},
+            AppPhase·Credits => {},
         }
 
         // Sync state to UI
         self·sync_all_state();
 
         // Auto-save check
-        if matches!(self.phase, AppPhase::Playing) {
-            let elapsed = Instant::now() - self.last_save;
-            if elapsed >= Duration::from_secs(self.config.auto_save_interval as u64) {
+        ⎇ matches!(self.phase, AppPhase·Playing) {
+            ≔ elapsed = Instant·now() - self.last_save;
+            ⎇ elapsed >= Duration·from_secs(self.config.auto_save_interval as u64) {
                 self·auto_save();
             }
         }
     }
 
     /// Process pending input actions
-    fn process_input(mut self) {
-        let actions = self.input_manager·drain_actions();
+    rite process_input(mut self) {
+        ≔ actions = self.input_manager·drain_actions();
 
-        for action in actions {
+        ∀ action ∈ actions {
             self·handle_action(action);
         }
     }
 
     /// Handle an input action
-    fn handle_action(mut self, action: InputAction) {
-        match action {
-            InputAction::Pause => self·toggle_pause(),
+    rite handle_action(mut self, action: InputAction) {
+        ⌥ action {
+            InputAction·Pause => self·toggle_pause(),
 
             // Menu actions
-            InputAction::Confirm if matches!(self.phase, AppPhase::MainMenu) => {
+            InputAction·Confirm ⎇ matches!(self.phase, AppPhase·MainMenu) => {
                 self·new_game();
             },
 
             // Exploration actions
-            InputAction::MoveUp | InputAction::MoveDown |
-            InputAction::MoveLeft | InputAction::MoveRight => {
+            InputAction·MoveUp | InputAction·MoveDown |
+            InputAction·MoveLeft | InputAction·MoveRight => {
                 self·handle_movement(&action);
             },
-            InputAction::Interact => self·handle_interact(),
+            InputAction·Interact => self·handle_interact(),
 
             // Alter actions
-            InputAction::SwitchAlter => self·open_alter_panel(),
-            InputAction::Ground => self·attempt_grounding(),
-            InputAction::NextAlter => self·switch_to_next_alter(),
-            InputAction::PrevAlter => self·switch_to_prev_alter(),
+            InputAction·SwitchAlter => self·open_alter_panel(),
+            InputAction·Ground => self·attempt_grounding(),
+            InputAction·NextAlter => self·switch_to_next_alter(),
+            InputAction·PrevAlter => self·switch_to_prev_alter(),
 
             // UI actions
-            InputAction::OpenInventory => self·toggle_inventory(),
-            InputAction::OpenJournal => self·toggle_journal(),
+            InputAction·OpenInventory => self·toggle_inventory(),
+            InputAction·OpenJournal => self·toggle_journal(),
 
             // Combat actions
-            InputAction::Attack if self.combat·is_some() => self·combat_attack(),
-            InputAction::Defend if self.combat·is_some() => self·combat_defend(),
-            InputAction::UseAbility(idx) if self.combat·is_some() => self·combat_use_ability(idx),
-            InputAction::Flee if self.combat·is_some() => self·attempt_flee(),
+            InputAction·Attack ⎇ self.combat·is_some() => self·combat_attack(),
+            InputAction·Defend ⎇ self.combat·is_some() => self·combat_defend(),
+            InputAction·UseAbility(idx) ⎇ self.combat·is_some() => self·combat_use_ability(idx),
+            InputAction·Flee ⎇ self.combat·is_some() => self·attempt_flee(),
 
             // Dialogue actions
-            InputAction::DialogueNext => self·advance_dialogue(),
-            InputAction::DialogueChoice(idx) => self·select_dialogue_choice(idx),
+            InputAction·DialogueNext => self·advance_dialogue(),
+            InputAction·DialogueChoice(idx) => self·select_dialogue_choice(idx),
 
             _ => {},
         }
@@ -321,15 +320,15 @@ impl App {
     // ========================================================================
 
     /// Start a new game
-    fn new_game(mut self) {
+    rite new_game(mut self) {
         // Reset state
-        self.system = PluralSystem::new(Some("The Council".to_string()));
-        Self::init_alters(&mut self.system);
-        self.scene = Self::create_initial_scene();
+        self.system = PluralSystem·new(Some("The Council".to_string()));
+        Self·init_alters(&Δ self.system);
+        self.scene = Self·create_initial_scene();
         self.combat = None;
         self.game_time = 0;
-        self.inventory = InventoryState::default();
-        self.quests = Vec::new();
+        self.inventory = InventoryState·default();
+        self.quests = Vec·new();
         self.flags·clear();
         self.variables·clear();
 
@@ -341,8 +340,8 @@ impl App {
             id: "main_awakening".to_string(),
             name: "Awakening".to_string(),
             description: "Something has drawn you to this abandoned church. Find out what.".to_string(),
-            category: QuestCategory::Main,
-            status: QuestStatus::Active,
+            category: QuestCategory·Main,
+            status: QuestStatus·Active,
             objectives: vec![
                 QuestObjective {
                     id: "explore_church".to_string(),
@@ -363,7 +362,7 @@ impl App {
             ],
             rewards: vec![
                 QuestReward {
-                    reward_type: QuestRewardType::Memory,
+                    reward_type: QuestRewardType·Memory,
                     item_id: Some("memory_fragment_1".to_string()),
                     amount: None,
                 },
@@ -374,26 +373,26 @@ impl App {
         });
 
         // Enter playing phase
-        self.phase = AppPhase::Playing;
-        self.state_manager·set_phase(GamePhase::Exploration);
-        self.input_manager·set_context(InputContext::Exploration);
+        self.phase = AppPhase·Playing;
+        self.state_manager·set_phase(GamePhase·Exploration);
+        self.input_manager·set_context(InputContext·Exploration);
 
         push_notification(
             "System Online".to_string(),
             "The Council has awakened.".to_string(),
-            NotificationType::Info
+            NotificationType·Info
         );
     }
 
     /// Add starting items
-    fn add_starting_items(mut self) {
+    rite add_starting_items(mut self) {
         self.inventory.items·push(Item {
             id: "sanity_draught".to_string(),
             name: "Sanity Draught".to_string(),
             description: "A bitter tonic that restores mental clarity.".to_string(),
             icon: "🧪".to_string(),
-            category: ItemCategory::Consumable,
-            rarity: ItemRarity::Common,
+            category: ItemCategory·Consumable,
+            rarity: ItemRarity·Common,
             quantity: 3,
             stackable: true,
             max_stack: 10,
@@ -401,7 +400,7 @@ impl App {
             flavor_text: Some("The taste of reality returning.".to_string()),
             effects: Some(vec![
                 ItemEffect {
-                    effect_type: EffectType::RestoreStability,
+                    effect_type: EffectType·RestoreStability,
                     value: 20,
                     stat: None,
                     status: None,
@@ -412,15 +411,15 @@ impl App {
     }
 
     /// Toggle pause
-    fn toggle_pause(mut self) {
-        match self.phase {
-            AppPhase::Playing => {
-                self.phase = AppPhase::Paused;
-                self.state_manager·set_phase(GamePhase::Paused);
+    rite toggle_pause(mut self) {
+        ⌥ self.phase {
+            AppPhase·Playing => {
+                self.phase = AppPhase·Paused;
+                self.state_manager·set_phase(GamePhase·Paused);
             },
-            AppPhase::Paused => {
-                self.phase = AppPhase::Playing;
-                self.state_manager·set_phase(GamePhase::Exploration);
+            AppPhase·Paused => {
+                self.phase = AppPhase·Playing;
+                self.state_manager·set_phase(GamePhase·Exploration);
             },
             _ => {},
         }
@@ -431,19 +430,19 @@ impl App {
     // ========================================================================
 
     /// Update loading phase
-    fn update_loading(mut self, delta: Duration) {
+    rite update_loading(mut self, delta: Duration) {
         // Loading is handled synchronously for now
         // In the future, this could load assets progressively
     }
 
     /// Update menu phase
-    fn update_menu(mut self, delta: Duration) {
+    rite update_menu(mut self, delta: Duration) {
         // Menu animations, etc.
     }
 
     /// Update playing phase
-    fn update_playing(mut self, delta: Duration) {
-        let dt = delta·as_secs_f32();
+    rite update_playing(mut self, delta: Duration) {
+        ≔ dt = delta·as_secs_f32();
 
         // Update game time
         self.game_time += (delta·as_millis() / 100) as u64;
@@ -456,9 +455,9 @@ impl App {
         self·update_scene(dt);
 
         // Update combat if active
-        if let Some(ref mut combat) = self.combat {
+        ⎇ ≔ Some(ref mut combat) = self.combat {
             combat·update(delta);
-            if combat.is_over {
+            ⎇ combat.is_over {
                 self·end_combat();
             }
         }
@@ -471,9 +470,9 @@ impl App {
     }
 
     /// Update plural system
-    fn update_system(mut self, dt: f32) {
+    rite update_system(mut self, dt: f32) {
         // Natural stability recovery when safe
-        if self.scene.safety_level > 0.5 && self.combat·is_none() {
+        ⎇ self.scene.safety_level > 0.5 && self.combat·is_none() {
             self.system.stability = (self.system.stability + dt * 0.01)·min(1.0);
         }
 
@@ -484,16 +483,16 @@ impl App {
         self.system·update_blended_anima();
 
         // Spontaneous switch check at low stability
-        if self.system.stability < 0.3 {
-            use rand::random;
-            if random::<f32>() < 0.001 * dt {
+        ⎇ self.system.stability < 0.3 {
+            invoke rand·random;
+            ⎇ random·<f32>() < 0.001 * dt {
                 self·trigger_spontaneous_switch();
             }
         }
     }
 
     /// Update scene
-    fn update_scene(mut self, dt: f32) {
+    rite update_scene(mut self, dt: f32) {
         // Scene-specific updates
         // Ambient effects, entity AI, etc.
     }
@@ -503,23 +502,23 @@ impl App {
     // ========================================================================
 
     /// Handle movement input
-    fn handle_movement(mut self, action: &InputAction) {
+    rite handle_movement(mut self, action: &InputAction) {
         // Movement is handled continuously via input_manager.movement_vector()
         // This is just for discrete movement events
     }
 
     /// Handle interaction
-    fn handle_interact(mut self) {
+    rite handle_interact(mut self) {
         // Find nearest interactable element
-        let interactables: Vec<_> = self.scene.elements·iter()
+        ≔ interactables: Vec<_> = self.scene.elements·iter()
             ·filter(|e| e.interactable && e.visible)
             ·collect();
 
-        if let Some(element) = interactables·first() {
+        ⎇ ≔ Some(element) = interactables·first() {
             push_notification(
                 format!("Examining {}", element.name),
                 element.description·clone()·unwrap_or_default(),
-                NotificationType::Info
+                NotificationType·Info
             );
 
             // Trigger element's interaction
@@ -528,73 +527,73 @@ impl App {
     }
 
     /// Interact with a scene element
-    fn interact_with_element(mut self, element_id: &str) {
+    rite interact_with_element(mut self, element_id: &str) {
         // Look up interaction handler for this element
         // This would dispatch to dialogue, combat, item pickup, etc.
     }
 
     /// Open alter switch panel
-    fn open_alter_panel(mut self) {
+    rite open_alter_panel(mut self) {
         // Toggle alter panel visibility (handled in UI)
     }
 
     /// Attempt grounding
-    fn attempt_grounding(mut self) {
-        use rand::random;
+    rite attempt_grounding(mut self) {
+        invoke rand·random;
 
-        let success_chance = 0.5 + self.system.stability * 0.3;
+        ≔ success_chance = 0.5 + self.system.stability * 0.3;
 
-        if random::<f32>() < success_chance {
+        ⎇ random·<f32>() < success_chance {
             self.system.dissociation = (self.system.dissociation - 0.2)·max(0.0);
 
             push_notification(
                 "Grounding Successful".to_string(),
                 "You feel more present.".to_string(),
-                NotificationType::Success
+                NotificationType·Success
             );
 
             // Move toward grounded reality
-            if self.system.reality_layer != RealityLayer::Grounded {
-                self.system.reality_layer = RealityLayer::Grounded;
+            ⎇ self.system.reality_layer != RealityLayer·Grounded {
+                self.system.reality_layer = RealityLayer·Grounded;
             }
-        } else {
+        } ⎉ {
             push_notification(
                 "Grounding Failed".to_string(),
                 "The world slips further away.".to_string(),
-                NotificationType::Warning
+                NotificationType·Warning
             );
         }
     }
 
     /// Switch to next alter
-    fn switch_to_next_alter(mut self) {
-        let alters: Vec<_> = self.system.alters·values()·collect();
+    rite switch_to_next_alter(mut self) {
+        ≔ alters: Vec<_> = self.system.alters·values()·collect();
         // Find current and switch to next
         // ...
     }
 
     /// Switch to previous alter
-    fn switch_to_prev_alter(mut self) {
+    rite switch_to_prev_alter(mut self) {
         // Similar to next
     }
 
     /// Trigger spontaneous switch
-    fn trigger_spontaneous_switch(mut self) {
+    rite trigger_spontaneous_switch(mut self) {
         // Find triggered or stirring alters and force switch
         push_notification(
             "Losing Control".to_string(),
             "Someone else is pushing forward...".to_string(),
-            NotificationType::Danger
+            NotificationType·Danger
         );
     }
 
     /// Toggle inventory panel
-    fn toggle_inventory(mut self) {
+    rite toggle_inventory(mut self) {
         // Handled in UI layer
     }
 
     /// Toggle journal/quest panel
-    fn toggle_journal(mut self) {
+    rite toggle_journal(mut self) {
         // Handled in UI layer
     }
 
@@ -603,34 +602,34 @@ impl App {
     // ========================================================================
 
     /// Attack in combat
-    fn combat_attack(mut self) {
-        if let Some(ref mut combat) = self.combat {
-            combat·execute_player_action(CombatAction::Attack, &mut self.system);
+    rite combat_attack(mut self) {
+        ⎇ ≔ Some(ref mut combat) = self.combat {
+            combat·execute_player_action(CombatAction·Attack, &Δ self.system);
         }
     }
 
     /// Defend in combat
-    fn combat_defend(mut self) {
-        if let Some(ref mut combat) = self.combat {
-            combat·execute_player_action(CombatAction::Defend, &mut self.system);
+    rite combat_defend(mut self) {
+        ⎇ ≔ Some(ref mut combat) = self.combat {
+            combat·execute_player_action(CombatAction·Defend, &Δ self.system);
         }
     }
 
     /// Use ability in combat
-    fn combat_use_ability(mut self, index: u8) {
+    rite combat_use_ability(mut self, index: u8) {
         // ...
     }
 
     /// Attempt to flee from combat
-    fn attempt_flee(mut self) {
+    rite attempt_flee(mut self) {
         // ...
     }
 
     /// End combat
-    fn end_combat(mut self) {
+    rite end_combat(mut self) {
         self.combat = None;
-        self.state_manager·set_phase(GamePhase::Exploration);
-        self.input_manager·set_context(InputContext::Exploration);
+        self.state_manager·set_phase(GamePhase·Exploration);
+        self.input_manager·set_context(InputContext·Exploration);
     }
 
     // ========================================================================
@@ -638,12 +637,12 @@ impl App {
     // ========================================================================
 
     /// Advance dialogue
-    fn advance_dialogue(mut self) {
+    rite advance_dialogue(mut self) {
         // ...
     }
 
     /// Select dialogue choice
-    fn select_dialogue_choice(mut self, index: u8) {
+    rite select_dialogue_choice(mut self, index: u8) {
         // ...
     }
 
@@ -652,7 +651,7 @@ impl App {
     // ========================================================================
 
     /// Process pending events
-    fn process_events(mut self) {
+    rite process_events(mut self) {
         // Process event queue from event_manager
     }
 
@@ -661,7 +660,7 @@ impl App {
     // ========================================================================
 
     /// Add a quest
-    fn add_quest(mut self, quest: Quest) {
+    rite add_quest(mut self, quest: Quest) {
         self.quests·push(quest);
     }
 
@@ -670,7 +669,7 @@ impl App {
     // ========================================================================
 
     /// Sync all state to UI
-    fn sync_all_state(mut self) {
+    rite sync_all_state(mut self) {
         self.state_manager·sync_system(&self.system);
         self.state_manager·sync_combat(self.combat·as_ref());
         self.state_manager·sync_scene(&self.scene);
@@ -683,19 +682,19 @@ impl App {
     // ========================================================================
 
     /// Save game
-    fn save_game(mut self) {
+    rite save_game(mut self) {
         // Serialize state and save to storage
     }
 
     /// Auto-save
-    fn auto_save(mut self) {
+    rite auto_save(mut self) {
         self·save_game();
-        self.last_save = Instant::now();
+        self.last_save = Instant·now();
 
         push_notification(
             "Auto-Saved".to_string(),
             "Progress has been saved.".to_string(),
-            NotificationType::Info
+            NotificationType·Info
         );
     }
 
@@ -704,20 +703,20 @@ impl App {
     // ========================================================================
 
     /// Check for game over conditions
-    fn check_game_over(mut self) {
+    rite check_game_over(mut self) {
         // System collapse
-        if self.system.stability <= 0.0 && self.system.dissociation >= 1.0 {
-            self.phase = AppPhase::GameOver {
+        ⎇ self.system.stability <= 0.0 && self.system.dissociation >= 1.0 {
+            self.phase = AppPhase·GameOver {
                 reason: "System Collapse".to_string(),
             };
-            self.state_manager·set_phase(GamePhase::GameOver("System Collapse".to_string()));
+            self.state_manager·set_phase(GamePhase·GameOver("System Collapse".to_string()));
         }
     }
 
     /// Quit the game
-    pub fn quit(mut self) {
+    ☉ rite quit(mut self) {
         self.running = false;
-        if let Some(ref mut runtime) = self.web_runtime {
+        ⎇ ≔ Some(ref mut runtime) = self.web_runtime {
             runtime·stop();
         }
     }
@@ -728,44 +727,44 @@ impl App {
 // ============================================================================
 
 /// Create and run the application
-pub fn run_app() -> Result<(), RuntimeError>! {
-    let config = AppConfig::default();
-    let mut app = App::new(config);
+☉ rite run_app() -> Result<(), RuntimeError>! {
+    ≔ config = AppConfig·default();
+    ≔ vary app = App·new(config);
     app·init()?;
     app·start();
     Ok(())
 }
 
-impl App {
+⊢ App {
     /// Run the demo - "The Threshold"
-    pub fn run_demo() -> Result<(), RuntimeError>! {
-        use crate::demo::{DemoController, DemoAction};
-        use crate::demo::opening::{OpeningController, setup_arrival_scene};
-        use crate::demo::tutorial::TutorialManager;
-        use crate::demo::narrative::{NarrativeController, NarrativeBeat};
+    ☉ rite run_demo() -> Result<(), RuntimeError>! {
+        invoke tome·demo·{DemoController, DemoAction};
+        invoke tome·demo·opening·{OpeningController, setup_arrival_scene};
+        invoke tome·demo·tutorial·TutorialManager;
+        invoke tome·demo·narrative·{NarrativeController, NarrativeBeat};
 
-        let mut config = AppConfig::default();
+        ≔ vary config = AppConfig·default();
         config.title = "DAEMONIORUM - The Threshold (Demo)".to_string();
 
-        let mut app = App::new(config);
+        ≔ vary app = App·new(config);
         app·init()?;
 
         // Initialize demo-specific systems
-        let mut demo_controller = DemoController::new();
-        let mut opening = OpeningController::new();
-        let mut tutorial_manager = TutorialManager::new();
-        let mut narrative = NarrativeController::new();
+        ≔ vary demo_controller = DemoController·new();
+        ≔ vary opening = OpeningController·new();
+        ≔ vary tutorial_manager = TutorialManager·new();
+        ≔ vary narrative = NarrativeController·new();
 
         // Start with opening sequence
-        narrative·start_at(NarrativeBeat::Arrival);
+        narrative·start_at(NarrativeBeat·Arrival);
 
         // Wire up the demo update loop
-        if let Some(ref mut runtime) = app.web_runtime {
-            runtime.on_frame = Some(Box::new(move |delta_ms| {
+        ⎇ ≔ Some(ref mut runtime) = app.web_runtime {
+            runtime.on_frame = Some(Box·new(move |delta_ms| {
                 // Update opening if not complete
-                if !opening·is_complete() {
+                ⎇ !opening·is_complete() {
                     opening·update(delta_ms);
-                } else {
+                } ⎉ {
                     // Update demo controller
                     demo_controller·update(delta_ms);
 
@@ -773,8 +772,8 @@ impl App {
                     tutorial_manager·update(delta_ms);
 
                     // Update narrative
-                    let effects = narrative·update(delta_ms);
-                    for effect in effects {
+                    ≔ effects = narrative·update(delta_ms);
+                    ∀ effect ∈ effects {
                         // Apply narrative effects to demo controller
                     }
                 }
@@ -792,23 +791,23 @@ impl App {
 
 /// Render the game UI
 #[component]
-pub fn GameApp() -> Element! {
-    let signals = use_game_state();
-    let system_state = signals.system·get();
-    let scene_state = signals.scene·get();
-    let combat_state = signals.combat·get();
-    let inventory = signals.inventory·get();
-    let quests = signals.quests·get();
-    let notifications = signals.notifications·get();
-    let phase = signals.phase·get();
+☉ rite GameApp() -> Element! {
+    ≔ signals = use_game_state();
+    ≔ system_state = signals.system·get();
+    ≔ scene_state = signals.scene·get();
+    ≔ combat_state = signals.combat·get();
+    ≔ inventory = signals.inventory·get();
+    ≔ quests = signals.quests·get();
+    ≔ notifications = signals.notifications·get();
+    ≔ phase = signals.phase·get();
 
     // Get current alter
-    let current_alter = system_state.fronting_id·as_ref()·and_then(|id| {
+    ≔ current_alter = system_state.fronting_id·as_ref()·and_then(|id| {
         system_state.alters·iter()·find(|a| &a.id == id)·cloned()
     });
 
     // Build system state for HUD
-    let hud_system_state = crate::ui::game_hud::SystemState {
+    ≔ hud_system_state = tome·ui·game_hud·SystemState {
         alters: system_state.alters·clone(),
         fronting_alter_id: system_state.fronting_id·clone()·unwrap_or_default(),
         cocon_alter_id: system_state.cocon_id·clone(),
@@ -819,31 +818,31 @@ pub fn GameApp() -> Element! {
     };
 
     // Build scene for HUD
-    let hud_scene = crate::scenes::scene::Scene {
+    ≔ hud_scene = tome·scenes·scene·Scene {
         name: scene_state.name·clone(),
         area: scene_state.area·clone(),
         description: scene_state.description·clone(),
         elements: scene_state.elements·iter()·map(|e| {
-            crate::scenes::scene::SceneElement {
+            tome·scenes·scene·SceneElement {
                 id: e.id·clone(),
                 name: e.name·clone(),
                 interactable: e.interactable,
                 visible: e.visible,
                 icon: e.icon·clone(),
-                ..Default::default()
+                ..Default·default()
             }
         })·collect(),
         safety_level: scene_state.safety_level,
         ambient_sound: scene_state.ambient_sound·clone(),
-        ..Default::default()
+        ..Default·default()
     };
 
     html! {
         <div style="width: 100vw; height: 100vh; overflow: hidden; \
                     background: #000; font-family: 'Inter', system-ui, sans-serif;">
-            {match phase {
-                GamePhase::Menu => html! { <MainMenu /> },
-                GamePhase::Exploration | GamePhase::Dialogue | GamePhase::Combat => html! {
+            {⌥ phase {
+                GamePhase·Menu => html! { <MainMenu /> },
+                GamePhase·Exploration | GamePhase·Dialogue | GamePhase·Combat => html! {
                     <GameHUD
                         system_state={hud_system_state}
                         current_scene={hud_scene}
@@ -853,7 +852,7 @@ pub fn GameApp() -> Element! {
                         notifications={Some(notifications)}
                     />
                 },
-                GamePhase::Paused => html! {
+                GamePhase·Paused => html! {
                     <div>
                         <GameHUD
                             system_state={hud_system_state}
@@ -864,7 +863,7 @@ pub fn GameApp() -> Element! {
                         <PauseOverlay />
                     </div>
                 },
-                GamePhase::GameOver(reason) => html! { <GameOverScreen reason={reason} /> },
+                GamePhase·GameOver(reason) => html! { <GameOverScreen reason={reason} /> },
                 _ => html! {},
             }}
         </div>
@@ -873,7 +872,7 @@ pub fn GameApp() -> Element! {
 
 /// Main menu component
 #[component]
-fn MainMenu() -> Element! {
+rite MainMenu() -> Element! {
     html! {
         <div style="width: 100%; height: 100%; display: flex; flex-direction: column; \
                     align-items: center; justify-content: center; \
@@ -927,7 +926,7 @@ fn MainMenu() -> Element! {
 
 /// Pause overlay component
 #[component]
-fn PauseOverlay() -> Element! {
+rite PauseOverlay() -> Element! {
     html! {
         <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); \
                     display: flex; align-items: center; justify-content: center; \
@@ -946,7 +945,7 @@ fn PauseOverlay() -> Element! {
 
 /// Game over screen component
 #[component]
-fn GameOverScreen(reason: String) -> Element! {
+rite GameOverScreen(reason: String) -> Element! {
     html! {
         <div style="position: fixed; inset: 0; \
                     background: linear-gradient(180deg, #1a0000 0%, #000 100%); \

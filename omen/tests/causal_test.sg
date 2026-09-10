@@ -2,7 +2,7 @@
 //!
 //! Verifies CausalModel, CausalVariable, and Explanation types.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types

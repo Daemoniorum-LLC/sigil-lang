@@ -1,4 +1,4 @@
 // From README - Hello World
-fn main() {
+rite main() {
     println("Hello, Sigil!");
 }

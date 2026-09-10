@@ -1,0 +1,93 @@
+// Array basics: the operations a view uses to get at a list.
+
+☉ rite t_literal_len() -> i64! {
+    ⤺ [1, 2, 3]·len();
+}
+☉ rite t_empty_len() -> i64! {
+    ⤺ []·len();
+}
+☉ rite t_index() -> i64! {
+    ⤺ [10, 20, 30][2];
+}
+☉ rite t_push_len() -> i64! {
+    ≔ Δ xs = [1];
+    xs·push(2);
+    xs·push(3);
+    ⤺ xs·len();
+}
+☉ rite t_push_value() -> i64! {
+    ≔ Δ xs = [1];
+    xs·push(42);
+    ⤺ xs[1];
+}
+☉ rite t_first() -> Any! {
+    ⤺ [7, 8, 9]·first()·unwrap_or(0);
+}
+☉ rite t_last() -> Any! {
+    ⤺ [7, 8, 9]·last()·unwrap_or(0);
+}
+☉ rite t_sum() -> i64! {
+    ⤺ [1, 2, 3, 4]·sum();
+}
+☉ rite t_min() -> Any! {
+    ⤺ [5, 2, 9]·min()·unwrap_or(0);
+}
+☉ rite t_max() -> Any! {
+    ⤺ [5, 2, 9]·max()·unwrap_or(0);
+}
+☉ rite t_is_empty_true() -> i64! {
+    ⤺ ⎇ []·is_empty() { 1 } ⎉ { 0 };
+}
+☉ rite t_is_empty_false() -> i64! {
+    ⤺ ⎇ [1]·is_empty() { 1 } ⎉ { 0 };
+}
+☉ rite t_reverse_first() -> i64! {
+    ≔ ys = [1, 2, 3]·reverse();
+    ⤺ ys[0];
+}
+☉ rite t_sort_first() -> i64! {
+    ≔ ys = [3, 1, 2]·sort();
+    ⤺ ys[0];
+}
+☉ rite t_join() -> String! {
+    ⤺ ["a", "b", "c"]·join("-");
+}
+☉ rite t_contains_true() -> i64! {
+    ⤺ ⎇ [1, 2, 3]·contains(2) { 1 } ⎉ { 0 };
+}
+☉ rite t_contains_false() -> i64! {
+    ⤺ ⎇ [1, 2, 3]·contains(9) { 1 } ⎉ { 0 };
+}
+☉ rite t_for_loop_sum() -> i64! {
+    ≔ Δ total = 0;
+    ∀ x ∈ [1, 2, 3, 4] {
+        total = total + x;
+    }
+    ⤺ total;
+}
+☉ rite t_nested_len() -> i64! {
+    ≔ xs = [[1, 2], [3, 4]];
+    ⤺ xs[0]·len();
+}
+
+☉ rite main() {
+    println((t_literal_len())·to_string());
+    println((t_empty_len())·to_string());
+    println((t_index())·to_string());
+    println((t_push_len())·to_string());
+    println((t_push_value())·to_string());
+    println((t_first())·to_string());
+    println((t_last())·to_string());
+    println((t_sum())·to_string());
+    println((t_min())·to_string());
+    println((t_max())·to_string());
+    println((t_is_empty_true())·to_string());
+    println((t_is_empty_false())·to_string());
+    println((t_reverse_first())·to_string());
+    println((t_sort_first())·to_string());
+    println(t_join());
+    println((t_contains_true())·to_string());
+    println((t_contains_false())·to_string());
+    println((t_for_loop_sum())·to_string());
+    println((t_nested_len())·to_string());
+}

@@ -70,6 +70,7 @@ invoke tome·lexer·Lexer;
         ⌥ name.as_str() {
             // Definition keywords
             "fn" => Token·Fn,
+            "rite" => Token·Fn,   // canonical Sigil spelling for a function declaration
             "async" => Token·Async,
             "let" => Token·Let,
             "mut" => Token·Mut,

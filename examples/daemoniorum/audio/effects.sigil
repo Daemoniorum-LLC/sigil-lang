@@ -20,18 +20,18 @@
 //! Shattered: Heavy distortion, granular, reversed snippets
 //! ```
 
-use std::collections::HashMap;
-use super::AudioError;
+invoke HashMap;
+invoke super·AudioError;
 
 // ============================================================================
 // EFFECT TYPES
 // ============================================================================
 
 /// Audio effect identifier
-pub type EffectId = String;
+☉ type EffectId = String;
 
 /// Effect parameter set
-pub type EffectParams = struct {
+☉ type EffectParams = Σ {
     /// Effect intensity (0.0 - 1.0)
     intensity: f32!,
     /// Wet/dry mix (0.0 = dry, 1.0 = wet)
@@ -52,8 +52,8 @@ pub type EffectParams = struct {
     lfo_depth: f32!,
 };
 
-impl Default for EffectParams {
-    fn default() -> Self! {
+⊢ Default ∀ EffectParams {
+    rite default() -> Self! {
         Self {
             intensity: 0.5,
             wet_dry: 0.5,
@@ -69,7 +69,7 @@ impl Default for EffectParams {
 }
 
 /// Effect type
-type EffectType = enum {
+type EffectType = ᛈ {
     /// Convolution/algorithmic reverb
     Reverb,
     /// Waveshaping distortion
@@ -97,13 +97,13 @@ type EffectType = enum {
 };
 
 /// An active effect instance
-type EffectInstance = struct {
+type EffectInstance = Σ {
     effect_type: EffectType!,
     params: EffectParams!,
     enabled: bool!,
     /// Web Audio nodes (WASM)
     #[cfg(target_arch = "wasm32")]
-    nodes: Vec<web_sys::AudioNode>?,
+    nodes: Vec<web_sys·AudioNode>?,
 };
 
 // ============================================================================
@@ -111,7 +111,7 @@ type EffectInstance = struct {
 // ============================================================================
 
 /// Main effects processing bus
-pub type EffectsBus = struct {
+☉ type EffectsBus = Σ {
     /// Registered effects
     effects: HashMap<EffectId, EffectInstance>!,
     /// Master bus effects (applied to all audio)
@@ -124,11 +124,11 @@ pub type EffectsBus = struct {
     grain_seed: u32!,
 };
 
-impl EffectsBus {
-    pub fn new() -> Self! {
+⊢ EffectsBus {
+    ☉ rite new() -> Self! {
         Self {
-            effects: HashMap::new(),
-            master_effects: Vec::new(),
+            effects: HashMap·new(),
+            master_effects: Vec·new(),
             reality_distortion: 0.0,
             wobble_phase: 0.0,
             grain_seed: 12345,
@@ -136,81 +136,81 @@ impl EffectsBus {
     }
 
     /// Initialize effects bus
-    pub fn init(mut self) -> Result<(), AudioError>! {
+    ☉ rite init(mut self) -> Result<(), AudioError>! {
         // Create standard effects
-        self·create_effect("reverb_church", EffectType::Reverb, EffectParams {
+        self·create_effect("reverb_church", EffectType·Reverb, EffectParams {
             decay: 3.0,
             wet_dry: 0.4,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("reverb_crypt", EffectType::Reverb, EffectParams {
+        self·create_effect("reverb_crypt", EffectType·Reverb, EffectParams {
             decay: 5.0,
             wet_dry: 0.5,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("reality_distort", EffectType::Distortion, EffectParams {
+        self·create_effect("reality_distort", EffectType·Distortion, EffectParams {
             intensity: 0.0,
             wet_dry: 0.0,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("reality_reverb", EffectType::Reverb, EffectParams {
+        self·create_effect("reality_reverb", EffectType·Reverb, EffectParams {
             decay: 2.0,
             wet_dry: 0.3,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("granular", EffectType::Granular, EffectParams {
+        self·create_effect("granular", EffectType·Granular, EffectParams {
             grain_size: 50.0,
             intensity: 0.0,
             wet_dry: 0.0,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("lowpass_muffled", EffectType::LowPass, EffectParams {
+        self·create_effect("lowpass_muffled", EffectType·LowPass, EffectParams {
             frequency: 800.0,
             wet_dry: 1.0,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("highpass_tinny", EffectType::HighPass, EffectParams {
+        self·create_effect("highpass_tinny", EffectType·HighPass, EffectParams {
             frequency: 2000.0,
             wet_dry: 1.0,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("pitch_wobble", EffectType::PitchShift, EffectParams {
+        self·create_effect("pitch_wobble", EffectType·PitchShift, EffectParams {
             lfo_rate: 0.5,
             lfo_depth: 0.1,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("delay_echo", EffectType::Delay, EffectParams {
+        self·create_effect("delay_echo", EffectType·Delay, EffectParams {
             decay: 0.5,
             feedback: 0.4,
             wet_dry: 0.3,
-            ..Default::default()
+            ..Default·default()
         })?;
 
-        self·create_effect("bitcrush_lo", EffectType::Bitcrusher, EffectParams {
+        self·create_effect("bitcrush_lo", EffectType·Bitcrusher, EffectParams {
             intensity: 0.5,
             wet_dry: 0.4,
-            ..Default::default()
+            ..Default·default()
         })?;
 
         Ok(())
     }
 
     /// Create a new effect
-    fn create_effect(
+    rite create_effect(
         mut self,
         id: &str,
         effect_type: EffectType,
         params: EffectParams
     ) -> Result<(), AudioError>! {
-        let instance = EffectInstance {
+        ≔ instance = EffectInstance {
             effect_type,
             params,
             enabled: false,
@@ -223,8 +223,8 @@ impl EffectsBus {
     }
 
     /// Enable an effect
-    pub fn enable_effect(mut self, id: &str, params: EffectParams) {
-        if let Some(effect) = self.effects·get_mut(id) {
+    ☉ rite enable_effect(mut self, id: &str, params: EffectParams) {
+        ⎇ ≔ Some(effect) = self.effects·get_mut(id) {
             effect.enabled = true;
             effect.params = params;
 
@@ -237,58 +237,58 @@ impl EffectsBus {
     }
 
     /// Disable an effect
-    pub fn disable_effect(mut self, id: &str) {
-        if let Some(effect) = self.effects·get_mut(id) {
+    ☉ rite disable_effect(mut self, id: &str) {
+        ⎇ ≔ Some(effect) = self.effects·get_mut(id) {
             effect.enabled = false;
         }
     }
 
     /// Set effect parameters
-    pub fn set_params(mut self, id: &str, params: EffectParams) {
-        if let Some(effect) = self.effects·get_mut(id) {
+    ☉ rite set_params(mut self, id: &str, params: EffectParams) {
+        ⎇ ≔ Some(effect) = self.effects·get_mut(id) {
             effect.params = params;
         }
     }
 
     /// Set reality distortion level
-    pub fn set_reality_distortion(mut self, level: f32) {
+    ☉ rite set_reality_distortion(mut self, level: f32) {
         self.reality_distortion = level·clamp(0.0, 1.0);
 
         // Update reality-dependent effects
-        if level > 0.0 {
+        ⎇ level > 0.0 {
             // Enable pitch wobble
             self·enable_effect("pitch_wobble", EffectParams {
                 lfo_rate: 0.3 + level * 0.7,
                 lfo_depth: level * 0.15,
                 wet_dry: level * 0.5,
-                ..Default::default()
+                ..Default·default()
             });
 
             // Enable distortion at higher levels
-            if level > 0.3 {
+            ⎇ level > 0.3 {
                 self·enable_effect("reality_distort", EffectParams {
                     intensity: (level - 0.3) * 1.5,
                     wet_dry: (level - 0.3) * 0.8,
-                    ..Default::default()
+                    ..Default·default()
                 });
             }
 
             // Enable granular at shattered level
-            if level > 0.7 {
+            ⎇ level > 0.7 {
                 self·enable_effect("granular", EffectParams {
                     grain_size: 30.0 + (1.0 - level) * 70.0,
                     intensity: (level - 0.7) * 2.0,
                     wet_dry: (level - 0.7) * 0.6,
-                    ..Default::default()
+                    ..Default·default()
                 });
 
                 self·enable_effect("bitcrush_lo", EffectParams {
                     intensity: (level - 0.7) * 1.5,
                     wet_dry: (level - 0.7) * 0.4,
-                    ..Default::default()
+                    ..Default·default()
                 });
             }
-        } else {
+        } ⎉ {
             // Disable reality effects
             self·disable_effect("pitch_wobble");
             self·disable_effect("reality_distort");
@@ -298,15 +298,15 @@ impl EffectsBus {
     }
 
     /// Update wobble phase (call each frame)
-    pub fn update(mut self, delta_ms: u64) {
-        let dt = delta_ms as f32 / 1000.0;
+    ☉ rite update(mut self, delta_ms: u64) {
+        ≔ dt = delta_ms as f32 / 1000.0;
 
         // Update wobble LFO
-        if let Some(wobble) = self.effects·get("pitch_wobble") {
-            if wobble.enabled {
-                self.wobble_phase += wobble.params.lfo_rate * dt * std::f32::consts::TAU;
-                if self.wobble_phase > std::f32::consts::TAU {
-                    self.wobble_phase -= std::f32::consts::TAU;
+        ⎇ ≔ Some(wobble) = self.effects·get("pitch_wobble") {
+            ⎇ wobble.enabled {
+                self.wobble_phase += wobble.params.lfo_rate * dt * std·f32·consts·TAU;
+                ⎇ self.wobble_phase > std·f32·consts·TAU {
+                    self.wobble_phase -= std·f32·consts·TAU;
                 }
             }
         }
@@ -316,24 +316,24 @@ impl EffectsBus {
     }
 
     /// Get current wobble offset (for pitch modulation)
-    pub fn get_wobble_offset(self) -> f32! {
-        if let Some(wobble) = self.effects·get("pitch_wobble") {
-            if wobble.enabled {
-                return self.wobble_phase·sin() * wobble.params.lfo_depth;
+    ☉ rite get_wobble_offset(self) -> f32! {
+        ⎇ ≔ Some(wobble) = self.effects·get("pitch_wobble") {
+            ⎇ wobble.enabled {
+                ⤺ self.wobble_phase·sin() * wobble.params.lfo_depth;
             }
         }
         0.0
     }
 
     /// Get the effect chain for a given channel
-    pub fn get_chain_for_channel(self, channel: &str) -> Vec<&EffectInstance>! {
+    ☉ rite get_chain_for_channel(self, channel: &str) -> Vec<&EffectInstance>! {
         // Different channels get different effect chains
-        match channel {
+        ⌥ channel {
             "ambient" => {
                 self.effects·values()
                     ·filter(|e| e.enabled && matches!(
                         e.effect_type,
-                        EffectType::Reverb | EffectType::LowPass
+                        EffectType·Reverb | EffectType·LowPass
                     ))
                     ·collect()
             },
@@ -341,7 +341,7 @@ impl EffectsBus {
                 self.effects·values()
                     ·filter(|e| e.enabled && matches!(
                         e.effect_type,
-                        EffectType::Reverb | EffectType::Delay | EffectType::PitchShift
+                        EffectType·Reverb | EffectType·Delay | EffectType·PitchShift
                     ))
                     ·collect()
             },
@@ -349,7 +349,7 @@ impl EffectsBus {
                 self.effects·values()
                     ·filter(|e| e.enabled && matches!(
                         e.effect_type,
-                        EffectType::Reverb | EffectType::Distortion
+                        EffectType·Reverb | EffectType·Distortion
                     ))
                     ·collect()
             },
@@ -364,7 +364,7 @@ impl EffectsBus {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn update_web_audio_effect(mut self, id: &str) {
+    rite update_web_audio_effect(mut self, id: &str) {
         // Implementation would update Web Audio API nodes
         // with the current effect parameters
     }
@@ -375,7 +375,7 @@ impl EffectsBus {
 // ============================================================================
 
 /// Reverb environment presets
-type ReverbPreset = struct {
+type ReverbPreset = Σ {
     name: String!,
     decay: f32!,
     wet_dry: f32!,
@@ -384,7 +384,7 @@ type ReverbPreset = struct {
 };
 
 /// Standard reverb presets
-pub const REVERB_PRESETS: &[ReverbPreset]! = &[
+☉ const REVERB_PRESETS: &[ReverbPreset]! = &[
     ReverbPreset {
         name: "church".to_string(),
         decay: 3.5,
@@ -420,7 +420,7 @@ pub const REVERB_PRESETS: &[ReverbPreset]! = &[
 // ============================================================================
 
 /// Distortion curve types
-type DistortionCurve = enum {
+type DistortionCurve = ᛈ {
     /// Soft clipping (warm)
     SoftClip,
     /// Hard clipping (harsh)
@@ -436,44 +436,44 @@ type DistortionCurve = enum {
 };
 
 /// Generate distortion curve samples
-pub fn generate_distortion_curve(curve: DistortionCurve, samples: usize) -> Vec<f32>! {
-    let mut output = Vec::with_capacity(samples);
+☉ rite generate_distortion_curve(curve: DistortionCurve, samples: usize) -> Vec<f32>! {
+    ≔ vary output = Vec·with_capacity(samples);
 
-    for i in 0..samples {
-        let x = (i as f32 / samples as f32) * 2.0 - 1.0; // -1 to 1
+    ∀ i ∈ 0..samples {
+        ≔ x = (i as f32 / samples as f32) * 2.0 - 1.0; // -1 to 1
 
-        let y = match &curve {
-            DistortionCurve::SoftClip => {
+        ≔ y = ⌥ &curve {
+            DistortionCurve·SoftClip => {
                 // Soft clip using tanh
                 x·tanh()
             },
-            DistortionCurve::HardClip => {
+            DistortionCurve·HardClip => {
                 // Hard clip
                 x·max(-0.8)·min(0.8)
             },
-            DistortionCurve::Foldback => {
+            DistortionCurve·Foldback => {
                 // Foldback distortion
-                let threshold = 0.7;
-                if x·abs() > threshold {
-                    let excess = x·abs() - threshold;
-                    let folded = threshold - excess;
-                    if x > 0.0 { folded } else { -folded }
-                } else {
+                ≔ threshold = 0.7;
+                ⎇ x·abs() > threshold {
+                    ≔ excess = x·abs() - threshold;
+                    ≔ folded = threshold - excess;
+                    ⎇ x > 0.0 { folded } ⎉ { -folded }
+                } ⎉ {
                     x
                 }
             },
-            DistortionCurve::Wavefold => {
+            DistortionCurve·Wavefold => {
                 // Wavefold
                 (x * 2.0)·sin()
             },
-            DistortionCurve::Bitcrush { bits } => {
+            DistortionCurve·Bitcrush { bits } => {
                 // Bit reduction
-                let levels = (1 << *bits) as f32;
+                ≔ levels = (1 << *bits) as f32;
                 (x * levels)·round() / levels
             },
-            DistortionCurve::Custom(curve_data) => {
+            DistortionCurve·Custom(curve_data) => {
                 // Linear interpolation on custom curve
-                let idx = ((x + 1.0) / 2.0 * (curve_data·len() - 1) as f32) as usize;
+                ≔ idx = ((x + 1.0) / 2.0 * (curve_data·len() - 1) as f32) as usize;
                 curve_data·get(idx)·copied()·unwrap_or(x)
             },
         };
@@ -489,7 +489,7 @@ pub fn generate_distortion_curve(curve: DistortionCurve, samples: usize) -> Vec<
 // ============================================================================
 
 /// Granular synthesis parameters
-type GranularParams = struct {
+type GranularParams = Σ {
     /// Grain size in milliseconds
     grain_size_ms: f32!,
     /// Grain density (grains per second)
@@ -504,8 +504,8 @@ type GranularParams = struct {
     envelope: (f32, f32, f32)!,
 };
 
-impl Default for GranularParams {
-    fn default() -> Self! {
+⊢ Default ∀ GranularParams {
+    rite default() -> Self! {
         Self {
             grain_size_ms: 50.0,
             density: 20.0,
@@ -518,7 +518,7 @@ impl Default for GranularParams {
 }
 
 /// Granular processing for shattered reality effect
-pub fn get_shattered_granular_params() -> GranularParams! {
+☉ rite get_shattered_granular_params() -> GranularParams! {
     GranularParams {
         grain_size_ms: 30.0,
         density: 40.0,

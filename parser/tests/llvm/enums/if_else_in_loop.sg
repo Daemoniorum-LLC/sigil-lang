@@ -1,0 +1,32 @@
+// G45: If-else expressions inside loop - mimics nihil-core pattern
+
+rite test_if_in_loop() → i64 {
+    ≔ vary sum = 0;
+    ∀ i ∈ 0..5 {
+        ≔ val = ⎇ i >= 2 { i * 2 } ⎉ { 1 };
+        sum = sum + val;
+    }
+    sum
+}
+
+rite test_multiple_if_in_loop() → i64 {
+    ≔ vary sum = 0;
+    ∀ i ∈ 0..5 {
+        ≔ a = ⎇ i >= 2 { i } ⎉ { 0 };
+        ≔ b = ⎇ i >= 3 { i * 2 } ⎉ { 1 };
+        sum = sum + a + b;
+    }
+    sum
+}
+
+rite main() {
+    println!("Testing if-else in loop...");
+
+    ≔ r1 = test_if_in_loop();
+    println!("test_if_in_loop() = {}", r1);
+
+    ≔ r2 = test_multiple_if_in_loop();
+    println!("test_multiple_if_in_loop() = {}", r2);
+
+    println!("Done!");
+}

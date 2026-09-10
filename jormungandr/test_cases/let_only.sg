@@ -1,4 +1,4 @@
-λ main() -> i64 {
+rite main() -> i64 {
     ≔ x = 42;
     x
 }

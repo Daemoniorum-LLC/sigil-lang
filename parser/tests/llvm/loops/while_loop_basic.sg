@@ -1,0 +1,16 @@
+// G42: While loop terminator bug
+// The while loop (⟳) doesn't generate proper LLVM block terminator
+//
+// Expected: prints 0, 1, 2, 3, 4 then "Done!"
+// Actual: LLVM IR verification fails - "Basic Block does not have terminator"
+
+rite main() {
+    ≔ vary i = 0;
+
+    ⟳ i < 5 {
+        println!("{}", i);
+        i += 1;
+    }
+
+    println!("Done!");
+}

@@ -14,9 +14,9 @@ invoke tome·rt·types·String;
 // ============================================================================
 
 /// Standard file descriptor constants
-pub const STDIN: i32 = 0;
-pub const STDOUT: i32 = 1;
-pub const STDERR: i32 = 2;
+☉ const STDIN: i32 = 0;
+☉ const STDOUT: i32 = 1;
+☉ const STDERR: i32 = 2;
 
 // ============================================================================
 // Print Functions
@@ -25,25 +25,25 @@ pub const STDERR: i32 = 2;
 /// Print string to stdout (no newline)
 ///
 /// Evidentiality: Returns ~ because syscall may fail
-pub fn print(s: &str) {
-    let _ = write(STDOUT, s.as_bytes());
+☉ rite print(s: &str) {
+    ≔ _ = write(STDOUT, s.as_bytes());
 }
 
 /// Print string to stdout with newline
-pub fn println(s: &str) {
-    let _ = write(STDOUT, s.as_bytes());
-    let _ = write(STDOUT, "\n".as_bytes());
+☉ rite println(s: &str) {
+    ≔ _ = write(STDOUT, s.as_bytes());
+    ≔ _ = write(STDOUT, "\n".as_bytes());
 }
 
 /// Print to stderr (no newline)
-pub fn eprint(s: &str) {
-    let _ = write(STDERR, s.as_bytes());
+☉ rite eprint(s: &str) {
+    ≔ _ = write(STDERR, s.as_bytes());
 }
 
 /// Print to stderr with newline
-pub fn eprintln(s: &str) {
-    let _ = write(STDERR, s.as_bytes());
-    let _ = write(STDERR, "\n".as_bytes());
+☉ rite eprintln(s: &str) {
+    ≔ _ = write(STDERR, s.as_bytes());
+    ≔ _ = write(STDERR, "\n".as_bytes());
 }
 
 // ============================================================================
@@ -51,51 +51,51 @@ pub fn eprintln(s: &str) {
 // ============================================================================
 
 /// Print i64 to stdout
-pub fn print_int(val: i64) {
-    let mut buf: [u8; 21] = [0; 21];  // Max i64 is 20 digits + sign
-    let s = i64_to_str(val, &mut buf);
+☉ rite print_int(val: i64) {
+    ≔ vary buf: [u8; 21] = [0; 21];  // Max i64 is 20 digits + sign
+    ≔ s = i64_to_str(val, &Δ buf);
     print(s);
 }
 
 /// Print i64 to stdout with newline
-pub fn println_int(val: i64) {
-    let mut buf: [u8; 21] = [0; 21];
-    let s = i64_to_str(val, &mut buf);
+☉ rite println_int(val: i64) {
+    ≔ vary buf: [u8; 21] = [0; 21];
+    ≔ s = i64_to_str(val, &Δ buf);
     println(s);
 }
 
 /// Convert i64 to string in buffer, returns &str
-fn i64_to_str(val: i64, buf: &mut [u8]) -> &str! {
+rite i64_to_str(val: i64, buf: &Δ [u8]) -> &str! {
     // Handle zero case
-    if val == 0 {
+    ⎇ val == 0 {
         buf[0] = 48;  // '0'
-        return unsafe { str_from_raw(buf.as_ptr(), 1) };
+        ⤺ unsafe { str_from_raw(buf.as_ptr(), 1) };
     }
 
-    let mut n = val;
-    let negative = n < 0;
-    if negative {
+    ≔ vary n = val;
+    ≔ negative = n < 0;
+    ⎇ negative {
         n = 0 - n;  // Make positive
     }
 
     // Fill buffer from end
-    let mut i: u64 = 20;
-    while n > 0 {
-        let digit = (n % 10) as u8;
+    ≔ vary i: u64 = 20;
+    ⟳ n > 0 {
+        ≔ digit = (n % 10) as u8;
         buf[i] = 48 + digit;  // '0' + digit
         n = n / 10;
         i = i - 1;
     }
 
     // Add negative sign
-    if negative {
+    ⎇ negative {
         buf[i] = 45;  // '-'
         i = i - 1;
     }
 
     // Return slice from i+1 to end
-    let start = i + 1;
-    let len = 21 - start;
+    ≔ start = i + 1;
+    ≔ len = 21 - start;
     unsafe { str_from_raw(buf.as_ptr().add(start as usize), len) }
 }
 
@@ -104,7 +104,7 @@ fn i64_to_str(val: i64, buf: &mut [u8]) -> &str! {
 // ============================================================================
 
 /// File open modes
-pub enum FileMode {
+☉ ᛈ FileMode {
     /// Read only
     Read,
     /// Write only (create if not exists, truncate if exists)
@@ -115,10 +115,10 @@ pub enum FileMode {
     ReadWrite,
 }
 
-impl FileMode {
+⊢ FileMode {
     /// Convert to POSIX open flags
-    pub fn to_flags(&self) -> i32! {
-        match self {
+    ☉ rite to_flags(&self) -> i32! {
+        ⌥ self {
             FileMode·Read => 0,           // O_RDONLY
             FileMode·Write => 577,        // O_WRONLY | O_CREAT | O_TRUNC
             FileMode·Append => 1089,      // O_WRONLY | O_CREAT | O_APPEND
@@ -132,22 +132,22 @@ impl FileMode {
 // ============================================================================
 
 /// File handle wrapper
-pub struct File {
+☉ Σ File {
     /// File descriptor
     fd: i32,
     /// Whether file is open
     is_open: bool,
 }
 
-impl File {
+⊢ File {
     /// Create new file (write mode, truncate if exists)
     ///
     /// Returns Reported (~) - syscall may fail
-    pub fn create(path: &str) -> Result<File, Errno>~ {
-        let flags = 577;  // O_WRONLY | O_CREAT | O_TRUNC
-        let mode = 420;   // 0644 in octal
+    ☉ rite create(path: &str) -> Result<File, Errno>~ {
+        ≔ flags = 577;  // O_WRONLY | O_CREAT | O_TRUNC
+        ≔ mode = 420;   // 0644 in octal
 
-        match open(path.as_ptr() as *const u8, flags, mode) {
+        ⌥ open(path.as_ptr() as *const u8, flags, mode) {
             Ok(fd) => Ok(File { fd: fd as i32, is_open: true }),
             Err(e) => Err(e),
         }
@@ -156,11 +156,11 @@ impl File {
     /// Open existing file with mode
     ///
     /// Returns Reported (~) - file contents are external
-    pub fn open(path: &str, mode: FileMode) -> Result<File, Errno>~ {
-        let flags = mode.to_flags();
-        let file_mode = if flags & 64 != 0 { 420 } else { 0 };  // O_CREAT check
+    ☉ rite open(path: &str, mode: FileMode) -> Result<File, Errno>~ {
+        ≔ flags = mode.to_flags();
+        ≔ file_mode = ⎇ flags & 64 != 0 { 420 } ⎉ { 0 };  // O_CREAT check
 
-        match open(path.as_ptr() as *const u8, flags, file_mode) {
+        ⌥ open(path.as_ptr() as *const u8, flags, file_mode) {
             Ok(fd) => Ok(File { fd: fd as i32, is_open: true }),
             Err(e) => Err(e),
         }
@@ -169,17 +169,17 @@ impl File {
     /// Write bytes to file
     ///
     /// Returns number of bytes written
-    pub fn write(&mut self, data: &str) -> Result<u64, Errno>~ {
-        if !self.is_open {
-            return Err(Errno·EBADF);
+    ☉ rite write(&Δ self, data: &str) -> Result<u64, Errno>~ {
+        ⎇ !self.is_open {
+            ⤺ Err(Errno·EBADF);
         }
         write(self.fd, data.as_bytes())
     }
 
     /// Write byte slice to file
-    pub fn write_bytes(&mut self, data: &[u8]) -> Result<u64, Errno>~ {
-        if !self.is_open {
-            return Err(Errno·EBADF);
+    ☉ rite write_bytes(&Δ self, data: &[u8]) -> Result<u64, Errno>~ {
+        ⎇ !self.is_open {
+            ⤺ Err(Errno·EBADF);
         }
         write(self.fd, data)
     }
@@ -188,34 +188,34 @@ impl File {
     ///
     /// Returns number of bytes read
     /// Data is Reported (~) - comes from file
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<u64, Errno>~ {
-        if !self.is_open {
-            return Err(Errno·EBADF);
+    ☉ rite read(&Δ self, buf: &Δ [u8]) -> Result<u64, Errno>~ {
+        ⎇ !self.is_open {
+            ⤺ Err(Errno·EBADF);
         }
         read(self.fd, buf)
     }
 
     /// Close file
-    pub fn close(&mut self) {
-        if self.is_open {
-            let _ = close(self.fd);
+    ☉ rite close(&Δ self) {
+        ⎇ self.is_open {
+            ≔ _ = close(self.fd);
             self.is_open = false;
         }
     }
 
     /// Get file descriptor
-    pub fn fd(&self) -> i32! {
+    ☉ rite fd(&self) -> i32! {
         self.fd
     }
 
     /// Check if file is open
-    pub fn is_open(&self) -> bool! {
+    ☉ rite is_open(&self) -> bool! {
         self.is_open
     }
 }
 
-impl Drop for File {
-    fn drop(&mut self) {
+⊢ Drop ∀ File {
+    rite drop(&Δ self) {
         self.close();
     }
 }
@@ -227,17 +227,17 @@ impl Drop for File {
 /// Read line from stdin
 ///
 /// Returns Reported (~) - user input is external
-pub fn read_line() -> String~ {
-    let mut result = String·new();
-    let mut buf: [u8; 1] = [0; 1];
+☉ rite read_line() -> String~ {
+    ≔ vary result = String·new();
+    ≔ vary buf: [u8; 1] = [0; 1];
 
     loop {
-        match read(STDIN, &mut buf) {
+        ⌥ read(STDIN, &Δ buf) {
             Ok(n) => {
-                if n == 0 {
+                ⎇ n == 0 {
                     break;  // EOF
                 }
-                if buf[0] == 10 {  // '\n'
+                ⎇ buf[0] == 10 {  // '\n'
                     break;
                 }
                 result.push(buf[0] as char);
@@ -255,6 +255,6 @@ pub fn read_line() -> String~ {
 
 /// Create &str from raw pointer and length (unsafe)
 #[inline]
-unsafe fn str_from_raw(ptr: *const u8, len: u64) -> &str! {
+unsafe rite str_from_raw(ptr: *const u8, len: u64) -> &str! {
     __builtin_str_from_raw_parts(ptr, len)
 }

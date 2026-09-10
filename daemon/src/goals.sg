@@ -1,0 +1,126 @@
+// Goal Types for Daemon
+// Clean Sigil: DaemonId, LifecycleState, Goal, GoalId, GoalStatus
+
+// ============================================================================
+// Daemon Identity + Lifecycle Types
+// ============================================================================
+
+/// Unique identifier for a daemon instance
+Σ DaemonId { id: String }
+
+⊢ DaemonId {
+    rite new() {
+        DaemonId { id: uuid_v4() }
+    }
+    rite to_string(self) {
+        ↩ self.id;
+    }
+}
+
+/// Simplified lifecycle state for daemon instances (Morgoth v0.2 scope)
+/// Initializing — created but not yet running (e.g., monitor pane)
+/// Running       — actively executing
+/// Terminated    — exited or killed
+ᛈ LifecycleState {
+    Initializing,
+    Running,
+    Terminated,
+}
+
+// ============================================================================
+// Goal Types
+// ============================================================================
+
+/// Unique goal identifier
+Σ GoalId { id: String }
+
+⊢ GoalId {
+    rite new() {
+        GoalId { id: uuid_v4() }
+    }
+    rite to_string(self) {
+        ↩ self.id;
+    }
+}
+
+/// Current status of a goal
+ᛈ GoalStatus {
+    Pending,
+    Active,
+    Blocked,
+    Suspended,
+    Completed,
+    Failed,
+    Abandoned,
+}
+
+/// A goal the daemon is pursuing
+Σ Goal {
+    id:               GoalId,
+    description:      String,
+    priority:         Float,
+    status:           GoalStatus,
+    parent:           Any,
+    constraints:      Array,
+    created_at:       Int,
+    attempts:         Array,
+    // v0.2: execution metadata
+    pane_id:          Any,   // String when Active, null otherwise
+    abandoned_reason: Any,   // String when Abandoned, null otherwise
+    outcome:          Any,   // "success"|"failure"|"partial" when Completed, null otherwise
+    completed_at:     Any,   // Int timestamp when Completed or Abandoned, null otherwise
+}
+
+⊢ Goal {
+    rite new(description) {
+        Goal {
+            id:               GoalId·new(),
+            description:      description,
+            priority:         0.5,
+            status:           GoalStatus·Pending,
+            parent:           null,
+            constraints:      [],
+            created_at:       Sys·clock_gettime(),
+            attempts:         [],
+            pane_id:          null,
+            abandoned_reason: null,
+            outcome:          null,
+            completed_at:     null,
+        }
+    }
+
+    rite with_priority(self, priority) {
+        self.priority = priority;
+        ↩ self;
+    }
+
+    rite is_pending(self) {
+        ↩ self.status == GoalStatus·Pending;
+    }
+
+    rite is_active(self) {
+        ↩ self.status == GoalStatus·Active;
+    }
+
+    rite is_done(self) {
+        ↩ self.status == GoalStatus·Completed ∨ self.status == GoalStatus·Abandoned;
+    }
+
+    rite activate(self) {
+        self.status = GoalStatus·Active;
+        ↩ self;
+    }
+
+    rite complete(self) {
+        self.status = GoalStatus·Completed;
+        ↩ self;
+    }
+
+    rite abandon(self, reason) {
+        // NOTE: reason is intentionally not stored here. GoalStack·abandon(id, reason)
+        // persists it in the goal map via slot-rebuild. This method only sets status
+        // for pre-roundtrip convenience; it is not the authoritative abandonment path.
+        self.status = GoalStatus·Abandoned;
+        ↩ self;
+    }
+}

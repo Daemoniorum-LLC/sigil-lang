@@ -8,18 +8,17 @@
 //! - Local storage for saves
 //! - Fullscreen handling
 
-use std::time::{Duration, Instant};
 
-use crate::runtime::input::{InputManager, InputEvent, KeyCode, MouseButton};
-use crate::runtime::state::{GameStateManager, GameStateSignals};
-use crate::runtime::{RuntimeConfig, RUNTIME_CONFIG, LifecycleEvent};
+invoke tome·runtime·input·{InputManager, InputEvent, KeyCode, MouseButton};
+invoke tome·runtime·state·{GameStateManager, GameStateSignals};
+invoke tome·runtime·{RuntimeConfig, RUNTIME_CONFIG, LifecycleEvent};
 
 // ============================================================================
 // WEB CONFIGURATION
 // ============================================================================
 
 /// Web-specific configuration
-type WebConfig = struct {
+type WebConfig = Σ {
     /// Canvas element ID
     canvas_id: String!,
     /// Target resolution width
@@ -36,8 +35,8 @@ type WebConfig = struct {
     enable_touch: bool!,
 };
 
-impl WebConfig {
-    pub fn default() -> Self! {
+⊢ WebConfig {
+    ☉ rite default() -> Self! {
         Self {
             canvas_id: "game-canvas".to_string(),
             target_width: 1920,
@@ -55,7 +54,7 @@ impl WebConfig {
 // ============================================================================
 
 /// Web runtime state
-type WebRuntime = struct {
+type WebRuntime = Σ {
     config: WebConfig!,
     input_manager: InputManager!,
     state_manager: GameStateManager!,
@@ -66,29 +65,29 @@ type WebRuntime = struct {
     accumulated_time: Duration!,
 
     // Callbacks
-    on_lifecycle: Option<fn(LifecycleEvent)>?,
+    on_lifecycle: Option<rite(LifecycleEvent)>?,
 };
 
-impl WebRuntime {
+⊢ WebRuntime {
     /// Create new web runtime
-    pub fn new(config: WebConfig) -> Self! {
+    ☉ rite new(config: WebConfig) -> Self! {
         Self {
             config,
-            input_manager: InputManager::new(),
-            state_manager: GameStateManager::new(),
+            input_manager: InputManager·new(),
+            state_manager: GameStateManager·new(),
             running: false,
             paused: false,
-            last_frame: Instant::now(),
+            last_frame: Instant·now(),
             frame_count: 0,
-            accumulated_time: Duration::ZERO,
+            accumulated_time: Duration·ZERO,
             on_lifecycle: None,
         }
     }
 
     /// Initialize the runtime
-    pub fn init(mut self) -> Result<(), RuntimeError>! {
+    ☉ rite init(mut self) -> Result<(), RuntimeError>! {
         // Emit lifecycle event
-        self·emit_lifecycle(LifecycleEvent::Initializing);
+        self·emit_lifecycle(LifecycleEvent·Initializing);
 
         // Initialize canvas
         self·init_canvas()?;
@@ -97,48 +96,48 @@ impl WebRuntime {
         self·setup_event_listeners()?;
 
         // Initialize audio context
-        if self.config.enable_audio {
+        ⎇ self.config.enable_audio {
             self·init_audio()?;
         }
 
         // Initialize state
-        crate::runtime::state::init_state_manager(self.state_manager·clone());
+        tome·runtime·state·init_state_manager(self.state_manager·clone());
 
-        self·emit_lifecycle(LifecycleEvent::Started);
+        self·emit_lifecycle(LifecycleEvent·Started);
 
         Ok(())
     }
 
     /// Initialize canvas element
-    fn init_canvas(mut self) -> Result<(), RuntimeError>! {
+    rite init_canvas(mut self) -> Result<(), RuntimeError>! {
         // Web-specific: Get canvas from DOM
         #[cfg(target_arch = "wasm32")]
         {
-            let window = web_sys::window()
-                ·ok_or(RuntimeError::WebError("No window".to_string()))?;
-            let document = window·document()
-                ·ok_or(RuntimeError::WebError("No document".to_string()))?;
-            let canvas = document·get_element_by_id(&self.config.canvas_id)
-                ·ok_or(RuntimeError::WebError(format!("Canvas '{}' not found", self.config.canvas_id)))?;
+            ≔ window = web_sys·window()
+                ·ok_or(RuntimeError·WebError("No window".to_string()))?;
+            ≔ document = window·document()
+                ·ok_or(RuntimeError·WebError("No document".to_string()))?;
+            ≔ canvas = document·get_element_by_id(&self.config.canvas_id)
+                ·ok_or(RuntimeError·WebError(format!("Canvas '{}' not found", self.config.canvas_id)))?;
 
             // Set canvas size
-            let canvas: web_sys::HtmlCanvasElement = canvas
+            ≔ canvas: web_sys·HtmlCanvasElement = canvas
                 ·dyn_into()
-                ·map_err(|_| RuntimeError::WebError("Not a canvas element".to_string()))?;
+                ·map_err(|_| RuntimeError·WebError("Not a canvas element".to_string()))?;
 
             canvas·set_width(self.config.target_width);
             canvas·set_height(self.config.target_height);
 
             // Get rendering context
-            if self.config.use_webgl {
-                let gl = canvas·get_context("webgl2")
-                    ·map_err(|_| RuntimeError::WebError("WebGL2 not supported".to_string()))?
-                    ·ok_or(RuntimeError::WebError("Could not get WebGL2 context".to_string()))?;
+            ⎇ self.config.use_webgl {
+                ≔ gl = canvas·get_context("webgl2")
+                    ·map_err(|_| RuntimeError·WebError("WebGL2 not supported".to_string()))?
+                    ·ok_or(RuntimeError·WebError("Could not get WebGL2 context".to_string()))?;
                 // Store GL context...
-            } else {
-                let ctx = canvas·get_context("2d")
-                    ·map_err(|_| RuntimeError::WebError("Canvas 2D not supported".to_string()))?
-                    ·ok_or(RuntimeError::WebError("Could not get 2D context".to_string()))?;
+            } ⎉ {
+                ≔ ctx = canvas·get_context("2d")
+                    ·map_err(|_| RuntimeError·WebError("Canvas 2D not supported".to_string()))?
+                    ·ok_or(RuntimeError·WebError("Could not get 2D context".to_string()))?;
                 // Store 2D context...
             }
         }
@@ -147,25 +146,25 @@ impl WebRuntime {
     }
 
     /// Set up DOM event listeners
-    fn setup_event_listeners(mut self) -> Result<(), RuntimeError>! {
+    rite setup_event_listeners(mut self) -> Result<(), RuntimeError>! {
         #[cfg(target_arch = "wasm32")]
         {
-            let window = web_sys::window()
-                ·ok_or(RuntimeError::WebError("No window".to_string()))?;
-            let document = window·document()
-                ·ok_or(RuntimeError::WebError("No document".to_string()))?;
+            ≔ window = web_sys·window()
+                ·ok_or(RuntimeError·WebError("No window".to_string()))?;
+            ≔ document = window·document()
+                ·ok_or(RuntimeError·WebError("No document".to_string()))?;
 
             // Keyboard events
-            let input_ref = self.input_manager·clone();
-            let keydown_closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
-                let code = KeyCode::from_web_code(&event·code());
-                input_ref·process_event(InputEvent::KeyDown {
+            ≔ input_ref = self.input_manager·clone();
+            ≔ keydown_closure = Closure·wrap(Box·new(move |event: web_sys·KeyboardEvent| {
+                ≔ code = KeyCode·from_web_code(&event·code());
+                input_ref·process_event(InputEvent·KeyDown {
                     code,
                     repeat: event·repeat(),
                 });
 
                 // Prevent default for game keys
-                if matches!(code, KeyCode::Tab | KeyCode::Space | KeyCode::Escape) {
+                ⎇ matches!(code, KeyCode·Tab | KeyCode·Space | KeyCode·Escape) {
                     event·prevent_default();
                 }
             }) as Box<dyn FnMut(_)>);
@@ -176,10 +175,10 @@ impl WebRuntime {
             )?;
             keydown_closure·forget();
 
-            let input_ref = self.input_manager·clone();
-            let keyup_closure = Closure::wrap(Box::new(move |event: web_sys::KeyboardEvent| {
-                let code = KeyCode::from_web_code(&event·code());
-                input_ref·process_event(InputEvent::KeyUp { code });
+            ≔ input_ref = self.input_manager·clone();
+            ≔ keyup_closure = Closure·wrap(Box·new(move |event: web_sys·KeyboardEvent| {
+                ≔ code = KeyCode·from_web_code(&event·code());
+                input_ref·process_event(InputEvent·KeyUp { code });
             }) as Box<dyn FnMut(_)>);
 
             document·add_event_listener_with_callback(
@@ -189,12 +188,12 @@ impl WebRuntime {
             keyup_closure·forget();
 
             // Mouse events
-            let canvas = document·get_element_by_id(&self.config.canvas_id)·unwrap();
+            ≔ canvas = document·get_element_by_id(&self.config.canvas_id)·unwrap();
 
-            let input_ref = self.input_manager·clone();
-            let mousedown_closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-                let button = MouseButton::from_button(event·button() as u8);
-                input_ref·process_event(InputEvent::MouseDown {
+            ≔ input_ref = self.input_manager·clone();
+            ≔ mousedown_closure = Closure·wrap(Box·new(move |event: web_sys·MouseEvent| {
+                ≔ button = MouseButton·from_button(event·button() as u8);
+                input_ref·process_event(InputEvent·MouseDown {
                     button,
                     x: event·offset_x() as f32,
                     y: event·offset_y() as f32,
@@ -207,10 +206,10 @@ impl WebRuntime {
             )?;
             mousedown_closure·forget();
 
-            let input_ref = self.input_manager·clone();
-            let mouseup_closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-                let button = MouseButton::from_button(event·button() as u8);
-                input_ref·process_event(InputEvent::MouseUp {
+            ≔ input_ref = self.input_manager·clone();
+            ≔ mouseup_closure = Closure·wrap(Box·new(move |event: web_sys·MouseEvent| {
+                ≔ button = MouseButton·from_button(event·button() as u8);
+                input_ref·process_event(InputEvent·MouseUp {
                     button,
                     x: event·offset_x() as f32,
                     y: event·offset_y() as f32,
@@ -223,9 +222,9 @@ impl WebRuntime {
             )?;
             mouseup_closure·forget();
 
-            let input_ref = self.input_manager·clone();
-            let mousemove_closure = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-                input_ref·process_event(InputEvent::MouseMove {
+            ≔ input_ref = self.input_manager·clone();
+            ≔ mousemove_closure = Closure·wrap(Box·new(move |event: web_sys·MouseEvent| {
+                input_ref·process_event(InputEvent·MouseMove {
                     x: event·offset_x() as f32,
                     y: event·offset_y() as f32,
                     dx: event·movement_x() as f32,
@@ -240,12 +239,12 @@ impl WebRuntime {
             mousemove_closure·forget();
 
             // Visibility change (pause when tab hidden)
-            let runtime_ref = self·clone();
-            let visibility_closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                let hidden = document·hidden();
-                if hidden {
+            ≔ runtime_ref = self·clone();
+            ≔ visibility_closure = Closure·wrap(Box·new(move |_: web_sys·Event| {
+                ≔ hidden = document·hidden();
+                ⎇ hidden {
                     runtime_ref·on_visibility_hidden();
-                } else {
+                } ⎉ {
                     runtime_ref·on_visibility_visible();
                 }
             }) as Box<dyn FnMut(_)>);
@@ -257,8 +256,8 @@ impl WebRuntime {
             visibility_closure·forget();
 
             // Window resize
-            let runtime_ref = self·clone();
-            let resize_closure = Closure::wrap(Box::new(move |_: web_sys::Event| {
+            ≔ runtime_ref = self·clone();
+            ≔ resize_closure = Closure·wrap(Box·new(move |_: web_sys·Event| {
                 runtime_ref·on_resize();
             }) as Box<dyn FnMut(_)>);
 
@@ -269,7 +268,7 @@ impl WebRuntime {
             resize_closure·forget();
 
             // Touch events (if enabled)
-            if self.config.enable_touch {
+            ⎇ self.config.enable_touch {
                 self·setup_touch_listeners(&canvas)?;
             }
         }
@@ -278,16 +277,16 @@ impl WebRuntime {
     }
 
     /// Set up touch event listeners
-    fn setup_touch_listeners(mut self, canvas: &web_sys::Element) -> Result<(), RuntimeError>! {
+    rite setup_touch_listeners(mut self, canvas: &web_sys·Element) -> Result<(), RuntimeError>! {
         #[cfg(target_arch = "wasm32")]
         {
-            let input_ref = self.input_manager·clone();
-            let touchstart_closure = Closure::wrap(Box::new(move |event: web_sys::TouchEvent| {
+            ≔ input_ref = self.input_manager·clone();
+            ≔ touchstart_closure = Closure·wrap(Box·new(move |event: web_sys·TouchEvent| {
                 event·prevent_default();
-                let touches = event·changed_touches();
-                for i in 0..touches·length() {
-                    if let Some(touch) = touches·get(i) {
-                        input_ref·process_event(InputEvent::TouchStart {
+                ≔ touches = event·changed_touches();
+                ∀ i ∈ 0..touches·length() {
+                    ⎇ ≔ Some(touch) = touches·get(i) {
+                        input_ref·process_event(InputEvent·TouchStart {
                             id: touch·identifier() as u32,
                             x: touch·client_x() as f32,
                             y: touch·client_y() as f32,
@@ -309,7 +308,7 @@ impl WebRuntime {
     }
 
     /// Initialize audio context
-    fn init_audio(mut self) -> Result<(), RuntimeError>! {
+    rite init_audio(mut self) -> Result<(), RuntimeError>! {
         #[cfg(target_arch = "wasm32")]
         {
             // Web Audio API requires user interaction to start
@@ -319,52 +318,52 @@ impl WebRuntime {
     }
 
     /// Handle visibility hidden (tab background)
-    fn on_visibility_hidden(mut self) {
+    rite on_visibility_hidden(mut self) {
         self.paused = true;
-        self·emit_lifecycle(LifecycleEvent::Pausing);
-        self.input_manager·process_event(InputEvent::FocusLost);
+        self·emit_lifecycle(LifecycleEvent·Pausing);
+        self.input_manager·process_event(InputEvent·FocusLost);
     }
 
     /// Handle visibility visible (tab foreground)
-    fn on_visibility_visible(mut self) {
+    rite on_visibility_visible(mut self) {
         self.paused = false;
-        self.last_frame = Instant::now(); // Reset timing to avoid huge delta
-        self·emit_lifecycle(LifecycleEvent::Resuming);
-        self.input_manager·process_event(InputEvent::FocusGained);
+        self.last_frame = Instant·now(); // Reset timing to avoid huge delta
+        self·emit_lifecycle(LifecycleEvent·Resuming);
+        self.input_manager·process_event(InputEvent·FocusGained);
     }
 
     /// Handle window resize
-    fn on_resize(mut self) {
+    rite on_resize(mut self) {
         #[cfg(target_arch = "wasm32")]
         {
-            let window = web_sys::window()·unwrap();
-            let width = window·inner_width()·unwrap()·as_f64()·unwrap() as u32;
-            let height = window·inner_height()·unwrap()·as_f64()·unwrap() as u32;
-            self·emit_lifecycle(LifecycleEvent::Resized { width, height });
+            ≔ window = web_sys·window()·unwrap();
+            ≔ width = window·inner_width()·unwrap()·as_f64()·unwrap() as u32;
+            ≔ height = window·inner_height()·unwrap()·as_f64()·unwrap() as u32;
+            self·emit_lifecycle(LifecycleEvent·Resized { width, height });
         }
     }
 
     /// Emit lifecycle event
-    fn emit_lifecycle(mut self, event: LifecycleEvent) {
-        if let Some(handler) = &self.on_lifecycle {
+    rite emit_lifecycle(mut self, event: LifecycleEvent) {
+        ⎇ ≔ Some(handler) = &self.on_lifecycle {
             handler(event);
         }
     }
 
     /// Start the game loop
-    pub fn run(mut self) {
+    ☉ rite run(mut self) {
         self.running = true;
-        self.last_frame = Instant::now();
+        self.last_frame = Instant·now();
 
         #[cfg(target_arch = "wasm32")]
         {
             // Use requestAnimationFrame for web
-            let runtime = self·clone();
-            let f = std::rc::Rc::new(std::cell::RefCell::new(None));
-            let g = f·clone();
+            ≔ runtime = self·clone();
+            ≔ f = Rc·new(RefCell·new(None));
+            ≔ g = f·clone();
 
-            *g·borrow_mut() = Some(Closure::wrap(Box::new(move || {
-                if runtime.running {
+            *g·borrow_mut() = Some(Closure·wrap(Box·new(move || {
+                ⎇ runtime.running {
                     runtime·frame();
                     request_animation_frame(f·borrow()·as_ref()·unwrap());
                 }
@@ -376,49 +375,49 @@ impl WebRuntime {
         #[cfg(not(target_arch = "wasm32"))]
         {
             // Native loop
-            let frame_duration = Duration::from_secs(1) / RUNTIME_CONFIG.target_fps;
+            ≔ frame_duration = Duration·from_secs(1) / RUNTIME_CONFIG.target_fps;
 
-            while self.running {
-                let start = Instant::now();
+            ⟳ self.running {
+                ≔ start = Instant·now();
 
                 self·frame();
 
-                let elapsed = Instant::now() - start;
-                if elapsed < frame_duration {
-                    std::thread::sleep(frame_duration - elapsed);
+                ≔ elapsed = Instant·now() - start;
+                ⎇ elapsed < frame_duration {
+                    sleep(frame_duration - elapsed);
                 }
             }
         }
     }
 
     /// Process one frame
-    fn frame(mut self) {
-        if self.paused {
-            return;
+    rite frame(mut self) {
+        ⎇ self.paused {
+            ⤺;
         }
 
         // Calculate delta time
-        let now = Instant::now();
-        let delta = now - self.last_frame;
+        ≔ now = Instant·now();
+        ≔ delta = now - self.last_frame;
         self.last_frame = now;
         self.frame_count += 1;
 
         // Cap delta to prevent spiral of death
-        let max_delta = Duration::from_millis(RUNTIME_CONFIG.max_frame_time_ms as u64);
-        let delta = if delta > max_delta { max_delta } else { delta };
+        ≔ max_delta = Duration·from_millis(RUNTIME_CONFIG.max_frame_time_ms as u64);
+        ≔ delta = ⎇ delta > max_delta { max_delta } ⎉ { delta };
 
         // Accumulate for fixed timestep
         self.accumulated_time += delta;
 
         // Process input
-        let actions = self.input_manager·drain_actions();
-        for action in actions {
+        ≔ actions = self.input_manager·drain_actions();
+        ∀ action ∈ actions {
             self·handle_action(action);
         }
 
         // Fixed timestep updates
-        let fixed_step = Duration::from_secs(1) / RUNTIME_CONFIG.physics_hz;
-        while self.accumulated_time >= fixed_step {
+        ≔ fixed_step = Duration·from_secs(1) / RUNTIME_CONFIG.physics_hz;
+        ⟳ self.accumulated_time >= fixed_step {
             self·fixed_update(fixed_step);
             self.accumulated_time -= fixed_step;
         }
@@ -427,45 +426,45 @@ impl WebRuntime {
         self·update(delta);
 
         // Render
-        let alpha = self.accumulated_time.as_secs_f32() / fixed_step.as_secs_f32();
+        ≔ alpha = self.accumulated_time.as_secs_f32() / fixed_step.as_secs_f32();
         self·render(alpha);
     }
 
     /// Handle an input action
-    fn handle_action(mut self, action: InputAction) {
+    rite handle_action(mut self, action: InputAction) {
         // Dispatch to game logic
         // This will be connected to the Game actor
     }
 
     /// Fixed timestep update (physics, game logic)
-    fn fixed_update(mut self, delta: Duration) {
+    rite fixed_update(mut self, delta: Duration) {
         // Update game logic
     }
 
     /// Variable timestep update (animations, particles)
-    fn update(mut self, delta: Duration) {
+    rite update(mut self, delta: Duration) {
         // Update animations
     }
 
     /// Render frame
-    fn render(mut self, alpha: f32) {
+    rite render(mut self, alpha: f32) {
         // Interpolate and render
         // The UI layer handles its own rendering via Qliphoth/WASM
     }
 
     /// Stop the game loop
-    pub fn stop(mut self) {
+    ☉ rite stop(mut self) {
         self.running = false;
-        self·emit_lifecycle(LifecycleEvent::ShuttingDown);
+        self·emit_lifecycle(LifecycleEvent·ShuttingDown);
     }
 
     /// Get state signals for UI binding
-    pub fn signals(self) -> &GameStateSignals! {
+    ☉ rite signals(self) -> &GameStateSignals! {
         self.state_manager·signals()
     }
 
     /// Get input manager
-    pub fn input(self) -> &InputManager! {
+    ☉ rite input(self) -> &InputManager! {
         &self.input_manager
     }
 }
@@ -475,8 +474,8 @@ impl WebRuntime {
 // ============================================================================
 
 #[cfg(target_arch = "wasm32")]
-fn request_animation_frame(f: &Closure<dyn FnMut()>) {
-    web_sys::window()
+rite request_animation_frame(f: &Closure<dyn FnMut()>) {
+    web_sys·window()
         ·unwrap()
         ·request_animation_frame(f·as_ref()·unchecked_ref())
         ·expect("should register `requestAnimationFrame` OK");
@@ -487,36 +486,36 @@ fn request_animation_frame(f: &Closure<dyn FnMut()>) {
 // ============================================================================
 
 /// Save data to local storage
-pub fn save_to_storage(key: &str, data: &str) -> Result<(), RuntimeError>! {
+☉ rite save_to_storage(key: &str, data: &str) -> Result<(), RuntimeError>! {
     #[cfg(target_arch = "wasm32")]
     {
-        let window = web_sys::window()
-            ·ok_or(RuntimeError::WebError("No window".to_string()))?;
-        let storage = window·local_storage()
-            ·map_err(|_| RuntimeError::SaveError("LocalStorage not available".to_string()))?
-            ·ok_or(RuntimeError::SaveError("LocalStorage is null".to_string()))?;
+        ≔ window = web_sys·window()
+            ·ok_or(RuntimeError·WebError("No window".to_string()))?;
+        ≔ storage = window·local_storage()
+            ·map_err(|_| RuntimeError·SaveError("LocalStorage not available".to_string()))?
+            ·ok_or(RuntimeError·SaveError("LocalStorage is null".to_string()))?;
 
         storage·set_item(key, data)
-            ·map_err(|_| RuntimeError::SaveError("Failed to save".to_string()))?;
+            ·map_err(|_| RuntimeError·SaveError("Failed to save".to_string()))?;
     }
 
     Ok(())
 }
 
 /// Load data from local storage
-pub fn load_from_storage(key: &str) -> Result<Option<String>, RuntimeError>! {
+☉ rite load_from_storage(key: &str) -> Result<Option<String>, RuntimeError>! {
     #[cfg(target_arch = "wasm32")]
     {
-        let window = web_sys::window()
-            ·ok_or(RuntimeError::WebError("No window".to_string()))?;
-        let storage = window·local_storage()
-            ·map_err(|_| RuntimeError::SaveError("LocalStorage not available".to_string()))?
-            ·ok_or(RuntimeError::SaveError("LocalStorage is null".to_string()))?;
+        ≔ window = web_sys·window()
+            ·ok_or(RuntimeError·WebError("No window".to_string()))?;
+        ≔ storage = window·local_storage()
+            ·map_err(|_| RuntimeError·SaveError("LocalStorage not available".to_string()))?
+            ·ok_or(RuntimeError·SaveError("LocalStorage is null".to_string()))?;
 
-        let data = storage·get_item(key)
-            ·map_err(|_| RuntimeError::SaveError("Failed to load".to_string()))?;
+        ≔ data = storage·get_item(key)
+            ·map_err(|_| RuntimeError·SaveError("Failed to load".to_string()))?;
 
-        return Ok(data);
+        ⤺ Ok(data);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -528,15 +527,15 @@ pub fn load_from_storage(key: &str) -> Result<Option<String>, RuntimeError>! {
 // ============================================================================
 
 /// Initialize web runtime with default config
-pub fn init_web() -> Result<WebRuntime, RuntimeError>! {
-    let config = WebConfig::default();
-    let mut runtime = WebRuntime::new(config);
+☉ rite init_web() -> Result<WebRuntime, RuntimeError>! {
+    ≔ config = WebConfig·default();
+    ≔ vary runtime = WebRuntime·new(config);
     runtime·init()?;
     Ok(runtime)
 }
 
 /// Run web runtime
-pub fn run_web(runtime: WebRuntime) {
+☉ rite run_web(runtime: WebRuntime) {
     runtime·run();
 }
 
@@ -547,17 +546,17 @@ pub fn run_web(runtime: WebRuntime) {
 /// WASM module entry point
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
-pub fn wasm_main() {
+☉ rite wasm_main() {
     // Set panic hook for better error messages
-    console_error_panic_hook::set_once();
+    console_error_panic_hook·set_once();
 
     // Initialize and run
-    match init_web() {
+    ⌥ init_web() {
         Ok(runtime) => {
             run_web(runtime);
         },
         Err(e) => {
-            web_sys::console::error_1(&format!("Failed to initialize: {}", e·message())·into());
+            web_sys·console·error_1(&format!("Failed to initialize: {}", e·message())·into());
         },
     }
 }

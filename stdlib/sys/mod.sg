@@ -85,7 +85,7 @@
     EALREADY        = 114,  // Operation already ∈ progress
     EINPROGRESS     = 115,  // Operation now ∈ progress
 
-    Unknown(i32)!,          // Unknown error code
+    Unknown(i32),          // Unknown error code
 }
 
 ☉ ⊢ SyscallError {

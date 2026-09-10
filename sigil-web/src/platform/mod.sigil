@@ -1,145 +1,145 @@
 // Platform Module
 // Cross-platform bindings for browser, SSR, and native environments
 
-use std::collections::HashMap;
-use crate::core::vdom::{VNode, Patch};
-use crate::core::events::{Event, EventDelegator, EventType};
+invoke HashMap;
+invoke tome·core·vdom·{VNode, Patch};
+invoke tome·core·events·{Event, EventDelegator, EventType};
 
 /// Platform abstraction
-pub trait Platform {
+☉ aspect Platform {
     /// Query DOM element by selector
-    fn query_selector(&self, selector: &str) -> Option<DomElement>?;
+    rite query_selector(&self, selector: &str) -> Option<DomElement>?;
 
     /// Create DOM element
-    fn create_element(&self, tag: &str) -> DomElement!;
+    rite create_element(&self, tag: &str) -> DomElement!;
 
     /// Create text node
-    fn create_text(&self, content: &str) -> DomElement!;
+    rite create_text(&self, content: &str) -> DomElement!;
 
     /// Apply patch to DOM
-    fn apply_patch(&self, patch: Patch);
+    rite apply_patch(&self, patch: Patch);
 
     /// Add event listener
-    fn add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64);
+    rite add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64);
 
     /// Remove event listener
-    fn remove_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64);
+    rite remove_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64);
 
     /// Get window dimensions
-    fn window_size(&self) -> (i32, i32)!;
+    rite window_size(&self) -> (i32, i32)!;
 
     /// Request animation frame
-    fn request_animation_frame(&self, callback: fn(f64)) -> u64!;
+    rite request_animation_frame(&self, callback: rite(f64)) -> u64!;
 
     /// Cancel animation frame
-    fn cancel_animation_frame(&self, id: u64);
+    rite cancel_animation_frame(&self, id: u64);
 
     /// Set timeout
-    fn set_timeout(&self, callback: fn(), delay_ms: u64) -> u64!;
+    rite set_timeout(&self, callback: rite(), delay_ms: u64) -> u64!;
 
     /// Clear timeout
-    fn clear_timeout(&self, id: u64);
+    rite clear_timeout(&self, id: u64);
 
     /// Set interval
-    fn set_interval(&self, callback: fn(), interval_ms: u64) -> u64!;
+    rite set_interval(&self, callback: rite(), interval_ms: u64) -> u64!;
 
     /// Clear interval
-    fn clear_interval(&self, id: u64);
+    rite clear_interval(&self, id: u64);
 
     /// Fetch URL
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>!;
+    rite fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>!;
 
     /// Get local storage
-    fn local_storage(&self) -> Storage!;
+    rite local_storage(&self) -> Storage!;
 
     /// Get session storage
-    fn session_storage(&self) -> Storage!;
+    rite session_storage(&self) -> Storage!;
 
     /// Get current URL
-    fn current_url(&self) -> String!;
+    rite current_url(&self) -> String!;
 
     /// Push history state
-    fn push_history(&self, url: &str, state: Option<HashMap<String, String>>);
+    rite push_history(&self, url: &str, state: Option<HashMap<String, String>>);
 
     /// Replace history state
-    fn replace_history(&self, url: &str, state: Option<HashMap<String, String>>);
+    rite replace_history(&self, url: &str, state: Option<HashMap<String, String>>);
 
     /// Render to string (for SSR)
-    fn render_to_string(&self, vnode: &VNode) -> String!;
+    rite render_to_string(&self, vnode: &VNode) -> String!;
 }
 
 /// DOM element handle
-pub struct DomElement {
+☉ Σ DomElement {
     /// Platform-specific element reference
     handle: usize!
 }
 
-impl DomElement {
-    pub fn new(handle: usize) -> Self! {
+⊢ DomElement {
+    ☉ rite new(handle: usize) -> Self! {
         DomElement { handle }
     }
 }
 
 /// Fetch options
-pub struct FetchOptions {
-    pub method: String! = "GET"
-    pub headers: HashMap<String, String>! = HashMap::new()
-    pub body: Option<String>? = None
-    pub mode: FetchMode! = FetchMode::Cors
-    pub credentials: FetchCredentials! = FetchCredentials::SameOrigin
-    pub cache: FetchCache! = FetchCache::Default
-    pub redirect: FetchRedirect! = FetchRedirect::Follow
+☉ Σ FetchOptions {
+    ☉ method: String! = "GET"
+    ☉ headers: HashMap<String, String>! = HashMap·new()
+    ☉ body: Option<String>? = None
+    ☉ mode: FetchMode! = FetchMode·Cors
+    ☉ credentials: FetchCredentials! = FetchCredentials·SameOrigin
+    ☉ cache: FetchCache! = FetchCache·Default
+    ☉ redirect: FetchRedirect! = FetchRedirect·Follow
 }
 
-impl FetchOptions {
-    pub fn default() -> Self! {
+⊢ FetchOptions {
+    ☉ rite default() -> Self! {
         FetchOptions {
             method: "GET".to_string(),
-            headers: HashMap::new(),
-            body: None,
-            mode: FetchMode::Cors,
-            credentials: FetchCredentials::SameOrigin,
-            cache: FetchCache::Default,
-            redirect: FetchRedirect::Follow
+            headers: HashMap·new(),
+            body_: None,
+            mode: FetchMode·Cors,
+            credentials: FetchCredentials·SameOrigin,
+            cache: FetchCache·Default,
+            redirect: FetchRedirect·Follow
         }
     }
 
-    pub fn get(url: &str) -> Self! {
-        FetchOptions::default()
+    ☉ rite get(url: &str) -> Self! {
+        FetchOptions·default()
     }
 
-    pub fn post(body: &str) -> Self! {
+    ☉ rite post(body_: &str) -> Self! {
         FetchOptions {
             method: "POST".to_string(),
-            body: Some(body.to_string()),
-            ..FetchOptions::default()
+            body_: Some(body_.to_string()),
+            ..FetchOptions·default()
         }
     }
 
-    pub fn json(body: impl serde::Serialize) -> Self! {
-        let mut opts! = FetchOptions {
+    ☉ rite json(body_: impl serde·Serialize) -> Self! {
+        ≔ vary opts! = FetchOptions {
             method: "POST".to_string(),
-            body: Some(serde_json::to_string(&body)·unwrap()),
-            ..FetchOptions::default()
+            body_: Some(serde_json·to_string(&body_)·unwrap()),
+            ..FetchOptions·default()
         }
         opts.headers·insert("Content-Type".to_string(), "application/json".to_string())
         opts
     }
 }
 
-pub enum FetchMode {
+☉ ᛈ FetchMode {
     Cors,
     NoCors,
     SameOrigin
 }
 
-pub enum FetchCredentials {
+☉ ᛈ FetchCredentials {
     Omit,
     SameOrigin,
     Include
 }
 
-pub enum FetchCache {
+☉ ᛈ FetchCache {
     Default,
     NoStore,
     Reload,
@@ -148,73 +148,73 @@ pub enum FetchCache {
     OnlyIfCached
 }
 
-pub enum FetchRedirect {
+☉ ᛈ FetchRedirect {
     Follow,
     Error,
     Manual
 }
 
 /// Fetch response
-pub struct FetchResponse {
-    pub ok: bool!
-    pub status: u16!
-    pub status_text: String!
-    pub headers: HashMap<String, String>!
-    body: Vec<u8>!
+☉ Σ FetchResponse {
+    ☉ ok: bool!
+    ☉ status: u16!
+    ☉ status_text: String!
+    ☉ headers: HashMap<String, String>!
+    body_: Vec<u8>!
 }
 
-impl FetchResponse {
+⊢ FetchResponse {
     /// Get response as text
-    pub fn text(&self) -> String! {
-        String::from_utf8(self.body·clone())·unwrap_or_default()
+    ☉ rite text(&self) -> String! {
+        String·from_utf8(self.body·clone())·unwrap_or_default()
     }
 
     /// Get response as JSON
-    pub fn json<T: serde::Deserialize>(&self) -> Result<T, String>! {
-        serde_json::from_slice(&self.body)
+    ☉ rite json<T: serde·Deserialize>(&self) -> Result<T, String>! {
+        serde_json·from_slice(&self.body)
             ·map_err(|e| e·to_string())
     }
 
     /// Get response as bytes
-    pub fn bytes(&self) -> Vec<u8>! {
+    ☉ rite bytes(&self) -> Vec<u8>! {
         self.body·clone()
     }
 }
 
 /// Storage abstraction
-pub struct Storage {
+☉ Σ Storage {
     storage_type: StorageType!
 }
 
-pub enum StorageType {
+☉ ᛈ StorageType {
     Local,
     Session
 }
 
-impl Storage {
-    pub fn get(&self, key: &str) -> Option<String>? {
+⊢ Storage {
+    ☉ rite get(&self, key: &str) -> Option<String>? {
         // Platform-specific implementation
         None
     }
 
-    pub fn set(&self, key: &str, value: &str) {
+    ☉ rite set(&self, key: &str, value: &str) {
         // Platform-specific implementation
     }
 
-    pub fn remove(&self, key: &str) {
+    ☉ rite remove(&self, key: &str) {
         // Platform-specific implementation
     }
 
-    pub fn clear(&self) {
+    ☉ rite clear(&self) {
         // Platform-specific implementation
     }
 
-    pub fn length(&self) -> usize! {
+    ☉ rite length(&self) -> usize! {
         // Platform-specific implementation
         0
     }
 
-    pub fn key(&self, index: usize) -> Option<String>? {
+    ☉ rite key(&self, index: usize) -> Option<String>? {
         // Platform-specific implementation
         None
     }
@@ -225,153 +225,153 @@ impl Storage {
 // ============================================================================
 
 /// Browser platform implementation
-pub struct BrowserPlatform {
+☉ Σ BrowserPlatform {
     event_delegator: EventDelegator!
 }
 
-impl BrowserPlatform {
-    pub fn new() -> Self! {
+⊢ BrowserPlatform {
+    ☉ rite new() -> Self! {
         BrowserPlatform {
-            event_delegator: EventDelegator::new()
+            event_delegator: EventDelegator·new()
         }
     }
 }
 
-impl Platform for BrowserPlatform {
-    fn query_selector(&self, selector: &str) -> Option<DomElement>? {
+⊢ Platform ∀ BrowserPlatform {
+    rite query_selector(&self, selector: &str) -> Option<DomElement>? {
         // js: document.querySelector(selector)
         extern "js" {
-            fn js_query_selector(selector: &str) -> Option<usize>?;
+            rite js_query_selector(selector: &str) -> Option<usize>?;
         }
-        unsafe { js_query_selector(selector)·map(DomElement::new) }
+        unsafe { js_query_selector(selector)·map(DomElement·new) }
     }
 
-    fn create_element(&self, tag: &str) -> DomElement! {
+    rite create_element(&self, tag: &str) -> DomElement! {
         extern "js" {
-            fn js_create_element(tag: &str) -> usize!;
+            rite js_create_element(tag: &str) -> usize!;
         }
-        unsafe { DomElement::new(js_create_element(tag)) }
+        unsafe { DomElement·new(js_create_element(tag)) }
     }
 
-    fn create_text(&self, content: &str) -> DomElement! {
+    rite create_text(&self, content: &str) -> DomElement! {
         extern "js" {
-            fn js_create_text_node(content: &str) -> usize!;
+            rite js_create_text_node(content: &str) -> usize!;
         }
-        unsafe { DomElement::new(js_create_text_node(content)) }
+        unsafe { DomElement·new(js_create_text_node(content)) }
     }
 
-    fn apply_patch(&self, patch: Patch) {
+    rite apply_patch(&self, patch: Patch) {
         // Apply patch to real DOM
-        match patch {
-            Patch::Create(node) => {
+        ⌥ patch {
+            Patch·Create(node) => {
                 // Create DOM element from VNode
             }
-            Patch::Remove(id) => {
+            Patch·Remove(id) => {
                 // Remove element by ID
             }
-            Patch::Replace(id, node) => {
+            Patch·Replace(id, node) => {
                 // Replace element
             }
-            Patch::UpdateAttrs(id, attrs) => {
+            Patch·UpdateAttrs(id, attrs) => {
                 // Update attributes
             }
-            Patch::UpdateProps(id, props) => {
+            Patch·UpdateProps(id, props) => {
                 // Update properties
             }
-            Patch::UpdateEvents(id, events) => {
+            Patch·UpdateEvents(id, events) => {
                 // Update event handlers
             }
-            Patch::UpdateText(id, text) => {
+            Patch·UpdateText(id, text) => {
                 // Update text content
             }
-            Patch::ReorderChildren(id, order) => {
+            Patch·ReorderChildren(id, order) => {
                 // Reorder children
             }
-            Patch::AppendChild(parent_id, node) => {
+            Patch·AppendChild(parent_id, node) => {
                 // Append child
             }
-            Patch::InsertBefore(parent_id, node, before_id) => {
+            Patch·InsertBefore(parent_id, node, before_id) => {
                 // Insert before
             }
-            Patch::RemoveChild(parent_id, child_id) => {
+            Patch·RemoveChild(parent_id, child_id) => {
                 // Remove child
             }
         }
     }
 
-    fn add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
+    rite add_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
         extern "js" {
-            fn js_add_event_listener(element: usize, event_name: &str, handler_id: u64);
+            rite js_add_event_listener(element: usize, event_name: &str, handler_id: u64);
         }
         unsafe { js_add_event_listener(element.handle, event·dom_name(), handler_id) }
     }
 
-    fn remove_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
+    rite remove_event_listener(&self, element: &DomElement, event: EventType, handler_id: u64) {
         extern "js" {
-            fn js_remove_event_listener(element: usize, event_name: &str, handler_id: u64);
+            rite js_remove_event_listener(element: usize, event_name: &str, handler_id: u64);
         }
         unsafe { js_remove_event_listener(element.handle, event·dom_name(), handler_id) }
     }
 
-    fn window_size(&self) -> (i32, i32)! {
+    rite window_size(&self) -> (i32, i32)! {
         extern "js" {
-            fn js_window_inner_width() -> i32!;
-            fn js_window_inner_height() -> i32!;
+            rite js_window_inner_width() -> i32!;
+            rite js_window_inner_height() -> i32!;
         }
         unsafe { (js_window_inner_width(), js_window_inner_height()) }
     }
 
-    fn request_animation_frame(&self, callback: fn(f64)) -> u64! {
+    rite request_animation_frame(&self, callback: rite(f64)) -> u64! {
         extern "js" {
-            fn js_request_animation_frame(callback_id: u64) -> u64!;
+            rite js_request_animation_frame(callback_id: u64) -> u64!;
         }
         // Register callback and get ID
         unsafe { js_request_animation_frame(0) }
     }
 
-    fn cancel_animation_frame(&self, id: u64) {
+    rite cancel_animation_frame(&self, id: u64) {
         extern "js" {
-            fn js_cancel_animation_frame(id: u64);
+            rite js_cancel_animation_frame(id: u64);
         }
         unsafe { js_cancel_animation_frame(id) }
     }
 
-    fn set_timeout(&self, callback: fn(), delay_ms: u64) -> u64! {
+    rite set_timeout(&self, callback: rite(), delay_ms: u64) -> u64! {
         extern "js" {
-            fn js_set_timeout(callback_id: u64, delay: u64) -> u64!;
+            rite js_set_timeout(callback_id: u64, delay: u64) -> u64!;
         }
         unsafe { js_set_timeout(0, delay_ms) }
     }
 
-    fn clear_timeout(&self, id: u64) {
+    rite clear_timeout(&self, id: u64) {
         extern "js" {
-            fn js_clear_timeout(id: u64);
+            rite js_clear_timeout(id: u64);
         }
         unsafe { js_clear_timeout(id) }
     }
 
-    fn set_interval(&self, callback: fn(), interval_ms: u64) -> u64! {
+    rite set_interval(&self, callback: rite(), interval_ms: u64) -> u64! {
         extern "js" {
-            fn js_set_interval(callback_id: u64, interval: u64) -> u64!;
+            rite js_set_interval(callback_id: u64, interval: u64) -> u64!;
         }
         unsafe { js_set_interval(0, interval_ms) }
     }
 
-    fn clear_interval(&self, id: u64) {
+    rite clear_interval(&self, id: u64) {
         extern "js" {
-            fn js_clear_interval(id: u64);
+            rite js_clear_interval(id: u64);
         }
         unsafe { js_clear_interval(id) }
     }
 
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
+    rite fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
         async {
             extern "js" {
-                async fn js_fetch(url: &str, method: &str, headers: &str, body: Option<&str>) -> (bool, u16, String, String, Vec<u8>);
+                async rite js_fetch(url: &str, method: &str, headers: &str, body_: Option<&str>) -> (bool, u16, String, String, Vec<u8>);
             }
 
-            let headers_json! = serde_json::to_string(&options.headers)·unwrap()
-            let result! = unsafe {
+            ≔ headers_json! = serde_json·to_string(&options.headers)·unwrap()
+            ≔ result! = unsafe {
                 js_fetch(url, &options.method, &headers_json, options.body·as_deref())·await
             }
 
@@ -379,44 +379,44 @@ impl Platform for BrowserPlatform {
                 ok: result.0,
                 status: result.1,
                 status_text: result.2,
-                headers: serde_json::from_str(&result.3)·unwrap_or_default(),
-                body: result.4
+                headers: serde_json·from_str(&result.3)·unwrap_or_default(),
+                body_: result.4
             }
         }
     }
 
-    fn local_storage(&self) -> Storage! {
-        Storage { storage_type: StorageType::Local }
+    rite local_storage(&self) -> Storage! {
+        Storage { storage_type: StorageType·Local }
     }
 
-    fn session_storage(&self) -> Storage! {
-        Storage { storage_type: StorageType::Session }
+    rite session_storage(&self) -> Storage! {
+        Storage { storage_type: StorageType·Session }
     }
 
-    fn current_url(&self) -> String! {
+    rite current_url(&self) -> String! {
         extern "js" {
-            fn js_get_location_href() -> String!;
+            rite js_get_location_href() -> String!;
         }
         unsafe { js_get_location_href() }
     }
 
-    fn push_history(&self, url: &str, state: Option<HashMap<String, String>>) {
+    rite push_history(&self, url: &str, state: Option<HashMap<String, String>>) {
         extern "js" {
-            fn js_push_state(state: Option<&str>, url: &str);
+            rite js_push_state(state: Option<&str>, url: &str);
         }
-        let state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
+        ≔ state_json? = state·map(|s| serde_json·to_string(&s)·unwrap())
         unsafe { js_push_state(state_json·as_deref(), url) }
     }
 
-    fn replace_history(&self, url: &str, state: Option<HashMap<String, String>>) {
+    rite replace_history(&self, url: &str, state: Option<HashMap<String, String>>) {
         extern "js" {
-            fn js_replace_state(state: Option<&str>, url: &str);
+            rite js_replace_state(state: Option<&str>, url: &str);
         }
-        let state_json? = state·map(|s| serde_json::to_string(&s)·unwrap())
+        ≔ state_json? = state·map(|s| serde_json·to_string(&s)·unwrap())
         unsafe { js_replace_state(state_json·as_deref(), url) }
     }
 
-    fn render_to_string(&self, vnode: &VNode) -> String! {
+    rite render_to_string(&self, vnode: &VNode) -> String! {
         // Browser doesn't support SSR rendering
         panic!("render_to_string not supported in browser")
     }
@@ -427,62 +427,62 @@ impl Platform for BrowserPlatform {
 // ============================================================================
 
 /// Server-side rendering platform
-pub struct ServerPlatform {}
+☉ Σ ServerPlatform {}
 
-impl ServerPlatform {
-    pub fn new() -> Self! {
+⊢ ServerPlatform {
+    ☉ rite new() -> Self! {
         ServerPlatform {}
     }
 }
 
-impl Platform for ServerPlatform {
-    fn query_selector(&self, _selector: &str) -> Option<DomElement>? {
+⊢ Platform ∀ ServerPlatform {
+    rite query_selector(&self, _selector: &str) -> Option<DomElement>? {
         None // No DOM on server
     }
 
-    fn create_element(&self, _tag: &str) -> DomElement! {
-        DomElement::new(0)
+    rite create_element(&self, _tag: &str) -> DomElement! {
+        DomElement·new(0)
     }
 
-    fn create_text(&self, _content: &str) -> DomElement! {
-        DomElement::new(0)
+    rite create_text(&self, _content: &str) -> DomElement! {
+        DomElement·new(0)
     }
 
-    fn apply_patch(&self, _patch: Patch) {
+    rite apply_patch(&self, _patch: Patch) {
         // No-op on server
     }
 
-    fn add_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
+    rite add_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
         // No-op on server
     }
 
-    fn remove_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
+    rite remove_event_listener(&self, _element: &DomElement, _event: EventType, _handler_id: u64) {
         // No-op on server
     }
 
-    fn window_size(&self) -> (i32, i32)! {
+    rite window_size(&self) -> (i32, i32)! {
         (0, 0) // No window on server
     }
 
-    fn request_animation_frame(&self, _callback: fn(f64)) -> u64! {
+    rite request_animation_frame(&self, _callback: rite(f64)) -> u64! {
         0 // No RAF on server
     }
 
-    fn cancel_animation_frame(&self, _id: u64) {}
+    rite cancel_animation_frame(&self, _id: u64) {}
 
-    fn set_timeout(&self, _callback: fn(), _delay_ms: u64) -> u64! {
+    rite set_timeout(&self, _callback: rite(), _delay_ms: u64) -> u64! {
         0
     }
 
-    fn clear_timeout(&self, _id: u64) {}
+    rite clear_timeout(&self, _id: u64) {}
 
-    fn set_interval(&self, _callback: fn(), _interval_ms: u64) -> u64! {
+    rite set_interval(&self, _callback: rite(), _interval_ms: u64) -> u64! {
         0
     }
 
-    fn clear_interval(&self, _id: u64) {}
+    rite clear_interval(&self, _id: u64) {}
 
-    fn fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
+    rite fetch(&self, url: &str, options: FetchOptions) -> Future<Output = FetchResponse>! {
         // Use native HTTP client
         async {
             // Server-side fetch implementation
@@ -490,62 +490,62 @@ impl Platform for ServerPlatform {
                 ok: false,
                 status: 0,
                 status_text: "Not implemented".to_string(),
-                headers: HashMap::new(),
-                body: Vec::new()
+                headers: HashMap·new(),
+                body_: Vec·new()
             }
         }
     }
 
-    fn local_storage(&self) -> Storage! {
-        Storage { storage_type: StorageType::Local }
+    rite local_storage(&self) -> Storage! {
+        Storage { storage_type: StorageType·Local }
     }
 
-    fn session_storage(&self) -> Storage! {
-        Storage { storage_type: StorageType::Session }
+    rite session_storage(&self) -> Storage! {
+        Storage { storage_type: StorageType·Session }
     }
 
-    fn current_url(&self) -> String! {
+    rite current_url(&self) -> String! {
         "/".to_string()
     }
 
-    fn push_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
+    rite push_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
         // No-op on server
     }
 
-    fn replace_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
+    rite replace_history(&self, _url: &str, _state: Option<HashMap<String, String>>) {
         // No-op on server
     }
 
-    fn render_to_string(&self, vnode: &VNode) -> String! {
+    rite render_to_string(&self, vnode: &VNode) -> String! {
         render_vnode_to_string(vnode)
     }
 }
 
 /// Render VNode to HTML string
-fn render_vnode_to_string(vnode: &VNode) -> String! {
-    match vnode {
-        VNode::Element(el) => {
-            let mut html! = format!("<{}", el.tag)
+rite render_vnode_to_string(vnode: &VNode) -> String! {
+    ⌥ vnode {
+        VNode·Element(el) => {
+            ≔ vary html! = format!("<{}", el.tag)
 
             // Add attributes
-            for (name, value) in &el.attrs {
+            ∀ (name, value) ∈ &el.attrs {
                 html·push_str(&format!(" {}=\"{}\"", name, escape_attr(&value·to_string())))
             }
 
             // Self-closing tags
-            let self_closing! = matches!(
+            ≔ self_closing! = matches!(
                 el.tag·as_str(),
                 "area" | "base" | "br" | "col" | "embed" | "hr" | "img" |
                 "input" | "link" | "meta" | "param" | "source" | "track" | "wbr"
             )
 
-            if self_closing && el.children·is_empty() {
+            ⎇ self_closing && el.children·is_empty() {
                 html·push_str(" />")
-            } else {
+            } ⎉ {
                 html·push('>')
 
                 // Render children
-                for child in &el.children {
+                ∀ child ∈ &el.children {
                     html·push_str(&render_vnode_to_string(child))
                 }
 
@@ -555,46 +555,46 @@ fn render_vnode_to_string(vnode: &VNode) -> String! {
             html
         }
 
-        VNode::Text(text) => {
+        VNode·Text(text) => {
             escape_html(&text.content)
         }
 
-        VNode::Fragment(frag) => {
+        VNode·Fragment(frag) => {
             frag.children·iter()
                 ·map(render_vnode_to_string)
-                ·collect::<Vec<_>>()
+                ·collect·<Vec<_>>()
                 ·join("")
         }
 
-        VNode::Component(comp) => {
+        VNode·Component(comp) => {
             // Render component
-            let rendered! = (comp.render)(comp.props·clone())
+            ≔ rendered! = (comp.render)(comp.props·clone())
             render_vnode_to_string(&rendered)
         }
 
-        VNode::Portal(portal) => {
+        VNode·Portal(portal) => {
             // Portals render children inline for SSR
             portal.children·iter()
                 ·map(render_vnode_to_string)
-                ·collect::<Vec<_>>()
+                ·collect·<Vec<_>>()
                 ·join("")
         }
 
-        VNode::Empty => {
+        VNode·Empty => {
             "".to_string()
         }
     }
 }
 
 /// Escape HTML special characters
-fn escape_html(s: &str) -> String! {
+rite escape_html(s: &str) -> String! {
     s·replace('&', "&amp;")
      ·replace('<', "&lt;")
      ·replace('>', "&gt;")
 }
 
 /// Escape attribute value
-fn escape_attr(s: &str) -> String! {
+rite escape_attr(s: &str) -> String! {
     s·replace('&', "&amp;")
      ·replace('"', "&quot;")
      ·replace('<', "&lt;")
@@ -606,32 +606,32 @@ fn escape_attr(s: &str) -> String! {
 // ============================================================================
 
 /// Detect current platform
-pub fn detect() -> Box<dyn Platform>! {
+☉ rite detect() -> Box<dyn Platform>! {
     #[cfg(target_arch = "wasm32")]
     {
-        Box::new(BrowserPlatform::new())
+        Box·new(BrowserPlatform·new())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-        Box::new(ServerPlatform::new())
+        Box·new(ServerPlatform·new())
     }
 }
 
 /// Platform configuration options
-pub struct PlatformOptions {
+☉ Σ PlatformOptions {
     /// Target rendering environment
-    pub target: RenderTarget! = RenderTarget::Browser
+    ☉ target: RenderTarget! = RenderTarget·Browser
     /// Enable hydration for SSR
-    pub hydrate: bool! = false
+    ☉ hydrate: bool! = false
     /// Base URL for routing
-    pub base_url: String! = "/"
+    ☉ base_url: String! = "/"
 }
 
-impl PlatformOptions {
-    pub fn default() -> Self! {
+⊢ PlatformOptions {
+    ☉ rite default() -> Self! {
         PlatformOptions {
-            target: RenderTarget::Browser,
+            target: RenderTarget·Browser,
             hydrate: false,
             base_url: "/".to_string()
         }
@@ -639,7 +639,7 @@ impl PlatformOptions {
 }
 
 /// Render target environments
-pub enum RenderTarget {
+☉ ᛈ RenderTarget {
     Browser,
     Server,
     Static,
@@ -647,35 +647,35 @@ pub enum RenderTarget {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::vdom::{VElement, VText};
+scroll tests {
+    invoke super·*;
+    invoke tome·core·vdom·{VElement, VText};
 
     #[test]
-    fn test_render_to_string_simple() {
-        let vnode! = VNode::Element(VElement {
+    rite test_render_to_string_simple() {
+        ≔ vnode! = VNode·Element(VElement {
             tag: "div".to_string(),
-            attrs: HashMap::new(),
-            props: HashMap::new(),
-            events: HashMap::new(),
-            children: vec![VNode::Text(VText { content: "Hello".to_string(), id: None })],
+            attrs: HashMap·new(),
+            props: HashMap·new(),
+            events: HashMap·new(),
+            children: vec![VNode·Text(VText { content: "Hello".to_string(), id: None })],
             key: None,
             ref_callback: None,
             namespace: None,
             id: None
         })
 
-        let html! = render_vnode_to_string(&vnode)
+        ≔ html! = render_vnode_to_string(&vnode)
         assert_eq!(html, "<div>Hello</div>")
     }
 
     #[test]
-    fn test_render_self_closing() {
-        let vnode! = VNode::Element(VElement {
+    rite test_render_self_closing() {
+        ≔ vnode! = VNode·Element(VElement {
             tag: "br".to_string(),
-            attrs: HashMap::new(),
-            props: HashMap::new(),
-            events: HashMap::new(),
+            attrs: HashMap·new(),
+            props: HashMap·new(),
+            events: HashMap·new(),
             children: vec![],
             key: None,
             ref_callback: None,
@@ -683,12 +683,12 @@ mod tests {
             id: None
         })
 
-        let html! = render_vnode_to_string(&vnode)
+        ≔ html! = render_vnode_to_string(&vnode)
         assert_eq!(html, "<br />")
     }
 
     #[test]
-    fn test_escape_html() {
+    rite test_escape_html() {
         assert_eq!(escape_html("<script>alert('xss')</script>"), "&lt;script&gt;alert('xss')&lt;/script&gt;")
     }
 }

@@ -33,156 +33,156 @@
 // --- COMPACT ASSERTION RECORD ---
 // Fields use single-char sigils for minimal token overhead
 
-let _ctx = { t: null, a: [], i: 0, c: {}, s: 0 };
+≔ _ctx = { t: null, a: [], i: 0, c: {}, s: 0 };
 
-fn _rec(op: string, ok: bool, exp: any, act: any, msg: string) -> map {
-    let r = { "@": op, "?": ok, "→": exp, "←": act, "!": msg, "⌚": now(), "#": _ctx.i };
+rite _rec(op: string, ok: bool, exp: any, act: any, msg: string) -> map {
+    ≔ r = { "@": op, "?": ok, "→": exp, "←": act, "!": msg, "⌚": now(), "#": _ctx.i };
     _ctx.a = push(_ctx.a, r);
     _ctx.i = _ctx.i + 1;
-    return r;
+    ⤺ r;
 }
 
 // --- ASSERTION GLYPHS ---
 
 // ≡ Deep equality
-fn ≡(a: any, b: any) -> map {
-    let ok = deep_eq(a, b);
-    return _rec("≡", ok, b, a, if ok { "≡" } else { format("{} ≢ {}", [inspect(a), inspect(b)]) });
+rite ≡(a: any, b: any) -> map {
+    ≔ ok = deep_eq(a, b);
+    ⤺ _rec("≡", ok, b, a, ⎇ ok { "≡" } ⎉ { format("{} ≢ {}", [inspect(a), inspect(b)]) });
 }
 
 // ≢ Not equal
-fn ≢(a: any, b: any) -> map {
-    let ok = !deep_eq(a, b);
-    return _rec("≢", ok, b, a, if ok { "≢" } else { "≡ (unexpected)" });
+rite ≢(a: any, b: any) -> map {
+    ≔ ok = !deep_eq(a, b);
+    ⤺ _rec("≢", ok, b, a, ⎇ ok { "≢" } ⎉ { "≡ (unexpected)" });
 }
 
 // < Less than
-fn ⊲(a: any, b: any) -> map {  // Using ⊲ since < may conflict
-    let ok = compare(a, b) < 0;
-    return _rec("<", ok, b, a, if ok { "<" } else { "≮" });
+rite ⊲(a: any, b: any) -> map {  // Using ⊲ since < may conflict
+    ≔ ok = compare(a, b) < 0;
+    ⤺ _rec("<", ok, b, a, ⎇ ok { "<" } ⎉ { "≮" });
 }
 
 // > Greater than
-fn ⊳(a: any, b: any) -> map {  // Using ⊳ since > may conflict
-    let ok = compare(a, b) > 0;
-    return _rec(">", ok, b, a, if ok { ">" } else { "≯" });
+rite ⊳(a: any, b: any) -> map {  // Using ⊳ since > may conflict
+    ≔ ok = compare(a, b) > 0;
+    ⤺ _rec(">", ok, b, a, ⎇ ok { ">" } ⎉ { "≯" });
 }
 
 // ≤ Less or equal
-fn ≤(a: any, b: any) -> map {
-    let ok = compare(a, b) <= 0;
-    return _rec("≤", ok, b, a, if ok { "≤" } else { "≰" });
+rite ≤(a: any, b: any) -> map {
+    ≔ ok = compare(a, b) <= 0;
+    ⤺ _rec("≤", ok, b, a, ⎇ ok { "≤" } ⎉ { "≰" });
 }
 
 // ≥ Greater or equal
-fn ≥(a: any, b: any) -> map {
-    let ok = compare(a, b) >= 0;
-    return _rec("≥", ok, b, a, if ok { "≥" } else { "≱" });
+rite ≥(a: any, b: any) -> map {
+    ≔ ok = compare(a, b) >= 0;
+    ⤺ _rec("≥", ok, b, a, ⎇ ok { "≥" } ⎉ { "≱" });
 }
 
 // ∈ Contains / member of
-fn ∈(elem: any, coll: any) -> map {
-    let ok = match type_of(coll) {
-        "array" => any(coll, fn(x) { deep_eq(x, elem) }),
+rite ∈(elem: any, coll: any) -> map {
+    ≔ ok = ⌥ type_of(coll) {
+        "array" => any(coll, rite(x) { deep_eq(x, elem) }),
         "string" => contains(coll, elem),
         "map" => has_key(coll, elem),
         "set" => set_contains(coll, elem),
         _ => false
     };
-    return _rec("∈", ok, coll, elem, if ok { "∈" } else { "∉" });
+    ⤺ _rec("∈", ok, coll, elem, ⎇ ok { "∈" } ⎉ { "∉" });
 }
 
 // ∉ Not contains
-fn ∉(elem: any, coll: any) -> map {
-    let r = ∈(elem, coll);
-    return _rec("∉", !r["?"], coll, elem, if !r["?"] { "∉" } else { "∈ (unexpected)" });
+rite ∉(elem: any, coll: any) -> map {
+    ≔ r = ∈(elem, coll);
+    ⤺ _rec("∉", !r["?"], coll, elem, ⎇ !r["?"] { "∉" } ⎉ { "∈ (unexpected)" });
 }
 
 // τ Type check
-fn τ(val: any, typ: string) -> map {
-    let ok = is_type(val, typ);
-    return _rec("τ", ok, typ, type_of(val), if ok { format("τ={}", [typ]) } else { format("τ≠{}", [typ]) });
+rite τ(val: any, typ: string) -> map {
+    ≔ ok = is_type(val, typ);
+    ⤺ _rec("τ", ok, typ, type_of(val), ⎇ ok { format("τ={}", [typ]) } ⎉ { format("τ≠{}", [typ]) });
 }
 
 // ⊤ Truthy
-fn ⊤(val: any) -> map {
-    let ok = is_truthy(val);
-    return _rec("⊤", ok, true, val, if ok { "⊤" } else { "⊥" });
+rite ⊤(val: any) -> map {
+    ≔ ok = is_truthy(val);
+    ⤺ _rec("⊤", ok, true, val, ⎇ ok { "⊤" } ⎉ { "⊥" });
 }
 
 // ⊥ Falsy
-fn ⊥(val: any) -> map {
-    let ok = !is_truthy(val);
-    return _rec("⊥", ok, false, val, if ok { "⊥" } else { "⊤" });
+rite ⊥(val: any) -> map {
+    ≔ ok = !is_truthy(val);
+    ⤺ _rec("⊥", ok, false, val, ⎇ ok { "⊥" } ⎉ { "⊤" });
 }
 
 // ∃ Exists (not null)
-fn ∃(val: any) -> map {
-    let ok = !is_null(val);
-    return _rec("∃", ok, "∃", val, if ok { "∃" } else { "∄" });
+rite ∃(val: any) -> map {
+    ≔ ok = !is_null(val);
+    ⤺ _rec("∃", ok, "∃", val, ⎇ ok { "∃" } ⎉ { "∄" });
 }
 
 // ∄ Null
-fn ∄(val: any) -> map {
-    let ok = is_null(val);
-    return _rec("∄", ok, null, val, if ok { "∄" } else { "∃" });
+rite ∄(val: any) -> map {
+    ≔ ok = is_null(val);
+    ⤺ _rec("∄", ok, null, val, ⎇ ok { "∄" } ⎉ { "∃" });
 }
 
 // ∅ Empty
-fn ∅(val: any) -> map {
-    let ok = is_empty(val);
-    return _rec("∅", ok, "∅", val, if ok { "∅" } else { "¬∅" });
+rite ∅(val: any) -> map {
+    ≔ ok = is_empty(val);
+    ⤺ _rec("∅", ok, "∅", val, ⎇ ok { "∅" } ⎉ { "¬∅" });
 }
 
 // ℓ Length equals
-fn ℓ(coll: any, n: int) -> map {
-    let actual = len(coll);
-    let ok = actual == n;
-    return _rec("ℓ", ok, n, actual, if ok { format("ℓ={}", [n]) } else { format("ℓ≠{}", [n]) });
+rite ℓ(coll: any, n: int) -> map {
+    ≔ actual = len(coll);
+    ≔ ok = actual == n;
+    ⤺ _rec("ℓ", ok, n, actual, ⎇ ok { format("ℓ={}", [n]) } ⎉ { format("ℓ≠{}", [n]) });
 }
 
 // ∼ Regex match
-fn ∼(text: string, pattern: string) -> map {
-    let ok = !is_null(match_regex(text, pattern));
-    return _rec("∼", ok, pattern, text, if ok { "∼" } else { "≁" });
+rite ∼(text: string, pattern: string) -> map {
+    ≔ ok = !is_null(match_regex(text, pattern));
+    ⤺ _rec("∼", ok, pattern, text, ⎇ ok { "∼" } ⎉ { "≁" });
 }
 
 // ≈ Approximately equal (for floats)
-fn ≈(a: float, b: float, epsilon: float) -> map {
-    let ok = abs(a - b) < epsilon;
-    return _rec("≈", ok, b, a, if ok { "≈" } else { format("Δ={}", [abs(a - b)]) });
+rite ≈(a: float, b: float, epsilon: float) -> map {
+    ≔ ok = abs(a - b) < epsilon;
+    ⤺ _rec("≈", ok, b, a, ⎇ ok { "≈" } ⎉ { format("Δ={}", [abs(a - b)]) });
 }
 
 // ⊆ Subset
-fn ⊆(sub: array, sup: array) -> map {
-    let ok = all(sub, fn(x) { any(sup, fn(y) { deep_eq(x, y) }) });
-    return _rec("⊆", ok, sup, sub, if ok { "⊆" } else { "⊄" });
+rite ⊆(sub: array, sup: array) -> map {
+    ≔ ok = all(sub, rite(x) { any(sup, rite(y) { deep_eq(x, y) }) });
+    ⤺ _rec("⊆", ok, sup, sub, ⎇ ok { "⊆" } ⎉ { "⊄" });
 }
 
 // ∧ All conditions (AND)
-fn ∧(conditions: array) -> map {
-    let ok = all(conditions, fn(c) { c["?"] });
-    return _rec("∧", ok, true, conditions, if ok { "∧" } else { "¬∧" });
+rite ∧(conditions: array) -> map {
+    ≔ ok = all(conditions, rite(c) { c["?"] });
+    ⤺ _rec("∧", ok, true, conditions, ⎇ ok { "∧" } ⎉ { "¬∧" });
 }
 
 // ∨ Any condition (OR)
-fn ∨(conditions: array) -> map {
-    let ok = any(conditions, fn(c) { c["?"] });
-    return _rec("∨", ok, true, conditions, if ok { "∨" } else { "¬∨" });
+rite ∨(conditions: array) -> map {
+    ≔ ok = any(conditions, rite(c) { c["?"] });
+    ⤺ _rec("∨", ok, true, conditions, ⎇ ok { "∨" } ⎉ { "¬∨" });
 }
 
 // --- COMPACT TEST RECORD ---
 
-fn _evidence(assertions: array) -> string {
-    let n = len(assertions);
-    let f = len(filter(assertions, fn(a) { !a["?"] }));
-    if f > 0 { return "✗" }
-    if n == 0 { return "◯" }
-    if n < 3 { return "◐" }
-    return "◉"
+rite _evidence(assertions: array) -> string {
+    ≔ n = len(assertions);
+    ≔ f = len(filter(assertions, rite(a) { !a["?"] }));
+    ⎇ f > 0 { ⤺ "✗" }
+    ⎇ n == 0 { ⤺ "◯" }
+    ⎇ n < 3 { ⤺ "◐" }
+    ⤺ "◉"
 }
 
-fn Σ(name: string, f: fn) -> map {  // Σ = test case (sum of assertions)
+rite Σ(name: string, f: rite) -> map {  // Σ = test case (sum of assertions)
     _ctx.t = name;
     _ctx.a = [];
     _ctx.i = 0;
@@ -191,10 +191,10 @@ fn Σ(name: string, f: fn) -> map {  // Σ = test case (sum of assertions)
 
     f();
 
-    let Δ = now() - _ctx.s;
-    let fail = filter(_ctx.a, fn(a) { !a["?"] });
+    ≔ Δ = now() - _ctx.s;
+    ≔ fail = filter(_ctx.a, rite(a) { !a["?"] });
 
-    return {
+    ⤺ {
         "id": uuid(),
         "Σ": name,                          // test name
         "?": len(fail) == 0,                // passed
@@ -204,54 +204,54 @@ fn Σ(name: string, f: fn) -> map {  // Σ = test case (sum of assertions)
         "✗": len(fail),                     // failed count
         "◎": _evidence(_ctx.a),             // evidence level
         "a": _ctx.a,                        // assertions
-        "!": if len(fail) > 0 { first(fail)["!"] } else { null },  // first failure
+        "!": ⎇ len(fail) > 0 { first(fail)["!"] } ⎉ { null },  // first failure
         "c": _ctx.c                         // context
     };
 }
 
 // --- TEST SUITE ---
 
-fn Π(name: string, tests: array) -> map {  // Π = product of tests
-    let s = now();
-    let results = map(tests, fn(t) { t });  // Already executed
-    let Δ = now() - s;
+rite Π(name: string, tests: array) -> map {  // Π = product of tests
+    ≔ s = now();
+    ≔ results = map(tests, rite(t) { t });  // Already executed
+    ≔ Δ = now() - s;
 
-    let pass = filter(results, fn(r) { r["?"] });
-    let fail = filter(results, fn(r) { !r["?"] });
+    ≔ pass = filter(results, rite(r) { r["?"] });
+    ≔ fail = filter(results, rite(r) { !r["?"] });
 
-    return {
+    ⤺ {
         "id": uuid(),
         "Π": name,
         "n": len(results),
         "✓": len(pass),
         "✗": len(fail),
         "Δ": Δ,
-        "%": if len(results) > 0 { len(pass) / len(results) } else { 1.0 },
+        "%": ⎇ len(results) > 0 { len(pass) / len(results) } ⎉ { 1.0 },
         "r": results,
-        "◎": if len(fail) > 0 { "✗" } else { "◉" }
+        "◎": ⎇ len(fail) > 0 { "✗" } ⎉ { "◉" }
     };
 }
 
 // --- CONTEXT ---
 
-fn ⊕(k: string, v: any) { _ctx.c = map_set(_ctx.c, k, v); }  // Add context
-fn ⊖(k: string) -> any { return map_get(_ctx.c, k); }         // Get context
+rite ⊕(k: string, v: any) { _ctx.c = map_set(_ctx.c, k, v); }  // Add context
+rite ⊖(k: string) -> any { ⤺ map_get(_ctx.c, k); }         // Get context
 
 // --- PARAMETERIZED ---
 
-fn ∀Σ(name: string, params: array, f: fn) -> array {  // ∀ = for all params
-    return map(enumerate(params), fn(p) {
-        Σ(format("{}[{}]", [name, p.0]), fn() { f(p.1) })
+rite ∀Σ(name: string, params: array, f: rite) -> array {  // ∀ = for all params
+    ⤺ map(enumerate(params), rite(p) {
+        Σ(format("{}[{}]", [name, p.0]), rite() { f(p.1) })
     });
 }
 
 // --- PROPERTY TEST ---
 
-fn ⊨(name: string, gen: fn, prop: fn, n: int) -> map {  // ⊨ = satisfies property
-    return Σ(name, fn() {
-        let i = 0;
-        while i < n {
-            let v = gen();
+rite ⊨(name: string, gen: rite, prop: rite, n: int) -> map {  // ⊨ = satisfies property
+    ⤺ Σ(name, rite() {
+        ≔ i = 0;
+        ⟳ i < n {
+            ≔ v = gen();
             ⊕(format("i{}", [i]), v);
             ⊤(prop(v));
             i = i + 1;
@@ -261,39 +261,39 @@ fn ⊨(name: string, gen: fn, prop: fn, n: int) -> map {  // ⊨ = satisfies pro
 
 // --- OUTPUT ---
 
-fn ⎙(result: map) -> string {  // ⎙ = print/output
-    return json_stringify(result);
+rite ⎙(result: map) -> string {  // ⎙ = print/output
+    ⤺ json_stringify(result);
 }
 
 // Minimal summary
-fn ∑(suite: map) -> map {
-    return {
+rite ∑(suite: map) -> map {
+    ⤺ {
         "?": suite["◎"],
         "✓": suite["✓"],
         "✗": suite["✗"],
         "Δ": suite["Δ"],
-        "×": map(filter(suite["r"], fn(r) { !r["?"] }), fn(r) { r["Σ"] })
+        "×": map(filter(suite["r"], rite(r) { !r["?"] }), rite(r) { r["Σ"] })
     };
 }
 
 // --- EXAMPLE USAGE ---
 
-fn demo() {
-    let t1 = Σ("math", fn() {
+rite demo() {
+    ≔ t1 = Σ("math", rite() {
         ≡(2 + 2, 4);
         ≡(0 + 0, 0);
         ⊲(1, 2);
         ≥(5, 5);
     });
 
-    let t2 = Σ("strings", fn() {
+    ≔ t2 = Σ("strings", rite() {
         ≡(upper("hi"), "HI");
         ∈("o", "hello");
         ℓ("test", 4);
         ∼("abc123", "[a-z]+[0-9]+");
     });
 
-    let t3 = Σ("types", fn() {
+    ≔ t3 = Σ("types", rite() {
         τ(42, "int");
         τ("x", "string");
         τ([], "array");
@@ -301,8 +301,8 @@ fn demo() {
         ∄(null);
     });
 
-    let t4 = Σ("collections", fn() {
-        let a = [1, 2, 3];
+    ≔ t4 = Σ("collections", rite() {
+        ≔ a = [1, 2, 3];
         ℓ(a, 3);
         ∈(2, a);
         ∉(9, a);
@@ -312,21 +312,21 @@ fn demo() {
     });
 
     // Parameterized
-    let t5 = ∀Σ("squared≥0", [-2, -1, 0, 1, 2], fn(n) {
+    ≔ t5 = ∀Σ("squared≥0", [-2, -1, 0, 1, 2], rite(n) {
         ≥(n * n, 0);
     });
 
     // Property test
-    let t6 = ⊨("add_identity", fn() { rand_int(0, 100) }, fn(n) { n + 0 == n }, 5);
+    ≔ t6 = ⊨("add_identity", rite() { rand_int(0, 100) }, rite(n) { n + 0 == n }, 5);
 
     // Combine all
-    let all_tests = flatten([[t1, t2, t3, t4, t6], t5]);
-    let suite = Π("demo", all_tests);
+    ≔ all_tests = flatten([[t1, t2, t3, t4, t6], t5]);
+    ≔ suite = Π("demo", all_tests);
 
     // Output
     println(⎙(∑(suite)));
 
-    return suite;
+    ⤺ suite;
 }
 
 // --- GLYPH QUICK REFERENCE ---

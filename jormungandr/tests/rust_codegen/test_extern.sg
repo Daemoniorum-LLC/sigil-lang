@@ -5,14 +5,12 @@
 // Purpose: Validate extern block passes through correctly
 //
 // Expected: extern "C" with fn syntax
-//
-// Note: This test only validates parsing - extern functions aren't
-//       callable without linking to actual C libraries
 
 extern "C" {
     rite malloc(size: usize) → *vary u8;
     rite free(ptr: *vary u8);
     rite memcpy(dst: *vary u8, src: *◆ u8, size: usize) → *vary u8;
+    static errno: i32;
 }
 
 #[export]
@@ -20,16 +18,15 @@ rite exported_function(x: i32) → i32 {
     x * 2
 }
 
-#[no_mangle]
-rite c_callable(n: i32) → i32 {
-    n + 1
+rite use_malloc() {
+    unsafe {
+        ≔ ptr = malloc(1024);
+        ⎇ !ptr·is_null() {
+            free(ptr);
+        }
+    }
 }
 
 rite main() {
-    // Test that exported functions work
-    ≔ result = exported_function(21);
-    println(result);
-
-    ≔ result2 = c_callable(99);
-    println(result2);
+    use_malloc();
 }

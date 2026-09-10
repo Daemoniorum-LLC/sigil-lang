@@ -161,13 +161,18 @@ fn block_comment_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
 }
 
 fn raw_string_delimited_callback(lex: &mut logos::Lexer<'_, Token>) -> Option<String> {
-    let remainder = lex.remainder();
+    // The opening delimiter fixes how many hashes close the literal: r#"…"#,
+    // r##"…"##, and so on. Only one hash used to be supported, so any content
+    // containing the sequence `"#` ended the literal early — a Sigil sample
+    // containing `App·mount("#preview-target", …)` closed at the `"#` inside its
+    // own argument, and the rest of the file was parsed as code.
+    let hashes = lex.slice().matches('#').count();
+    let close: String = std::iter::once('"').chain(std::iter::repeat('#').take(hashes)).collect();
 
-    // Find the closing "#
-    if let Some(end_pos) = remainder.find("\"#") {
+    let remainder = lex.remainder();
+    if let Some(end_pos) = remainder.find(&close) {
         let content = &remainder[..end_pos];
-        // Bump past content and closing "# (2 chars)
-        lex.bump(end_pos + 2);
+        lex.bump(end_pos + close.len());
         Some(content.to_string())
     } else {
         None
@@ -327,33 +332,17 @@ pub enum Token {
     // === Deprecated Rust Syntax ===
     // These tokens capture Rust-like syntax for helpful error messages
     // The parser maps these to Sigil equivalents in error messages
-    #[token("fn", |lex| lex.slice().to_string())]
-    #[token("let", |lex| lex.slice().to_string())]
-    #[token("mut", |lex| lex.slice().to_string())]
-    #[token("struct", |lex| lex.slice().to_string())]
-    #[token("enum", |lex| lex.slice().to_string())]
-    #[token("trait", |lex| lex.slice().to_string())]
-    #[token("impl", |lex| lex.slice().to_string())]
-    #[token("mod", |lex| lex.slice().to_string())]
-    #[token("use", |lex| lex.slice().to_string())]
-    #[token("pub", |lex| lex.slice().to_string())]
-    #[token("if", |lex| lex.slice().to_string())]
-    #[token("else", |lex| lex.slice().to_string())]
-    #[token("match", |lex| lex.slice().to_string())]
-    #[token("while", |lex| lex.slice().to_string())]
-    #[token("for", |lex| lex.slice().to_string())]
-    #[token("in", |lex| lex.slice().to_string())]
-    #[token("break", |lex| lex.slice().to_string())]
-    #[token("continue", |lex| lex.slice().to_string())]
-    #[token("return", |lex| lex.slice().to_string())]
+    // Deprecated Rust keywords - emit as deprecated for error messaging
+    // Note: All common Rust keywords are now handled as aliases for backwards compatibility.
+    // This variant is kept for future deprecation warnings if needed.
     DeprecatedRustKeyword(String),
 
     // Rust mutable reference &mut - use &Δ in Sigil
     #[token("&mut")]
     DeprecatedAmpMut,
 
-    // === Keywords (Native Sigil Syntax Only) ===
-    #[token("rite")]  // Rite - named function declaration (canonical Sigil keyword)
+    // === Keywords (Native Sigil Syntax) ===
+    #[token("rite")]  // Rite - named function declaration
     Fn,
     #[token("async")]
     #[token("⌛")]  // Hourglass - time/waiting (native symbol alternative)
@@ -362,6 +351,7 @@ pub enum Token {
     Let,
     #[token("Δ")]  // Delta - change/mutable
     #[token("vary")]  // Vary - mutable/changing (Sigil prose alternative)
+    #[token("mut")]  // G76: Rust-style mutable keyword for pointer types
     Mut,
     #[token("const")]
     #[token("◆")]  // Diamond - solid, fixed (native symbol alternative)
@@ -403,7 +393,7 @@ pub enum Token {
     #[token("macro_rules")]
     MacroRules,
 
-    // Control flow (Native Sigil Syntax Only)
+    // Control flow (Native Sigil Syntax)
     // Note: ∀ (ForAll token) is used contextually as `for` by parser
     // Note: ∈ (ElementOf token) is used contextually as `in` by parser
     // Note: ⊗ (Tensor token) is used contextually as `break` by parser
@@ -757,6 +747,9 @@ pub enum Token {
     #[token("◊")]
     Lozenge, // Predicted/speculative (U+25CA) - Token◊
 
+    #[token("⁂")]
+    Asterism, // Chaos/entropic (U+2042) - random⁂
+
     #[token("□")]
     BoxSquare, // Necessity/verification (U+25A1) - |□verify
 
@@ -874,7 +867,7 @@ pub enum Token {
     #[token("|")]
     Pipe,
     #[token("·")]
-    MiddleDot, // Incorporation
+    MiddleDot, // Incorporation / Path separator
     #[token("->")]
     #[token("→")]  // Unicode arrow (U+2192) - native Sigil syntax
     Arrow,
@@ -885,10 +878,13 @@ pub enum Token {
     #[token("==")]
     EqEq,
     #[token("!=")]
+    #[token("≠")] // ≠ — native symbol alternative
     NotEq,
     #[token("<=")]
+    #[token("≤")] // ≤ — native symbol alternative
     LtEq,
     #[token(">=")]
+    #[token("≥")] // ≥ — native symbol alternative
     GtEq,
     #[token("<")]
     Lt,
@@ -952,9 +948,6 @@ pub enum Token {
     DotDotEq,
     #[token("++")]
     PlusPlus, // Concatenation
-    // Deprecated Rust operator - use · (middledot) for paths
-    #[token("::")]
-    DeprecatedColonColon,
     #[token(":")]
     Colon,
     #[token(";")]
@@ -1162,8 +1155,9 @@ pub enum Token {
     })]
     RawStringLit(String),
 
-    // Raw string with delimiter (r#"..."# style) - handles internal quotes
-    #[token(r##"r#""##, raw_string_delimited_callback)]
+    // Raw string with delimiter (r#"..."#, r##"..."##, ... ) - handles internal
+    // quotes, and internal `"#` sequences when more hashes are used.
+    #[regex(r###"r#+""###, raw_string_delimited_callback)]
     RawStringDelimited(String),
 
     // === Lifetime/Label (for loop labels like 'outer: loop { break 'outer }) ===
@@ -1468,6 +1462,12 @@ impl Token {
 /// Lexer wrapping Logos for Sigil.
 pub struct Lexer<'a> {
     inner: logos::Lexer<'a, Token>,
+    /// Byte offset of `inner`'s source within the original source.
+    ///
+    /// Non-zero only after `split_greedy_aspect` re-lexes from a mid-source
+    /// position; every span is reported as `base + inner_span` so callers
+    /// always see absolute offsets into the original file.
+    base: usize,
     /// Buffer for lookahead tokens (supports multi-token peek)
     buffer: Vec<Option<(Token, Span)>>,
 }
@@ -1476,8 +1476,40 @@ impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
         Self {
             inner: Token::lexer(source),
+            base: 0,
             buffer: Vec::new(),
         }
+    }
+
+    /// Recover from an aspect marker that swallowed the head of a path segment.
+    ///
+    /// `·ed` (perfective) and `·ing` (progressive) are aspect markers, but logos
+    /// resolves ambiguity by longest match, so in `super·editor` the three bytes
+    /// `·ed` beat the one-character `·` and the rest lexes as `itor`. Any path
+    /// segment beginning "ed" or "ing" was affected — `·editor`, `·edit`,
+    /// `·ingest`, `·index` — and the damage was silent at the lexer level: the
+    /// parser reported a confusing "found AspectPerfective" much later.
+    ///
+    /// logos has no lookahead, so the boundary check happens here instead. When
+    /// an aspect marker is followed immediately by an identifier character it was
+    /// not an aspect marker at all: re-lex from just past the `·` and emit a
+    /// plain `MiddleDot`.
+    fn split_greedy_aspect(&mut self, start: usize, end: usize) -> Option<(Token, Span)> {
+        let src = self.inner.source();
+        let followed_by_ident = src[end..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        if !followed_by_ident {
+            return None;
+        }
+        let dot_len = '·'.len_utf8();
+        let resume = start + dot_len;
+        let abs_start = self.base + start;
+        self.base += resume;
+        self.inner = Token::lexer(&src[resume..]);
+        self.buffer.clear();
+        Some((Token::MiddleDot, Span::new(abs_start, abs_start + dot_len)))
     }
 
     /// Read the next token from the underlying logos lexer
@@ -1485,7 +1517,15 @@ impl<'a> Lexer<'a> {
         match self.inner.next() {
             Some(Ok(token)) => {
                 let span = self.inner.span();
-                Some((token, Span::new(span.start, span.end)))
+                if matches!(token, Token::AspectPerfective | Token::AspectProgressive) {
+                    if let Some(fixed) = self.split_greedy_aspect(span.start, span.end) {
+                        return Some(fixed);
+                    }
+                }
+                Some((
+                    token,
+                    Span::new(self.base + span.start, self.base + span.end),
+                ))
             }
             Some(Err(_)) => {
                 // Skip invalid tokens and try next
@@ -1520,7 +1560,10 @@ impl<'a> Lexer<'a> {
 
     pub fn span(&self) -> Span {
         let span = self.inner.span();
-        Span::new(span.start, span.end)
+        // `base` is non-zero once split_greedy_aspect has re-lexed; without it
+        // every span after that point would be reported relative to the resume
+        // position rather than the file.
+        Span::new(self.base + span.start, self.base + span.end)
     }
 }
 
@@ -1671,12 +1714,12 @@ mod tests {
     #[test]
     fn test_lifetime_labels() {
         // Test loop labels
-        let mut lexer = Lexer::new("'outer: loop { break 'outer }");
+        let mut lexer = Lexer::new("'outer: loop { ⊗ 'outer }");
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::Colon, _))));
         assert!(matches!(lexer.next_token(), Some((Token::Loop, _))));
         assert!(matches!(lexer.next_token(), Some((Token::LBrace, _))));
-        assert!(matches!(lexer.next_token(), Some((Token::DeprecatedRustKeyword(s), _)) if s == "break"));
+        assert!(matches!(lexer.next_token(), Some((Token::Tensor, _))));  // ⊗ is native Sigil break
         assert!(matches!(lexer.next_token(), Some((Token::Lifetime(s), _)) if s == "outer"));
         assert!(matches!(lexer.next_token(), Some((Token::RBrace, _))));
     }

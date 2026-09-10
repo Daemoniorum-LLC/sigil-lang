@@ -2,7 +2,7 @@
 //!
 //! Verifies SkillSystem, SkillProfile, SkillLevel, Exercise, and skill mechanics.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types
@@ -242,7 +242,7 @@ invoke std·collections·HashMap;
         }
     }
 
-    ☉ rite with_aspect(Δ self, aspect: &str) -> Self {
+    ☉ rite with_aspect(Δ self, aspect_: &str) -> Self {
         self.aspects.push(aspect.to_string());
         self
     }

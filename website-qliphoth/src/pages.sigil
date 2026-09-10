@@ -2,9 +2,9 @@
 //!
 //! Each page component corresponds to a route in the application.
 
-use qliphoth_ui::prelude::*;
-use sigil_web::prelude::*;
-use crate::components::*;
+invoke qliphoth_ui·prelude·*;
+invoke sigil_web·prelude·*;
+invoke crate·components·*;
 
 // =============================================================================
 // Home Page
@@ -12,7 +12,7 @@ use crate::components::*;
 
 /// The main landing page for sigil-lang.com
 #[component]
-pub fn Home() -> Element! {
+☉ rite Home() -> Element! {
     html! {
         <>
             <Hero />
@@ -35,14 +35,14 @@ pub fn Home() -> Element! {
 
 /// The problem comparison: Before/After
 #[component]
-fn ProblemSection() -> Element! {
-    let comparison_style! = "
+rite ProblemSection() -> Element! {
+    ≔ comparison_style! = "
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 2rem;
     ";
 
-    let rust_code! = r#"// This compiles in every mainstream language
+    ≔ rust_code! = r#"// This compiles in every mainstream language
 async fn get_user_profile(id: String) -> Profile {
     let response = http::get("/api/users/{id}").await;
     let profile: Profile = response.json();
@@ -56,7 +56,7 @@ async fn get_user_profile(id: String) -> Profile {
     profile
 }"#;
 
-    let sigil_code! = r#"async fn get_user_profile(id: Str) -> Profile! {
+    ≔ sigil_code! = r#"async fn get_user_profile(id: Str) -> Profile! {
     let response~ = http::get("/api/users/{id}").await;
     let profile~: Profile~ = response.json();
 
@@ -111,38 +111,38 @@ async fn get_user_profile(id: String) -> Profile {
 
 /// Evidentiality markers deep dive
 #[component]
-fn EvidentialitySection() -> Element! {
-    let grid_style! = "
+rite EvidentialitySection() -> Element! {
+    ≔ grid_style! = "
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 1.5rem;
         margin-bottom: 3rem;
     ";
 
-    let card_style! = "
+    ≔ card_style! = "
         background: #0c0c0f;
         border: 1px solid #1a1a1f;
         border-radius: 0.75rem;
         padding: 1.5rem;
     ";
 
-    let header_style! = "
+    ≔ header_style! = "
         display: flex;
         align-items: center;
         gap: 1rem;
         margin-bottom: 1rem;
     ";
 
-    let marker_style_known! = "font-size: 2rem; color: #14A088;";
-    let marker_style_uncertain! = "font-size: 2rem; color: #D4A017;";
-    let marker_style_reported! = "font-size: 2rem; color: #6B9BD1;";
-    let marker_style_paradox! = "font-size: 2rem; color: #D47171;";
+    ≔ marker_style_known! = "font-size: 2rem; color: #14A088;";
+    ≔ marker_style_uncertain! = "font-size: 2rem; color: #D4A017;";
+    ≔ marker_style_reported! = "font-size: 2rem; color: #6B9BD1;";
+    ≔ marker_style_paradox! = "font-size: 2rem; color: #D47171;";
 
-    let title_style! = "font-weight: 600; color: #e8e8ec;";
-    let subtitle_style! = "font-size: 0.875rem; color: #a0a0aa;";
-    let desc_style! = "color: #a0a0aa; font-size: 0.9375rem; margin-bottom: 1rem;";
+    ≔ title_style! = "font-weight: 600; color: #e8e8ec;";
+    ≔ subtitle_style! = "font-size: 0.875rem; color: #a0a0aa;";
+    ≔ desc_style! = "color: #a0a0aa; font-size: 0.9375rem; margin-bottom: 1rem;";
 
-    let code_style! = "
+    ≔ code_style! = "
         font-family: 'IBM Plex Mono', monospace;
         font-size: 0.8125rem;
         background: #030305;
@@ -151,7 +151,7 @@ fn EvidentialitySection() -> Element! {
         color: #e8e8ec;
     ";
 
-    let rule_style! = "
+    ≔ rule_style! = "
         background: #0c0c0f;
         border: 1px solid #1a1a1f;
         border-radius: 0.75rem;
@@ -238,8 +238,8 @@ let result~ = local * remote          // Known + Reported = Reported
 
 /// Morpheme operators section
 #[component]
-fn MorphemeSection() -> Element! {
-    let demo_style! = "
+rite MorphemeSection() -> Element! {
+    ≔ demo_style! = "
         background: #030305;
         border: 1px solid #1a1a1f;
         border-radius: 0.5rem;
@@ -250,13 +250,13 @@ fn MorphemeSection() -> Element! {
         line-height: 1.7;
     ";
 
-    let grid_style! = "
+    ≔ grid_style! = "
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 1rem;
     ";
 
-    let morpheme_code! = r#"let result = users~
+    ≔ morpheme_code! = r#"let result = users~
     |φ{.active}              // φ filter: keep active users
     |φ{.age >= 18}           // φ filter: adults only
     |τ{.normalize()}         // τ transform: normalize each
@@ -290,12 +290,12 @@ fn MorphemeSection() -> Element! {
 
 /// Agent infrastructure section
 #[component]
-fn AgentInfraSection() -> Element! {
-    let layer_group_style! = "
+rite AgentInfraSection() -> Element! {
+    ≔ layer_group_style! = "
         margin-bottom: 2rem;
     ";
 
-    let group_title_style! = "
+    ≔ group_title_style! = "
         font-size: 0.875rem;
         font-weight: 600;
         color: #14A088;
@@ -304,37 +304,37 @@ fn AgentInfraSection() -> Element! {
         margin-bottom: 1rem;
     ";
 
-    let layers_style! = "
+    ≔ layers_style! = "
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 1rem;
     ";
 
-    let layer_style! = "
+    ≔ layer_style! = "
         background: #0c0c0f;
         border: 1px solid #1a1a1f;
         border-radius: 0.5rem;
         padding: 1.25rem;
     ";
 
-    let layer_icon_style! = "
+    ≔ layer_icon_style! = "
         font-size: 1.5rem;
         margin-bottom: 0.5rem;
     ";
 
-    let layer_name_style! = "
+    ≔ layer_name_style! = "
         font-weight: 600;
         color: #e8e8ec;
         margin-bottom: 0.25rem;
     ";
 
-    let layer_subtitle_style! = "
+    ≔ layer_subtitle_style! = "
         font-size: 0.75rem;
         color: #14A088;
         margin-bottom: 0.5rem;
     ";
 
-    let layer_desc_style! = "
+    ≔ layer_desc_style! = "
         font-size: 0.875rem;
         color: #a0a0aa;
         line-height: 1.5;
@@ -431,7 +431,7 @@ fn AgentInfraSection() -> Element! {
             </div>
 
             <div style="text-align: center; margin-top: 2rem;">
-                <Button variant={ButtonVariant::Primary} href="/pages/agents.html">
+                <Button variant={ButtonVariant·Primary} href="/pages/agents.html">
                     "Explore Agent Infrastructure"
                 </Button>
             </div>
@@ -441,8 +441,8 @@ fn AgentInfraSection() -> Element! {
 
 /// The Pattern philosophy teaser
 #[component]
-fn PatternSection() -> Element! {
-    let quote_style! = "
+rite PatternSection() -> Element! {
+    ≔ quote_style! = "
         font-size: 1.25rem;
         font-style: italic;
         color: #a0a0aa;
@@ -452,24 +452,24 @@ fn PatternSection() -> Element! {
         max-width: 800px;
     ";
 
-    let grid_style! = "
+    ≔ grid_style! = "
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 2rem;
         margin-top: 2rem;
     ";
 
-    let item_style! = "
+    ≔ item_style! = "
         text-align: center;
     ";
 
-    let item_title_style! = "
+    ≔ item_title_style! = "
         font-weight: 600;
         color: #e8e8ec;
         margin-bottom: 0.5rem;
     ";
 
-    let item_desc_style! = "
+    ≔ item_desc_style! = "
         color: #a0a0aa;
         font-size: 0.9375rem;
     ";
@@ -501,7 +501,7 @@ fn PatternSection() -> Element! {
             </div>
 
             <div style="text-align: center; margin-top: 2rem;">
-                <Button variant={ButtonVariant::Secondary} href="/pages/pattern.html">
+                <Button variant={ButtonVariant·Secondary} href="/pages/pattern.html">
                     "Explore The Pattern"
                 </Button>
             </div>
@@ -511,37 +511,37 @@ fn PatternSection() -> Element! {
 
 /// Code density comparison
 #[component]
-fn CodeDensitySection() -> Element! {
-    let comparison_style! = "
+rite CodeDensitySection() -> Element! {
+    ≔ comparison_style! = "
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 2rem;
         margin-bottom: 2rem;
     ";
 
-    let metrics_style! = "
+    ≔ metrics_style! = "
         display: flex;
         justify-content: center;
         gap: 4rem;
         margin-bottom: 2rem;
     ";
 
-    let metric_style! = "
+    ≔ metric_style! = "
         text-align: center;
     ";
 
-    let metric_value_style! = "
+    ≔ metric_value_style! = "
         font-size: 3rem;
         font-weight: 700;
         color: #14A088;
     ";
 
-    let metric_label_style! = "
+    ≔ metric_label_style! = "
         font-size: 0.875rem;
         color: #a0a0aa;
     ";
 
-    let sigil_code! = r#"type Todo = struct { id: u64, text: Str, done: bool }
+    ≔ sigil_code! = r#"type Todo = struct { id: u64, text: Str, done: bool }
 type Store = struct { todos: Vec[Todo], next_id: u64 }
 
 impl Store {
@@ -566,7 +566,7 @@ impl Store {
     fn clear_done(&mut self) { self.todos |φ{!.done} }
 }"#;
 
-    let rust_code! = r#"struct Todo { id: u64, text: String, done: bool }
+    ≔ rust_code! = r#"struct Todo { id: u64, text: String, done: bool }
 struct Store { todos: Vec<Todo>, next_id: u64 }
 
 impl Store {
@@ -681,34 +681,34 @@ impl Store {
 
 /// Ecosystem section - Built on Sigil
 #[component]
-fn EcosystemSection() -> Element! {
-    let grid_style! = "
+rite EcosystemSection() -> Element! {
+    ≔ grid_style! = "
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 1.5rem;
     ";
 
-    let card_style! = "
+    ≔ card_style! = "
         background: #0c0c0f;
         border: 1px solid #1a1a1f;
         border-radius: 0.75rem;
         padding: 1.5rem;
     ";
 
-    let header_style! = "
+    ≔ header_style! = "
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 1rem;
     ";
 
-    let title_style! = "
+    ≔ title_style! = "
         font-size: 1.25rem;
         font-weight: 600;
         color: #e8e8ec;
     ";
 
-    let badge_style! = "
+    ≔ badge_style! = "
         font-size: 0.75rem;
         font-weight: 500;
         padding: 0.25rem 0.5rem;
@@ -717,19 +717,19 @@ fn EcosystemSection() -> Element! {
         border-radius: 0.25rem;
     ";
 
-    let desc_style! = "
+    ≔ desc_style! = "
         color: #a0a0aa;
         font-size: 0.9375rem;
         margin-bottom: 1rem;
     ";
 
-    let features_style! = "
+    ≔ features_style! = "
         list-style: none;
         padding: 0;
         margin: 0 0 1rem 0;
     ";
 
-    let feature_style! = "
+    ≔ feature_style! = "
         color: #a0a0aa;
         font-size: 0.875rem;
         padding: 0.25rem 0;
@@ -798,25 +798,25 @@ fn EcosystemSection() -> Element! {
 
 /// Get Started section
 #[component]
-fn GetStartedSection() -> Element! {
-    let steps_style! = "
+rite GetStartedSection() -> Element! {
+    ≔ steps_style! = "
         max-width: 600px;
         margin: 0 auto;
     ";
 
-    let step_style! = "
+    ≔ step_style! = "
         margin-bottom: 2rem;
         padding-left: 2rem;
         border-left: 2px solid #1a1a1f;
     ";
 
-    let step_title_style! = "
+    ≔ step_title_style! = "
         font-weight: 600;
         color: #e8e8ec;
         margin-bottom: 0.75rem;
     ";
 
-    let code_style! = "
+    ≔ code_style! = "
         background: #030305;
         border: 1px solid #1a1a1f;
         border-radius: 0.375rem;
@@ -827,13 +827,13 @@ fn GetStartedSection() -> Element! {
         margin-bottom: 0.5rem;
     ";
 
-    let note_style! = "
+    ≔ note_style! = "
         font-size: 0.875rem;
         color: #6c6c76;
         font-style: italic;
     ";
 
-    let actions_style! = "
+    ≔ actions_style! = "
         display: flex;
         gap: 1rem;
         justify-content: center;
@@ -861,10 +861,10 @@ fn GetStartedSection() -> Element! {
             </ol>
 
             <div style={actions_style}>
-                <Button variant={ButtonVariant::Primary} href="/pages/learn.html">
+                <Button variant={ButtonVariant·Primary} href="/pages/learn.html">
                     "Start the Tutorial"
                 </Button>
-                <Button variant={ButtonVariant::Secondary} href="/pages/playground.html">
+                <Button variant={ButtonVariant·Secondary} href="/pages/playground.html">
                     "Try in Browser"
                 </Button>
             </div>
@@ -874,13 +874,13 @@ fn GetStartedSection() -> Element! {
 
 /// Technical summary collapsible
 #[component]
-fn TechnicalSummarySection() -> Element! {
-    let section_style! = "
+rite TechnicalSummarySection() -> Element! {
+    ≔ section_style! = "
         background: #0a0a0d;
         padding: 2rem 0;
     ";
 
-    let details_style! = "
+    ≔ details_style! = "
         max-width: 800px;
         margin: 0 auto;
         background: #0c0c0f;
@@ -888,7 +888,7 @@ fn TechnicalSummarySection() -> Element! {
         border-radius: 0.5rem;
     ";
 
-    let summary_style! = "
+    ≔ summary_style! = "
         padding: 1rem 1.5rem;
         cursor: pointer;
         display: flex;
@@ -896,22 +896,22 @@ fn TechnicalSummarySection() -> Element! {
         gap: 0.75rem;
     ";
 
-    let content_style! = "
+    ≔ content_style! = "
         padding: 0 1.5rem 1.5rem;
     ";
 
-    let dl_style! = "
+    ≔ dl_style! = "
         display: grid;
         grid-template-columns: 1fr 2fr;
         gap: 0.75rem;
     ";
 
-    let dt_style! = "
+    ≔ dt_style! = "
         color: #a0a0aa;
         font-size: 0.875rem;
     ";
 
-    let dd_style! = "
+    ≔ dd_style! = "
         color: #e8e8ec;
         font-size: 0.875rem;
     ";
@@ -977,7 +977,7 @@ fn TechnicalSummarySection() -> Element! {
 // =============================================================================
 
 #[component]
-pub fn Learn() -> Element! {
+☉ rite Learn() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -992,7 +992,7 @@ pub fn Learn() -> Element! {
 }
 
 #[component]
-pub fn Docs() -> Element! {
+☉ rite Docs() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1007,7 +1007,7 @@ pub fn Docs() -> Element! {
 }
 
 #[component]
-pub fn Playground() -> Element! {
+☉ rite Playground() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1022,7 +1022,7 @@ pub fn Playground() -> Element! {
 }
 
 #[component]
-pub fn Agents() -> Element! {
+☉ rite Agents() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1037,7 +1037,7 @@ pub fn Agents() -> Element! {
 }
 
 #[component]
-pub fn Pattern() -> Element! {
+☉ rite Pattern() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1052,7 +1052,7 @@ pub fn Pattern() -> Element! {
 }
 
 #[component]
-pub fn Examples() -> Element! {
+☉ rite Examples() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1067,7 +1067,7 @@ pub fn Examples() -> Element! {
 }
 
 #[component]
-pub fn Contributing() -> Element! {
+☉ rite Contributing() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1082,7 +1082,7 @@ pub fn Contributing() -> Element! {
 }
 
 #[component]
-pub fn NotFound() -> Element! {
+☉ rite NotFound() -> Element! {
     html! {
         <Section>
             <SectionHeader
@@ -1090,7 +1090,7 @@ pub fn NotFound() -> Element! {
                 subtitle="The page you're looking for doesn't exist."
             />
             <div style="text-align: center; margin-top: 2rem;">
-                <Button variant={ButtonVariant::Primary} href="/">
+                <Button variant={ButtonVariant·Primary} href="/">
                     "Go Home"
                 </Button>
             </div>

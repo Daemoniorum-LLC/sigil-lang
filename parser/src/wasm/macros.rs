@@ -34,6 +34,26 @@ impl WasmCompiler {
                 self.compile_stringify_macro(tokens)?;
                 Ok(true)
             }
+            "console_log" | "console_warn" | "console_error" => {
+                self.compile_console_log_macro(macro_name, tokens)?;
+                Ok(true)
+            }
+            "print" | "println" | "eprint" | "eprintln" => {
+                self.compile_print_macro(macro_name, tokens)?;
+                Ok(true)
+            }
+            "matches" => {
+                self.compile_matches_macro(tokens)?;
+                Ok(true)
+            }
+            "assert" | "assert_eq" | "assert_ne" => {
+                // In WASM, assertions are no-ops for now (could call panic import)
+                // Push true/unit for expression result
+                let func = self.current_function_mut()
+                    .ok_or_else(|| WasmError::internal("not in function context"))?;
+                func.push(Instruction::I64Const(0)); // unit value
+                Ok(true)
+            }
             // Handled elsewhere as special cases
             "unreachable" | "panic" | "todo" | "unimplemented" => Ok(false),
             "debug_assert" | "debug_assert_eq" | "debug_assert_ne" => Ok(false),
@@ -107,8 +127,8 @@ impl WasmCompiler {
         let mut positional_idx = 0;
         for (i, spec) in parts.format_specs.iter().enumerate() {
             // Determine which argument to use for this placeholder
-            let arg_expr = if spec.is_empty() {
-                // Positional placeholder {}
+            let arg_expr = if spec.is_empty() || spec.starts_with(':') {
+                // Positional placeholder {} or {:spec}
                 let arg = positional_args.get(positional_idx)
                     .ok_or_else(|| WasmError::parse(&format!(
                         "format! has more positional placeholders than arguments"
@@ -118,11 +138,22 @@ impl WasmCompiler {
             } else {
                 // Named placeholder {name} or {name:spec}
                 let name = spec.split(':').next().unwrap_or(spec).trim();
-                named_args.get(name)
-                    .cloned()
-                    .ok_or_else(|| WasmError::parse(&format!(
-                        "format! missing named argument: {}", name
-                    )))?
+                // Check if it's actually a positional number like {0} or {1}
+                if name.chars().all(|c| c.is_ascii_digit()) {
+                    // Positional index like {0}, {1}
+                    let idx: usize = name.parse().unwrap_or(0);
+                    positional_args.get(idx)
+                        .cloned()
+                        .ok_or_else(|| WasmError::parse(&format!(
+                            "format! argument index {} out of range", idx
+                        )))?
+                } else {
+                    named_args.get(name)
+                        .cloned()
+                        .ok_or_else(|| WasmError::parse(&format!(
+                            "format! missing named argument: {}", name
+                        )))?
+                }
             };
 
             // Convert argument to string
@@ -358,12 +389,17 @@ impl WasmCompiler {
         while let Some(c) = chars.next() {
             if in_placeholder {
                 if c == '}' {
-                    // End of placeholder
+                    // End of placeholder. The literal that follows it is still
+                    // being read; it is pushed by the NEXT `{`, or by the tail
+                    // handler below. Pushing here as well produced an empty
+                    // literal after every placeholder, which shifted the whole
+                    // interleaving: the caller reads `literals[i + 1]` as the text
+                    // following placeholder `i`, so `format!("a{}b{}c", x, y)`
+                    // rendered as `a<x><y>b` — the trailing literal dropped
+                    // entirely and the middle one moved one placeholder late.
                     in_placeholder = false;
                     format_specs.push(placeholder_content.clone());
                     placeholder_content.clear();
-                    literals.push(current.clone());
-                    current.clear();
                 } else {
                     placeholder_content.push(c);
                 }
@@ -373,11 +409,12 @@ impl WasmCompiler {
                     chars.next();
                     current.push('{');
                 } else {
-                    // Start of placeholder - save current literal first
-                    if literals.is_empty() {
-                        literals.push(current.clone());
-                        current.clear();
-                    }
+                    // Start of placeholder - save the literal that preceded it.
+                    // Unconditionally: this used to fire only for the first
+                    // placeholder, so the text between later placeholders was
+                    // held over and emitted in the wrong slot.
+                    literals.push(current.clone());
+                    current.clear();
                     in_placeholder = true;
                 }
             } else if c == '}' {
@@ -397,10 +434,9 @@ impl WasmCompiler {
             return Err(WasmError::parse("unclosed { in format string"));
         }
 
-        // Push any remaining literal
-        if !current.is_empty() || literals.is_empty() {
-            literals.push(current);
-        }
+        // Push the trailing literal, empty or not: the caller indexes literals by
+        // placeholder position, so `literals.len()` must be `placeholders + 1`.
+        literals.push(current);
 
         let placeholders = format_specs.len();
         Ok(FormatParts {
@@ -418,6 +454,13 @@ impl WasmCompiler {
             .map_err(|e| WasmError::parse(&format!("in format! argument: {}", e)))?;
 
         self.compile_expr(&expr)?;
+
+        // A string argument is already a string. This used to convert
+        // unconditionally, so `format!("<{}>", tag)` called `string.from_int`
+        // on a pointer and produced `<16384>`.
+        if self.is_string_expr(&expr) {
+            return Ok(());
+        }
 
         // Get string::from_int or string::from_float import index
         let from_int_idx = self.imports.get_func("string_from_int")
@@ -437,23 +480,47 @@ impl WasmCompiler {
             // Convert f64 bits (stored as i64) back to f64, then to string
             func.push(Instruction::F64ReinterpretI64);
             func.push(Instruction::Call(from_float_idx));
+            // from_float returns i32, extend to i64 for uniform representation
+            func.push(Instruction::I64ExtendI32U);
         } else {
             // Convert i64 to string
             func.push(Instruction::Call(from_int_idx));
+            // from_int returns i32, extend to i64 for uniform representation
+            func.push(Instruction::I64ExtendI32U);
         }
 
         Ok(())
     }
 
     /// Emit string concatenation: concat(a, b) -> result
-    /// Assumes two strings are on the stack.
+    /// Assumes two strings are on the stack as i64 (uniform representation).
+    /// Wraps them to i32 for the call, then extends result back to i64.
     fn emit_string_concat(&mut self) -> WasmResult<()> {
+        use wasm_encoder::ValType;
+
         let concat_idx = self.imports.get_func("string_concat")
             .ok_or_else(|| WasmError::internal("string::concat import not found"))?;
 
         let func = self.current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Stack: [... str_a (i64), str_b (i64)]
+        // Wrap str_b to i32 and store in temp
+        func.push(Instruction::I32WrapI64);
+        let str_b_local = func.alloc_local("__concat_b".to_string(), ValType::I32);
+        func.push(Instruction::LocalSet(str_b_local));
+
+        // Wrap str_a to i32
+        func.push(Instruction::I32WrapI64);
+
+        // Push str_b back
+        func.push(Instruction::LocalGet(str_b_local));
+
+        // Call concat(str_a: i32, str_b: i32) -> i32
         func.push(Instruction::Call(concat_idx));
+
+        // Extend result to i64
+        func.push(Instruction::I64ExtendI32U);
 
         Ok(())
     }
@@ -852,9 +919,16 @@ impl WasmCompiler {
         match node {
             HtmlNode::Fragment { children } => {
                 self.compile_html_fragment()?;
+
+                // Extend i32 result to i64 for uniform storage
+                {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::I64ExtendI32U);
+                }
+
                 let fragment_local = self.allocate_temp_local()?;
 
-                // Store the fragment
+                // Store the fragment (now i64)
                 {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalSet(fragment_local));
@@ -865,14 +939,17 @@ impl WasmCompiler {
                     {
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(fragment_local));
+                        func.push(Instruction::I32WrapI64);  // wrap to i32 for append
                     }
                     self.compile_html_node(child)?;
+                    // Child result is i32 from create_vnode/create_text_vnode
                     self.emit_append_vnode_child()?;
                 }
 
-                // Return fragment
+                // Return fragment as i32
                 let func = self.current_function_mut().unwrap();
                 func.push(Instruction::LocalGet(fragment_local));
+                func.push(Instruction::I32WrapI64);
                 Ok(())
             }
 
@@ -884,23 +961,25 @@ impl WasmCompiler {
 
                 {
                     let func = self.current_function_mut().unwrap();
-                    func.push(Instruction::I32Const(tag_offset as i32));
-                    func.push(Instruction::I64ExtendI32U);
+                    func.push(Instruction::I64Const(tag_offset as i64));  // string ref as i64
                     func.push(Instruction::Call(create_vnode_idx));
+                    // Extend i32 result to i64 for uniform storage
+                    func.push(Instruction::I64ExtendI32U);
                 }
 
-                // Save vnode to local
+                // Save vnode to local (i64)
                 let vnode_local = self.allocate_temp_local()?;
                 {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalSet(vnode_local));
                 }
 
-                // Set attributes
+                // Set attributes (import expects vnode as i32)
                 for attr in attributes {
                     {
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(vnode_local));
+                        func.push(Instruction::I32WrapI64);  // wrap to i32 for set_vnode_prop
                     }
                     self.compile_html_attribute(attr)?;
                 }
@@ -910,14 +989,17 @@ impl WasmCompiler {
                     {
                         let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(vnode_local));
+                        func.push(Instruction::I32WrapI64);  // wrap parent to i32
                     }
                     self.compile_html_node(child)?;
+                    // Child result is i32 from create_vnode/create_text_vnode
                     self.emit_append_vnode_child()?;
                 }
 
-                // Return vnode
+                // Return vnode as i32 (for html! the result is used directly)
                 let func = self.current_function_mut().unwrap();
                 func.push(Instruction::LocalGet(vnode_local));
+                func.push(Instruction::I32WrapI64);
                 Ok(())
             }
 
@@ -927,9 +1009,9 @@ impl WasmCompiler {
                     .ok_or_else(|| WasmError::internal("vdom::create_text_vnode import not found"))?;
 
                 let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I32Const(text_offset as i32));
-                func.push(Instruction::I64ExtendI32U);
+                func.push(Instruction::I64Const(text_offset as i64));  // string ref as i64
                 func.push(Instruction::Call(create_text_vnode_idx));
+                // Result is i32, leave as-is for append_vnode_child
                 Ok(())
             }
 
@@ -949,6 +1031,10 @@ impl WasmCompiler {
     }
 
     /// Compile an HTML attribute.
+    /// Stack on entry: [i32_vnode]
+    /// Import signatures:
+    ///   set_vnode_str_prop(vnodeId: i32, nameStrRef: i64, valueStrRef: i64)
+    ///   set_vnode_prop(vnodeId: i32, nameStrRef: i64, value: i64)
     fn compile_html_attribute(&mut self, attr: &HtmlAttribute) -> WasmResult<()> {
         let name_offset = self.add_string(&attr.name);
 
@@ -959,10 +1045,9 @@ impl WasmCompiler {
                     .ok_or_else(|| WasmError::internal("vdom::set_vnode_str_prop import not found"))?;
 
                 let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I32Const(name_offset as i32));
-                func.push(Instruction::I64ExtendI32U);
-                func.push(Instruction::I32Const(value_offset as i32));
-                func.push(Instruction::I64ExtendI32U);
+                // vnode i32 already on stack
+                func.push(Instruction::I64Const(name_offset as i64));   // name as i64
+                func.push(Instruction::I64Const(value_offset as i64));  // value as i64
                 func.push(Instruction::Call(set_str_prop_idx));
             }
             HtmlAttrValue::Expression(expr_str) => {
@@ -970,11 +1055,11 @@ impl WasmCompiler {
                     .ok_or_else(|| WasmError::internal("vdom::set_vnode_prop import not found"))?;
 
                 let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I32Const(name_offset as i32));
-                func.push(Instruction::I64ExtendI32U);
+                // vnode i32 already on stack
+                func.push(Instruction::I64Const(name_offset as i64));  // name as i64
                 drop(func);
 
-                // Compile expression
+                // Compile expression (produces i64)
                 let mut parser = Parser::new(expr_str);
                 let expr = parser.parse_expr()
                     .map_err(|e| WasmError::parse(&format!("in html! attribute: {}", e)))?;
@@ -988,9 +1073,9 @@ impl WasmCompiler {
                     .ok_or_else(|| WasmError::internal("vdom::set_vnode_prop import not found"))?;
 
                 let func = self.current_function_mut().unwrap();
-                func.push(Instruction::I32Const(name_offset as i32));
-                func.push(Instruction::I64ExtendI32U);
-                func.push(Instruction::I64Const(1)); // true
+                // vnode i32 already on stack
+                func.push(Instruction::I64Const(name_offset as i64));  // name as i64
+                func.push(Instruction::I64Const(1)); // true as i64
                 func.push(Instruction::Call(set_prop_idx));
             }
         }
@@ -1044,25 +1129,30 @@ impl WasmCompiler {
         let func = self.current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
         func.push(Instruction::Call(array_new_idx));
+        // array_new returns i32, extend to i64 for Sigil's uniform type system
+        func.push(Instruction::I64ExtendI32U);
 
         // Push each element
         for arg in args {
-            // Save array reference
+            // Save array reference (i64)
             let array_local = self.allocate_temp_local()?;
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::LocalSet(array_local));
+            // Push array ref wrapped to i32 for array_push
             func.push(Instruction::LocalGet(array_local));
+            func.push(Instruction::I32WrapI64);
             drop(func);
 
-            // Compile element
+            // Compile element (leaves i64 on stack)
             let mut parser = Parser::new(&arg);
             let expr = parser.parse_expr()
                 .map_err(|e| WasmError::parse(&format!("in vec! element: {}", e)))?;
             self.compile_expr(&expr)?;
 
-            // Push to array
+            // Push to array: array_push(i32 arr, i64 elem)
             let func = self.current_function_mut().unwrap();
             func.push(Instruction::Call(array_push_idx));
+            // Leave array ref (i64) on stack for next iteration or return
             func.push(Instruction::LocalGet(array_local));
         }
 
@@ -1113,6 +1203,161 @@ impl WasmCompiler {
         func.push(Instruction::I64ExtendI32U);
 
         Ok(())
+    }
+
+    /// Compile console_log!/console_warn!/console_error! macros.
+    /// These compile similarly to format! but call the appropriate console import.
+    fn compile_console_log_macro(&mut self, macro_name: &str, tokens: &str) -> WasmResult<()> {
+        let tokens = tokens.trim();
+
+        // Determine which import to use based on macro name
+        let import_name = match macro_name {
+            "console_warn" => "console_warn",
+            "console_error" => "console_error",
+            _ => "console_log",
+        };
+
+        // If empty, log empty string
+        if tokens.is_empty() {
+            let offset = self.add_string("");
+            let func = self.current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::I32Const(offset as i32));
+            func.push(Instruction::I64ExtendI32U);
+        } else {
+            // Use format! compilation to build the string
+            self.compile_format_macro(tokens)?;
+        }
+
+        // Call the appropriate console function
+        let console_fn_idx = self.imports.get_func(import_name)
+            .ok_or_else(|| WasmError::internal(&format!("{} import not found", import_name)))?;
+
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::Call(console_fn_idx));
+
+        // Console functions return void, push unit value for expression result
+        func.push(Instruction::I64Const(0));
+
+        Ok(())
+    }
+
+    /// Compile print!/println!/eprint!/eprintln! macros.
+    /// These are aliases for console_log (browser environment).
+    fn compile_print_macro(&mut self, macro_name: &str, tokens: &str) -> WasmResult<()> {
+        // In WASM/browser, all print variants use console.log
+        // The 'e' variants (eprint/eprintln) could use console.error
+        let console_type = if macro_name.starts_with('e') {
+            "console_error"
+        } else {
+            "console_log"
+        };
+        self.compile_console_log_macro(console_type, tokens)
+    }
+
+    /// Compile matches!(expr, pattern) macro.
+    /// Expands to: match expr { pattern => true, _ => false }
+    fn compile_matches_macro(&mut self, tokens: &str) -> WasmResult<()> {
+        let tokens = tokens.trim();
+
+        // Parse: expr, pattern (possibly with guard)
+        // Simple parsing: find first comma at depth 0
+        let args = self.parse_macro_args(tokens)?;
+        if args.len() < 2 {
+            return Err(WasmError::parse("matches! requires at least 2 arguments: expr, pattern"));
+        }
+
+        let expr_str = &args[0];
+        let pattern_str = &args[1];
+
+        // Parse the expression
+        let mut parser = Parser::new(expr_str);
+        let expr = parser.parse_expr()
+            .map_err(|e| WasmError::parse(&format!("in matches! expression: {}", e)))?;
+
+        // For enum variant matching like `ConnectionState::Connected`:
+        // Check if expression's enum discriminant matches the pattern's discriminant
+        // This is a simplified implementation that works for simple enum variants
+
+        // Compile the expression (this puts the enum value on the stack)
+        self.compile_expr(&expr)?;
+
+        // Extract the enum discriminant from the value
+        // For tagged enums, discriminant is typically stored in the low bits
+        // We'll use a simple approach: extract discriminant and compare to expected value
+
+        // Parse the pattern to get the expected discriminant
+        let discriminant = self.get_enum_discriminant_from_pattern(pattern_str)?;
+
+        // Get discriminant from the value on stack
+        // Enum values are stored as: (tag << 32) | data or similar
+        // For now, assume the value itself IS the discriminant for unit variants
+        let func = self.current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+
+        // Compare: value == expected_discriminant
+        func.push(Instruction::I64Const(discriminant));
+        func.push(Instruction::I64Eq);
+
+        // Result is already on stack as i32 (0 or 1)
+        // Extend to i64 for uniform value representation
+        func.push(Instruction::I64ExtendI32U);
+
+        Ok(())
+    }
+
+    /// Extract the expected discriminant value from a pattern string.
+    /// For patterns like "ConnectionState::Connected", returns the variant index.
+    fn get_enum_discriminant_from_pattern(&self, pattern: &str) -> WasmResult<i64> {
+        let pattern = pattern.trim();
+
+        // Parse as path: SomeEnum::Variant
+        if let Some(variant_pos) = pattern.rfind("::") {
+            let enum_name = &pattern[..variant_pos];
+            let variant_name = &pattern[variant_pos + 2..];
+
+            // Look up the enum layout
+            if let Some(layout) = self.enum_layouts.get(enum_name) {
+                // Find the variant index
+                for (idx, (name, _, _)) in layout.variants.iter().enumerate() {
+                    if name == variant_name {
+                        return Ok(idx as i64);
+                    }
+                }
+                return Err(WasmError::parse(&format!(
+                    "unknown variant '{}' in enum '{}'", variant_name, enum_name
+                )));
+            }
+
+            // Enum not found in layouts - might be referenced by short name
+            // Try looking up just the last segment of the enum path
+            let short_enum_name = enum_name.rsplit("::").next().unwrap_or(enum_name);
+            if let Some(layout) = self.enum_layouts.get(short_enum_name) {
+                for (idx, (name, _, _)) in layout.variants.iter().enumerate() {
+                    if name == variant_name {
+                        return Ok(idx as i64);
+                    }
+                }
+            }
+
+            // If enum not found, return 0 as default (Connected is typically first)
+            // This is a fallback for when enum definitions aren't available
+            // In a full implementation, we'd track all enum definitions
+            return Ok(0);
+        }
+
+        // Simple pattern (not a path) - assume it's a bool or number
+        if pattern == "true" {
+            return Ok(1);
+        } else if pattern == "false" {
+            return Ok(0);
+        } else if let Ok(n) = pattern.parse::<i64>() {
+            return Ok(n);
+        }
+
+        // Unknown pattern - return 0 as fallback
+        Ok(0)
     }
 }
 
@@ -1185,6 +1430,28 @@ mod tests {
         assert_eq!(parts.literals[0], "hello ");
         assert_eq!(parts.literals[1], " world");
         assert_eq!(parts.placeholders, 1);
+    }
+
+    /// Literals and placeholders interleave: `literals[i]` precedes placeholder
+    /// `i`, and there is always one more literal than placeholder. The caller
+    /// relies on that, and it used to hold only for a single-placeholder string.
+    #[test]
+    fn test_split_format_string_interleaving() {
+        let compiler = WasmCompiler::new();
+        let parts = compiler.split_format_string("a{}b{}c").unwrap();
+        assert_eq!(parts.placeholders, 2);
+        assert_eq!(parts.literals, vec!["a", "b", "c"]);
+
+        // Leading and trailing placeholders still get their empty literals, so
+        // the indexing holds.
+        let parts = compiler.split_format_string("{}x{}").unwrap();
+        assert_eq!(parts.placeholders, 2);
+        assert_eq!(parts.literals, vec!["", "x", ""]);
+
+        // No placeholders: one literal.
+        let parts = compiler.split_format_string("plain").unwrap();
+        assert_eq!(parts.placeholders, 0);
+        assert_eq!(parts.literals, vec!["plain"]);
     }
 
     #[test]

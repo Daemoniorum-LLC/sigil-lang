@@ -1,0 +1,61 @@
+// G52: BPE pair counter test
+
+Σ PairCount { left: i64, right: i64, count: i64 }
+⊢ PairCount {
+    rite new(l: i64, r: i64) → Self {
+        Self { left: l, right: r, count: 1 }
+    }
+}
+
+Σ PairCounter { pairs: Vec<PairCount> }
+⊢ PairCounter {
+    rite new() → Self { Self { pairs: vec![] } }
+
+    rite add(&vary this, l: i64, r: i64) {
+        ≔ vary found = false;
+        ∀ i ∈ 0..this.pairs.len() {
+            ⎇ this.pairs[i].left == l && this.pairs[i].right == r {
+                this.pairs[i].count += 1;
+                found = true;
+            } ⎉ {}
+        }
+        ⎇ !found { this.pairs.push(PairCount·new(l, r)); } ⎉ {}
+    }
+
+    rite best(&this) → (i64, i64, i64) {
+        ⎇ this.pairs.len() == 0 { ⤺ (-1, -1, 0); } ⎉ {}
+        ≔ vary bi = 0;
+        ≔ vary bc = this.pairs[0].count;
+        ∀ i ∈ 1..this.pairs.len() {
+            ⎇ this.pairs[i].count > bc { bi = i; bc = this.pairs[i].count; } ⎉ {}
+        }
+        ≔ b = &this.pairs[bi];
+        (b.left, b.right, b.count)
+    }
+}
+
+rite main() {
+    println!("Creating pair counter...");
+    ≔ vary counter = PairCounter·new();
+
+    // Simulate token stream: "AABCAB" = [65, 65, 66, 67, 65, 66]
+    ≔ tokens = vec![65, 65, 66, 67, 65, 66];
+    println!("Tokens: {} items", tokens.len());
+
+    println!("Counting pairs...");
+    ∀ i ∈ 0..(tokens.len() - 1) {
+        counter.add(tokens[i], tokens[i+1]);
+    }
+
+    println!("Found {} unique pairs", counter.pairs.len());
+    ∀ i ∈ 0..counter.pairs.len() {
+        ≔ p = &counter.pairs[i];
+        println!("  ({}, {}) = {}", p.left, p.right, p.count);
+    }
+
+    println!("Best pair...");
+    ≔ (bl, br, bc) = counter.best();
+    println!("Best: ({}, {}) with count {}", bl, br, bc);
+
+    println!("Done!");
+}

@@ -3,7 +3,7 @@ rite identity(x: i64) -> i64 {
     ≔ result: i64 = 0;
     unsafe {
         asm!("mov rax, rdi",
-            in("rdi") x,
+            ∈("rdi") x,
             out("rax") result,
             options(nostack));
     }

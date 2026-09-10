@@ -526,6 +526,7 @@ pub enum Evidentiality {
     Uncertain, // ? - unverified input
     Reported,  // ~ - EMA, eventually consistent
     Predicted, // ◊ - model output, speculative
+    Chaos,     // ⁂ - intentional randomness, entropic
     Paradox,   // ‽ - contradiction detected
 }
 
@@ -944,7 +945,7 @@ pub struct ConstDef {
     pub doc_comments: Vec<DocComment>,
     pub visibility: Visibility,
     pub name: Ident,
-    pub ty: TypeExpr,
+    pub ty: Option<TypeExpr>,
     pub value: Expr,
 }
 
@@ -968,6 +969,7 @@ pub struct ActorDef {
     pub generics: Option<Generics>,
     pub state: Vec<FieldDef>,
     pub handlers: Vec<MessageHandler>,
+    pub methods: Vec<Function>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1961,4 +1963,17 @@ pub struct MatchArm {
 pub struct ClosureParam {
     pub pattern: Pattern,
     pub ty: Option<TypeExpr>,
+}
+
+impl Expr {
+    /// Look through `&`, `&mut` and `*` to the expression underneath.
+    pub fn strip_refs(&self) -> &Expr {
+        match self {
+            Expr::Unary { op: UnaryOp::Ref | UnaryOp::RefMut | UnaryOp::Deref, expr } => {
+                expr.strip_refs()
+            }
+            Expr::AddrOf { expr, .. } => expr.strip_refs(),
+            other => other,
+        }
+    }
 }

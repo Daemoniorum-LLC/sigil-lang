@@ -63,7 +63,7 @@ invoke super·{sys_mmap, sys_munmap, sys_mremap, MREMAP_MAYMOVE};
 
 /// Node ∈ the free list (overlays freed allocation)
 Σ FreeNode {
-    header: AllocHeader,
+    header_: AllocHeader,
     next: *vary FreeNode,
 }
 
@@ -202,7 +202,7 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
 
     // Try current chunks
     unsafe {
-        vary chunk = ALLOCATOR.chunks;
+        ≔ vary chunk = ALLOCATOR.chunks;
         ⌥ chunk as usize != 0 {
             ⎇ ≔ Some(ptr) = (*chunk).try_alloc(size) {
                 ALLOCATOR.total_allocated += size;
@@ -270,8 +270,8 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
 
     // Check ⎇ this is a large allocation that can invoke mremap
     unsafe {
-        ≔ header = (ptr as *u8).offset(-(size_of·<AllocHeader>() as isize)) as *AllocHeader;
-        ⎇ (*header).is_large() {
+        ≔ header_ = (ptr as *u8).offset(-(size_of·<AllocHeader>() as isize)) as *AllocHeader;
+        ⎇ (*header_).is_large() {
             // Try mremap
             ≔ old_total = (*header).total_size();
             ≔ new_total = size_of·<AllocHeader>() + new_size;
@@ -312,7 +312,7 @@ static vary ALLOCATOR: GlobalAlloc = GlobalAlloc {
     }
 
     unsafe {
-        ≔ header = (ptr as *u8).offset(-(size_of·<AllocHeader>() as isize)) as *vary AllocHeader;
+        ≔ header_ = (ptr as *u8).offset(-(size_of·<AllocHeader>() as isize)) as *vary AllocHeader;
 
         // Validate magic (debug)
         ⎇ (*header).magic != ALLOC_MAGIC {
@@ -358,10 +358,10 @@ rite alloc_large(size: usize) -> Result<*vary u8, SyscallError>! {
     )?;
 
     unsafe {
-        ≔ header = mem as *vary AllocHeader;
-        (*header).size = size;
-        (*header).flags = ALLOC_FLAG_LARGE;
-        (*header).magic = ALLOC_MAGIC;
+        ≔ header_ = mem as *vary AllocHeader;
+        (*header_).size = size;
+        (*header_).flags = ALLOC_FLAG_LARGE;
+        (*header_).magic = ALLOC_MAGIC;
 
         ALLOCATOR.total_allocated += size;
         Ok(mem.offset(size_of·<AllocHeader>() as isize))
@@ -371,8 +371,8 @@ rite alloc_large(size: usize) -> Result<*vary u8, SyscallError>! {
 /// Try to allocate from the free list
 rite try_alloc_from_free_list(size: usize) -> ?*vary u8 {
     unsafe {
-        vary prev: *vary FreeNode = null as *vary FreeNode;
-        vary curr = ALLOCATOR.free_list;
+        ≔ vary prev: *vary FreeNode = null as *vary FreeNode;
+        ≔ vary curr = ALLOCATOR.free_list;
 
         ⌥ curr as usize != 0 {
             ⎇ (*curr).header.size >= size {
@@ -410,7 +410,7 @@ rite size_of<T>() -> usize! {
 
 /// Simple memset (should be compiler intrinsic)
 unsafe rite memset(dst: *vary u8, val: u8, count: usize) {
-    vary i: usize = 0;
+    ≔ vary i: usize = 0;
     ⌥ i < count {
         *dst.offset(i as isize) = val;
         i += 1;
@@ -419,7 +419,7 @@ unsafe rite memset(dst: *vary u8, val: u8, count: usize) {
 
 /// Simple memcpy (should be compiler intrinsic)
 unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
-    vary i: usize = 0;
+    ≔ vary i: usize = 0;
     ⌥ i < count {
         *dst.offset(i as isize) = *src.offset(i as isize);
         i += 1;
@@ -440,8 +440,8 @@ unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
 /// Get number of chunks allocated
 ☉ rite alloc_chunk_count() -> usize! {
     unsafe {
-        vary count: usize = 0;
-        vary chunk = ALLOCATOR.chunks;
+        ≔ vary count: usize = 0;
+        ≔ vary chunk = ALLOCATOR.chunks;
         ⌥ chunk as usize != 0 {
             count += 1;
             chunk = (*chunk).next;
@@ -453,8 +453,8 @@ unsafe rite memcpy(dst: *vary u8, src: *u8, count: usize) {
 /// Get number of entries ∈ free list
 ☉ rite alloc_free_list_count() -> usize! {
     unsafe {
-        vary count: usize = 0;
-        vary node = ALLOCATOR.free_list;
+        ≔ vary count: usize = 0;
+        ≔ vary node = ALLOCATOR.free_list;
         ⌥ node as usize != 0 {
             count += 1;
             node = (*node).next;

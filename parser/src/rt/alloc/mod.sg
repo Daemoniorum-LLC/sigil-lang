@@ -3,8 +3,8 @@
 // Provides memory allocation without malloc/free from libc.
 // Uses mmap syscall for memory acquisition.
 
-pub mod arena;
-pub mod global;
+☉ scroll arena;
+☉ scroll global;
 
-pub use arena·Arena;
-pub use global·{init_allocator, sigil_alloc, sigil_free, sigil_realloc};
+☉ invoke arena·Arena;
+☉ invoke global·{init_allocator, sigil_alloc, sigil_free, sigil_realloc};

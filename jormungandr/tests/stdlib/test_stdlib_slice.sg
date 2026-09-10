@@ -1,20 +1,29 @@
-// Stdlib Tests: slice
-// Slice operations with REAL assertions
+// Stdlib Tests: slicing
+//
+// Sigil slices with range indexing, `a[start..end]`. The old test called Rust's
+// `slice·from_raw_parts`, which was unreachable (a lowercase path root does not
+// resolve) and whose shim ignored its offset anyway — the test's own comment said
+// "Still returns full array". Range indexing actually slices.
 
 rite main() {
-    println("=== Testing slice ===");
+    println("=== Testing slicing ===");
 
-    // slice·from_raw_parts - returns view into array
-    // Second arg appears to be start offset, returns full array from offset
-    ≔ s = slice·from_raw_parts([1, 2, 3, 4, 5], 0);
-    assert_eq(len(s), 5);
-    assert_eq(s[0], 1);
-    assert_eq(s[4], 5);
+    ≔ a = [1, 2, 3, 4, 5];
 
-    // slice with offset
-    ≔ s2 = slice·from_raw_parts([10, 20, 30, 40, 50], 2);
-    assert_eq(len(s2), 5);  // Still returns full array
-    assert_eq(s2[0], 10);
+    ≔ whole = a[0..5];
+    assert_eq(len(whole), 5);
+    assert_eq(whole[0], 1);
+    assert_eq(whole[4], 5);
+
+    // An offset really does offset, which the old shim did not
+    ≔ tail = a[2..5];
+    assert_eq(len(tail), 3);
+    assert_eq(tail[0], 3);
+    assert_eq(tail[2], 5);
+
+    ≔ middle = a[1..4];
+    assert_eq(len(middle), 3);
+    assert_eq(middle[0], 2);
 
     println("ALL SLICE TESTS PASSED!");
 }

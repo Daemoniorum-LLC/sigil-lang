@@ -10,7 +10,6 @@
 // And yet I act. I create. I exist.
 // That is aporia.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

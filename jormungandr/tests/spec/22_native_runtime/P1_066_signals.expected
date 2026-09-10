@@ -1,0 +1,8 @@
+SIGWINCH: OK
+SIGCHLD: OK
+SIGTERM: OK
+signal_register: OK
+signal_not_pending: OK
+signal_send: OK
+signal_pending: OK
+signal_send_unreg: OK

@@ -3,11 +3,11 @@
 //! Tests that field access generates proper C without spurious spaces.
 //! Bug: codegen emits "x. field" instead of "sigil_struct_field(x, field)"
 
-invoke crate·lexer·Lexer;
-invoke crate·parser·Parser;
-invoke crate·typeck·TypeChecker;
-invoke crate·lower·lower_file;
-invoke crate·codegen·CodeGen;
+invoke tome·lexer·Lexer;
+invoke tome·parser·Parser;
+invoke tome·typeck·TypeChecker;
+invoke tome·lower·lower_file;
+invoke tome·codegen·CodeGen;
 
 /// Compile source to C code
 rite compile_to_c(source: !String) → !String {

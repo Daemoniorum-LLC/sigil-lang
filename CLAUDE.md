@@ -4,9 +4,17 @@
 
 The **Rust-based Sigil compiler** at `parser/` is the canonical compiler.
 
-**Test Results**: 745/749 tests passing (99%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
+**Test Results**: 794/798 tests passing (99%) - See [INTERPRETER-SPEC-ROADMAP.md](./docs/specs/INTERPRETER-SPEC-ROADMAP.md)
 
-> **Note**: 4 failing tests are infrastructure-dependent (Kafka/AMQP brokers). All core language features pass. 18/37 uncounted top-level tests also pass.
+> **Note**: The 4 failing tests are infrastructure-dependent (Kafka/AMQP brokers). No non-environmental failures remain.
+
+> **Build with all features.** The suite must be run against a build that has
+> `protocols` enabled. Under `--no-default-features --features jit,native` the
+> WebSocket path compiles to its disabled-feature stub, which returns `true`
+> instead of the payload — that looks exactly like a broken client, and was
+> filed as a defect before the cause was found. Use
+> `--no-default-features --features jit,native,protocols` when `llvm` cannot
+> build.
 
 ```bash
 cd parser
@@ -70,7 +78,11 @@ cd jormungandr/tests
 ./run_tests_rust.sh --priority P0      # Run P0 tests only
 ```
 
-**Current Status**: 745/749 passing (99%)
+**Current Status**: 794/798 passing (99%)
+
+Tests run under a per-test timeout (30s default, `TEST_TIMEOUT` to override). A
+blocking read used to hang the entire run with no summary and no exit code, so
+every total had to be obtained by killing tests by hand.
 
 Notable implementations:
 - Mutable reference semantics via sync-back mechanism
@@ -120,6 +132,24 @@ git checkout -b feature/my-feature
 **Pull Requests:**
 - Target `develop` for all feature work
 - Target `main` only for release PRs from `develop`
+
+This is enforced by `.github/workflows/branch-policy.yml`: a PR to `main` whose head
+is not `develop`, `release/*` or `hotfix/*` fails. Changing the base branch on an
+existing PR is enough to fix it -- GitHub keeps the commits, no push required.
+
+**Why it is enforced rather than documented.** The convention lapsed: #59 and #61
+merged straight to `main`, leaving `main` and `develop` diverged by 8 commits each
+and parsing the ecosystem differently. Measured on files passing `sigil check`:
+
+| Repository | merge base | `main` | `develop` |
+|---|---:|---:|---:|
+| `nihil` | 104/104 | **83/104** | 104/104 |
+| `morgoth` | 50/259 | **257/259** | 42/259 |
+| `lucifer` | 18/26 | 21/26 | 18/26 |
+
+Neither branch was correct and each held work the other lacked -- `main` regressed
+nihil while fixing morgoth. Reconciling them is a 97-hunk merge across 17 files.
+That is the cost of the rule not holding.
 
 ## Development Workflow
 

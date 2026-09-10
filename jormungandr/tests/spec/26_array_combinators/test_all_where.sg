@@ -1,0 +1,32 @@
+// Test: all_where — true if every element satisfies predicate
+// Spec: 09A-ARRAY-COMBINATORS.md § 3.3
+// Priority: P1
+
+rite main() {
+    // All match
+    println(all_where([2, 4, 6], |x| x % 2 == 0));   // true
+
+    // One doesn't match
+    println(all_where([2, 3, 6], |x| x % 2 == 0));   // false
+
+    // None match
+    println(all_where([1, 3, 5], |x| x % 2 == 0));   // false
+
+    // Empty array → true (vacuous: no element violates)
+    println(all_where([], |x| false));                // true
+
+    // Single element matches
+    println(all_where([42], |x| x == 42));            // true
+
+    // Single element doesn't match
+    println(all_where([42], |x| x == 0));             // false
+
+    // Relationship with any_where: all ↔ negated any of negated predicate
+    ≔ arr = [2, 4, 6];
+    ≔ all_even = all_where(arr, |x| x % 2 == 0);
+    ≔ any_odd  = any_where(arr, |x| x % 2 != 0);
+    println(all_even);   // true
+    println(any_odd);    // false
+
+    println("PASS");
+}

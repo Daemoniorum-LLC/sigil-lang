@@ -6,7 +6,6 @@
 // Where teaching costs and learning wounds.
 // Where the gift cannot be ungiven.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

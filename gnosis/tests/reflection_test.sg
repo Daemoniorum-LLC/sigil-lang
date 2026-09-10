@@ -2,7 +2,7 @@
 //!
 //! Verifies ReflectionSystem, Reflection, insights, and growth measurement.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types
@@ -22,7 +22,7 @@ invoke std·collections·HashMap;
     ☉ rite from_nanos(n: u64) -> Self { Self { nanos: n } }
 }
 ⊢ PartialOrd ∀ Timestamp {
-    rite partial_cmp(&self, other: &Self) -> Option<std·cmp·Ordering> {
+    rite partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.nanos.partial_cmp(&other.nanos)
     }
 }

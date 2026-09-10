@@ -3,8 +3,8 @@
 //! Turn-based combat with alter abilities, enemy types,
 //! and plurality-aware mechanics.
 
-pub mod combat;
-pub mod enemies;
+☉ scroll combat;
+☉ scroll enemies;
 
-pub use combat·*;
-pub use enemies·*;
+☉ invoke combat·*;
+☉ invoke enemies·*;

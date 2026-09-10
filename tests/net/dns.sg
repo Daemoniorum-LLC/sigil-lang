@@ -62,7 +62,7 @@ rite syscall1(num: i64, arg1: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
+            ∈("rdi") arg1,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -75,9 +75,9 @@ rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -90,11 +90,11 @@ rite syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
-            in("r10") arg4,
-            in("r8") arg5,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
+            ∈("r10") arg4,
+            ∈("r8") arg5,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -107,12 +107,12 @@ rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, a
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
-            in("r10") arg4,
-            in("r8") arg5,
-            in("r9") arg6,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
+            ∈("r10") arg4,
+            ∈("r8") arg5,
+            ∈("r9") arg6,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -170,8 +170,8 @@ rite write_byte(buf: i64, offset: i64, value: i64) -> i64 {
     unsafe {
         ≔ ptr = buf + offset;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") value as i8,
+            ∈("rdi") ptr,
+            ∈("al") value as i8,
             options(nostack));
     }
     offset + 1
@@ -183,15 +183,15 @@ rite write_u16_be(buf: i64, offset: i64, value: i64) -> i64 {
     unsafe {
         ≔ ptr = buf + offset;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") hi as i8,
+            ∈("rdi") ptr,
+            ∈("al") hi as i8,
             options(nostack));
     }
     unsafe {
         ≔ ptr = buf + offset + 1;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") lo as i8,
+            ∈("rdi") ptr,
+            ∈("al") lo as i8,
             options(nostack));
     }
     offset + 2
@@ -202,7 +202,7 @@ rite read_byte(buf: i64, offset: i64) -> i64 {
     unsafe {
         ≔ ptr = buf + offset;
         asm!("movzx rax, byte ptr [rdi]",
-            in("rdi") ptr,
+            ∈("rdi") ptr,
             out("rax") value,
             options(nostack, readonly));
     }
@@ -417,7 +417,7 @@ rite sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
         unsafe {
             ≔ ptr = buf + offset;
             asm!("mov byte ptr [rdi], 0",
-                in("rdi") ptr,
+                ∈("rdi") ptr,
                 options(nostack));
         }
         i = i + 1;
@@ -426,7 +426,7 @@ rite sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     // sin_family = AF_INET (2)
     unsafe {
         asm!("mov word ptr [rdi], 2",
-            in("rdi") buf,
+            ∈("rdi") buf,
             options(nostack));
     }
 
@@ -436,15 +436,15 @@ rite sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     unsafe {
         ≔ ptr2 = buf + 2;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr2,
-            in("al") port_hi as i8,
+            ∈("rdi") ptr2,
+            ∈("al") port_hi as i8,
             options(nostack));
     }
     unsafe {
         ≔ ptr3 = buf + 3;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr3,
-            in("al") port_lo as i8,
+            ∈("rdi") ptr3,
+            ∈("al") port_lo as i8,
             options(nostack));
     }
 
@@ -456,29 +456,29 @@ rite sockaddr_in_create(buf: i64, ip_packed: i64, port: i64) -> i64 {
     unsafe {
         ≔ ptr = buf + 4;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") b0 as i8,
+            ∈("rdi") ptr,
+            ∈("al") b0 as i8,
             options(nostack));
     }
     unsafe {
         ≔ ptr = buf + 5;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") b1 as i8,
+            ∈("rdi") ptr,
+            ∈("al") b1 as i8,
             options(nostack));
     }
     unsafe {
         ≔ ptr = buf + 6;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") b2 as i8,
+            ∈("rdi") ptr,
+            ∈("al") b2 as i8,
             options(nostack));
     }
     unsafe {
         ≔ ptr = buf + 7;
         asm!("mov byte ptr [rdi], al",
-            in("rdi") ptr,
-            in("al") b3 as i8,
+            ∈("rdi") ptr,
+            ∈("al") b3 as i8,
             options(nostack));
     }
 
@@ -535,7 +535,7 @@ rite dns_resolve(dns_server: i64, domain: i64, domain_len: i64) -> i64 {
     ≔ addrlen_ptr = buf + 1536;  // Use later part of buffer ∀ addrlen
     unsafe {
         asm!("mov qword ptr [rdi], 16",
-            in("rdi") addrlen_ptr,
+            ∈("rdi") addrlen_ptr,
             options(nostack));
     }
 
