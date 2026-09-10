@@ -8483,3 +8483,71 @@ mod migrate_destination_tests {
         assert_eq!(fs::read_to_string(&src).unwrap(), RUST_SOURCE);
     }
 }
+
+/// The committed corpus behind the reserved-name diagnostic.
+///
+/// #68 is sold on a corpus property -- "0 false positives across N files" --
+/// that nothing on the branch reproduced, so every change to the scanner
+/// re-established it by hand and no two hand-built sweeps were comparable
+/// (#90). `tools/collision-sweep/sweep.sh` is the wide measurement; this is
+/// the per-PR check: four files, one per shape the scanner has been wrong
+/// about, with their findings pinned exactly.
+///
+/// A scanner change that alters any expectation below has to change it here,
+/// in the same commit, where a reviewer sees it.
+#[cfg(test)]
+mod collision_corpus_tests {
+    use super::collect_keyword_collisions;
+
+    fn findings(fixture: &str) -> Vec<(String, usize)> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tools/collision-sweep/corpus")
+            .join(fixture);
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        collect_keyword_collisions(&source)
+    }
+
+    fn expect(fixture: &str, want: &[(&str, usize)]) {
+        let got = findings(fixture);
+        let got: Vec<(&str, usize)> = got.iter().map(|(n, c)| (n.as_str(), *c)).collect();
+        assert_eq!(got, want, "findings for {fixture}");
+    }
+
+    #[test]
+    fn a_name_is_judged_by_its_position_not_by_itself() {
+        // `tome` is a valid Sigil field and an invalid binding; `this` is the
+        // other way round. Both appear in both positions in the fixture, so a
+        // scanner with one verdict per word fails this whichever way it
+        // decides: only the parameter `tome` and the field `this` are refused.
+        expect("positions.rs", &[("this", 1), ("tome", 1)]);
+    }
+
+    #[test]
+    fn a_closure_parameter_is_a_binding() {
+        // #84/#89. `this` binds cleanly, so no closure parameter spelled
+        // `this` may be reported -- develop carried exactly that as a live
+        // false positive, in cranelift-isle and rustc-demangle. `of` is
+        // refused in every position, so it is a true positive and stays.
+        //
+        // `tome` is counted once: the typed `|mut tome: u32|` is found by its
+        // colon. The untyped `|mut tome|` beside it is #91 -- a quiet false
+        // negative, in the same direction as #84.
+        expect("closure_params.rs", &[("of", 1), ("tome", 1)]);
+    }
+
+    #[test]
+    fn prose_is_not_code() {
+        // Prose ends a sentence with a colon too. Reading comments reported
+        // every colon-terminated word in a doc comment as a field.
+        expect("prose.rs", &[]);
+    }
+
+    #[test]
+    fn a_where_bound_is_not_a_field() {
+        // `where Self: Sized` inside a trait body reads exactly like a field
+        // declaration.
+        expect("bounds.rs", &[]);
+    }
+}
+
