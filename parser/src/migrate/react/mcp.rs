@@ -364,6 +364,62 @@ impl MigrationSession {
             merged.append(&mut comp.source.module_constants);
             comp.source.module_constants = merged;
 
+            // constant -> helper. The walks above cover helper->helper,
+            // constant->constant and helper->constant; this is the fourth edge
+            // and it was missing. A helper that only a module constant's
+            // INITIALISER calls is in nobody's `module_scope`, and no helper
+            // body names it either, so nothing queued it:
+            //
+            //   export const BUILTIN_THEMES = {
+            //     "daemoniorum": { modes: { dark: daemoniorumTheme("dark") } },
+            //     …
+            //   }
+            //
+            // `BUILTIN_THEMES` is exported, reached and emitted; the five theme
+            // builders it calls were not, and each call compiled to a constant
+            // 0. This is S119 in the other direction — that one added the
+            // constants a helper's body names, and left the helpers a
+            // constant's initialiser names.
+            let mut reachable_helpers = reachable_helpers;
+            {
+                let mut have_h: std::collections::HashSet<String> = reachable_helpers
+                    .iter()
+                    .map(|h| h.name.clone())
+                    .chain(comp.source.helpers.iter().map(|h| h.name.clone()))
+                    .collect();
+                let mut seeds: Vec<String> = Vec::new();
+                // The component's full constant set, imported and own: a
+                // constant declared in the component's own file has the same
+                // edge, and `module_constants` is the merged list by here.
+                for c in &comp.source.module_constants {
+                    for word in c
+                        .init
+                        .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                    {
+                        if !word.is_empty()
+                            && !have_h.contains(word)
+                            && (helpers.contains_key(word) || deep_helpers.contains_key(word))
+                        {
+                            have_h.insert(word.to_string());
+                            seeds.push(word.to_string());
+                        }
+                    }
+                }
+                if !seeds.is_empty() {
+                    let from_constants = Self::reachable_helpers_from(
+                        seeds,
+                        comp.source.helpers.iter().map(|h| h.name.clone()).collect(),
+                        &helpers,
+                        &deep_helpers,
+                    );
+                    for h in from_constants {
+                        if !reachable_helpers.iter().any(|e| e.name == h.name) {
+                            reachable_helpers.push(h);
+                        }
+                    }
+                }
+            }
+
             // Helpers, computed above: a helper's own body may reference
             // another helper, so that walk is transitive too.
             let added_h = reachable_helpers;
@@ -395,9 +451,24 @@ impl MigrationSession {
         exported: &HashMap<String, HelperFunctionExtraction>,
         all: &HashMap<String, HelperFunctionExtraction>,
     ) -> Vec<HelperFunctionExtraction> {
-        let mut have: std::collections::HashSet<String> =
+        let have: std::collections::HashSet<String> =
             source.helpers.iter().map(|h| h.name.clone()).collect();
-        let mut queue: Vec<String> = source.module_scope.clone();
+        Self::reachable_helpers_from(source.module_scope.clone(), have, exported, all)
+    }
+
+    /// The same walk from an explicit seed list, with an explicit "already
+    /// have" set.
+    ///
+    /// Split out for the constant→helper edge: a helper that only a module
+    /// constant's initialiser calls is in nobody's `module_scope`, so the
+    /// seeded walk above never reaches it.
+    fn reachable_helpers_from(
+        seeds: Vec<String>,
+        mut have: std::collections::HashSet<String>,
+        exported: &HashMap<String, HelperFunctionExtraction>,
+        all: &HashMap<String, HelperFunctionExtraction>,
+    ) -> Vec<HelperFunctionExtraction> {
+        let mut queue: Vec<String> = seeds;
         let mut added: Vec<HelperFunctionExtraction> = Vec::new();
         let mut guard = 0;
         while let Some(name) = queue.pop() {
@@ -939,4 +1010,91 @@ pub fn topo_sort_constants(items: Vec<ModuleConstantExtraction>) -> Vec<ModuleCo
         out.push(items[i].clone());
     }
     out
+}
+
+#[cfg(test)]
+mod constant_to_helper_tests {
+    use super::*;
+    use crate::migrate::react::extraction::{
+        HelperFunctionExtraction, ModuleConstantExtraction, SourceLocation,
+    };
+
+    fn helper(name: &str, source: &str, exported: bool) -> HelperFunctionExtraction {
+        HelperFunctionExtraction {
+            name: name.to_string(),
+            location: SourceLocation { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
+            exported,
+            is_async: false,
+            is_generator: false,
+            parameters: Vec::new(),
+            return_type: None,
+            is_pure: true,
+            side_effects: Vec::new(),
+            calls: Vec::new(),
+            used_by: Vec::new(),
+            source: source.to_string(),
+            returns_expression: None,
+        }
+    }
+
+    fn constant(name: &str, init: &str) -> ModuleConstantExtraction {
+        ModuleConstantExtraction {
+            name: name.to_string(),
+            exported: true,
+            type_annotation: None,
+            init: init.to_string(),
+            entries: Vec::new(),
+        }
+    }
+
+    /// A helper reached only from a module constant's initialiser.
+    ///
+    /// `BUILTIN_THEMES` is exported and emitted; `daemoniorumTheme` is called
+    /// only from inside its object literal, is in nobody's `module_scope`, and
+    /// no helper body names it. Before the constant->helper edge it was never
+    /// carried, and the call compiled to a constant 0.
+    #[test]
+    fn helper_named_only_by_a_constant_initialiser_is_reached() {
+        let mut all = HashMap::new();
+        all.insert(
+            "daemoniorumTheme".to_string(),
+            helper("daemoniorumTheme", "function daemoniorumTheme(mode) { return pickAccent(mode) }", false),
+        );
+        // …and transitively, what that helper itself calls.
+        all.insert(
+            "pickAccent".to_string(),
+            helper("pickAccent", "function pickAccent(m) { return m }", false),
+        );
+        let exported: HashMap<String, HelperFunctionExtraction> = HashMap::new();
+
+        let c = constant(
+            "BUILTIN_THEMES",
+            r#"{ "daemoniorum": { modes: { dark: daemoniorumTheme("dark") } } }"#,
+        );
+
+        // The seeding this fix added: scan the constant's initialiser for names
+        // that are helpers, then expand transitively.
+        let mut seeds = Vec::new();
+        for word in c
+            .init
+            .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+        {
+            if !word.is_empty() && all.contains_key(word) {
+                seeds.push(word.to_string());
+            }
+        }
+        assert_eq!(seeds, vec!["daemoniorumTheme".to_string()], "constant initialiser must seed the helper");
+
+        let reached = MigrationSession::reachable_helpers_from(
+            seeds,
+            std::collections::HashSet::new(),
+            &exported,
+            &all,
+        );
+        let names: std::collections::HashSet<&str> =
+            reached.iter().map(|h| h.name.as_str()).collect();
+
+        assert!(names.contains("daemoniorumTheme"), "helper named by the constant");
+        assert!(names.contains("pickAccent"), "and what it calls, transitively");
+    }
 }
