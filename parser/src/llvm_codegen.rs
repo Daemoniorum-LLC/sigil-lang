@@ -11511,7 +11511,6 @@ pub mod llvm {
             expr: &Expr,
             index: &Expr,
         ) -> Result<IntValue<'ctx>, String> {
-            let idx = self.compile_expr(fn_value, scope, index)?;
             let i64_type = self.context.i64_type();
             let ptr_type = self.context.ptr_type(AddressSpace::default());
 
@@ -19023,13 +19022,6 @@ pub mod llvm {
                 OptLevel::Aggressive => "default<O2>",
             };
             eprintln!("[DEBUG] run_llvm_optimizations: running passes {}", passes);
-
-            // Configure pass builder with explicit vectorization options
-            let pass_options = PassBuilderOptions::create();
-            pass_options.set_loop_vectorization(true);
-            pass_options.set_loop_slp_vectorization(true);
-            pass_options.set_loop_interleaving(true);
-            pass_options.set_loop_unrolling(true);
 
             // Configure pass builder with explicit vectorization options
             let pass_options = PassBuilderOptions::create();
