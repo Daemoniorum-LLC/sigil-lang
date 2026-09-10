@@ -189,12 +189,26 @@ impl Diagnostic {
 
     /// Write this diagnostic to a writer.
     pub fn write_to<W: std::io::Write>(&self, writer: W, filename: &str, source: &str) {
-        let span_range: Range<usize> = self.span.start..self.span.end;
+        // `Span` holds BYTE offsets — that is what `&str` indexing and the lexer
+        // produce — while `ariadne::Source` indexes by CHARACTER. Handing it
+        // bytes moves every caret forward by one column per extra byte of every
+        // multi-byte character before it, and the drift accumulates down the
+        // file rather than staying local.
+        //
+        // In most languages that is a rounding error. Sigil is written in
+        // `⊢ Σ ≔ ⎇ ⎉ ∀ ☉ Θ ·`, all three bytes each, so the drift is roughly
+        // two columns per symbol and a real file is wrong by lines within a
+        // screenful. It read as "type errors in impl bodies point at the closing
+        // brace" (#110), because impl blocks are where the symbols cluster —
+        // but the spans were correct all along, and `--format=json`, which uses
+        // `offset_to_line_col` below, always reported them correctly.
+        let to_char = |byte: usize| -> usize { byte_to_char_offset(source, byte) };
+        let span_range: Range<usize> = to_char(self.span.start)..to_char(self.span.end);
 
         let mut colors = ColorGenerator::new();
         let primary_color = self.severity.color();
 
-        let mut builder = Report::build(self.severity.to_report_kind(), filename, self.span.start)
+        let mut builder = Report::build(self.severity.to_report_kind(), filename, span_range.start)
             .with_config(Config::default().with_cross_gap(true))
             .with_message(&self.message);
 
@@ -214,7 +228,7 @@ impl Diagnostic {
         for (span, msg) in &self.labels {
             let color = colors.next();
             builder = builder.with_label(
-                Label::new((filename, span.start..span.end))
+                Label::new((filename, to_char(span.start)..to_char(span.end)))
                     .with_message(msg)
                     .with_color(color),
             );
@@ -274,6 +288,20 @@ impl Diagnostic {
             related: self.related.clone(),
         }
     }
+}
+
+/// Convert a byte offset to a character offset, for consumers that index by
+/// character rather than by byte — `ariadne` being the one that matters here.
+///
+/// Clamps past the end of the source, and rounds an offset that lands inside a
+/// multi-byte character down to that character's start, so a malformed span
+/// degrades to a nearby caret instead of a panic.
+fn byte_to_char_offset(source: &str, byte: usize) -> usize {
+    let mut byte = byte.min(source.len());
+    while byte > 0 && !source.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    source[..byte].chars().count()
 }
 
 /// Convert byte offset to line/column (1-indexed).
@@ -851,5 +879,47 @@ mod tests {
         assert!(mappings.iter().any(|(a, u, _)| *a == "&&" && *u == "∧"));
         assert!(mappings.iter().any(|(a, u, _)| *a == "tau" && *u == "τ"));
         assert!(mappings.iter().any(|(a, u, _)| *a == "sqrt" && *u == "√"));
+    }
+
+    /// #110: `Span` is in bytes, `ariadne::Source` indexes in characters.
+    ///
+    /// These are the numbers from the original report. A Sigil source is mostly
+    /// three-byte symbols, so the two offsets diverge immediately and keep
+    /// diverging — which is why the caret drifted further the further into the
+    /// file the error was.
+    #[test]
+    fn byte_offsets_convert_to_char_offsets() {
+        // Pure ASCII: the two are the same, so nothing moves.
+        let ascii = "rite take(b: bool) {}";
+        assert_eq!(byte_to_char_offset(ascii, 5), 5);
+        assert_eq!(byte_to_char_offset(ascii, 0), 0);
+
+        // One three-byte symbol before the offset costs two columns.
+        let one = "≔ n = 5;";
+        assert_eq!("≔".len(), 3, "the premise of this whole bug");
+        assert_eq!(byte_to_char_offset(one, 3), 1);
+        assert_eq!(byte_to_char_offset(one, 5), 3);
+
+        // Several symbols accumulate — the drift is not a constant offset,
+        // which is what made it impossible to correct for mentally.
+        let many = "Σ W { }\n⊢ W {\n    ≔ n = 5;\n";
+        let byte_of_n = many.find('n').unwrap();
+        let char_of_n = many.chars().take_while(|c| *c != 'n').count();
+        assert_eq!(byte_to_char_offset(many, byte_of_n), char_of_n);
+        assert!(byte_of_n > char_of_n, "otherwise this test proves nothing");
+    }
+
+    /// A span that is out of range, or that lands inside a multi-byte
+    /// character, must degrade to a nearby caret rather than panic — rendering
+    /// a diagnostic is the worst moment to add a second failure.
+    #[test]
+    fn byte_to_char_offset_is_total() {
+        let src = "⊢ W {}";
+        assert_eq!(byte_to_char_offset(src, usize::MAX), src.chars().count());
+        assert_eq!(byte_to_char_offset(src, src.len() + 99), src.chars().count());
+        // Bytes 1 and 2 are interior to `⊢`; both round down to its start.
+        assert_eq!(byte_to_char_offset(src, 1), 0);
+        assert_eq!(byte_to_char_offset(src, 2), 0);
+        assert_eq!(byte_to_char_offset(src, 3), 1);
     }
 }
