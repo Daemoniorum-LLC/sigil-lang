@@ -19773,6 +19773,25 @@ impl Interpreter {
         }
     }
 
+    /// How many parameters does the named user-defined function declare?
+    ///
+    /// `None` when the name is not bound to a user-defined function — a built-in,
+    /// a non-function value, or absent entirely. Callers that need to shape their
+    /// argument list to a function they did not write (the `main` entry point) ask
+    /// this first, rather than calling and interpreting the failure: a call that
+    /// fails has already run whatever the function did before it failed.
+    pub fn function_arity(&self, name: &str) -> Option<usize> {
+        let value = self
+            .environment
+            .borrow()
+            .get(name)
+            .or_else(|| self.globals.borrow().get(name));
+        match value {
+            Some(Value::Function(f)) => Some(f.params.len()),
+            _ => None,
+        }
+    }
+
     /// Call a function by name from the environment
     pub fn call_function_by_name(
         &mut self,
@@ -26457,6 +26476,42 @@ mod tests {
             .map_err(|e| RuntimeError::new(e.to_string()))?;
         let mut interp = Interpreter::new();
         interp.execute(&file)
+    }
+
+    /// Load a file's definitions and hand back the interpreter, so a test can
+    /// inspect what got registered rather than only what `main` returned.
+    fn interp_after(source: &str) -> Interpreter {
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().expect("parse");
+        let mut interp = Interpreter::new();
+        interp.execute(&file).expect("execute");
+        interp
+    }
+
+    #[test]
+    fn function_arity_reports_declared_parameter_count() {
+        // `sigil run-dir` used to pass an argv array to `main` unconditionally,
+        // so every zero-arg `main` died with "Expected 0 arguments, got 1". The
+        // fix shapes the call to the declared arity, which is only as good as
+        // this lookup.
+        let interp = interp_after("rite main() { ⤺ 1; }");
+        assert_eq!(interp.function_arity("main"), Some(0));
+
+        let interp = interp_after("rite main(args) { ⤺ 1; }");
+        assert_eq!(interp.function_arity("main"), Some(1));
+    }
+
+    #[test]
+    fn function_arity_is_none_for_anything_that_is_not_a_user_function() {
+        // The caller falls back to passing argv when this is None, so it must not
+        // report Some for a non-function — an absent `main` has to reach
+        // `call_function_by_name` and produce its own error, not be treated as
+        // zero-arg here.
+        let interp = interp_after("rite other() { ⤺ 1; }");
+        assert_eq!(interp.function_arity("main"), None);
+
+        let interp = interp_after("rite main() { ⤺ 1; }");
+        assert_eq!(interp.function_arity("no_such_function"), None);
     }
 
     #[test]
