@@ -5187,18 +5187,26 @@ fn drop_absolute_path_prefix(text: &str) -> (String, usize) {
     (out, dropped)
 }
 
-/// Report Rust identifiers in `source` that Sigil lexes as keywords.
+/// Report names in `source` that the Sigil parser will refuse where they stand.
 ///
-/// Sigil reserves a number of ordinary English words — `aspect` for `Θ`, `of`
-/// for `∈`, and `body`, `location`, `layer`, `header` among others — so Rust
-/// code using them as field or binding names migrates into something that will
-/// not parse, and the eventual error names the token rather than the field.
-/// Reporting them at migration time turns that into a diagnostic the reader
-/// can act on, at the point where the name is still visible.
+/// Sigil reserves some ordinary English words as prose spellings of glyphs —
+/// `aspect` for `Θ`, `of` for `∈` — so Rust code using one as a field or
+/// parameter name migrates into something that will not parse, and the
+/// eventual error names the token rather than the field. Reporting it at
+/// migration time turns that into a diagnostic the reader can act on, while
+/// the name is still visible.
 ///
-/// Classification uses the real lexer, so this list cannot drift from the
-/// language: a word is flagged when lexing it yields anything but the
-/// identical identifier.
+/// The question asked is whether the **parser** accepts the name in the
+/// position it was found, not whether the **lexer** returns a keyword token
+/// for it. Those are very different: of the word-shaped tokens in the lexer's
+/// table, most are accepted as names in most positions, so a lexer test
+/// reports `body`, `layer`, `location` and `header` — all of which parse
+/// perfectly well — and tells the reader to rename them.
+///
+/// Position matters in both directions, which is why one verdict per word
+/// cannot be right: `tome` is a valid field name and an invalid parameter
+/// name, and `true` is the other way round. A name whose position this cannot
+/// determine is left alone; guessing is the defect being fixed.
 fn collect_keyword_collisions(source: &str) -> Vec<(String, usize)> {
     let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
     // Code only. Prose ends sentences with a colon too — "Continue mobbing if:"
@@ -5211,12 +5219,108 @@ fn collect_keyword_collisions(source: &str) -> Vec<(String, usize)> {
     counts.into_iter().collect()
 }
 
-/// Tally reserved-word names in one span of code.
+/// Where a name sits. The parser's answer depends on it, so this is carried
+/// alongside the name rather than collapsed into a single reserved-word set.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum NamePosition {
+    /// A struct field, in a declaration or a literal.
+    Field,
+    /// A function parameter.
+    Parameter,
+    /// A `let` binding.
+    Local,
+}
+
+impl NamePosition {
+    /// A minimal Sigil program placing `name` in this position.
+    ///
+    /// The local case both binds and reads the name back: `const`, `async`,
+    /// `move`, `unsafe`, `volatile`, `atomic` and `simd` all bind cleanly and
+    /// fail only on use, so a probe that binds alone declares them fine.
+    fn probe(self, name: &str) -> String {
+        match self {
+            NamePosition::Field => format!("☉ Σ CollisionProbe {{ ☉ {name}: i64 }}"),
+            NamePosition::Parameter => {
+                format!("☉ rite collision_probe({name}: i64) -> i64 {{ {name} }}")
+            }
+            NamePosition::Local => {
+                format!("☉ rite collision_probe() -> i64 {{ ≔ {name} = 1; {name} + 1 }}")
+            }
+        }
+    }
+}
+
+/// Whether the Sigil parser accepts `name` in `position`.
+///
+/// Memoised: migration runs over whole trees, and the answer depends only on
+/// the pair. The cache is per thread, so it needs no synchronisation.
+fn parser_accepts(name: &str, position: NamePosition) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    thread_local! {
+        static CACHE: RefCell<HashMap<(String, NamePosition), bool>> =
+            RefCell::new(HashMap::new());
+    }
+    CACHE.with(|cache| {
+        if let Some(&known) = cache.borrow().get(&(name.to_string(), position)) {
+            return known;
+        }
+        let accepted = sigil_parser::Parser::new(&position.probe(name))
+            .parse_file()
+            .is_ok();
+        cache
+            .borrow_mut()
+            .insert((name.to_string(), position), accepted);
+        accepted
+    })
+}
+
+/// The position of a name from the two words before it and the bracket
+/// enclosing it.
+///
+/// `None` means the context is not one of the three that can be judged — a
+/// closure parameter, a match arm, a type ascription somewhere unusual. Those
+/// are passed over rather than guessed at.
+fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePosition> {
+    // `let x: T` and `let mut x: T` are locals whatever encloses them.
+    if prev_words[1] == "let" || (prev_words[1] == "mut" && prev_words[0] == "let") {
+        return Some(NamePosition::Local);
+    }
+    match enclosing {
+        // A parameter list. `fn f(mut x: T)` lands here too, since `mut`
+        // alone did not make it a local above.
+        Some(b'(') => Some(NamePosition::Parameter),
+        // A struct declaration or literal body.
+        Some(b'{') => Some(NamePosition::Field),
+        _ => None,
+    }
+}
+
+/// Tally names in one span of code that the parser refuses where they stand.
 fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String, usize>) {
     let bytes = source.as_bytes();
+    // Innermost unclosed bracket, which distinguishes a parameter list from a
+    // struct body — the two contexts a bare `name:` is otherwise ambiguous
+    // between, and the two whose answers differ for `ref`, `super` and `tome`.
+    let mut brackets: Vec<u8> = Vec::new();
+    // The two words before the current one, for `let` and `let mut`.
+    let mut prev_words: [&str; 2] = [""; 2];
     let mut i = 0;
     while i < bytes.len() {
-        if (bytes[i] as char).is_ascii_alphabetic() || bytes[i] == b'_' {
+        let b = bytes[i];
+        if matches!(b, b'(' | b'{' | b'[') {
+            brackets.push(b);
+            prev_words = [""; 2];
+            i += 1;
+            continue;
+        }
+        if matches!(b, b')' | b'}' | b']') {
+            brackets.pop();
+            prev_words = [""; 2];
+            i += 1;
+            continue;
+        }
+        if (b as char).is_ascii_alphabetic() || b == b'_' {
             let start = i;
             while i < bytes.len()
                 && ((bytes[i] as char).is_ascii_alphanumeric() || bytes[i] == b'_')
@@ -5224,22 +5328,22 @@ fn collect_in_code(source: &str, counts: &mut std::collections::BTreeMap<String,
                 i += 1;
             }
             let word = &source[start..i];
-            // Only a word used as a name is a problem. `name:` covers struct
-            // fields and typed bindings; `::` excludes path segments, where a
-            // reserved word is fine.
+            // Only a word introducing a name is a candidate. `::` excludes
+            // path segments, where a reserved word is fine.
             let rest = source[i..].trim_start_matches([' ', '\t']);
             if rest.starts_with(':') && !rest.starts_with("::") {
-                let mut lexer = sigil_parser::Lexer::new(word);
-                let is_keyword = match lexer.next_token() {
-                    Some((sigil_parser::Token::Ident(lexed), _)) => lexed != word,
-                    Some(_) => true,
-                    None => false,
-                };
-                if is_keyword {
-                    *counts.entry(word.to_string()).or_default() += 1;
+                if let Some(position) = name_position(prev_words, brackets.last().copied()) {
+                    if !parser_accepts(word, position) {
+                        *counts.entry(word.to_string()).or_default() += 1;
+                    }
                 }
             }
+            prev_words = [prev_words[1], word];
             continue;
+        }
+        // Punctuation separates words; whitespace does not.
+        if !(b as char).is_whitespace() {
+            prev_words = [""; 2];
         }
         i += 1;
     }
@@ -5881,7 +5985,7 @@ fn migrate_file(path: &str, output_dir: Option<&str>, dry_run: bool, backup: boo
         let total: usize = keyword_collisions.iter().map(|(_, n)| n).sum();
         eprintln!();
         eprintln!(
-            "warning: {} name{} in this file {} reserved in Sigil and will not parse:",
+            "warning: {} name{} in this file {} refused by the Sigil parser where they stand:",
             total,
             if total == 1 { "" } else { "s" },
             if total == 1 { "is" } else { "are" },
@@ -6723,11 +6827,10 @@ mod migrate_span_tests {
     fn keyword_collisions_are_reported_from_code_only() {
         let f = |src: &str| super::collect_keyword_collisions(src);
 
-        // A reserved word used as a field name is the case worth reporting:
-        // `aspect` is Sigil's prose spelling of `Θ`, so this will not parse.
+        // A word the parser refuses in every position is the clear case:
+        // `aspect` is Sigil's prose spelling of `Θ`.
         assert_eq!(f("pub struct C { pub aspect: f32 }"), vec![("aspect".into(), 1)]);
-        // Counted per use, and a parameter counts as much as a field —
-        // both positions declare a name.
+        // Counted per use, across positions.
         assert_eq!(
             f("struct C { aspect: f32, other: u8 }\nfn g(aspect: f32) {}"),
             vec![("aspect".into(), 2)]
@@ -6743,6 +6846,52 @@ mod migrate_span_tests {
         assert!(f("let v = std::from::x;").is_empty());
         // An ordinary identifier is not reserved.
         assert!(f("struct C { velocity: f32 }").is_empty());
+    }
+
+    #[test]
+    fn a_word_the_parser_accepts_is_not_reported() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // These four lex as keyword tokens but the parser takes them as field
+        // names without complaint. A lexer-based test reports all of them.
+        for word in ["body", "location", "layer", "header"] {
+            let src = format!("struct C {{ {word}: u32 }}");
+            assert!(
+                f(&src).is_empty(),
+                "{word} parses as a field name and must not be reported"
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_word_is_judged_by_where_it_sits() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `tome` is a valid field name and an invalid parameter name.
+        assert!(f("struct C { tome: u32 }").is_empty());
+        assert_eq!(f("fn g(tome: u32) {}"), vec![("tome".into(), 1)]);
+
+        // `true` is the other way round, so no single verdict per word works.
+        assert_eq!(f("struct C { true: u32 }"), vec![("true".into(), 1)]);
+        assert!(f("fn g(true: u32) {}").is_empty());
+    }
+
+    #[test]
+    fn a_name_that_only_fails_when_read_back_is_reported() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // `≔ const = 1;` parses on its own; `const + 1` does not. A probe that
+        // binds without reading would call this fine.
+        assert_eq!(f("let const: u32 = 1;"), vec![("const".into(), 1)]);
+    }
+
+    #[test]
+    fn an_undeterminable_position_is_left_alone() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // Not inside a parameter list or a struct body, and not a `let`.
+        // Guessing here is what produced the false positives.
+        assert!(f("aspect: u32").is_empty());
     }
 
     #[test]
