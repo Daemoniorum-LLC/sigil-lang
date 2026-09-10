@@ -100,9 +100,17 @@ run_test() {
     local test_out="$TEMP_DIR/${test_name}.out"
     local test_err="$TEMP_DIR/${test_name}.err"
 
-    # Check if test should be skipped
+    # Check if test should be skipped.
+    #
+    # A `// SKIP` marks a test whose implementation is ABSENT -- the feature
+    # does not exist, so the test cannot pass. It is not a flaky test and not
+    # a disabled one. The marker carries the issue number for the gap, and it
+    # is echoed here so a reader of the run reaches the gap without opening
+    # the file.
     if grep -q "^// SKIP" "$test_file" 2>/dev/null; then
-        echo -e "  ${YELLOW}⏭  SKIP${NC}: $test_name (marked as SKIP)"
+        local skip_reason
+        skip_reason=$(grep -m1 "^// SKIP" "$test_file" | sed 's|^// SKIP *||')
+        echo -e "  ${YELLOW}⏭  SKIP${NC}: $test_name -- ${skip_reason}"
         ((SKIP++))
         return 0
     fi
@@ -250,10 +258,21 @@ if [ $TIMEOUT -gt 0 ]; then
 fi
 echo -e "${BLUE}───────────────────────────────────────────────${NC}"
 
-TOTAL=$((PASS + FAIL))
+# Skips count against the total. Excluding them let "795 passed, 6 skipped"
+# and "795 passed, 0 skipped" print the same 100%, which is the one thing the
+# number must never do -- a skipped test is a feature that does not exist, and
+# hiding it makes the suite report a capability the compiler does not have.
+TOTAL=$((PASS + FAIL + SKIP))
 if [ $TOTAL -gt 0 ]; then
     PERCENTAGE=$((PASS * 100 / TOTAL))
-    echo -e "${BLUE}Pass rate: ${PERCENTAGE}%${NC}"
+    echo -e "${BLUE}Pass rate: ${PERCENTAGE}% (${PASS} of ${TOTAL}; skips count as not passing)${NC}"
+fi
+
+if [ $SKIP -gt 0 ]; then
+    echo
+    echo -e "${YELLOW}${SKIP} test(s) skipped because the implementation is ABSENT, not because${NC}"
+    echo -e "${YELLOW}they are flaky. Each names its issue above. A skip is a missing feature${NC}"
+    echo -e "${YELLOW}that is being counted rather than hidden; it should shrink, not settle.${NC}"
 fi
 
 # Exit with error if any tests failed

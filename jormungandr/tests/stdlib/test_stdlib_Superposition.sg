@@ -1,13 +1,43 @@
 // Stdlib Tests: Superposition
-// Superposition type with REAL assertions
-// TODO: Expand coverage - currently only tests constructor, needs collapse/observe testing
+//
+// Constructed through `Superposition·uniform`, which is the constructor that
+// exists. This file previously called `Superposition·new`, which does not,
+// and asserted `type_of(sp) == "struct:Superposition"` -- an assertion that
+// could not fail, because the fallback removed in #146 named the struct it
+// fabricated after the type in the call. `Wibble·new()` satisfied the same
+// shape of assertion.
+//
+// Every assertion below is one a stub would fail.
 
 rite main() {
     println("=== Testing Superposition ===");
 
-    // Superposition·new - creates superposition state
-    ≔ sp = Superposition·new();
-    assert_eq(type_of(sp), "struct:Superposition");
+    ≔ sp = Superposition·uniform([1, 2, 3]);
+
+    // The elements are the ones handed in, not a default.
+    assert_eq(len(sp.__elements__), 3);
+    assert_eq(sp.__elements__[0], 1);
+    assert_eq(sp.__elements__[2], 3);
+
+    // One amplitude per element, and the state is not born collapsed.
+    assert_eq(len(sp.__amplitudes__), 3);
+    assert_eq(sp.__collapsed__, false);
+
+    // Uniform amplitudes are normalised: the squares sum to 1. A constructor
+    // that stored the elements and left amplitudes unset, zeroed, or equal to
+    // 1/n rather than 1/sqrt(n) fails here and passes everything above.
+    ≔ a0 = sp.__amplitudes__[0];
+    ≔ a1 = sp.__amplitudes__[1];
+    ≔ a2 = sp.__amplitudes__[2];
+    ≔ norm = a0 * a0 + a1 * a1 + a2 * a2;
+    assert(norm > 0.999);
+    assert(norm < 1.001);
+
+    // A two-element superposition must not reuse the three-element
+    // amplitudes: 1/sqrt(2) > 1/sqrt(3).
+    ≔ sp2 = Superposition·uniform([7, 8]);
+    assert_eq(len(sp2.__amplitudes__), 2);
+    assert(sp2.__amplitudes__[0] > a0);
 
     println("ALL SUPERPOSITION TESTS PASSED!");
 }

@@ -5879,53 +5879,61 @@ impl Interpreter {
                 }
             }
 
-            // Fallback for unknown types from external crates:
+            // `Type·member`, where nothing above has resolved it.
+            //
+            // This used to answer rather than fail. A lowercase `member` was
+            // taken for a constructor on some type from a crate the
+            // interpreter could not load, and returned a marker that
+            // `eval_call` turned into an empty struct named after the type,
+            // discarding the arguments; an uppercase one was taken for a
+            // variant of an enum from the same imagined crate, and fabricated
+            // one. So `Zzz·qqq(1, 2, 3)` evaluated to `Zzz { }` and `Zzz·Qqq`
+            // to a `Qqq` variant, for a `Zzz` that exists nowhere -- and
+            // `check` reported no error either. Anything spelled like a member
+            // got a plausible value instead of an answer, which is why
+            // `File·read_to_string(path)` returned `File { }` for a file that
+            // exists, having read nothing.
+            //
+            // Measured before removing it: across 896 test files, the two arms
+            // fired 12 times in 11 files, and every one was a call to something
+            // that does not exist under any spelling -- `Superposition·new`
+            // where only `·uniform` is registered, `Rc·downgrade` where Weak is
+            // unimplemented. Not one was the external-crate type the leniency
+            // was written for. It furnished defects with values.
             if path.segments.len() == 2 {
                 let type_name = &path.segments[0].ident.name;
-                let method_name = &path.segments[1].ident.name;
+                let member = &path.segments[1].ident.name;
 
-                // Check if this looks like a constructor/method call (lowercase or snake_case)
-                let is_method = method_name
-                    .chars()
-                    .next()
-                    .map_or(false, |c| c.is_lowercase())
-                    || method_name == "new"
-                    || method_name == "default"
-                    || method_name == "from"
-                    || method_name == "try_from"
-                    || method_name == "into"
-                    || method_name == "with_capacity"
-                    || method_name == "from_str";
-
-                if is_method {
-                    // Return a special marker that eval_call will recognize
-                    // Store the type name in a Struct value with a special marker name
-                    return Ok(Value::Struct {
-                        name: format!("__constructor__{}", type_name),
-                        fields: Rc::new(RefCell::new(HashMap::new())),
-                    });
-                } else {
-                    // Looks like an enum variant (PascalCase) - check if it exists
-                    if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
-                        // Check if variant exists
-                        let variant_exists = enum_def
-                            .variants
-                            .iter()
-                            .any(|v| v.name.name == *method_name);
-                        if !variant_exists {
-                            return Err(RuntimeError::new(format!(
-                                "no variant '{}' on enum '{}'",
-                                method_name, type_name
-                            )));
-                        }
+                // A known enum still answers for its own variants; only the
+                // invented ones are refused.
+                if let Some(TypeDef::Enum(enum_def)) = self.types.get(type_name) {
+                    if enum_def.variants.iter().any(|v| v.name.name == *member) {
+                        return Ok(Value::Variant {
+                            enum_name: type_name.clone(),
+                            variant_name: member.clone(),
+                            fields: None,
+                        });
                     }
-                    // Create unit variant (for external types or verified variants)
-                    return Ok(Value::Variant {
-                        enum_name: type_name.clone(),
-                        variant_name: method_name.clone(),
-                        fields: None,
-                    });
+                    return Err(RuntimeError::new(format!(
+                        "no variant '{}' on enum '{}'",
+                        member, type_name
+                    )));
                 }
+
+                // Name the half that is missing: "no such type" and "no such
+                // member on a type that exists" send the reader to different
+                // places, and the empty struct sent them nowhere.
+                return Err(RuntimeError::new(if self.types.contains_key(type_name.as_str()) {
+                    format!(
+                        "no associated function or variant '{}' on '{}'",
+                        member, type_name
+                    )
+                } else {
+                    format!(
+                        "no such type '{}' (in '{}·{}')",
+                        type_name, type_name, member
+                    )
+                }));
             }
 
             Err(RuntimeError::new(format!(
@@ -27164,6 +27172,66 @@ mod tests {
             invoke tome·tui·{pick};
             rite main() { ⤺ pick(); }";
         assert!(matches!(tome.run(source), Ok(Value::Int(2))));
+    }
+
+    #[test]
+    fn an_unknown_type_is_refused_rather_than_invented() {
+        // #146. `Zzz·qqq(1, 2, 3)` evaluated to `Zzz { }` -- an empty struct
+        // named after a type that exists nowhere, with the arguments
+        // discarded and no error from `check` either. Anything spelled like a
+        // member got a plausible value instead of an answer, which is why
+        // `File·read_to_string(path)` returned `File { }` having read nothing.
+        let err = run("rite main() { ⤺ Zzz·qqq(1, 2, 3); }").unwrap_err();
+        assert!(
+            err.to_string().contains("no such type 'Zzz'"),
+            "expected a no-such-type error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn an_unknown_member_names_the_type_that_does_exist() {
+        // The other half is a different question for the reader: the type is
+        // real and the member is not. The empty struct answered both with the
+        // same silence.
+        let source = "\
+            ☉ Σ P { ☉ x: f32 }
+            rite main() { ⤺ P·nosuchthing(1); }";
+        let err = run(source).unwrap_err();
+        assert!(
+            err.to_string().contains("no associated function or variant 'nosuchthing' on 'P'"),
+            "expected a no-such-member error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn an_uppercase_member_is_refused_the_same_way() {
+        // The capitalised arm fabricated a *variant* rather than a struct, so
+        // fixing only the lowercase one would have left the same defect
+        // reachable by capitalising the name.
+        let err = run("rite main() { ⤺ Zzz·Qqq; }").unwrap_err();
+        assert!(
+            err.to_string().contains("no such type 'Zzz'"),
+            "expected a no-such-type error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn a_real_enum_still_answers_for_its_own_variants() {
+        // The refusal must not reach a variant that exists: enums are still
+        // resolved from their declaration, and only invented ones are refused.
+        let source = "\
+            ☉ ᛈ Status { Success, Failure }
+            rite main() { ≔ s = Status·Success; ⤺ 1; }";
+        assert!(matches!(run(source), Ok(Value::Int(1))));
+
+        let bad = "\
+            ☉ ᛈ Status { Success, Failure }
+            rite main() { ≔ s = Status·Nope; ⤺ 1; }";
+        let err = run(bad).unwrap_err();
+        assert!(
+            err.to_string().contains("no variant 'Nope' on enum 'Status'"),
+            "expected a no-such-variant error, got: {err}"
+        );
     }
 
     #[test]
