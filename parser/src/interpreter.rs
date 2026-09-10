@@ -1365,6 +1365,37 @@ pub enum TypeDef {
     Enum(EnumDef),
 }
 
+
+/// `s·slice(start, end)` over CHARACTERS, not bytes.
+///
+/// Sigil had no substring method at all — not slice, substring, substr or sub —
+/// so extracting a piece of a string meant `chars()·skip(n)·take(k)·collect()`.
+/// That is the first thing any text protocol needs; parsing an HTTP request line
+/// is the canonical case. Character indices keep it total for non-ASCII input:
+/// byte slicing would panic mid-codepoint.
+fn string_slice(s: &str, start: i64, end: i64) -> Value {
+    let n = s.chars().count() as i64;
+    let lo = start.clamp(0, n) as usize;
+    let hi = end.clamp(start.clamp(0, n), n) as usize;
+    Value::String(Rc::new(s.chars().skip(lo).take(hi - lo).collect::<String>()))
+}
+
+/// `s·find(needle)` -> Option<i64>, a CHARACTER index, matching string_slice.
+fn string_find(s: &str, needle: &str) -> Value {
+    match s.find(needle) {
+        Some(byte_idx) => Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "Some".to_string(),
+            fields: Some(Rc::new(vec![Value::Int(s[..byte_idx].chars().count() as i64)])),
+        },
+        None => Value::Variant {
+            enum_name: "Option".to_string(),
+            variant_name: "None".to_string(),
+            fields: None,
+        },
+    }
+}
+
 impl Interpreter {
     pub fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new()));
@@ -12026,6 +12057,30 @@ impl Interpreter {
             }
             (Value::String(s), "to_string") => Ok(Value::String(s.clone())),
             (Value::String(s), "into") => Ok(Value::String(s.clone())), // into() for String just returns String
+            (Value::String(s), "slice") | (Value::String(s), "substring")
+            | (Value::String(s), "substr") => {
+                let start = match arg_values.first() {
+                    Some(Value::Int(n)) => *n,
+                    _ => 0,
+                };
+                let end = match arg_values.get(1) {
+                    Some(Value::Int(n)) => *n,
+                    _ => s.chars().count() as i64,
+                };
+                Ok(string_slice(s, start, end))
+            }
+            (Value::String(s), "find") => {
+                let needle = match arg_values.first() {
+                    Some(Value::String(n)) => (**n).clone(),
+                    Some(Value::Char(c)) => c.to_string(),
+                    Some(Value::Ref(r)) => match &*r.borrow() {
+                        Value::String(n) => (**n).clone(),
+                        _ => return Err(RuntimeError::new("find expects a string or char")),
+                    },
+                    _ => return Err(RuntimeError::new("find expects a string or char")),
+                };
+                Ok(string_find(s, &needle))
+            }
             (Value::String(s), "starts_with") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("starts_with expects 1 argument"));
@@ -12704,7 +12759,13 @@ impl Interpreter {
                 let was_new = s.borrow_mut().insert(key);
                 Ok(Value::Bool(was_new))
             }
-            (Value::Set(s), "contains") => {
+            // `contains_key` too: a set is a map with no values, so the name
+            // is unambiguous on one, and it is the spelling migrated JavaScript
+            // reaches for — `Set.has(x)` and `Map.has(k)` are one method there.
+            // The WASM backend has always accepted both; the interpreter
+            // rejected `contains_key` outright, so generated code ran on one
+            // backend and not the other.
+            (Value::Set(s), "contains") | (Value::Set(s), "contains_key") => {
                 if arg_values.len() != 1 {
                     return Err(RuntimeError::new("contains expects 1 argument"));
                 }
@@ -13051,6 +13112,25 @@ impl Interpreter {
                             return Ok(Value::Bool(s.contains(substr)));
                         }
                         "trim" => return Ok(Value::String(Rc::new(s.trim().to_string()))),
+                        "slice" | "substring" | "substr" => {
+                            let start = match arg_values.first() {
+                                Some(Value::Int(n)) => *n,
+                                _ => 0,
+                            };
+                            let end = match arg_values.get(1) {
+                                Some(Value::Int(n)) => *n,
+                                _ => s.chars().count() as i64,
+                            };
+                            return Ok(string_slice(s, start, end));
+                        }
+                        "find" => {
+                            let needle = match arg_values.first() {
+                                Some(Value::String(n)) => (**n).clone(),
+                                Some(Value::Char(c)) => c.to_string(),
+                                _ => return Err(RuntimeError::new("find expects a string or char")),
+                            };
+                            return Ok(string_find(s, &needle));
+                        }
                         "to_lowercase" => return Ok(Value::String(Rc::new(s.to_lowercase()))),
                         "to_uppercase" => return Ok(Value::String(Rc::new(s.to_uppercase()))),
                         "chars" => {
@@ -18872,6 +18952,19 @@ impl Interpreter {
                 let mut borrowed = map.borrow_mut();
                 Ok(borrowed.remove(&key).unwrap_or(Value::Null))
             }
+            // `x·to_bool()` — JavaScript truthiness, spelled as a method.
+            //
+            // `to_bool` existed only as a free function, and the React migrator
+            // emits the method form 548 times across the generated Lares client
+            // (every `&&`, `||` and ternary over a non-boolean). Neither backend
+            // had it: the interpreter answered "no method 'to_bool'", and the
+            // WASM backend had no `to_bool` at all.
+            (_, "to_bool") => {
+                if !arg_values.is_empty() {
+                    return Err(RuntimeError::new("to_bool() takes no arguments"));
+                }
+                Ok(Value::Bool(crate::stdlib::is_truthy(&recv)))
+            }
             _ => {
                 // Debug: what type is failing method lookup
                 let recv_type = match &recv {
@@ -19074,6 +19167,26 @@ impl Interpreter {
             | (Value::String(s), "lowercase")
             | (Value::String(s), "to_lowercase") => Ok(Value::String(Rc::new(s.to_lowercase()))),
             (Value::String(s), "trim") => Ok(Value::String(Rc::new(s.trim().to_string()))),
+            (Value::String(s), "slice") | (Value::String(s), "substring")
+            | (Value::String(s), "substr") => {
+                let start = match args.first() {
+                    Some(Value::Int(n)) => *n,
+                    _ => 0,
+                };
+                let end = match args.get(1) {
+                    Some(Value::Int(n)) => *n,
+                    _ => s.chars().count() as i64,
+                };
+                Ok(string_slice(s, start, end))
+            }
+            (Value::String(s), "find") => {
+                let needle = match args.first() {
+                    Some(Value::String(n)) => (**n).clone(),
+                    Some(Value::Char(c)) => c.to_string(),
+                    _ => return Err(RuntimeError::new("find expects a string or char")),
+                };
+                Ok(string_find(s, &needle))
+            }
             (Value::String(s), "chars") => {
                 let chars: Vec<Value> = s.chars().map(Value::Char).collect();
                 Ok(Value::Array(Rc::new(RefCell::new(chars))))

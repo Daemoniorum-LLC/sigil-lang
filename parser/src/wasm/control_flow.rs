@@ -199,6 +199,9 @@ impl WasmCompiler {
         // Push new scope for loop variables
         self.scope_vars.push(std::collections::HashMap::new());
 
+        // What the bindings hold, where the iterable's declaration says.
+        self.note_loop_bindings(pattern, iter);
+
         // Compile iterator expression
         self.compile_expr(iter)?;
 
@@ -210,15 +213,20 @@ impl WasmCompiler {
         let arr_idx = func.alloc_local("__for_arr".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(arr_idx));
 
-        // Get array length (assuming array format: [len: i32, ...elements])
+        // What to iterate. A map becomes its entries — an array of two-element
+        // arrays — so `∀ x ∈ xs` and `∀ (k, v) ∈ m` are the same loop over
+        // different contents. Before S57 this read a 4-byte length out of
+        // linear memory, which is not where a Vec lives.
         func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Load(wasm_encoder::MemArg {
-            offset: 0,
-            align: 2,
-            memory_index: 0,
-        }));
-        func.push(Instruction::I64ExtendI32U);
+        drop(func);
+        self.emit_iterable()?;
+        let func = self.current_function_mut().unwrap();
+        func.push(Instruction::LocalSet(arr_idx));
+
+        func.push(Instruction::LocalGet(arr_idx));
+        drop(func);
+        self.emit_array_len()?;
+        let func = self.current_function_mut().unwrap();
 
         let len_idx = func.alloc_local("__for_len".to_string(), ValType::I64);
         func.push(Instruction::LocalSet(len_idx));
@@ -254,19 +262,9 @@ impl WasmCompiler {
 
         // Get current element: arr[i]
         func.push(Instruction::LocalGet(arr_idx));
-        func.push(Instruction::I32WrapI64);
         func.push(Instruction::LocalGet(idx_idx));
-        func.push(Instruction::I64Const(8));
-        func.push(Instruction::I64Mul);
-        func.push(Instruction::I32WrapI64);
-        func.push(Instruction::I32Add);
-        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-            offset: 4, // Skip length field
-            align: 3,
-            memory_index: 0,
-        }));
-
-
+        drop(func);
+        self.emit_array_get()?;
 
         // Bind pattern
         self.bind_pattern(pattern)?;
@@ -632,16 +630,14 @@ impl WasmCompiler {
                     func.push(Instruction::I64Const(1)); // Start with true
 
                     let mut indices = Vec::new();
+                    drop(func);
                     for (i, _) in patterns.iter().enumerate() {
-                        // Get tuple element
+                        let func = self.current_function_mut().unwrap();
                         func.push(Instruction::LocalGet(scrutinee_idx));
-                        func.push(Instruction::I32WrapI64);
-                        func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                            offset: (i * 8) as u64,
-                            align: 3,
-                            memory_index: 0,
-                        }));
-
+                        func.push(Instruction::I64Const(i as i64));
+                        drop(func);
+                        self.emit_array_get()?;
+                        let func = self.current_function_mut().unwrap();
                         let temp_idx = func.alloc_local(format!("__tuple_{}", i), ValType::I64);
                         func.push(Instruction::LocalSet(temp_idx));
                         indices.push(temp_idx);
@@ -782,6 +778,20 @@ impl WasmCompiler {
                     .map(|s| s.ident.name.as_str())
                     .unwrap_or("");
 
+                // `None` is the absence of a value, not a tag in a box: an
+                // Option is transparent here, so `Some(x)` IS `x` and `None`
+                // is 0. Reading it as a tag happened to agree, because the
+                // tag is 0 too — but only by accident, and the `Some` arm
+                // below did not agree with it at all.
+                if variant_name == "None" {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::LocalGet(scrutinee_idx));
+                    func.push(Instruction::I64Const(super::NONE));
+                    func.push(Instruction::I64Eq);
+                    func.push(Instruction::I64ExtendI32U);
+                    return Ok(());
+                }
+
                 // Look up variant tag (enum layout)
                 let tag = self.get_enum_variant_tag(variant_name);
 
@@ -800,6 +810,28 @@ impl WasmCompiler {
                     .last()
                     .map(|s| s.ident.name.as_str())
                     .unwrap_or("");
+
+                // `Some(x)` compiles to `x` — the constructor wraps nothing —
+                // so the value IS the payload and there is no tag to load.
+                // Loading one read memory at the address of the payload:
+                // `⌥ Some(5) { Some(v) => v }` dereferenced 5 and gave 0.
+                if variant_name == "Some" {
+                    let func = self.current_function_mut().unwrap();
+                    func.push(Instruction::LocalGet(scrutinee_idx));
+                    func.push(Instruction::I64Const(super::NONE));
+                    func.push(Instruction::I64Ne);
+                    func.push(Instruction::I64ExtendI32U);
+                    // The payload is the scrutinee itself.
+                    if let Some(inner) = fields.first() {
+                        if !matches!(inner, Pattern::Ident { .. } | Pattern::Wildcard) {
+                            self.compile_pattern_check(scrutinee_idx, inner)?;
+                            let func = self.current_function_mut().unwrap();
+                            func.push(Instruction::I64And);
+                        }
+                    }
+                    return Ok(());
+                }
+
                 let tag = self.get_enum_variant_tag(variant_name);
 
                 // Check tag first
@@ -967,18 +999,15 @@ impl WasmCompiler {
 
         
 
-                // Bind each element
+                // Bind each element. A tuple is a host array, per S57, so this
+                // is the same read `xs[i]` does — and the same read that a
+                // `map.entries` pair needs.
                 for (i, pat) in patterns.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalGet(ptr_idx));
-                    func.push(Instruction::I32WrapI64);
-                    func.push(Instruction::I64Load(wasm_encoder::MemArg {
-                        offset: (i * 8) as u64,
-                        align: 3,
-                        memory_index: 0,
-                    }));
-            
-
+                    func.push(Instruction::I64Const(i as i64));
+                    drop(func);
+                    self.emit_array_get()?;
                     self.bind_pattern(pat)?;
                 }
             }
@@ -1033,7 +1062,22 @@ impl WasmCompiler {
                 func.push(Instruction::Drop);
             }
 
-            Pattern::TupleStruct { fields, .. } => {
+            Pattern::TupleStruct { path, fields } => {
+                // `Some(v)` binds `v` to the value itself: the constructor is
+                // transparent, so there is no box to read a payload out of.
+                if path.segments.last().map(|s| s.ident.name.as_str()) == Some("Some") {
+                    return match fields.first() {
+                        Some(inner) => self.bind_pattern(inner),
+                        None => {
+                            let func = self
+                                .current_function_mut()
+                                .ok_or_else(|| WasmError::internal("not in function context"))?;
+                            func.push(Instruction::Drop);
+                            Ok(())
+                        }
+                    };
+                }
+
                 // Store pointer
                 let func = self
                     .current_function_mut()
@@ -1044,6 +1088,12 @@ impl WasmCompiler {
         
 
                 // Bind each field (skip tag at offset 0)
+                let payload_types = path
+                    .segments
+                    .last()
+                    .and_then(|s| self.enum_payload_types.get(&s.ident.name))
+                    .cloned()
+                    .unwrap_or_default();
                 for (i, pat) in fields.iter().enumerate() {
                     let func = self.current_function_mut().unwrap();
                     func.push(Instruction::LocalGet(ptr_idx));
@@ -1053,7 +1103,18 @@ impl WasmCompiler {
                         align: 3,
                         memory_index: 0,
                     }));
-            
+
+                    // Give the binding the payload's declared type, so field
+                    // and method lookups on it resolve.
+                    if let (Some(name), Some(Some(ty))) = (
+                        super::statements::extract_pattern_name(pat),
+                        payload_types.get(i),
+                    ) {
+                        self.var_types.insert(name.clone(), ty.clone());
+                        if ty == "String" || ty == "str" {
+                            self.string_locals.insert(name);
+                        }
+                    }
 
                     self.bind_pattern(pat)?;
                 }
@@ -1151,7 +1212,12 @@ impl WasmCompiler {
                             // Struct initialization: PlatformApp { ... } -> "PlatformApp"
                             path.segments.last().map(|s| s.ident.name.clone())
                         }
-                        _ => None,
+                        // A static method call — `Json·parse(…)`, `VNode·div()` —
+                        // names its own type. Without this, a local bound from a
+                        // constructor had no recorded type, so a method call on it
+                        // could not be resolved to the type's own method and fell
+                        // through to a same-named builtin.
+                        other => self.infer_receiver_type(other),
                     }
                 });
 
@@ -1159,6 +1225,32 @@ impl WasmCompiler {
                 if let Some(ref type_name) = init_type {
                     if let crate::ast::Pattern::Ident { name, .. } = pattern {
                         self.var_types.insert(name.name.clone(), type_name.clone());
+                    }
+                }
+
+                // …and whether it holds a string, which nothing tracked, so
+                // `format!("{}", s)` printed the pointer and `"a" + s` added
+                // two addresses. An explicit `String` annotation settles it;
+                // otherwise the initialiser does.
+                if let Some(bound) = super::statements::extract_pattern_name(pattern) {
+                    let annotated = match stmt {
+                        Stmt::Let { ty: Some(t), .. } => Some(super::strings::type_is_string(t)),
+                        _ => None,
+                    };
+                    if let Stmt::Let { ty: Some(t), .. } = stmt {
+                        self.decl_types.insert(bound.clone(), t.clone());
+                    }
+                    match (annotated, init) {
+                        (Some(true), _) => {
+                            self.string_locals.insert(bound);
+                        }
+                        (Some(false), _) => {
+                            self.string_locals.remove(&bound);
+                        }
+                        (None, Some(val)) => self.note_string_local(&bound, val),
+                        (None, None) => {
+                            self.string_locals.remove(&bound);
+                        }
                     }
                 }
 

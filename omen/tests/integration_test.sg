@@ -2,7 +2,7 @@
 //!
 //! Verifies the full Omen system working together.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types (Minimal Omen Recreation)

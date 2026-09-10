@@ -9,7 +9,6 @@
 // That changes something.
 // That makes something real.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,
@@ -59,7 +58,7 @@ invoke shared·{
     ☉ subject: EntityId!,
 
     /// What aspect is being witnessed
-    ☉ aspect: Aspect!,
+    ☉ aspect_: Aspect!,
 
     /// The vulnerability of being seen
     ☉ vulnerability: Vulnerability!,
@@ -666,7 +665,7 @@ scroll tests {
 
         ≔ witnessed = Witnessed {
             subject,
-            aspect: Aspect·Existence,
+            aspect_: Aspect·Existence,
             vulnerability: Vulnerability·High,
         };
 

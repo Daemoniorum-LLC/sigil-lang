@@ -1,9 +1,9 @@
-fn main() {
-    let nums = [1, 2, 3, 4, 5];
+rite main() {
+    ≔ nums = [1, 2, 3, 4, 5];
     
     // Try sum with lowercase
-    let total = nums|sum;
+    ≔ total = nums|sum;
     print(total);
     
-    return 0;
+    ⤺ 0;
 }

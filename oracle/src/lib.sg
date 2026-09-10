@@ -1,8 +1,7 @@
 // Oracle - Explainability Infrastructure
 // Understanding is the foundation of trust
 
-invoke std·collections·HashMap;
-invoke std·hash·{Hash, Hasher};
+invoke HashMap;
 invoke shared·{
     Timestamp, Value, Confidence, EntityId,
 };

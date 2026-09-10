@@ -389,12 +389,17 @@ impl WasmCompiler {
         while let Some(c) = chars.next() {
             if in_placeholder {
                 if c == '}' {
-                    // End of placeholder
+                    // End of placeholder. The literal that follows it is still
+                    // being read; it is pushed by the NEXT `{`, or by the tail
+                    // handler below. Pushing here as well produced an empty
+                    // literal after every placeholder, which shifted the whole
+                    // interleaving: the caller reads `literals[i + 1]` as the text
+                    // following placeholder `i`, so `format!("a{}b{}c", x, y)`
+                    // rendered as `a<x><y>b` — the trailing literal dropped
+                    // entirely and the middle one moved one placeholder late.
                     in_placeholder = false;
                     format_specs.push(placeholder_content.clone());
                     placeholder_content.clear();
-                    literals.push(current.clone());
-                    current.clear();
                 } else {
                     placeholder_content.push(c);
                 }
@@ -404,11 +409,12 @@ impl WasmCompiler {
                     chars.next();
                     current.push('{');
                 } else {
-                    // Start of placeholder - save current literal first
-                    if literals.is_empty() {
-                        literals.push(current.clone());
-                        current.clear();
-                    }
+                    // Start of placeholder - save the literal that preceded it.
+                    // Unconditionally: this used to fire only for the first
+                    // placeholder, so the text between later placeholders was
+                    // held over and emitted in the wrong slot.
+                    literals.push(current.clone());
+                    current.clear();
                     in_placeholder = true;
                 }
             } else if c == '}' {
@@ -428,10 +434,9 @@ impl WasmCompiler {
             return Err(WasmError::parse("unclosed { in format string"));
         }
 
-        // Push any remaining literal
-        if !current.is_empty() || literals.is_empty() {
-            literals.push(current);
-        }
+        // Push the trailing literal, empty or not: the caller indexes literals by
+        // placeholder position, so `literals.len()` must be `placeholders + 1`.
+        literals.push(current);
 
         let placeholders = format_specs.len();
         Ok(FormatParts {
@@ -449,6 +454,13 @@ impl WasmCompiler {
             .map_err(|e| WasmError::parse(&format!("in format! argument: {}", e)))?;
 
         self.compile_expr(&expr)?;
+
+        // A string argument is already a string. This used to convert
+        // unconditionally, so `format!("<{}>", tag)` called `string.from_int`
+        // on a pointer and produced `<16384>`.
+        if self.is_string_expr(&expr) {
+            return Ok(());
+        }
 
         // Get string::from_int or string::from_float import index
         let from_int_idx = self.imports.get_func("string_from_int")
@@ -1418,6 +1430,28 @@ mod tests {
         assert_eq!(parts.literals[0], "hello ");
         assert_eq!(parts.literals[1], " world");
         assert_eq!(parts.placeholders, 1);
+    }
+
+    /// Literals and placeholders interleave: `literals[i]` precedes placeholder
+    /// `i`, and there is always one more literal than placeholder. The caller
+    /// relies on that, and it used to hold only for a single-placeholder string.
+    #[test]
+    fn test_split_format_string_interleaving() {
+        let compiler = WasmCompiler::new();
+        let parts = compiler.split_format_string("a{}b{}c").unwrap();
+        assert_eq!(parts.placeholders, 2);
+        assert_eq!(parts.literals, vec!["a", "b", "c"]);
+
+        // Leading and trailing placeholders still get their empty literals, so
+        // the indexing holds.
+        let parts = compiler.split_format_string("{}x{}").unwrap();
+        assert_eq!(parts.placeholders, 2);
+        assert_eq!(parts.literals, vec!["", "x", ""]);
+
+        // No placeholders: one literal.
+        let parts = compiler.split_format_string("plain").unwrap();
+        assert_eq!(parts.placeholders, 0);
+        assert_eq!(parts.literals, vec!["plain"]);
     }
 
     #[test]

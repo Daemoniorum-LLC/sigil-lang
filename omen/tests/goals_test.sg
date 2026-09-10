@@ -2,7 +2,7 @@
 //!
 //! Verifies Goal, GoalStatus, Predicate, Constraint, and GoalManager.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types
@@ -46,7 +46,7 @@ rite uuid_v7() -> [u8; 16] { [0u8; 16] }
     ☉ rite now() -> Self { Self { nanos: 1000 } }
 }
 
-⊢ std·ops·Add<Duration> ∀ Timestamp {
+⊢ Add<Duration> ∀ Timestamp {
     type Output = Self;
     rite add(self, d: Duration) -> Self {
         Self { nanos: self.nanos + d.nanos }

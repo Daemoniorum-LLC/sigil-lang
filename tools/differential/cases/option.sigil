@@ -1,0 +1,82 @@
+// What "nothing" is, in both backends.
+//
+// An Option is TRANSPARENT in the WASM backend: `Some(x)` compiles to `x` and
+// nothing wraps it. `None` used to allocate a fresh Option at every mention
+// with equality on the pointer, so `None == None` was false and no `x == None`
+// guard in a migrated program could ever be true. It is a sentinel now
+// (`wasm::NONE`), which is also what `∅` and `null` compile to.
+//
+// The interpreter does not share that model, and these probes are where the
+// two are pinned against each other.
+//
+// NOT PROBED HERE, because the interpreter REFUSES them rather than answering
+// — `==` is strictly typed there and untyped in WASM, where every value is an
+// i64. Each is a runtime type error in the interpreter and a comparison in
+// WASM:
+//
+//     ∅ == None        Discriminant(14) Eq Discriminant(9)   wasm: true
+//     ∅ == ∅           Discriminant(14) Eq Discriminant(14)  wasm: true
+//     false == None    Discriminant(1)  Eq Discriminant(9)   wasm: false
+//     0 == None        Discriminant(2)  Eq Discriminant(9)   wasm: false
+//     "" == None       Discriminant(4)  Eq Discriminant(9)   wasm: false
+//     (None)·to_bool()  no method 'to_bool' on enum 'Option'  wasm: false
+//     (∅)·to_string()   no method 'to_string' on Discriminant(14)  wasm: ""
+//
+// A migrated component is made of `x == None` where `x` is `Any`, so under the
+// interpreter the Lares client would stop on the first guard it reached. That
+// is the gap, not a defect in these probes.
+
+☉ rite t_none_eq_none() -> i64! {
+    ⤺ ⎇ None == None { 1 } ⎉ { 0 };
+}
+
+// Matching. `Some(v)` binds the value itself — the constructor wraps nothing —
+// and `Some(0)` is still Some, which is why nothing can not be 0.
+☉ rite t_match_none() -> i64! {
+    ⌥ None {
+        None => { ⤺ 1; }
+        _ => { ⤺ 0; }
+    }
+}
+☉ rite t_match_some() -> i64! {
+    ⌥ Some(5) {
+        Some(v) => { ⤺ v; }
+        _ => { ⤺ 0; }
+    }
+}
+☉ rite t_match_some_zero() -> i64! {
+    ⌥ Some(0) {
+        Some(v) => { ⤺ 77; }
+        _ => { ⤺ 0; }
+    }
+}
+☉ rite t_match_some_on_none() -> i64! {
+    ⌥ None {
+        Some(v) => { ⤺ v; }
+        _ => { ⤺ 7; }
+    }
+}
+
+// Nothing is falsy.
+☉ rite t_nil_to_bool() -> i64! {
+    ⤺ ⎇ (∅)·to_bool() { 1 } ⎉ { 0 };
+}
+
+// …and renders as nothing. The interpreter says "None" and the WASM backend
+// says "": React writes `{null}` as an empty string and generated code emits
+// `(x)·to_string()` wherever React had one, so the WASM answer is the one the
+// migration needs and the interpreter's is the one a Sigil programmer expects.
+// Recorded, not reconciled — this probe is here to keep it visible.
+☉ rite t_none_to_string() -> String! {
+    ⤺ (None)·to_string();
+}
+
+☉ rite main() {
+    println((t_none_eq_none())·to_string());
+    println((t_match_none())·to_string());
+    println((t_match_some())·to_string());
+    println((t_match_some_zero())·to_string());
+    println((t_match_some_on_none())·to_string());
+    println((t_nil_to_bool())·to_string());
+    println((t_none_to_string())·to_string());
+}

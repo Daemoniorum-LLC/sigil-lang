@@ -14,8 +14,8 @@
 //! - gnosis (Learning & Growth)
 //! - anima (Interiority)
 
-invoke std·collections·VecDeque;
-invoke std·hash·Hash;
+invoke VecDeque;
+invoke Hash;
 
 // Cross-module integration layer
 ☉ scroll integration;
@@ -784,7 +784,7 @@ invoke std·hash·Hash;
             created_at: now,
             updated_at: now,
             tags: Vec·new(),
-            attributes: std·collections·HashMap·new(),
+            attributes: HashMap·new(),
         }
     }
 

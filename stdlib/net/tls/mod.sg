@@ -24,7 +24,7 @@ invoke security·*;
     CertificateError { message: String }!,
     ProtocolError { message: String }!,
     IoError { inner: SocketError }!,
-    NotConnected!,
+    NotConnected,
     LibraryError { code: i32, message: String }!,
 }
 
@@ -70,7 +70,7 @@ invoke security·*;
     /// Wrap a TCP connection with TLS (client mode)
     ///
     /// Performs the TLS handshake with the given hostname ∀ SNI.
-    ☉ rite connect(stream: TcpStream, hostname: &str) -> Result<TlsStream, TlsError>! {
+    ☉ rite connect_(stream_: TcpStream, hostname: &str) -> Result<TlsStream, TlsError>! {
         // Initialize TLS library (idempotent)
         tls_init()?;
 
@@ -116,8 +116,8 @@ invoke security·*;
 
     /// Read exactly `buf.len()` bytes
     ☉ rite read_exact(&vary self, buf: &vary [u8]) -> Result<(), TlsError>! {
-        vary total_read: usize = 0;
-        vary remaining = buf;
+        ≔ vary total_read: usize = 0;
+        ≔ vary remaining = buf;
 
         ⟳ total_read < buf.len() {
             ⌥ self.read(remaining) {
@@ -143,7 +143,7 @@ invoke security·*;
             ret Err(TlsError·NotConnected);
         }
 
-        vary total_written: usize = 0;
+        ≔ vary total_written: usize = 0;
 
         ⟳ total_written < buf.len() {
             ≔ remaining = &buf[total_written..];
@@ -157,12 +157,12 @@ invoke security·*;
     }
 
     /// Graceful TLS shutdown
-    ☉ rite close(&vary self) -> Result<(), TlsError>! {
+    ☉ rite close_(&vary self) -> Result<(), TlsError>! {
         ⎇ self.connected {
             ssl_shutdown(self.ssl)?;
             ssl_free(self.ssl);
             ssl_ctx_free(self.ssl_ctx);
-            self.inner.close().map_err(|e| TlsError·IoError { inner: e })?;
+            self.inner.close_().map_err(|e| TlsError·IoError { inner: e })?;
             self.connected = false;
         }
         Ok(())

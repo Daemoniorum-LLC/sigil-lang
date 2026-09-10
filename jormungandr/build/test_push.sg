@@ -1,4 +1,4 @@
-λ test_push() {
+rite test_push() {
     ≔ Δ name: String = "hello".to_string();
     ≔ c: char = 'x';
     name.push(c);

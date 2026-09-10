@@ -3,16 +3,16 @@
 //! The first major location - an abandoned church that serves
 //! as Father Marcus's domain. Reality bends here.
 
-use super·scene·*
-use super·super·system·*
-use std·collections·HashMap
+invoke super·scene·*
+invoke super·super·system·*
+invoke HashMap
 
 // ============================================================================
 // CHURCH EXTERIOR
 // ============================================================================
 
 //! Create the church exterior scene
-fn create_church_exterior() -> Scene! {
+rite create_church_exterior() -> Scene! {
     SceneBuilder·new("church_exterior")
         ·name(
             "St. Malachar's Church",
@@ -194,28 +194,28 @@ fn create_church_exterior() -> Scene! {
         ·ambiance(Ambiance {
             background_sound: "wind_through_stones"·to_string(),
             music_track: Some("ominous_ambient"·to_string())?,
-            layer_sounds: {
-                RealityLayer·Fractured => "heartbeat_subtle",
-                RealityLayer·Shattered => "choir_screaming",
-            }~,
-            weather_sounds: {
-                Weather·Fog => "fog_whispers",
-            }~,
+            layer_sounds: HashMap·from([
+                (RealityLayer·Fractured, "heartbeat_subtle"),
+                (RealityLayer·Shattered, "choir_screaming"),
+            ])~,
+            weather_sounds: HashMap·from([
+                (Weather·Fog, "fog_whispers"),
+            ])~,
             lighting: Lighting {
                 base_level: 0.3,
                 color: (0.9, 0.8, 0.7),
-                layer_modifiers: {
-                    RealityLayer·Fractured => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Fractured, LightingMod {
                         level_delta: -0.1,
                         color_shift: (-0.2, -0.1, 0.0),
                         flicker: true,
-                    },
-                    RealityLayer·Shattered => LightingMod {
+                    }),
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: -0.2,
                         color_shift: (-0.4, -0.3, -0.1),
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·on_enter(InteractionEffect·PlaySound("church_bell_distant"·to_string()))
@@ -227,7 +227,7 @@ fn create_church_exterior() -> Scene! {
 // ============================================================================
 
 //! Create the church nave (main interior)
-fn create_church_nave() -> Scene! {
+rite create_church_nave() -> Scene! {
     SceneBuilder·new("church_nave")
         ·name(
             "Church Nave",
@@ -446,26 +446,26 @@ fn create_church_nave() -> Scene! {
         ·ambiance(Ambiance {
             background_sound: "church_echoes"·to_string(),
             music_track: Some("dread_sacred"·to_string())?,
-            layer_sounds: {
-                RealityLayer·Fractured => "heartbeat_building",
-                RealityLayer·Shattered => "reality_tear",
-            }~,
+            layer_sounds: HashMap·from([
+                (RealityLayer·Fractured, "heartbeat_building"),
+                (RealityLayer·Shattered, "reality_tear"),
+            ])~,
             weather_sounds: HashMap·new()~,
             lighting: Lighting {
                 base_level: 0.4,
                 color: (0.9, 0.7, 0.5),  // Candlelight
-                layer_modifiers: {
-                    RealityLayer·Fractured => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Fractured, LightingMod {
                         level_delta: -0.15,
                         color_shift: (-0.2, -0.2, 0.0),
                         flicker: true,
-                    },
-                    RealityLayer·Shattered => LightingMod {
+                    }),
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: 0.2,  // Too bright
                         color_shift: (0.3, -0.3, -0.2),  // Sickly red
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·build()
@@ -476,7 +476,7 @@ fn create_church_nave() -> Scene! {
 // ============================================================================
 
 //! Create the church crypt (hidden area)
-fn create_church_crypt() -> Scene! {
+rite create_church_crypt() -> Scene! {
     SceneBuilder·new("church_crypt")
         ·name(
             "The Crypt",
@@ -584,13 +584,13 @@ fn create_church_crypt() -> Scene! {
             lighting: Lighting {
                 base_level: 0.2,
                 color: (0.5, 0.8, 0.5),  // Phosphorescent green
-                layer_modifiers: {
-                    RealityLayer·Shattered => LightingMod {
+                layer_modifiers: HashMap·from([
+                    (RealityLayer·Shattered, LightingMod {
                         level_delta: 0.3,
                         color_shift: (0.5, -0.3, -0.3),  // Blood red
                         flicker: true,
-                    },
-                }~,
+                    }),
+                ])~,
             },
         })
         ·build()
@@ -601,7 +601,7 @@ fn create_church_crypt() -> Scene! {
 // ============================================================================
 
 //! Register all church scenes
-fn register_church_scenes(manager: &mut SceneManager) {
+rite register_church_scenes(manager: &Δ SceneManager) {
     manager·register_scene(create_church_exterior());
     manager·register_scene(create_church_nave());
     manager·register_scene(create_church_crypt());

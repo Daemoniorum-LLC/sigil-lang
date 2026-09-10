@@ -3,29 +3,29 @@
 //! Alter-aware dialogue system with evidentiality types,
 //! morpheme operators, and native plurality support.
 
-pub mod dialogue;
-pub mod marcus;
-pub mod internal;
-pub mod vance;
+☉ scroll dialogue;
+☉ scroll marcus;
+☉ scroll internal;
+☉ scroll vance;
 
-pub use dialogue·*;
-pub use marcus·*;
-pub use internal·*;
-pub use vance·*;
+☉ invoke dialogue·*;
+☉ invoke marcus·*;
+☉ invoke internal·*;
+☉ invoke vance·*;
 
 // ============================================================================
 // MODULE INITIALIZATION
 // ============================================================================
 
 //! Initialize the complete dialogue system
-fn init_dialogue_system() -> DialogueManager! {
-    let mut manager = DialogueManager·new();
+rite init_dialogue_system() -> DialogueManager! {
+    ≔ vary manager = DialogueManager·new();
 
     // Register NPC dialogues
-    register_marcus_dialogues(&mut manager);
+    register_marcus_dialogues(&Δ manager);
 
     // Register internal system dialogues
-    register_internal_dialogues(&mut manager);
+    register_internal_dialogues(&Δ manager);
 
     manager
 }

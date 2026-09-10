@@ -6,7 +6,6 @@
 // Where belief persists despite evidence.
 // Where madness might be wisdom ∈ disguise.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

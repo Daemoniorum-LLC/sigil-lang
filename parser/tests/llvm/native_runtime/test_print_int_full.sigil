@@ -31,25 +31,25 @@ rite VEC_GROWTH_FACTOR() -> i64 { 2 }
 
     rite grow(&vary self, min_cap: i64) {
         ≔ vary new_cap = self.cap * VEC_GROWTH_FACTOR();
-        if new_cap < min_cap {
+        ⎇ new_cap < min_cap {
             new_cap = min_cap;
         }
-        if new_cap < VEC_INITIAL_CAPACITY() {
+        ⎇ new_cap < VEC_INITIAL_CAPACITY() {
             new_cap = VEC_INITIAL_CAPACITY();
         }
 
         ≔ new_size = new_cap * 8;
         ≔ new_ptr = __intrinsic_malloc(new_size);
 
-        if new_ptr == 0 {
+        ⎇ new_ptr == 0 {
             __intrinsic_exit(1);
         }
 
         // Copy old data to new buffer
-        if self.ptr != 0 {
+        ⎇ self.ptr != 0 {
             ≔ vary i = 0;
             loop {
-                if i >= self.len { break }
+                ⎇ i >= self.len { break }
                 ≔ old_addr = self.ptr + i * 8;
                 ≔ new_addr = new_ptr + i * 8;
                 ≔ value = *(old_addr as *i64);
@@ -64,7 +64,7 @@ rite VEC_GROWTH_FACTOR() -> i64 { 2 }
     }
 
     rite push(&vary self, value: i64) {
-        if self.len >= self.cap {
+        ⎇ self.len >= self.cap {
             self.grow(self.len + 1);
         }
 
@@ -74,11 +74,11 @@ rite VEC_GROWTH_FACTOR() -> i64 { 2 }
     }
 
     rite get(&self, index: i64) -> i64 {
-        if index < 0 {
-            return 0
+        ⎇ index < 0 {
+            ⤺ 0
         }
-        if index >= self.len {
-            return 0
+        ⎇ index >= self.len {
+            ⤺ 0
         }
 
         ≔ addr = self.ptr + index * 8;
@@ -86,7 +86,7 @@ rite VEC_GROWTH_FACTOR() -> i64 { 2 }
     }
 
     rite drop(&vary self) {
-        if self.ptr != 0 {
+        ⎇ self.ptr != 0 {
             __intrinsic_free(self.ptr);
             self.ptr = 0;
             self.len = 0;
@@ -110,37 +110,37 @@ rite print_newline() {
 
 // Print an integer to stdout
 rite print_int(n: i64) {
-    if n == 0 {
+    ⎇ n == 0 {
         write_byte(48);  // '0'
-        return
+        ⤺
     }
 
     ≔ vary num = n;
     ≔ vary negative = false;
 
-    if num < 0 {
+    ⎇ num < 0 {
         negative = true;
         num = 0 - num;
     }
 
     // Extract digits in reverse order
-    ≔ vary digits = RawVec::new();
+    ≔ vary digits = RawVec·new();
     loop {
-        if num == 0 { break }
+        ⎇ num == 0 { break }
         ≔ digit = num % 10;
         digits.push(digit + 48);  // '0' = 48
         num = num / 10;
     }
 
     // Print negative sign if needed
-    if negative {
+    ⎇ negative {
         write_byte(45);  // '-'
     }
 
     // Print digits in reverse (correct order)
     ≔ vary i = digits.len() - 1;
     loop {
-        if i < 0 { break }
+        ⎇ i < 0 { break }
         write_byte(digits.get(i));
         i = i - 1;
     }

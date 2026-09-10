@@ -131,11 +131,13 @@ impl ImportRegistry {
         self.register_router_imports();
         self.register_memory_imports();
         self.register_morpheme_imports();
+        self.register_map_imports();
         self.register_math_imports();
         self.register_vdom_imports();
         self.register_signal_imports();
         self.register_async_imports();
         self.register_browser_imports();
+        self.register_json_imports();
     }
 
     fn register_browser_imports(&mut self) {
@@ -154,6 +156,12 @@ impl ImportRegistry {
         self.add_import("browser", "mql_matches", vec![I32], vec![I32]);
         self.add_import("browser", "mql_add_listener", vec![I32, I32], vec![I32]);
         self.add_import("browser", "mql_remove_listener", vec![I32, I32], vec![]);
+        // Dialogs. `confirm(msg)` guards every destructive action in the Lares
+        // client; with no import behind it the call was an undefined function
+        // and the whole module failed to build.
+        self.add_import("browser", "confirm", vec![I32], vec![I32]);
+        self.add_import("browser", "alert", vec![I32], vec![]);
+        self.add_import("browser", "prompt", vec![I32, I32], vec![I32]);
     }
 
     fn register_console_imports(&mut self) {
@@ -177,10 +185,53 @@ impl ImportRegistry {
         self.add_import("string", "length", vec![I32], vec![I32]); // (str) -> length
         self.add_import("string", "slice", vec![I32, I32, I32], vec![I32]); // (str, start, end) -> new_str
         self.add_import("string", "eq", vec![I32, I32], vec![I32]); // (str1, str2) -> bool
-        self.add_import("string", "from_int", vec![I64], vec![I32]); // (int) -> str
+        self.add_import("string", "from_int", vec![I64], vec![I32]);
+        // `x·to_string()` where the compiler cannot prove which it is. The host
+        // knows which addresses it wrote strings to; `from_int` would print the
+        // decimal of the address.
+        self.add_import_with_alias(
+            "string",
+            "from_value",
+            "string_from_value",
+            vec![I64],
+            vec![I32],
+        );
+        // `x·to_string()` where the compiler cannot prove which it is. The host
+        // knows which addresses it wrote strings to; `from_int` would print the
+        // decimal of the address.
+        self.add_import_with_alias(
+            "string",
+            "from_value",
+            "string_from_value",
+            vec![I64],
+            vec![I32],
+        ); // (int) -> str
         self.add_import("string", "from_float", vec![F64], vec![I32]); // (float) -> str
-        self.add_import("string", "parse_int", vec![I32], vec![I64]); // (str) -> int
-        self.add_import("string", "parse_float", vec![I32], vec![F64]); // (str) -> float
+        // `String·from_utf8(bytes)`. A Sigil `Vec[u8]` is a host array handle,
+        // so the host does the decoding; there is no byte buffer in linear
+        // memory to walk.
+        self.add_import("string", "from_utf8", vec![I32], vec![I32]); // (bytes) -> str
+        // Aliased so the bare names resolve: `Number(x)` lowers to
+        // `parse_float(x)`, and the qualified `string_parse_float` is not what
+        // anyone writes.
+        self.add_import_with_alias("string", "parse_int", "parse_int", vec![I32], vec![I64]);
+        self.add_import_with_alias("string", "parse_float", "parse_float", vec![I32], vec![F64]);
+        // `encodeURIComponent(s)` — every generated URL that carries a ticket
+        // key or a query builds one, and there was no import behind it.
+        self.add_import_with_alias(
+            "string",
+            "encode_uri_component",
+            "encode_uri_component",
+            vec![I32],
+            vec![I32],
+        );
+        self.add_import_with_alias(
+            "string",
+            "decode_uri_component",
+            "decode_uri_component",
+            vec![I32],
+            vec![I32],
+        );
         // Additional string methods
         self.add_import("string", "lines", vec![I32], vec![I32]); // (str) -> array of strings
         self.add_import("string", "split_whitespace", vec![I32], vec![I32]); // (str) -> array of strings
@@ -193,8 +244,20 @@ impl ImportRegistry {
         self.add_import("string", "contains", vec![I32, I32], vec![I32]); // (str, substr) -> bool
         self.add_import("string", "starts_with", vec![I32, I32], vec![I32]); // (str, prefix) -> bool
         self.add_import("string", "ends_with", vec![I32, I32], vec![I32]); // (str, suffix) -> bool
+        // `a·locale_compare(b)` — JavaScript's `localeCompare`, which every
+        // sort comparator in the migrated client uses. -1, 0 or 1.
+        self.add_import("string", "locale_compare", vec![I32, I32], vec![I64]);
         self.add_import("string", "replace", vec![I32, I32, I32], vec![I32]); // (str, from, to) -> new str
         self.add_import("string", "chars", vec![I32], vec![I32]); // (str) -> array of chars
+        // `s.padStart(n, pad)` / `padEnd`. Migrated code formats timestamps and
+        // ids with these, and they reached the backend as undefined functions.
+        // `s.indexOf(x)` / `lastIndexOf(x)`, -1 when absent. `splitPath` finds
+        // the last `/` with one; neither existed, so it reached the backend as
+        // an undefined function.
+        self.add_import("string", "index_of", vec![I32, I32], vec![I64]);
+        self.add_import("string", "last_index_of", vec![I32, I32], vec![I64]);
+        self.add_import("string", "pad_start", vec![I32, I64, I32], vec![I32]);
+        self.add_import("string", "pad_end", vec![I32, I64, I32], vec![I32]);
     }
 
     fn register_dom_imports(&mut self) {
@@ -244,8 +307,28 @@ impl ImportRegistry {
         self.add_import("fetch", "start", vec![I32, I32, I32], vec![I32]);
         self.add_import("fetch", "poll", vec![I32], vec![I32]);
         self.add_import("fetch", "get_status", vec![I32], vec![I32]);
-        self.add_import("fetch", "get_body", vec![I32, I32], vec![I32]);
+        // One parameter: the request handle. The runtime's `fetchGetBody(id)`
+        // has always taken one, so the two-parameter declaration made every
+        // call a signature mismatch.
+        self.add_import("fetch", "get_body", vec![I32], vec![I32]);
         self.add_import("fetch", "abort", vec![I32], vec![]);
+        // One request, as a promise.
+        //
+        // `start`/`poll`/`get_body` is a polling protocol, and a Sigil program
+        // has no loop to poll from — `.await` is the only thing it says. This
+        // returns a promise id that `async.await_promise` suspends on, so
+        // `fetch_request(url, method, body).await` is the whole of it.
+        self.add_import_with_alias(
+            "fetch",
+            "request",
+            "fetch_request",
+            vec![I32, I32, I32],
+            vec![I32],
+        );
+        // The HTTP status the request came back with, so a program can tell a
+        // 404 from a body it could not parse.
+        self.add_import_with_alias("fetch", "status", "fetch_status", vec![I32], vec![I32]);
+        self.add_import_with_alias("fetch", "ok", "fetch_ok", vec![I32], vec![I32]);
     }
 
     fn register_storage_imports(&mut self) {
@@ -271,6 +354,42 @@ impl ImportRegistry {
         self.add_import_with_alias("memory", "heap_alloc", "heap_alloc", vec![I64], vec![I64]);
     }
 
+    /// `HashMap` / `HashSet`. A Sigil map is a host object, like an array:
+    /// there is no map in linear memory to walk. Without these, `HashMap·new()`
+    /// was stubbed to a constant `0` and every `VElement.attrs` was a null
+    /// pointer the renderer then dereferenced.
+    fn register_map_imports(&mut self) {
+        use ValType::*;
+        self.add_import_with_alias("map", "new", "map_new", vec![], vec![I32]);
+        self.add_import_with_alias("map", "set", "map_set", vec![I32, I64, I64], vec![]);
+        self.add_import_with_alias("map", "get", "map_get", vec![I32, I64], vec![I64]);
+        self.add_import_with_alias("map", "has", "map_has", vec![I32, I64], vec![I32]);
+        self.add_import_with_alias("map", "remove", "map_remove", vec![I32, I64], vec![]);
+        self.add_import_with_alias("map", "len", "map_len", vec![I32], vec![I32]);
+        self.add_import_with_alias("map", "is_empty", "map_is_empty", vec![I32], vec![I32]);
+        // Iteration: the host returns an array, which the array imports walk.
+        self.add_import_with_alias("map", "keys", "map_keys", vec![I32], vec![I32]);
+        self.add_import_with_alias("map", "values", "map_values", vec![I32], vec![I32]);
+        self.add_import_with_alias("map", "entries", "map_entries", vec![I32], vec![I32]);
+        // What `∀` iterates: a map becomes its entries, an array stays itself.
+        self.add_import_with_alias("map", "iter_of", "iter_of", vec![I32], vec![I32]);
+        // `HashMap·from(entries)` — an array of two-element `[k, v]` arrays,
+        // which is what `Object.entries(x)` and `new Map(pairs)` both give.
+        self.add_import_with_alias("map", "from", "map_from", vec![I32], vec![I32]);
+
+        // HashSet. Its own group, not a map with dummy values: `∀ x ∈ set`
+        // must yield the elements, and a map yields `[k, v]` pairs. Before
+        // this, `HashSet·new()` produced a map and `set·add(x)` produced an
+        // undefined `add` — the whole set surface was unimplemented.
+        self.add_import_with_alias("set", "new", "set_new", vec![], vec![I32]);
+        self.add_import_with_alias("set", "from", "set_from", vec![I32], vec![I32]);
+        self.add_import_with_alias("set", "add", "set_add", vec![I32, I64], vec![]);
+        self.add_import_with_alias("set", "has", "set_has", vec![I32, I64], vec![I32]);
+        self.add_import_with_alias("set", "remove", "set_remove", vec![I32, I64], vec![]);
+        self.add_import_with_alias("set", "len", "set_len", vec![I32], vec![I32]);
+        self.add_import_with_alias("set", "values", "set_values", vec![I32], vec![I32]);
+    }
+
     fn register_morpheme_imports(&mut self) {
         use ValType::*;
         // Core array operations with aliases for direct lookup
@@ -285,8 +404,20 @@ impl ImportRegistry {
         self.add_import("morpheme", "array_parallel_map", vec![I32, I32], vec![I32]);
         self.add_import("morpheme", "array_parallel_filter", vec![I32, I32], vec![I32]);
         self.add_import("morpheme", "array_parallel_reduce", vec![I32, I32, I64], vec![I64]);
-        self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I32, I64], vec![I64]);
+        // `(array, init, closure)` - Sigil's `fold` takes the initial value
+        // first, and the interpreter is the oracle for that.
+        self.add_import_with_alias("morpheme", "array_reduce", "array_reduce", vec![I32, I64, I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_sort", "array_sort", vec![I32], vec![I32]);
+        // `xs·sort(|a, b| …)`. Sigil's own `sort` takes no comparator, so a
+        // comparator sort had nowhere to go — and dropping the comparator
+        // silently sorts by something else.
+        self.add_import_with_alias(
+            "morpheme",
+            "array_sort_by",
+            "array_sort_by",
+            vec![I32, I64],
+            vec![I32],
+        );
         self.add_import_with_alias("morpheme", "array_first", "array_first", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_last", "array_last", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_nth", "array_nth", vec![I32, I32], vec![I64]);
@@ -297,9 +428,128 @@ impl ImportRegistry {
         self.add_import_with_alias("morpheme", "array_max", "array_max", vec![I32], vec![I64]);
         self.add_import_with_alias("morpheme", "array_all", "array_all", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_any", "array_any", vec![I32], vec![I32]);
+
+        // The higher-order morphemes that take a closure. `array_all` and
+        // `array_any` above take no predicate at all, so `xs·any(|x| …)` was
+        // compiled as filter-then-count against a filter that did nothing.
+        self.add_import_with_alias("morpheme", "array_find", "array_find", vec![I32, I32], vec![I64]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_position",
+            "array_position",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import_with_alias("morpheme", "array_any_by", "array_any_by", vec![I32, I32], vec![I32]);
+        self.add_import_with_alias("morpheme", "array_all_by", "array_all_by", vec![I32, I32], vec![I32]);
+        self.add_import_with_alias(
+            "morpheme",
+            "array_flat_map",
+            "array_flat_map",
+            vec![I32, I32],
+            vec![I32],
+        );
+        self.add_import_with_alias("morpheme", "array_flatten", "array_flatten", vec![I32], vec![I32]);
+        self.add_import_with_alias("morpheme", "array_reverse", "array_reverse", vec![I32], vec![I32]);
         self.add_import_with_alias("morpheme", "array_random_element", "array_random_element", vec![I32], vec![I64]);
         // Vec::join - concatenate elements with separator
         self.add_import_with_alias("morpheme", "vec_join", "vec_join", vec![I32, I32], vec![I32]);
+    }
+
+    /// JSON, which the WASM backend had none of.
+    ///
+    /// Sigil's JSON lives on the interpreter as `json_parse` / `json_stringify`
+    /// / `json_get` / `json_set` / `json_pretty`. Compiled to WASM those names
+    /// resolved to nothing and, under the unresolved-call stub, quietly became
+    /// `0` — so a web target could not read or write JSON at all, and would not
+    /// say so. Qliphoth worked around it by calling `serde_json·`, a Rust crate
+    /// Sigil does not have, in its storage, websocket, router-guard and history
+    /// modules.
+    ///
+    /// Values are opaque host handles, like vnodes and arrays. Strings are i64
+    /// pointers to length-prefixed data, matching the vdom convention.
+    fn register_json_imports(&mut self) {
+        use ValType::*;
+        self.add_import_with_alias("json", "parse", "json_parse", vec![I64], vec![I64]);
+        self.add_import_with_alias("json", "stringify", "json_stringify", vec![I64], vec![I64]);
+        self.add_import_with_alias("json", "pretty", "json_pretty", vec![I64], vec![I64]);
+        self.add_import_with_alias("json", "get", "json_get", vec![I64, I64], vec![I64]);
+        self.add_import_with_alias("json", "set", "json_set", vec![I64, I64, I64], vec![I64]);
+
+        // JavaScript truthiness, which the React migrator emits as `x·to_bool()`
+        // for every `&&`, `||` and ternary over a non-boolean — 548 times across
+        // the generated Lares client. `to_bool` existed only as an interpreter
+        // free function, so the method form worked in neither backend. It is a
+        // host call rather than an `i64.ne 0` because only the host can tell a
+        // string pointer from a small integer, and `""` is falsy while a pointer
+        // to it is not zero.
+        self.add_import_with_alias("value", "to_bool", "to_bool", vec![I64], vec![I64]);
+
+        // JS statics the React migrator emits that have no Sigil equivalent.
+        // Each one is a host call for the same reason `to_bool` is: only the
+        // host knows whether a value is a string, an array or an object.
+        self.add_import_with_alias("value", "object_values", "object_values", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "object_keys", "object_keys", vec![I64], vec![I64]);
+        self.add_import_with_alias(
+            "value",
+            "object_entries",
+            "object_entries",
+            vec![I64],
+            vec![I64],
+        );
+        self.add_import_with_alias("value", "is_finite", "is_finite", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "is_nan", "is_nan", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "is_integer", "is_integer", vec![I64], vec![I64]);
+
+        // `new Date(s).getTime()` — parsing a timestamp string to epoch millis.
+        // `timing.now` covers the clock; nothing covered the parse, so every
+        // `format_relative_time(new Date(x).getTime())` in the Lares client was
+        // an undefined call.
+        self.add_import_with_alias("timing", "parse", "timing_parse", vec![I64], vec![I64]);
+
+        // `x.toFixed(2)` — a formatted string, not a rounded number, so
+        // `math.round` is not it.
+        self.add_import_with_alias("value", "to_fixed", "to_fixed", vec![I64, I64], vec![I64]);
+        // `Array.isArray(x)` — only the host can tell an array handle from any
+        // other i64.
+        self.add_import_with_alias("value", "is_array", "is_array", vec![I64], vec![I64]);
+        // `typeof x` — "string", "number", "object", … Only the host can say.
+        self.add_import_with_alias("value", "type_of", "type_of", vec![I64], vec![I64]);
+
+        // `Math.floor` and friends over the uniform value domain.
+        //
+        // `math.floor` next door takes and returns an F64, and a migrated
+        // JavaScript number is an i64 here — so nothing could call it, and
+        // `formatRelativeTime`, `formatFileSize`, `kbToSize` and everything
+        // like them stayed untranslated on the name alone. These take the
+        // value, whatever it is, and hand it to the host, which is the only
+        // thing that can tell an integer from a handle to a float.
+        self.add_import_with_alias("value", "math_floor", "math_floor", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_ceil", "math_ceil", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_round", "math_round", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_trunc", "math_trunc", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_abs", "math_abs", vec![I64], vec![I64]);
+        self.add_import_with_alias("value", "math_min", "math_min", vec![I64, I64], vec![I64]);
+        self.add_import_with_alias("value", "math_max", "math_max", vec![I64, I64], vec![I64]);
+
+        // `Date.now()` — epoch milliseconds, as an i64.
+        //
+        // `timing.now` is the monotonic clock and is declared F64. Migrated
+        // code was routed there, so it compared epoch timestamps against
+        // milliseconds-since-page-load, as a float, in a value domain that is
+        // otherwise entirely i64.
+        self.add_import_with_alias("value", "date_now", "date_now", vec![], vec![I64]);
+
+        // `new Date(x).toLocaleDateString()` and its siblings. Without it these
+        // collapsed to `to_string` on the millisecond count, and the number
+        // itself was rendered into the document.
+        self.add_import_with_alias(
+            "value",
+            "date_format",
+            "date_format",
+            vec![I64, I64, I64],
+            vec![I32],
+        );
     }
 
     fn register_math_imports(&mut self) {

@@ -7,8 +7,7 @@
 
 invoke socket·{TcpStream, SocketAddr, SocketError};
 invoke tls·{TlsStream, TlsConfig, TlsError};
-invoke std·collections·HashMap;
-invoke std·time·{Duration, Instant};
+invoke HashMap;
 
 // ============================================================================
 // Pool Configuration
@@ -94,9 +93,9 @@ sigil PoolKey {
 /// A connection that can be returned to the pool
 ☉ ᛈ PooledStream {
     /// Plain TCP connection
-    Tcp(TcpStream)!,
+    Tcp(TcpStream),
     /// TLS-encrypted connection
-    Tls(TlsStream)!,
+    Tls(TlsStream),
 }
 
 /// Metadata ∀ pooled connection
@@ -429,7 +428,7 @@ scroll tests {
 
     #[test]
     rite test_pool_empty_acquire() {
-        vary pool = ConnectionPool·new();
+        ≔ vary pool = ConnectionPool·new();
         ≔ result = pool.try_acquire("example.com", 443, ⊤);
         assert!(result.is_none());
         assert_eq!(pool.stats.creations, 1);
@@ -437,7 +436,7 @@ scroll tests {
 
     #[test]
     rite test_pool_stats_hit_rate() {
-        vary stats = PoolStats·new();
+        ≔ vary stats = PoolStats·new();
         assert_eq!(stats.hit_rate(), 0.0);
 
         stats.acquisitions = 10;
@@ -447,7 +446,7 @@ scroll tests {
 
     #[test]
     rite test_pool_max_per_host() {
-        vary pool = ConnectionPool·with_config(PoolConfig {
+        ≔ vary pool = ConnectionPool·with_config(PoolConfig {
             max_connections_per_host: 2,
             max_total_connections: 100,
             idle_timeout: Duration·from_secs(60),

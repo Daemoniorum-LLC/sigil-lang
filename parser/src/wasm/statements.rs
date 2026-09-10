@@ -2,7 +2,7 @@
 //!
 //! Compiles Sigil functions, structs, enums, and other top-level items to WASM.
 
-use wasm_encoder::{Instruction, ValType};
+use wasm_encoder::{BlockType, Instruction, ValType};
 
 use std::path::PathBuf;
 
@@ -578,10 +578,36 @@ impl WasmCompiler {
                     self.register_handler_sig(&handler_name, handler)?;
                 }
 
+                // …and one dispatcher per actor, so a host that only knows a
+                // message id can deliver a message without knowing handler names.
+                if !actor.handlers.is_empty() {
+                    self.register_actor_dispatcher_sig(&actor_name)?;
+                }
+
                 // Register methods as ActorName::method_name
+                // Actor methods export under `<Actor>_<method>`, like handlers
+                // and the dispatcher. Ninety-three components each define
+                // `view`, and one export name per function meant they came out
+                // as `view`, `view_608`, `view_621` — a component's view was
+                // not addressable from the host at all.
+                self.registering_actor = Some(actor_name.clone());
                 for method in &actor.methods {
+                    // A `self` receiver is a real WASM parameter (a placeholder —
+                    // the state is in globals), so a caller reaching the method
+                    // through the actor's name has to push it. Record which
+                    // methods have one; `compile_call` cannot tell from the index.
+                    if method
+                        .params
+                        .first()
+                        .and_then(|p| p.pattern_name())
+                        .is_some_and(|n| n == "self")
+                    {
+                        self.actor_self_methods
+                            .insert(format!("{}::{}", actor_name, method.name.name));
+                    }
                     self.register_function_sig(method)?;
                 }
+                self.registering_actor = None;
 
                 self.module_path.pop();
             }
@@ -611,8 +637,17 @@ impl WasmCompiler {
                     // They're typically used as handles (represented as i64)
                     self.extern_types.insert(ty.name.name.clone());
                 }
-                ExternItem::Static(_) => {
-                    // Extern statics could be global imports - not yet supported
+                ExternItem::Static(st) => {
+                    // A host-provided value, fetched by a nullary import. See
+                    // `extern_statics`.
+                    let name = st.name.name.clone();
+                    let idx = self.imports.add_import(
+                        module_name,
+                        &name,
+                        vec![],
+                        vec![wasm_encoder::ValType::I64],
+                    );
+                    self.extern_statics.insert(name, idx);
                 }
             }
         }
@@ -667,6 +702,8 @@ impl WasmCompiler {
         }
 
         // Register by simple name too
+        self.func_arity.insert(import_idx, func.params.len());
+        self.note_candidate(&func_name, import_idx);
         self.func_map.insert(func_name.clone(), import_idx);
 
         Ok(())
@@ -753,6 +790,14 @@ impl WasmCompiler {
             StructFields::Named(fields) => {
                 for field in fields {
                     layout.add_field(&field.name.name);
+                    // Which fields hold strings, so `self.title` in a `format!`
+                    // is interpolated rather than printed as its address.
+                    if super::strings::type_is_string(&field.ty) {
+                        self.string_fields
+                            .entry(def.name.name.clone())
+                            .or_default()
+                            .insert(field.name.name.clone());
+                    }
                 }
             }
             StructFields::Tuple(types) => {
@@ -797,6 +842,18 @@ impl WasmCompiler {
                         for (i, _) in types.iter().enumerate() {
                             payload.add_field(&format!("_{}", i));
                         }
+                        // The declared type of each payload slot. A match arm
+                        // binding — `⌥ node { Node·Element(el) => … }` — had no
+                        // recorded type at all, so `el.tag` could not be
+                        // resolved to `Elem`'s field and `el·method()` could
+                        // not be resolved to `Elem`'s method.
+                        self.enum_payload_types.insert(
+                            variant.name.name.clone(),
+                            types
+                                .iter()
+                                .map(|t| super::strings::named_type(t))
+                                .collect(),
+                        );
                     }
                     StructFields::Unit => {}
                 }
@@ -818,10 +875,13 @@ impl WasmCompiler {
         // Build qualified name
         let qualified_name = self.qualify_name(&func.name.name);
 
-        // Skip if already registered
-        if self.func_map.contains_key(&qualified_name) {
-            return Ok(());
-        }
+        // A second definition under the same qualified name — two impl blocks
+        // on one type, say — still needs its own function. Registering only the
+        // first used to leave the second body appended to the first, past its
+        // `End`, which every runtime rejects as operators after the end of a
+        // function. Give the duplicate its own slot, and leave name resolution
+        // pointing at the first.
+        let duplicate = self.func_map.contains_key(&qualified_name);
 
         // Build parameter types
         let param_types: Vec<ValType> = func.params.iter().map(|_| ValType::I64).collect();
@@ -835,20 +895,38 @@ impl WasmCompiler {
 
         let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
 
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
+
+        // Whether this function returns a string, so a call to it can be
+        // interpolated rather than printed as a number.
+        if func
+            .return_type
+            .as_ref()
+            .is_some_and(super::strings::type_is_string)
+        {
+            self.string_returning.insert(func.name.name.clone());
+        }
 
         // Record function index with both qualified and simple names
-        self.func_map.insert(qualified_name.clone(), func_idx);
-        // Also register simple name for backwards compatibility
-        if !self.module_path.is_empty() {
-            self.func_map.insert(func.name.name.clone(), func_idx);
+        self.func_arity.insert(func_idx, param_types.len());
+        self.note_candidate(&func.name.name, func_idx);
+        self.def_slots
+            .entry(qualified_name.clone())
+            .or_default()
+            .push(func_idx);
+        if !duplicate {
+            self.func_map.insert(qualified_name.clone(), func_idx);
+            // Also register simple name for backwards compatibility
+            if !self.module_path.is_empty() {
+                self.func_map.insert(func.name.name.clone(), func_idx);
 
-            // For impl methods, also register with short Type::method format
-            // This allows method resolution when the type is known without full path
-            // e.g., VNode::attr in addition to qliphoth::core::vdom::VNode::attr
-            if let Some(type_name) = self.module_path.last() {
-                let short_qualified = format!("{}::{}", type_name, func.name.name);
-                self.func_map.insert(short_qualified, func_idx);
+                // For impl methods, also register with short Type::method format
+                // This allows method resolution when the type is known without full path
+                // e.g., VNode::attr in addition to qliphoth::core::vdom::VNode::attr
+                if let Some(type_name) = self.module_path.last() {
+                    let short_qualified = format!("{}::{}", type_name, func.name.name);
+                    self.func_map.insert(short_qualified, func_idx);
+                }
             }
         }
 
@@ -861,8 +939,19 @@ impl WasmCompiler {
 
         let is_exported = matches!(func.visibility, Visibility::Public);
 
+        // Name the duplicate apart so a diagnostic naming it says which of the
+        // two definitions it means.
+        let compiled_name = if duplicate {
+            let n = self.def_slots.get(&qualified_name).map(|v| v.len()).unwrap_or(1) - 1;
+            format!("{}#{}", func.name.name, n)
+        } else if let Some(actor) = &self.registering_actor {
+            format!("{}_{}", actor, func.name.name)
+        } else {
+            func.name.name.clone()
+        };
+
         let compiled_func = CompiledFunction::new(
-            func.name.name.clone(),
+            compiled_name,
             type_idx,
             func_idx,
             params_with_names,
@@ -885,9 +974,14 @@ impl WasmCompiler {
             return Ok(());
         }
 
-        // Handler has implicit self parameter + explicit params
-        // For WASM, we pass actor state as globals, so params are just the message params
-        let param_types: Vec<ValType> = handler.params.iter().map(|_| ValType::I64).collect();
+        // Actor state is in globals, so there is no `self` to pass; what a
+        // handler does need is its payload. A generated handler declares no
+        // parameters and reads `msg.0`, so every handler takes one implicit
+        // `msg` value ahead of any declared parameters.
+        let param_types: Vec<ValType> =
+            std::iter::once(ValType::I64)
+                .chain(handler.params.iter().map(|_| ValType::I64))
+                .collect();
 
         // Result type
         let result_types = if handler.return_type.is_some() {
@@ -897,9 +991,18 @@ impl WasmCompiler {
         };
 
         let type_idx = self.get_or_create_type(param_types.clone(), result_types.clone());
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         // Record function index with both qualified and simple names
+        // Two handlers of the same name compile into one function with a second
+        // body appended: "operators remaining after end of function", reported by
+        // the browser rather than the compiler.
+        if self.func_map.contains_key(&qualified_name) {
+            return Err(WasmError::unsupported(&format!(
+                "duplicate handler: {} is declared more than once",
+                qualified_name
+            )));
+        }
         self.func_map.insert(qualified_name.clone(), func_idx);
         self.func_map.insert(handler_name.to_string(), func_idx);
 
@@ -910,19 +1013,32 @@ impl WasmCompiler {
         }
 
         // Create function placeholder
-        let params_with_names: Vec<(String, ValType)> = handler
-            .params
-            .iter()
-            .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64))
+        let params_with_names: Vec<(String, ValType)> = std::iter::once(("msg".to_string(), ValType::I64))
+            .chain(
+                handler
+                    .params
+                    .iter()
+                    .map(|p| (p.pattern_name().unwrap_or_default(), ValType::I64)),
+            )
             .collect();
 
+        // A message handler used to compile to a function nothing could ever
+        // call: not exported, no mailbox in the backend, no dispatcher in the JS
+        // runtime, and `Actor ! Message` is not a construct the parser has. Every
+        // actor in a Qliphoth component was unreachable code. Export it under
+        // `<Actor>_on_<Message>` so a host can deliver a message at all.
+        let export_name = match self.module_path.last() {
+            Some(actor_name) => format!("{}_{}", actor_name, handler_name),
+            None => handler_name.to_string(),
+        };
+
         let compiled_func = CompiledFunction::new(
-            handler_name.to_string(),
+            export_name,
             type_idx,
             func_idx,
             params_with_names,
             result_types,
-            false, // Handlers are not exported directly
+            true,
         );
 
         self.functions.push(compiled_func);
@@ -930,26 +1046,145 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// Register `<Actor>_dispatch(msg_id, payload) -> i64`.
+    ///
+    /// The DOM knows a message by its id — `VNode·on_click(message_id: u64)` is
+    /// Qliphoth's own signature — not by a handler's name. Without a dispatcher
+    /// there was no way from an event back into an actor at all.
+    fn register_actor_dispatcher_sig(&mut self, actor_name: &str) -> WasmResult<()> {
+        let name = format!("{}_dispatch", actor_name);
+        if self.func_map.contains_key(&name) {
+            return Ok(());
+        }
+        let param_types = vec![ValType::I64, ValType::I64];
+        let result_types = vec![ValType::I64];
+        let type_idx = self.get_or_create_type(param_types, result_types.clone());
+        let func_idx = self.next_func_idx();
+        self.func_map.insert(name.clone(), func_idx);
+
+        self.functions.push(CompiledFunction::new(
+            name,
+            type_idx,
+            func_idx,
+            vec![
+                ("__msg_id".to_string(), ValType::I64),
+                ("__payload".to_string(), ValType::I64),
+            ],
+            result_types,
+            true,
+        ));
+        Ok(())
+    }
+
+    /// The message id for one of an actor's handlers.
+    ///
+    /// Prefer the actor's own `<Actor>Msg` enum — that is what the React
+    /// migrator emits and what a `·on_click(…)` call site carries — then any
+    /// enum declaring a variant of that name, and only then declaration order.
+    fn actor_message_tag(&self, actor_name: &str, message: &str, fallback: u32) -> u32 {
+        if let Some(layout) = self.enum_layouts.get(&format!("{}Msg", actor_name)) {
+            if let Some(tag) = layout.variant_tag(message) {
+                return tag;
+            }
+        }
+        for layout in self.enum_layouts.values() {
+            if let Some(tag) = layout.variant_tag(message) {
+                return tag;
+            }
+        }
+        fallback
+    }
+
+    /// Emit the dispatcher body: compare the id against each handler's message
+    /// tag and call the first that matches.
+    fn compile_actor_dispatcher(&mut self, actor: &crate::ast::ActorDef) -> WasmResult<()> {
+        let actor_name = actor.name.name.clone();
+        let name = format!("{}_dispatch", actor_name);
+        let func_idx = match self.func_map.get(&name) {
+            Some(&idx) => idx,
+            None => return Ok(()),
+        };
+        let fn_list_idx = Self::func_list_index(func_idx)
+            .ok_or_else(|| WasmError::internal(format!("{} is an import, not a function", name)))?;
+        self.current_fn_idx = Some(fn_list_idx);
+
+        for (i, handler) in actor.handlers.iter().enumerate() {
+            let tag = self.actor_message_tag(&actor_name, &handler.message.name, i as u32);
+            let handler_idx = match self
+                .func_map
+                .get(&format!("{}::on_{}", actor_name, handler.message.name))
+            {
+                Some(&idx) => idx,
+                None => continue,
+            };
+            // One implicit `msg` parameter, then any declared ones.
+            let arity = 1 + handler.params.len();
+            let returns_value = handler.return_type.is_some();
+
+            let func = self
+                .current_function_mut()
+                .ok_or_else(|| WasmError::internal("not in function context"))?;
+            func.push(Instruction::LocalGet(0)); // msg_id
+            func.push(Instruction::I64Const(tag as i64));
+            func.push(Instruction::I64Eq);
+            func.push(Instruction::If(BlockType::Empty));
+            // The payload fills the first parameter; anything beyond it is a
+            // message shape this dispatcher cannot express, and gets zero.
+            for p in 0..arity {
+                if p == 0 {
+                    func.push(Instruction::LocalGet(1));
+                } else {
+                    func.push(Instruction::I64Const(0));
+                }
+            }
+            func.push(Instruction::Call(handler_idx));
+            if returns_value {
+                func.push(Instruction::Drop);
+            }
+            func.push(Instruction::End);
+        }
+
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(Instruction::I64Const(0));
+        func.push(Instruction::End);
+        self.current_fn_idx = None;
+        Ok(())
+    }
+
     /// Compile a function.
     fn compile_function(&mut self, func: &Function) -> WasmResult<()> {
-        // Find the function index (try qualified name first, then simple name)
+        // Find the function index. The signature pass recorded one slot per
+        // definition, in order; take the next one for this qualified name, so
+        // two definitions of the same method name compile into two functions
+        // rather than one body appended to the other.
         let qualified_name = self.qualify_name(&func.name.name);
-        let func_idx = self
-            .func_map
-            .get(&qualified_name)
-            .or_else(|| self.func_map.get(&func.name.name))
-            .copied()
+        let slot = {
+            let taken = self.def_cursor.entry(qualified_name.clone()).or_insert(0);
+            let picked = self
+                .def_slots
+                .get(&qualified_name)
+                .and_then(|v| v.get(*taken))
+                .copied();
+            if picked.is_some() {
+                *taken += 1;
+            }
+            picked
+        };
+        let func_idx = slot
+            .or_else(|| self.func_map.get(&qualified_name).copied())
+            .or_else(|| self.func_map.get(&func.name.name).copied())
             .ok_or_else(|| WasmError::internal(format!(
                 "function not registered: '{}' (qualified: '{}')",
                 func.name.name, qualified_name
             )))?;
 
-        // Find the function in our list by matching func_idx
-        // NOTE: We can't use (func_idx - import_count) because import_count may have
-        // changed since registration due to dynamic import additions during compilation
-        let fn_list_idx = self.functions
-            .iter()
-            .position(|f| f.func_idx == func_idx)
+        // Function indices come from `FUNC_BASE`, so the position is the index
+        // minus that base — no search, and no dependence on an import count that
+        // grows as later files and crates register their `extern` blocks.
+        let fn_list_idx = Self::func_list_index(func_idx)
+            .filter(|&i| i < self.functions.len())
             .ok_or_else(|| WasmError::internal(format!(
                 "function not found in list: func_idx={}, qualified='{}'",
                 func_idx, qualified_name
@@ -957,6 +1192,19 @@ impl WasmCompiler {
 
         // Set as current function
         self.current_fn_idx = Some(fn_list_idx);
+
+        // String tracking is per function: the parameters declared `&str` or
+        // `String` seed it, and nothing carries over from the last one.
+        self.string_locals.clear();
+        self.decl_types.clear();
+        for param in &func.params {
+            if let Some(name) = param.pattern_name() {
+                if super::strings::type_is_string(&param.ty) {
+                    self.string_locals.insert(name.clone());
+                }
+                self.decl_types.insert(name, param.ty.clone());
+            }
+        }
 
         // Track function in source map (if debug info enabled)
         if let Some(ref mut source_map) = self.source_map {
@@ -1344,6 +1592,11 @@ impl WasmCompiler {
             self.compile_actor_method(&actor_name, method)?;
         }
 
+        // 5. The dispatcher, which needs every handler's index to exist first.
+        if !actor.handlers.is_empty() {
+            self.compile_actor_dispatcher(actor)?;
+        }
+
         // Restore previous actor context
         self.current_actor = prev_actor;
 
@@ -1373,8 +1626,9 @@ impl WasmCompiler {
             )))?;
 
         // Get the function list index
-        let import_count = self.imports.import_count();
-        let fn_list_idx = (func_idx - import_count) as usize;
+        let fn_list_idx = Self::func_list_index(func_idx).ok_or_else(|| {
+            WasmError::internal(format!("handler '{}' is an import, not a function", handler_name))
+        })?;
 
         // Set current function context
         self.current_fn_idx = Some(fn_list_idx);
@@ -1386,29 +1640,26 @@ impl WasmCompiler {
         // Parameters are already registered in register_handler_sig as params
         // They will be accessible via get_local by name
 
-        // Compile the handler body
+        // Compile the handler body.
+        //
+        // `compile_block` ALWAYS leaves exactly one value on the stack — the
+        // trailing expression, or `i64.const 0` standing for unit. This used to
+        // branch on `handler.body.expr`, which double-counted that convention in
+        // both directions: a void handler with no trailing expression dropped
+        // nothing and fell through with the unit value still on the stack, and a
+        // returning handler with no trailing expression pushed a *second* zero
+        // on top of it. Every `on Msg { … }` in a module therefore produced a
+        // function that fails WebAssembly validation — including an empty one —
+        // while `sigil wasm` reported success and wrote the file.
+        //
+        // `compile_function` has always had this right; this is the same rule.
         self.compile_block(&handler.body)?;
 
-        // Handle return value based on return type and trailing expression
-        if handler.return_type.is_none() {
-            // No return type - drop any trailing expression result
-            if handler.body.expr.is_some() {
-                let func = self.current_function_mut()
-                    .ok_or_else(|| WasmError::internal("not in function context"))?;
-                func.push(Instruction::Drop);
-            }
-            // No trailing expression = nothing to drop
-        } else if handler.body.expr.is_none() {
-            // Handler has return type but no trailing expression - push 0
-            let func = self.current_function_mut()
-                .ok_or_else(|| WasmError::internal("not in function context"))?;
-            func.push(Instruction::I64Const(0));
-        }
-        // Handler has return type and trailing expression - value already on stack
-
-        // Add end instruction
         let func = self.current_function_mut()
             .ok_or_else(|| WasmError::internal("not in function context"))?;
+        if handler.return_type.is_none() {
+            func.push(Instruction::Drop);
+        }
         func.push(Instruction::End);
 
         // Restore previous actor context
@@ -1455,7 +1706,23 @@ impl WasmCompiler {
 
             Expr::Literal(Literal::Bool(b)) => Ok(if *b { 1 } else { 0 }),
 
-            Expr::Literal(Literal::Null | Literal::Empty) => Ok(0),
+            // A float, as the f64 bits `compile_literal` emits for it. There
+            // was no arm at all, so a module-scope `≔ x = 4.5;` failed the
+            // whole-project link with "expression is not constant" while the
+            // same literal inside a function compiled fine — const and runtime
+            // have to agree about what a value IS.
+            Expr::Literal(Literal::Float { value, .. }) => {
+                let v: f64 = value
+                    .parse()
+                    .map_err(|_| WasmError::not_const_expr(&format!("float {value}")))?;
+                Ok(v.to_bits() as i64)
+            }
+
+            // The same nothing `None` is — see `wasm::NONE`. This answered 0
+            // while `None` below answered 0 too, which agreed with each other
+            // and with neither of the two runtime paths once nothing became a
+            // sentinel.
+            Expr::Literal(Literal::Null | Literal::Empty) => Ok(super::NONE),
 
             Expr::Unary { op, expr } => {
                 let val = self.eval_const_expr(expr)?;
@@ -1500,14 +1767,22 @@ impl WasmCompiler {
             Expr::Path(path) => {
                 // Look up const
                 let name = path.segments.first().map(|s| s.ident.name.as_str()).unwrap_or("");
+                // `None` is a path, not a literal, so it never reached the
+                // `Literal::Null | Literal::Empty` arm above — `≔ x = None;` at
+                // module scope passed `sigil check` and failed to compile with
+                // "expression is not constant", while `∅` in the same position
+                // worked. It is the absent value, and the same one `∅` is.
+                if name == "None" && path.segments.len() == 1 {
+                    return Ok(super::NONE);
+                }
                 if let Some(&idx) = self.global_map.get(name) {
                     Ok(self.globals[idx as usize].2)
                 } else {
-                    Err(WasmError::not_const())
+                    Err(WasmError::not_const_expr(name))
                 }
             }
 
-            _ => Err(WasmError::not_const()),
+            other => Err(WasmError::not_const_expr(&format!("{other:?}"))),
         }
     }
 }
@@ -1526,7 +1801,7 @@ impl ParamExt for Param {
 
 /// Recursively extract the binding name from a pattern.
 /// Handles &self, &mut self, ref self, and plain self patterns.
-fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
+pub(crate) fn extract_pattern_name(pattern: &crate::ast::Pattern) -> Option<String> {
     use crate::ast::Pattern;
     match pattern {
         // Direct identifier: self, x, etc.
@@ -1802,11 +2077,12 @@ mod tests {
     fn test_eval_const_expr_null() {
         let compiler = WasmCompiler::new();
 
+        // Nothing, at compile time, is the same value it is at run time.
         let null_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Null)).unwrap();
-        assert_eq!(null_result, 0);
+        assert_eq!(null_result, crate::wasm::NONE);
 
         let empty_result = compiler.eval_const_expr(&crate::ast::Expr::Literal(Literal::Empty)).unwrap();
-        assert_eq!(empty_result, 0);
+        assert_eq!(empty_result, crate::wasm::NONE);
     }
 
     #[test]

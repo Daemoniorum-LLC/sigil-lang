@@ -1,18 +1,18 @@
 // Simple JIT benchmark - recursive fibonacci
 // This tests: function calls, recursion, arithmetic, conditionals
 
-fn fib(n) {
-    if n <= 1 {
-        return n;
+rite fib(n) {
+    ⎇ n <= 1 {
+        ⤺ n;
     }
-    return fib(n - 1) + fib(n - 2);
+    ⤺ fib(n - 1) + fib(n - 2);
 }
 
-fn main() {
-    let start = now();
-    let result = fib(35);
-    let elapsed = now() - start;
+rite main() {
+    ≔ start = now();
+    ≔ result = fib(35);
+    ≔ elapsed = now() - start;
     print(result);
     print(elapsed);
-    return 0;
+    ⤺ 0;
 }

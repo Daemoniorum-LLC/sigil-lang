@@ -18,76 +18,76 @@ const PAGE_ABOUT: i64 = 2;
 const PAGE_CONTACT: i64 = 3;
 
 // === Navigation ===
-pub fn navigate(page: i64) {
+☉ rite navigate(page: i64) {
     CURRENT_PAGE = page;
-    let page_name = get_page_name(page);
+    ≔ page_name = get_page_name(page);
     print(f"[NAVIGATE] {page_name}");
     render_page();
 }
 
-fn get_page_name(page: i64) -> str {
-    if page == PAGE_HOME {
+rite get_page_name(page: i64) -> str {
+    ⎇ page == PAGE_HOME {
         "Home"
-    } else if page == PAGE_PRODUCTS {
+    } ⎉ ⎇ page == PAGE_PRODUCTS {
         "Products"
-    } else if page == PAGE_ABOUT {
+    } ⎉ ⎇ page == PAGE_ABOUT {
         "About"
-    } else if page == PAGE_CONTACT {
+    } ⎉ ⎇ page == PAGE_CONTACT {
         "Contact"
-    } else {
+    } ⎉ {
         "Unknown"
     }
 }
 
 // === Theme ===
-pub fn toggle_theme() {
-    if THEME == 0 {
+☉ rite toggle_theme() {
+    ⎇ THEME == 0 {
         THEME = 1;
         print("[THEME] light");
-    } else {
+    } ⎉ {
         THEME = 0;
         print("[THEME] dark");
     }
 }
 
-pub fn get_theme() -> i64 {
+☉ rite get_theme() -> i64 {
     THEME
 }
 
 // === Counter (interactive demo) ===
-pub fn increment() {
+☉ rite increment() {
     COUNTER = COUNTER + 1;
     print(f"[COUNTER] {COUNTER}");
 }
 
-pub fn decrement() {
+☉ rite decrement() {
     COUNTER = COUNTER - 1;
     print(f"[COUNTER] {COUNTER}");
 }
 
-pub fn reset_counter() {
+☉ rite reset_counter() {
     COUNTER = 0;
     print("[COUNTER] 0");
 }
 
-pub fn get_counter() -> i64 {
+☉ rite get_counter() -> i64 {
     COUNTER
 }
 
 // === Page Rendering ===
-fn render_page() {
-    if CURRENT_PAGE == PAGE_HOME {
+rite render_page() {
+    ⎇ CURRENT_PAGE == PAGE_HOME {
         render_home();
-    } else if CURRENT_PAGE == PAGE_PRODUCTS {
+    } ⎉ ⎇ CURRENT_PAGE == PAGE_PRODUCTS {
         render_products();
-    } else if CURRENT_PAGE == PAGE_ABOUT {
+    } ⎉ ⎇ CURRENT_PAGE == PAGE_ABOUT {
         render_about();
-    } else if CURRENT_PAGE == PAGE_CONTACT {
+    } ⎉ ⎇ CURRENT_PAGE == PAGE_CONTACT {
         render_contact();
     }
 }
 
-fn render_home() {
+rite render_home() {
     print("[PAGE:home]");
     print("[RENDER] <section id='hero'>");
     print("[RENDER]   <h1>Welcome to Daemoniorum</h1>");
@@ -96,7 +96,7 @@ fn render_home() {
     print("[RENDER] </section>");
 }
 
-fn render_products() {
+rite render_products() {
     print("[PAGE:products]");
     print("[RENDER] <section id='products'>");
     print("[RENDER]   <h2>Our Products</h2>");
@@ -109,7 +109,7 @@ fn render_products() {
     print("[RENDER] </section>");
 }
 
-fn render_about() {
+rite render_about() {
     print("[PAGE:about]");
     print("[RENDER] <section id='about'>");
     print("[RENDER]   <h2>About Qliphoth</h2>");
@@ -119,7 +119,7 @@ fn render_about() {
     print("[RENDER] </section>");
 }
 
-fn render_contact() {
+rite render_contact() {
     print("[PAGE:contact]");
     print("[RENDER] <section id='contact'>");
     print("[RENDER]   <h2>Contact Us</h2>");
@@ -128,7 +128,7 @@ fn render_contact() {
 }
 
 // === Initialization ===
-pub fn main() {
+☉ rite main() {
     print("=== Qliphoth Demo ===");
     print("");
     print("A Sigil-powered web application");
@@ -153,6 +153,6 @@ pub fn main() {
 }
 
 // === API for external calls ===
-pub fn get_current_page() -> i64 {
+☉ rite get_current_page() -> i64 {
     CURRENT_PAGE
 }

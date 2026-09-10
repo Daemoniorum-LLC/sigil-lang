@@ -31,9 +31,13 @@
 pub mod async_sm;
 pub mod async_sm_ir;
 pub mod closures;
+pub mod coerce;
+pub mod stackcheck;
 pub mod constants;
 pub mod control_flow;
 pub mod deps;
+pub mod collections;
+pub mod strings;
 pub mod error;
 pub mod expressions;
 pub mod imports;
@@ -58,6 +62,30 @@ use wasm_encoder::ValType;
 use crate::optimize::OptLevel;
 use crate::parser::Parser;
 
+/// The value of `None` and `\u{2205}`.
+///
+/// An Option is TRANSPARENT in this backend — `Some(x)` compiles to `x` and
+/// nothing wraps it — so "nothing" has to be a value no real one can be. It
+/// used to be 0, which is also `false`, also the integer zero, and also every
+/// host function's "absent": `conn_row` reads `up: boolean | null` and could
+/// not tell a service that is DOWN from one it has not checked yet.
+///
+/// Before that it was a fresh 16-byte heap allocation at every mention, with
+/// equality on the pointer, so `None == None` was false and no `x == None`
+/// guard could ever be true.
+///
+/// `i64::MIN` is not a number any interface computes, not a pointer into a
+/// 32-bit linear memory, and not a handle. The host knows the same value —
+/// `sigil_runtime.js` calls it `NONE`, and a test pins the two together.
+pub const NONE: i64 = i64::MIN;
+
+/// The type name the parser gives every anonymous object literal.
+///
+/// Kept next to the compiler that special-cases it, and pinned by a test, so a
+/// rename in the parser cannot quietly turn every `{ a: 1 }` back into a
+/// same-named struct sharing one layout.
+pub(crate) const ANON_STRUCT: &str = "__anonymous__";
+
 /// WASM Compiler for Sigil.
 ///
 /// Compiles Sigil source code to WASM bytecode.
@@ -71,6 +99,63 @@ pub struct WasmCompiler {
 
     /// Function name -> index mapping
     pub(crate) func_map: HashMap<String, u32>,
+
+    /// Declared parameter count per function index.
+    ///
+    /// Every user function takes i64 parameters, so arity is the only way a
+    /// call can disagree with its callee — and nothing checked it. `sigil
+    /// check` does not resolve names (S23), so `VNode·div()·child()` passed and
+    /// the backend emitted a `call` with one operand for a function that takes
+    /// two: "not enough arguments on the stack", reported by the browser rather
+    /// than the compiler. Too many arguments is the same defect the other way,
+    /// and shows up as a fallthru with an extra value.
+    pub(crate) func_arity: HashMap<u32, usize>,
+
+    /// `extern "js" { static NAME: T; }` — a value the host supplies, by the
+    /// index of the import that fetches it.
+    ///
+    /// These were dropped on the floor ("not yet supported"), so every
+    /// reference to one was an undefined variable — `WINDOW` in
+    /// `qliphoth-sys`, which is how that package reaches the browser's window
+    /// object at all. A host value has to be fetched rather than read, because
+    /// an imported global cannot be typed as the opaque handle these are.
+    pub(crate) extern_statics: HashMap<String, u32>,
+
+    /// Every function index a simple name could mean.
+    ///
+    /// `func_map` holds one index per name and is last-writer-wins, so an impl's
+    /// associated function registered under its simple name silently replaced an
+    /// `extern "js"` declaration of the same name — `⊢ LocalStorage { rite
+    /// clear() }` over `extern "js" { rite clear(this: &Storage) }`, which is
+    /// the one name that stopped the whole `qliphoth-sys` package compiling.
+    /// When a call cannot be resolved by type, the arity decides between these.
+    pub(crate) func_candidates: HashMap<String, Vec<u32>>,
+    /// Every function index registered under a qualified name, in the order
+    /// the signature pass met them. Two impl blocks on the same type may
+    /// define the same method name; each definition needs its own body.
+    /// Names that hold a string in the function being compiled. See
+    /// `wasm::strings` — the backend had no notion of this at all.
+    /// The actor whose methods are being registered, so they export under
+    /// `<Actor>_<method>` rather than colliding on a bare name.
+    pub(crate) registering_actor: Option<String>,
+    pub(crate) string_locals: std::collections::HashSet<String>,
+    /// Declared types of the current function's parameters and annotated
+    /// locals, for the questions a bare name cannot answer.
+    pub(crate) decl_types: HashMap<String, crate::ast::TypeExpr>,
+    /// Per enum variant, the declared type of each payload slot.
+    pub(crate) enum_payload_types: HashMap<String, Vec<Option<String>>>,
+    /// Functions whose declared return type is a string.
+    pub(crate) string_returning: std::collections::HashSet<String>,
+    /// Per struct, the fields declared as strings.
+    pub(crate) string_fields: HashMap<String, std::collections::HashSet<String>>,
+    pub(crate) def_slots: HashMap<String, Vec<u32>>,
+    /// How many definitions of a qualified name the body pass has consumed.
+    /// The two passes walk the same items in the same order, so the Nth body
+    /// belongs to the Nth registered slot.
+    pub(crate) def_cursor: HashMap<String, usize>,
+
+    /// Diagnostics from the stack checker, filled in as the module is encoded.
+    pub(crate) stack_reports: Vec<String>,
 
     /// Global variables: (type, mutable, initial_value)
     pub(crate) globals: Vec<(ValType, bool, i64)>,
@@ -101,6 +186,20 @@ pub struct WasmCompiler {
 
     /// Struct layouts
     pub(crate) struct_layouts: HashMap<String, StructLayout>,
+    /// Field slots for anonymous object literals (`{ a: 1, b: 2 }`).
+    ///
+    /// The parser names every anonymous literal `__anonymous__`, so they all
+    /// used to share ONE `StructLayout` — the first shape compiled. Every field
+    /// name that shape did not have fell to `unwrap_or(0)`, so a second literal
+    /// wrote all of its fields over each other at offset 0 and read them back
+    /// as whatever landed there last. Anonymous objects are how untyped props
+    /// bags are passed, so this silently flattened them.
+    ///
+    /// Instead: one program-wide slot per distinct field name, assigned in
+    /// first-seen order. Offsets are then stable no matter which literal is
+    /// compiled first, and each literal allocates only up to its own highest
+    /// slot.
+    pub(crate) anon_field_slots: Vec<String>,
 
     /// Enum layouts
     pub(crate) enum_layouts: HashMap<String, EnumLayout>,
@@ -173,7 +272,37 @@ pub struct WasmCompiler {
 
     /// Current actor being compiled (for self.field resolution)
     pub(crate) current_actor: Option<String>,
+
+    /// Functions that were called but never resolved, and were compiled to a
+    /// constant `0` instead. See `stubbed_calls()` — this is silent wrong
+    /// behaviour, not a compile error, and callers must be able to see it.
+    pub(crate) stubbed_calls: std::collections::BTreeSet<String>,
+    /// Names stubbed under `SIGIL_WASM_STUB_UNRESOLVED`. See `stubbing_unresolved`.
+    pub(crate) unresolved: std::collections::BTreeSet<String>,
+
+    /// Actor methods declared with a `self` receiver, by `Actor::method`. Actor
+    /// state lives in globals, so the receiver is a placeholder — but it is part
+    /// of the WASM signature, and a call through the actor's name has to push it.
+    pub(crate) actor_self_methods: std::collections::HashSet<String>,
 }
+
+/// Base for function indices while compiling.
+///
+/// A WebAssembly function index space puts imports first, so a defined
+/// function's real index is `import_count + position`. Indices used to be
+/// assigned that way at registration — and `import_count` keeps growing, because
+/// an `extern` block in a later file, or a later crate in the same project, adds
+/// imports after earlier functions were already numbered. Every call to one of
+/// those earlier functions then pointed one slot too low, silently, at whatever
+/// function happened to sit there: 96 of qliphoth's 353 functions were numbered
+/// against a stale count, and the module still validated.
+///
+/// Function indices are therefore assigned from this base and are stable for the
+/// whole compilation. `resolve_function_indices`, the first thing
+/// `generate_module` does, rewrites them to `import_count + position` once the
+/// import count is final. It also keeps "is this an import?" a question about
+/// the index alone, rather than about a number that moves.
+pub(crate) const FUNC_BASE: u32 = 0x4000_0000;
 
 impl WasmCompiler {
     /// Create a new WASM compiler.
@@ -182,6 +311,18 @@ impl WasmCompiler {
             imports: ImportRegistry::new(),
             functions: Vec::new(),
             func_map: HashMap::new(),
+            func_arity: HashMap::new(),
+            extern_statics: HashMap::new(),
+            func_candidates: HashMap::new(),
+            registering_actor: None,
+            string_locals: std::collections::HashSet::new(),
+            decl_types: HashMap::new(),
+            enum_payload_types: HashMap::new(),
+            string_returning: std::collections::HashSet::new(),
+            string_fields: HashMap::new(),
+            def_slots: HashMap::new(),
+            def_cursor: HashMap::new(),
+            stack_reports: Vec::new(),
             globals: Vec::new(),
             global_map: HashMap::new(),
             data_segments: Vec::new(),
@@ -192,6 +333,7 @@ impl WasmCompiler {
             closure_map: HashMap::new(),
             closure_counter: 0,
             struct_layouts: HashMap::new(),
+            anon_field_slots: Vec::new(),
             enum_layouts: HashMap::new(),
             current_fn_idx: None,
             loop_stack: Vec::new(),
@@ -214,6 +356,9 @@ impl WasmCompiler {
             deferred_static_inits: Vec::new(),
             start_function_idx: None,
             current_actor: None,
+            stubbed_calls: std::collections::BTreeSet::new(),
+            unresolved: std::collections::BTreeSet::new(),
+            actor_self_methods: std::collections::HashSet::new(),
         };
 
         // Add heap pointer global
@@ -234,6 +379,103 @@ impl WasmCompiler {
     pub fn with_debug_info(mut self) -> Self {
         self.debug_info = true;
         self
+    }
+
+    /// Names that were called but never resolved to a function or import.
+    ///
+    /// The call compiler stubs any unresolved lowercase name — which is every
+    /// Sigil function name — to `i64.const 0`, so `json_parse("…")` and
+    /// `totally_undefined_function_xyz(1)` both compile to a valid module that
+    /// returns 0 and calls nothing. That fallback is load-bearing for code with
+    /// un-hoisted local helpers, so it is not an error; but a build that silently
+    /// dropped calls has to be able to say which ones.
+    pub fn stubbed_calls(&self) -> &std::collections::BTreeSet<String> {
+        &self.stubbed_calls
+    }
+
+    /// Whether to stub every unresolved name instead of stopping at the first.
+    ///
+    /// A port surfaces missing names one rebuild at a time, which is the slow
+    /// way to learn what a codebase needs. With `SIGIL_WASM_STUB_UNRESOLVED`
+    /// set, one build lists all of them. Off by default: a stubbed call is
+    /// silently wrong at run time, so this is a survey aid, never a build mode.
+    pub fn stubbing_unresolved() -> bool {
+        std::env::var("SIGIL_WASM_STUB_UNRESOLVED").is_ok()
+    }
+
+    /// Names stubbed only because `SIGIL_WASM_STUB_UNRESOLVED` was set.
+    pub fn unresolved(&self) -> &std::collections::BTreeSet<String> {
+        &self.unresolved
+    }
+
+    /// Record an unresolved name and leave a unit in its place.
+    pub(crate) fn stub_unresolved(&mut self, name: &str) -> WasmResult<()> {
+        // Name the function it appears in: `new` says nothing on its own.
+        let where_ = self
+            .current_function()
+            .map(|f| f.name.clone())
+            .unwrap_or_else(|| "<module scope>".to_string());
+        self.unresolved.insert(format!("{}  (in {})", name, where_));
+        let func = self
+            .current_function_mut()
+            .ok_or_else(|| WasmError::internal("not in function context"))?;
+        func.push(wasm_encoder::Instruction::I64Const(0));
+        Ok(())
+    }
+
+    /// Every host function the compiler can import, as `module.name`, sorted.
+    ///
+    /// This is the contract a JS runtime has to satisfy. It is not a subset
+    /// question: a module importing a function the host does not provide fails
+    /// at `WebAssembly.instantiate`, so one missing name takes the whole page
+    /// down. Exposed through `sigil wasm --list-imports` so a runtime can be
+    /// checked against the compiler that will target it, rather than against a
+    /// grep of this file.
+    pub fn host_imports(&self) -> Vec<String> {
+        // With the signature, not just the name. A runtime can supply every
+        // name and still be wrong: `value.to_fixed` and `value.type_of` are
+        // declared to return i64 and returned a plain JavaScript Number, which
+        // WebAssembly rejects as "Cannot convert N to a BigInt" — and only on
+        // the call, so it was invisible until a component that formatted a
+        // number happened to run. An i64 parameter or result is a BigInt on the
+        // JavaScript side; an i32 or f64 is a Number.
+        let types = self.imports.types();
+        let mut names: Vec<String> = self
+            .imports
+            .imports()
+            .iter()
+            .map(|i| {
+                let sig = types.get(i.type_idx as usize);
+                let render = |ts: &[wasm_encoder::ValType]| {
+                    ts.iter()
+                        .map(|t| match t {
+                            wasm_encoder::ValType::I32 => "i32",
+                            wasm_encoder::ValType::I64 => "i64",
+                            wasm_encoder::ValType::F32 => "f32",
+                            wasm_encoder::ValType::F64 => "f64",
+                            _ => "?",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                match sig {
+                    Some((params, results)) if results.is_empty() => {
+                        format!("{}.{}({})", i.module, i.name, render(params))
+                    }
+                    Some((params, results)) => format!(
+                        "{}.{}({}) -> {}",
+                        i.module,
+                        i.name,
+                        render(params),
+                        render(results)
+                    ),
+                    None => format!("{}.{}", i.module, i.name),
+                }
+            })
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     /// Compile source code to WASM bytes.
@@ -272,6 +514,9 @@ impl WasmCompiler {
 
         // Fix control flow stack imbalance (spurious initial values)
         self.fix_control_flow_stack();
+
+        // Every name that resolved to nothing, in one report.
+        self.finish_unresolved()?;
 
         // Generate WASM module
         self.generate_module()
@@ -313,13 +558,20 @@ impl WasmCompiler {
     /// This resolves all dependencies, compiles them in order, and bundles
     /// everything into a single WASM module.
     pub fn compile_project(project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
+        let mut compiler = Self::new();
+        compiler.compile_project_into(project_dir)
+    }
+
+    /// As `compile_project`, but on an existing compiler, so the caller keeps
+    /// it afterwards — `sigil wasm` reports the calls that did not resolve, and
+    /// the project path was silently dropping that report on the floor.
+    pub fn compile_project_into(&mut self, project_dir: &std::path::Path) -> WasmResult<Vec<u8>> {
         use deps::{DependencyGraph, ProjectManifest};
 
         // Build dependency graph
         let graph = DependencyGraph::from_project(project_dir)?;
 
-        // Create compiler instance
-        let mut compiler = Self::new();
+        let compiler = self;
 
         // Compile each dependency in order (dependencies first)
         for manifest in graph.iter_in_order() {
@@ -331,6 +583,9 @@ impl WasmCompiler {
 
         // Fix control flow stack imbalance (spurious initial values)
         compiler.fix_control_flow_stack();
+
+        // Every name that resolved to nothing, in one report.
+        compiler.finish_unresolved()?;
 
         // Generate the final WASM module
         compiler.generate_module()
@@ -396,6 +651,19 @@ impl WasmCompiler {
         self.imports.get_or_create_type(params, results)
     }
 
+    /// Record that `name` may mean `idx`, keeping any earlier meaning.
+    pub(crate) fn note_candidate(&mut self, name: &str, idx: u32) {
+        let slot = self.func_candidates.entry(name.to_string()).or_default();
+        if !slot.contains(&idx) {
+            slot.push(idx);
+        }
+    }
+
+    /// Instruction-level diagnostics for anything the stack checker found.
+    pub fn stack_reports(&self) -> &[String] {
+        &self.stack_reports
+    }
+
     /// Look up a function by name.
     pub fn get_func(&self, name: &str) -> Option<u32> {
         // Check local functions first
@@ -456,15 +724,84 @@ impl WasmCompiler {
             .and_then(move |idx| self.functions.get_mut(idx))
     }
 
+    /// The index the next registered function gets. Stable for the whole
+    /// compilation — see `FUNC_BASE`.
+    pub(crate) fn next_func_idx(&self) -> u32 {
+        FUNC_BASE + self.functions.len() as u32
+    }
+
+    /// Position in `self.functions` of a compile-time function index, or `None`
+    /// when the index names an import.
+    pub(crate) fn func_list_index(idx: u32) -> Option<usize> {
+        idx.checked_sub(FUNC_BASE).map(|i| i as usize)
+    }
+
+    /// Whether a compile-time index names an import rather than a defined
+    /// function.
+    pub(crate) fn is_import_idx(idx: u32) -> bool {
+        idx < FUNC_BASE
+    }
+
+    /// Rewrite every compile-time function index to its final WebAssembly index.
+    ///
+    /// Called once, at the top of `generate_module`, when the import count can
+    /// no longer change. After this the whole module speaks final indices, so
+    /// the encoder, the validator and every diagnostic agree on what a `call`
+    /// names.
+    fn resolve_function_indices(&mut self) {
+        use wasm_encoder::Instruction;
+        let base = self.imports.import_count();
+        let resolve = |idx: u32| -> u32 {
+            match Self::func_list_index(idx) {
+                Some(pos) => base + pos as u32,
+                None => idx,
+            }
+        };
+        for func in &mut self.functions {
+            for instr in &mut func.instructions {
+                match instr {
+                    Instruction::Call(idx) => *idx = resolve(*idx),
+                    Instruction::RefFunc(idx) => *idx = resolve(*idx),
+                    _ => {}
+                }
+            }
+        }
+        for (i, func) in self.functions.iter_mut().enumerate() {
+            func.func_idx = base + i as u32;
+        }
+        for idx in &mut self.table_elements {
+            *idx = resolve(*idx);
+        }
+        if let Some(idx) = self.start_function_idx.as_mut() {
+            *idx = resolve(*idx);
+        }
+    }
+
+    /// How many operands a call to `func_idx` takes.
+    ///
+    /// `func_arity` records user functions and `extern` blocks only, so an
+    /// arity check that consulted it alone waved through every builtin host
+    /// import — which is how a four-argument `remove_event_listener` bound to
+    /// the two-parameter `browser.remove_event_listener` and emitted a call
+    /// that left two operands stranded.
+    pub(crate) fn arity_of(&self, func_idx: u32) -> Option<usize> {
+        if let Some(&declared) = self.func_arity.get(&func_idx) {
+            return Some(declared);
+        }
+        if Self::is_import_idx(func_idx) {
+            return self.imports.get_param_types(func_idx).map(|p| p.len());
+        }
+        None
+    }
+
     /// Check if a user-defined function returns void (no results).
     pub fn func_returns_void(&self, func_idx: u32) -> bool {
-        let import_count = self.imports.import_count();
-        if func_idx < import_count {
+        if Self::is_import_idx(func_idx) {
             // Import function - check via imports
             self.imports.get_return_type(func_idx).is_none()
         } else {
             // User-defined function
-            let local_idx = (func_idx - import_count) as usize;
+            let local_idx = Self::func_list_index(func_idx).unwrap_or(usize::MAX);
             self.functions
                 .get(local_idx)
                 .map(|f| f.results.is_empty())
@@ -525,43 +862,92 @@ impl WasmCompiler {
     /// Resolve a path that may start with "tome" (crate root).
     /// Returns the resolved path segments.
     pub fn resolve_path(&self, segments: &[String]) -> Vec<String> {
-        if segments.first().map(|s| s.as_str()) == Some("tome") {
+        let mut out = if segments.first().map(|s| s.as_str()) == Some("tome") {
             // tome:: means crate root - skip the "tome" prefix
             segments[1..].to_vec()
         } else {
             segments.to_vec()
+        };
+
+        // `Self·get(key)` inside `⊢ LocalStorage` names `LocalStorage::get`.
+        // The impl's type is on `module_path` while its methods compile, and
+        // nothing consulted it — so `Self` as a path qualifier was an undefined
+        // variable, which is most of how `qliphoth-sys`'s storage module calls
+        // its own associated functions.
+        if out.first().map(|s| s.as_str()) == Some("Self") {
+            if let Some(ty) = self.module_path.last() {
+                out[0] = ty.clone();
+            }
         }
+        out
     }
 
     /// Look up a function by qualified path.
     /// Handles tome:: prefix and module-relative paths.
     pub fn get_func_by_path(&self, segments: &[String]) -> Option<u32> {
+        self.get_func_by_path_arity(segments, None)
+    }
+
+    /// As `get_func_by_path`, but a fallback that would bind a differently
+    /// shaped function is refused.
+    pub fn get_func_by_path_arity(&self, segments: &[String], argc: Option<usize>) -> Option<u32> {
         let resolved = self.resolve_path(segments);
+
+        // Every lookup below has to fit the call. A name can mean several
+        // things — six `extern "js"` types in `qliphoth-sys` declare a `get`,
+        // and so does `⊢ Window`, with a different arity — and returning the
+        // first match made the caller reject a call that was resolvable.
+        let fits = |idx: u32| {
+            argc.is_none_or(|n| self.arity_of(idx).is_none_or(|a| a == n))
+        };
 
         // If it's a single-segment path, check simple name first
         if resolved.len() == 1 {
-            if let Some(idx) = self.func_map.get(&resolved[0]) {
-                return Some(*idx);
+            if let Some(&idx) = self.func_map.get(&resolved[0]) {
+                if fits(idx) {
+                    return Some(idx);
+                }
             }
         }
 
         // Try qualified lookup
         let qualified = resolved.join("::");
-        if let Some(idx) = self.func_map.get(&qualified) {
-            return Some(*idx);
+        if let Some(&idx) = self.func_map.get(&qualified) {
+            if fits(idx) {
+                return Some(idx);
+            }
         }
 
         // Check in qualified_items
         if let Some(QualifiedItem::Function(idx)) = self.qualified_items.get(&qualified) {
-            return Some(*idx);
+            if fits(*idx) {
+                return Some(*idx);
+            }
         }
 
         // Try just the last segment (simple name) for module-qualified calls
         // e.g., components::nav_view -> try just "nav_view"
+        //
+        // Only when the arity agrees. `Type·method()` reaches here too, and the
+        // last segment of one type's method is very often the name of another's
+        // — `view` is what every generated Qliphoth component calls its render
+        // method, so `ConnRow·view()` bound to whichever `view` was in scope,
+        // usually the enclosing one, and the call went out a `self` short.
         if resolved.len() > 1 {
             let simple_name = resolved.last().unwrap();
-            if let Some(idx) = self.func_map.get(simple_name) {
-                return Some(*idx);
+            if let Some(&idx) = self.func_map.get(simple_name) {
+                if fits(idx) {
+                    return Some(idx);
+                }
+            }
+            // `func_map` keeps one index per name; a name can mean several
+            // things. Ask the rest before giving up. See `func_candidates`.
+            if let Some(idx) = self
+                .func_candidates
+                .get(simple_name)
+                .and_then(|c| c.iter().copied().find(|i| fits(*i)))
+            {
+                return Some(idx);
             }
         }
 
@@ -645,14 +1031,13 @@ impl WasmCompiler {
             // Case 3: Spurious i64.const 0 before a call that expects i32 args
             // Pattern: ..., i32.wrap_i64, i64.const 0, call(import)
             // The i64.const 0 is spurious - remove it
-            let import_count = self.imports.import_count();
             let mut i = 0;
             while i + 2 < func.instructions.len() {
                 if let Instruction::I64Const(0) = &func.instructions[i] {
                     if let Instruction::Call(call_idx) = &func.instructions[i + 1] {
                         let call_idx = *call_idx;
                         // Check if it's an import
-                        if call_idx < import_count {
+                        if Self::is_import_idx(call_idx) {
                             if let Some(params) = self.imports.get_param_types(call_idx) {
                                 // The i64.const 0 is spurious if:
                                 // 1. All params are i32 (classic case), OR
@@ -717,7 +1102,7 @@ impl WasmCompiler {
                     if let Instruction::Call(call_idx) = &func.instructions[idx] {
                         let call_idx = *call_idx;
                         // Check if it's calling an import
-                        if call_idx < import_count {
+                        if Self::is_import_idx(call_idx) {
                             // Get the import's param count
                             let param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
                             // If import expects params but we have 0, need to push a default value
@@ -752,7 +1137,7 @@ impl WasmCompiler {
             for i in 0..func.instructions.len().min(20) {
                 if let Instruction::Call(call_idx) = &func.instructions[i] {
                     let call_idx = *call_idx;
-                    if call_idx < import_count {
+                    if Self::is_import_idx(call_idx) {
                         let import_param_count = import_param_counts.get(call_idx as usize).copied().unwrap_or(0);
                         if import_param_count == 0 {
                             continue;
@@ -776,14 +1161,14 @@ impl WasmCompiler {
                                 }
                                 Instruction::Call(idx) => {
                                     // For calls, track stack effect
-                                    if *idx < import_count {
+                                    if Self::is_import_idx(*idx) {
                                         // Import function: use known param count
                                         let params = import_param_counts.get(*idx as usize).copied().unwrap_or(0);
                                         stack_depth -= params as i32;
                                         stack_depth += 1; // Assume 1 return value
                                     } else {
                                         // Local function: look up param count from pre-calculated vector
-                                        let local_idx = (*idx - import_count) as usize;
+                                        let local_idx = Self::func_list_index(*idx).unwrap_or(usize::MAX);
                                         if let Some(&param_count) = local_func_param_counts.get(local_idx) {
                                             stack_depth -= param_count as i32;
                                         }
@@ -875,7 +1260,7 @@ impl WasmCompiler {
 
         // Create __wasm_start function: () -> ()
         let type_idx = self.get_or_create_type(vec![], vec![]);
-        let func_idx = self.imports.import_count() + self.functions.len() as u32;
+        let func_idx = self.next_func_idx();
 
         let mut start_func = CompiledFunction::new(
             "__wasm_start".to_string(),
@@ -923,7 +1308,44 @@ impl WasmCompiler {
         Ok(())
     }
 
+    /// Fail the build with every unresolved name, not the first one.
+    ///
+    /// Each unresolved name used to raise on the spot, so a port learned about
+    /// them one two-minute rebuild at a time. They are recorded as they are met
+    /// and reported together here — unless `SIGIL_WASM_STUB_UNRESOLVED` says
+    /// this is a survey build, which wants the module anyway.
+    #[cfg(test)]
+    pub(crate) fn finish_unresolved_for_test(&self) -> WasmResult<()> {
+        self.finish_unresolved()
+    }
+
+    fn finish_unresolved(&self) -> WasmResult<()> {
+        if self.unresolved.is_empty() || Self::stubbing_unresolved() {
+            return Ok(());
+        }
+        let mut lines = vec![format!(
+            "{} name(s) resolved to nothing (each compiles to a constant 0):",
+            self.unresolved.len()
+        )];
+        for name in &self.unresolved {
+            lines.push(format!("  {}", name));
+        }
+        lines.push(
+            "  Set SIGIL_WASM_STUB_UNRESOLVED=1 to build anyway and survey.".to_string(),
+        );
+        Err(WasmError::new(
+            crate::wasm::error::WasmErrorKind::Undefined,
+            lines.join("\n"),
+        ))
+    }
+
     fn generate_module(&mut self) -> WasmResult<Vec<u8>> {
+        // Function indices were assigned from `FUNC_BASE` while the import count
+        // was still moving. Settle them first: everything below — the encoder,
+        // the repair passes, the stack checker, the exports — speaks final
+        // WebAssembly indices from here on.
+        self.resolve_function_indices();
+
         // TODO: Implement in codegen.rs
         use wasm_encoder::{
             CodeSection, DataSection, DataSegment, DataSegmentMode, ElementSection, Elements,
@@ -959,8 +1381,15 @@ impl WasmCompiler {
         }
         module.section(&functions);
 
-        // Table section (for indirect calls)
-        if !self.table_elements.is_empty() {
+        // Table section (for indirect calls).
+        //
+        // Always emitted, even empty. A `call_indirect` can be reached with no
+        // closure ever added to the table — calling a local bound to `∅`, for
+        // one — and a module with a `call_indirect` and no table is invalid:
+        // "unknown table 0", which reads as a compiler bug rather than as the
+        // missing callback it is. An empty table traps at the call instead,
+        // which is the honest answer.
+        {
             let mut tables = TableSection::new();
             tables.table(TableType {
                 element_type: RefType::FUNCREF,
@@ -985,6 +1414,19 @@ impl WasmCompiler {
 
         // Global section
         if !self.globals.is_empty() {
+            // The runtime heap must start ABOVE the string literals. Both
+            // used to start at `HEAP_START`, so the first allocation in a
+            // function overwrote the literals it was about to read:
+            // `format!("x={}", x)` inside a match arm allocated the enum, wrote
+            // a zero length over "x=", and produced "7". `outside` the arm, with
+            // nothing to allocate, the same `format!` was correct — which is
+            // why this survived every test that did not allocate first.
+            if let Some(heap_ptr) = self.global_map.get("__heap_ptr").copied() {
+                if let Some(slot) = self.globals.get_mut(heap_ptr as usize) {
+                    slot.2 = self.data_offset.max(memory::HEAP_START) as i64;
+                }
+            }
+
             let mut globals = GlobalSection::new();
             for (ty, mutable, init) in &self.globals {
                 globals.global(
@@ -1008,6 +1450,19 @@ impl WasmCompiler {
         // Export section
         let mut exports = ExportSection::new();
         exports.export("memory", wasm_encoder::ExportKind::Memory, 0);
+
+        // The module's bump pointer, so the host can share it.
+        //
+        // There were two allocators over one linear memory: enum construction
+        // bumps this global inline, everything else calls `memory.heap_alloc`
+        // on the host, and the host kept its own pointer starting at a constant
+        // 65536. They handed out the same addresses, so a VNode's tag was
+        // overwritten by whatever was allocated next — `createElement('')`,
+        // from the largest component only, because the small ones never
+        // allocated enough to collide. Exported, there is one pointer.
+        if let Some(heap_ptr) = self.global_map.get("__heap_ptr").copied() {
+            exports.export("__heap_ptr", wasm_encoder::ExportKind::Global, heap_ptr);
+        }
 
         if !self.table_elements.is_empty() {
             exports.export("__indirect_function_table", wasm_encoder::ExportKind::Table, 0);
@@ -1047,6 +1502,134 @@ impl WasmCompiler {
                 Elements::Functions(std::borrow::Cow::Borrowed(&self.table_elements)),
             );
             module.section(&elements);
+        }
+
+        // Every call agrees with its callee before anything is encoded. See
+        // `coerce`: the backend has 66 hand-rolled import call sites and no
+        // shared coercion, so validity used to be decided per site.
+        {
+            let import_count = self.imports.import_count();
+            let import_sigs: Vec<Option<(Vec<ValType>, Vec<ValType>)>> = (0..import_count)
+                .map(|i| {
+                    self.imports
+                        .get_func_type(i)
+                        .and_then(|t| self.imports.types().get(t as usize).cloned())
+                })
+                .collect();
+            let local_sigs: Vec<(Vec<ValType>, Vec<ValType>)> = self
+                .functions
+                .iter()
+                .map(|f| {
+                    (
+                        f.params.iter().map(|(_, t)| *t).collect::<Vec<_>>(),
+                        f.results.clone(),
+                    )
+                })
+                .collect();
+            let global_types: Vec<ValType> = self.globals.iter().map(|(t, _, _)| *t).collect();
+
+            let call_sig = move |idx: u32| -> Option<(Vec<ValType>, Vec<ValType>)> {
+                if (idx as usize) < import_sigs.len() {
+                    import_sigs[idx as usize].clone()
+                } else {
+                    local_sigs.get(idx as usize - import_sigs.len()).cloned()
+                }
+            };
+            let global_ty = move |idx: u32| -> Option<ValType> {
+                global_types.get(idx as usize).copied()
+            };
+            let all_types: Vec<(Vec<ValType>, Vec<ValType>)> = self.imports.types().to_vec();
+            let type_sig = move |idx: u32| -> Option<(Vec<ValType>, Vec<ValType>)> {
+                all_types.get(idx as usize).cloned()
+            };
+
+            for func in &mut self.functions {
+                let params: Vec<ValType> = func.params.iter().map(|(_, t)| *t).collect();
+                let locals = func.local_types.clone();
+                let nparams = params.len();
+                let local_ty = move |idx: u32| -> Option<ValType> {
+                    let i = idx as usize;
+                    if i < nparams {
+                        params.get(i).copied()
+                    } else {
+                        locals.get(i - nparams).copied()
+                    }
+                };
+                let results = func.results.clone();
+                coerce::normalise_call_results(
+                    &mut func.instructions,
+                    import_count,
+                    &call_sig,
+                );
+                coerce::repair_operand_types(
+                    &mut func.instructions,
+                    &results,
+                    &call_sig,
+                    &type_sig,
+                    &local_ty,
+                    &global_ty,
+                );
+            }
+
+            // Say what is wrong with the instructions we emitted, in terms of
+            // the instructions we emitted. `wasmparser` gives a byte offset into
+            // the encoded binary, which names nothing anyone can act on.
+            // The forward model repairs what the backward scan could not reach —
+            // an operand pushed on the far side of an `if`/`end`, which is where
+            // the remaining invalid modules were. Repeat until it settles: one
+            // conversion can expose the next.
+            self.stack_reports.clear();
+            for func in &mut self.functions {
+                let mut repairs: Vec<(usize, wasm_encoder::Instruction<'static>)> = Vec::new();
+                for _ in 0..8 {
+                    let report =
+                        stackcheck::check_function(func, &mut repairs, &call_sig, &type_sig, &global_ty);
+                    if repairs.is_empty() {
+                        if let Some(r) = report {
+                            self.stack_reports.push(r.render());
+                        }
+                        break;
+                    }
+                    repairs.sort_by(|a, b| b.0.cmp(&a.0));
+                    for (at, instr) in repairs.drain(..) {
+                        func.instructions.insert(at.min(func.instructions.len()), instr);
+                    }
+                }
+            }
+        }
+
+        // `WebAssembly.Module()` reports a failure as "Compiling function #N",
+        // and N counts imports first. SIGIL_WASM_FUNCS prints the map.
+        if std::env::var("SIGIL_WASM_FUNCS").is_ok() {
+            let base = self.imports.import_count();
+            for (i, f) in self.functions.iter().enumerate() {
+                eprintln!("func #{} = {}", base as usize + i, f.name);
+            }
+        }
+
+        // `GlobalGet(512)` says nothing on its own, and a closure held in the
+        // wrong global is invisible without the map.
+        if std::env::var("SIGIL_WASM_GLOBALS").is_ok() {
+            let mut by_index: Vec<(u32, &String)> =
+                self.global_map.iter().map(|(n, i)| (*i, n)).collect();
+            by_index.sort();
+            for (idx, name) in by_index {
+                eprintln!("global #{} = {}", idx, name);
+            }
+        }
+
+        // SIGIL_WASM_DUMP=<name> prints a function's final instruction list.
+        // The stack checker only speaks up when a module is invalid; a module
+        // that validates and computes the wrong thing had nothing to show.
+        if let Ok(want) = std::env::var("SIGIL_WASM_DUMP") {
+            for func in &self.functions {
+                if func.name == want {
+                    eprintln!("== {} ({} instructions) ==", func.name, func.instructions.len());
+                    for (i, instr) in func.instructions.iter().enumerate() {
+                        eprintln!("{:>5}  {:?}", i, instr);
+                    }
+                }
+            }
         }
 
         // Code section
@@ -1246,6 +1829,135 @@ mod validation_tests {
 
         let validation = validate_wasm(&bytes);
         assert!(validation.is_ok(), "Validation failed: {:?}", validation);
+    }
+
+    /// An actor message handler is the core construct of every Qliphoth
+    /// component, and none of the 21 validation tests above compiled one. Every
+    /// `on Msg { … }` produced a function that failed WebAssembly validation
+    /// while `sigil wasm` reported success and wrote the file — an empty handler
+    /// included, because `compile_block` always leaves one value on the stack and
+    /// `compile_handler` only dropped it when the body had a trailing expression.
+    #[test]
+    fn test_validate_actor_message_handler() {
+        // Void handler, empty body: the block's unit value must be dropped.
+        for src in [
+            r#"☉ actor A { on Bump { } }"#,
+            r#"☉ actor A { state c: i64! = 0, on Bump { self.c = 1; } }"#,
+            // Two handlers, so the second one's function index is also exercised.
+            r#"☉ actor A { state c: i64! = 0, on Bump { self.c = 1; } on Zap { } }"#,
+            // Returning handler with no trailing expression: the block already
+            // pushed the unit value, so a second push would leave two.
+            r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { } }"#,
+            // Returning handler WITH a trailing expression: exactly one value.
+            r#"☉ actor A { state c: i64! = 0, on Bump -> i64! { self.c } }"#,
+        ] {
+            let mut compiler = WasmCompiler::new();
+            let bytes = compiler
+                .compile(src)
+                .unwrap_or_else(|e| panic!("compilation failed for {src}: {e:?}"));
+            let validation = validate_wasm(&bytes);
+            assert!(
+                validation.is_ok(),
+                "validation failed for {src}: {validation:?}"
+            );
+        }
+    }
+
+    /// An actor method reached through the actor's name — `Counter·value()`,
+    /// which is how anything outside the actor calls it. The `self` receiver is
+    /// part of the method's WASM signature, and only the `self·method()` path
+    /// pushed it, so these calls were one argument short.
+    /// A message handler used to compile to a function nothing could call: not
+    /// exported, no dispatcher, no mailbox, and `Actor ! Message` is not a
+    /// construct the parser has (it lexes as `Actor` marked known, then `Message`
+    /// — two statements). Handlers are now exported as `<Actor>_on_<Message>`
+    /// and reachable by message id through `<Actor>_dispatch`.
+    #[test]
+    fn test_actor_handlers_are_reachable() {
+        let src = r#"
+            ☉ ᛈ CounterMsg { Increment, Decrement, SetTo(i64), }
+            ☉ actor Counter {
+                state count: i64! = 0,
+                on Increment { self.count = self.count + 1; }
+                on Decrement { self.count = self.count - 1; }
+                on SetTo { self.count = msg.0; }
+                ☉ rite value(self) -> i64! { self.count }
+            }
+            ☉ rite main() -> i64! { 0 }
+        "#;
+        let mut compiler = WasmCompiler::new();
+        let bytes = compiler.compile(src).expect("compilation failed");
+        assert!(validate_wasm(&bytes).is_ok(), "{:?}", validate_wasm(&bytes));
+
+        let exports = exported_names(&bytes);
+        for expected in [
+            "Counter_on_Increment",
+            "Counter_on_Decrement",
+            "Counter_on_SetTo",
+            "Counter_dispatch",
+        ] {
+            assert!(
+                exports.contains(&expected.to_string()),
+                "missing export {expected}; have {exports:?}"
+            );
+        }
+    }
+
+    /// `msg.0` is how every handler the React migrator generates reads its
+    /// payload, and `msg` was bound nowhere — those bodies failed to compile
+    /// with "undefined variable: msg".
+    #[test]
+    fn test_handler_payload_binding_compiles() {
+        let mut compiler = WasmCompiler::new();
+        let bytes = compiler
+            .compile(
+                r#"☉ ᛈ M { SetTo(i64), }
+                   ☉ actor A { state c: i64! = 0, on SetTo { self.c = msg.0; } }
+                   ☉ rite main() -> i64! { 0 }"#,
+            )
+            .expect("compilation failed");
+        assert!(validate_wasm(&bytes).is_ok(), "{:?}", validate_wasm(&bytes));
+    }
+
+    fn exported_names(bytes: &[u8]) -> Vec<String> {
+        use wasmparser::{Parser, Payload};
+        let mut out = Vec::new();
+        for payload in Parser::new(0).parse_all(bytes).flatten() {
+            if let Payload::ExportSection(reader) = payload {
+                for export in reader.into_iter().flatten() {
+                    out.push(export.name.to_string());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn test_validate_actor_method_call_through_type_name() {
+        for src in [
+            r#"☉ actor Counter { state c: i64! = 7, ☉ rite value(self) -> i64! { self.c } }
+               ☉ rite main() -> i64! { Counter·value() }"#,
+            // Nested as an argument, which is where it first showed up.
+            r#"☉ actor Counter { state c: i64! = 7, ☉ rite value(self) -> i64! { self.c } }
+               rite twice(a: i64, b: i64) -> i64! { a + b }
+               ☉ rite main() -> i64! { twice(1, Counter·value()) }"#,
+            // A method that also takes explicit arguments.
+            r#"☉ actor Counter { state c: i64! = 0, ☉ rite add(self, n: i64) -> i64! { self.c + n } }
+               ☉ rite main() -> i64! { Counter·add(5) }"#,
+            // A void method: the call site pushes a unit value for consistency.
+            r#"☉ actor Counter { state c: i64! = 0, ☉ rite reset(self) { self.c = 0; } }
+               ☉ rite main() -> i64! { Counter·reset(); 0 }"#,
+        ] {
+            let mut compiler = WasmCompiler::new();
+            let bytes = compiler
+                .compile(src)
+                .unwrap_or_else(|e| panic!("compilation failed for {src}: {e:?}"));
+            let validation = validate_wasm(&bytes);
+            assert!(
+                validation.is_ok(),
+                "validation failed for {src}: {validation:?}"
+            );
+        }
     }
 
     #[test]

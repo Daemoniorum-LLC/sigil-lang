@@ -15,18 +15,18 @@
 //!                                              Demo Ending
 //! ```
 
-use crate::system::*;
-use crate::scenes::scene::*;
-use crate::dialogue::DialogueManager;
-use crate::events::events::*;
-use qliphoth::prelude::*;
+invoke tome·system·*;
+invoke tome·scenes·scene·*;
+invoke tome·dialogue·DialogueManager;
+invoke tome·events·events·*;
+invoke qliphoth·prelude·*;
 
 // ============================================================================
 // NARRATIVE BEATS
 // ============================================================================
 
 /// Major story beats in the demo
-type NarrativeBeat = enum {
+type NarrativeBeat = ᛈ {
     /// Arrival at the church
     Arrival,
     /// First look at the church exterior
@@ -62,7 +62,7 @@ type NarrativeBeat = enum {
 };
 
 /// Narrative beat definition
-type BeatDefinition = struct {
+type BeatDefinition = Σ {
     beat: NarrativeBeat!,
     /// Scene description override
     scene_text: Option<LayeredDescription>?,
@@ -79,14 +79,14 @@ type BeatDefinition = struct {
 };
 
 /// Internal system chatter
-type InternalLine = struct {
-    alter: &'static str!,
+type InternalLine = Σ {
+    alter_: &'static str!,
     text: &'static str!,
     delay_ms: u64!,
 };
 
 /// Narrative effects
-type NarrativeEffect = enum {
+type NarrativeEffect = ᛈ {
     /// Play ambient sound
     PlayAmbient(String),
     /// Stop ambient sound
@@ -117,14 +117,14 @@ type NarrativeEffect = enum {
     TriggerCocon(String),
 };
 
-type CameraEffect = enum {
+type CameraEffect = ᛈ {
     Shake { intensity: f32, duration_ms: u64 },
     Zoom { target: f32, duration_ms: u64 },
     Pan { x: f32, y: f32, duration_ms: u64 },
     Focus(String), // Focus on element
 };
 
-type ScreenEffect = enum {
+type ScreenEffect = ᛈ {
     Flash { color: String, duration_ms: u64 },
     Vignette { intensity: f32 },
     Distortion { intensity: f32 },
@@ -136,24 +136,24 @@ type ScreenEffect = enum {
 // ============================================================================
 
 /// All narrative beats for the demo
-pub fn get_demo_beats() -> Vec<BeatDefinition>! {
+☉ rite get_demo_beats() -> Vec<BeatDefinition>! {
     vec![
         // ARRIVAL
         BeatDefinition {
-            beat: NarrativeBeat::Arrival,
+            beat: NarrativeBeat·Arrival,
             scene_text: None,
             internal: vec![],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::PlayAmbient("night_wind".to_string()),
+                NarrativeEffect·PlayAmbient("night_wind".to_string()),
             ],
-            next: Some(NarrativeBeat::ExteriorFirst),
+            next: Some(NarrativeBeat·ExteriorFirst),
             delay_ms: 1000,
         },
 
         // EXTERIOR FIRST LOOK
         BeatDefinition {
-            beat: NarrativeBeat::ExteriorFirst,
+            beat: NarrativeBeat·ExteriorFirst,
             scene_text: Some(LayeredDescription {
                 grounded: "The Church of St. Dymphna rises before you, its spire a black needle against the starless sky.".to_string(),
                 fractured: "The church... shifts. Its outline blurs like a memory you can't quite hold.".to_string(),
@@ -165,7 +165,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::SetFlag("saw_church".to_string(), true),
+                NarrativeEffect·SetFlag("saw_church".to_string(), true),
             ],
             next: None, // Player must interact with gate
             delay_ms: 0,
@@ -173,7 +173,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 
         // GATE DISCOVERY
         BeatDefinition {
-            beat: NarrativeBeat::GateDiscovery,
+            beat: NarrativeBeat·GateDiscovery,
             scene_text: Some(LayeredDescription {
                 grounded: "The iron gate is rusted but stands firm. Strange symbols are etched into the metal - they look almost like letters, if letters could bleed.".to_string(),
                 fractured: "The symbols on the gate... move. Rearranging themselves when you look away.".to_string(),
@@ -187,7 +187,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::SetFlag("examined_gate".to_string(), true),
+                NarrativeEffect·SetFlag("examined_gate".to_string(), true),
             ],
             next: None,
             delay_ms: 0,
@@ -195,7 +195,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 
         // GATE OPENS
         BeatDefinition {
-            beat: NarrativeBeat::GateOpens,
+            beat: NarrativeBeat·GateOpens,
             scene_text: Some(LayeredDescription {
                 grounded: "The gate swings open on its own. The hinges don't make a sound.".to_string(),
                 fractured: "The gate... was it always open? You can't remember touching it.".to_string(),
@@ -207,10 +207,10 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::PlaySfx("gate_creak".to_string()),
-                NarrativeEffect::ModifyDissociation(0.05),
-                NarrativeEffect::SetFlag("gate_open".to_string(), true),
-                NarrativeEffect::RevealElement("church_path".to_string()),
+                NarrativeEffect·PlaySfx("gate_creak".to_string()),
+                NarrativeEffect·ModifyDissociation(0.05),
+                NarrativeEffect·SetFlag("gate_open".to_string(), true),
+                NarrativeEffect·RevealElement("church_path".to_string()),
             ],
             next: None,
             delay_ms: 0,
@@ -218,7 +218,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 
         // APPROACH DOOR
         BeatDefinition {
-            beat: NarrativeBeat::ApproachDoor,
+            beat: NarrativeBeat·ApproachDoor,
             scene_text: Some(LayeredDescription {
                 grounded: "The church doors are massive oak, carved with scenes from some saint's martyrdom. The wood is warm to the touch.".to_string(),
                 fractured: "The carvings... the faces in the wood are screaming. Or laughing. You can't tell anymore.".to_string(),
@@ -231,7 +231,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::SetFlag("at_door".to_string(), true),
+                NarrativeEffect·SetFlag("at_door".to_string(), true),
             ],
             next: None,
             delay_ms: 0,
@@ -239,7 +239,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 
         // ENTER NAVE
         BeatDefinition {
-            beat: NarrativeBeat::EnterNave,
+            beat: NarrativeBeat·EnterNave,
             scene_text: Some(LayeredDescription {
                 grounded: "The nave stretches before you, pews askew like broken teeth. Candles flicker on the altar, though no one should be here to light them.".to_string(),
                 fractured: "The nave breathes. In... out... The shadows between the pews pulse with each exhale.".to_string(),
@@ -250,16 +250,16 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::PlayAmbient("church_interior".to_string()),
-                NarrativeEffect::SetFlag("entered_church".to_string(), true),
+                NarrativeEffect·PlayAmbient("church_interior".to_string()),
+                NarrativeEffect·SetFlag("entered_church".to_string(), true),
             ],
-            next: Some(NarrativeBeat::MarcusSighted),
+            next: Some(NarrativeBeat·MarcusSighted),
             delay_ms: 3000,
         },
 
         // MARCUS SIGHTED
         BeatDefinition {
-            beat: NarrativeBeat::MarcusSighted,
+            beat: NarrativeBeat·MarcusSighted,
             scene_text: Some(LayeredDescription {
                 grounded: "A figure stands near the altar. A man in priest's vestments, his back to you. He seems to be praying.".to_string(),
                 fractured: "The priest... flickers. For a moment, he has too many arms.".to_string(),
@@ -272,16 +272,16 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::RevealElement("marcus".to_string()),
-                NarrativeEffect::SetFlag("saw_marcus".to_string(), true),
+                NarrativeEffect·RevealElement("marcus".to_string()),
+                NarrativeEffect·SetFlag("saw_marcus".to_string(), true),
             ],
-            next: Some(NarrativeBeat::MarcusApproach),
+            next: Some(NarrativeBeat·MarcusApproach),
             delay_ms: 5000,
         },
 
         // MARCUS APPROACHES
         BeatDefinition {
-            beat: NarrativeBeat::MarcusApproach,
+            beat: NarrativeBeat·MarcusApproach,
             scene_text: Some(LayeredDescription {
                 grounded: "The priest turns. His face is kindly, weathered. He smiles as if greeting an old friend.".to_string(),
                 fractured: "His smile doesn't reach his eyes. Something behind his eyes smiles instead.".to_string(),
@@ -292,20 +292,20 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::CameraEffect(CameraEffect::Focus("marcus".to_string())),
+                NarrativeEffect·CameraEffect(CameraEffect·Focus("marcus".to_string())),
             ],
-            next: Some(NarrativeBeat::MarcusGreeting),
+            next: Some(NarrativeBeat·MarcusGreeting),
             delay_ms: 2000,
         },
 
         // MARCUS GREETING
         BeatDefinition {
-            beat: NarrativeBeat::MarcusGreeting,
+            beat: NarrativeBeat·MarcusGreeting,
             scene_text: None,
             internal: vec![],
             external_dialogue: Some("marcus_greeting".to_string()),
             effects: vec![
-                NarrativeEffect::SetFlag("marcus_dialogue_started".to_string(), true),
+                NarrativeEffect·SetFlag("marcus_dialogue_started".to_string(), true),
             ],
             next: None, // Dialogue system takes over
             delay_ms: 0,
@@ -313,7 +313,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 
         // REALITY FRACTURES
         BeatDefinition {
-            beat: NarrativeBeat::RealityFractures,
+            beat: NarrativeBeat·RealityFractures,
             scene_text: Some(LayeredDescription {
                 grounded: "".to_string(), // Not visible in grounded
                 fractured: "The air... tears. Like fabric. Something is pushing through from the other side.".to_string(),
@@ -326,20 +326,20 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::ShiftReality(RealityLayer::Fractured),
-                NarrativeEffect::ModifyStability(-0.2),
-                NarrativeEffect::ModifyDissociation(0.15),
-                NarrativeEffect::ScreenEffect(ScreenEffect::Distortion { intensity: 0.3 }),
-                NarrativeEffect::CameraEffect(CameraEffect::Shake { intensity: 0.5, duration_ms: 2000 }),
-                NarrativeEffect::PlaySfx("reality_tear".to_string()),
+                NarrativeEffect·ShiftReality(RealityLayer·Fractured),
+                NarrativeEffect·ModifyStability(-0.2),
+                NarrativeEffect·ModifyDissociation(0.15),
+                NarrativeEffect·ScreenEffect(ScreenEffect·Distortion { intensity: 0.3 }),
+                NarrativeEffect·CameraEffect(CameraEffect·Shake { intensity: 0.5, duration_ms: 2000 }),
+                NarrativeEffect·PlaySfx("reality_tear".to_string()),
             ],
-            next: Some(NarrativeBeat::ShadowsEmerge),
+            next: Some(NarrativeBeat·ShadowsEmerge),
             delay_ms: 3000,
         },
 
         // SHADOWS EMERGE
         BeatDefinition {
-            beat: NarrativeBeat::ShadowsEmerge,
+            beat: NarrativeBeat·ShadowsEmerge,
             scene_text: Some(LayeredDescription {
                 grounded: "".to_string(),
                 fractured: "Shapes crawl from the shadows. They have too many limbs, too many eyes.".to_string(),
@@ -351,24 +351,24 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::RevealElement("shadow_crawler_1".to_string()),
-                NarrativeEffect::RevealElement("shadow_crawler_2".to_string()),
-                NarrativeEffect::PlaySfx("shadow_emerge".to_string()),
+                NarrativeEffect·RevealElement("shadow_crawler_1".to_string()),
+                NarrativeEffect·RevealElement("shadow_crawler_2".to_string()),
+                NarrativeEffect·PlaySfx("shadow_emerge".to_string()),
             ],
-            next: Some(NarrativeBeat::CombatStart),
+            next: Some(NarrativeBeat·CombatStart),
             delay_ms: 2000,
         },
 
         // COMBAT START
         BeatDefinition {
-            beat: NarrativeBeat::CombatStart,
+            beat: NarrativeBeat·CombatStart,
             scene_text: None,
             internal: vec![
                 InternalLine { alter: "Warden", text: "Vessel, switch! Let someone who can fight take over!", delay_ms: 0 },
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::SetFlag("combat_tutorial".to_string(), true),
+                NarrativeEffect·SetFlag("combat_tutorial".to_string(), true),
             ],
             next: None, // Combat system takes over
             delay_ms: 0,
@@ -376,7 +376,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 
         // COMBAT VICTORY
         BeatDefinition {
-            beat: NarrativeBeat::CombatVictory,
+            beat: NarrativeBeat·CombatVictory,
             scene_text: Some(LayeredDescription {
                 grounded: "The shadows... dissipate. Like smoke in wind. The church is silent once more.".to_string(),
                 fractured: "The shadows retreat. But they haven't left. They're just... watching now.".to_string(),
@@ -389,17 +389,17 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::ShiftReality(RealityLayer::Grounded),
-                NarrativeEffect::ModifyStability(0.1),
-                NarrativeEffect::SetFlag("combat_won".to_string(), true),
+                NarrativeEffect·ShiftReality(RealityLayer·Grounded),
+                NarrativeEffect·ModifyStability(0.1),
+                NarrativeEffect·SetFlag("combat_won".to_string(), true),
             ],
-            next: Some(NarrativeBeat::MarcusAftermath),
+            next: Some(NarrativeBeat·MarcusAftermath),
             delay_ms: 5000,
         },
 
         // MARCUS AFTERMATH
         BeatDefinition {
-            beat: NarrativeBeat::MarcusAftermath,
+            beat: NarrativeBeat·MarcusAftermath,
             scene_text: Some(LayeredDescription {
                 grounded: "Father Marcus watches you with renewed interest. His smile has changed somehow.".to_string(),
                 fractured: "Marcus... or the thing wearing Marcus... seems pleased.".to_string(),
@@ -411,13 +411,13 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: Some("marcus_aftermath".to_string()),
             effects: vec![],
-            next: Some(NarrativeBeat::Conclusion),
+            next: Some(NarrativeBeat·Conclusion),
             delay_ms: 0,
         },
 
         // CONCLUSION
         BeatDefinition {
-            beat: NarrativeBeat::Conclusion,
+            beat: NarrativeBeat·Conclusion,
             scene_text: Some(LayeredDescription {
                 grounded: "This is only the beginning. The church has many more secrets to reveal.".to_string(),
                 fractured: "The veil is thin here. Thin enough to slip through.".to_string(),
@@ -429,7 +429,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
             ],
             external_dialogue: None,
             effects: vec![
-                NarrativeEffect::SetFlag("demo_complete".to_string(), true),
+                NarrativeEffect·SetFlag("demo_complete".to_string(), true),
             ],
             next: None,
             delay_ms: 0,
@@ -442,7 +442,7 @@ pub fn get_demo_beats() -> Vec<BeatDefinition>! {
 // ============================================================================
 
 /// Controls narrative flow
-type NarrativeController = struct {
+type NarrativeController = Σ {
     /// All beats
     beats: Vec<BeatDefinition>!,
     /// Current beat index
@@ -459,59 +459,59 @@ type NarrativeController = struct {
     completed: Vec<NarrativeBeat>!,
 };
 
-impl NarrativeController {
-    pub fn new() -> Self! {
+⊢ NarrativeController {
+    ☉ rite new() -> Self! {
         Self {
             beats: get_demo_beats(),
             current_index: None,
             beat_time_ms: 0,
             internal_index: 0,
             internal_time_ms: 0,
-            pending_effects: Vec::new(),
-            completed: Vec::new(),
+            pending_effects: Vec·new(),
+            completed: Vec·new(),
         }
     }
 
     /// Start narrative at a specific beat
-    pub fn start_at(mut self, beat: NarrativeBeat) {
-        if let Some(index) = self·find_beat_index(&beat) {
+    ☉ rite start_at(mut self, beat: NarrativeBeat) {
+        ⎇ ≔ Some(index) = self·find_beat_index(&beat) {
             self.current_index = Some(index);
             self.beat_time_ms = 0;
             self.internal_index = 0;
             self.internal_time_ms = 0;
 
             // Queue initial effects
-            let beat_def = &self.beats[index];
+            ≔ beat_def = &self.beats[index];
             self.pending_effects = beat_def.effects·clone();
         }
     }
 
     /// Find beat index
-    fn find_beat_index(self, beat: &NarrativeBeat) -> Option<usize>? {
-        self.beats·iter()·position(|b| std::mem::discriminant(&b.beat) == std::mem::discriminant(beat))
+    rite find_beat_index(self, beat: &NarrativeBeat) -> Option<usize>? {
+        self.beats·iter()·position(|b| std·mem·discriminant(&b.beat) == std·mem·discriminant(beat))
     }
 
     /// Update narrative
-    pub fn update(mut self, delta_ms: u64) -> Vec<NarrativeEffect>! {
-        let mut effects = Vec::new();
+    ☉ rite update(mut self, delta_ms: u64) -> Vec<NarrativeEffect>! {
+        ≔ vary effects = Vec·new();
 
         // Return pending effects
-        effects·append(&mut self.pending_effects);
+        effects·append(&Δ self.pending_effects);
 
-        let index = match self.current_index {
+        ≔ index = ⌥ self.current_index {
             Some(i) => i,
-            None => return effects,
+            None => ⤺ effects,
         };
 
-        let beat = &self.beats[index];
+        ≔ beat = &self.beats[index];
 
         // Update timers
         self.beat_time_ms += delta_ms;
         self.internal_time_ms += delta_ms;
 
         // Check for automatic transition
-        if beat.delay_ms > 0 && self.beat_time_ms >= beat.delay_ms {
-            if let Some(ref next) = beat.next {
+        ⎇ beat.delay_ms > 0 && self.beat_time_ms >= beat.delay_ms {
+            ⎇ ≔ Some(ref next) = beat.next {
                 self·trigger_beat(next·clone());
             }
         }
@@ -520,9 +520,9 @@ impl NarrativeController {
     }
 
     /// Trigger a specific beat
-    pub fn trigger_beat(mut self, beat: NarrativeBeat) {
+    ☉ rite trigger_beat(mut self, beat: NarrativeBeat) {
         // Mark current as complete
-        if let Some(index) = self.current_index {
+        ⎇ ≔ Some(index) = self.current_index {
             self.completed·push(self.beats[index].beat·clone());
         }
 
@@ -531,24 +531,24 @@ impl NarrativeController {
     }
 
     /// Get current beat
-    pub fn get_current_beat(self) -> Option<&BeatDefinition>? {
+    ☉ rite get_current_beat(self) -> Option<&BeatDefinition>? {
         self.current_index·map(|i| &self.beats[i])
     }
 
     /// Get current internal lines that should be visible
-    pub fn get_visible_internal(self) -> Vec<&InternalLine>! {
-        let index = match self.current_index {
+    ☉ rite get_visible_internal(self) -> Vec<&InternalLine>! {
+        ≔ index = ⌥ self.current_index {
             Some(i) => i,
-            None => return Vec::new(),
+            None => ⤺ Vec·new(),
         };
 
-        let beat = &self.beats[index];
-        let mut visible = Vec::new();
-        let mut accumulated_delay = 0u64;
+        ≔ beat = &self.beats[index];
+        ≔ vary visible = Vec·new();
+        ≔ vary accumulated_delay = 0u64;
 
-        for line in &beat.internal {
+        ∀ line ∈ &beat.internal {
             accumulated_delay += line.delay_ms;
-            if self.beat_time_ms >= accumulated_delay {
+            ⎇ self.beat_time_ms >= accumulated_delay {
                 visible·push(line);
             }
         }
@@ -557,15 +557,15 @@ impl NarrativeController {
     }
 
     /// Check if beat is complete
-    pub fn is_beat_complete(self, beat: &NarrativeBeat) -> bool! {
-        self.completed·iter()·any(|b| std::mem::discriminant(b) == std::mem::discriminant(beat))
+    ☉ rite is_beat_complete(self, beat: &NarrativeBeat) -> bool! {
+        self.completed·iter()·any(|b| std·mem·discriminant(b) == std·mem·discriminant(beat))
     }
 
     /// Handle player triggering next step
-    pub fn advance(mut self) {
-        if let Some(index) = self.current_index {
-            let beat = &self.beats[index];
-            if let Some(ref next) = beat.next {
+    ☉ rite advance(mut self) {
+        ⎇ ≔ Some(index) = self.current_index {
+            ≔ beat = &self.beats[index];
+            ⎇ ≔ Some(ref next) = beat.next {
                 self·trigger_beat(next·clone());
             }
         }
@@ -578,46 +578,46 @@ impl NarrativeController {
 
 /// Internal dialogue overlay
 #[component]
-pub fn InternalDialogue(controller: &NarrativeController) -> Element! {
-    let lines = controller·get_visible_internal();
+☉ rite InternalDialogue(controller: &NarrativeController) -> Element! {
+    ≔ lines = controller·get_visible_internal();
 
-    if lines·is_empty() {
-        return html! {};
+    ⎇ lines·is_empty() {
+        ⤺ html! {};
     }
 
     html! {
         <div class="internal-dialogue">
             {lines·iter()·map(|line| {
-                let alter_class = format!("internal-alter-{}", line.alter·to_lowercase());
+                ≔ alter_class = format!("internal-alter-{}", line.alter·to_lowercase());
                 html! {
                     <div class={format!("internal-line {}", alter_class)}>
                         <span class="internal-speaker">{format!("[{}]", line.alter)}</span>
                         <span class="internal-text">{line.text}</span>
                     </div>
                 }
-            })·collect::<Vec<_>>()}
+            })·collect·<Vec<_>>()}
         </div>
     }
 }
 
 /// Narrative text overlay (scene descriptions)
 #[component]
-pub fn NarrativeText(
+☉ rite NarrativeText(
     controller: &NarrativeController,
     reality_layer: &RealityLayer
 ) -> Element! {
-    let beat = match controller·get_current_beat() {
+    ≔ beat = ⌥ controller·get_current_beat() {
         Some(b) => b,
-        None => return html! {},
+        None => ⤺ html! {},
     };
 
-    let text = match &beat.scene_text {
+    ≔ text = ⌥ &beat.scene_text {
         Some(layered) => layered·for_layer(reality_layer),
-        None => return html! {},
+        None => ⤺ html! {},
     };
 
-    if text·is_empty() {
-        return html! {};
+    ⎇ text·is_empty() {
+        ⤺ html! {};
     }
 
     html! {
@@ -628,7 +628,7 @@ pub fn NarrativeText(
 }
 
 /// Narrative styles
-pub const NARRATIVE_STYLES: &str! = r#"
+☉ const NARRATIVE_STYLES: &str! = r#"
     .internal-dialogue {
         position: fixed;
         top: 15%;

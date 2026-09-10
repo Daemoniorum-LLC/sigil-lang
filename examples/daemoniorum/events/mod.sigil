@@ -3,25 +3,25 @@
 //! Event system for reactive game behavior,
 //! emotional triggers, and system integration.
 
-pub mod events;
-pub mod triggers;
+☉ scroll events;
+☉ scroll triggers;
 
-pub use events·*;
-pub use triggers·*;
+☉ invoke events·*;
+☉ invoke triggers·*;
 
 // ============================================================================
 // MODULE INITIALIZATION
 // ============================================================================
 
 //! Initialize the complete event system
-fn init_event_system() -> EventManager! {
-    let mut manager = EventManager·new();
+rite init_event_system() -> EventManager! {
+    ≔ vary manager = EventManager·new();
 
     // Register built-in handlers
-    register_builtin_handlers(&mut manager);
+    register_builtin_handlers(&Δ manager);
 
     // Register all triggers
-    register_all_triggers(&mut manager);
+    register_all_triggers(&Δ manager);
 
     manager
 }

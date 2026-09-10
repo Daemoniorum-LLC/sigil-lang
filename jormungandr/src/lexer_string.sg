@@ -93,7 +93,7 @@ invoke tome·lexer·Lexer;
             '0' => '\0',
             'x' => this.lex_hex_escape(2),
             'u' => this.lex_unicode_escape(),
-            c => c?, // Unknown escape, ⤺ as-is
+            c => c, // Unknown escape, return as-is
         }
     }
 

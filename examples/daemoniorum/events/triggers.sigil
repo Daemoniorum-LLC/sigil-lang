@@ -3,15 +3,15 @@
 //! Emotional triggers that affect the plural system.
 //! These connect environmental stimuli to alter responses.
 
-use super·events·*
-use super·super·system·*
+invoke super·events·*
+invoke super·super·system·*
 
 // ============================================================================
 // THREAT TRIGGERS
 // ============================================================================
 
 //! Trigger: Direct threat to physical safety
-fn trigger_threat_to_system() -> TriggerDefinition! {
+rite trigger_threat_to_system() -> TriggerDefinition! {
     TriggerDefinition {
         id: "threat_to_system"·to_string(),
         name: "Threat Detected"·to_string(),
@@ -41,7 +41,7 @@ fn trigger_threat_to_system() -> TriggerDefinition! {
 }
 
 //! Trigger: Perceived injustice
-fn trigger_injustice() -> TriggerDefinition! {
+rite trigger_injustice() -> TriggerDefinition! {
     TriggerDefinition {
         id: "injustice"·to_string(),
         name: "Injustice Perceived"·to_string(),
@@ -74,7 +74,7 @@ fn trigger_injustice() -> TriggerDefinition! {
 // ============================================================================
 
 //! Trigger: Fear of abandonment
-fn trigger_abandonment() -> TriggerDefinition! {
+rite trigger_abandonment() -> TriggerDefinition! {
     TriggerDefinition {
         id: "abandonment"·to_string(),
         name: "Abandonment Fear"·to_string(),
@@ -105,7 +105,7 @@ fn trigger_abandonment() -> TriggerDefinition! {
 }
 
 //! Trigger: Emotional connection opportunity
-fn trigger_emotional_connection() -> TriggerDefinition! {
+rite trigger_emotional_connection() -> TriggerDefinition! {
     TriggerDefinition {
         id: "emotional_connection"·to_string(),
         name: "Connection Opportunity"·to_string(),
@@ -139,7 +139,7 @@ fn trigger_emotional_connection() -> TriggerDefinition! {
 // ============================================================================
 
 //! Trigger: Curiosity/Mystery
-fn trigger_curiosity() -> TriggerDefinition! {
+rite trigger_curiosity() -> TriggerDefinition! {
     TriggerDefinition {
         id: "curiosity"·to_string(),
         name: "Mystery Detected"·to_string(),
@@ -169,7 +169,7 @@ fn trigger_curiosity() -> TriggerDefinition! {
 }
 
 //! Trigger: Being lost or confused
-fn trigger_confusion() -> TriggerDefinition! {
+rite trigger_confusion() -> TriggerDefinition! {
     TriggerDefinition {
         id: "confusion"·to_string(),
         name: "Confusion/Lost"·to_string(),
@@ -202,7 +202,7 @@ fn trigger_confusion() -> TriggerDefinition! {
 // ============================================================================
 
 //! Trigger: Overwhelming sensory input
-fn trigger_sensory_overload() -> TriggerDefinition! {
+rite trigger_sensory_overload() -> TriggerDefinition! {
     TriggerDefinition {
         id: "sensory_overload"·to_string(),
         name: "Sensory Overload"·to_string(),
@@ -231,7 +231,7 @@ fn trigger_sensory_overload() -> TriggerDefinition! {
 // ============================================================================
 
 //! Trigger: Entering the church
-fn trigger_church_entry() -> TriggerDefinition! {
+rite trigger_church_entry() -> TriggerDefinition! {
     TriggerDefinition {
         id: "church_entry"·to_string(),
         name: "Sacred Ground"·to_string(),
@@ -252,7 +252,7 @@ fn trigger_church_entry() -> TriggerDefinition! {
 }
 
 //! Trigger: Entering the crypt
-fn trigger_crypt_entry() -> TriggerDefinition! {
+rite trigger_crypt_entry() -> TriggerDefinition! {
     TriggerDefinition {
         id: "crypt_entry"·to_string(),
         name: "Descent into Darkness"·to_string(),
@@ -281,7 +281,7 @@ fn trigger_crypt_entry() -> TriggerDefinition! {
 // ============================================================================
 
 //! Trigger: Reality fracture
-fn trigger_reality_fracture() -> TriggerDefinition! {
+rite trigger_reality_fracture() -> TriggerDefinition! {
     TriggerDefinition {
         id: "reality_fracture"·to_string(),
         name: "Reality Fracture"·to_string(),
@@ -309,7 +309,7 @@ fn trigger_reality_fracture() -> TriggerDefinition! {
 }
 
 //! Trigger: Reality shatter
-fn trigger_reality_shatter() -> TriggerDefinition! {
+rite trigger_reality_shatter() -> TriggerDefinition! {
     TriggerDefinition {
         id: "reality_shatter"·to_string(),
         name: "Reality Shatter"·to_string(),
@@ -344,7 +344,7 @@ fn trigger_reality_shatter() -> TriggerDefinition! {
 // ============================================================================
 
 //! Trigger: Safe space recognition
-fn trigger_safety() -> TriggerDefinition! {
+rite trigger_safety() -> TriggerDefinition! {
     TriggerDefinition {
         id: "safety"·to_string(),
         name: "Safety Recognized"·to_string(),
@@ -376,7 +376,7 @@ fn trigger_safety() -> TriggerDefinition! {
 }
 
 //! Trigger: Grounding moment
-fn trigger_grounding() -> TriggerDefinition! {
+rite trigger_grounding() -> TriggerDefinition! {
     TriggerDefinition {
         id: "grounding"·to_string(),
         name: "Grounding"·to_string(),
@@ -407,7 +407,7 @@ fn trigger_grounding() -> TriggerDefinition! {
 // ============================================================================
 
 //! Register all triggers
-fn register_all_triggers(manager: &mut EventManager) {
+rite register_all_triggers(manager: &Δ EventManager) {
     // Threat triggers
     manager·register_trigger(trigger_threat_to_system());
     manager·register_trigger(trigger_injustice());

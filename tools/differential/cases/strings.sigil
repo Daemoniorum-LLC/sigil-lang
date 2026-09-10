@@ -1,0 +1,90 @@
+// Strings. The predicates here are the ones a view uses to branch.
+
+☉ rite t_len() -> i64! {
+    ⤺ "hello"·len();
+}
+☉ rite t_empty_len() -> i64! {
+    ⤺ ""·len();
+}
+☉ rite t_concat() -> String! {
+    ⤺ "ab" + "cd";
+}
+☉ rite t_trim() -> String! {
+    ⤺ "  padded  "·trim();
+}
+☉ rite t_upper() -> String! {
+    ⤺ "abc"·to_uppercase();
+}
+☉ rite t_lower() -> String! {
+    ⤺ "ABC"·to_lowercase();
+}
+☉ rite t_contains_true() -> i64! {
+    ⤺ ⎇ "hello world"·contains("lo w") { 1 } ⎉ { 0 };
+}
+☉ rite t_contains_false() -> i64! {
+    ⤺ ⎇ "hello"·contains("zz") { 1 } ⎉ { 0 };
+}
+☉ rite t_starts_true() -> i64! {
+    ⤺ ⎇ "hello"·starts_with("he") { 1 } ⎉ { 0 };
+}
+☉ rite t_starts_false() -> i64! {
+    ⤺ ⎇ "hello"·starts_with("zz") { 1 } ⎉ { 0 };
+}
+☉ rite t_ends_true() -> i64! {
+    ⤺ ⎇ "hello"·ends_with("lo") { 1 } ⎉ { 0 };
+}
+☉ rite t_ends_false() -> i64! {
+    ⤺ ⎇ "hello"·ends_with("zz") { 1 } ⎉ { 0 };
+}
+☉ rite t_replace() -> String! {
+    ⤺ "a-b-c"·replace("-", "+");
+}
+☉ rite t_split_len() -> i64! {
+    ⤺ "a,b,c"·split(",")·len();
+}
+☉ rite t_split_value() -> String! {
+    ≔ parts = "a,b,c"·split(",");
+    ⤺ parts[1];
+}
+☉ rite t_is_empty_true() -> i64! {
+    ⤺ ⎇ ""·is_empty() { 1 } ⎉ { 0 };
+}
+☉ rite t_is_empty_false() -> i64! {
+    ⤺ ⎇ "x"·is_empty() { 1 } ⎉ { 0 };
+}
+☉ rite t_eq_true() -> i64! {
+    ⤺ ⎇ "abc" == "abc" { 1 } ⎉ { 0 };
+}
+☉ rite t_eq_false() -> i64! {
+    ⤺ ⎇ "abc" == "abd" { 1 } ⎉ { 0 };
+}
+☉ rite t_int_to_string() -> String! {
+    ⤺ (42)·to_string();
+}
+☉ rite t_concat_number() -> String! {
+    ⤺ "n=" + (7)·to_string();
+}
+
+☉ rite main() {
+    println((t_len())·to_string());
+    println((t_empty_len())·to_string());
+    println(t_concat());
+    println(t_trim());
+    println(t_upper());
+    println(t_lower());
+    println((t_contains_true())·to_string());
+    println((t_contains_false())·to_string());
+    println((t_starts_true())·to_string());
+    println((t_starts_false())·to_string());
+    println((t_ends_true())·to_string());
+    println((t_ends_false())·to_string());
+    println(t_replace());
+    println((t_split_len())·to_string());
+    println(t_split_value());
+    println((t_is_empty_true())·to_string());
+    println((t_is_empty_false())·to_string());
+    println((t_eq_true())·to_string());
+    println((t_eq_false())·to_string());
+    println(t_int_to_string());
+    println(t_concat_number());
+}

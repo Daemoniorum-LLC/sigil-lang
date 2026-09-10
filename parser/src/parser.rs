@@ -87,6 +87,16 @@ const QUANTUM_OPS: &[&str] = &[
 
 /// Recursive descent parser for Sigil.
 pub struct Parser<'a> {
+    /// Set by `parse_item`: whether the item it just returned passed its own
+    /// `@[cfg(…)]`. See the comment there.
+    last_item_cfg_holds: bool,
+    /// The same, for `parse_impl_item`.
+    last_impl_item_cfg_holds: bool,
+    /// The target `@[cfg(…)]` is evaluated against. Snapshotted from
+    /// `crate::cfg::active()` at construction, so one parse cannot see the
+    /// target change underneath it, and a test can set it directly.
+    cfg: crate::cfg::CfgContext,
+
     lexer: Lexer<'a>,
     current: Option<(Token, Span)>,
     /// Tracks whether we're parsing a condition (if/while/for) where < is comparison not generics
@@ -104,12 +114,21 @@ impl<'a> Parser<'a> {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
         Self {
+            last_item_cfg_holds: true,
+            last_impl_item_cfg_holds: true,
+            cfg: crate::cfg::active(),
             lexer,
             current,
             in_condition: false,
             in_type_position: false,
             pending_gt: None,
         }
+    }
+
+    /// Parse for a specific target instead of the process-wide one.
+    pub fn with_cfg(mut self, cfg: crate::cfg::CfgContext) -> Self {
+        self.cfg = cfg;
+        self
     }
 
     /// Parse a complete source file.
@@ -135,13 +154,10 @@ impl<'a> Parser<'a> {
                 break;
             }
             let item = self.parse_item()?;
-            // Filter out cfg-disabled items by checking their outer attributes
-            let should_include = match &item.node {
-                Item::Function(f) => self.evaluate_cfg_condition(&f.attrs.outer_attrs),
-                Item::Struct(s) => self.evaluate_cfg_condition(&s.attrs.outer_attrs),
-                _ => true,
-            };
-            if should_include {
+            // `parse_item` has already evaluated this item's `@[cfg(…)]`, for
+            // every item kind — including a module, an impl block and an
+            // `extern` block, none of which keep their attributes in the AST.
+            if self.last_item_cfg_holds {
                 items.push(item);
             }
         }
@@ -310,104 +326,52 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Evaluate a cfg condition to determine if the annotated item should be included.
-    /// Returns true if the condition is satisfied, false if the item should be skipped.
-    /// For the interpreter, `debug_assertions` is always true (interpreter = debug mode).
+    /// Whether an item carrying these attributes belongs in this compilation.
+    ///
+    /// `@[cfg(…)]` is evaluated against `crate::cfg::active()` — the target the
+    /// CLI selected — not against the machine running the compiler. Several
+    /// attributes are ANDed, as are several predicates inside one `cfg(…)`.
     fn evaluate_cfg_condition(&self, attrs: &[Attribute]) -> bool {
-        for attr in attrs {
-            if attr.name.name == "cfg" {
-                if let Some(AttrArgs::Paren(args)) = &attr.args {
-                    // Check the cfg argument
-                    for arg in args {
-                        match arg {
-                            AttrArg::Ident(ident) => {
-                                // Simple cfg like #[cfg(debug_assertions)]
-                                if ident.name == "debug_assertions" {
-                                    // In interpreter mode, debug_assertions is true
-                                    return true;
-                                }
-                                // Unknown cfg - default to true
-                                return true;
-                            }
-                            AttrArg::KeyValue { key, value } => {
-                                // Key-value cfg like #[cfg(target_os = "linux")]
-                                return self.evaluate_cfg_key_value(&key.name, value);
-                            }
-                            AttrArg::Nested(nested_attr) => {
-                                // cfg(not(...)) or cfg(all(...)) or cfg(any(...))
-                                if nested_attr.name.name == "not" {
-                                    // Evaluate the negated condition
-                                    if let Some(AttrArgs::Paren(inner_args)) = &nested_attr.args {
-                                        for inner_arg in inner_args {
-                                            match inner_arg {
-                                                AttrArg::Ident(inner_ident) => {
-                                                    if inner_ident.name == "debug_assertions" {
-                                                        // not(debug_assertions) = false in interpreter
-                                                        return false;
-                                                    }
-                                                }
-                                                AttrArg::KeyValue { key, value } => {
-                                                    return !self.evaluate_cfg_key_value(&key.name, value);
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                    // Unknown negated condition - default to false (skip)
-                                    return false;
-                                }
-                                if nested_attr.name.name == "any" {
-                                    // cfg(any(cond1, cond2, ...)) - true if ANY condition matches
-                                    if let Some(AttrArgs::Paren(inner_args)) = &nested_attr.args {
-                                        for inner_arg in inner_args {
-                                            if let AttrArg::KeyValue { key, value } = inner_arg {
-                                                if self.evaluate_cfg_key_value(&key.name, value) {
-                                                    return true;
-                                                }
-                                            }
-                                        }
-                                        return false;
-                                    }
-                                }
-                                // Unknown nested cfg - default to true
-                                return true;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
+        let cfg = &self.cfg;
+        attrs.iter().all(|attr| {
+            if attr.name.name != "cfg" {
+                return true;
             }
-        }
-        // No cfg attribute or couldn't evaluate - include the item
-        true
+            match &attr.args {
+                Some(AttrArgs::Paren(args)) => {
+                    args.iter().all(|arg| Self::cfg_predicate_holds(cfg, arg))
+                }
+                // `@[cfg]` with nothing to test says nothing; keep the item.
+                _ => true,
+            }
+        })
     }
 
-    /// Evaluate a cfg key-value pair like `target_os = "linux"`.
-    fn evaluate_cfg_key_value(&self, key: &str, value: &Expr) -> bool {
-        let value_str = match value {
-            Expr::Literal(Literal::String(s)) => s.as_str(),
-            _ => return false,
-        };
-        match key {
-            "target_os" => {
-                // Detect current OS
-                if cfg!(target_os = "linux") {
-                    value_str == "linux"
-                } else if cfg!(target_os = "macos") {
-                    value_str == "macos"
-                } else if cfg!(target_os = "windows") {
-                    value_str == "windows"
-                } else {
-                    false
-                }
-            }
-            "target_arch" => {
-                if cfg!(target_arch = "x86_64") {
-                    value_str == "x86_64"
-                } else if cfg!(target_arch = "aarch64") {
-                    value_str == "aarch64"
-                } else {
-                    false
+    /// Evaluate one `cfg` predicate, recursively.
+    ///
+    /// `not`, `all` and `any` nest arbitrarily. The previous version looked one
+    /// level deep, handled `all` not at all, and returned on the *first*
+    /// predicate — so `cfg(target_os = "linux", target_arch = "x86_64")` ignored
+    /// the architecture entirely.
+    fn cfg_predicate_holds(cfg: &crate::cfg::CfgContext, arg: &AttrArg) -> bool {
+        match arg {
+            AttrArg::Ident(ident) => cfg.holds_ident(&ident.name),
+            AttrArg::KeyValue { key, value } => match &**value {
+                Expr::Literal(Literal::String(v)) => cfg.holds_key_value(&key.name, v),
+                _ => false,
+            },
+            AttrArg::Nested(nested) => {
+                let inner: &[AttrArg] = match &nested.args {
+                    Some(AttrArgs::Paren(args)) => args,
+                    _ => &[],
+                };
+                match nested.name.name.as_str() {
+                    "not" => !inner.iter().all(|a| Self::cfg_predicate_holds(cfg, a)),
+                    "all" => inner.iter().all(|a| Self::cfg_predicate_holds(cfg, a)),
+                    "any" => inner.iter().any(|a| Self::cfg_predicate_holds(cfg, a)),
+                    // A bare `cfg(foo(…))` is not a predicate this compiler
+                    // knows, and an unknown predicate is not set.
+                    _ => false,
                 }
             }
             _ => false,
@@ -1393,6 +1357,13 @@ impl<'a> Parser<'a> {
             }
         }
 
+        // Whether this item's own `@[cfg(…)]` holds. Only `Item::Function` and
+        // `Item::Struct` carry their attributes into the AST, so asking the
+        // finished item is not enough — a `@[cfg(…)] ☉ scroll native;` was
+        // compiled into every target. Recorded here, where every item kind has
+        // its attributes in hand, and read by the loops that collect items.
+        let cfg_holds = self.evaluate_cfg_condition(&outer_attrs);
+
         // Skip any regular comments between attributes and the item
         // This allows patterns like:
         //   //@ rune: test
@@ -1541,6 +1512,11 @@ impl<'a> Parser<'a> {
         };
 
         let end_span = self.current_span();
+        // Set on the way out, not on the way in: parsing a module body calls
+        // `parse_item` recursively, and the inner items would otherwise leave
+        // their own answer here for the caller to read.
+        self.last_item_cfg_holds = cfg_holds;
+
         Ok(Spanned::new(item, start_span.merge(end_span)))
     }
 
@@ -1935,20 +1911,17 @@ impl<'a> Parser<'a> {
                 self.advance();
             }
             // Skip any outer attributes (#[...] or @[...])
-            while self.check(&Token::Hash) || self.check(&Token::At) {
-                self.parse_outer_attribute()?;
-            }
-            // Skip any additional comments after attributes
-            while matches!(
-                self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
-            ) {
-                self.advance();
-            }
+            // Attributes belong to the variant, so leave them for
+            // `parse_enum_variant` to collect. Consuming and discarding them
+            // here meant `EnumVariant::attributes` was always empty and a
+            // `@[cfg(…)]` on a variant said nothing.
             if self.check(&Token::RBrace) {
                 break;
             }
-            variants.push(self.parse_enum_variant()?);
+            let variant = self.parse_enum_variant()?;
+            if self.evaluate_cfg_condition(&variant.attributes) {
+                variants.push(variant);
+            }
             if !self.consume_if(&Token::Comma) {
                 break;
             }
@@ -2186,37 +2159,23 @@ impl<'a> Parser<'a> {
         self.expect(Token::LBrace)?;
         let mut items = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Skip doc comments, line comments, and attributes before impl items
+            // Only comments here. Attributes belong to the item that follows,
+            // and `parse_impl_item` collects them — skipping them by counting
+            // brackets, which is what this did, threw away every `@[cfg(…)]` on
+            // a method before anything could read it.
             while matches!(
                 self.current_token(),
-                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_)) | Some(Token::Hash) | Some(Token::RuneAnnotation(_))
+                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
             ) {
-                if self.check(&Token::Hash) {
-                    // Skip attribute: #[...] or #![...]
-                    self.advance();
-                    self.consume_if(&Token::Bang);
-                    if self.consume_if(&Token::LBracket) {
-                        let mut depth = 1;
-                        while depth > 0 && !self.is_eof() {
-                            match self.current_token() {
-                                Some(Token::LBracket) => depth += 1,
-                                Some(Token::RBracket) => depth -= 1,
-                                _ => {}
-                            }
-                            self.advance();
-                        }
-                    }
-                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
-                    // Skip rune annotations (like //@ rune: cfg(...))
-                    self.advance();
-                } else {
-                    self.advance();
-                }
+                self.advance();
             }
             if self.check(&Token::RBrace) {
                 break;
             }
-            items.push(self.parse_impl_item()?);
+            let impl_item = self.parse_impl_item()?;
+            if self.last_impl_item_cfg_holds {
+                items.push(impl_item);
+            }
         }
         self.expect(Token::RBrace)?;
 
@@ -2234,36 +2193,51 @@ impl<'a> Parser<'a> {
     fn parse_impl_item(&mut self) -> ParseResult<ImplItem> {
         // Parse outer attributes (#[...] or @[...]) and rune annotations
         let mut outer_attrs = Vec::new();
-        while self.check(&Token::Hash) || self.check(&Token::At) || matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
-            if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
-                outer_attrs.push(self.parse_rune_annotation()?);
-            } else {
+        loop {
+            if self.check(&Token::Hash) || self.check(&Token::At) {
                 outer_attrs.push(self.parse_outer_attribute()?);
+            } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                outer_attrs.push(self.parse_rune_annotation()?);
+            } else if matches!(
+                self.current_token(),
+                Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
+            ) {
+                self.advance();
+            } else {
+                break;
             }
         }
+        let cfg_holds = self.evaluate_cfg_condition(&outer_attrs);
 
         let visibility = self.parse_visibility()?;
 
-        match self.current_token() {
+        let item = match self.current_token() {
             Some(Token::Fn) | Some(Token::Async) | Some(Token::Unsafe) => {
-                Ok(ImplItem::Function(self.parse_function_with_attrs(visibility, outer_attrs)?))
+                ImplItem::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
             }
-            Some(Token::Type) => Ok(ImplItem::Type(self.parse_type_alias(visibility)?)),
+            Some(Token::Type) => ImplItem::Type(self.parse_type_alias(visibility)?),
             Some(Token::Const) => {
                 // Check if this is `const fn` or just `const`
                 if self.peek_next().map(|t| matches!(t, Token::Fn | Token::Async)) == Some(true) {
-                    Ok(ImplItem::Function(self.parse_function_with_attrs(visibility, outer_attrs)?))
+                    ImplItem::Function(self.parse_function_with_attrs(visibility, outer_attrs)?)
                 } else {
-                    Ok(ImplItem::Const(self.parse_const(visibility)?))
+                    ImplItem::Const(self.parse_const(visibility)?)
                 }
             }
-            Some(token) => Err(ParseError::UnexpectedToken {
-                expected: "impl item".to_string(),
-                found: token.clone(),
-                span: self.current_span(),
-            }),
-            None => Err(ParseError::UnexpectedEof),
-        }
+            Some(token) => {
+                return Err(ParseError::UnexpectedToken {
+                    expected: "impl item".to_string(),
+                    found: token.clone(),
+                    span: self.current_span(),
+                })
+            }
+            None => return Err(ParseError::UnexpectedEof),
+        };
+
+        // Set on the way out: a method body can contain an impl block of its
+        // own, whose items would otherwise leave their answer here.
+        self.last_impl_item_cfg_holds = cfg_holds;
+        Ok(item)
     }
 
     fn parse_type_alias(&mut self, visibility: Visibility) -> ParseResult<TypeAlias> {
@@ -2313,7 +2287,10 @@ impl<'a> Parser<'a> {
                 if self.check(&Token::RBrace) {
                     break;
                 }
-                items.push(self.parse_item()?);
+                let item = self.parse_item()?;
+                if self.last_item_cfg_holds {
+                    items.push(item);
+                }
             }
             self.expect(Token::RBrace)?;
             Some(items)
@@ -2872,7 +2849,7 @@ impl<'a> Parser<'a> {
         use crate::ast::{MacroDelimiter, MacroInvocation};
 
         // Parse the path (macro name, potentially with ::)
-        let path = self.parse_type_path()?;
+        let path = self.parse_type_path(false)?;
 
         // Expect !
         self.expect(Token::Bang)?;
@@ -3169,6 +3146,31 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // Attributes on an extern item. `#[wasm_bindgen(method)]` and friends are
+            // how every js-ABI binding in the ecosystem is written, and this loop only
+            // skipped comments — so an attribute inside an extern block was a parse
+            // error, while the same attribute on an item, in an impl, on a struct
+            // field or inside a scroll all parsed fine.
+            while self.check(&Token::Hash)
+                || self.check(&Token::At)
+                || matches!(self.current_token(), Some(Token::RuneAnnotation(_)))
+            {
+                if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    let _ = self.parse_rune_annotation()?;
+                } else {
+                    let _ = self.parse_outer_attribute()?;
+                }
+                while matches!(
+                    self.current_token(),
+                    Some(Token::LineComment(_)) | Some(Token::BlockComment(_))
+                ) {
+                    self.advance();
+                }
+            }
+            if self.check(&Token::RBrace) || self.is_eof() {
+                break;
+            }
+
             let visibility = self.parse_visibility()?;
 
             match self.current_token() {
@@ -3238,6 +3240,31 @@ impl<'a> Parser<'a> {
             // Skip comments inside extern blocks
             while matches!(self.current_token(), Some(Token::LineComment(_)) | Some(Token::BlockComment(_))) {
                 self.advance();
+            }
+            if self.check(&Token::RBrace) || self.is_eof() {
+                break;
+            }
+
+            // Attributes on an extern item. `#[wasm_bindgen(method)]` and friends are
+            // how every js-ABI binding in the ecosystem is written, and this loop only
+            // skipped comments — so an attribute inside an extern block was a parse
+            // error, while the same attribute on an item, in an impl, on a struct
+            // field or inside a scroll all parsed fine.
+            while self.check(&Token::Hash)
+                || self.check(&Token::At)
+                || matches!(self.current_token(), Some(Token::RuneAnnotation(_)))
+            {
+                if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    let _ = self.parse_rune_annotation()?;
+                } else {
+                    let _ = self.parse_outer_attribute()?;
+                }
+                while matches!(
+                    self.current_token(),
+                    Some(Token::LineComment(_)) | Some(Token::BlockComment(_))
+                ) {
+                    self.advance();
+                }
             }
             if self.check(&Token::RBrace) || self.is_eof() {
                 break;
@@ -3856,7 +3883,7 @@ impl<'a> Parser<'a> {
 
                 // Check for "as Trait" clause
                 let trait_path = if self.consume_if(&Token::As) {
-                    Some(self.parse_type_path_in_type_position()?)
+                    Some(self.parse_type_path(true)?)
                 } else {
                     None
                 };
@@ -4135,30 +4162,31 @@ impl<'a> Parser<'a> {
                 Ok(TypeExpr::Path(TypePath { segments }))
             }
             _ => {
-                let path = self.parse_type_path_in_type_position()?;
+                let path = self.parse_type_path(true)?;
                 Ok(TypeExpr::Path(path))
             }
         }
     }
 
-    /// `parse_type_path` with `·` treated as a path separator regardless of case.
+    /// Parse a `·`-separated path.
     ///
-    /// Only type positions call this. Expression positions keep the uppercase heuristic,
-    /// because there `lhs·method()` really is a method call.
-    fn parse_type_path_in_type_position(&mut self) -> ParseResult<TypePath> {
-        let was_in_type_position = self.in_type_position;
-        self.in_type_position = true;
-        let result = self.parse_type_path();
-        self.in_type_position = was_in_type_position;
-        result
-    }
-
-    fn parse_type_path(&mut self) -> ParseResult<TypePath> {
-        // Read-once: the flag applies to this path and nothing reached from it. A type can
-        // contain an expression (a const generic argument, an array length), and that
-        // expression is expression position again -- `·` there is a method call.
-        let in_type_position = std::mem::replace(&mut self.in_type_position, false);
-
+    /// `in_type_context` distinguishes the two grammars that share this function:
+    ///
+    /// * **Type context** (`true`) — a parameter type, type argument, generic bound.
+    ///   `·` is unambiguously a path separator here, because types have no method
+    ///   calls. A lowercase first segment is an ordinary module name
+    ///   (`std·collections·HashMap`, `serde·de·DeserializeOwned`), so the
+    ///   uppercase heuristic below must not apply.
+    ///
+    /// * **Expression context** (`false`) — `·` is overloaded: `HashMap·new()` is a
+    ///   path, but `tag·to_string()` is a method call on a variable, which
+    ///   `parse_postfix_expr` must handle. The uppercase-first-segment heuristic
+    ///   separates them and is preserved unchanged.
+    ///
+    /// Passing `false` in a type position is the S5 defect: parsing stopped at the
+    /// first `·` and the caller then reported `expected RParen/RBracket, found
+    /// MiddleDot`, taking out 16 of 39 Qliphoth source files.
+    fn parse_type_path(&mut self, in_type_context: bool) -> ParseResult<TypePath> {
         let mut segments = Vec::new();
         segments.push(self.parse_path_segment()?);
 
@@ -4170,12 +4198,23 @@ impl<'a> Parser<'a> {
         // - For type paths starting with uppercase (HashMap·new), allow · as separator
         // - For variable paths starting with lowercase (tag·to_string), DON'T consume ·
         //   because those are method calls handled by postfix expression parsing
+        // A path root that can never be a value: `tome` and `super` are keywords, so
+        // `tome·router·Opts` is unambiguously a path even though the first segment
+        // is lowercase.
         //
-        // The uppercase test is a heuristic for *expression* position, where `tag·to_string`
-        // is a method call. It does not apply in a type position: a type contains no
-        // variables, so every `·` there is a path separator. Without this, a lowercase module
-        // path in a type -- `std·fmt·Formatter<'_>` -- is rejected, which is #61's regression.
-        let first_segment_is_type = in_type_position
+        // Only real Sigil spellings belong here. Rust's `crate` is NOT one — the
+        // lexer defines `#[token("tome")]` and no `crate` token, so a source
+        // `crate` lexes as an ordinary identifier. Listing it would silently
+        // reinterpret a user's variable named `crate`, turning `crate·to_string()`
+        // from a method call into a path.
+        //
+        // `self` is excluded for the same class of reason: `self·field` is a
+        // legitimate field access on the receiver.
+        let first_segment_is_path_keyword = segments
+            .first()
+            .is_some_and(|s| matches!(s.ident.name.as_str(), "tome" | "super"));
+
+        let first_segment_is_type = first_segment_is_path_keyword
             || segments
                 .first()
                 .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
@@ -4185,7 +4224,10 @@ impl<'a> Parser<'a> {
             // Only allow · as a path separator for type paths (uppercase first letter).
             // For lowercase identifiers (variables), · is a method-call operator and
             // must be left for postfix expression parsing (parse_postfix_expr MiddleDot arm).
-            let is_path_sep = first_segment_is_type && self.consume_if(&Token::MiddleDot);
+            // In a type position `·` is always a separator; elsewhere fall back to the
+            // uppercase heuristic that keeps method calls out of path parsing.
+            let is_path_sep =
+                (in_type_context || first_segment_is_type) && self.consume_if(&Token::MiddleDot);
             if !is_path_sep {
                 break;
             }
@@ -4876,7 +4918,7 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(lit))
             }
             Some(Token::Ident(_)) => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(false)?;
                 Ok(Expr::Path(path))
             }
             Some(Token::Underscore) => {
@@ -5561,8 +5603,16 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Dot) => {
                     self.advance();
-                    // Handle `.⌛` as await syntax (alternative to `expr⌛`)
-                    if self.check(&Token::Async) {
+                    // Handle `.⌛` and `.await` as await syntax (alternatives
+                    // to `expr⌛`).
+                    //
+                    // `.await` was not among them, so it parsed as a FIELD named
+                    // `await` and compiled to a load at offset 0 of whatever the
+                    // expression produced — reading a promise id as a pointer.
+                    // Every `.await` in a migrated program is this spelling, so
+                    // none of them awaited anything, in code that compiled and
+                    // reported success.
+                    if self.check(&Token::Async) || self.check(&Token::Await) {
                         self.advance();
                         let evidentiality = self.parse_evidentiality_opt();
                         expr = Expr::Await {
@@ -6143,7 +6193,7 @@ impl<'a> Parser<'a> {
                 } else {
                     // Treat as identifier/function call: no_grad(...)
                     // Parse as path expression; postfix parsing handles the call `(...)`
-                    let path = self.parse_type_path()?;
+                    let path = self.parse_type_path(false)?;
                     Ok(Expr::Path(path))
                 }
             }
@@ -6437,7 +6487,7 @@ impl<'a> Parser<'a> {
                 }
             }
             Some(Token::Ident(_)) => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(false)?;
 
                 // Check for struct literal: Name { ... }
                 // Note: Name! { ... } is treated as a macro invocation, handled in parse_postfix_expr
@@ -6511,7 +6561,7 @@ impl<'a> Parser<'a> {
             }
             // Handle contextual keywords as identifiers in expressions
             Some(ref token) if Self::keyword_as_ident(token).is_some() => {
-                let path = self.parse_type_path()?;
+                let path = self.parse_type_path(false)?;
                 // Check for struct literal: Name { ... }
                 // Note: Don't consume ! here - macro invocations (Name!(...)) are handled in parse_postfix_expr
                 if self.check(&Token::LBrace) && !self.is_in_condition() {
@@ -6612,6 +6662,17 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.expect(Token::LParen)?;
                     while !self.check(&Token::RParen) {
+                        // `volatile` lexes as a keyword, not an identifier, so an
+                        // Ident-only match could never see the most common asm
+                        // option — `options(volatile)` was unparseable.
+                        if self.check(&Token::Volatile) {
+                            self.advance();
+                            options.volatile = true;
+                            if !self.consume_if(&Token::Comma) {
+                                break;
+                            }
+                            continue;
+                        }
                         if let Some(Token::Ident(opt)) = self.current_token().cloned() {
                             self.advance();
                             match opt.as_str() {
@@ -7711,10 +7772,35 @@ impl<'a> Parser<'a> {
                 // |assume!("reason") - assume evidence level
                 if name.name == "validate" || name.name == "assume" {
                     // Check for evidentiality marker followed by { or (
-                    // NOTE: ! (Bang) is NOT treated as evidence marker here because
-                    // |validate!{...} should be parsed as a macro invocation (line 6980+).
-                    // Only ? and ~ are evidence markers for built-in validate.
-                    let (has_marker, target_evidence) = if self.check(&Token::Question) {
+                    //
+                    // `!` is handled here alongside `?` and `~`. It used to be routed
+                    // to the macro path instead, which captured `{|x| x > 0}` as raw
+                    // text — so the README's own example,
+                    // `external|validate!{|x| x > 0}`, failed at run time with
+                    // "Cannot call non-function value in pipe: \"| x | x > 0\"".
+                    // That contradicted the doc comment four lines above, which says
+                    // `|validate!{predicate}` validates and promotes to Known — and
+                    // `!` IS the Known marker, so this is the one spelling that had to
+                    // work. The marker is only consumed when a `{` or `(` follows, so
+                    // a genuine `validate!` macro invocation with any other shape is
+                    // untouched.
+                    //
+                    // `validate!` is also a legitimate user macro name — there is a
+                    // `rune validate!` in spec/07_metaprogramming taking struct-shaped
+                    // fields — so `!` alone cannot decide. What decides is the shape
+                    // of the argument: a closure (`{|x| …}`, `{λ …}`) is the built-in
+                    // predicate form, while anything else (`{prompt: non_empty, …}`)
+                    // is a macro invocation and must reach the macro path untouched.
+                    let bang_opens_closure = self.check(&Token::Bang)
+                        && matches!(self.peek_next(), Some(Token::LBrace))
+                        && matches!(
+                            self.peek_n(1),
+                            Some(Token::Pipe) | Some(Token::OrOr) | Some(Token::LambdaExpr)
+                        );
+                    let (has_marker, target_evidence) = if bang_opens_closure {
+                        self.advance(); // consume !
+                        (true, Evidentiality::Known)
+                    } else if self.check(&Token::Question) {
                         let peek = self.peek_next();
                         if matches!(peek, Some(Token::LBrace) | Some(Token::LParen)) {
                             self.advance(); // consume ?
@@ -8635,16 +8721,21 @@ impl<'a> Parser<'a> {
 
         let mut arms = Vec::new();
         while !self.check(&Token::RBrace) && !self.is_eof() {
-            // Skip comments and attributes before match arms: #[cfg(...)]
+            // Comments and attributes before a match arm. Attributes used to be
+            // skipped — `#` only, so `@[cfg(…)]` did not even parse — which meant
+            // a match over a platform enum could not drop the arm for a variant
+            // that is not in this build. They are collected and evaluated now.
+            let mut arm_attrs = Vec::new();
             loop {
                 if matches!(
                     self.current_token(),
                     Some(Token::DocComment(_)) | Some(Token::LineComment(_) | Token::TildeComment(_) | Token::BlockComment(_))
                 ) {
                     self.advance();
-                } else if self.check(&Token::Hash) {
-                    // Skip attribute: #[...]
-                    self.skip_attribute()?;
+                } else if self.check(&Token::Hash) || self.check(&Token::At) {
+                    arm_attrs.push(self.parse_outer_attribute()?);
+                } else if matches!(self.current_token(), Some(Token::RuneAnnotation(_))) {
+                    arm_attrs.push(self.parse_rune_annotation()?);
                 } else {
                     break;
                 }
@@ -8652,6 +8743,7 @@ impl<'a> Parser<'a> {
             if self.check(&Token::RBrace) {
                 break;
             }
+            let keep_arm = self.evaluate_cfg_condition(&arm_attrs);
             let pattern = self.parse_or_pattern()?;
             let guard = if self.consume_if(&Token::If) {
                 Some(self.parse_condition()?)
@@ -8660,11 +8752,13 @@ impl<'a> Parser<'a> {
             };
             self.expect(Token::FatArrow)?;
             let body = self.parse_expr()?;
-            arms.push(MatchArm {
-                pattern,
-                guard,
-                body,
-            });
+            if keep_arm {
+                arms.push(MatchArm {
+                    pattern,
+                    guard,
+                    body,
+                });
+            }
             // In Rust/Sigil, commas are optional after block-bodied match arms
             // So we try to consume a comma, but don't break if absent
             self.consume_if(&Token::Comma);
@@ -10368,6 +10462,159 @@ fn infix_binding_power(op: BinOp) -> (u8, u8) {
 }
 
 #[cfg(test)]
+mod cfg_gating_tests {
+    use super::*;
+    use crate::cfg::CfgContext;
+
+    fn items_for(source: &str, cfg: CfgContext) -> Vec<Item> {
+        Parser::new(source)
+            .with_cfg(cfg)
+            .parse_file()
+            .expect("parses")
+            .items
+            .into_iter()
+            .map(|i| i.node)
+            .collect()
+    }
+
+    fn names(items: &[Item]) -> Vec<String> {
+        items
+            .iter()
+            .map(|i| match i {
+                Item::Function(f) => format!("fn {}", f.name.name),
+                Item::Module(m) => format!("mod {}", m.name.name),
+                Item::Struct(s) => format!("struct {}", s.name.name),
+                Item::Enum(e) => format!("enum {}", e.name.name),
+                Item::Impl(_) => "impl".to_string(),
+                _ => "other".to_string(),
+            })
+            .collect()
+    }
+
+    const SRC: &str = r#"
+@[cfg(target_family = "wasm")]
+rite web_only() -> i64! { 1 }
+
+@[cfg(not(target_family = "wasm"))]
+rite native_only() -> i64! { 2 }
+
+@[cfg(not(target_family = "wasm"))]
+☉ scroll native;
+
+@[cfg(feature = "gtk")]
+rite with_gtk() -> i64! { 3 }
+"#;
+
+    #[test]
+    fn a_module_is_gated_like_any_other_item() {
+        // `@[cfg(…)] ☉ scroll native;` was compiled into every target,
+        // because only functions and structs were filtered at file scope.
+        let wasm = names(&items_for(SRC, CfgContext::wasm32()));
+        assert!(!wasm.contains(&"mod native".to_string()), "{:?}", wasm);
+        let host = names(&items_for(SRC, CfgContext::host()));
+        assert!(host.contains(&"mod native".to_string()), "{:?}", host);
+    }
+
+    #[test]
+    fn the_target_is_the_compilation_not_the_host() {
+        let wasm = names(&items_for(SRC, CfgContext::wasm32()));
+        assert!(wasm.contains(&"fn web_only".to_string()), "{:?}", wasm);
+        assert!(!wasm.contains(&"fn native_only".to_string()), "{:?}", wasm);
+    }
+
+    #[test]
+    fn features_gate_items() {
+        let off = names(&items_for(SRC, CfgContext::wasm32()));
+        assert!(!off.contains(&"fn with_gtk".to_string()), "{:?}", off);
+        let on = names(&items_for(SRC, CfgContext::wasm32().with_features(["gtk"])));
+        assert!(on.contains(&"fn with_gtk".to_string()), "{:?}", on);
+    }
+
+    #[test]
+    fn all_evaluates_every_predicate() {
+        // `cfg(a, b)` used to return on the first predicate, so
+        // `cfg(target_os = "linux", target_arch = "x86_64")` ignored the arch.
+        let src = r#"
+@[cfg(all(target_family = "wasm", target_arch = "x86_64"))]
+rite impossible() -> i64! { 0 }
+
+@[cfg(target_family = "wasm", target_arch = "wasm32")]
+rite both() -> i64! { 1 }
+"#;
+        let got = names(&items_for(src, CfgContext::wasm32()));
+        assert_eq!(got, vec!["fn both".to_string()]);
+    }
+
+    #[test]
+    fn an_unknown_predicate_is_not_set() {
+        // Answering "true" for anything unrecognised meant a name and its
+        // negation were both included, and the second definition won.
+        let src = r#"
+@[cfg(gtk_backend)]
+rite a() -> i64! { 0 }
+
+@[cfg(not(gtk_backend))]
+rite b() -> i64! { 1 }
+"#;
+        let got = names(&items_for(src, CfgContext::wasm32()));
+        assert_eq!(got, vec!["fn b".to_string()]);
+    }
+
+    #[test]
+    fn enum_variants_and_match_arms_are_gated() {
+        let src = r#"
+ᛈ Backend {
+    Browser(Web),
+    @[cfg(not(target_family = "wasm"))]
+    Native(Gtk),
+}
+
+rite pick(b: Backend!) -> i64! {
+    ⌥ b {
+        Backend·Browser(p) => 1,
+        @[cfg(not(target_family = "wasm"))]
+        Backend·Native(p) => 2,
+    }
+}
+"#;
+        for (cfg, want_native) in [(CfgContext::wasm32(), false), (CfgContext::host(), true)] {
+            let items = items_for(src, cfg);
+            let variants = items
+                .iter()
+                .find_map(|i| match i {
+                    Item::Enum(e) => Some(e.variants.len()),
+                    _ => None,
+                })
+                .expect("enum survives");
+            assert_eq!(variants, if want_native { 2 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn impl_items_are_gated() {
+        let src = r#"
+⊢ Thing {
+    ☉ rite web(&self) -> i64! { 1 }
+
+    @[cfg(not(target_family = "wasm"))]
+    ☉ rite native_only(&self) -> i64! { 2 }
+}
+"#;
+        let count = |cfg| {
+            items_for(src, cfg)
+                .into_iter()
+                .find_map(|i| match i {
+                    Item::Impl(b) => Some(b.items.len()),
+                    _ => None,
+                })
+                .expect("impl survives")
+        };
+        assert_eq!(count(CfgContext::wasm32()), 1);
+        assert_eq!(count(CfgContext::host()), 2);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -10406,11 +10653,14 @@ mod tests {
 
     #[test]
     fn test_parse_actor() {
-        // Simplified actor without compound assignment
+        // Simplified actor without compound assignment.
+        // `state` introduces a NAMED field — `state count: i64 = 0`. This test
+        // wrote `state: i64 = 0`, treating `state` as the field name, which the
+        // parser has never accepted.
         let source = r#"
             actor Counter {
-                state: i64 = 0
-                on Increment(n: i64) { ⤺ self.state + n; }
+                state count: i64 = 0
+                on Increment(n: i64) { ⤺ self.count + n; }
             }
         "#;
         let mut parser = Parser::new(source);

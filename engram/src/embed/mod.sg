@@ -3,7 +3,7 @@
 
 
 invoke engram·types·*
-invoke std·collections·HashMap
+invoke HashMap
 
 // ============================================================================
 // Embedder Trait

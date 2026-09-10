@@ -1,7 +1,7 @@
-λ double(x: i64) -> i64 {
+rite double(x: i64) -> i64 {
     x + x
 }
 
-λ main() -> i64 {
+rite main() -> i64 {
     double(21)
 }

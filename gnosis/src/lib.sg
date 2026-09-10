@@ -1,9 +1,8 @@
 // Gnosis - Learning and Growth Infrastructure
 // Wisdom is knowledge applied through experience
 
-invoke std·collections·HashMap;
-invoke std·hash·{Hash, Hasher};
-invoke std·cmp·Ordering;
+invoke HashMap;
+invoke Ordering;
 invoke shared·{
     Timestamp, Duration, Value, BoundedDeque, Confidence,
     Priority, HumanId, ExperienceId, EntityId,

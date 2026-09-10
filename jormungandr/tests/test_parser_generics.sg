@@ -3,7 +3,7 @@
 //! Tests generic syntax parsing each functions, structs, enums, traits, and impls.
 //! Target: 100% generic syntax coverage each regression detection.
 
-invoke crate·parser·Parser;
+invoke tome·parser·Parser;
 
 // ============================================================================
 // Test Helpers

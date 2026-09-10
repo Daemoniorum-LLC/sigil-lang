@@ -14,7 +14,7 @@ rite syscall1(nr: i64, a1: i64) -> isize {
     unsafe {
         asm!("syscall",
             inout("rax") nr => result,
-            in("rdi") a1,
+            ∈("rdi") a1,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -27,9 +27,9 @@ rite syscall3(nr: i64, a1: i64, a2: i64, a3: i64) -> isize {
     unsafe {
         asm!("syscall",
             inout("rax") nr => result,
-            in("rdi") a1,
-            in("rsi") a2,
-            in("rdx") a3,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            ∈("rdx") a3,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -42,12 +42,12 @@ rite syscall6(nr: i64, a1: i64, a2: i64, a3: i64, a4: i64, a5: i64, a6: i64) -> 
     unsafe {
         asm!("syscall",
             inout("rax") nr => result,
-            in("rdi") a1,
-            in("rsi") a2,
-            in("rdx") a3,
-            in("r10") a4,
-            in("r8") a5,
-            in("r9") a6,
+            ∈("rdi") a1,
+            ∈("rsi") a2,
+            ∈("rdx") a3,
+            ∈("r10") a4,
+            ∈("r8") a5,
+            ∈("r9") a6,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -103,12 +103,12 @@ rite main() -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") 9_i64 => ptr,
-            in("rdi") 0_i64,
-            in("rsi") 4096_i64,
-            in("rdx") 3_i64,
-            in("r10") 34_i64,
-            in("r8") neg_one,
-            in("r9") 0_i64,
+            ∈("rdi") 0_i64,
+            ∈("rsi") 4096_i64,
+            ∈("rdx") 3_i64,
+            ∈("r10") 34_i64,
+            ∈("r8") neg_one,
+            ∈("r9") 0_i64,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -125,8 +125,8 @@ rite main() -> i64 {
         unsafe {
             asm!("syscall",
                 inout("rax") 11_i64 => unmap_result,
-                in("rdi") ptr,
-                in("rsi") 4096_i64,
+                ∈("rdi") ptr,
+                ∈("rsi") 4096_i64,
                 out("rcx") _,
                 out("r11") _,
                 options(nostack));

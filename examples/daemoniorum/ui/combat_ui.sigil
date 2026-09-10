@@ -6,17 +6,17 @@
 //! - Combat log with scrolling messages
 //! - Alter-aware mechanics
 
-use crate::system::{Alter, AlterAbility, CombatRole};
-use crate::combat::combat::{CombatState, Enemy, CombatAction, CombatLogEntry, ThreatLevel};
-use super::tokens::colors;
-use super::alter_card::{get_alter_color_scheme, AlterColorScheme};
+invoke tome·system·{Alter, AlterAbility, CombatRole};
+invoke tome·combat·combat·{CombatState, Enemy, CombatAction, CombatLogEntry, ThreatLevel};
+invoke super·tokens·colors;
+invoke super·alter_card·{get_alter_color_scheme, AlterColorScheme};
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 /// Item for combat use
-type Item = struct {
+type Item = Σ {
     id: String!,
     name: String!,
     icon: String!,
@@ -25,7 +25,7 @@ type Item = struct {
     usable: bool!,
 }
 
-type ItemCategory = enum {
+type ItemCategory = ᛈ {
     Consumable,
     Equipment,
     Quest,
@@ -33,17 +33,17 @@ type ItemCategory = enum {
 }
 
 /// Props for the main combat UI
-type CombatUIProps = struct {
+type CombatUIProps = Σ {
     combat_state: CombatState!,
     current_alter: Alter!,
     available_alters: Vec<Alter>!,
     inventory: Vec<Item>!,
-    on_action: fn(CombatAction)!,
-    on_target_select: fn(String)!,
+    on_action: rite(CombatAction)!,
+    on_target_select: rite(String)!,
 }
 
 /// Combat menu state
-type CombatMenuState = enum {
+type CombatMenuState = ᛈ {
     Main,
     Abilities,
     Switch,
@@ -51,58 +51,58 @@ type CombatMenuState = enum {
 }
 
 /// Props for EnemyCard
-type EnemyCardProps = struct {
+type EnemyCardProps = Σ {
     enemy: Enemy!,
     is_selected: bool!,
     is_targetable: bool!,
-    on_click: fn()!,
+    on_click: rite()!,
 }
 
 /// Props for CurrentAlterDisplay
-type CurrentAlterDisplayProps = struct {
-    alter: Alter!,
+type CurrentAlterDisplayProps = Σ {
+    alter_: Alter!,
 }
 
 /// Props for CombatLog
-type CombatLogProps = struct {
+type CombatLogProps = Σ {
     entries: Vec<CombatLogEntry>!,
     max_visible: u32?,
 }
 
 /// Props for MainActionMenu
-type MainActionMenuProps = struct {
+type MainActionMenuProps = Σ {
     disabled: bool!,
-    on_attack: fn()!,
-    on_abilities: fn()!,
-    on_switch: fn()!,
-    on_items: fn()!,
-    on_defend: fn()!,
-    on_escape: fn()!,
+    on_attack: rite()!,
+    on_abilities: rite()!,
+    on_switch: rite()!,
+    on_items: rite()!,
+    on_defend: rite()!,
+    on_escape: rite()!,
     alter_color: String!,
 }
 
 /// Props for AbilitiesMenu
-type AbilitiesMenuProps = struct {
+type AbilitiesMenuProps = Σ {
     abilities: Vec<AlterAbility>!,
     alter_color: String!,
     alter_glow: String!,
-    on_select: fn(AlterAbility)!,
-    on_back: fn()!,
+    on_select: rite(AlterAbility)!,
+    on_back: rite()!,
 }
 
 /// Props for SwitchMenu
-type SwitchMenuProps = struct {
+type SwitchMenuProps = Σ {
     alters: Vec<Alter>!,
     current_alter_id: String!,
-    on_select: fn(Alter)!,
-    on_back: fn()!,
+    on_select: rite(Alter)!,
+    on_back: rite()!,
 }
 
 /// Props for ItemsMenu
-type ItemsMenuProps = struct {
+type ItemsMenuProps = Σ {
     items: Vec<Item>!,
-    on_select: fn(Item)!,
-    on_back: fn()!,
+    on_select: rite(Item)!,
+    on_back: rite()!,
 }
 
 // ============================================================================
@@ -110,13 +110,13 @@ type ItemsMenuProps = struct {
 // ============================================================================
 
 /// Get color for threat level
-fn get_threat_level_color(threat: ThreatLevel!) -> String! {
-    match threat {
-        ThreatLevel::Trivial => "#6b7280".to_string(),
-        ThreatLevel::Low => "#10b981".to_string(),
-        ThreatLevel::Medium => "#f59e0b".to_string(),
-        ThreatLevel::High => "#ef4444".to_string(),
-        ThreatLevel::Lethal => "#a855f7".to_string(),
+rite get_threat_level_color(threat: ThreatLevel!) -> String! {
+    ⌥ threat {
+        ThreatLevel·Trivial => "#6b7280".to_string(),
+        ThreatLevel·Low => "#10b981".to_string(),
+        ThreatLevel·Medium => "#f59e0b".to_string(),
+        ThreatLevel·High => "#ef4444".to_string(),
+        ThreatLevel·Lethal => "#a855f7".to_string(),
     }
 }
 
@@ -125,35 +125,35 @@ fn get_threat_level_color(threat: ThreatLevel!) -> String! {
 // ============================================================================
 
 #[component]
-pub fn CombatUI(props: CombatUIProps!) -> Element! {
-    let (selected_menu, set_selected_menu) = use_signal(CombatMenuState::Main);
-    let (selected_target, set_selected_target) = use_signal::<Option<String>>(None);
+☉ rite CombatUI(props: CombatUIProps!) -> Element! {
+    ≔ (selected_menu, set_selected_menu) = use_signal(CombatMenuState·Main);
+    ≔ (selected_target, set_selected_target) = use_signal·<Option<String>>(None);
 
-    let combat_state! = &props.combat_state;
-    let current_alter! = &props.current_alter;
-    let colors! = get_alter_color_scheme(current_alter);
+    ≔ combat_state! = &props.combat_state;
+    ≔ current_alter! = &props.current_alter;
+    ≔ colors! = get_alter_color_scheme(current_alter);
 
-    let handle_target_click = |enemy_id: String| {
+    ≔ handle_target_click = |enemy_id: String| {
         set_selected_target(Some(enemy_id·clone()));
         (props.on_target_select)(enemy_id);
     };
 
-    let handle_ability_select = |ability: AlterAbility| {
-        if ability.current_cooldown > 0 { return; }
-        (props.on_action)(CombatAction::Ability { ability_id: ability.id });
-        set_selected_menu(CombatMenuState::Main);
+    ≔ handle_ability_select = |ability: AlterAbility| {
+        ⎇ ability.current_cooldown > 0 { ⤺; }
+        (props.on_action)(CombatAction·Ability { ability_id: ability.id });
+        set_selected_menu(CombatMenuState·Main);
     };
 
-    let handle_switch_select = |alter: Alter| {
-        if !alter.is_available { return; }
-        (props.on_action)(CombatAction::Switch { alter_id: alter.id });
-        set_selected_menu(CombatMenuState::Main);
+    ≔ handle_switch_select = |alter: Alter| {
+        ⎇ !alter.is_available { ⤺; }
+        (props.on_action)(CombatAction·Switch { alter_id: alter.id });
+        set_selected_menu(CombatMenuState·Main);
     };
 
-    let handle_item_select = |item: Item| {
-        if !item.usable { return; }
-        (props.on_action)(CombatAction::Item { item_id: item.id });
-        set_selected_menu(CombatMenuState::Main);
+    ≔ handle_item_select = |item: Item| {
+        ⎇ !item.usable { ⤺; }
+        (props.on_action)(CombatAction·Item { item_id: item.id });
+        set_selected_menu(CombatMenuState·Main);
     };
 
     html! {
@@ -168,11 +168,11 @@ pub fn CombatUI(props: CombatUIProps!) -> Element! {
                     <div style={format!(
                         "padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: bold; \
                          background: {}; color: {}; box-shadow: 0 0 15px {}30;",
-                        if combat_state.is_player_turn { format!("{}30", colors.primary) } else { "rgba(239,68,68,0.2)".to_string() },
-                        if combat_state.is_player_turn { &colors.primary } else { "#ef4444" },
-                        if combat_state.is_player_turn { &colors.glow } else { "#ef4444" }
+                        ⎇ combat_state.is_player_turn { format!("{}30", colors.primary) } ⎉ { "rgba(239,68,68,0.2)".to_string() },
+                        ⎇ combat_state.is_player_turn { &colors.primary } ⎉ { "#ef4444" },
+                        ⎇ combat_state.is_player_turn { &colors.glow } ⎉ { "#ef4444" }
                     )}>
-                        {if combat_state.is_player_turn { "YOUR TURN" } else { "ENEMY TURN" }}
+                        {⎇ combat_state.is_player_turn { "YOUR TURN" } ⎉ { "ENEMY TURN" }}
                     </div>
                     <div style="font-size: 0.875rem; color: rgba(255,255,255,0.6);">
                         {"Turn "}{combat_state.turn}
@@ -190,7 +190,7 @@ pub fn CombatUI(props: CombatUIProps!) -> Element! {
                                 on_click={move || handle_target_click(enemy.id·clone())}
                             />
                         }
-                    }·collect::<Vec<_>>()}
+                    }·collect·<Vec<_>>()}
                 </div>
 
                 // VS Divider
@@ -209,41 +209,41 @@ pub fn CombatUI(props: CombatUIProps!) -> Element! {
 
             // Action Menu - Bottom section
             <div style="padding: 1rem; background: rgba(0,0,0,0.4); border-top: 1px solid rgba(255,255,255,0.1);">
-                {match selected_menu() {
-                    CombatMenuState::Main => html! {
+                {⌥ selected_menu() {
+                    CombatMenuState·Main => html! {
                         <MainActionMenu
                             disabled={!combat_state.is_player_turn}
-                            on_attack={move || (props.on_action)(CombatAction::Attack)}
-                            on_abilities={move || set_selected_menu(CombatMenuState::Abilities)}
-                            on_switch={move || set_selected_menu(CombatMenuState::Switch)}
-                            on_items={move || set_selected_menu(CombatMenuState::Items)}
-                            on_defend={move || (props.on_action)(CombatAction::Defend)}
-                            on_escape={move || (props.on_action)(CombatAction::Escape)}
+                            on_attack={move || (props.on_action)(CombatAction·Attack)}
+                            on_abilities={move || set_selected_menu(CombatMenuState·Abilities)}
+                            on_switch={move || set_selected_menu(CombatMenuState·Switch)}
+                            on_items={move || set_selected_menu(CombatMenuState·Items)}
+                            on_defend={move || (props.on_action)(CombatAction·Defend)}
+                            on_escape={move || (props.on_action)(CombatAction·Escape)}
                             alter_color={colors.primary·clone()}
                         />
                     },
-                    CombatMenuState::Abilities => html! {
+                    CombatMenuState·Abilities => html! {
                         <AbilitiesMenu
                             abilities={current_alter.abilities·clone()}
                             alter_color={colors.primary·clone()}
                             alter_glow={colors.glow·clone()}
                             on_select={handle_ability_select}
-                            on_back={move || set_selected_menu(CombatMenuState::Main)}
+                            on_back={move || set_selected_menu(CombatMenuState·Main)}
                         />
                     },
-                    CombatMenuState::Switch => html! {
+                    CombatMenuState·Switch => html! {
                         <SwitchMenu
                             alters={props.available_alters·clone()}
                             current_alter_id={current_alter.id·clone()}
                             on_select={handle_switch_select}
-                            on_back={move || set_selected_menu(CombatMenuState::Main)}
+                            on_back={move || set_selected_menu(CombatMenuState·Main)}
                         />
                     },
-                    CombatMenuState::Items => html! {
+                    CombatMenuState·Items => html! {
                         <ItemsMenu
-                            items={props.inventory·iter()·|φ|i| i.category == ItemCategory::Consumable && i.usable·collect()}
+                            items={props.inventory·iter()·|φ|i| i.category == ItemCategory·Consumable && i.usable·collect()}
                             on_select={handle_item_select}
-                            on_back={move || set_selected_menu(CombatMenuState::Main)}
+                            on_back={move || set_selected_menu(CombatMenuState·Main)}
                         />
                     },
                 }}
@@ -257,21 +257,21 @@ pub fn CombatUI(props: CombatUIProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
-    let enemy! = &props.enemy;
-    let health_percent! = (enemy.current_health as f32 / enemy.max_health as f32) * 100.0;
-    let threat_color! = get_threat_level_color(enemy.threat_level);
-    let is_defeated! = enemy.current_health <= 0;
+☉ rite EnemyCard(props: EnemyCardProps!) -> Element! {
+    ≔ enemy! = &props.enemy;
+    ≔ health_percent! = (enemy.current_health as f32 / enemy.max_health as f32) * 100.0;
+    ≔ threat_color! = get_threat_level_color(enemy.threat_level);
+    ≔ is_defeated! = enemy.current_health <= 0;
 
-    let bg_style = if props.is_selected {
+    ≔ bg_style = ⎇ props.is_selected {
         "linear-gradient(135deg, rgba(251,191,36,0.2), rgba(0,0,0,0.6))"
-    } else {
+    } ⎉ {
         "linear-gradient(135deg, rgba(0,0,0,0.4), rgba(0,0,0,0.6))"
     };
 
-    let health_color! = if health_percent > 50.0 { "#10b981" }
-        else if health_percent > 25.0 { "#f59e0b" }
-        else { "#ef4444" };
+    ≔ health_color! = ⎇ health_percent > 50.0 { "#10b981" }
+        ⎉ ⎇ health_percent > 25.0 { "#f59e0b" }
+        ⎉ { "#ef4444" };
 
     html! {
         <button
@@ -283,13 +283,13 @@ pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
                  cursor: {}; transition: all 0.2s; \
                  {} {}",
                 bg_style,
-                if props.is_targetable && !is_defeated { "pointer" } else { "default" },
-                if props.is_selected { "box-shadow: 0 0 20px rgba(251,191,36,0.3); outline: 2px solid #fbbf24;" } else { "" },
-                if is_defeated { "opacity: 0.4; filter: grayscale(100%);" } else { "" }
+                ⎇ props.is_targetable && !is_defeated { "pointer" } ⎉ { "default" },
+                ⎇ props.is_selected { "box-shadow: 0 0 20px rgba(251,191,36,0.3); outline: 2px solid #fbbf24;" } ⎉ { "" },
+                ⎇ is_defeated { "opacity: 0.4; filter: grayscale(100%);" } ⎉ { "" }
             )}
         >
             // Boss indicator
-            {if enemy.is_boss {
+            {⎇ enemy.is_boss {
                 html! {
                     <div style="position: absolute; top: -0.5rem; right: -0.5rem; \
                                 padding: 0.125rem 0.5rem; border-radius: 9999px; \
@@ -298,7 +298,7 @@ pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
                         {"BOSS"}
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Threat level badge
             <div style={format!(
@@ -336,7 +336,7 @@ pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
             </div>
 
             // Status effects
-            {if !enemy.status_effects·is_empty() {
+            {⎇ !enemy.status_effects·is_empty() {
                 html! {
                     <div style="display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem;">
                         {enemy.status_effects·iter()·|τ|effect| {
@@ -347,29 +347,29 @@ pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
                                     {&effect.name}
                                 </span>
                             }
-                        }·collect::<Vec<_>>()}
+                        }·collect·<Vec<_>>()}
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Selection indicator
-            {if props.is_selected && props.is_targetable && !is_defeated {
+            {⎇ props.is_selected && props.is_targetable && !is_defeated {
                 html! {
                     <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;">
                         <span style="font-size: 2.25rem; animation: pulse 1s ease-in-out infinite;">{"⬇"}</span>
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Defeated overlay
-            {if is_defeated {
+            {⎇ is_defeated {
                 html! {
                     <div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; \
                                 background: rgba(0,0,0,0.6); border-radius: 0.75rem;">
                         <span style="color: #ef4444; font-weight: bold;">{"DEFEATED"}</span>
                     </div>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
         </button>
     }
 }
@@ -379,15 +379,15 @@ pub fn EnemyCard(props: EnemyCardProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn CurrentAlterDisplay(props: CurrentAlterDisplayProps!) -> Element! {
-    let alter! = &props.alter;
-    let colors! = get_alter_color_scheme(alter);
-    let health_percent! = (alter.stats.current_health as f32 / alter.stats.max_health as f32) * 100.0;
-    let energy_percent! = (alter.stats.current_energy as f32 / alter.stats.max_energy as f32) * 100.0;
+☉ rite CurrentAlterDisplay(props: CurrentAlterDisplayProps!) -> Element! {
+    ≔ alter_! = &props.alter_;
+    ≔ colors! = get_alter_color_scheme(alter_);
+    ≔ health_percent! = (alter_.stats.current_health as f32 / alter_.stats.max_health as f32) * 100.0;
+    ≔ energy_percent! = (alter_.stats.current_energy as f32 / alter_.stats.max_energy as f32) * 100.0;
 
-    let health_color! = if health_percent > 50.0 { "#10b981" }
-        else if health_percent > 25.0 { "#f59e0b" }
-        else { "#ef4444" };
+    ≔ health_color! = ⎇ health_percent > 50.0 { "#10b981" }
+        ⎉ ⎇ health_percent > 25.0 { "#f59e0b" }
+        ⎉ { "#ef4444" };
 
     html! {
         <div style={format!(
@@ -465,12 +465,12 @@ pub fn CurrentAlterDisplay(props: CurrentAlterDisplayProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn CombatLog(props: CombatLogProps!) -> Element! {
-    let max_visible! = props.max_visible·unwrap_or(4);
-    let entries! = &props.entries;
-    let visible_entries! = if entries·len() > max_visible as usize {
+☉ rite CombatLog(props: CombatLogProps!) -> Element! {
+    ≔ max_visible! = props.max_visible·unwrap_or(4);
+    ≔ entries! = &props.entries;
+    ≔ visible_entries! = ⎇ entries·len() > max_visible as usize {
         entries[(entries·len() - max_visible as usize)..]·to_vec()
-    } else {
+    } ⎉ {
         entries·clone()
     };
 
@@ -478,13 +478,13 @@ pub fn CombatLog(props: CombatLogProps!) -> Element! {
         <div style="height: 8rem; overflow-y: auto; padding: 0.5rem 1rem; \
                     background: rgba(0,0,0,0.3); border-top: 1px solid rgba(255,255,255,0.1); \
                     border-bottom: 1px solid rgba(255,255,255,0.1);">
-            {if visible_entries·is_empty() {
+            {⎇ visible_entries·is_empty() {
                 html! {
                     <div style="color: rgba(255,255,255,0.4); text-align: center; padding: 1rem;">
                         {"Combat begins..."}
                     </div>
                 }
-            } else {
+            } ⎉ {
                 html! {
                     <div>
                         {visible_entries·iter()·|τ|entry| {
@@ -497,15 +497,15 @@ pub fn CombatLog(props: CombatLogProps!) -> Element! {
                                     <span style="color: rgba(255,255,255,0.8);">
                                         {&entry.message}
                                     </span>
-                                    {if let Some(damage) = entry.damage {
+                                    {⎇ ≔ Some(damage) = entry.damage {
                                         html! { <span style="margin-left: 0.5rem; color: #ef4444;">{"-"}{damage}</span> }
-                                    } else { html! {} }}
-                                    {if let Some(healing) = entry.healing {
+                                    } ⎉ { html! {} }}
+                                    {⎇ ≔ Some(healing) = entry.healing {
                                         html! { <span style="margin-left: 0.5rem; color: #10b981;">{"+"}{healing}</span> }
-                                    } else { html! {} }}
+                                    } ⎉ { html! {} }}
                                 </div>
                             }
-                        }·collect::<Vec<_>>()}
+                        }·collect·<Vec<_>>()}
                     </div>
                 }
             }}
@@ -518,8 +518,8 @@ pub fn CombatLog(props: CombatLogProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn MainActionMenu(props: MainActionMenuProps!) -> Element! {
-    let actions = [
+☉ rite MainActionMenu(props: MainActionMenuProps!) -> Element! {
+    ≔ actions = [
         ("Attack", "⚔", props.on_attack·clone()),
         ("Abilities", "✦", props.on_abilities·clone()),
         ("Switch", "↻", props.on_switch·clone()),
@@ -540,25 +540,25 @@ pub fn MainActionMenu(props: MainActionMenuProps!) -> Element! {
                         color={props.alter_color·clone()}
                     />
                 }
-            }·collect::<Vec<_>>()}
+            }·collect·<Vec<_>>()}
         </div>
     }
 }
 
 /// Action button component
-type ActionButtonProps = struct {
+type ActionButtonProps = Σ {
     label: String!,
     icon: String!,
-    on_click: fn()!,
+    on_click: rite()!,
     disabled: bool!,
     color: String!,
 }
 
 #[component]
-pub fn ActionButton(props: ActionButtonProps!) -> Element! {
-    let bg = if props.disabled {
+☉ rite ActionButton(props: ActionButtonProps!) -> Element! {
+    ≔ bg = ⎇ props.disabled {
         "rgba(0,0,0,0.3)".to_string()
-    } else {
+    } ⎉ {
         format!("{}20", props.color)
     };
 
@@ -572,8 +572,8 @@ pub fn ActionButton(props: ActionButtonProps!) -> Element! {
                  background: {}; border: 1px solid rgba(255,255,255,0.1); \
                  cursor: {}; opacity: {}; transition: all 0.2s;",
                 bg,
-                if props.disabled { "not-allowed" } else { "pointer" },
-                if props.disabled { "0.4" } else { "1" }
+                ⎇ props.disabled { "not-allowed" } ⎉ { "pointer" },
+                ⎇ props.disabled { "0.4" } ⎉ { "1" }
             )}
         >
             <span style="font-size: 1.25rem;">{&props.icon}</span>
@@ -587,8 +587,8 @@ pub fn ActionButton(props: ActionButtonProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
-    let unlocked_abilities! = props.abilities·iter()·|φ|a| a.unlocked·collect::<Vec<_>>();
+☉ rite AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
+    ≔ unlocked_abilities! = props.abilities·iter()·|φ|a| a.unlocked·collect·<Vec<_>>();
 
     html! {
         <div>
@@ -607,7 +607,7 @@ pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
             // Ability grid
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
                 {unlocked_abilities·iter()·|τ|ability| {
-                    let on_cooldown = ability.current_cooldown > 0;
+                    ≔ on_cooldown = ability.current_cooldown > 0;
                     html! {
                         <button
                             onclick={move || (props.on_select)(ability.clone())}
@@ -617,8 +617,8 @@ pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
                                  background: {}20; border: 1px solid rgba(255,255,255,0.1); \
                                  cursor: {}; opacity: {}; transition: all 0.2s;",
                                 props.alter_color,
-                                if on_cooldown { "not-allowed" } else { "pointer" },
-                                if on_cooldown { "0.5" } else { "1" }
+                                ⎇ on_cooldown { "not-allowed" } ⎉ { "pointer" },
+                                ⎇ on_cooldown { "0.5" } ⎉ { "1" }
                             )}
                         >
                             <div style="font-size: 1.125rem; margin-bottom: 0.25rem;">{&ability.icon}</div>
@@ -631,7 +631,7 @@ pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
                             </div>
 
                             // Cooldown overlay
-                            {if on_cooldown {
+                            {⎇ on_cooldown {
                                 html! {
                                     <div style="position: absolute; inset: 0; display: flex; \
                                                 align-items: center; justify-content: center; \
@@ -641,10 +641,10 @@ pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
                                         </span>
                                     </div>
                                 }
-                            } else { html! {} }}
+                            } ⎉ { html! {} }}
                         </button>
                     }
-                }·collect::<Vec<_>>()}
+                }·collect·<Vec<_>>()}
             </div>
         </div>
     }
@@ -655,10 +655,10 @@ pub fn AbilitiesMenu(props: AbilitiesMenuProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn SwitchMenu(props: SwitchMenuProps!) -> Element! {
-    let available_alters! = props.alters·iter()
+☉ rite SwitchMenu(props: SwitchMenuProps!) -> Element! {
+    ≔ available_alters! = props.alters·iter()
         ·|φ|a| a.id != props.current_alter_id && a.is_available
-        ·collect::<Vec<_>>();
+        ·collect·<Vec<_>>();
 
     html! {
         <div>
@@ -676,21 +676,21 @@ pub fn SwitchMenu(props: SwitchMenuProps!) -> Element! {
 
             // Alter grid
             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
-                {if available_alters·is_empty() {
+                {⎇ available_alters·is_empty() {
                     html! {
                         <div style="grid-column: span 3; text-align: center; padding: 1rem; \
                                     color: rgba(255,255,255,0.4);">
                             {"No other alters available to switch"}
                         </div>
                     }
-                } else {
-                    available_alters·iter()·|τ|alter| {
-                        let colors = get_alter_color_scheme(alter);
-                        let health_percent = (alter.stats.current_health as f32 / alter.stats.max_health as f32) * 100.0;
+                } ⎉ {
+                    available_alters·iter()·|τ|alter_| {
+                        ≔ colors = get_alter_color_scheme(alter_);
+                        ≔ health_percent = (alter_.stats.current_health as f32 / alter_.stats.max_health as f32) * 100.0;
 
                         html! {
                             <button
-                                onclick={move || (props.on_select)(alter.clone())}
+                                onclick={move || (props.on_select)(alter_.clone())}
                                 style={format!(
                                     "padding: 0.75rem; border-radius: 0.5rem; text-align: left; \
                                      background: {}; border: 1px solid {}; \
@@ -727,7 +727,7 @@ pub fn SwitchMenu(props: SwitchMenuProps!) -> Element! {
                                 </div>
                             </button>
                         }
-                    }·collect::<Vec<_>>()·into_iter()·map(|e| e)·collect::<Element>()
+                    }·collect·<Vec<_>>()·into_iter()·map(|e| e)·collect·<Element>()
                 }}
             </div>
         </div>
@@ -739,7 +739,7 @@ pub fn SwitchMenu(props: SwitchMenuProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn ItemsMenu(props: ItemsMenuProps!) -> Element! {
+☉ rite ItemsMenu(props: ItemsMenuProps!) -> Element! {
     html! {
         <div>
             // Header with back button
@@ -756,14 +756,14 @@ pub fn ItemsMenu(props: ItemsMenuProps!) -> Element! {
 
             // Item grid
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;">
-                {if props.items·is_empty() {
+                {⎇ props.items·is_empty() {
                     html! {
                         <div style="grid-column: span 4; text-align: center; padding: 1rem; \
                                     color: rgba(255,255,255,0.4);">
                             {"No usable items"}
                         </div>
                     }
-                } else {
+                } ⎉ {
                     props.items·iter()·|τ|item| {
                         html! {
                             <button
@@ -782,7 +782,7 @@ pub fn ItemsMenu(props: ItemsMenuProps!) -> Element! {
                                 </div>
                             </button>
                         }
-                    }·collect::<Vec<_>>()·into_iter()·map(|e| e)·collect::<Element>()
+                    }·collect·<Vec<_>>()·into_iter()·map(|e| e)·collect·<Element>()
                 }}
             </div>
         </div>

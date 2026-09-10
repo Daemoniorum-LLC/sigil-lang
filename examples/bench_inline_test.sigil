@@ -1,26 +1,26 @@
 // Test function inlining optimization
-fn add(a, b) {
-    return a + b;
+rite add(a, b) {
+    ⤺ a + b;
 }
 
-fn mul(a, b) {
-    return a * b;
+rite mul(a, b) {
+    ⤺ a * b;
 }
 
-fn compute(x) {
-    return add(mul(x, 2), 1);
+rite compute(x) {
+    ⤺ add(mul(x, 2), 1);
 }
 
-fn main() {
-    let start = now();
-    let i = 0;
-    let result = 0;
-    while i < 1000000 {
+rite main() {
+    ≔ start = now();
+    ≔ i = 0;
+    ≔ result = 0;
+    ⟳ i < 1000000 {
         result = compute(i);
         i = i + 1;
     }
-    let elapsed = now() - start;
+    ≔ elapsed = now() - start;
     print(elapsed);
     print(result);
-    return 0;
+    ⤺ 0;
 }

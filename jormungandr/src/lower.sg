@@ -61,7 +61,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 ⊢ LoweringContext {
     /// Create a new lowering context
-    ☉ λ new(type_checker: !TypeChecker) -> !LoweringContext {
+    ☉ rite new(type_checker: !TypeChecker) -> !LoweringContext {
         // Pre-populate imports with standard library types
         ≔ Δ imports = Map·new();
         imports.insert("Some".to_string(), "Option·Some".to_string());
@@ -84,7 +84,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
     }
 
     /// Generate a unique ID
-    λ fresh_id(Δ self) -> !String {
+    rite fresh_id(Δ self) -> !String {
         ≔ id = self.id_counter;
         self.id_counter += 1;
         format!("id_{}", id)
@@ -92,7 +92,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
     /// Get the current namespace as a qualified name
     /// e.g., ["foo", "bar"] -> "foo·bar·"
-    λ current_namespace(self) -> !String {
+    rite current_namespace(self) -> !String {
         ⎇ self.namespace_stack.len() == 0 {
             "".to_string()
         } ⎉ {
@@ -110,18 +110,18 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
     /// Qualify a name with the current namespace
     /// e.g., "baz" ∈ namespace ["foo", "bar"] -> "foo·bar·baz"
-    λ qualify_name(self, name: !&str) -> !String {
+    rite qualify_name(self, name: !&str) -> !String {
         ≔ ns = self.current_namespace();
         format!("{}{}", ns, name)
     }
 
     /// Record an error
-    λ error(Δ self, err: !LowerError) {
+    rite error(Δ self, err: !LowerError) {
         self.errors.push(err);
     }
 
     /// Get or create an ID ∀ a variable
-    λ get_var_id(Δ self, name: !&str) -> !String {
+    rite get_var_id(Δ self, name: !&str) -> !String {
         ⎇ ≔ ?id = self.var_ids.get(name) {
             id.clone()
         } ⎉ {
@@ -139,11 +139,11 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 ⊢ LowerError {
-    ☉ λ new(message: !String) -> !LowerError {
+    ☉ rite new(message: !String) -> !LowerError {
         LowerError { message, span: null }
     }
 
-    ☉ λ with_span(Δ self, span: !Span) -> !LowerError {
+    ☉ rite with_span(Δ self, span: !Span) -> !LowerError {
         self.span = ?span;
         self
     }
@@ -154,7 +154,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a complete source file to IR
-☉ λ lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) -> !Result<IrModule, [LowerError]> {
+☉ rite lower_file(file: !SourceFile, type_checker: !TypeChecker, path: !String) -> !Result<IrModule, [LowerError]> {
     ≔ Δ ctx = LoweringContext·new(type_checker);
     ≔ Δ module = IrModule·new(path);
 
@@ -182,7 +182,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 /// Process a invoke declaration tree and populate the imports map
 /// prefix: accumulated module path (e.g., "std·collections")
-λ process_use_decl(ctx: &Δ LoweringContext, prefix: !&str, tree: !UseTree) {
+rite process_use_decl(ctx: &Δ LoweringContext, prefix: !&str, tree: !UseTree) {
     ⌥ tree {
         UseTree·Path { prefix: segment, suffix } => {
             // Build up the path: prefix·segment
@@ -227,7 +227,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a single item
-λ lower_item(ctx: &Δ LoweringContext, module: &Δ IrModule, item: !Item) {
+rite lower_item(ctx: &Δ LoweringContext, module: &Δ IrModule, item: !Item) {
     ⌥ item {
         Item·Function(f) => {
             ⎇ ≔ ?ir_fn = lower_function(ctx, f) {
@@ -327,7 +327,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a function definition
-λ lower_function(ctx: &Δ LoweringContext, func: !Function) -> ?IrFunction {
+rite lower_function(ctx: &Δ LoweringContext, func: !Function) -> ?IrFunction {
     ≔ name = ctx.qualify_name(func.name.name.as_str());
     ≔ id = ctx.fresh_id();
 
@@ -382,7 +382,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a generic parameter
-λ lower_generic_param(ctx: &Δ LoweringContext, param: !GenericParam) -> !IrGenericParam {
+rite lower_generic_param(ctx: &Δ LoweringContext, param: !GenericParam) -> !IrGenericParam {
     ⌥ param {
         GenericParam·Type { .. } => {
             ≔ name = param.name;
@@ -410,7 +410,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a function parameter
-λ lower_param(ctx: &Δ LoweringContext, param: !Parameter) -> !IrParam {
+rite lower_param(ctx: &Δ LoweringContext, param: !Parameter) -> !IrParam {
     ≔ name = ⌥ param.pattern.binding_name() {
         ?n => n,
         null => "_",
@@ -435,7 +435,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower visibility
-λ lower_visibility(vis: !Visibility) -> !IrVisibility {
+rite lower_visibility(vis: !Visibility) -> !IrVisibility {
     ⌥ vis {
         Visibility·Public => IrVisibility·Public,
         Visibility·Crate => IrVisibility·Crate,
@@ -450,7 +450,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 /// Extract the base type name from a TypeExpr ∀ variable type tracking
 /// Handles both Path types and Evidential types (like !IrTypeDef)
-λ extract_type_name(ty: !TypeExpr) -> Option<String> {
+rite extract_type_name(ty: !TypeExpr) -> Option<String> {
     ⌥ ty {
         TypeExpr·Path(p) => {
             ⎇ p.segments.len() == 1 {
@@ -468,7 +468,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a type expression to IR type
-λ lower_type(ctx: &Δ LoweringContext, ty: !TypeExpr) -> !IrType {
+rite lower_type(ctx: &Δ LoweringContext, ty: !TypeExpr) -> !IrType {
     ⌥ ty {
         // Handle null TypeExpr gracefully (shouldn't happen but safety first)
         null => IrType·Infer,
@@ -592,7 +592,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Evaluate a constant expression to u64 (∀ array lengths)
-λ eval_const_length(ctx: &Δ LoweringContext, expr: !Expr) -> !u64 {
+rite eval_const_length(ctx: &Δ LoweringContext, expr: !Expr) -> !u64 {
     ⌥ expr {
         Expr·Literal(lit) => {
             ⌥ lit {
@@ -618,7 +618,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a Σ definition
-λ lower_struct(ctx: &Δ LoweringContext, s: !Struct) -> !IrTypeDef {
+rite lower_struct(ctx: &Δ LoweringContext, s: !Struct) -> !IrTypeDef {
     ≔ generics = ⌥ s.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
@@ -649,7 +649,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower an ᛈ definition
-λ lower_enum(ctx: &Δ LoweringContext, e: !Enum) -> !IrTypeDef {
+rite lower_enum(ctx: &Δ LoweringContext, e: !Enum) -> !IrTypeDef {
     ≔ generics = ⌥ e.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
@@ -691,7 +691,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a type alias
-λ lower_type_alias(ctx: &Δ LoweringContext, t: !TypeAlias) -> !IrTypeDef {
+rite lower_type_alias(ctx: &Δ LoweringContext, t: !TypeAlias) -> !IrTypeDef {
     ≔ generics = ⌥ t.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
@@ -706,7 +706,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Evaluate a constant expression to i64 (∀ ᛈ discriminants)
-λ eval_const_i64(ctx: &Δ LoweringContext, expr: !Expr) -> !i64 {
+rite eval_const_i64(ctx: &Δ LoweringContext, expr: !Expr) -> !i64 {
     ⌥ expr {
         Expr·Literal(Literal·Int { value, .. }) => value,
         _ => {
@@ -721,7 +721,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a constant definition
-λ lower_const(ctx: &Δ LoweringContext, c: !Const) -> ?IrConstant {
+rite lower_const(ctx: &Δ LoweringContext, c: !Const) -> ?IrConstant {
     ≔ ty = lower_type(ctx, c.ty);
     ≔ value = lower_expr(ctx, c.value);
     ≔ visibility = lower_visibility(c.visibility);
@@ -740,7 +740,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a Θ definition
-λ lower_trait(ctx: &Δ LoweringContext, t: !TraitDef) -> !IrTraitDef {
+rite lower_trait(ctx: &Δ LoweringContext, t: !TraitDef) -> !IrTraitDef {
     ≔ generics = ⌥ t.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
@@ -768,7 +768,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower an ⊢ block
-λ lower_impl(ctx: &Δ LoweringContext, i: !ImplBlock) -> !IrImplBlock {
+rite lower_impl(ctx: &Δ LoweringContext, i: !ImplBlock) -> !IrImplBlock {
     ≔ generics = ⌥ i.generics {
         ?g => g.params|τ{p => lower_generic_param(ctx, p)}|collect(),
         null => [],
@@ -809,7 +809,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower an expression to IR operation
-λ lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
+rite lower_expr(ctx: &Δ LoweringContext, expr: !Expr) -> !IrOperation {
     ⌥ expr {
         Expr·Literal(lit) => lower_literal(ctx, lit),
 
@@ -978,7 +978,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             ≔ else_branch = expr.else_branch;
             ≔ ir_cond = lower_expr(ctx, *condition);
             ≔ ir_then = lower_block(ctx, then_branch);
-            ≔ ir_⎉ = ⌥ else_branch {
+            ≔ ir_else = ⌥ else_branch {
                 ?e => ?Box·new(lower_expr(ctx, *e)),
                 null => null,
             };
@@ -1507,7 +1507,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Helper to parse integer literals with different bases
-λ parse_int_literal(value_str: !String, base: !NumBase) -> !i64 {
+rite parse_int_literal(value_str: !String, base: !NumBase) -> !i64 {
     // Remove underscores ∀ readability (they're allowed ∈ literals)
     ≔ clean_str = value_str.replace("_", "");
 
@@ -1546,7 +1546,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a literal
-λ lower_literal(ctx: &Δ LoweringContext, lit: !Literal) -> !IrOperation {
+rite lower_literal(ctx: &Δ LoweringContext, lit: !Literal) -> !IrOperation {
     ⌥ lit {
         Literal·Int { value, base, .. } => {
             // Parse the string value according to its base
@@ -1618,13 +1618,13 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 
 /// Find free variables ∈ an expression that are not ∈ the bound set
 /// This is used ∀ closure capture analysis
-λ find_free_variables(expr: &Expr, bound: &[String]) -> ![String] {
+rite find_free_variables(expr: &Expr, bound: &[String]) -> ![String] {
     ≔ Δ free = Vec·new();
     collect_free_vars(expr, bound, free)
 }
 
 /// Helper to collect free variables, returning updated array
-λ collect_free_vars(expr: &Expr, bound: &[String], free: ![String]) -> ![String] {
+rite collect_free_vars(expr: &Expr, bound: &[String], free: ![String]) -> ![String] {
     ≔ Δ result = free;
     ⌥ expr {
         Expr·Path(path) => {
@@ -1745,7 +1745,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Helper to collect free variables from statements, returning updated array
-λ collect_free_vars_stmt(stmt: &Stmt, bound: &[String], free: ![String]) -> ![String] {
+rite collect_free_vars_stmt(stmt: &Stmt, bound: &[String], free: ![String]) -> ![String] {
     ⌥ stmt {
         Stmt·Expr(expr) => collect_free_vars(expr, bound, free),
         Stmt·Let { init, .. } => {
@@ -1760,7 +1760,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a binary operator
-λ lower_binop(op: !BinOp) -> !BinaryOp {
+rite lower_binop(op: !BinOp) -> !BinaryOp {
     ⌥ op {
         BinOp·Add => BinaryOp·Add,
         BinOp·Sub => BinaryOp·Sub,
@@ -1786,7 +1786,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a unary operator (AST UnaryOp -> IR UnaryOp)
-λ lower_unaryop(op: !AstUnaryOp) -> !UnaryOp {
+rite lower_unaryop(op: !AstUnaryOp) -> !UnaryOp {
     ⌥ op {
         AstUnaryOp·Neg => UnaryOp·Neg,
         AstUnaryOp·Not => UnaryOp·Not,
@@ -1801,7 +1801,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a block
-λ lower_block(ctx: &Δ LoweringContext, block: !Block) -> !IrOperation {
+rite lower_block(ctx: &Δ LoweringContext, block: !Block) -> !IrOperation {
     ≔ Δ statements = Vec·new();
 
     ≔ Δ idx: usize = 0;
@@ -1823,7 +1823,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a statement
-λ lower_stmt(ctx: &Δ LoweringContext, stmt: !Stmt) -> !IrOperation {
+rite lower_stmt(ctx: &Δ LoweringContext, stmt: !Stmt) -> !IrOperation {
     ⌥ stmt {
         Stmt·Let { .. } => {
             ≔ pattern = stmt.pattern;
@@ -1915,7 +1915,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
             };
 
             ≔ ir_init = lower_expr(ctx, init);
-            ≔ ir_⎉ = lower_expr(ctx, else_branch);
+            ≔ ir_else = lower_expr(ctx, else_branch);
 
             // Lower to a conditional with pattern matching
             // The ⎉ branch should diverge (return/panic)
@@ -1944,7 +1944,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a pattern
-λ lower_pattern(ctx: &Δ LoweringContext, pattern: !Pattern) -> !IrPattern {
+rite lower_pattern(ctx: &Δ LoweringContext, pattern: !Pattern) -> !IrPattern {
     ⌥ pattern {
         Pattern·Ident { name, mutable, by_ref, evidentiality } => {
             ≔ ev = ⌥ evidentiality {
@@ -2033,7 +2033,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a literal to LiteralValue
-λ lower_literal_value(ctx: &Δ LoweringContext, lit: !Literal) -> !LiteralValue {
+rite lower_literal_value(ctx: &Δ LoweringContext, lit: !Literal) -> !LiteralValue {
     ⌥ lit {
         Literal·Int { value, .. } => LiteralValue·Int(value),
         Literal·Float { value, .. } => LiteralValue·Float(value),
@@ -2050,7 +2050,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a ⌥ arm
-λ lower_match_arm(ctx: &Δ LoweringContext, arm: !MatchArm) -> !IrMatchArm {
+rite lower_match_arm(ctx: &Δ LoweringContext, arm: !MatchArm) -> !IrMatchArm {
     ≔ pattern = lower_pattern(ctx, arm.pattern);
     ≔ guard = ⌥ arm.guard {
         ?g => ?lower_expr(ctx, g),
@@ -2066,7 +2066,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 // ============================================================================
 
 /// Lower a pipeline expression
-λ lower_pipeline(ctx: &Δ LoweringContext, input: !Expr, operations: ![PipeOp]) -> !IrOperation {
+rite lower_pipeline(ctx: &Δ LoweringContext, input: !Expr, operations: ![PipeOp]) -> !IrOperation {
     ≔ ir_input = lower_expr(ctx, input);
     ≔ steps = operations|τ{op => lower_pipe_op(ctx, op)}|collect();
 
@@ -2079,7 +2079,7 @@ invoke tome·typeck·{Type, TypeChecker, EvidenceLevel};
 }
 
 /// Lower a pipe operation
-λ lower_pipe_op(ctx: &Δ LoweringContext, op: !PipeOp) -> !IrPipelineStep {
+rite lower_pipe_op(ctx: &Δ LoweringContext, op: !PipeOp) -> !IrPipelineStep {
     ⌥ op {
         PipeOp·Transform(body) => IrPipelineStep·Morpheme {
             morpheme: MorphemeKind·Transform,

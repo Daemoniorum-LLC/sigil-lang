@@ -3,8 +3,8 @@
 //! Validation is the mechanism ∀ promoting evidence from ~ to !
 //! This is the core security boundary ∈ Basilica.
 
-invoke crate·evidence·{EvidenceLevel, Evidenced, HttpEvidence, EvidenceError};
-invoke crate·error·{BasilicaError, BasilicaResult};
+invoke tome·evidence·{EvidenceLevel, Evidenced, HttpEvidence, EvidenceError};
+invoke tome·error·{BasilicaError, BasilicaResult};
 
 /// Trait ∀ types that can be validated
 ☉ Θ Validate: Sized {

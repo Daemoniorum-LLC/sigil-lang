@@ -15,12 +15,12 @@ invoke tome·rt·alloc·{sigil_alloc, sigil_free};
 /// - Contents: Known (!) when created from literals
 /// - Contents: Reported (~) when from external input
 /// - The String type itself tracks the provenance
-pub struct String {
+☉ Σ String {
     /// Internal byte storage (guaranteed UTF-8)
     vec: Vec<u8>,
 }
 
-impl String {
+⊢ String {
     // ========================================================================
     // Construction
     // ========================================================================
@@ -28,7 +28,7 @@ impl String {
     /// Create empty String
     ///
     /// Returns Known (!) - fresh empty string
-    pub fn new() -> Self! {
+    ☉ rite new() -> Self! {
         String {
             vec: Vec·new(1),  // elem_size = 1 byte
         }
@@ -37,7 +37,7 @@ impl String {
     /// Create String with pre-allocated capacity
     ///
     /// Returns Known (!) - capacity is known
-    pub fn with_capacity(cap: u64) -> Self! {
+    ☉ rite with_capacity(cap: u64) -> Self! {
         String {
             vec: Vec·with_capacity(cap, 1),
         }
@@ -46,8 +46,8 @@ impl String {
     /// Create String from string slice
     ///
     /// Returns Known (!) when s is a literal
-    pub fn from(s: &str) -> Self! {
-        let mut string = String·with_capacity(s.len() as u64);
+    ☉ rite from(s: &str) -> Self! {
+        ≔ vary string = String·with_capacity(s.len() as u64);
         string.push_str(s);
         string
     }
@@ -57,10 +57,10 @@ impl String {
     // ========================================================================
 
     /// Append a string slice
-    pub fn push_str(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        let mut i: u64 = 0;
-        while i < bytes.len() as u64 {
+    ☉ rite push_str(&Δ self, s: &str) {
+        ≔ bytes = s.as_bytes();
+        ≔ vary i: u64 = 0;
+        ⟳ i < bytes.len() as u64 {
             self.vec.push(bytes[i]);
             i = i + 1;
         }
@@ -69,22 +69,22 @@ impl String {
     /// Append a single character
     ///
     /// Encodes the char as UTF-8 bytes
-    pub fn push(&mut self, ch: char) {
-        let code = ch as u32;
+    ☉ rite push(&Δ self, ch: char) {
+        ≔ code = ch as u32;
 
-        if code < 0x80 {
+        ⎇ code < 0x80 {
             // 1-byte: 0xxxxxxx
             self.vec.push(code as u8);
-        } else if code < 0x800 {
+        } ⎉ ⎇ code < 0x800 {
             // 2-byte: 110xxxxx 10xxxxxx
             self.vec.push((0xC0 | (code >> 6)) as u8);
             self.vec.push((0x80 | (code & 0x3F)) as u8);
-        } else if code < 0x10000 {
+        } ⎉ ⎇ code < 0x10000 {
             // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
             self.vec.push((0xE0 | (code >> 12)) as u8);
             self.vec.push((0x80 | ((code >> 6) & 0x3F)) as u8);
             self.vec.push((0x80 | (code & 0x3F)) as u8);
-        } else {
+        } ⎉ {
             // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
             self.vec.push((0xF0 | (code >> 18)) as u8);
             self.vec.push((0x80 | ((code >> 12) & 0x3F)) as u8);
@@ -100,17 +100,17 @@ impl String {
     /// Length in bytes (not characters)
     ///
     /// Returns Known (!) - internal counter
-    pub fn len(&self) -> u64! {
+    ☉ rite len(&self) -> u64! {
         self.vec.len()
     }
 
     /// Capacity in bytes
-    pub fn capacity(&self) -> u64! {
+    ☉ rite capacity(&self) -> u64! {
         self.vec.capacity()
     }
 
     /// Check if string is empty
-    pub fn is_empty(&self) -> bool! {
+    ☉ rite is_empty(&self) -> bool! {
         self.vec.is_empty()
     }
 
@@ -121,7 +121,7 @@ impl String {
     /// Get as &str
     ///
     /// Returns Known (!) - UTF-8 is guaranteed valid
-    pub fn as_str(&self) -> &str! {
+    ☉ rite as_str(&self) -> &str! {
         unsafe {
             // We guarantee UTF-8 validity by construction
             str_from_utf8_unchecked(self.vec.as_ptr(), self.vec.len())
@@ -129,14 +129,14 @@ impl String {
     }
 
     /// Get as byte slice
-    pub fn as_bytes(&self) -> &[u8]! {
+    ☉ rite as_bytes(&self) -> &[u8]! {
         unsafe {
             slice_from_raw_parts(self.vec.as_ptr(), self.vec.len())
         }
     }
 
     /// Get raw pointer to bytes
-    pub fn as_ptr(&self) -> *const u8! {
+    ☉ rite as_ptr(&self) -> *const u8! {
         self.vec.as_ptr() as *const u8
     }
 
@@ -145,12 +145,12 @@ impl String {
     // ========================================================================
 
     /// Clear contents (keeps capacity)
-    pub fn clear(&mut self) {
+    ☉ rite clear(&Δ self) {
         self.vec.clear();
     }
 
     /// Reserve capacity for additional bytes
-    pub fn reserve(&mut self, additional: u64) {
+    ☉ rite reserve(&Δ self, additional: u64) {
         self.vec.reserve(additional);
     }
 
@@ -161,8 +161,8 @@ impl String {
     /// Create new String by concatenating with another
     ///
     /// Returns Known (!) - newly allocated
-    pub fn concat(&self, other: &String) -> String! {
-        let mut result = String·with_capacity(self.len() + other.len());
+    ☉ rite concat(&self, other: &String) -> String! {
+        ≔ vary result = String·with_capacity(self.len() + other.len());
         result.push_str(self.as_str());
         result.push_str(other.as_str());
         result
@@ -173,32 +173,32 @@ impl String {
 // Trait Implementations
 // ============================================================================
 
-impl Drop for String {
-    fn drop(&mut self) {
+⊢ Drop ∀ String {
+    rite drop(&Δ self) {
         // Vec's drop will handle freeing memory
     }
 }
 
-impl Add<&String> for String {
+⊢ Add<&String> ∀ String {
     type Output = String;
 
-    fn add(self, other: &String) -> String! {
+    rite add(self, other: &String) -> String! {
         self.concat(other)
     }
 }
 
-impl PartialEq for String {
-    fn eq(&self, other: &String) -> bool! {
-        if self.len() != other.len() {
+⊢ PartialEq ∀ String {
+    rite eq(&self, other: &String) -> bool! {
+        ⎇ self.len() != other.len() {
             false
-        } else {
+        } ⎉ {
             // Compare bytes
-            let a = self.as_bytes();
-            let b = other.as_bytes();
-            let mut i: u64 = 0;
-            while i < self.len() {
-                if a[i] != b[i] {
-                    return false;
+            ≔ a = self.as_bytes();
+            ≔ b = other.as_bytes();
+            ≔ vary i: u64 = 0;
+            ⟳ i < self.len() {
+                ⎇ a[i] != b[i] {
+                    ⤺ false;
                 }
                 i = i + 1;
             }
@@ -207,17 +207,17 @@ impl PartialEq for String {
     }
 }
 
-impl PartialEq<&str> for String {
-    fn eq(&self, other: &&str) -> bool! {
-        let other_bytes = (*other).as_bytes();
-        if self.len() != other_bytes.len() as u64 {
+⊢ PartialEq<&str> ∀ String {
+    rite eq(&self, other: &&str) -> bool! {
+        ≔ other_bytes = (*other).as_bytes();
+        ⎇ self.len() != other_bytes.len() as u64 {
             false
-        } else {
-            let a = self.as_bytes();
-            let mut i: u64 = 0;
-            while i < self.len() {
-                if a[i] != other_bytes[i] {
-                    return false;
+        } ⎉ {
+            ≔ a = self.as_bytes();
+            ≔ vary i: u64 = 0;
+            ⟳ i < self.len() {
+                ⎇ a[i] != other_bytes[i] {
+                    ⤺ false;
                 }
                 i = i + 1;
             }
@@ -232,12 +232,12 @@ impl PartialEq<&str> for String {
 
 /// Create &str from raw pointer and length (unchecked UTF-8)
 #[inline]
-unsafe fn str_from_utf8_unchecked(ptr: *const u8, len: u64) -> &str! {
+unsafe rite str_from_utf8_unchecked(ptr: *const u8, len: u64) -> &str! {
     __builtin_str_from_raw_parts(ptr, len)
 }
 
 /// Create slice from raw parts
 #[inline]
-unsafe fn slice_from_raw_parts(ptr: *const u8, len: u64) -> &[u8]! {
+unsafe rite slice_from_raw_parts(ptr: *const u8, len: u64) -> &[u8]! {
     __builtin_slice_from_raw_parts_u8(ptr, len)
 }

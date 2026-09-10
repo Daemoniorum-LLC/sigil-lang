@@ -3,7 +3,7 @@
 // Run: sigil run examples/04_enums.sg
 
 // Simple enum
-Σ enum Direction {
+Σ ᛈ Direction {
     North,
     South,
     East,
@@ -11,7 +11,7 @@
 }
 
 // Enum with associated data
-Σ enum Message {
+Σ ᛈ Message {
     Text(String),
     Number(i32),
     Coordinates(f64, f64),
@@ -19,19 +19,19 @@
 }
 
 // Enum for error handling
-Σ enum Result<T, E> {
+Σ ᛈ Result<T, E> {
     Ok(T),
     Err(E),
 }
 
-Σ enum Option<T> {
+Σ ᛈ Option<T> {
     Some(T),
     None,
 }
 
 // Function using enum
 rite direction_to_string(d: Direction) → String {
-    match d {
+    ⌥ d {
         Direction·North => "Going North",
         Direction·South => "Going South",
         Direction·East => "Going East",
@@ -41,7 +41,7 @@ rite direction_to_string(d: Direction) → String {
 
 // Pattern matching with data extraction
 rite process_message(msg: Message) → String {
-    match msg {
+    ⌥ msg {
         Message·Text(s) => "Text message: " + s,
         Message·Number(n) => "Number: " + str(n),
         Message·Coordinates(x, y) => "Position: (" + str(x) + ", " + str(y) + ")",
@@ -52,8 +52,8 @@ rite process_message(msg: Message) → String {
 // Using Option for nullable values
 rite find_even(numbers: &[i32]) → Option<i32> {
     ∀ n ∈ numbers {
-        if n % 2 == 0 {
-            return Some(n);
+        ⎇ n % 2 == 0 {
+            ⤺ Some(n);
         }
     }
     None
@@ -61,9 +61,9 @@ rite find_even(numbers: &[i32]) → Option<i32> {
 
 // Using Result for error handling
 rite divide(a: f64, b: f64) → Result<f64, String> {
-    if b == 0.0 {
+    ⎇ b == 0.0 {
         Err("Division by zero".to_string())
-    } else {
+    } ⎉ {
         Ok(a / b)
     }
 }
@@ -89,19 +89,19 @@ rite main() {
     // Option handling
     println("\n=== Option ===");
     ≔ numbers = [1, 3, 5, 6, 7];
-    match find_even(&numbers) {
+    ⌥ find_even(&numbers) {
         Some(n) => println("Found even number: " + str(n)),
         None => println("No even number found"),
     }
 
     // Result handling
     println("\n=== Result ===");
-    match divide(10.0, 3.0) {
+    ⌥ divide(10.0, 3.0) {
         Ok(result) => println("10 / 3 = " + str(result)),
         Err(e) => println("Error: " + e),
     }
 
-    match divide(10.0, 0.0) {
+    ⌥ divide(10.0, 0.0) {
         Ok(result) => println("10 / 0 = " + str(result)),
         Err(e) => println("Error: " + e),
     }
@@ -109,11 +109,11 @@ rite main() {
     // Pattern matching with guards
     println("\n=== Pattern Guards ===");
     ≔ value = 42;
-    ≔ description = match value {
-        n if n < 0 => "negative",
+    ≔ description = ⌥ value {
+        n ⎇ n < 0 => "negative",
         0 => "zero",
-        n if n < 10 => "small positive",
-        n if n < 100 => "medium positive",
+        n ⎇ n < 10 => "small positive",
+        n ⎇ n < 100 => "medium positive",
         _ => "large positive",
     };
     println(str(value) + " is " + description);

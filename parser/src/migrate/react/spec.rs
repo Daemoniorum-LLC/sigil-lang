@@ -63,11 +63,58 @@ pub struct ComponentMigrationSpec {
     pub status: MigrationStatus,
 }
 
+/// JavaScript globals a component may name. They are not fields of anything, so
+/// the unknown-identifier rule turned `Math.round(x)` into `self.math.round(x)`.
+/// Listing them keeps the reference intact for a human to finish; Sigil has its
+/// own spellings for most of these and none of them are `self.`.
+const JS_GLOBALS: &[&str] = &[
+    "Math", "JSON", "Object", "Array", "String", "Number", "Boolean", "Date",
+    "RegExp", "Promise", "Map", "Set", "Error", "console", "window", "document",
+    "navigator", "localStorage", "sessionStorage", "fetch", "URL",
+    "URLSearchParams", "Intl", "parseInt", "parseFloat", "isNaN", "encodeURIComponent",
+    "decodeURIComponent", "structuredClone", "queueMicrotask",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComponentSource {
     pub path: String,
     pub code: String,
     pub extraction: ComponentExtraction,
+    /// Names declared at module scope in the same file — helper functions and
+    /// non-function `const`s.
+    ///
+    /// The generator needs these to leave a reference alone. Without them the
+    /// unknown-identifier rule turned `fmtDate(x)` into `self.fmt_date(x)` and
+    /// `DEFAULT_SORT` into `self.default_sort`, neither of which any actor
+    /// declares — 108 references across the generated Lares client.
+    #[serde(default)]
+    pub module_scope: Vec<String>,
+    /// Module-scope `const`s from the same file, so the generator can emit them.
+    ///
+    /// Knowing the name is not enough: `DEFAULT_SORT` stopped being rewritten to
+    /// `self.default_sort` once it was in scope, but nothing declared it either.
+    #[serde(default)]
+    pub module_constants: Vec<ModuleConstantExtraction>,
+    /// Module-scope function names from the same file.
+    ///
+    /// `module_scope` conflates functions with constants, and a `useState`
+    /// initialiser tells them apart by how it is written: `useState(storedView)`
+    /// passes the function lazily, so the field's initial value is
+    /// `stored_view()`, not the function itself. Emitting the bare name left
+    /// `state view: Any~ = storedView,` — an undefined identifier, in React's
+    /// own casing, in a declaration.
+    #[serde(default)]
+    pub module_functions: Vec<String>,
+    /// The helper functions this component can reach, from its own file and
+    /// from the modules it imports.
+    ///
+    /// The generator emitted components and module constants and no helper
+    /// functions at all, so `renderFileEntryDetail` — defined twenty lines
+    /// above its only call site — was an undefined name, and fifteen of the
+    /// seventeen files that failed `--strict` stopped on a helper from a
+    /// sibling module.
+    #[serde(default)]
+    pub helpers: Vec<HelperFunctionExtraction>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +179,47 @@ pub struct MessageRecommendation {
     /// Calls to service actor methods (from hook-returned functions)
     #[serde(default)]
     pub service_calls: Vec<ServiceCall>,
+    /// The originating handler's parameter names, in order, for as many as the
+    /// payload carries. The body's state changes are written in terms of these
+    /// (`self.view = next`), so the generator has to bind them to `msg.N` first
+    /// or the names resolve to nothing.
+    #[serde(default)]
+    pub param_bindings: Vec<String>,
+    /// `state_changes` in structured form: the field written and the *untranslated*
+    /// JavaScript that produces the value. `state_changes` holds the same thing
+    /// flattened for the JSON spec, but flattening it meant the value never went
+    /// through the expression transform — `setCollapsed(c => !c)` was emitted as
+    /// a JavaScript arrow inside a Sigil actor, and seven files stopped parsing
+    /// the moment plain-named handlers began contributing bodies.
+    #[serde(default)]
+    pub state_assignments: Vec<StateAssignment>,
+    /// The React handler this came from had branches or an early return, and the
+    /// mutation walker collects mutations from every branch into one flat list.
+    /// The generated body therefore runs assignments unconditionally that React
+    /// ran under a condition — a real semantic difference, and one a reader would
+    /// otherwise have to diff against the TSX to notice.
+    #[serde(default)]
+    pub flattened_control_flow: bool,
+    /// The handler's body as React wrote it. S30: reducing a body to a flat
+    /// list of mutations loses the branches, so a handler that wrote one field
+    /// on success and another on failure emitted both. The generator translates
+    /// this statement by statement when it can, and falls back to the flat list
+    /// with the flattening noted when it cannot.
+    #[serde(default)]
+    pub body_source: Option<String>,
+}
+
+/// A single `self.<field> = <value>` a message handler performs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateAssignment {
+    /// Sigil field name (already snake-cased and keyword-escaped).
+    pub field: String,
+    /// The value as React wrote it. Transformed by the generator, not here.
+    pub value: String,
+    /// Set when React used the functional updater form, `setX(prev => ...)`:
+    /// the parameter name, which stands for the field's current value.
+    #[serde(default)]
+    pub updater_param: Option<String>,
 }
 
 /// A call to a service actor method
@@ -477,6 +565,51 @@ impl<'a> SpecGenerator<'a> {
                 path: self.extraction.file.path.to_string_lossy().to_string(),
                 code: self.source_code.to_string(),
                 extraction: comp.clone(),
+                module_scope: self
+                    .extraction
+                    .helper_functions
+                    .iter()
+                    .map(|h| h.name.clone())
+                    .chain(
+                        self.extraction
+                            .module_constants
+                            .iter()
+                            .map(|c| c.name.clone()),
+                    )
+                    // Imported names are module scope too, and most of the
+                    // helpers a component actually uses come from a sibling
+                    // module — `kbToGB` lives in `../format`, not in the file
+                    // that calls it, and became `self.kb_to_gb`.
+                    .chain(
+                        self.extraction
+                            .imports
+                            .iter()
+                            .filter(|i| !i.is_type_only)
+                            .flat_map(|i| i.specifiers.iter().map(|s| s.local.clone())),
+                    )
+                    // Sibling COMPONENTS are module scope too. A component
+                    // that returns JSX is generated as its own top-level
+                    // `rite`, but its name was in neither the helper list nor
+                    // the constant list, so a call to one from the same file —
+                    // `renderFileEntryDetail(entry, …)` — came out
+                    // `self.render_file_entry_detail(…)`, a method no actor
+                    // could ever have.
+                    .chain(
+                        self.extraction
+                            .components
+                            .iter()
+                            .map(|c| c.name.clone()),
+                    )
+                    .chain(JS_GLOBALS.iter().map(|g| g.to_string()))
+                    .collect(),
+                module_constants: self.extraction.module_constants.clone(),
+                module_functions: self
+                    .extraction
+                    .helper_functions
+                    .iter()
+                    .map(|h| h.name.clone())
+                    .collect(),
+                helpers: self.extraction.helper_functions.clone(),
             },
             target: TargetInfo {
                 suggested_path: format!("src/components/{}.sigil", to_snake_case(&comp.name)),
@@ -570,39 +703,170 @@ impl<'a> SpecGenerator<'a> {
                     // Common patterns: setCount -> Increment/Decrement, setVisible -> Toggle/Show/Hide
                     let msg_name = derive_message_name(state_name, setter_name);
 
+                    // The body this generates is `self.<field> = msg.0`, so the
+                    // variant has to declare the value it is reading. It used to be
+                    // payload-less, which made every setter handler in the UI read a
+                    // field off a message that had none.
                     messages.push(MessageRecommendation {
                         name: msg_name.clone(),
                         from_handler: setter_name.clone(),
-                        payload: None,
-                        state_changes: vec![format!("self.{} = /* new value */", state_name)],
+                        payload: Some("(Any)".to_string()),
+                        state_changes: vec![format!(
+                            "self.{} = /* new value */",
+                            to_snake_case(state_name)
+                        )],
                         side_effects: vec![],
                         service_calls: vec![],
+                        param_bindings: vec![],
+                        state_assignments: vec![],
+                        flattened_control_flow: false,
+                        body_source: None,
                     });
                 }
             }
         }
 
+        // Every JSX event in the component, with the message name the generator
+        // will dispatch for it. Handlers are matched against this: a function
+        // bound to an event is a handler, one that is not is a local helper.
+        let jsx_events = collect_jsx_event_messages(&comp.jsx);
+        let jsx_by_callback: Vec<(String, String, String)> = jsx_events
+            .iter()
+            .filter_map(|(msg, code)| {
+                derive_invoked_callback(code).map(|cb| (cb, msg.clone(), code.clone()))
+            })
+            .collect();
+
         // Generate messages from event handlers
         for handler in &comp.handlers {
-            let msg_name = to_pascal_case(&handler.name.replace("handle", ""));
+            // `comp.handlers` now holds every function-valued binding in the
+            // component body, not only `handle*`/`on*` ones — that convention was
+            // costing us the 66 plain-named handlers (`save`, `startNew`,
+            // `copyBody`) that the Lares UI actually uses. Decide here which are
+            // handlers: bound to a JSX event, or conventionally named. Anything
+            // else is a helper the view calls directly and must not become a
+            // message, or the enum fills with variants nothing dispatches.
+            let jsx_hit = jsx_by_callback.iter().find(|(cb, _, _)| *cb == handler.name);
+            let (msg_name, payload) = match jsx_hit {
+                Some((_, msg, code)) => {
+                    // Arity comes from the call site, exactly as the inline path
+                    // below derives it, so declaration and dispatch agree.
+                    let arity = derive_event_message_payload(code).len();
+                    let payload = if arity == 0 {
+                        None
+                    } else {
+                        Some(format!("({})", vec!["Any"; arity].join(", ")))
+                    };
+                    (msg.clone(), payload)
+                }
+                None if handler.name.starts_with("handle") || handler.name.starts_with("on") => {
+                    (to_pascal_case(&handler.name.replace("handle", "")), None)
+                }
+                None => continue,
+            };
+
+            if messages.iter().any(|m| m.name == msg_name) {
+                continue;
+            }
 
             // Transform React state mutations to Sigil syntax
             let transformed_state_changes = transform_state_mutations_to_sigil(
                 &handler.state_mutations,
                 &state_fields,
             );
+            let state_assignments =
+                extract_state_assignments(&handler.state_mutations, &state_fields);
+            let flattened_control_flow = !state_assignments.is_empty()
+                && (handler.has_conditionals || handler.has_early_return);
 
             // Extract service calls from handler.calls (hook-returned functions)
             let service_calls = extract_service_calls(&handler.calls);
 
+            // EVERY parameter, not only the ones the payload carries.
+            //
+            // A handler's body is written in terms of its parameters —
+            // `(branchName) => setBranchOverride(branchName)` — and a parameter
+            // the message has no room for is still a name the body uses. Capping
+            // this at the payload arity left those unbound, and the
+            // unknown-identifier rule turned each into a `self.` field the actor
+            // does not have. The generator binds what the payload supplies to
+            // `msg.N` and the remainder to ∅, which is visible rather than wrong.
+            let param_bindings: Vec<String> =
+                handler.parameters.iter().map(|p| p.name.clone()).collect();
+
             messages.push(MessageRecommendation {
                 name: msg_name,
                 from_handler: handler.name.clone(),
-                payload: None,
+                payload,
                 state_changes: transformed_state_changes,
                 side_effects: handler.api_calls.clone(),
                 service_calls,
+                param_bindings,
+                state_assignments,
+                flattened_control_flow,
+                body_source: Some(handler.body_summary.clone()),
             });
+        }
+
+        // Inline JSX handlers (`onClick={() => onExpand(id)}`) are not in
+        // comp.handlers, which only holds named handler functions. Without these the
+        // generated view dispatched messages that the actor's enum never declared.
+        for (msg_name, code) in jsx_events {
+            if messages.iter().any(|m| m.name == msg_name) {
+                continue;
+            }
+            // Carry the handler's arguments through as a tuple payload, so
+            // `onExpand(slot.id)` declares `Expand(Any)` rather than throwing the
+            // id away and leaving the actor unable to tell which row was clicked.
+            let args = derive_event_message_payload(&code);
+
+            // An inline handler that calls a useState setter is a state change, and
+            // we know exactly which field: `onClick={() => setOpen(true)}` should
+            // write `self.open = msg.0`, not leave a TODO next to a live message.
+            let callback = derive_invoked_callback(&code);
+            let state_changes = callback
+                .as_ref()
+                .and_then(|cb| state_fields.iter().find(|(setter, _)| setter == cb))
+                .map(|(_, field)| {
+                    vec![format!("self.{} = /* new value */", to_snake_case(field))]
+                })
+                .unwrap_or_default();
+
+            // A body reading msg.0 needs a payload even when the call site had no
+            // argument we could safely reproduce.
+            let arity = if state_changes.is_empty() {
+                args.len()
+            } else {
+                args.len().max(1)
+            };
+            let payload = if arity == 0 {
+                None
+            } else {
+                Some(format!("({})", vec!["Any"; arity].join(", ")))
+            };
+            messages.push(MessageRecommendation {
+                name: msg_name,
+                from_handler: code,
+                payload,
+                state_changes,
+                side_effects: vec![],
+                service_calls: vec![],
+                param_bindings: vec![],
+                state_assignments: vec![],
+                flattened_control_flow: false,
+                body_source: None,
+            });
+        }
+
+        // Invariant: a handler body that reads `msg.0` must belong to a variant that
+        // declares one. The generator substitutes `/* new value */` with `msg.0`, so
+        // that placeholder is the marker.
+        for msg in messages.iter_mut() {
+            if msg.payload.is_none()
+                && msg.state_changes.iter().any(|c| c.contains("/* new value */"))
+            {
+                msg.payload = Some("(Any)".to_string());
+            }
         }
 
         messages
@@ -1105,19 +1369,67 @@ pub fn chrono_now() -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", year, month, day, hours, minutes, seconds)
 }
 
-fn to_snake_case(s: &str) -> String {
+/// The one definition. `generator.rs` and `ast_transform.rs` delegate here;
+/// they used to carry byte-identical copies, which is how a fix to one of them
+/// could leave the other two mangling the same names.
+/// snake_case WITHOUT keyword escaping.
+///
+/// A member or method name is not a binding, so it cannot collide with a
+/// keyword and must not be escaped: `selected.body` became `selected.body_`,
+/// `hunk.header` became `header_`, and `s.split(",")` became `s·split_(",")`,
+/// which is a method Sigil does not have. Escaping belongs on names the
+/// generated file *declares*.
+pub(crate) fn to_snake_case_member(s: &str) -> String {
     let mut result = String::new();
-    for (i, c) in s.chars().enumerate() {
+    let chars: Vec<char> = s.chars().collect();
+    for (i, c) in chars.iter().enumerate() {
         if c.is_uppercase() {
-            if i > 0 {
+            let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+            let next = chars.get(i + 1).copied();
+            let boundary = match prev {
+                None => false,
+                Some(p) if p.is_lowercase() || p.is_numeric() => true,
+                Some(p) if p.is_uppercase() => next.is_some_and(|n| n.is_lowercase()),
+                _ => false,
+            };
+            if boundary {
                 result.push('_');
             }
             result.push(c.to_lowercase().next().unwrap());
         } else {
-            result.push(c);
+            result.push(*c);
         }
     }
     result
+}
+
+pub(crate) fn to_snake_case(s: &str) -> String {
+    // Acronym-aware: a run of capitals is one word. Underscoring before every
+    // capital turned `DEFAULT_SORT` into `d_e_f_a_u_l_t__s_o_r_t`, which is what
+    // 16 module-level constants were referred to as across the generated client.
+    let chars: Vec<char> = s.chars().collect();
+    let mut result = String::new();
+    for (i, c) in chars.iter().enumerate() {
+        if c.is_uppercase() {
+            let prev = if i > 0 { Some(chars[i - 1]) } else { None };
+            let next = chars.get(i + 1).copied();
+            let boundary = match prev {
+                None => false,
+                Some(p) if p.is_lowercase() || p.is_numeric() => true,
+                // `URLPath` -> `url_path`: the last capital of a run starts a word.
+                Some(p) if p.is_uppercase() => next.is_some_and(|n| n.is_lowercase()),
+                _ => false,
+            };
+            if boundary {
+                result.push('_');
+            }
+            result.push(c.to_lowercase().next().unwrap());
+        } else {
+            result.push(*c);
+        }
+    }
+    // A prop named `ref` or `type` is a parse error, not a type error.
+    escape_sigil_keyword(&result)
 }
 
 fn to_pascal_case(s: &str) -> String {
@@ -1222,20 +1534,153 @@ fn infer_type_from_value(value: &str) -> (String, String) {
 }
 
 fn map_ts_type_to_sigil(ts_type: &str) -> String {
-    match ts_type {
-        "number" => "f64".to_string(),
-        "string" => "String".to_string(),
-        "boolean" => "bool".to_string(),
-        "void" => "()".to_string(),
-        "null" | "undefined" => "∅".to_string(),
-        "any" | "unknown" => "Any".to_string(),
-        "HTMLInputElement" | "HTMLElement" | "Element" => "Element".to_string(),
-        t if t.starts_with("Array<") => {
-            let inner = &t[6..t.len()-1];
-            format!("Vec<{}>", map_ts_type_to_sigil(inner))
-        }
-        t => t.to_string(), // Keep as-is for custom types
+    // Strip TypeScript modifiers that have no Sigil equivalent. `readonly Foo[]`
+    // otherwise became `Vec<readonly Foo>`, which does not parse.
+    let t = ts_type
+        .trim()
+        .trim_start_matches("readonly ")
+        .trim_start_matches("const ")
+        .trim();
+    match t {
+        "number" => return "f64".to_string(),
+        "string" => return "String".to_string(),
+        "boolean" => return "bool".to_string(),
+        "void" => return "()".to_string(),
+        "null" | "undefined" => return "∅".to_string(),
+        "any" | "unknown" => return "Any".to_string(),
+        "HTMLInputElement" | "HTMLElement" | "Element" => return "Element".to_string(),
+        _ => {}
     }
+
+    // A function type — `(c: boolean) => void`, `() => void`. Callbacks become
+    // messages in Qliphoth, so the prop itself is opaque.
+    if t.contains("=>") {
+        return "Any".to_string();
+    }
+
+    // A union. `T | null` and `T | undefined` are optionality, which Sigil spells
+    // Option<T>. Any other union has no Sigil equivalent, so it degrades to Any
+    // rather than emitting `A | B`, which does not parse.
+    if t.contains('|') {
+        let parts: Vec<&str> = t.split('|').map(|p| p.trim()).collect();
+        let non_null: Vec<&str> = parts
+            .iter()
+            .copied()
+            .filter(|p| *p != "null" && *p != "undefined")
+            .collect();
+        if non_null.len() == 1 && non_null.len() < parts.len() {
+            return format!("Option<{}>", map_ts_type_to_sigil(non_null[0]));
+        }
+        return "Any".to_string();
+    }
+
+    // `T[]` array shorthand.
+    if let Some(inner) = t.strip_suffix("[]") {
+        return format!("Vec<{}>", map_ts_type_to_sigil(inner));
+    }
+
+    if let Some(inner) = t.strip_prefix("Array<").and_then(|x| x.strip_suffix('>')) {
+        return format!("Vec<{}>", map_ts_type_to_sigil(inner));
+    }
+
+    // An inline object type has no name to refer to; keep it opaque rather than
+    // emitting TypeScript into a Sigil signature.
+    if t.starts_with('{') {
+        return "Any".to_string();
+    }
+
+    // A generic application — `Record<string, DirState>`, `Readonly<Record<…>>`.
+    // The ARGUMENTS have to be mapped as well. Sigil accepts a lowercase name as a
+    // standalone type but rejects one as a type argument, so a bare `string` parsed
+    // while `Record<string, X>` did not, and the whole file failed on it.
+    if let Some((head, args)) = split_generic(t) {
+        let mapped: Vec<String> = args.iter().map(|a| map_ts_type_to_sigil(a)).collect();
+        return match head {
+            // Erasable TS wrappers with no Sigil counterpart.
+            "Readonly" | "Partial" | "Required" | "NonNullable" if mapped.len() == 1 => {
+                mapped.into_iter().next().unwrap()
+            }
+            "Record" if mapped.len() == 2 => format!("Map<{}>", mapped.join(", ")),
+            "ReadonlyArray" if mapped.len() == 1 => format!("Vec<{}>", mapped[0]),
+            h if !h.is_empty()
+                && h.chars().all(|c| c.is_alphanumeric() || c == '_') =>
+            {
+                format!("{}<{}>", h, mapped.join(", "))
+            }
+            _ => "Any".to_string(),
+        };
+    }
+
+    // Custom named types pass through — but only if they are actually spellable in
+    // Sigil. Anything still carrying TypeScript syntax (a colon, an arrow, a union
+    // bar, a brace or paren, a leftover modifier) would be emitted verbatim into a
+    // signature and fail to parse, so it degrades to Any instead. Being wrong in the
+    // direction of Any costs type information; being wrong the other way costs a
+    // file that will not compile at all.
+    let spellable = t
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '<' | '>' | ',' | ' '))
+        && !t.contains("=>");
+    if spellable && !t.is_empty() {
+        t.to_string()
+    } else {
+        "Any".to_string()
+    }
+}
+
+/// Sigil's reserved words, taken from the lexer's `#[token("…")]` set.
+///
+/// React prop names collide with these more often than you would guess — `ref`,
+/// `type`, `on`, `body`, `from`, `to`, `scope`, `location`. A prop named `ref`
+/// emitted `rite new(ref: Any)`, which is a parse error, not a type error.
+const SIGIL_KEYWORDS: &[&str] = &[
+    "actor", "affine", "alter", "amqp", "anima", "as", "asm", "aspect", "async", "atomic",
+    "await", "body", "broadcast", "close", "cocon", "connect", "consensus", "const",
+    "derive", "distribute", "dyn", "each", "extern", "false", "forever", "from", "gather",
+    "gpu", "graphql", "grpc", "header", "headspace", "http", "https", "interfere", "invoke",
+    "kafka", "layer", "legion_field", "linear", "location", "loop", "macro", "macro_rules",
+    "move", "mut", "naked", "nay", "no_grad", "null", "of", "on", "packed", "parallel",
+    "reality", "recv", "ref", "relevant", "retry", "rite", "rune", "saga", "scope",
+    "scroll", "self", "send", "sigil", "simd", "split", "states", "static", "stream", "super",
+    "switch", "this", "timeout", "to", "tome", "trigger", "true", "type", "unsafe", "vary",
+    "volatile", "where", "ws", "wss", "yay", "yea", "yield",
+];
+
+/// Make an identifier safe to emit. Applied inside every `to_snake_case`, so a field
+/// declared `ref_` is also referenced as `ref_` — escaping one and not the other
+/// would be worse than not escaping at all.
+pub fn escape_sigil_keyword(name: &str) -> String {
+    if SIGIL_KEYWORDS.contains(&name) {
+        format!("{}_", name)
+    } else {
+        name.to_string()
+    }
+}
+
+/// Split `Head<A, B>` into ("Head", ["A", "B"]). Returns None when the type is not a
+/// generic application. Commas inside nested arguments do not split.
+fn split_generic(t: &str) -> Option<(&str, Vec<String>)> {
+    let open = t.find('<')?;
+    if !t.ends_with('>') {
+        return None;
+    }
+    let head = t[..open].trim();
+    let inner = &t[open + 1..t.len() - 1];
+    let mut args = Vec::new();
+    let mut depth = 0i32;
+    let mut cur = String::new();
+    for c in inner.chars() {
+        match c {
+            '<' => { depth += 1; cur.push(c); }
+            '>' => { depth -= 1; cur.push(c); }
+            ',' if depth == 0 => { args.push(cur.trim().to_string()); cur.clear(); }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.trim().is_empty() {
+        args.push(cur.trim().to_string());
+    }
+    if args.is_empty() { None } else { Some((head, args)) }
 }
 
 fn derive_message_name(state_name: &str, setter_name: &str) -> String {
@@ -1414,6 +1859,62 @@ fn transform_state_mutations_to_sigil(
         .collect()
 }
 
+/// The same mutations, structured, with the value left as JavaScript so the
+/// generator can run it through the expression transform.
+fn extract_state_assignments(
+    mutations: &[String],
+    state_fields: &[(String, String)],
+) -> Vec<StateAssignment> {
+    mutations
+        .iter()
+        .filter_map(|mutation| {
+            let mutation = mutation.trim();
+            let (setter, field) = state_fields
+                .iter()
+                .find(|(setter, _)| mutation.starts_with(setter.as_str()))?;
+            let _ = setter;
+            let start = mutation.find('(')?;
+            let end = find_matching_paren(mutation, start)?;
+            let value = mutation[start + 1..end].trim();
+            if value.is_empty() {
+                return None;
+            }
+            // `setOpen(prev => !prev)` — the parameter stands for the current
+            // value of the field, so the generator binds it before the body.
+            let (value, updater_param) = match split_updater(value) {
+                Some((param, body)) => (body, Some(param)),
+                None => (value.to_string(), None),
+            };
+            Some(StateAssignment {
+                field: to_snake_case(field),
+                value,
+                updater_param,
+            })
+        })
+        .collect()
+}
+
+/// Split a functional-updater argument `prev => body` / `(prev) => body` into its
+/// parameter and body. Returns None for anything else, including multi-parameter
+/// arrows, which are not updaters.
+fn split_updater(value: &str) -> Option<(String, String)> {
+    let arrow = value.find("=>")?;
+    let param = value[..arrow].trim().trim_start_matches('(').trim_end_matches(')').trim();
+    if param.is_empty()
+        || !param.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        || param.chars().next().is_some_and(|c| c.is_numeric())
+    {
+        return None;
+    }
+    let body = value[arrow + 2..].trim();
+    // A block body is a statement sequence, not an expression; the generator has
+    // no spelling for it and would emit the braces verbatim.
+    if body.starts_with('{') {
+        return None;
+    }
+    Some((param.to_string(), body.to_string()))
+}
+
 /// Transform a single React state mutation to Sigil.
 fn transform_single_mutation(
     mutation: &str,
@@ -1433,13 +1934,25 @@ fn transform_single_mutation(
                 // Transform state references in the value
                 let transformed_value = transform_state_references(value, state_fields);
 
-                return Some(format!("self.{} = {}", field, transformed_value));
+                return Some(format!("self.{} = {}", to_snake_case(field), transformed_value));
             }
         }
     }
 
-    // Not a recognized state setter - return as-is with self prefix attempt
-    Some(transform_state_references(mutation, state_fields))
+    // Not a recognized state setter. This used to fall through to
+    // `transform_state_references`, which returns the JavaScript unchanged when
+    // it recognises nothing — so a call to a prop setter or an imported helper
+    // was emitted verbatim into the actor body. Harmless while only `handle*`
+    // functions were extracted; once every function-valued binding became a
+    // handler candidate it put raw JS in generated Sigil. Record what the React
+    // did instead, on one line, and leave the translation to a human.
+    let one_line: String = mutation.split_whitespace().collect::<Vec<_>>().join(" ");
+    let one_line = if one_line.chars().count() > 100 {
+        one_line.chars().take(97).collect::<String>() + "..."
+    } else {
+        one_line
+    };
+    Some(format!("// React: {}", one_line))
 }
 
 /// Find the matching closing parenthesis.
@@ -1479,7 +1992,7 @@ fn transform_state_references(value: &str, state_fields: &[(String, String)]) ->
         let pattern = format!(r"\b{}\b", regex::escape(field));
         if let Ok(re) = regex::Regex::new(&pattern) {
             // Only replace if not already prefixed with self.
-            let replacement = format!("self.{}", field);
+            let replacement = format!("self.{}", to_snake_case(field));
 
             // Avoid replacing self.field with self.self.field
             let mut new_result = String::new();
@@ -1595,4 +2108,407 @@ fn infer_type_from_name(name: &str) -> String {
 
     // Default to Any
     "Any".to_string()
+}
+
+/// The callback an inline event handler actually invokes.
+///
+/// `() => onExpand(slot.id)` invokes `onExpand`; `onClick={handleSubmit}` invokes
+/// `handleSubmit`. Shared by the message name, the message payload and the
+/// handler body, so all three read the same call and cannot disagree about
+/// which one the handler was for.
+pub fn derive_invoked_callback(handler_code: &str) -> Option<String> {
+    let body = match handler_code.find("=>") {
+        Some(i) => &handler_code[i + 2..],
+        None => handler_code,
+    }
+    .trim();
+
+    // First identifier followed by '(' — the callback being invoked.
+    let bytes: Vec<char> = body.chars().collect();
+    let mut ident = String::new();
+    let mut found = None;
+    for (i, c) in bytes.iter().enumerate() {
+        if c.is_alphanumeric() || *c == '_' || *c == '$' {
+            ident.push(*c);
+        } else {
+            if *c == '(' && !ident.is_empty() {
+                found = Some(ident.clone());
+                break;
+            }
+            // a '.' continues a member chain; keep the LAST segment
+            if *c == '.' {
+                ident.clear();
+            } else {
+                ident.clear();
+            }
+        }
+        if i + 1 == bytes.len() && !ident.is_empty() && found.is_none() {
+            // bare reference, e.g. onClick={handleSubmit}
+            found = Some(ident.clone());
+        }
+    }
+
+    let name = found?;
+
+    // `e => { e.preventDefault(); onSubmit(x) }` names the message after the real
+    // action, not the event plumbing that happens to come first.
+    if matches!(
+        name.as_str(),
+        "preventDefault" | "stopPropagation" | "stopImmediatePropagation"
+    ) {
+        return body.find(");").and_then(|i| {
+            let rest = &body[i + 1..];
+            let mut ident = String::new();
+            let mut found2 = None;
+            for c in rest.chars() {
+                if c.is_alphanumeric() || c == '_' || c == '$' {
+                    ident.push(c);
+                } else {
+                    if c == '(' && !ident.is_empty() {
+                        found2 = Some(ident.clone());
+                        break;
+                    }
+                    ident.clear();
+                }
+            }
+            found2
+        });
+    }
+
+    Some(name)
+}
+
+/// Derive a message name for an inline JSX event handler.
+///
+/// `onChange={e => onChange(e.target.checked)}` should not become the same message
+/// as every other onChange in the file. The meaningful name is the callback the
+/// handler actually invokes, so this looks past any arrow to the first call:
+///
+///   `e => onChange(e.target.checked)` -> Change
+///   `() => onExpand(slot.id)`         -> Expand
+///   `() => setOpen(true)`             -> UpdateOpen
+///   `handleSubmit`                    -> HandleSubmit
+///
+/// Falls back to the event name when nothing better can be found.
+pub fn derive_event_message_name(handler_code: &str, event_name: &str) -> String {
+    let name = match derive_invoked_callback(handler_code) {
+        Some(n) => n,
+        None => return to_pascal_case(event_name.trim_start_matches("on")),
+    };
+
+    if let Some(rest) = name.strip_prefix("set") {
+        if rest.chars().next().map_or(false, |c| c.is_uppercase()) {
+            return format!("Update{}", to_pascal_case(rest));
+        }
+    }
+    if let Some(rest) = name.strip_prefix("on") {
+        if rest.chars().next().map_or(false, |c| c.is_uppercase()) {
+            return to_pascal_case(rest);
+        }
+    }
+    to_pascal_case(&name)
+}
+
+/// Collect the message names implied by inline event handlers in a JSX tree.
+///
+/// These never appear in `ComponentExtraction::handlers`, which only holds named
+/// handler functions, so without this every inline handler dispatched a message
+/// that was never declared in the actor's enum.
+pub fn collect_jsx_event_messages(jsx: &JsxTree) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+
+    fn walk(node: &JsxNode, out: &mut Vec<(String, String)>) {
+        match &node.node_type {
+            JsxNodeType::Element { attributes, children, .. } => {
+                for a in attributes {
+                    if !a.is_event_handler {
+                        continue;
+                    }
+                    let code = match &a.value {
+                        JsxAttributeValue::Expression { code } => code.clone(),
+                        _ => String::new(),
+                    };
+                    let msg = derive_event_message_name(&code, &a.name);
+                    if !out.iter().any(|(m, _)| *m == msg) {
+                        out.push((msg, code));
+                    }
+                }
+                for c in children {
+                    walk(c, out);
+                }
+            }
+            JsxNodeType::Fragment { children } => {
+                for c in children {
+                    walk(c, out);
+                }
+            }
+            // Conditionals and maps hold the bulk of a real component's handlers —
+            // rows rendered from `items.map(...)`, panels behind `cond && <div/>`.
+            // Skipping them meant a large tab contributed no handler messages at all.
+            JsxNodeType::Conditional { consequent, alternate, .. } => {
+                walk(consequent, out);
+                if let Some(alt) = alternate {
+                    walk(alt, out);
+                }
+            }
+            JsxNodeType::Map { body, .. } => walk(body, out),
+            _ => {}
+        }
+    }
+
+    if let Some(root) = &jsx.root {
+        walk(root, &mut out);
+    }
+    out
+}
+
+/// The parameter names bound by a handler's arrow function, if it is one.
+///
+/// `(e: React.MouseEvent) => onPick(e.target.value)` binds `e`. Anything rooted
+/// at one of these names cannot become a message payload: the dispatch site in
+/// the generated Sigil is the node builder, not a closure, so the event object
+/// is simply not in scope there.
+fn arrow_param_names(handler_code: &str) -> Vec<String> {
+    let head = match handler_code.find("=>") {
+        Some(i) => handler_code[..i].trim(),
+        None => return Vec::new(),
+    };
+    let head = head
+        .trim()
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .trim();
+    head.split(',')
+        .filter_map(|p| {
+            let ident: String = p
+                .trim()
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+                .collect();
+            if ident.is_empty() { None } else { Some(ident) }
+        })
+        .collect()
+}
+
+/// Locate the first `ident(` in `body`, returning the name and the byte offset
+/// of its opening paren.
+fn find_invocation(body: &str) -> Option<(String, usize)> {
+    let mut ident = String::new();
+    let mut start = 0usize;
+    for (i, c) in body.char_indices() {
+        if c.is_alphanumeric() || c == '_' || c == '$' {
+            if ident.is_empty() {
+                start = i;
+            }
+            ident.push(c);
+        } else {
+            if c == '(' && !ident.is_empty() {
+                let _ = start;
+                return Some((ident, i));
+            }
+            ident.clear();
+        }
+    }
+    None
+}
+
+/// Split the balanced argument list beginning at `open` (the index of `(`) into
+/// its top-level comma-separated pieces.
+fn split_call_args(body: &str, open: usize) -> Option<Vec<String>> {
+    let mut depth = 0i32;
+    let mut args: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for (i, c) in body.char_indices() {
+        if i < open {
+            continue;
+        }
+        if let Some(q) = quote {
+            cur.push(c);
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' | '`' => {
+                quote = Some(c);
+                cur.push(c);
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                if depth > 1 {
+                    cur.push(c);
+                }
+            }
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    if !cur.trim().is_empty() {
+                        args.push(cur.trim().to_string());
+                    }
+                    return Some(args);
+                }
+                cur.push(c);
+            }
+            ',' if depth == 1 => {
+                args.push(cur.trim().to_string());
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+    }
+    None
+}
+
+/// Whether an argument expression can be carried verbatim into a message payload.
+///
+/// Conservative on purpose. A payload is emitted at the node-builder dispatch
+/// site, so it may only reference bindings that are live there — a `map` item,
+/// a prop, a signal — and must survive `transform_expression` unchanged in
+/// shape. Calls, object/array literals, ternaries and arithmetic are all
+/// rejected rather than mistranslated.
+fn is_payloadable_arg(arg: &str, params: &[String]) -> bool {
+    let a = arg.trim();
+    if a.is_empty() || a.len() > 60 {
+        return false;
+    }
+    if a.chars().any(|c| {
+        matches!(
+            c,
+            '(' | ')' | '{' | '}' | '=' | '>' | '<' | '?' | ':' | '+' | '*' | '/' | '&' | '|'
+                | '!' | '%' | '^' | '~' | ';'
+        )
+    }) {
+        return false;
+    }
+    // String and numeric literals pass straight through.
+    let first = a.chars().next().unwrap();
+    if first == '"' || first == '\'' || first.is_ascii_digit() || first == '-' {
+        return !a.contains('`');
+    }
+    if !(first.is_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    let root: String = a
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '$')
+        .collect();
+    if params.iter().any(|p| *p == root) {
+        return false;
+    }
+    // `this`/`window`/`document` have no Sigil equivalent at the dispatch site.
+    !matches!(root.as_str(), "this" | "window" | "document" | "globalThis")
+}
+
+/// The payload arguments implied by an inline event handler.
+///
+/// `() => onExpand(slot.id)` yields `["slot.id"]`, so the message can be
+/// declared `Expand(Any)` and dispatched as `Expand(slot·id)` instead of losing
+/// the one piece of information the handler was carrying. Returns an empty
+/// vector when the handler takes no arguments, or when any of them is not
+/// safely reproducible at the dispatch site.
+pub fn derive_event_message_payload(handler_code: &str) -> Vec<String> {
+    let body = match handler_code.find("=>") {
+        Some(i) => &handler_code[i + 2..],
+        None => handler_code,
+    }
+    .trim();
+
+    let params = arrow_param_names(handler_code);
+
+    let (name, open) = match find_invocation(body) {
+        Some(v) => v,
+        None => return Vec::new(),
+    };
+
+    // Skip the event plumbing, the same way the message name does, so payload
+    // and name are always read off the same call.
+    let (_, open) = if matches!(
+        name.as_str(),
+        "preventDefault" | "stopPropagation" | "stopImmediatePropagation"
+    ) {
+        match body.find(");").and_then(|i| {
+            find_invocation(&body[i + 1..]).map(|(n, o)| (n, o + i + 1))
+        }) {
+            Some(v) => v,
+            None => return Vec::new(),
+        }
+    } else {
+        (name, open)
+    };
+
+    let args = match split_call_args(body, open) {
+        Some(a) => a,
+        None => return Vec::new(),
+    };
+    if args.is_empty() || !args.iter().all(|a| is_payloadable_arg(a, &params)) {
+        return Vec::new();
+    }
+    args
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// SIGIL_KEYWORDS is transcribed from the lexer, and transcription drops entries:
+    /// the first version of that list was missing exactly one word — `ref` — which was
+    /// the one React actually uses, so two files still failed to parse after the fix
+    /// that was supposed to handle them. Pin it to the lexer at compile time.
+    #[test]
+    fn keyword_list_matches_the_lexer() {
+        let lexer = include_str!("../../lexer.rs");
+        let mut from_lexer: Vec<&str> = lexer
+            .match_indices("#[token(\"")
+            .filter_map(|(i, _)| {
+                let rest = &lexer[i + 9..];
+                let end = rest.find('"')?;
+                let word = &rest[..end];
+                if rest[end..].starts_with("\")]")
+                    && !word.is_empty()
+                    && word.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+                {
+                    Some(word)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        from_lexer.sort_unstable();
+        from_lexer.dedup();
+
+        let missing: Vec<&&str> = from_lexer
+            .iter()
+            .filter(|w| !SIGIL_KEYWORDS.contains(w))
+            .collect();
+        assert!(missing.is_empty(), "keywords in the lexer but not escaped: {:?}", missing);
+    }
+
+    #[test]
+    fn keywords_are_escaped_and_ordinary_names_are_not() {
+        assert_eq!(escape_sigil_keyword("ref"), "ref_");
+        assert_eq!(escape_sigil_keyword("type"), "type_");
+        assert_eq!(escape_sigil_keyword("on_change"), "on_change");
+        assert_eq!(escape_sigil_keyword("reference"), "reference");
+    }
+
+    /// Sigil accepts a lowercase name as a standalone type but rejects one as a type
+    /// ARGUMENT, so mapping only the outer name left `Record<string, X>` unparseable.
+    #[test]
+    fn generic_arguments_are_mapped_too() {
+        assert_eq!(map_ts_type_to_sigil("Record<string, DirState>"), "Map<String, DirState>");
+        assert_eq!(map_ts_type_to_sigil("Readonly<Record<string, P>>"), "Map<String, P>");
+        assert_eq!(map_ts_type_to_sigil("Array<number>"), "Vec<f64>");
+        assert_eq!(map_ts_type_to_sigil("Option<string>"), "Option<String>");
+    }
+
+    #[test]
+    fn payload_rejects_what_the_dispatch_site_cannot_reproduce() {
+        // The dispatch site is a node builder, not a closure: `e` is not in scope.
+        assert!(derive_event_message_payload("e => onPick(e.target.value)").is_empty());
+        assert!(derive_event_message_payload("() => onSave(build())").is_empty());
+        assert_eq!(derive_event_message_payload("() => onExpand(slot.id)"), vec!["slot.id"]);
+        assert_eq!(derive_event_message_payload("() => onView(\"active\")"), vec!["\"active\""]);
+    }
 }

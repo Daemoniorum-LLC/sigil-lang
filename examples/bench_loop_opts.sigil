@@ -1,46 +1,46 @@
 // Benchmark for loop optimizations
 // Tests: Loop unrolling, LICM, SIMD array operations
 
-fn main() -> i64 {
-    let start = now();
+rite main() -> i64 {
+    ≔ start = now();
 
     // Test 1: Sum with loop (tests LICM and basic loop performance)
-    let sum = 0;
-    let n = 0;
-    while n < 1000000 {
+    ≔ sum = 0;
+    ≔ n = 0;
+    ⟳ n < 1000000 {
         sum = sum + n;
         n = n + 1;
     }
-    let t1 = now() - start;
+    ≔ t1 = now() - start;
     print(t1);
     print(sum);
 
     // Test 2: Nested multiplication (tests strength reduction)
-    let start2 = now();
-    let result = 0;
-    let i = 0;
-    while i < 10000 {
-        let j = 0;
-        while j < 100 {
+    ≔ start2 = now();
+    ≔ result = 0;
+    ≔ i = 0;
+    ⟳ i < 10000 {
+        ≔ j = 0;
+        ⟳ j < 100 {
             result = result + i * 2 + j * 4;
             j = j + 1;
         }
         i = i + 1;
     }
-    let t2 = now() - start2;
+    ≔ t2 = now() - start2;
     print(t2);
     print(result);
 
     // Test 3: Iterative fibonacci (tests register usage in loops)
-    let start3 = now();
-    let k = 0;
-    let fib_result = 0;
-    while k < 10000 {
-        let a = 0;
-        let b = 1;
-        let m = 0;
-        while m < 50 {
-            let temp = a + b;
+    ≔ start3 = now();
+    ≔ k = 0;
+    ≔ fib_result = 0;
+    ⟳ k < 10000 {
+        ≔ a = 0;
+        ≔ b = 1;
+        ≔ m = 0;
+        ⟳ m < 50 {
+            ≔ temp = a + b;
             a = b;
             b = temp;
             m = m + 1;
@@ -48,7 +48,7 @@ fn main() -> i64 {
         fib_result = b;
         k = k + 1;
     }
-    let t3 = now() - start3;
+    ≔ t3 = now() - start3;
     print(t3);
     print(fib_result);
 

@@ -1,82 +1,82 @@
 // Hooks System
 // React-inspired hooks with Sigil's evidentiality tracking
 
-use std::collections::HashMap;
-use crate::core::vdom::VNode;
-use crate::state::{Store, Action, Selector};
+invoke HashMap;
+invoke tome·core·vdom·VNode;
+invoke tome·state·{Store, Action, Selector};
 
 /// Hook state storage for a component instance
-pub struct HookState {
+☉ Σ HookState {
     /// State values indexed by hook position
-    states: Vec<HookValue>!
+    states_: Vec<HookValue>!
     /// Current hook index during render
     cursor: usize!
     /// Effect cleanup functions
-    cleanups: Vec<Option<fn()>>!
+    cleanups: Vec<Option<rite()>>!
     /// Ref values
-    refs: Vec<RefCell<Box<dyn std::any::Any>>>!
+    refs: Vec<RefCell<Box<dyn Any>>>!
 }
 
-enum HookValue {
-    State(Box<dyn std::any::Any>!),
-    Reducer(Box<dyn std::any::Any>!),
+ᛈ HookValue {
+    State(Box<dyn Any>!),
+    Reducer(Box<dyn Any>!),
     Effect(EffectState!),
     Memo(MemoState!),
     Callback(CallbackState!),
     Ref(usize!),
     Context(u64!),
-    Custom(Box<dyn std::any::Any>!)
+    Custom(Box<dyn Any>!)
 }
 
-struct EffectState {
-    deps: Option<Vec<Box<dyn std::any::Any>>>?
-    cleanup: Option<fn()>?
+Σ EffectState {
+    deps: Option<Vec<Box<dyn Any>>>?
+    cleanup: Option<rite()>?
     pending: bool!
 }
 
-struct MemoState {
-    value: Box<dyn std::any::Any>!
-    deps: Vec<Box<dyn std::any::Any>>!
+Σ MemoState {
+    value: Box<dyn Any>!
+    deps: Vec<Box<dyn Any>>!
 }
 
-struct CallbackState {
+Σ CallbackState {
     callback: Box<dyn Fn()>!
-    deps: Vec<Box<dyn std::any::Any>>!
+    deps: Vec<Box<dyn Any>>!
 }
 
-impl HookState {
-    pub fn new() -> Self! {
+⊢ HookState {
+    ☉ rite new() -> Self! {
         HookState {
-            states: Vec::new(),
+            states_: Vec·new(),
             cursor: 0,
-            cleanups: Vec::new(),
-            refs: Vec::new()
+            cleanups: Vec·new(),
+            refs: Vec·new()
         }
     }
 
     /// Reset cursor for new render pass
-    pub fn reset_cursor(&mut self) {
+    ☉ rite reset_cursor(&Δ self) {
         self.cursor = 0
     }
 
     /// Get next hook slot
-    fn next_slot(&mut self) -> usize! {
-        let idx! = self.cursor
+    rite next_slot(&Δ self) -> usize! {
+        ≔ idx! = self.cursor
         self.cursor += 1
         idx
     }
 
     /// Get or create state at current position
-    fn get_or_create<T: Clone + 'static>(&mut self, initial: fn() -> T) -> &mut T! {
-        let idx! = self.next_slot()
+    rite get_or_create<T: Clone + 'static>(&Δ self, initial: rite() -> T) -> &Δ T! {
+        ≔ idx! = self.next_slot()
 
-        if idx >= self.states·len() {
-            self.states·push(HookValue::State(Box::new(initial())))
+        ⎇ idx >= self.states·len() {
+            self.states·push(HookValue·State(Box·new(initial())))
         }
 
-        match &mut self.states[idx] {
-            HookValue::State(boxed) => {
-                boxed·downcast_mut::<T>()·unwrap()
+        ⌥ &Δ self.states[idx] {
+            HookValue·State(boxed) => {
+                boxed·downcast_mut·<T>()·unwrap()
             }
             _ => panic!("Hook type mismatch at index {idx}")
         }
@@ -85,18 +85,18 @@ impl HookState {
 
 // Thread-local hook context
 thread_local! {
-    static HOOK_CONTEXT: RefCell<Option<*mut HookState>> = RefCell::new(None);
+    static HOOK_CONTEXT: RefCell<Option<*mut HookState>> = RefCell·new(None);
 }
 
 /// Enter hook context for a component render
-pub fn use_hook_context<R>(state: &mut HookState, render: fn() -> R) -> R! {
+☉ rite use_hook_context<R>(state: &Δ HookState, render: rite() -> R) -> R! {
     state·reset_cursor()
 
     HOOK_CONTEXT·with(|ctx| {
         *ctx·borrow_mut() = Some(state as *mut HookState)
     })
 
-    let result! = render()
+    ≔ result! = render()
 
     HOOK_CONTEXT·with(|ctx| {
         *ctx·borrow_mut() = None
@@ -106,10 +106,10 @@ pub fn use_hook_context<R>(state: &mut HookState, render: fn() -> R) -> R! {
 }
 
 /// Get current hook state (panics if called outside component)
-fn current_hooks() -> &mut HookState! {
+rite current_hooks() -> &Δ HookState! {
     HOOK_CONTEXT·with(|ctx| {
-        let ptr! = ctx·borrow()·expect("Hooks must be called inside a component")
-        unsafe { &mut *ptr }
+        ≔ ptr! = ctx·borrow()·expect("Hooks must be called inside a component")
+        unsafe { &Δ *ptr }
     })
 }
 
@@ -125,29 +125,29 @@ fn current_hooks() -> &mut HookState! {
 /// let (count, set_count) = use_state!(0)
 /// button[onclick: || set_count(count + 1)] { "Count: {count}" }
 /// ```
-pub fn use_state<T: Clone + 'static>(initial: T) -> (T!, fn(T))! {
+☉ rite use_state<T: Clone + 'static>(initial: T) -> (T!, rite(T))! {
     use_state_with(|| initial)
 }
 
 /// useState with lazy initialization
-pub fn use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+☉ rite use_state_with<T: Clone + 'static>(init: rite() -> T) -> (T!, rite(T))! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        hooks.states·push(HookValue::State(Box::new(init())))
+    ⎇ idx >= hooks.states·len() {
+        hooks.states·push(HookValue·State(Box·new(init())))
     }
 
-    let value! = match &hooks.states[idx] {
-        HookValue::State(boxed) => boxed·downcast_ref::<T>()·unwrap()·clone(),
+    ≔ value! = ⌥ &hooks.states[idx] {
+        HookValue·State(boxed) => boxed·downcast_ref·<T>()·unwrap()·clone(),
         _ => panic!("Hook type mismatch")
     }
 
-    let setter! = move |new_value: T| {
-        let hooks! = current_hooks()
-        match &mut hooks.states[idx] {
-            HookValue::State(boxed) => {
-                *boxed = Box::new(new_value)
+    ≔ setter! = move |new_value: T| {
+        ≔ hooks! = current_hooks()
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·State(boxed) => {
+                *boxed = Box·new(new_value)
             }
             _ => {}
         }
@@ -175,28 +175,28 @@ pub fn use_state_with<T: Clone + 'static>(init: fn() -> T) -> (T!, fn(T))! {
 /// let (count, dispatch) = use_reducer(reducer, 0)
 /// button[onclick: || dispatch(Increment)] { "+" }
 /// ```
-pub fn use_reducer<S: Clone + 'static, A: 'static>(
-    reducer: fn(S, A) -> S,
+☉ rite use_reducer<S: Clone + 'static, A: 'static>(
+    reducer: rite(S, A) -> S,
     initial: S
-) -> (S!, fn(A))! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+) -> (S!, rite(A))! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        hooks.states·push(HookValue::Reducer(Box::new(initial)))
+    ⎇ idx >= hooks.states·len() {
+        hooks.states·push(HookValue·Reducer(Box·new(initial)))
     }
 
-    let state! = match &hooks.states[idx] {
-        HookValue::Reducer(boxed) => boxed·downcast_ref::<S>()·unwrap()·clone(),
+    ≔ state! = ⌥ &hooks.states[idx] {
+        HookValue·Reducer(boxed) => boxed·downcast_ref·<S>()·unwrap()·clone(),
         _ => panic!("Hook type mismatch")
     }
 
-    let dispatch! = move |action: A| {
-        let hooks! = current_hooks()
-        match &mut hooks.states[idx] {
-            HookValue::Reducer(boxed) => {
-                let current! = boxed·downcast_ref::<S>()·unwrap()·clone()
-                *boxed = Box::new(reducer(current, action))
+    ≔ dispatch! = move |action: A| {
+        ≔ hooks! = current_hooks()
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·Reducer(boxed) => {
+                ≔ current! = boxed·downcast_ref·<S>()·unwrap()·clone()
+                *boxed = Box·new(reducer(current, action))
             }
             _ => {}
         }
@@ -216,34 +216,34 @@ pub fn use_reducer<S: Clone + 'static, A: 'static>(
 ///     || subscription·unsubscribe()
 /// }, [data_source.id])
 /// ```
-pub fn use_effect<D: PartialEq + Clone + 'static>(
-    effect: fn() -> Option<fn()>?,
+☉ rite use_effect<D: PartialEq + Clone + 'static>(
+    effect: rite() -> Option<rite()>?,
     deps: Vec<D>
 )! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    let should_run! = if idx >= hooks.states·len() {
-        hooks.states·push(HookValue::Effect(EffectState {
-            deps: Some(deps·clone()·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()),
+    ≔ should_run! = ⎇ idx >= hooks.states·len() {
+        hooks.states·push(HookValue·Effect(EffectState {
+            deps: Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn Any>)·collect()),
             cleanup: None,
             pending: true
         }))
         true
-    } else {
-        match &mut hooks.states[idx] {
-            HookValue::Effect(state) => {
-                let changed! = match &state.deps {
+    } ⎉ {
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·Effect(state) => {
+                ≔ changed! = ⌥ &state.deps {
                     None => true,
                     Some(old_deps) => {
                         old_deps·len() != deps·len() ||
                         old_deps·iter()·zip(deps·iter())·any(|(old, new)| {
-                            old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(true)
+                            old·downcast_ref·<D>()·map(|o| o != new)·unwrap_or(true)
                         })
                     }
                 }
-                if changed {
-                    state.deps = Some(deps·clone()·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect())
+                ⎇ changed {
+                    state.deps = Some(deps·clone()·into_iter()·map(|d| Box·new(d) as Box<dyn Any>)·collect())
                     state.pending = true
                 }
                 changed
@@ -252,15 +252,15 @@ pub fn use_effect<D: PartialEq + Clone + 'static>(
         }
     }
 
-    if should_run {
+    ⎇ should_run {
         // Schedule effect to run after render
         schedule_effect(idx, effect)
     }
 }
 
 /// useLayoutEffect - like useEffect but fires synchronously after DOM mutations
-pub fn use_layout_effect<D: PartialEq + Clone + 'static>(
-    effect: fn() -> Option<fn()>?,
+☉ rite use_layout_effect<D: PartialEq + Clone + 'static>(
+    effect: rite() -> Option<rite()>?,
     deps: Vec<D>
 )! {
     // Similar to use_effect but runs synchronously
@@ -275,35 +275,35 @@ pub fn use_layout_effect<D: PartialEq + Clone + 'static>(
 ///     data|φ{_.active}|τ{compute_score}|ρ+
 /// }, [data])
 /// ```
-pub fn use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
-    compute: fn() -> T,
+☉ rite use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
+    compute: rite() -> T,
     deps: Vec<D>
 ) -> T!! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.states·len() {
-        let value! = compute()
-        hooks.states·push(HookValue::Memo(MemoState {
-            value: Box::new(value·clone()),
-            deps: deps·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()
+    ⎇ idx >= hooks.states·len() {
+        ≔ value! = compute()
+        hooks.states·push(HookValue·Memo(MemoState {
+            value: Box·new(value·clone()),
+            deps: deps·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect()
         }))
         value
-    } else {
-        match &mut hooks.states[idx] {
-            HookValue::Memo(state) => {
-                let changed! = state.deps·len() != deps·len() ||
+    } ⎉ {
+        ⌥ &Δ hooks.states[idx] {
+            HookValue·Memo(state) => {
+                ≔ changed! = state.deps·len() != deps·len() ||
                     state.deps·iter()·zip(deps·iter())·any(|(old, new)| {
-                        old·downcast_ref::<D>()·map(|o| o != new)·unwrap_or(true)
+                        old·downcast_ref·<D>()·map(|o| o != new)·unwrap_or(true)
                     })
 
-                if changed {
-                    let value! = compute()
-                    state.value = Box::new(value·clone())
-                    state.deps = deps·into_iter()·map(|d| Box::new(d) as Box<dyn std::any::Any>)·collect()
+                ⎇ changed {
+                    ≔ value! = compute()
+                    state.value = Box·new(value·clone())
+                    state.deps = deps·into_iter()·map(|d| Box·new(d) as Box<dyn std·any·Any>)·collect()
                     value
-                } else {
-                    state.value·downcast_ref::<T>()·unwrap()·clone()
+                } ⎉ {
+                    state.value·downcast_ref·<T>()·unwrap()·clone()
                 }
             }
             _ => panic!("Hook type mismatch")
@@ -319,7 +319,7 @@ pub fn use_memo<T: Clone + 'static, D: PartialEq + Clone + 'static>(
 ///     do_something(item.id)
 /// }, [item.id])
 /// ```
-pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
+☉ rite use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
     callback: F,
     deps: Vec<D>
 ) -> F!! {
@@ -334,36 +334,36 @@ pub fn use_callback<F: Fn() + Clone + 'static, D: PartialEq + Clone + 'static>(
 /// input[ref: input_ref]
 /// button[onclick: || input_ref.current?·focus()] { "Focus" }
 /// ```
-pub fn use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
-    let hooks! = current_hooks()
-    let idx! = hooks·next_slot()
+☉ rite use_ref<T: 'static>(initial: Option<T>?) -> Ref<T>!! {
+    ≔ hooks! = current_hooks()
+    ≔ idx! = hooks·next_slot()
 
-    if idx >= hooks.refs·len() {
-        hooks.refs·push(RefCell::new(Box::new(initial)))
+    ⎇ idx >= hooks.refs·len() {
+        hooks.refs·push(RefCell·new(Box·new(initial)))
     }
 
     Ref { index: idx }
 }
 
 /// Reference wrapper for useRef
-pub struct Ref<T> {
+☉ Σ Ref<T> {
     index: usize!
 }
 
-impl<T: 'static> Ref<T> {
-    pub fn current(&self) -> Option<&T>? {
-        let hooks! = current_hooks()
+⊢<T: 'static> Ref<T> {
+    ☉ rite current(&self) -> Option<&T>? {
+        ≔ hooks! = current_hooks()
         hooks.refs·get(self.index)
             ·and_then(|cell| {
-                cell·borrow()·downcast_ref::<Option<T>>()
+                cell·borrow()·downcast_ref·<Option<T>>()
                     ·and_then(|opt| opt·as_ref())
             })
     }
 
-    pub fn set(&self, value: T) {
-        let hooks! = current_hooks()
-        if let Some(cell) = hooks.refs·get(self.index) {
-            *cell·borrow_mut() = Box::new(Some(value))
+    ☉ rite set(&self, value: T) {
+        ≔ hooks! = current_hooks()
+        ⎇ ≔ Some(cell) = hooks.refs·get(self.index) {
+            *cell·borrow_mut() = Box·new(Some(value))
         }
     }
 }
@@ -375,7 +375,7 @@ impl<T: 'static> Ref<T> {
 /// let theme = use_context(ThemeContext)
 /// div[class: "container {theme.mode}"] { ... }
 /// ```
-pub fn use_context<T: Clone + 'static>(context: &crate::components::Context<T>) -> T!! {
+☉ rite use_context<T: Clone + 'static>(context: &tome·components·Context<T>) -> T!! {
     context·consume()
 }
 
@@ -384,7 +384,7 @@ pub fn use_context<T: Clone + 'static>(context: &crate::components::Context<T>) 
 // ============================================================================
 
 /// Async data state with evidentiality
-pub enum AsyncState<T> {
+☉ ᛈ AsyncState<T> {
     /// Initial state, not yet fetched
     Idle,
     /// Currently fetching
@@ -395,29 +395,29 @@ pub enum AsyncState<T> {
     Error(String~)
 }
 
-impl<T> AsyncState<T> {
-    pub fn is_loading(&self) -> bool! {
-        matches!(self, AsyncState::Loading)
+⊢<T> AsyncState<T> {
+    ☉ rite is_loading(&self) -> bool! {
+        matches!(self, AsyncState·Loading)
     }
 
-    pub fn is_success(&self) -> bool! {
-        matches!(self, AsyncState::Success(_))
+    ☉ rite is_success(&self) -> bool! {
+        matches!(self, AsyncState·Success(_))
     }
 
-    pub fn is_error(&self) -> bool! {
-        matches!(self, AsyncState::Error(_))
+    ☉ rite is_error(&self) -> bool! {
+        matches!(self, AsyncState·Error(_))
     }
 
-    pub fn data(&self) -> Option<&T>? {
-        match self {
-            AsyncState::Success(data) => Some(data),
+    ☉ rite data(&self) -> Option<&T>? {
+        ⌥ self {
+            AsyncState·Success(data) => Some(data),
             _ => None
         }
     }
 
-    pub fn error(&self) -> Option<&str>? {
-        match self {
-            AsyncState::Error(e) => Some(e),
+    ☉ rite error(&self) -> Option<&str>? {
+        ⌥ self {
+            AsyncState·Error(e) => Some(e),
             _ => None
         }
     }
@@ -435,34 +435,34 @@ impl<T> AsyncState<T> {
 ///     Success(data~) => UserList { users: data~ }
 /// }
 /// ```
-pub fn use_fetch<T: serde::Deserialize + Clone + 'static>(url: &str) -> AsyncState<T>!! {
-    use_fetch_with(url, FetchOptions::default())
+☉ rite use_fetch<T: serde·Deserialize + Clone + 'static>(url: &str) -> AsyncState<T>!! {
+    use_fetch_with(url, FetchOptions·default())
 }
 
 /// Fetch options
-pub struct FetchOptions {
+☉ Σ FetchOptions {
     method: String! = "GET"
-    headers: HashMap<String, String>! = HashMap::new()
-    body: Option<String>? = None
-    cache: CachePolicy! = CachePolicy::Default
-    retry: RetryPolicy! = RetryPolicy::default()
+    headers: HashMap<String, String>! = HashMap·new()
+    body_: Option<String>? = None
+    cache: CachePolicy! = CachePolicy·Default
+    retry_: RetryPolicy! = RetryPolicy·default()
 }
 
-pub enum CachePolicy {
+☉ ᛈ CachePolicy {
     Default,
     NoCache,
     ForceCache,
     StaleWhileRevalidate(u64!)
 }
 
-pub struct RetryPolicy {
+☉ Σ RetryPolicy {
     max_attempts: u32! = 3
     delay_ms: u64! = 1000
     backoff: f64! = 2.0
 }
 
-impl RetryPolicy {
-    pub fn default() -> Self! {
+⊢ RetryPolicy {
+    ☉ rite default() -> Self! {
         RetryPolicy {
             max_attempts: 3,
             delay_ms: 1000,
@@ -472,21 +472,21 @@ impl RetryPolicy {
 }
 
 /// useFetch with options
-pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
+☉ rite use_fetch_with<T: serde·Deserialize + Clone + 'static>(
     url: &str,
     options: FetchOptions
 ) -> AsyncState<T>!! {
-    let (state, set_state) = use_state(AsyncState::Idle)
-    let url_string! = url.to_string()
+    ≔ (state, set_state) = use_state(AsyncState·Idle)
+    ≔ url_string! = url.to_string()
 
     use_effect(|| {
-        set_state(AsyncState::Loading)
+        set_state(AsyncState·Loading)
 
         // Spawn async fetch
         spawn_async(async {
-            match fetch_json::<T>(&url_string, &options)·await {
-                Ok(data~) => set_state(AsyncState::Success(data~)),
-                Err(e~) => set_state(AsyncState::Error(e~·to_string()))
+            ⌥ fetch_json·<T>(&url_string, &options)·await {
+                Ok(data~) => set_state(AsyncState·Success(data~)),
+                Err(e~) => set_state(AsyncState·Error(e~·to_string()))
             }
         })
 
@@ -506,18 +506,18 @@ pub fn use_fetch_with<T: serde::Deserialize + Clone + 'static>(
 ///
 /// button[onclick: || mutate(CreateUserInput { name: "John" })] { "Create User" }
 /// ```
-pub fn use_mutation<T: Clone + 'static, I: 'static>(
-    mutation_fn: fn(I) -> Future<Output = Result<T~, String~>>
-) -> (fn(I), AsyncState<T>)!! {
-    let (state, set_state) = use_state(AsyncState::Idle)
+☉ rite use_mutation<T: Clone + 'static, I: 'static>(
+    mutation_fn: rite(I) -> Future<Output = Result<T~, String~>>
+) -> (rite(I), AsyncState<T>)!! {
+    ≔ (state, set_state) = use_state(AsyncState·Idle)
 
-    let mutate! = move |input: I| {
-        set_state(AsyncState::Loading)
+    ≔ mutate! = move |input: I| {
+        set_state(AsyncState·Loading)
 
         spawn_async(async {
-            match mutation_fn(input)·await {
-                Ok(data~) => set_state(AsyncState::Success(data~)),
-                Err(e~) => set_state(AsyncState::Error(e~))
+            ⌥ mutation_fn(input)·await {
+                Ok(data~) => set_state(AsyncState·Success(data~)),
+                Err(e~) => set_state(AsyncState·Error(e~))
             }
         })
     }
@@ -539,11 +539,11 @@ pub fn use_mutation<T: Clone + 'static, I: 'static>(
 /// // debounced only updates 300ms after last search change
 /// use_effect(|| { fetch_results(debounced?) }, [debounced?])
 /// ```
-pub fn use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> T?! {
-    let (debounced, set_debounced) = use_state(value·clone())
+☉ rite use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> T?! {
+    ≔ (debounced, set_debounced) = use_state(value·clone())
 
     use_effect(|| {
-        let timer_id! = set_timeout(delay_ms, || {
+        ≔ timer_id! = set_timeout(delay_ms, || {
             set_debounced(value·clone())
         })
 
@@ -555,13 +555,13 @@ pub fn use_debounce<T: Clone + PartialEq + 'static>(value: T, delay_ms: u64) -> 
 }
 
 /// useThrottle - throttle a value
-pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
-    let (throttled, set_throttled) = use_state(value·clone())
-    let last_run! = use_ref(0u64)
+☉ rite use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
+    ≔ (throttled, set_throttled) = use_state(value·clone())
+    ≔ last_run! = use_ref(0u64)
 
     use_effect(|| {
-        let now! = current_time_ms()
-        if now - last_run·current()·unwrap_or(0) >= limit_ms {
+        ≔ now! = current_time_ms()
+        ⎇ now - last_run·current()·unwrap_or(0) >= limit_ms {
             set_throttled(value·clone())
             last_run·set(now)
         }
@@ -577,22 +577,22 @@ pub fn use_throttle<T: Clone + 'static>(value: T, limit_ms: u64) -> T!! {
 /// ```sigil
 /// let (theme, set_theme) = use_local_storage("theme", "light")
 /// ```
-pub fn use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'static>(
+☉ rite use_local_storage<T: serde·Serialize + serde·Deserialize + Clone + 'static>(
     key: &str,
     default: T
-) -> (T!, fn(T))!! {
-    let initial! = || {
-        match local_storage·get_item(key) {
-            Some(json) => serde_json::from_str(&json)·unwrap_or(default·clone()),
+) -> (T!, rite(T))!! {
+    ≔ initial! = || {
+        ⌥ local_storage·get_item(key) {
+            Some(json) => serde_json·from_str(&json)·unwrap_or(default·clone()),
             None => default·clone()
         }
     }
 
-    let (value, set_value) = use_state_with(initial)
-    let key_string! = key.to_string()
+    ≔ (value, set_value) = use_state_with(initial)
+    ≔ key_string! = key.to_string()
 
-    let set_stored! = move |new_value: T| {
-        let json! = serde_json::to_string(&new_value)·unwrap()
+    ≔ set_stored! = move |new_value: T| {
+        ≔ json! = serde_json·to_string(&new_value)·unwrap()
         local_storage·set_item(&key_string, &json)
         set_value(new_value)
     }
@@ -607,15 +607,15 @@ pub fn use_local_storage<T: serde::Serialize + serde::Deserialize + Clone + 'sta
 /// let is_mobile = use_media_query("(max-width: 768px)")
 /// if is_mobile { MobileNav {} } else { DesktopNav {} }
 /// ```
-pub fn use_media_query(query: &str) -> bool!! {
-    let (matches, set_matches) = use_state(false)
-    let query_string! = query.to_string()
+☉ rite use_media_query(query: &str) -> bool!! {
+    ≔ (matches, set_matches) = use_state(false)
+    ≔ query_string! = query.to_string()
 
     use_effect(|| {
-        let mql! = window·match_media(&query_string)
+        ≔ mql! = window·match_media(&query_string)
         set_matches(mql·matches())
 
-        let listener! = |e: MediaQueryListEvent| {
+        ≔ listener! = |e: MediaQueryListEvent| {
             set_matches(e·matches())
         }
         mql·add_listener(listener)
@@ -627,11 +627,11 @@ pub fn use_media_query(query: &str) -> bool!! {
 }
 
 /// useWindowSize - track window dimensions
-pub fn use_window_size() -> (i32!, i32!)!! {
-    let (size, set_size) = use_state((window·inner_width(), window·inner_height()))
+☉ rite use_window_size() -> (i32!, i32!)!! {
+    ≔ (size, set_size) = use_state((window·inner_width(), window·inner_height()))
 
     use_effect(|| {
-        let listener! = || {
+        ≔ listener! = || {
             set_size((window·inner_width(), window·inner_height()))
         }
         window·add_event_listener("resize", listener)
@@ -643,12 +643,12 @@ pub fn use_window_size() -> (i32!, i32!)!! {
 }
 
 /// useOnline - track online/offline status
-pub fn use_online() -> bool!! {
-    let (online, set_online) = use_state(navigator·online())
+☉ rite use_online() -> bool!! {
+    ≔ (online, set_online) = use_state(navigator·online())
 
     use_effect(|| {
-        let handle_online! = || set_online(true)
-        let handle_offline! = || set_online(false)
+        ≔ handle_online! = || set_online(true)
+        ≔ handle_offline! = || set_online(false)
 
         window·add_event_listener("online", handle_online)
         window·add_event_listener("offline", handle_offline)
@@ -663,16 +663,16 @@ pub fn use_online() -> bool!! {
 }
 
 /// useIntersection - observe element intersection
-pub fn use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!! {
-    let ref_! = use_ref::<DomRef>(None)
-    let (is_intersecting, set_intersecting) = use_state(false)
+☉ rite use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!! {
+    ≔ ref_! = use_ref·<DomRef>(None)
+    ≔ (is_intersecting, set_intersecting) = use_state(false)
 
     use_effect(|| {
-        let element? = ref_·current()
-        match element? {
+        ≔ element? = ref_·current()
+        ⌥ element? {
             Some(el) => {
-                let observer! = IntersectionObserver::new(|entries| {
-                    for entry in entries {
+                ≔ observer! = IntersectionObserver·new(|entries| {
+                    ∀ entry ∈ entries {
                         set_intersecting(entry·is_intersecting())
                     }
                 }, options)
@@ -688,7 +688,7 @@ pub fn use_intersection(options: IntersectionOptions) -> (Ref<DomRef>!, bool!)!!
     (ref_, is_intersecting)
 }
 
-pub struct IntersectionOptions {
+☉ Σ IntersectionOptions {
     root: Option<String>? = None
     root_margin: String! = "0px"
     threshold: f64! = 0.0
@@ -699,10 +699,10 @@ pub struct IntersectionOptions {
 // ============================================================================
 
 /// useTransition - manage transition state for async updates
-pub fn use_transition() -> (bool!, fn(fn()))!! {
-    let (is_pending, set_pending) = use_state(false)
+☉ rite use_transition() -> (bool!, rite(rite()))!! {
+    ≔ (is_pending, set_pending) = use_state(false)
 
-    let start_transition! = |callback: fn()| {
+    ≔ start_transition! = |callback: rite()| {
         set_pending(true)
         // Schedule low-priority update
         schedule_transition(|| {
@@ -715,9 +715,9 @@ pub fn use_transition() -> (bool!, fn(fn()))!! {
 }
 
 /// useDeferredValue - defer updating a value
-pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
-    let (deferred, set_deferred) = use_state(value·clone())
-    let (_, start_transition) = use_transition()
+☉ rite use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
+    ≔ (deferred, set_deferred) = use_state(value·clone())
+    ≔ (_, start_transition) = use_transition()
 
     use_effect(|| {
         start_transition(|| set_deferred(value·clone()))
@@ -728,15 +728,15 @@ pub fn use_deferred_value<T: Clone + 'static>(value: T) -> T!! {
 }
 
 /// useAnimationFrame - run callback on animation frame
-pub fn use_animation_frame(callback: fn(f64))! {
-    let saved_callback! = use_ref(Some(callback))
+☉ rite use_animation_frame(callback: rite(f64))! {
+    ≔ saved_callback! = use_ref(Some(callback))
     saved_callback·set(callback)
 
     use_effect(|| {
-        let frame_id! = use_ref(0u64)
+        ≔ frame_id! = use_ref(0u64)
 
-        let animate! = |timestamp: f64| {
-            if let Some(cb) = saved_callback·current() {
+        ≔ animate! = |timestamp: f64| {
+            ⎇ ≔ Some(cb) = saved_callback·current() {
                 cb(timestamp)
             }
             frame_id·set(request_animation_frame(animate))
@@ -752,107 +752,107 @@ pub fn use_animation_frame(callback: fn(f64))! {
 // Internal Utilities
 // ============================================================================
 
-fn schedule_update() {
+rite schedule_update() {
     // Signal runtime to schedule re-render
 }
 
-fn schedule_effect(idx: usize, effect: fn() -> Option<fn()>?) {
+rite schedule_effect(idx: usize, effect: rite() -> Option<rite()>?) {
     // Queue effect for post-render execution
 }
 
-fn schedule_transition(callback: fn()) {
+rite schedule_transition(callback: rite()) {
     // Schedule low-priority transition
 }
 
-fn spawn_async<F: Future<Output = ()>>(future: F) {
+rite spawn_async<F: Future<Output = ()>>(future: F) {
     // Spawn async task
 }
 
-async fn fetch_json<T: serde::Deserialize>(url: &str, options: &FetchOptions) -> Result<T~, String~>! {
+async rite fetch_json<T: serde·Deserialize>(url: &str, options: &FetchOptions) -> Result<T~, String~>! {
     // Platform-specific fetch implementation
     Err("Not implemented".to_string())
 }
 
-fn set_timeout(delay_ms: u64, callback: fn()) -> u64! {
+rite set_timeout(delay_ms: u64, callback: rite()) -> u64! {
     // Platform-specific timer
     0
 }
 
-fn clear_timeout(id: u64) {
+rite clear_timeout(id: u64) {
     // Platform-specific timer cancellation
 }
 
-fn current_time_ms() -> u64! {
+rite current_time_ms() -> u64! {
     // Platform-specific time
     0
 }
 
-fn request_animation_frame(callback: fn(f64)) -> u64! {
+rite request_animation_frame(callback: rite(f64)) -> u64! {
     // Platform-specific RAF
     0
 }
 
-fn cancel_animation_frame(id: u64) {
+rite cancel_animation_frame(id: u64) {
     // Platform-specific RAF cancellation
 }
 
 // Platform bindings
-mod window {
-    pub fn inner_width() -> i32! { 0 }
-    pub fn inner_height() -> i32! { 0 }
-    pub fn add_event_listener(event: &str, handler: fn()) {}
-    pub fn remove_event_listener(event: &str, handler: fn()) {}
-    pub fn match_media(query: &str) -> MediaQueryList! { MediaQueryList {} }
+scroll window {
+    ☉ rite inner_width() -> i32! { 0 }
+    ☉ rite inner_height() -> i32! { 0 }
+    ☉ rite add_event_listener(event: &str, handler: rite()) {}
+    ☉ rite remove_event_listener(event: &str, handler: rite()) {}
+    ☉ rite match_media(query: &str) -> MediaQueryList! { MediaQueryList {} }
 }
 
-mod navigator {
-    pub fn online() -> bool! { true }
+scroll navigator {
+    ☉ rite online() -> bool! { true }
 }
 
-mod local_storage {
-    pub fn get_item(key: &str) -> Option<String>? { None }
-    pub fn set_item(key: &str, value: &str) {}
+scroll local_storage {
+    ☉ rite get_item(key: &str) -> Option<String>? { None }
+    ☉ rite set_item(key: &str, value: &str) {}
 }
 
-struct MediaQueryList {}
-impl MediaQueryList {
-    fn matches(&self) -> bool! { false }
-    fn add_listener(&self, handler: fn(MediaQueryListEvent)) {}
-    fn remove_listener(&self, handler: fn(MediaQueryListEvent)) {}
+Σ MediaQueryList {}
+⊢ MediaQueryList {
+    rite matches(&self) -> bool! { false }
+    rite add_listener(&self, handler: rite(MediaQueryListEvent)) {}
+    rite remove_listener(&self, handler: rite(MediaQueryListEvent)) {}
 }
 
-struct MediaQueryListEvent {}
-impl MediaQueryListEvent {
-    fn matches(&self) -> bool! { false }
+Σ MediaQueryListEvent {}
+⊢ MediaQueryListEvent {
+    rite matches(&self) -> bool! { false }
 }
 
-struct IntersectionObserver {}
-impl IntersectionObserver {
-    fn new(callback: fn(Vec<IntersectionEntry>), options: IntersectionOptions) -> Self! {
+Σ IntersectionObserver {}
+⊢ IntersectionObserver {
+    rite new(callback: rite(Vec<IntersectionEntry>), options: IntersectionOptions) -> Self! {
         IntersectionObserver {}
     }
-    fn observe(&self, element: &DomRef) {}
-    fn disconnect(&self) {}
+    rite observe(&self, element: &DomRef) {}
+    rite disconnect(&self) {}
 }
 
-struct IntersectionEntry {}
-impl IntersectionEntry {
-    fn is_intersecting(&self) -> bool! { false }
+Σ IntersectionEntry {}
+⊢ IntersectionEntry {
+    rite is_intersecting(&self) -> bool! { false }
 }
 
-use crate::core::vdom::DomRef;
+invoke tome·core·vdom·DomRef;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+scroll tests {
+    invoke super·*;
 
     #[test]
-    fn test_use_state_initial() {
+    rite test_use_state_initial() {
         // Test useState initialization
     }
 
     #[test]
-    fn test_use_memo_caching() {
+    rite test_use_memo_caching() {
         // Test useMemo caching behavior
     }
 }

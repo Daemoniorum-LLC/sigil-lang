@@ -1,17 +1,17 @@
 // String operations
-fn main() {
-    let s1 = "Hello";
-    let s2 = "World";
+rite main() {
+    ≔ s1 = "Hello";
+    ≔ s2 = "World";
 
     // Concatenation
-    let combined = s1 + ", " + s2 + "!";
+    ≔ combined = s1 + ", " + s2 + "!";
     println(combined);
 
     // String methods
-    let upper = "hello".to_uppercase();
+    ≔ upper = "hello".to_uppercase();
     println(upper);
 
-    let lower = "HELLO".to_lowercase();
+    ≔ lower = "HELLO".to_lowercase();
     println(lower);
 
     // Length

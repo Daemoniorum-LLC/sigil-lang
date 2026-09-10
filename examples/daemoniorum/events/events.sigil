@@ -3,18 +3,18 @@
 //! Manages game events, triggers, and reactive systems.
 //! Events connect all game systems - plurality, combat, dialogue, scenes.
 
-use super·super·system·*
-use super·super·combat·*
-use super·super·dialogue·*
-use super·super·scenes·*
-use std·collections·HashMap
+invoke super·super·system·*
+invoke super·super·combat·*
+invoke super·super·dialogue·*
+invoke super·super·scenes·*
+invoke HashMap
 
 // ============================================================================
 // EVENT TYPES
 // ============================================================================
 
 //! Categories of events
-enum EventCategory {
+ᛈ EventCategory {
     System,         // Plurality system events
     Combat,         // Battle events
     Dialogue,       // Conversation events
@@ -26,7 +26,7 @@ enum EventCategory {
 }
 
 //! Priority levels for event processing
-enum EventPriority {
+ᛈ EventPriority {
     Critical,   // Process immediately (system emergencies)
     High,       // Process before normal events
     Normal,     // Standard processing
@@ -39,7 +39,7 @@ enum EventPriority {
 // ============================================================================
 
 //! A game event
-struct GameEvent {
+Σ GameEvent {
     id: String!,
     category: EventCategory!,
     priority: EventPriority!,
@@ -50,7 +50,7 @@ struct GameEvent {
 }
 
 //! Source of an event
-enum EventSource {
+ᛈ EventSource {
     System,                      // Internal system event
     Alter(String),               // Triggered by specific alter
     Combat(String),              // Combat encounter
@@ -58,11 +58,11 @@ enum EventSource {
     Scene(String),               // Scene interaction
     Player,                      // Direct player action
     Trigger(String),             // Emotional trigger
-    Unknown?,                    // Uncertain source
+    Unknown,                    // Uncertain source
 }
 
 //! Event payload data
-enum EventData {
+ᛈ EventData {
     // Plurality events
     AlterStateChange {
         alter_id: String,
@@ -197,10 +197,10 @@ enum EventData {
 // ============================================================================
 
 //! Function signature for event handlers
-type EventHandler = fn(&GameEvent, &mut GameContext) -> Vec<GameEvent>;
+type EventHandler = rite(&GameEvent, &Δ GameContext) -> Vec<GameEvent>;
 
 //! Event handler registration
-struct HandlerRegistration {
+Σ HandlerRegistration {
     id: String!,
     category: Option<EventCategory>?,  // None = handle all
     priority: EventPriority!,
@@ -213,7 +213,7 @@ struct HandlerRegistration {
 // ============================================================================
 
 //! Definition of an emotional trigger
-struct TriggerDefinition {
+Σ TriggerDefinition {
     id: String!,
     name: String!,
     description: String~,              // REPORTED - subjective
@@ -227,7 +227,7 @@ struct TriggerDefinition {
 }
 
 //! Categories of triggers
-enum TriggerCategory {
+ᛈ TriggerCategory {
     Trauma,         // Traumatic memories
     Safety,         // Safe/grounding
     Emotional,      // Strong emotion
@@ -237,7 +237,7 @@ enum TriggerCategory {
 }
 
 //! Conditions for trigger activation
-enum TriggerCondition {
+ᛈ TriggerCondition {
     //! Keyword in dialogue or scene
     KeywordPresent(String),
 
@@ -276,7 +276,7 @@ enum TriggerCondition {
 }
 
 //! Effects when a trigger activates
-enum TriggerEffect {
+ᛈ TriggerEffect {
     ModifyAnima {
         pleasure: f32,
         arousal: f32,
@@ -309,7 +309,7 @@ enum TriggerEffect {
 // ============================================================================
 
 //! Central game state accessible to event handlers
-struct GameContext {
+Σ GameContext {
     system: PluralSystem!,
     scene_manager: SceneManager!,
     dialogue_manager: DialogueManager!,
@@ -321,7 +321,7 @@ struct GameContext {
 }
 
 //! Values for variables
-enum EventValue {
+ᛈ EventValue {
     Bool(bool),
     Int(i64),
     Float(f64),
@@ -329,8 +329,8 @@ enum EventValue {
     List(Vec<EventValue>),
 }
 
-impl GameContext {
-    fn new(system: PluralSystem, scene_manager: SceneManager, dialogue_manager: DialogueManager) -> Self! {
+⊢ GameContext {
+    rite new(system: PluralSystem, scene_manager: SceneManager, dialogue_manager: DialogueManager) -> Self! {
         Self {
             system,
             scene_manager,
@@ -344,22 +344,22 @@ impl GameContext {
     }
 
     //! Set a flag
-    fn set_flag(mut self, flag: &str, value: bool) {
+    rite set_flag(mut self, flag: &str, value: bool) {
         self.flags·insert(flag·to_string(), value);
     }
 
     //! Check a flag
-    fn check_flag(self, flag: &str) -> bool! {
+    rite check_flag(self, flag: &str) -> bool! {
         self.flags·get(flag)·copied()·unwrap_or(false)
     }
 
     //! Set a variable
-    fn set_variable(mut self, name: &str, value: EventValue) {
+    rite set_variable(mut self, name: &str, value: EventValue) {
         self.variables·insert(name·to_string(), value);
     }
 
     //! Get a variable
-    fn get_variable(self, name: &str) -> Option<&EventValue>? {
+    rite get_variable(self, name: &str) -> Option<&EventValue>? {
         self.variables·get(name)
     }
 }
@@ -369,7 +369,7 @@ impl GameContext {
 // ============================================================================
 
 //! Central event processing system
-struct EventManager {
+Σ EventManager {
     event_queue: Vec<GameEvent>!,
     handlers: Vec<HandlerRegistration>!,
     triggers: HashMap<String, TriggerDefinition>!,
@@ -377,8 +377,8 @@ struct EventManager {
     next_event_id: u64!,
 }
 
-impl EventManager {
-    fn new() -> Self! {
+⊢ EventManager {
+    rite new() -> Self! {
         Self {
             event_queue: [],
             handlers: [],
@@ -389,12 +389,12 @@ impl EventManager {
     }
 
     //! Register an event handler
-    fn register_handler(mut self, registration: HandlerRegistration) {
+    rite register_handler(mut self, registration: HandlerRegistration) {
         self.handlers·push(registration);
         // Sort by priority
         self.handlers·sort_by(|a, b| {
-            let priority_order = |p: &EventPriority| -> i32 {
-                match p {
+            ≔ priority_order = |p: &EventPriority| -> i32 {
+                ⌥ p {
                     EventPriority·Critical => 0,
                     EventPriority·High => 1,
                     EventPriority·Normal => 2,
@@ -407,13 +407,13 @@ impl EventManager {
     }
 
     //! Register a trigger definition
-    fn register_trigger(mut self, trigger: TriggerDefinition) {
-        self.triggers·insert(trigger.id·clone(), trigger);
+    rite register_trigger(mut self, trigger_: TriggerDefinition) {
+        self.triggers·insert(trigger_.id·clone(), trigger_);
     }
 
     //! Queue an event for processing
-    fn queue_event(mut self, data: EventData, category: EventCategory, source: EventSource) {
-        let event = GameEvent {
+    rite queue_event(mut self, data: EventData, category: EventCategory, source: EventSource) {
+        ≔ event = GameEvent {
             id: format!("evt_{}~", self.next_event_id),
             category,
             priority: EventPriority·Normal,
@@ -427,8 +427,8 @@ impl EventManager {
     }
 
     //! Queue a high-priority event
-    fn queue_critical(mut self, data: EventData, category: EventCategory, source: EventSource) {
-        let event = GameEvent {
+    rite queue_critical(mut self, data: EventData, category: EventCategory, source: EventSource) {
+        ≔ event = GameEvent {
             id: format!("evt_{}~", self.next_event_id),
             category,
             priority: EventPriority·Critical,
@@ -443,14 +443,14 @@ impl EventManager {
     }
 
     //! Process all queued events
-    fn process_events(mut self, context: &mut GameContext) -> Vec<GameEvent>! {
-        let mut processed = Vec·new();
-        let mut new_events = Vec·new();
+    rite process_events(mut self, context: &Δ GameContext) -> Vec<GameEvent>! {
+        ≔ vary processed = Vec·new();
+        ≔ vary new_events = Vec·new();
 
         // Sort queue by priority
         self.event_queue·sort_by(|a, b| {
-            let priority_order = |p: &EventPriority| -> i32 {
-                match p {
+            ≔ priority_order = |p: &EventPriority| -> i32 {
+                ⌥ p {
                     EventPriority·Critical => 0,
                     EventPriority·High => 1,
                     EventPriority·Normal => 2,
@@ -462,25 +462,25 @@ impl EventManager {
         });
 
         // Process each event
-        while let Some(mut event) = self.event_queue·pop() {
+        ⟳ ≔ Some(mut event) = self.event_queue·pop() {
             event.timestamp = context.current_time;
 
             // Find matching handlers
-            let mut handlers_to_remove = Vec·new();
+            ≔ vary handlers_to_remove = Vec·new();
 
-            for (idx, handler) in self.handlers·iter()·enumerate() {
+            ∀ (idx, handler) ∈ self.handlers·iter()·enumerate() {
                 // Check category filter
-                let category_match = match &handler.category {
+                ≔ category_match = ⌥ &handler.category {
                     None => true,
                     Some(cat) => &event.category == cat,
                 };
 
-                if category_match && !event.consumed {
+                ⎇ category_match && !event.consumed {
                     // Execute handler
-                    let spawned = (handler.handler)(&event, context);
+                    ≔ spawned = (handler.handler)(&event, context);
                     new_events·extend(spawned);
 
-                    if handler.one_shot {
+                    ⎇ handler.one_shot {
                         handlers_to_remove·push(idx);
                     }
                 }
@@ -488,7 +488,7 @@ impl EventManager {
 
             // Remove one-shot handlers (in reverse to preserve indices)
             handlers_to_remove·reverse();
-            for idx in handlers_to_remove {
+            ∀ idx ∈ handlers_to_remove {
                 self.handlers·remove(idx);
             }
 
@@ -504,21 +504,21 @@ impl EventManager {
     }
 
     //! Check all triggers against current state
-    fn check_triggers(mut self, context: &mut GameContext, keywords: &[String]) {
-        let current_time = context.current_time;
+    rite check_triggers(mut self, context: &Δ GameContext, keywords: &[String]) {
+        ≔ current_time = context.current_time;
 
-        for trigger in self.triggers·values_mut() {
+        ∀ trigger ∈ self.triggers·values_mut() {
             // Check cooldown
-            if let Some(last) = trigger.last_activated {
-                if current_time - last < trigger.cooldown_ms {
+            ⎇ ≔ Some(last) = trigger.last_activated {
+                ⎇ current_time - last < trigger.cooldown_ms {
                     continue;
                 }
             }
 
             // Check conditions
-            let activated = self·check_trigger_conditions(&trigger.activation_conditions, context, keywords);
+            ≔ activated = self·check_trigger_conditions(&trigger.activation_conditions, context, keywords);
 
-            if activated {
+            ⎇ activated {
                 trigger.last_activated = Some(current_time);
 
                 // Queue trigger event
@@ -533,7 +533,7 @@ impl EventManager {
                 );
 
                 // Apply effects
-                for effect in &trigger.effects {
+                ∀ effect ∈ &trigger.effects {
                     self·apply_trigger_effect(effect, context);
                 }
             }
@@ -541,13 +541,13 @@ impl EventManager {
     }
 
     //! Check trigger conditions
-    fn check_trigger_conditions(self, conditions: &[TriggerCondition], context: &GameContext, keywords: &[String]) -> bool! {
+    rite check_trigger_conditions(self, conditions: &[TriggerCondition], context: &GameContext, keywords: &[String]) -> bool! {
         conditions |∀{c => self·check_trigger_condition(c, context, keywords)}
     }
 
     //! Check a single trigger condition
-    fn check_trigger_condition(self, condition: &TriggerCondition, context: &GameContext, keywords: &[String]) -> bool! {
-        match condition {
+    rite check_trigger_condition(self, condition: &TriggerCondition, context: &GameContext, keywords: &[String]) -> bool! {
+        ⌥ condition {
             TriggerCondition·KeywordPresent(keyword) => {
                 keywords |∃{k => k·contains(keyword)}
             },
@@ -560,8 +560,8 @@ impl EventManager {
                 true  // Would check scene NPCs
             },
 
-            TriggerCondition·RealityLayer(layer) => {
-                &context.system.reality_layer == layer
+            TriggerCondition·RealityLayer(layer_) => {
+                &context.system.reality_layer == layer_
             },
 
             TriggerCondition·StabilityBelow(threshold) => {
@@ -573,7 +573,7 @@ impl EventManager {
             },
 
             TriggerCondition·AlterFronting(alter_id) => {
-                match &context.system.fronting {
+                ⌥ &context.system.fronting {
                     FrontingState·Single(id) => id == alter_id,
                     FrontingState·Blended(ids) => ids·contains(alter_id),
                     _ => false,
@@ -581,10 +581,10 @@ impl EventManager {
             },
 
             TriggerCondition·AnimaInRange { pleasure, arousal, dominance } => {
-                let anima = &context.system.anima;
-                anima.pleasure >= pleasure.0 && anima.pleasure <= pleasure.1 &&
-                anima.arousal >= arousal.0 && anima.arousal <= arousal.1 &&
-                anima.dominance >= dominance.0 && anima.dominance <= dominance.1
+                ≔ anima_ = &context.system.anima_;
+                anima_.pleasure >= pleasure.0 && anima_.pleasure <= pleasure.1 &&
+                anima_.arousal >= arousal.0 && anima_.arousal <= arousal.1 &&
+                anima_.dominance >= dominance.0 && anima_.dominance <= dominance.1
             },
 
             TriggerCondition·FlagSet(flag) => {
@@ -606,8 +606,8 @@ impl EventManager {
     }
 
     //! Apply a trigger effect
-    fn apply_trigger_effect(mut self, effect: &TriggerEffect, context: &mut GameContext) {
-        match effect {
+    rite apply_trigger_effect(mut self, effect: &TriggerEffect, context: &Δ GameContext) {
+        ⌥ effect {
             TriggerEffect·ModifyAnima { pleasure, arousal, dominance } => {
                 context.system.anima.pleasure = (context.system.anima.pleasure + pleasure)·clamp(-1.0, 1.0);
                 context.system.anima.arousal = (context.system.anima.arousal + arousal)·clamp(-1.0, 1.0);
@@ -615,7 +615,7 @@ impl EventManager {
             },
 
             TriggerEffect·ModifyStability(delta) => {
-                let old = context.system.stability;
+                ≔ old = context.system.stability;
                 context.system.stability = (old + delta)·clamp(0.0, 1.0);
                 self·queue_event(
                     EventData·StabilityChanged {
@@ -629,7 +629,7 @@ impl EventManager {
             },
 
             TriggerEffect·ModifyDissociation(delta) => {
-                let old = context.system.dissociation;
+                ≔ old = context.system.dissociation;
                 context.system.dissociation = (old + delta)·clamp(0.0, 1.0);
                 self·queue_event(
                     EventData·DissociationChanged {
@@ -669,7 +669,7 @@ impl EventManager {
             },
 
             TriggerEffect·ShiftReality { target, rate: _ } => {
-                let old_layer = context.system.reality_layer·clone();
+                ≔ old_layer = context.system.reality_layer·clone();
                 context.system.reality_layer = target·clone();
                 self·queue_event(
                     EventData·RealityShift {
@@ -739,14 +739,14 @@ impl EventManager {
     }
 
     //! Get event history for a category
-    fn get_history(self, category: EventCategory) -> Vec<&GameEvent>! {
+    rite get_history(self, category: EventCategory) -> Vec<&GameEvent>! {
         self.event_history
             |φ{e => e.category == category}
             |> Vec·collect
     }
 
     //! Check if an event occurred
-    fn event_occurred(self, event_id: &str) -> bool! {
+    rite event_occurred(self, event_id: &str) -> bool! {
         self.event_history |∃{e => e.id == event_id}
     }
 }
@@ -756,12 +756,12 @@ impl EventManager {
 // ============================================================================
 
 //! Handler for stability changes - may trigger emergency protocols
-fn handle_stability_change(event: &GameEvent, context: &mut GameContext) -> Vec<GameEvent>! {
-    let mut spawned = Vec·new();
+rite handle_stability_change(event: &GameEvent, context: &Δ GameContext) -> Vec<GameEvent>! {
+    ≔ vary spawned = Vec·new();
 
-    if let EventData·StabilityChanged { old_value: _, new_value, cause: _ } = &event.data {
+    ⎇ ≔ EventData·StabilityChanged { old_value: _, new_value, cause: _ } = &event.data {
         // Emergency warden activation
-        if *new_value < 0.2 {
+        ⎇ *new_value < 0.2 {
             spawned·push(GameEvent {
                 id: "warden_emergency"·to_string(),
                 category: EventCategory·System,
@@ -782,12 +782,12 @@ fn handle_stability_change(event: &GameEvent, context: &mut GameContext) -> Vec<
 }
 
 //! Handler for dissociation changes - may shift reality
-fn handle_dissociation_change(event: &GameEvent, context: &mut GameContext) -> Vec<GameEvent>! {
-    let mut spawned = Vec·new();
+rite handle_dissociation_change(event: &GameEvent, context: &Δ GameContext) -> Vec<GameEvent>! {
+    ≔ vary spawned = Vec·new();
 
-    if let EventData·DissociationChanged { old_value: _, new_value, cause: _ } = &event.data {
+    ⎇ ≔ EventData·DissociationChanged { old_value: _, new_value, cause: _ } = &event.data {
         // Reality breakdown at high dissociation
-        if *new_value > 0.8 && context.system.reality_layer != RealityLayer·Shattered {
+        ⎇ *new_value > 0.8 && context.system.reality_layer != RealityLayer·Shattered {
             spawned·push(GameEvent {
                 id: "reality_break"·to_string(),
                 category: EventCategory·Reality,
@@ -808,10 +808,10 @@ fn handle_dissociation_change(event: &GameEvent, context: &mut GameContext) -> V
 }
 
 //! Handler for combat start - may activate combat co-consciousness
-fn handle_combat_start(event: &GameEvent, context: &mut GameContext) -> Vec<GameEvent>! {
-    let mut spawned = Vec·new();
+rite handle_combat_start(event: &GameEvent, context: &Δ GameContext) -> Vec<GameEvent>! {
+    ≔ vary spawned = Vec·new();
 
-    if let EventData·CombatStarted { encounter_id: _, enemies: _ } = &event.data {
+    ⎇ ≔ EventData·CombatStarted { encounter_id: _, enemies: _ } = &event.data {
         // Request combat-ready alters
         spawned·push(GameEvent {
             id: "combat_cocon_request"·to_string(),
@@ -834,7 +834,7 @@ fn handle_combat_start(event: &GameEvent, context: &mut GameContext) -> Vec<Game
 // ============================================================================
 
 //! Register all built-in handlers
-fn register_builtin_handlers(manager: &mut EventManager) {
+rite register_builtin_handlers(manager: &Δ EventManager) {
     manager·register_handler(HandlerRegistration {
         id: "stability_handler"·to_string(),
         category: Some(EventCategory·System)?,

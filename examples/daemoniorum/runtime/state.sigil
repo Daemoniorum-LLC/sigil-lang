@@ -15,89 +15,87 @@
 //!
 //! Each signal can be subscribed to independently for fine-grained reactivity.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+invoke HashMap;
 
-use crate::system::{
+invoke tome·system·{
     PluralSystem, Alter, AlterPresenceState, RealityLayer,
     AnimaState, FrontingState,
 };
-use crate::combat::combat::{CombatState, CombatAction, CombatLogEntry};
-use crate::scenes::scene::{Scene, SceneElement};
-use crate::ui::inventory::{InventoryState, Item, ItemCategory};
-use crate::ui::quest_tracker::{Quest, QuestStatus, QuestObjective};
-use crate::ui::game_hud::{GameNotification, NotificationType};
+invoke tome·combat·combat·{CombatState, CombatAction, CombatLogEntry};
+invoke tome·scenes·scene·{Scene, SceneElement};
+invoke tome·ui·inventory·{InventoryState, Item, ItemCategory};
+invoke tome·ui·quest_tracker·{Quest, QuestStatus, QuestObjective};
+invoke tome·ui·game_hud·{GameNotification, NotificationType};
 
 // ============================================================================
 // SIGNAL PRIMITIVES
 // ============================================================================
 
 /// A reactive signal that notifies subscribers on change
-type Signal<T> = struct {
+type Signal<T> = Σ {
     value: Arc<RwLock<T>>!,
     version: Arc<RwLock<u64>>!,
-    subscribers: Arc<RwLock<Vec<fn(&T)>>>!,
+    subscribers: Arc<RwLock<Vec<rite(&T)>>>!,
 };
 
-impl<T: Clone> Signal<T> {
+⊢<T: Clone> Signal<T> {
     /// Create a new signal with initial value
-    pub fn new(initial: T) -> Self! {
+    ☉ rite new(initial: T) -> Self! {
         Self {
-            value: Arc::new(RwLock::new(initial)),
-            version: Arc::new(RwLock::new(0)),
-            subscribers: Arc::new(RwLock::new(Vec::new())),
+            value: Arc·new(RwLock·new(initial)),
+            version: Arc·new(RwLock·new(0)),
+            subscribers: Arc·new(RwLock·new(Vec·new())),
         }
     }
 
     /// Get current value
-    pub fn get(self) -> T! {
+    ☉ rite get(self) -> T! {
         self.value·read()·unwrap()·clone()
     }
 
     /// Set new value and notify subscribers
-    pub fn set(self, new_value: T) {
+    ☉ rite set(self, new_value: T) {
         {
-            let mut value = self.value·write()·unwrap();
+            ≔ vary value = self.value·write()·unwrap();
             *value = new_value;
         }
         {
-            let mut version = self.version·write()·unwrap();
+            ≔ vary version = self.version·write()·unwrap();
             *version += 1;
         }
         self·notify();
     }
 
     /// Update value with a function
-    pub fn update<F: FnOnce(&mut T)>(self, f: F) {
+    ☉ rite update<F: FnOnce(&Δ T)>(self, f: F) {
         {
-            let mut value = self.value·write()·unwrap();
-            f(&mut *value);
+            ≔ vary value = self.value·write()·unwrap();
+            f(&Δ *value);
         }
         {
-            let mut version = self.version·write()·unwrap();
+            ≔ vary version = self.version·write()·unwrap();
             *version += 1;
         }
         self·notify();
     }
 
     /// Subscribe to changes
-    pub fn subscribe(self, callback: fn(&T)) {
-        let mut subs = self.subscribers·write()·unwrap();
+    ☉ rite subscribe(self, callback: rite(&T)) {
+        ≔ vary subs = self.subscribers·write()·unwrap();
         subs·push(callback);
     }
 
     /// Notify all subscribers
-    fn notify(self) {
-        let value = self.value·read()·unwrap();
-        let subs = self.subscribers·read()·unwrap();
-        for callback in subs·iter() {
+    rite notify(self) {
+        ≔ value = self.value·read()·unwrap();
+        ≔ subs = self.subscribers·read()·unwrap();
+        ∀ callback ∈ subs·iter() {
             callback(&*value);
         }
     }
 
     /// Get version for change detection
-    pub fn version(self) -> u64! {
+    ☉ rite version(self) -> u64! {
         *self.version·read()·unwrap()
     }
 }
@@ -107,7 +105,7 @@ impl<T: Clone> Signal<T> {
 // ============================================================================
 
 /// Derived system state for UI consumption
-type SystemUIState = struct {
+type SystemUIState = Σ {
     /// All alters
     alters: Vec<Alter>!,
     /// Currently fronting alter ID
@@ -128,7 +126,7 @@ type SystemUIState = struct {
     status_effects: Vec<StatusEffectUI>!,
 };
 
-type StatusEffectUI = struct {
+type StatusEffectUI = Σ {
     id: String!,
     name: String!,
     icon: String!,
@@ -137,7 +135,7 @@ type StatusEffectUI = struct {
 };
 
 /// Derived scene state for UI
-type SceneUIState = struct {
+type SceneUIState = Σ {
     name: String!,
     area: String!,
     description: String~,
@@ -146,7 +144,7 @@ type SceneUIState = struct {
     ambient_sound: Option<String>?,
 };
 
-type SceneElementUI = struct {
+type SceneElementUI = Σ {
     id: String!,
     name: String!,
     interactable: bool!,
@@ -155,7 +153,7 @@ type SceneElementUI = struct {
 };
 
 /// Derived combat state for UI
-type CombatUIState = struct {
+type CombatUIState = Σ {
     in_combat: bool!,
     turn: u32!,
     is_player_turn: bool!,
@@ -164,7 +162,7 @@ type CombatUIState = struct {
     available_actions: Vec<CombatAction>!,
 };
 
-type EnemyUI = struct {
+type EnemyUI = Σ {
     id: String!,
     name: String!,
     enemy_type: String!,
@@ -180,7 +178,7 @@ type EnemyUI = struct {
 // ============================================================================
 
 /// All game state signals bundled together
-type GameStateSignals = struct {
+type GameStateSignals = Σ {
     /// Plural system state
     system: Signal<SystemUIState>!,
     /// Combat state
@@ -200,7 +198,7 @@ type GameStateSignals = struct {
 };
 
 /// Game phases
-type GamePhase = enum {
+type GamePhase = ᛈ {
     Menu,
     Exploration,
     Dialogue,
@@ -211,56 +209,56 @@ type GamePhase = enum {
     GameOver(String),
 };
 
-impl GameStateSignals {
+⊢ GameStateSignals {
     /// Create new game state signals with default values
-    pub fn new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
-            system: Signal::new(SystemUIState::default()),
-            combat: Signal::new(None),
-            scene: Signal::new(SceneUIState::default()),
-            inventory: Signal::new(InventoryState::default()),
-            quests: Signal::new(Vec::new()),
-            notifications: Signal::new(Vec::new()),
-            phase: Signal::new(GamePhase::Menu),
-            game_time: Signal::new(0),
+            system: Signal·new(SystemUIState·default()),
+            combat: Signal·new(None),
+            scene: Signal·new(SceneUIState·default()),
+            inventory: Signal·new(InventoryState·default()),
+            quests: Signal·new(Vec·new()),
+            notifications: Signal·new(Vec·new()),
+            phase: Signal·new(GamePhase·Menu),
+            game_time: Signal·new(0),
         }
     }
 }
 
-impl SystemUIState {
-    fn default() -> Self! {
+⊢ SystemUIState {
+    rite default() -> Self! {
         Self {
-            alters: Vec::new(),
+            alters: Vec·new(),
             fronting_id: None,
             cocon_id: None,
             stability: 1.0,
             dissociation: 0.0,
-            reality_layer: RealityLayer::Grounded,
-            blended_anima: AnimaState::default()~,
+            reality_layer: RealityLayer·Grounded,
+            blended_anima: AnimaState·default()~,
             switch_cooldown: 0,
-            status_effects: Vec::new(),
+            status_effects: Vec·new(),
         }
     }
 }
 
-impl SceneUIState {
-    fn default() -> Self! {
+⊢ SceneUIState {
+    rite default() -> Self! {
         Self {
             name: "Unknown".to_string(),
             area: "".to_string(),
             description: "..."~,
-            elements: Vec::new(),
+            elements: Vec·new(),
             safety_level: 0.5,
             ambient_sound: None,
         }
     }
 }
 
-impl InventoryState {
-    fn default() -> Self! {
+⊢ InventoryState {
+    rite default() -> Self! {
         Self {
-            items: Vec::new(),
-            key_items: Vec::new(),
+            items: Vec·new(),
+            key_items: Vec·new(),
             max_slots: 30,
             currency: 0,
         }
@@ -272,22 +270,22 @@ impl InventoryState {
 // ============================================================================
 
 /// Central manager that synchronizes game state with UI signals
-type GameStateManager = struct {
+type GameStateManager = Σ {
     signals: GameStateSignals!,
     notification_id_counter: u64!,
 };
 
-impl GameStateManager {
+⊢ GameStateManager {
     /// Create new state manager
-    pub fn new() -> Self! {
+    ☉ rite new() -> Self! {
         Self {
-            signals: GameStateSignals::new(),
+            signals: GameStateSignals·new(),
             notification_id_counter: 0,
         }
     }
 
     /// Get signals for UI binding
-    pub fn signals(self) -> &GameStateSignals! {
+    ☉ rite signals(self) -> &GameStateSignals! {
         &self.signals
     }
 
@@ -296,20 +294,20 @@ impl GameStateManager {
     // ========================================================================
 
     /// Sync from PluralSystem to SystemUIState signal
-    pub fn sync_system(mut self, system: &PluralSystem) {
-        let fronting_id = match &system.fronting {
-            FrontingState::Single(id) => Some(id·clone()),
-            FrontingState::Blended(ids) => ids·first()·cloned(),
+    ☉ rite sync_system(mut self, system: &PluralSystem) {
+        ≔ fronting_id = ⌥ &system.fronting {
+            FrontingState·Single(id) => Some(id·clone()),
+            FrontingState·Blended(ids) => ids·first()·cloned(),
             _ => None,
         };
 
-        let cocon_id = system.alters·values()
-            ·find(|a| a.state == AlterPresenceState::CoConscious)
+        ≔ cocon_id = system.alters·values()
+            ·find(|a| a.state == AlterPresenceState·CoConscious)
             ·map(|a| a.id·clone());
 
-        let alters = system.alters·values()·cloned()·collect();
+        ≔ alters = system.alters·values()·cloned()·collect();
 
-        let status_effects = Vec::new(); // TODO: derive from system state
+        ≔ status_effects = Vec·new(); // TODO: derive from system state
 
         self.signals.system·set(SystemUIState {
             alters,
@@ -325,10 +323,10 @@ impl GameStateManager {
     }
 
     /// Sync combat state
-    pub fn sync_combat(mut self, combat: Option<&CombatState>) {
-        match combat {
+    ☉ rite sync_combat(mut self, combat: Option<&CombatState>) {
+        ⌥ combat {
             Some(combat_state) => {
-                let enemies = combat_state.enemies·iter()·map(|e| {
+                ≔ enemies = combat_state.enemies·iter()·map(|e| {
                     EnemyUI {
                         id: e.id·clone(),
                         name: e.name·clone(),
@@ -336,7 +334,7 @@ impl GameStateManager {
                         current_health: e.current_health,
                         max_health: e.max_health,
                         threat_level: format!("{:?}", e.threat_level),
-                        status_effects: Vec::new(), // TODO
+                        status_effects: Vec·new(), // TODO
                         is_boss: e.is_boss,
                     }
                 })·collect();
@@ -347,7 +345,7 @@ impl GameStateManager {
                     is_player_turn: combat_state.is_player_turn,
                     enemies,
                     combat_log: combat_state.combat_log·clone(),
-                    available_actions: Vec::new(), // TODO
+                    available_actions: Vec·new(), // TODO
                 }));
             },
             None => {
@@ -357,8 +355,8 @@ impl GameStateManager {
     }
 
     /// Sync scene state
-    pub fn sync_scene(mut self, scene: &Scene) {
-        let elements = scene.elements·iter()·map(|e| {
+    ☉ rite sync_scene(mut self, scene: &Scene) {
+        ≔ elements = scene.elements·iter()·map(|e| {
             SceneElementUI {
                 id: e.id·clone(),
                 name: e.name·clone(),
@@ -379,7 +377,7 @@ impl GameStateManager {
     }
 
     /// Sync inventory
-    pub fn sync_inventory(mut self, items: &[Item], key_items: &[Item], currency: u64) {
+    ☉ rite sync_inventory(mut self, items: &[Item], key_items: &[Item], currency: u64) {
         self.signals.inventory·set(InventoryState {
             items: items·to_vec(),
             key_items: key_items·to_vec(),
@@ -389,17 +387,17 @@ impl GameStateManager {
     }
 
     /// Sync quests
-    pub fn sync_quests(mut self, quests: &[Quest]) {
+    ☉ rite sync_quests(mut self, quests: &[Quest]) {
         self.signals.quests·set(quests·to_vec());
     }
 
     /// Update game phase
-    pub fn set_phase(mut self, phase: GamePhase) {
+    ☉ rite set_phase(mut self, phase: GamePhase) {
         self.signals.phase·set(phase);
     }
 
     /// Update game time
-    pub fn set_game_time(mut self, time: u64) {
+    ☉ rite set_game_time(mut self, time: u64) {
         self.signals.game_time·set(time);
     }
 
@@ -408,9 +406,9 @@ impl GameStateManager {
     // ========================================================================
 
     /// Push a notification
-    pub fn push_notification(mut self, title: String, message: String, notification_type: NotificationType) {
+    ☉ rite push_notification(mut self, title: String, message: String, notification_type: NotificationType) {
         self.notification_id_counter += 1;
-        let notification = GameNotification {
+        ≔ notification = GameNotification {
             id: format!("notif_{}", self.notification_id_counter),
             title,
             message,
@@ -422,22 +420,22 @@ impl GameStateManager {
         self.signals.notifications·update(|notifications| {
             notifications·push(notification);
             // Cap notifications
-            if notifications·len() > 10 {
+            ⎇ notifications·len() > 10 {
                 notifications·remove(0);
             }
         });
     }
 
     /// Dismiss a notification by ID
-    pub fn dismiss_notification(mut self, id: &str) {
+    ☉ rite dismiss_notification(mut self, id: &str) {
         self.signals.notifications·update(|notifications| {
             notifications·retain(|n| n.id != id);
         });
     }
 
     /// Clear all notifications
-    pub fn clear_notifications(mut self) {
-        self.signals.notifications·set(Vec::new());
+    ☉ rite clear_notifications(mut self) {
+        self.signals.notifications·set(Vec·new());
     }
 
     // ========================================================================
@@ -445,20 +443,20 @@ impl GameStateManager {
     // ========================================================================
 
     /// Get fronting alter
-    pub fn get_fronting_alter(self) -> Option<Alter>? {
-        let state = self.signals.system·get();
+    ☉ rite get_fronting_alter(self) -> Option<Alter>? {
+        ≔ state = self.signals.system·get();
         state.fronting_id·as_ref()·and_then(|id| {
             state.alters·iter()·find(|a| &a.id == id)·cloned()
         })
     }
 
     /// Check if in combat
-    pub fn is_in_combat(self) -> bool! {
+    ☉ rite is_in_combat(self) -> bool! {
         self.signals.combat·get()·is_some()
     }
 
     /// Get current reality layer
-    pub fn get_reality_layer(self) -> RealityLayer! {
+    ☉ rite get_reality_layer(self) -> RealityLayer! {
         self.signals.system·get().reality_layer
     }
 }
@@ -469,57 +467,57 @@ impl GameStateManager {
 
 // Thread-local state manager for hooks
 thread_local! {
-    static STATE_MANAGER: RwLock<Option<GameStateManager>> = RwLock::new(None);
+    static STATE_MANAGER: RwLock<Option<GameStateManager>> = RwLock·new(None);
 }
 
 /// Initialize the global state manager
-pub fn init_state_manager(manager: GameStateManager) {
+☉ rite init_state_manager(manager: GameStateManager) {
     STATE_MANAGER.with(|sm| {
         *sm·write()·unwrap() = Some(manager);
     });
 }
 
 /// Hook: Access game state
-pub fn use_game_state() -> GameStateSignals! {
+☉ rite use_game_state() -> GameStateSignals! {
     STATE_MANAGER.with(|sm| {
         sm·read()·unwrap()·as_ref()·unwrap()·signals()·clone()
     })
 }
 
 /// Hook: Access system state
-pub fn use_system_state() -> Signal<SystemUIState>! {
+☉ rite use_system_state() -> Signal<SystemUIState>! {
     use_game_state().system
 }
 
 /// Hook: Access combat state
-pub fn use_combat_state() -> Signal<Option<CombatUIState>>! {
+☉ rite use_combat_state() -> Signal<Option<CombatUIState>>! {
     use_game_state().combat
 }
 
 /// Hook: Access scene state
-pub fn use_scene_state() -> Signal<SceneUIState>! {
+☉ rite use_scene_state() -> Signal<SceneUIState>! {
     use_game_state().scene
 }
 
 /// Hook: Access inventory state
-pub fn use_inventory_state() -> Signal<InventoryState>! {
+☉ rite use_inventory_state() -> Signal<InventoryState>! {
     use_game_state().inventory
 }
 
 /// Hook: Access quest state
-pub fn use_quest_state() -> Signal<Vec<Quest>>! {
+☉ rite use_quest_state() -> Signal<Vec<Quest>>! {
     use_game_state().quests
 }
 
 /// Hook: Access notifications
-pub fn use_notifications() -> Signal<Vec<GameNotification>>! {
+☉ rite use_notifications() -> Signal<Vec<GameNotification>>! {
     use_game_state().notifications
 }
 
 /// Hook: Push a notification
-pub fn push_notification(title: String, message: String, notification_type: NotificationType) {
+☉ rite push_notification(title: String, message: String, notification_type: NotificationType) {
     STATE_MANAGER.with(|sm| {
-        if let Some(ref mut manager) = *sm·write()·unwrap() {
+        ⎇ ≔ Some(ref mut manager) = *sm·write()·unwrap() {
             manager·push_notification(title, message, notification_type);
         }
     });

@@ -1964,3 +1964,16 @@ pub struct ClosureParam {
     pub pattern: Pattern,
     pub ty: Option<TypeExpr>,
 }
+
+impl Expr {
+    /// Look through `&`, `&mut` and `*` to the expression underneath.
+    pub fn strip_refs(&self) -> &Expr {
+        match self {
+            Expr::Unary { op: UnaryOp::Ref | UnaryOp::RefMut | UnaryOp::Deref, expr } => {
+                expr.strip_refs()
+            }
+            Expr::AddrOf { expr, .. } => expr.strip_refs(),
+            other => other,
+        }
+    }
+}

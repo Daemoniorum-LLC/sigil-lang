@@ -4,7 +4,7 @@ rite main() -> i64 {
     ≔ result: i64 = 0;
     unsafe {
         asm!("mov rax, rdi",
-            in("rdi") x,
+            ∈("rdi") x,
             out("rax") result,
             options(nostack));
     }

@@ -1,63 +1,63 @@
 // Product Catalog
 // Daemoniorum product data for the documentation platform
 
-use crate::layouts::TocItem;
+invoke tome·layouts·TocItem;
 
 /// Product information
-pub struct Product {
-    pub id: String!
-    pub name: String!
-    pub tagline: String!
-    pub description: String!
-    pub version: String!
-    pub icon: String!
-    pub category: ProductCategory!
-    pub features: Vec<String>!
-    pub quick_start: String!
-    pub sections: Vec<Section>!
-    pub api_description: String!
-    pub api_modules: Vec<ApiModule>!
-    pub api_items_count: u32!
+☉ Σ Product {
+    ☉ id: String!
+    ☉ name: String!
+    ☉ tagline: String!
+    ☉ description: String!
+    ☉ version: String!
+    ☉ icon: String!
+    ☉ category: ProductCategory!
+    ☉ features: Vec<String>!
+    ☉ quick_start: String!
+    ☉ sections: Vec<Section>!
+    ☉ api_description: String!
+    ☉ api_modules: Vec<ApiModule>!
+    ☉ api_items_count: u32!
 }
 
 /// Product categories
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub enum ProductCategory {
+☉ ᛈ ProductCategory {
     Languages,
     Frameworks,
     Infrastructure,
     Tools
 }
 
-impl ProductCategory {
-    pub fn to_string(&self) -> &'static str! {
-        match self {
-            ProductCategory::Languages => "Languages",
-            ProductCategory::Frameworks => "Frameworks",
-            ProductCategory::Infrastructure => "Infrastructure",
-            ProductCategory::Tools => "Tools"
+⊢ ProductCategory {
+    ☉ rite to_string(&self) -> &'static str! {
+        ⌥ self {
+            ProductCategory·Languages => "Languages",
+            ProductCategory·Frameworks => "Frameworks",
+            ProductCategory·Infrastructure => "Infrastructure",
+            ProductCategory·Tools => "Tools"
         }
     }
 }
 
 /// Documentation section
-pub struct Section {
-    pub id: String!
-    pub title: String!
-    pub description: String!
-    pub content: String!
-    pub toc: Vec<TocItem>!
+☉ Σ Section {
+    ☉ id: String!
+    ☉ title: String!
+    ☉ description: String!
+    ☉ content: String!
+    ☉ toc: Vec<TocItem>!
 }
 
 /// API module
-pub struct ApiModule {
-    pub id: String!
-    pub name: String!
-    pub description: String!
+☉ Σ ApiModule {
+    ☉ id: String!
+    ☉ name: String!
+    ☉ description: String!
 }
 
 /// The complete product catalog
-pub static PRODUCT_CATALOG: Vec<Product> = vec![
+☉ static PRODUCT_CATALOG: Vec<Product> = vec![
     // =========================================================================
     // SIGIL - The Polysynthetic Programming Language
     // =========================================================================
@@ -68,7 +68,7 @@ pub static PRODUCT_CATALOG: Vec<Product> = vec![
         description: "Sigil is a polysynthetic systems programming language designed to achieve Rust-level performance while offering superior expressiveness through morpheme composition and evidentiality tracking.".to_string(),
         version: "0.1.0".to_string(),
         icon: "code".to_string(),
-        category: ProductCategory::Languages,
+        category: ProductCategory·Languages,
         features: vec![
             "Evidentiality type system for data provenance tracking".to_string(),
             "Polysynthetic syntax with morpheme composition".to_string(),
@@ -151,7 +151,7 @@ fn main() {
         description: "Sigil Web is a modern web application framework that leverages Sigil's unique features including evidentiality types, morpheme composition, and actor-based state management.".to_string(),
         version: "0.1.0".to_string(),
         icon: "globe".to_string(),
-        category: ProductCategory::Frameworks,
+        category: ProductCategory·Frameworks,
         features: vec![
             "React-inspired component model".to_string(),
             "Evidentiality-aware state management".to_string(),
@@ -238,7 +238,7 @@ fn main() {
         description: "Leviathan is a comprehensive backend framework built on Spring Boot, providing GraphQL APIs, authentication, multi-tenancy, and seamless integration with the Daemoniorum ecosystem.".to_string(),
         version: "2.4.0".to_string(),
         icon: "server".to_string(),
-        category: ProductCategory::Frameworks,
+        category: ProductCategory·Frameworks,
         features: vec![
             "GraphQL-first API design".to_string(),
             "Multi-tenant architecture".to_string(),
@@ -319,7 +319,7 @@ class UserResolver : GraphQLQueryResolver {
         description: "Nyx is an advanced AI agent framework for building autonomous systems with guardrails, memory, and multi-agent coordination capabilities.".to_string(),
         version: "1.2.0".to_string(),
         icon: "brain".to_string(),
-        category: ProductCategory::Frameworks,
+        category: ProductCategory·Frameworks,
         features: vec![
             "Autonomous agent execution".to_string(),
             "Guardian policy enforcement".to_string(),
@@ -403,7 +403,7 @@ fn main() {
         description: "Aether is a modern game engine with ECS architecture, GPU-accelerated rendering, and comprehensive tooling for 2D and 3D game development.".to_string(),
         version: "0.8.0".to_string(),
         icon: "gamepad".to_string(),
-        category: ProductCategory::Frameworks,
+        category: ProductCategory·Frameworks,
         features: vec![
             "Entity Component System (ECS)".to_string(),
             "Vulkan/Metal/DX12 rendering".to_string(),
@@ -490,7 +490,7 @@ fn movement(mut query: Query<&mut Transform>, input: Res<Input>) {
         description: "Bael is a React-based admin UI for managing Leviathan applications, featuring real-time updates, customizable dashboards, and comprehensive data management.".to_string(),
         version: "1.5.0".to_string(),
         icon: "layout".to_string(),
-        category: ProductCategory::Tools,
+        category: ProductCategory·Tools,
         features: vec![
             "Real-time data updates".to_string(),
             "Customizable dashboards".to_string(),
@@ -549,7 +549,7 @@ npm run dev"#.to_string(),
         description: "Moloch is an event streaming platform for building event-driven architectures with Kafka integration, exactly-once processing, and real-time analytics.".to_string(),
         version: "0.6.0".to_string(),
         icon: "activity".to_string(),
-        category: ProductCategory::Infrastructure,
+        category: ProductCategory·Infrastructure,
         features: vec![
             "Kafka integration".to_string(),
             "Exactly-once processing".to_string(),
@@ -560,23 +560,23 @@ npm run dev"#.to_string(),
             "Schema registry".to_string(),
             "Monitoring dashboard".to_string()
         ],
-        quick_start: r#"use moloch::prelude::*
+        quick_start: r#"invoke moloch·prelude·*
 
 #[event]
-struct OrderPlaced {
+Σ OrderPlaced {
     order_id: String!
     customer_id: String!
     total: Decimal!
 }
 
 #[consumer]
-async fn handle_order(event: OrderPlaced~) {
+async rite handle_order(event: OrderPlaced~) {
     // Process the order
     println!("Order {} placed by {}", event~.order_id, event~.customer_id)
 }
 
-fn main() {
-    Moloch::new()
+rite main() {
+    Moloch·new()
         .topic("orders")
         .consumer(handle_order)
         .run()
@@ -623,7 +623,7 @@ fn main() {
         description: "Arcanum provides secure cryptographic operations including encryption, hashing, key management, and secure communication protocols.".to_string(),
         version: "0.4.0".to_string(),
         icon: "lock".to_string(),
-        category: ProductCategory::Infrastructure,
+        category: ProductCategory·Infrastructure,
         features: vec![
             "AES-256-GCM encryption".to_string(),
             "Ed25519 signatures".to_string(),
@@ -634,23 +634,23 @@ fn main() {
             "HSM integration".to_string(),
             "Audit logging".to_string()
         ],
-        quick_start: r#"use arcanum::prelude::*
+        quick_start: r#"invoke arcanum·prelude·*
 
-fn main() {
+rite main() {
     // Generate a key pair
-    let keypair! = Ed25519::generate()
+    ≔ keypair! = Ed25519·generate()
 
     // Sign a message
-    let message! = b"Hello, Arcanum!"
-    let signature! = keypair·sign(message)
+    ≔ message! = b"Hello, Arcanum!"
+    ≔ signature! = keypair·sign(message)
 
     // Verify
     assert!(keypair·verify(message, &signature))
 
     // Encrypt data
-    let key! = Aes256Gcm::generate_key()
-    let encrypted! = key·encrypt(message)
-    let decrypted! = key·decrypt(&encrypted)
+    ≔ key! = Aes256Gcm·generate_key()
+    ≔ encrypted! = key·encrypt(message)
+    ≔ decrypted! = key·decrypt(&encrypted)
 }"#.to_string(),
         sections: vec![
             Section {

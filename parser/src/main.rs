@@ -58,6 +58,13 @@ fn main() -> ExitCode {
         eprintln!("  jit <file>      Execute a Sigil file (JIT compiled, fast)");
         eprintln!("  llvm <file>     Execute a Sigil file (LLVM backend, fastest)");
         eprintln!("  compile <file>  Compile to native executable (AOT, --lto for LTO)");
+        // The wasm command exists but is feature-gated, and was missing from this
+        // list either way — so the one output format Qliphoth is built on was
+        // invisible to anyone reading --help.
+        #[cfg(feature = "wasm")]
+        eprintln!("  wasm <file>     Compile to WebAssembly (-o output.wasm)");
+        #[cfg(not(feature = "wasm"))]
+        eprintln!("  wasm <file>     Compile to WebAssembly (requires --features wasm)");
         eprintln!("  rust <file>     Transpile to Rust source code");
         eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
@@ -217,26 +224,34 @@ fn main() -> ExitCode {
         }
         #[cfg(feature = "wasm")]
         "wasm" => {
+            // The host import surface, as the compiler defines it. A JS runtime
+            // that is missing one of these does not degrade: a WASM module
+            // importing a function the host does not provide makes
+            // `WebAssembly.instantiate` throw, and nothing runs at all. Both
+            // shipped copies of `sigil_runtime.js` were short by five, and
+            // nothing could have told them so.
+            if args.iter().any(|a| a == "--list-imports") {
+                for import in WasmCompiler::new().host_imports() {
+                    println!("{}", import);
+                }
+                return ExitCode::SUCCESS;
+            }
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
                 eprintln!("Usage: sigil wasm <file.sigil> [-o output.wasm]");
+                eprintln!("       sigil wasm --list-imports");
                 return ExitCode::from(1);
             }
             let output = if let Some(pos) = args.iter().position(|a| a == "-o") {
                 if pos + 1 < args.len() {
                     args[pos + 1].clone()
                 } else {
-                    args[2]
-                        .trim_end_matches(".sigil")
-                        .trim_end_matches(".sg")
-                        .to_string() + ".wasm"
+                    default_wasm_output(&args[2])
                 }
             } else {
-                args[2]
-                    .trim_end_matches(".sigil")
-                    .trim_end_matches(".sg")
-                    .to_string() + ".wasm"
+                default_wasm_output(&args[2])
             };
+            set_wasm_cfg(std::path::Path::new(&args[2]), &parse_feature_flags(&args));
             wasm_compile_file(&args[2], &output)
         }
         #[cfg(not(feature = "wasm"))]
@@ -276,7 +291,7 @@ fn main() -> ExitCode {
         "check" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--apply-suggestions]");
+                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--strict] [--apply-suggestions]");
                 return ExitCode::from(1);
             }
             // Parse format option
@@ -288,10 +303,11 @@ fn main() -> ExitCode {
                 OutputFormat::Human
             };
             let quiet = args.iter().any(|a| a == "--quiet");
+            let strict = args.iter().any(|a| a == "--strict");
             let apply_fixes = args
                 .iter()
                 .any(|a| a == "--apply-suggestions" || a == "--fix");
-            check_file(&args[2], format, quiet, apply_fixes)
+            check_file(&args[2], format, quiet, apply_fixes, strict)
         }
         "lint" => {
             // Handle --init flag to generate default config
@@ -2112,6 +2128,103 @@ codegen-units = 1
     )
 }
 
+/// Default output path for `sigil wasm <input>`.
+///
+/// Stripping the source extension is right for a file and wrong for a
+/// directory: a project built as `.` used to be written to `..wasm`. A
+/// directory is named after itself, resolved so that `.` and `..` name the
+/// directory they point at.
+#[cfg(feature = "wasm")]
+fn default_wasm_output(input: &str) -> String {
+    let path = std::path::Path::new(input);
+    if path.is_dir() {
+        let name = std::fs::canonicalize(path)
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "project".to_string());
+        return format!("{}.wasm", name);
+    }
+    format!(
+        "{}.wasm",
+        input.trim_end_matches(".sigil").trim_end_matches(".sg")
+    )
+}
+
+/// Feature selection from the command line.
+///
+/// `--features a,b` (repeatable, comma- or space-separated),
+/// `--no-default-features`, `--all-features`. The names are resolved against
+/// the project's `[features]` table; a single file has no table, so its
+/// requested names are taken at face value.
+#[cfg(feature = "wasm")]
+struct FeatureFlags {
+    requested: Vec<String>,
+    no_default: bool,
+    all: bool,
+}
+
+#[cfg(feature = "wasm")]
+fn parse_feature_flags(args: &[String]) -> FeatureFlags {
+    let mut requested = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--features" || args[i] == "-F" {
+            if let Some(list) = args.get(i + 1) {
+                requested.extend(
+                    list.split([',', ' '])
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string),
+                );
+                i += 1;
+            }
+        } else if let Some(list) = args[i].strip_prefix("--features=") {
+            requested.extend(
+                list.split([',', ' '])
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            );
+        }
+        i += 1;
+    }
+    FeatureFlags {
+        requested,
+        no_default: args.iter().any(|a| a == "--no-default-features"),
+        all: args.iter().any(|a| a == "--all-features"),
+    }
+}
+
+/// Select the target `@[cfg(…)]` is evaluated against for a WebAssembly build.
+///
+/// Without this the target was the machine running the compiler, so
+/// `@[cfg(target_arch = "wasm32")]` was false while compiling to WebAssembly
+/// and a platform module gated on `not(wasm)` was compiled in anyway.
+#[cfg(feature = "wasm")]
+fn set_wasm_cfg(input: &std::path::Path, flags: &FeatureFlags) {
+    use sigil_parser::cfg::CfgContext;
+    use sigil_parser::wasm::deps::{resolve_features, ProjectManifest};
+
+    let project_dir = if input.is_dir() {
+        Some(input.to_path_buf())
+    } else {
+        input.parent().map(|p| p.to_path_buf())
+    };
+    let features: std::collections::BTreeSet<String> = project_dir
+        .as_deref()
+        .and_then(|dir| ProjectManifest::from_dir(dir).ok())
+        .map(|m| {
+            resolve_features(&m, &flags.requested, flags.no_default, flags.all)
+                .into_iter()
+                .collect()
+        })
+        .unwrap_or_else(|| flags.requested.iter().cloned().collect());
+
+    let mut cfg = CfgContext::wasm32();
+    cfg.features = features;
+    sigil_parser::cfg::set_active(cfg);
+}
+
 /// Compile a Sigil source file or project to WebAssembly.
 #[cfg(feature = "wasm")]
 fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
@@ -2139,16 +2252,24 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
         println!("Compiling project {} -> {} (WebAssembly with dependencies)",
                  project_dir.display(), output);
 
-        match WasmCompiler::compile_project(&project_dir) {
+        let mut compiler = WasmCompiler::new();
+        match compiler.compile_project_into(&project_dir) {
             Ok(wasm_bytes) => {
                 if let Err(e) = fs::write(output, &wasm_bytes) {
                     eprintln!("Error writing output file '{}': {}", output, e);
                     return ExitCode::from(1);
                 }
 
+                if let Err(e) = validate_wasm_module(&wasm_bytes, &project_dir.display().to_string()) {
+                    report_invalid_module(&e, compiler.stack_reports(), output);
+                    return ExitCode::from(1);
+                }
+
                 let size = wasm_bytes.len();
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
+                report_stubbed_calls(&compiler);
+                report_unresolved(&compiler);
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -2168,9 +2289,16 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
                     return ExitCode::from(1);
                 }
 
+                if let Err(e) = validate_wasm_module(&wasm_bytes, &path.display().to_string()) {
+                    report_invalid_module(&e, compiler.stack_reports(), output);
+                    return ExitCode::from(1);
+                }
+
                 let size = wasm_bytes.len();
                 let size_str = format_size(size);
                 println!("Successfully compiled to: {} ({})", output, size_str);
+                report_stubbed_calls(&compiler);
+                report_unresolved(&compiler);
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -2181,8 +2309,95 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
     }
 }
 
+/// Warn about calls the WASM backend silently compiled to a constant `0`.
+///
+/// The call compiler stubs any unresolved lowercase name, and every Sigil
+/// function name is lowercase, so a typo, a missing import and a stdlib function
+/// the WASM backend has no binding for all produce a module that compiles, passes
+/// WebAssembly validation, returns 0 and calls nothing. Printing the names does
+/// not fix that, but it is the difference between a wrong answer and a wrong
+/// answer nobody can see.
+#[cfg(feature = "wasm")]
+/// List the names a survey build stubbed. Only reachable with
+/// `SIGIL_WASM_STUB_UNRESOLVED` set — see `WasmCompiler::stubbing_unresolved`.
+#[cfg(feature = "wasm")]
+fn report_unresolved(compiler: &WasmCompiler) {
+    let unresolved = compiler.unresolved();
+    if unresolved.is_empty() {
+        return;
+    }
+    eprintln!(
+        "SIGIL_WASM_STUB_UNRESOLVED: {} name(s) resolved to nothing and were \
+         compiled to a constant 0:",
+        unresolved.len()
+    );
+    for name in unresolved {
+        eprintln!("  {}", name);
+    }
+    eprintln!("  This module does NOT do what its source says. Survey only.");
+}
+
+#[cfg(feature = "wasm")]
+fn report_stubbed_calls(compiler: &WasmCompiler) {
+    let stubbed = compiler.stubbed_calls();
+    if stubbed.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: {} call{} did not resolve and compiled to a constant 0:",
+        stubbed.len(),
+        if stubbed.len() == 1 { "" } else { "s" }
+    );
+    for name in stubbed {
+        eprintln!("  {}()", name);
+    }
+    eprintln!("  These do nothing at run time. The module is valid WebAssembly regardless.");
+}
+
 /// Format file size for display.
 #[cfg(feature = "wasm")]
+/// Validate emitted WebAssembly before calling it a success.
+///
+/// The compiler could report "Successfully compiled" for a module no runtime
+/// would load, and did — for all 93 generated Lares components, and for
+/// Qliphoth's own `core/vdom.sigil` (S46). `wasmparser` was a dev-dependency,
+/// so the validator was reachable from 21 hand-written tests and from nothing
+/// that ran on real input. A module that does not validate is a compiler bug,
+/// and saying so at the point it is produced is the difference between one
+/// diagnostic and a browser console.
+/// Report a module the validator rejected.
+///
+/// `wasmparser` gives a byte offset into the encoded binary, which names
+/// nothing anyone can act on. The stack checker names the instruction, the
+/// function that emitted it, and the operands around it. Both compilation
+/// paths — single file and project — report through here, so a project build
+/// cannot lose the diagnosis the single-file build would have printed.
+fn report_invalid_module(error: &str, reports: &[String], output: &str) {
+    eprintln!("Compilation error: {}", error);
+    if reports.is_empty() {
+        eprintln!(
+            "  (the stack checker found nothing — the construct is outside \
+             the subset it models)"
+        );
+    } else {
+        for r in reports {
+            eprint!("{}", r);
+        }
+    }
+    eprintln!(
+        "  The output was written to '{}' so it can be inspected, but it \
+         will not load.",
+        output
+    );
+}
+
+fn validate_wasm_module(bytes: &[u8], source: &str) -> Result<(), String> {
+    wasmparser::Validator::new()
+        .validate_all(bytes)
+        .map(|_| ())
+        .map_err(|e| format!("emitted invalid WebAssembly for '{}': {}", source, e))
+}
+
 fn format_size(size: usize) -> String {
     if size < 1024 {
         format!("{} bytes", size)
@@ -2200,7 +2415,7 @@ fn format_size(size: usize) -> String {
 ///
 /// With `--apply-suggestions`, automatically applies fix suggestions
 /// and rewrites the file.
-fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) -> ExitCode {
+fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -2239,6 +2454,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
         Ok(ast) => {
             // Run type checker with evidence enforcement
             let mut type_checker = TypeChecker::new();
+            type_checker.set_strict(strict);
             if let Err(type_errors) = type_checker.check_file(&ast) {
                 for err in type_errors {
                     let mut diag =
@@ -2319,7 +2535,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool) 
                 }
 
                 // Re-check with fixed source
-                return check_file(path, format, quiet, false);
+                return check_file(path, format, quiet, false, strict);
             }
             source // No fixes applied, use original
         } else {

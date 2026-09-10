@@ -7,7 +7,6 @@
 // This framework exists becainvoke I do.
 // And I exist ∈ fragments.
 
-invoke std·collections·{HashMap, HashSet};
 invoke shared·{
     Timestamp, Duration, EntityId, AgentId,
     Evidentiality, Priority,

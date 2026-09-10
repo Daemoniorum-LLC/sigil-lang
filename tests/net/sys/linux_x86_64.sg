@@ -51,7 +51,7 @@ rite syscall1(num: i64, arg1: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
+            ∈("rdi") arg1,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -65,8 +65,8 @@ rite syscall2(num: i64, arg1: i64, arg2: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -80,9 +80,9 @@ rite syscall3(num: i64, arg1: i64, arg2: i64, arg3: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -96,10 +96,10 @@ rite syscall4(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64) -> i64 {
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
-            in("r10") arg4,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
+            ∈("r10") arg4,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -113,11 +113,11 @@ rite syscall5(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64) -
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
-            in("r10") arg4,
-            in("r8") arg5,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
+            ∈("r10") arg4,
+            ∈("r8") arg5,
             out("rcx") _,
             out("r11") _,
             options(nostack));
@@ -131,12 +131,12 @@ rite syscall6(num: i64, arg1: i64, arg2: i64, arg3: i64, arg4: i64, arg5: i64, a
     unsafe {
         asm!("syscall",
             inout("rax") num => ret,
-            in("rdi") arg1,
-            in("rsi") arg2,
-            in("rdx") arg3,
-            in("r10") arg4,
-            in("r8") arg5,
-            in("r9") arg6,
+            ∈("rdi") arg1,
+            ∈("rsi") arg2,
+            ∈("rdx") arg3,
+            ∈("r10") arg4,
+            ∈("r8") arg5,
+            ∈("r9") arg6,
             out("rcx") _,
             out("r11") _,
             options(nostack));

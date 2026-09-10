@@ -4,15 +4,15 @@
 //! This is the inner world of the plural system - a place
 //! that exists within, not without. Here, the system is home.
 
-use super·scene·*
-use super·super·system·*
-use std·collections::HashMap
+invoke super·scene·*
+invoke super·super·system·*
+invoke HashMap
 
 // ============================================================================
 // MINDSCAPE ENTRANCE
 // ============================================================================
 
-fn create_mindscape_entrance() -> Scene! {
+rite create_mindscape_entrance() -> Scene! {
     SceneBuilder·new("mindscape_entrance")
         ·name(
             "The Threshold",
@@ -152,7 +152,7 @@ fn create_mindscape_entrance() -> Scene! {
 // COUNCIL CHAMBER
 // ============================================================================
 
-fn create_mindscape_council() -> Scene! {
+rite create_mindscape_council() -> Scene! {
     SceneBuilder·new("mindscape_council")
         ·name(
             "Council Chamber",
@@ -391,7 +391,7 @@ fn create_mindscape_council() -> Scene! {
 // SANCTUARY
 // ============================================================================
 
-fn create_mindscape_sanctuary() -> Scene! {
+rite create_mindscape_sanctuary() -> Scene! {
     SceneBuilder·new("mindscape_sanctuary")
         ·name(
             "The Sanctuary",
@@ -492,7 +492,7 @@ fn create_mindscape_sanctuary() -> Scene! {
 // ARCHIVE
 // ============================================================================
 
-fn create_mindscape_archive() -> Scene! {
+rite create_mindscape_archive() -> Scene! {
     SceneBuilder·new("mindscape_archive")
         ·name(
             "The Archive",
@@ -597,7 +597,7 @@ fn create_mindscape_archive() -> Scene! {
 // REGISTRATION
 // ============================================================================
 
-fn register_mindscape_scenes(manager: &mut SceneManager) {
+rite register_mindscape_scenes(manager: &Δ SceneManager) {
     manager·register_scene(create_mindscape_entrance());
     manager·register_scene(create_mindscape_council());
     manager·register_scene(create_mindscape_sanctuary());

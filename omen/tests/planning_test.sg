@@ -2,7 +2,7 @@
 //!
 //! Verifies Plan, PlanStep, Action, Effect, ResourceCost, Risk, and strategies.
 
-invoke std·collections·HashMap;
+invoke HashMap;
 
 // ============================================================================
 // Self-contained Test Types
@@ -62,7 +62,7 @@ rite uuid_v7() -> [u8; 16] { [0u8; 16] }
     rite clone(&self) -> Self { *self }
 }
 
-⊢ std·ops·Add ∀ Duration {
+⊢ Add ∀ Duration {
     type Output = Self;
     rite add(self, other: Self) -> Self {
         Self { nanos: self.nanos + other.nanos }

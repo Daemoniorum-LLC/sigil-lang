@@ -1,7 +1,7 @@
 // Evidence Chain Demo
 // Demonstrates Sigil's evidentiality system
 
-fn main() {
+rite main() {
     print("========================================================");
     print("       SIGIL EVIDENCE CHAIN DEMONSTRATION");
     print("========================================================");
@@ -12,8 +12,8 @@ fn main() {
     print("  Source: External sensor");
     print("  Evidence: reported (~) - we did not witness this");
 
-    let raw_temp = 23.5;
-    let raw_humidity = 65.0;
+    ≔ raw_temp = 23.5;
+    ≔ raw_humidity = 65.0;
     print("  Temperature: 23.5 (reported)");
     print("  Humidity: 65.0 (reported)");
     print("");
@@ -29,9 +29,9 @@ fn main() {
     print("STAGE 3: Computation");
     print("  Computing heat index...");
 
-    let t = raw_temp;
-    let h = raw_humidity;
-    let heat_index = 0.5 * (t + 61.0 + ((t - 68.0) * 1.2) + (h * 0.094));
+    ≔ t = raw_temp;
+    ≔ h = raw_humidity;
+    ≔ heat_index = 0.5 * (t + 61.0 + ((t - 68.0) * 1.2) + (h * 0.094));
 
     print("  Heat index computed");
     print("  Evidence: known (!) - we computed this ourselves");
@@ -71,5 +71,5 @@ fn main() {
     print("This is AI safety through type theory.");
     print("Trust is earned, not assumed.");
 
-    return 0;
+    ⤺ 0;
 }

@@ -7,22 +7,22 @@
 //! - Notification system
 //! - Mini-map/location indicator
 
-use crate::system::{PluralSystem, Alter, RealityLayer};
-use crate::scenes::scene::Scene;
-use crate::combat::combat::CombatState;
-use super::tokens::colors;
-use super::alter_card::{AlterCard, get_alter_color_scheme};
-use super::system_meters::{SystemStatusPanel, RealityLayerBadge};
-use super::combat_ui::CombatUI;
-use super::inventory::{InventoryState, CompactInventory, InventoryPanel};
-use super::quest_tracker::{Quest, QuestStatus, CompactQuestTracker, QuestTracker};
+invoke tome·system·{PluralSystem, Alter, RealityLayer};
+invoke tome·scenes·scene·Scene;
+invoke tome·combat·combat·CombatState;
+invoke super·tokens·colors;
+invoke super·alter_card·{AlterCard, get_alter_color_scheme};
+invoke super·system_meters·{SystemStatusPanel, RealityLayerBadge};
+invoke super·combat_ui·CombatUI;
+invoke super·inventory·{InventoryState, CompactInventory, InventoryPanel};
+invoke super·quest_tracker·{Quest, QuestStatus, CompactQuestTracker, QuestTracker};
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
 /// System state for the HUD
-type SystemState = struct {
+type SystemState = Σ {
     alters: Vec<Alter>!,
     fronting_alter_id: String!,
     cocon_alter_id: Option<String>?,
@@ -33,7 +33,7 @@ type SystemState = struct {
 }
 
 /// Game notification type
-type NotificationType = enum {
+type NotificationType = ᛈ {
     Info,
     Warning,
     Success,
@@ -43,7 +43,7 @@ type NotificationType = enum {
 }
 
 /// Game notification
-type GameNotification = struct {
+type GameNotification = Σ {
     id: String!,
     title: String!,
     message: String!,
@@ -53,7 +53,7 @@ type GameNotification = struct {
 }
 
 /// Props for the main game HUD
-type GameHUDProps = struct {
+type GameHUDProps = Σ {
     // Core state
     system_state: SystemState!,
     current_scene: Scene!,
@@ -64,41 +64,41 @@ type GameHUDProps = struct {
     combat_state: Option<CombatState>?,
 
     // Callbacks
-    on_alter_switch: Option<fn(Alter)>?,
-    on_inventory_open: Option<fn()>?,
-    on_quest_open: Option<fn()>?,
-    on_menu_open: Option<fn()>?,
-    on_combat_action: Option<fn(crate::combat::combat::CombatAction)>?,
-    on_target_select: Option<fn(String)>?,
+    on_alter_switch: Option<rite(Alter)>?,
+    on_inventory_open: Option<rite()>?,
+    on_quest_open: Option<rite()>?,
+    on_menu_open: Option<rite()>?,
+    on_combat_action: Option<rite(tome·combat·combat·CombatAction)>?,
+    on_target_select: Option<rite(String)>?,
 
     // Notifications
     notifications: Vec<GameNotification>?,
-    on_dismiss_notification: Option<fn(String)>?,
+    on_dismiss_notification: Option<rite(String)>?,
 }
 
 /// Props for location indicator
-type LocationIndicatorProps = struct {
+type LocationIndicatorProps = Σ {
     scene: Scene!,
     reality_layer: RealityLayer!,
 }
 
 /// Props for notification toast
-type NotificationToastProps = struct {
+type NotificationToastProps = Σ {
     notification: GameNotification!,
-    on_dismiss: fn()!,
+    on_dismiss: rite()!,
 }
 
 /// Props for panel overlay
-type PanelOverlayProps = struct {
-    on_close: fn()!,
+type PanelOverlayProps = Σ {
+    on_close: rite()!,
 }
 
 /// Props for alter panel
-type AlterPanelProps = struct {
+type AlterPanelProps = Σ {
     alters: Vec<Alter>!,
     fronting_alter_id: String!,
     cocon_alter_id: Option<String>?,
-    on_switch: fn(Alter)!,
+    on_switch: rite(Alter)!,
     switch_cooldown: u32!,
 }
 
@@ -107,46 +107,46 @@ type AlterPanelProps = struct {
 // ============================================================================
 
 #[component]
-pub fn GameHUD(props: GameHUDProps!) -> Element! {
-    let (show_alter_panel, set_show_alter_panel) = use_signal(false);
-    let (show_inventory, set_show_inventory) = use_signal(false);
-    let (show_quests, set_show_quests) = use_signal(false);
+☉ rite GameHUD(props: GameHUDProps!) -> Element! {
+    ≔ (show_alter_panel, set_show_alter_panel) = use_signal(false);
+    ≔ (show_inventory, set_show_inventory) = use_signal(false);
+    ≔ (show_quests, set_show_quests) = use_signal(false);
 
-    let system_state! = &props.system_state;
+    ≔ system_state! = &props.system_state;
 
-    let current_alter = system_state.alters·iter()
+    ≔ current_alter = system_state.alters·iter()
         ·find(|a| a.id == system_state.fronting_alter_id)
         ·cloned();
 
-    let cocon_alter = system_state.cocon_alter_id·as_ref()
+    ≔ cocon_alter = system_state.cocon_alter_id·as_ref()
         ·and_then(|id| system_state.alters·iter()·find(|a| a.id == *id))
         ·cloned();
 
-    let active_quests = props.quests·iter()
-        ·|φ|q| q.status == QuestStatus::Active
+    ≔ active_quests = props.quests·iter()
+        ·|φ|q| q.status == QuestStatus·Active
         ·cloned()
-        ·collect::<Vec<_>>();
+        ·collect·<Vec<_>>();
 
-    let colors = current_alter·as_ref()·map(get_alter_color_scheme);
+    ≔ colors = current_alter·as_ref()·map(get_alter_color_scheme);
 
-    let notifications = props.notifications·clone()·unwrap_or_default();
+    ≔ notifications = props.notifications·clone()·unwrap_or_default();
 
     // Register keyboard handlers
     use_effect(|| {
-        let handle_keydown = |e: KeyboardEvent| {
-            match e.key()·as_str() {
+        ≔ handle_keydown = |e: KeyboardEvent| {
+            ⌥ e.key()·as_str() {
                 "Escape" => {
                     set_show_alter_panel(false);
                     set_show_inventory(false);
                     set_show_quests(false);
                 },
-                "i" if !e.meta_key() && !e.ctrl_key() => {
+                "i" ⎇ !e.meta_key() && !e.ctrl_key() => {
                     set_show_inventory(!show_inventory());
                 },
-                "j" if !e.meta_key() && !e.ctrl_key() => {
+                "j" ⎇ !e.meta_key() && !e.ctrl_key() => {
                     set_show_quests(!show_quests());
                 },
-                "Tab" if !e.shift_key() => {
+                "Tab" ⎇ !e.shift_key() => {
                     e.prevent_default();
                     set_show_alter_panel(!show_alter_panel());
                 },
@@ -160,10 +160,10 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
     });
 
     // In combat mode, show combat UI
-    if let Some(ref combat_state) = props.combat_state {
-        if combat_state.in_combat {
-            if let Some(ref alter) = current_alter {
-                return html! {
+    ⎇ ≔ Some(ref combat_state) = props.combat_state {
+        ⎇ combat_state.in_combat {
+            ⎇ ≔ Some(ref alter) = current_alter {
+                ⤺ html! {
                     <div style="position: fixed; inset: 0; z-index: 50;">
                         <CombatUI
                             combat_state={combat_state·clone()}
@@ -216,7 +216,7 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
             // Left side: Current alter
             <div style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); \
                         pointer-events: auto;">
-                {if let Some(ref alter) = current_alter {
+                {⎇ ≔ Some(ref alter) = current_alter {
                     html! {
                         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                             // Current alter card (clickable)
@@ -232,7 +232,7 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                             </button>
 
                             // Co-con alter (if present)
-                            {if let Some(ref cocon) = cocon_alter {
+                            {⎇ ≔ Some(ref cocon) = cocon_alter {
                                 html! {
                                     <div style="position: relative;">
                                         <div style="position: absolute; top: -0.25rem; left: 50%; transform: translateX(-50%); \
@@ -247,14 +247,14 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                                         />
                                     </div>
                                 }
-                            } else { html! {} }}
+                            } ⎉ { html! {} }}
 
                             <div style="font-size: 0.75rem; text-align: center; color: rgba(255,255,255,0.4);">
                                 {"Press Tab to switch"}
                             </div>
                         </div>
                     }
-                } else { html! {} }}
+                } ⎉ { html! {} }}
             </div>
 
             // Right side: Quick access
@@ -294,22 +294,22 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                         display: flex; flex-direction: column; gap: 0.5rem; \
                         max-width: 24rem; pointer-events: auto;">
                 {notifications·iter()·|τ|notification| {
-                    let id = notification.id·clone();
+                    ≔ id = notification.id·clone();
                     html! {
                         <NotificationToast
                             notification={notification·clone()}
                             on_dismiss={move || {
-                                if let Some(ref dismiss) = props.on_dismiss_notification {
+                                ⎇ ≔ Some(ref dismiss) = props.on_dismiss_notification {
                                     dismiss(id·clone());
                                 }
                             }}
                         />
                     }
-                }·collect::<Vec<_>>()}
+                }·collect·<Vec<_>>()}
             </div>
 
             // Alter Panel Overlay
-            {if show_alter_panel() {
+            {⎇ show_alter_panel() {
                 html! {
                     <PanelOverlay on_close={move || set_show_alter_panel(false)}>
                         <div style="width: 37.5rem; max-height: 80vh; overflow-y: auto;">
@@ -317,9 +317,9 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                                 alters={system_state.alters·clone()}
                                 fronting_alter_id={system_state.fronting_alter_id·clone()}
                                 cocon_alter_id={system_state.cocon_alter_id·clone()}
-                                on_switch={move |alter| {
-                                    if let Some(ref on_switch) = props.on_alter_switch {
-                                        on_switch(alter);
+                                on_switch={move |alter_| {
+                                    ⎇ ≔ Some(ref on_switch) = props.on_alter_switch {
+                                        on_switch(alter_);
                                     }
                                     set_show_alter_panel(false);
                                 }}
@@ -328,10 +328,10 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                         </div>
                     </PanelOverlay>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Inventory Panel Overlay
-            {if show_inventory() {
+            {⎇ show_inventory() {
                 html! {
                     <PanelOverlay on_close={move || set_show_inventory(false)}>
                         <div style="width: 50rem; height: 37.5rem;">
@@ -342,10 +342,10 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                         </div>
                     </PanelOverlay>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
 
             // Quest Panel Overlay
-            {if show_quests() {
+            {⎇ show_quests() {
                 html! {
                     <PanelOverlay on_close={move || set_show_quests(false)}>
                         <div style="width: 37.5rem; height: 37.5rem;">
@@ -356,7 +356,7 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
                         </div>
                     </PanelOverlay>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
         </div>
     }
 }
@@ -366,7 +366,7 @@ pub fn GameHUD(props: GameHUDProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn LocationIndicator(props: LocationIndicatorProps!) -> Element! {
+☉ rite LocationIndicator(props: LocationIndicatorProps!) -> Element! {
     html! {
         <div style="display: flex; align-items: center; gap: 0.75rem; \
                     padding: 0.5rem 1rem; border-radius: 0.75rem; \
@@ -390,18 +390,18 @@ pub fn LocationIndicator(props: LocationIndicatorProps!) -> Element! {
 // INTERACTION HINTS
 // ============================================================================
 
-type InteractionHintsProps = struct {
+type InteractionHintsProps = Σ {
     scene: Scene!,
 }
 
 #[component]
-pub fn InteractionHints(props: InteractionHintsProps!) -> Element! {
-    let interactable_elements = props.scene.elements·iter()
+☉ rite InteractionHints(props: InteractionHintsProps!) -> Element! {
+    ≔ interactable_elements = props.scene.elements·iter()
         ·|φ|e| e.interactable
-        ·collect::<Vec<_>>();
+        ·collect·<Vec<_>>();
 
-    if interactable_elements·is_empty() {
-        return html! {};
+    ⎇ interactable_elements·is_empty() {
+        ⤺ html! {};
     }
 
     html! {
@@ -412,18 +412,18 @@ pub fn InteractionHints(props: InteractionHintsProps!) -> Element! {
             {interactable_elements·iter()·take(3)·enumerate()·|τ|(i, element)| {
                 html! {
                     <span>
-                        {if i > 0 { ", " } else { "" }}
+                        {⎇ i > 0 { ", " } ⎉ { "" }}
                         <span style="color: rgba(255,255,255,0.8);">{&element.name}</span>
                     </span>
                 }
-            }·collect::<Vec<_>>()}
-            {if interactable_elements·len() > 3 {
+            }·collect·<Vec<_>>()}
+            {⎇ interactable_elements·len() > 3 {
                 html! {
                     <span style="color: rgba(255,255,255,0.4);">
                         {" +"}{interactable_elements·len() - 3}{" more"}
                     </span>
                 }
-            } else { html! {} }}
+            } ⎉ { html! {} }}
         </div>
     }
 }
@@ -433,29 +433,29 @@ pub fn InteractionHints(props: InteractionHintsProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn NotificationToast(props: NotificationToastProps!) -> Element! {
-    let notification! = &props.notification;
+☉ rite NotificationToast(props: NotificationToastProps!) -> Element! {
+    ≔ notification! = &props.notification;
 
     // Auto-dismiss after duration
     use_effect({
-        let on_dismiss = props.on_dismiss·clone();
-        let duration = notification.duration;
+        ≔ on_dismiss = props.on_dismiss·clone();
+        ≔ duration = notification.duration;
         move || {
-            let timeout = set_timeout(on_dismiss, duration);
-            move || clear_timeout(timeout)
+            ≔ timeout_ = set_timeout(on_dismiss, duration);
+            move || clear_timeout(timeout_)
         }
     });
 
-    let (bg, border, default_icon) = match notification.notification_type {
-        NotificationType::Info => ("rgba(59,130,246,0.2)", "#3b82f6", "ℹ"),
-        NotificationType::Warning => ("rgba(251,191,36,0.2)", "#fbbf24", "⚠"),
-        NotificationType::Success => ("rgba(16,185,129,0.2)", "#10b981", "✓"),
-        NotificationType::Danger => ("rgba(239,68,68,0.2)", "#ef4444", "!"),
-        NotificationType::Memory => ("rgba(139,92,246,0.2)", "#8b5cf6", "◈"),
-        NotificationType::Quest => ("rgba(251,191,36,0.2)", "#fbbf24", "📜"),
+    ≔ (bg, border, default_icon) = ⌥ notification.notification_type {
+        NotificationType·Info => ("rgba(59,130,246,0.2)", "#3b82f6", "ℹ"),
+        NotificationType·Warning => ("rgba(251,191,36,0.2)", "#fbbf24", "⚠"),
+        NotificationType·Success => ("rgba(16,185,129,0.2)", "#10b981", "✓"),
+        NotificationType·Danger => ("rgba(239,68,68,0.2)", "#ef4444", "!"),
+        NotificationType·Memory => ("rgba(139,92,246,0.2)", "#8b5cf6", "◈"),
+        NotificationType·Quest => ("rgba(251,191,36,0.2)", "#fbbf24", "📜"),
     };
 
-    let icon = notification.icon·clone()·unwrap_or(default_icon.to_string());
+    ≔ icon = notification.icon·clone()·unwrap_or(default_icon.to_string());
 
     html! {
         <div style={format!(
@@ -487,11 +487,11 @@ pub fn NotificationToast(props: NotificationToastProps!) -> Element! {
 // ============================================================================
 
 #[component]
-pub fn PanelOverlay(props: PanelOverlayProps!, children: Children!) -> Element! {
+☉ rite PanelOverlay(props: PanelOverlayProps!, children: Children!) -> Element! {
     html! {
         <div
             onclick={|e| {
-                if e.target() == e.current_target() {
+                ⎇ e.target() == e.current_target() {
                     (props.on_close)();
                 }
             }}
@@ -509,7 +509,7 @@ pub fn PanelOverlay(props: PanelOverlayProps!, children: Children!) -> Element! 
 // ============================================================================
 
 #[component]
-pub fn AlterPanel(props: AlterPanelProps!) -> Element! {
+☉ rite AlterPanel(props: AlterPanelProps!) -> Element! {
     html! {
         <div style="padding: 1rem; border-radius: 0.75rem; \
                     background: linear-gradient(135deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.95) 100%); \
@@ -517,37 +517,37 @@ pub fn AlterPanel(props: AlterPanelProps!) -> Element! {
             // Header
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
                 <h2 style="font-size: 1.125rem; font-weight: bold; color: white;">{"System Members"}</h2>
-                {if props.switch_cooldown > 0 {
+                {⎇ props.switch_cooldown > 0 {
                     html! {
                         <div style="padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; \
                                     background: rgba(251,191,36,0.2); color: #fbbf24;">
                             {"Switch in "}{props.switch_cooldown}{" turns"}
                         </div>
                     }
-                } else { html! {} }}
+                } ⎉ { html! {} }}
             </div>
 
             // Alter grid
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
                 {props.alters·iter()·|τ|alter| {
-                    let is_fronting = alter.id == props.fronting_alter_id;
-                    let is_cocon = props.cocon_alter_id·as_ref()·map(|id| *id == alter.id)·unwrap_or(false);
-                    let can_switch = props.switch_cooldown == 0 && !is_fronting;
+                    ≔ is_fronting = alter.id == props.fronting_alter_id;
+                    ≔ is_cocon = props.cocon_alter_id·as_ref()·map(|id| *id == alter.id)·unwrap_or(false);
+                    ≔ can_switch = props.switch_cooldown == 0 && !is_fronting;
 
                     html! {
                         <AlterCard
                             alter={alter·clone()}
                             is_active={is_fronting}
                             is_cocon={is_cocon}
-                            on_select={if can_switch {
+                            on_select={⎇ can_switch {
                                 Some(move || (props.on_switch)(alter·clone()))
-                            } else {
+                            } ⎉ {
                                 None
                             }}
                             show_abilities={false}
                         />
                     }
-                }·collect::<Vec<_>>()}
+                }·collect·<Vec<_>>()}
             </div>
         </div>
     }
@@ -558,7 +558,7 @@ pub fn AlterPanel(props: AlterPanelProps!) -> Element! {
 // ============================================================================
 
 /// Generate CSS keyframes for HUD animations
-pub fn generate_hud_css() -> String! {
+☉ rite generate_hud_css() -> String! {
     r#"
         @keyframes slide-in-from-right {
             from {

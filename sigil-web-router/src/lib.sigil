@@ -25,26 +25,26 @@
 //! }
 //! ```
 
-pub mod router;
-pub mod route;
-pub mod link;
-pub mod params;
-pub mod history;
-pub mod guards;
+☉ scroll router;
+☉ scroll route;
+☉ scroll link;
+☉ scroll params;
+☉ scroll history;
+☉ scroll guards;
 
-pub use router::Router;
-pub use route::Route;
-pub use link::Link;
-pub use params::{Params, use_params, use_query};
-pub use history::{use_navigate, use_location, Navigate};
-pub use guards::{RouteGuard, Redirect};
+☉ invoke router·Router;
+☉ invoke route·Route;
+☉ invoke link·Link;
+☉ invoke params·{Params, use_params, use_query};
+☉ invoke history·{use_navigate, use_location, Navigate};
+☉ invoke guards·{RouteGuard, Redirect};
 
 /// Prelude - common imports
-pub mod prelude {
-    pub use crate::Router;
-    pub use crate::Route;
-    pub use crate::Link;
-    pub use crate::params::*;
-    pub use crate::history::*;
-    pub use crate::guards::*;
+☉ scroll prelude {
+    ☉ invoke crate·Router;
+    ☉ invoke crate·Route;
+    ☉ invoke crate·Link;
+    ☉ invoke crate·params·*;
+    ☉ invoke crate·history·*;
+    ☉ invoke crate·guards·*;
 }
