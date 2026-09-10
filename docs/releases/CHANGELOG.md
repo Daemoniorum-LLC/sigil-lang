@@ -5,6 +5,27 @@ All notable changes to Sigil will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`sigil migrate` no longer defaults to overwriting its input** (#92). The
+  command now requires one of three destinations, and refuses with exit code 2
+  if given none:
+  - `-o <dir>` / `--output <dir>` — write the migrated tree to `<dir>`,
+    mirroring the input structure and converting `.rs` to `.sg`. The input is
+    left byte-for-byte alone. This is the recommended mode.
+  - `--dry-run` (alias `--diff`) — report what would change and write nothing
+    anywhere. `.rs` files are in scope, so this doubles as a read-only pass for
+    the reserved-name diagnostic over a Rust crate.
+  - `--in-place` — the old behaviour, kept but now opt-in.
+
+  `--in-place` cannot be combined with `-o` or `--dry-run`. `--backup` applies
+  to `--in-place`. `--workspace` accepts `--dry-run` or `--in-place`.
+
+  Previously `sigil migrate <path>` rewrote `<path>`, so the destructive mode
+  was the one you got by typing the least, with no backup and no preview.
+
 ## [0.4.0] - 2026-01-25
 
 ### Added
