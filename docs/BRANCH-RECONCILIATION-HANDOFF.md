@@ -74,29 +74,31 @@ unconditional. Recovering those needs a decision about the grammar, not a wider 
 | ~~#66~~ | the parse_type_path fix standalone | closed — #74 carries it |
 
 ```
-   #74  main→develop  ──┬──►  #77 record ancestry  ──►  release-merge develop→main
-       ✔ merged         │         (open)                (fixes nihil on main)
+   #74  main→develop  ──┬──►  #77 record ancestry  ──►  #79 release-merge develop→main
+       ✔ merged         │         ✔ merged                  ✔ merged -- nihil fixed on main
                         │
                         ├──►  #62 merges develop into itself, then resolves
                         │
                         └──►  downstream consumers repin   ✔ user-swarm done
 ```
 
+**The reconciliation is finished.** `main` is `0d37171` and its tree hash is `0468f09…` --
+byte-identical to `develop`. The divergence is closed rather than moved: `main` carries the
+middledot type-path fix and parses nihil at 102/104, where it parsed 83/104 before.
+
 **#74 was the bottleneck and it has merged.** PR #62 retargeted itself from `main` to `develop`
 citing #69, and its author reached the same conclusion independently: resolving its 13
 conflicting files earlier "would be throwaway work against a `develop` that #74 replaces". It
 can now resolve against the merged `develop`.
 
-**The release-merge back to `main` is still the half nobody has done.** Until it happens, `main`
-stays at nihil 83/104 and the divergence has been moved rather than closed.
-
-**#74 landed as a squash, and that costs one more step.** The content arrived; the ancestry did
-not. `git merge-base --is-ancestor main develop` still answers no, so git's base for a
-`develop → main` merge is `aeadd52`, sixteen commits back, and the merge re-conflicts in the
-same five parser files. PR **#77** fixes that with an ancestry-only `-s ours` merge whose tree
-hash is byte-identical to `d20a33c`; after it lands the release merge is a fast-forward. **#77
-must be merged with a merge commit — squashing it discards the second parent, which is the
-whole change.**
+**#74 landed as a squash, and that cost one extra step — worth recording, because the next
+integration merge will hit it again.** The content arrived; the ancestry did not.
+`git merge-base --is-ancestor main develop` answered *no*, so git's base for a `develop → main`
+merge was `aeadd52`, sixteen commits back, and the merge re-conflicted in the same five parser
+files. PR **#77** fixed it with an ancestry-only `-s ours` merge whose tree hash was
+byte-identical to `d20a33c`, and it had to be merged **with a merge commit** — a squash would
+have discarded the second parent, which was the whole change, while appearing to succeed. With
+the ancestry recorded, #79 was the fast-forward it should always have been.
 
 ## 4. How #74's 97 hunks were resolved
 
@@ -161,8 +163,8 @@ that made most of this work weaker than it looked.
 
 ## 6. Left open
 
-1. **The release-merge `develop` → `main`.** Nothing else closes the divergence. Take #77
-   first (with a merge commit, not a squash) and it is a fast-forward.
+1. ~~The release-merge `develop` → `main`.~~ **Done** — #77 then #79. `main` and `develop`
+   now have the same tree.
 2. **develop's morgoth dip** (50 → 42) is undiagnosed. #74 masks it by taking main's side, so it
    will not show up in the merged parse rates — but the defect may still be in develop's
    history and would resurface if those hunks are ever revisited.
