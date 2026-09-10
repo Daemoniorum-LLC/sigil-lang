@@ -6000,6 +6000,10 @@ struct CollisionScan {
     /// The last non-whitespace byte, for `!` before a bracket and `$` before a
     /// word.
     prev_byte: u8,
+    /// The byte before the *previous* word, so a name behind a `mut` can still
+    /// be seen to start a closure parameter: in `|mut tome|` the byte before
+    /// `tome` is the `t` of `mut`, and the bar is one word further back.
+    prev_word_before: u8,
 }
 
 /// Tally names in one span of code that the parser refuses where they stand.
@@ -6014,6 +6018,7 @@ fn collect_in_code(
         prev_words,
         in_where,
         prev_byte,
+        prev_word_before,
     } = state;
     // Everything above carries over from the previous span deliberately: a
     // comment is not a syntactic break, so `let /* why */ x: T` is still a
@@ -6115,8 +6120,16 @@ fn collect_in_code(
             // parameter named after its own type; the byte before it is the
             // `:`, so it is not. `|x: &'a Tome|` fails the same test on the
             // `a` of the lifetime.
+            // `|mut tome|` starts a parameter one word further back: the byte
+            // before the name is the `t` of `mut`, so the test has to look
+            // past it to the bar or comma before *that*. The typed
+            // `|mut tome: u32|` was already caught by its colon, which is what
+            // made the untyped form a quiet false negative rather than a
+            // visible one.
+            let starts_a_param = matches!(before, b'|' | b',')
+                || (prev_words[1] == "mut" && matches!(*prev_word_before, b'|' | b','));
             let untyped_closure_param = in_closure_params
-                && matches!(before, b'|' | b',')
+                && starts_a_param
                 && matches!(rest.as_bytes().first(), Some(b',') | Some(b'|'));
             if (untyped_closure_param || (rest.starts_with(':') && !rest.starts_with("::")))
                 && !*in_where
@@ -6132,6 +6145,7 @@ fn collect_in_code(
                 }
             }
             *prev_byte = bytes[i - 1];
+            *prev_word_before = before;
             if word == "where" {
                 *in_where = true;
             }
@@ -8052,6 +8066,50 @@ mod migrate_span_tests {
     }
 
     #[test]
+    fn a_mut_closure_parameter_is_still_a_parameter() {
+        // #91. A closure parameter is found either by the colon in `|x: T|`
+        // or, untyped, by starting and ending one -- the byte before it is the
+        // bar or a comma, and a comma or the closing bar follows. `|mut tome|`
+        // satisfies neither: the byte before `tome` is the `t` of `mut`, and
+        // there is no colon. A quiet false negative in the same direction as
+        // #84 -- a name that is fine as a field and refused as a binding went
+        // unwarned.
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        assert_eq!(
+            f("fn g() { let f = |mut tome| tome; }"),
+            vec![("tome".into(), 1)]
+        );
+        // The typed form always worked; its colon finds it.
+        assert_eq!(
+            f("fn g() { let f = |mut tome: u32| tome; }"),
+            vec![("tome".into(), 1)]
+        );
+        // Not only after the opening bar.
+        assert_eq!(
+            f("fn g() { let f = |a, mut tome| a; }"),
+            vec![("tome".into(), 1)]
+        );
+        assert_eq!(
+            f("fn g() { let f = move |mut tome| tome; }"),
+            vec![("tome".into(), 1)]
+        );
+        // `mut` reaches back exactly one word, and only to a bar or a comma.
+        // A type is still not a name: the word before `u32` is `mut`, but what
+        // precedes that `mut` is a colon.
+        assert!(f("fn g() { let f = |x: mut u32| x; }").is_empty());
+        // A binding the parser accepts stays unreported, `mut` or not --
+        // `this` is the direction #84/#89 was about.
+        assert!(f("fn g() { let f = |mut this| this; }").is_empty());
+        // Outside a parameter list `mut` reaches nothing: a local is judged by
+        // `let mut`, not by this.
+        assert_eq!(
+            f("fn g() { let mut tome: u32 = 1; }"),
+            vec![("tome".into(), 1)]
+        );
+    }
+
+    #[test]
     fn a_bar_that_is_not_a_parameter_list_is_left_alone() {
         let f = |src: &str| super::collect_keyword_collisions(src);
 
@@ -8530,10 +8588,11 @@ mod collision_corpus_tests {
         // false positive, in cranelift-isle and rustc-demangle. `of` is
         // refused in every position, so it is a true positive and stays.
         //
-        // `tome` is counted once: the typed `|mut tome: u32|` is found by its
-        // colon. The untyped `|mut tome|` beside it is #91 -- a quiet false
-        // negative, in the same direction as #84.
-        expect("closure_params.rs", &[("of", 1), ("tome", 1)]);
+        // `tome` is counted twice: once for the typed `|mut tome: u32|`,
+        // found by its colon, and once for the untyped `|mut tome|` beside it.
+        // The untyped form was #91 -- the byte before the name is the `t` of
+        // `mut`, so the test had to look one word further back for the bar.
+        expect("closure_params.rs", &[("of", 1), ("tome", 2)]);
     }
 
     #[test]
