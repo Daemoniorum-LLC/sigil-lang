@@ -1,6 +1,7 @@
 # How `invoke tome·…` finds a module file
 
-**Recorded:** 2026-09-10, closing #109.
+**Recorded:** 2026-09-10, closing #109; extended the same day for the
+`scroll` half.
 
 A tome used to have to be one flat directory. `invoke tome·tui·grid·{Region}`
 took the module name from the **second** segment alone, looked for `tui.sg`,
@@ -41,6 +42,35 @@ every existing tome uses.
 
 `scroll foo;` goes through the same resolver, so a module may be a file or a
 directory with a `mod.sg` in it.
+
+## `scroll` is relative; `tome·` is not
+
+The two roots differ, and that is the whole reason they are tracked separately:
+
+| | rooted at |
+|---|---|
+| `scroll grid;` | the **declaring file's own directory**, then the tome root |
+| `invoke tome·…` / `crate·` / `above·` | the tome root, wherever it is written |
+
+`scroll grid;` inside `tui/vterm.sg` names `tui/grid.sg`, the way `mod grid;`
+in `tui/vterm.rs` names `tui/grid.rs`. Resolving it against the tome root
+wherever it appeared meant a module in a subdirectory could not name the module
+beside it, and the failure — `undefined variable` — said nothing about why.
+
+The root stays in the search list *after* the declaring file's directory, so a
+nested module may still name one of the tome's top-level modules
+(`scroll constants;` from `tui/grid.sg` reaches `constants.sg`), and every flat
+tome is unaffected. When both exist, the sibling wins: searching the root first
+would stop a subdirectory from having a module of its own whenever the tome
+already had one by that name, which is exactly when grouping is wanted.
+
+`current_module_dir` carries the declaring file's directory and is saved and
+restored around each module load, alongside `current_module`.
+
+`above·` is *not* currently relative — it resolves from the tome root like
+`tome·`. That happens to give the right answer for a top-level module and is
+left alone deliberately; making it mean "the parent module" is a semantic
+change, not a fix.
 
 ## What is still flat
 
