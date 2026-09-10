@@ -3183,12 +3183,30 @@ impl TypeChecker {
                 };
                 // For bootstrapping: skip error when either side is a type variable or function
                 // (indicates incomplete type inference from unhandled expressions)
+                // An int literal against a float is already allowed everywhere
+                // else: `take_f64(0)` passes the argument coercion, and `x + 70`
+                // passes the arithmetic one. Only comparison rejected it, so
+                // `x ≥ 70` was an error while `x + 70` beside it was fine.
+                //
+                // That inconsistency is what #112 actually is. It reads as a
+                // migrator defect — JS has one numeric type, so a `number` prop
+                // becomes `f64` while its literals become `I64` — but emitting
+                // those literals as floats instead is worse: measured over the
+                // 102-component Lares corpus it took compilation from 101 to 90,
+                // because `.len() > 0` is a `USize` against a float. The
+                // literals were never the problem; the asymmetry was.
+                //
+                // Directional in both orders, reusing the argument rule so there
+                // is one definition of "int may become float".
+                let numeric_coercion = Self::is_numeric_coercion(&left_inner, &right_inner)
+                    || Self::is_numeric_coercion(&right_inner, &left_inner);
                 if !self.unify(&left_inner, &right_inner)
                     && !is_var_or_fn(&left_inner)
                     && !is_var_or_fn(&right_inner)
                     && !has_unit(&left_inner, &right_inner)
                     && !both_int(&left_inner, &right_inner)
                     && !has_named(&left_inner, &right_inner)
+                    && !numeric_coercion
                 {
                     self.error(TypeError::new(format!(
                         "comparison operands must have same type: left={:?}, right={:?}",
