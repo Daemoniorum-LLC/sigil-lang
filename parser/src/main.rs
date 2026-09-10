@@ -8043,9 +8043,14 @@ mod migrate_span_tests {
         // its bracket stack per span sees no enclosing brace here, takes no
         // position, and reports nothing — so it misses the documented field,
         // which is the ordinary shape of the thing this diagnostic is for.
+        // Specimen is `loop`, which is still refused in field position. It used
+        // to be `each` — an ASCII prose alias for `∀` that the parser now
+        // accepts as a field name, so it stopped being a collision and this
+        // test would otherwise be asserting the absence of a defect that was
+        // fixed rather than the bracket-stack behaviour it is for.
         assert_eq!(
-            f("pub struct S {\n    /// Emit extend method.\n    pub each: Option<Each>,\n}"),
-            vec![("each".into(), 1)]
+            f("pub struct S {\n    /// Emit extend method.\n    pub loop: Option<Loop>,\n}"),
+            vec![("loop".into(), 1)]
         );
         assert_eq!(
             f("struct S {\n    pub n: u8, // trailing\n    pub aspect: f32,\n}"),
@@ -8733,14 +8738,22 @@ mod collision_corpus_tests {
     fn a_closure_parameter_is_a_binding() {
         // #84/#89. `this` binds cleanly, so no closure parameter spelled
         // `this` may be reported -- develop carried exactly that as a live
-        // false positive, in cranelift-isle and rustc-demangle. `of` is
-        // refused in every position, so it is a true positive and stays.
+        // false positive, in cranelift-isle and rustc-demangle.
+        //
+        // `of` was here too, on the premise that it "is refused in every
+        // position, so it is a true positive". That premise is no longer true:
+        // `of` is the ASCII prose alias for `∈`, and it now resolves as an
+        // ordinary name in field, parameter and local position like the other
+        // 90 keywords. So it binds cleanly and joins `this` in not being
+        // reported. The detector needed no change to learn this — it probes the
+        // real parser per position, which is exactly why it tracked the change
+        // on its own and this expectation did not.
         //
         // `tome` is counted twice: once for the typed `|mut tome: u32|`,
         // found by its colon, and once for the untyped `|mut tome|` beside it.
         // The untyped form was #91 -- the byte before the name is the `t` of
         // `mut`, so the test had to look one word further back for the bar.
-        expect("closure_params.rs", &[("of", 1), ("tome", 2)]);
+        expect("closure_params.rs", &[("tome", 2)]);
     }
 
     #[test]
