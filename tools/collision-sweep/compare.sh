@@ -45,6 +45,17 @@ if [ -n "$bb" ] && [ "$bb" = "$ab" ]; then
     echo "compare: note -- both sweeps used the same binary ($bb)" >&2
 fi
 
+# A dirty build cannot be cited. The commit in the manifest does not describe
+# what ran, so a result measured from one is not reproducible by anyone else.
+for side in 1 2; do
+    eval "dir=\$$side"
+    tree=$(awk '/^build-tree:/ {print $2}' "$dir/manifest.txt" 2>/dev/null || true)
+    if [ "$tree" = "DIRTY" ]; then
+        echo "compare: WARNING -- $dir was measured with a binary built from a DIRTY tree;" >&2
+        echo "  its build-commit does not describe what ran, so this side is not citable" >&2
+    fi
+done
+
 added=$(LC_ALL=C comm -13 "$before" "$after" || true)
 removed=$(LC_ALL=C comm -23 "$before" "$after" || true)
 

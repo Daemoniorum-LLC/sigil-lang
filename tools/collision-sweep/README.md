@@ -41,12 +41,19 @@ Writes into the output directory:
 
 | file | |
 |---|---|
-| `manifest.txt` | root, file count, digest of the sorted relative path list, sha256 of the binary |
+| `manifest.txt` | root, file count, digest of the sorted relative path list, and the build: binary sha256, commit, branch, clean/dirty |
 | `findings.tsv` | `relative/path` ⇥ `name` ⇥ `uses`, sorted |
 | `summary.txt` | the headline counts, and names ranked by files affected |
 | `raw.err` | the `migrate` stderr the report was parsed from |
 
-**The corpus and the build are reported, not assumed.** "The crate registry"
+**The corpus and the build are reported, not assumed.** A shared build output
+is an input nobody declares — a sibling session measured Sigil with a binary
+built from a dirty feature branch 49 commits ahead of `develop` and 173 behind
+it, and the number it produced read as a `develop` number. So the manifest
+records the build's commit, branch and clean/dirty state alongside the hash,
+and both `sweep.sh` and `compare.sh` say so loudly when a tree was dirty: a
+hash tells you two runs used different code, but only a commit plus a clean
+flag tells you *which* code, and whether anyone else can check it out. "The crate registry"
 is not reproducible across machines or months; a file count plus a digest of
 the relative path list is. `sigil` has no `--version`, so the binary is
 recorded by sha256 — a path and a timestamp do not say which code ran, which is
