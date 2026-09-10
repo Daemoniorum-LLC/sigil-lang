@@ -10832,6 +10832,103 @@ impl Interpreter {
         }
     }
 
+    /// The leftmost identifier of a `·`-separated chain, without allocating.
+    /// Every method call runs through this, so it must stay cheap.
+    fn receiver_root_name(receiver: &Expr) -> Option<&str> {
+        match receiver {
+            Expr::Path(path) => Some(path.segments.first()?.ident.name.as_str()),
+            Expr::Field { expr, .. } => Self::receiver_root_name(expr),
+            _ => None,
+        }
+    }
+
+    /// Rebuild a `·`-separated chain of bare identifiers into path segments.
+    ///
+    /// Only a bare chain can name a module, so anything else — a call, an index,
+    /// a literal, a segment carrying generics — ends the walk and yields `None`.
+    /// `outer·inner` reaches here as `Field { expr: Path(outer), field: inner }`,
+    /// which is why the `Field` arm exists.
+    fn receiver_path_segments(receiver: &Expr) -> Option<Vec<PathSegment>> {
+        match receiver {
+            Expr::Path(path) if path.segments.iter().all(|s| s.generics.is_none()) => {
+                Some(path.segments.clone())
+            }
+            Expr::Field { expr, field } => {
+                let mut segments = Self::receiver_path_segments(expr)?;
+                segments.push(PathSegment {
+                    ident: field.clone(),
+                    generics: None,
+                });
+                Some(segments)
+            }
+            _ => None,
+        }
+    }
+
+    /// Is this "method call" really a module-qualified path the parser could not
+    /// recognise? If so, hand back the path it should have been.
+    ///
+    /// #87 taught `parse_type_path` to accept `·` as a path separator after a
+    /// lowercase segment when the `·ident` chain ahead reaches an UPPERCASE one,
+    /// because Sigil types are uppercase and methods are not. That covers
+    /// `geom·P·new(…)`. It cannot cover `geom·lerp(…)`: nothing in that chain is
+    /// uppercase, so it is lexically identical to `tag·to_string()` and the
+    /// parser leaves it as a method call on `geom` (#95).
+    ///
+    /// No lookahead can separate the two, because the difference is what the
+    /// first segment is BOUND to — a name-resolution question, not a syntactic
+    /// one. So it is settled here, where the binding is known:
+    ///
+    /// * A bound name is a value, and `value·method()` is a method call. That is
+    ///   what keeps `tag·to_string()` working, and it is why a local variable
+    ///   shadowing a scroll name still resolves to the variable.
+    /// * An unbound name that names a scroll in scope was never a receiver. The
+    ///   only thing it could have produced is `undefined variable: geom`, so
+    ///   retrying it as a path replaces an error and can never mask a program
+    ///   that worked.
+    fn module_qualified_path(
+        &self,
+        receiver: &Expr,
+        method: &Ident,
+        type_args: &Option<Vec<TypeExpr>>,
+    ) -> Option<TypePath> {
+        if self.crate_modules.is_empty() {
+            return None;
+        }
+        // Reject a bound receiver before allocating anything: that is what almost
+        // every method call is, and this sits on the path of all of them.
+        if self
+            .environment
+            .borrow()
+            .get(Self::receiver_root_name(receiver)?)
+            .is_some()
+        {
+            return None;
+        }
+        let mut segments = Self::receiver_path_segments(receiver)?;
+        let module = segments
+            .iter()
+            .map(|s| s.ident.name.as_str())
+            .collect::<Vec<_>>()
+            .join("·");
+        if !self.crate_modules.contains(&module) {
+            return None;
+        }
+        // The module must actually own this member. Without the check, an
+        // unresolvable `geom·nosuchfn(…)` reaches the generic path-call machinery
+        // and comes back as an empty struct named `geom` -- silently wrong, and
+        // strictly worse than the `undefined variable: geom` it replaced.
+        let qualified = format!("{}·{}", module, method.name);
+        if self.globals.borrow().get(&qualified).is_none() && !self.types.contains_key(&qualified) {
+            return None;
+        }
+        segments.push(PathSegment {
+            ident: method.clone(),
+            generics: type_args.clone(),
+        });
+        Some(TypePath { segments })
+    }
+
     /// Method call with optional type arguments (generics/turbofish)
     fn eval_method_call_with_generics(
         &mut self,
@@ -10840,6 +10937,12 @@ impl Interpreter {
         args: &[Expr],
         type_args: &Option<Vec<TypeExpr>>,
     ) -> Result<Value, RuntimeError> {
+        // `geom·lerp(…)` is a module-qualified call the parser had to leave as a
+        // method call on an unbound `geom`; see `module_qualified_path`.
+        if let Some(path) = self.module_qualified_path(receiver, method, type_args) {
+            return self.eval_call(&Expr::Path(path), args);
+        }
+
         // Collect const generics from type_args to inject into the method's environment
         // These will be consumed by call_function when the method is actually invoked
         if let Some(ref generics) = type_args {
@@ -26653,6 +26756,118 @@ mod tests {
                 ⤺ p·scaled(2.0);
             }";
         assert!(matches!(run(source), Ok(Value::Float(v)) if v == 6.0));
+    }
+
+    /// The scroll every #95 test resolves against: a type reached through an
+    /// uppercase segment, a free function that is not, and an uppercase const.
+    const GEOM_SCROLL: &str = "\
+        scroll geom {
+            ☉ Σ P { ☉ x: f32 }
+            ⊢ P {
+                ☉ rite new(x: f32) -> Self { Self { x } }
+                ☉ rite scaled(self, k: f32) -> f32 { self.x * k }
+            }
+            ☉ rite lerp(a: f32, b: f32, t: f32) -> f32 { a + (b - a) * t }
+            ☉ const EPSILON: f32 = 0.5;
+        }
+        ";
+
+    #[test]
+    fn module_qualified_call_to_a_lowercase_function_resolves() {
+        // #95. #87 accepts `·` as a path separator after a lowercase segment only
+        // when the `·ident` chain ahead reaches an UPPERCASE one, because Sigil
+        // types are uppercase and methods are not. `geom·lerp(…)` reaches nothing
+        // uppercase, so the parser must leave it as a method call on `geom` --
+        // it is lexically indistinguishable from `tag·to_string()`.
+        //
+        // It is settled in the interpreter instead: `geom` is unbound and names a
+        // scroll, so the "method call" is retried as the path it always was.
+        let source = format!("{}rite main() {{ ⤺ geom·lerp(0.0, 10.0, 0.5); }}", GEOM_SCROLL);
+        assert!(matches!(run(&source), Ok(Value::Float(v)) if v == 5.0));
+    }
+
+    #[test]
+    fn module_qualified_type_method_still_resolves_alongside_the_lowercase_fallback() {
+        // The #87 shape, asserted against the same scroll that now also carries a
+        // free function: the fallback must not disturb a path the parser already
+        // builds for itself.
+        let source = format!("{}rite main() {{ ⤺ geom·P·new(3.0).x; }}", GEOM_SCROLL);
+        assert!(matches!(run(&source), Ok(Value::Float(v)) if v == 3.0));
+    }
+
+    #[test]
+    fn module_qualified_uppercase_const_still_resolves() {
+        // `geom·EPSILON` reaches an uppercase segment, so it is a path before the
+        // interpreter ever sees it. Pinned because it is the sibling spelling of
+        // `geom·lerp` at the call sites #95 blocks.
+        let source = format!("{}rite main() {{ ⤺ geom·EPSILON; }}", GEOM_SCROLL);
+        assert!(matches!(run(&source), Ok(Value::Float(v)) if v == 0.5));
+    }
+
+    #[test]
+    fn a_bound_receiver_is_still_a_method_call_even_when_the_scroll_has_that_name() {
+        // The fallback keys on the receiver being UNBOUND. `p` is bound, so
+        // `p·scaled(…)` stays a method call -- and would even if the scroll
+        // exported a free function of the same name.
+        let source = format!(
+            "{}rite main() {{ ≔ p = geom·P·new(3.0); ⤺ p·scaled(2.0); }}",
+            GEOM_SCROLL
+        );
+        assert!(matches!(run(&source), Ok(Value::Float(v)) if v == 6.0));
+    }
+
+    #[test]
+    fn a_variable_shadowing_a_scroll_name_resolves_to_the_variable() {
+        // A local named `geom` shadows the scroll `geom`. Because the fallback
+        // only fires on an unbound name, `geom·scaled(2.0)` dispatches to the
+        // variable's method and never to the scroll -- 3.0 * 2.0, not the
+        // scroll's `lerp`.
+        let source = format!(
+            "{}rite main() {{ ≔ geom = geom·P·new(3.0); ⤺ geom·scaled(2.0); }}",
+            GEOM_SCROLL
+        );
+        assert!(matches!(run(&source), Ok(Value::Float(v)) if v == 6.0));
+    }
+
+    #[test]
+    fn an_undefined_receiver_still_reports_the_undefined_name() {
+        // A name that is neither bound nor a scroll must keep reporting itself,
+        // not be swallowed by the retry.
+        let source = format!("{}rite main() {{ ⤺ nosuch·whatever(1.0); }}", GEOM_SCROLL);
+        let err = run(&source).expect_err("nosuch is undefined");
+        assert_eq!(err.code, RuntimeErrorCode::UndefinedVariable);
+        assert!(
+            err.to_string().contains("nosuch"),
+            "error should name the undefined receiver, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn a_scroll_member_that_does_not_exist_is_an_error_not_an_empty_struct() {
+        // The retry is refused when the scroll has no such member. Without that
+        // guard the rewritten path reaches the generic path-call machinery and
+        // comes back as an empty struct named `geom` -- silently wrong, and worse
+        // than the error it replaced.
+        let source = format!("{}rite main() {{ ⤺ geom·nosuchfn(1.0); }}", GEOM_SCROLL);
+        let err = run(&source).expect_err("geom·nosuchfn does not exist");
+        assert_eq!(err.code, RuntimeErrorCode::UndefinedVariable);
+    }
+
+    #[test]
+    fn a_nested_scroll_qualified_call_to_a_lowercase_function_resolves() {
+        // `outer·inner·twice(…)` reaches the interpreter as a method call whose
+        // receiver is `Field { Path(outer), inner }`, not a one-segment path, so
+        // the receiver has to be flattened back into path segments before the
+        // scroll lookup can see `outer·inner`.
+        let source = "\
+            scroll outer {
+                scroll inner {
+                    ☉ rite twice(a: f32) -> f32 { a * 2.0 }
+                }
+            }
+            rite main() { ⤺ outer·inner·twice(2.0); }";
+        assert!(matches!(run(source), Ok(Value::Float(v)) if v == 4.0));
     }
 
     #[test]
