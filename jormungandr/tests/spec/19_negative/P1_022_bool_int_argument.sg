@@ -1,0 +1,32 @@
+// EXPECTED: Static type checking should catch this error
+// Negative Test: passing an integer where a bool is required
+// Priority: P1
+// Issue: sigil-lang#114 (gap S128)
+//
+// This is the program every codegen backend must agree to refuse. #114 was that
+// `sigil wasm` and `sigil rust` returned exit 0 for a rejected program, and
+// `sigil wasm` emitted a structurally valid, instantiable module — so the
+// backend had silently chosen a meaning for something the checker rejects.
+//
+// The original reproduction for #114 was a f64/int comparison. It is not used
+// here on purpose: #112 makes that comparison legal, since an int literal
+// against a float is already accepted in argument and arithmetic position and
+// only comparison rejected it. A negative test has to stay negative, so this
+// uses bool-against-int, which has no coercion path in any position.
+//
+// This case pins the type checker's verdict. It does NOT pin the exit codes of
+// the codegen commands, because the suite runs programs through the interpreter
+// and cannot ask what `sigil wasm` returned. That absence is why #114 survived
+// #96, which fixed the same thing for `llvm` and `compile` while nothing asked
+// the other two.
+
+rite take_bool(b: bool!) -> i64! { ⎇ b { 1 } ⎉ { 0 } }
+
+rite bad() -> i64! {
+    ≔ n = 5;
+    take_bool(n)          // SHOULD ERROR: expected bool!, found I64
+}
+
+rite main() {
+    println(bad());
+}
