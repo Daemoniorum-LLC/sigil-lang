@@ -5110,7 +5110,18 @@ impl Interpreter {
                     _ => return Err(RuntimeError::new(format!("Index must be an integer, got {:?}", idx_val))),
                 };
 
-                // Get the array and modify it
+                // Get the array and modify it.
+                //
+                // In place, through the `Rc` the binding already holds. This
+                // used to clone the whole vector, set the element, and rebind
+                // the name to a *new* `Rc`, which made `arr[i] = v` the one
+                // mutation that did not survive a return: the callee saw its
+                // own write because its local binding had been repointed, and
+                // the caller kept the original array. `arr[i].f = v`,
+                // `arr[i][j] = v`, `push(arr, v)` and `s.items[i] = v` all
+                // mutate through the shared `Rc` and always propagated, so
+                // three mutations out of four worked and nobody suspected the
+                // fourth.
                 if let Expr::Path(path) = expr.as_ref() {
                     if path.segments.len() == 1 {
                         let name = &path.segments[0].ident.name;
@@ -5119,14 +5130,9 @@ impl Interpreter {
                         })?;
 
                         if let Value::Array(arr) = current {
-                            let borrowed = arr.borrow();
-                            let mut new_arr = borrowed.clone();
-                            drop(borrowed);
-                            if idx < new_arr.len() {
-                                new_arr[idx] = val.clone();
-                                self.environment
-                                    .borrow_mut()
-                                    .set(name, Value::Array(Rc::new(RefCell::new(new_arr))))?;
+                            let mut borrowed = arr.borrow_mut();
+                            if idx < borrowed.len() {
+                                borrowed[idx] = val.clone();
                                 return Ok(val);
                             }
                         }
@@ -26974,6 +26980,102 @@ mod tests {
             invoke tome·output·{width};
             rite main() { ⤺ width(); }";
         assert!(matches!(tome.run(source), Ok(Value::Int(3))));
+    }
+
+    /// Every way a function can mutate an array its caller passed it.
+    ///
+    /// | mutation inside a function | propagated before #115 |
+    /// |---|---|
+    /// | `arr[0] = 42`      | **no** |
+    /// | `arr[0].field = 42`| yes |
+    /// | `arr[0][0] = 42`   | yes |
+    /// | `push(arr, v)`     | yes |
+    /// | `s.items[0] = 42`  | yes |
+    ///
+    /// One row of five behaved differently from the rest, and silently: the
+    /// callee saw its own write, so the function looked right in isolation and
+    /// under any test that checked state from inside it. Only the caller saw
+    /// the loss. Three of four neighbouring mutations working is what made it
+    /// lethal -- it shaped morgoth, whose pane swap had to stay inline in a
+    /// ~1000-line `main()` because extracting it stopped working.
+    ///
+    /// One test per row, so the next person reading this can see at a glance
+    /// which propagate.
+    #[test]
+    fn an_array_slot_assigned_in_a_function_reaches_the_caller() {
+        // The row that was broken. `arr[i] = v` on a bare name cloned the
+        // whole vector, set the element, and rebound the *local* name to a new
+        // `Rc` -- so the write landed on an array nobody else held.
+        let source = "\
+            rite set(arr) { arr[0] = 42; }
+            rite main() { ≔ mut a = [1, 2]; set(a); ⤺ a[0]; }";
+        assert!(matches!(run(source), Ok(Value::Int(42))));
+    }
+
+    #[test]
+    fn an_element_field_assigned_in_a_function_reaches_the_caller() {
+        let source = "\
+            ☉ Σ H { ☉ n: i64 }
+            rite set(arr) { arr[0].n = 42; }
+            rite main() { ≔ mut a = [H { n: 1 }]; set(a); ⤺ a[0].n; }";
+        assert!(matches!(run(source), Ok(Value::Int(42))));
+    }
+
+    #[test]
+    fn a_nested_array_slot_assigned_in_a_function_reaches_the_caller() {
+        // `arr[0][0] = v` working while `arr[0] = v` did not is what showed
+        // the difference was an implementation artifact and not value
+        // semantics: the base of the outer index is itself an index, so it
+        // never took the bare-name path.
+        let source = "\
+            rite set(o) { o[0][0] = 42; }
+            rite main() { ≔ mut a = [[1, 2]]; set(a); ⤺ a[0][0]; }";
+        assert!(matches!(run(source), Ok(Value::Int(42))));
+    }
+
+    #[test]
+    fn a_push_in_a_function_reaches_the_caller() {
+        let source = "\
+            rite add(arr) { push(arr, 99); }
+            rite main() { ≔ mut a = [1]; add(a); ⤺ len(a); }";
+        assert!(matches!(run(source), Ok(Value::Int(2))));
+    }
+
+    #[test]
+    fn an_array_reached_through_a_struct_field_reaches_the_caller() {
+        // The asymmetry that located the bug. `s.items[0] = v` and
+        // `arr[0] = v` both end at "set element 0 of an array", and only the
+        // second was lost -- so the difference had to be in how the base was
+        // reached, not in what was done to it. A struct field is not a
+        // single-segment path, so it fell through to the shared-`Rc` write
+        // that every other row already used.
+        let source = "\
+            ☉ Σ S { ☉ items: [i64] }
+            rite set(s) { s.items[0] = 42; }
+            rite main() { ≔ mut s = S { items: [1, 2] }; set(s); ⤺ s.items[0]; }";
+        assert!(matches!(run(source), Ok(Value::Int(42))));
+    }
+
+    #[test]
+    fn an_array_binding_aliases_rather_than_copies() {
+        // What the rows above are consistent *with*. Sigil arrays are
+        // reference-like: `≔ b = a` shares the array, and a push, an element
+        // field write and a nested slot write through `b` were all already
+        // visible through `a` before #115. Only the bare-name slot assignment
+        // was not -- and it was not a copy either, since it rebound one
+        // binding and left every other alias pointing at the original.
+        //
+        // Pinned because the fix makes this row agree with the other three,
+        // which is a visible change in same-scope behaviour and should fail
+        // loudly if anyone reverses it.
+        let source = "\
+            rite main() {
+                ≔ mut a = [1, 2];
+                ≔ mut b = a;
+                b[0] = 42;
+                ⤺ a[0];
+            }";
+        assert!(matches!(run(source), Ok(Value::Int(42))));
     }
 
     #[test]
