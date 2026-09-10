@@ -1288,6 +1288,15 @@ pub struct Interpreter {
     pub generic_type_bindings: HashMap<String, String>,
     /// Current source directory for resolving relative module paths
     pub current_source_dir: Option<String>,
+    /// The directory of the module file currently being executed, when that is
+    /// not the tome root.
+    ///
+    /// `scroll foo;` is *relative*: inside `tui/vterm.sg` it names
+    /// `tui/grid.sg`, the way `mod grid;` in `tui/vterm.rs` names
+    /// `tui/grid.rs`. `tome·` is not -- it is rooted at the tome wherever it
+    /// is written -- so the two directories are tracked separately rather than
+    /// by moving `current_source_dir` around.
+    pub current_module_dir: Option<String>,
     /// Loaded crates registry (crate_name -> true if loaded)
     pub loaded_crates: HashSet<String>,
     /// Crates currently being loaded (for circular dependency detection)
@@ -1425,6 +1434,7 @@ impl Interpreter {
             current_self_type: None,
             generic_type_bindings: HashMap::new(),
             current_source_dir: None,
+            current_module_dir: None,
             loaded_crates: HashSet::new(),
             loading_crates: HashSet::new(),
             project_root: None,
@@ -3833,15 +3843,33 @@ impl Interpreter {
                     // External module: `scroll foo;` - foo.sigil, foo.sg, or a
                     // directory of its own carrying foo/mod.sg, the way the
                     // workspace loader already reads a subdirectory.
-                    if let Some(ref source_dir) = self.current_source_dir {
-                        let module_path = Self::resolve_tome_module(
-                            source_dir,
-                            std::slice::from_ref(&module_name),
-                        )
-                        .map(|(_, file)| std::path::PathBuf::from(file))
-                        .unwrap_or_else(|| {
-                            std::path::Path::new(source_dir).join(format!("{}.sg", module_name))
-                        });
+                    // Searched from the declaring file's own directory first,
+                    // then the tome root. A `scroll` is relative, so
+                    // `scroll grid;` inside `tui/vterm.sg` names `tui/grid.sg`
+                    // and not a `grid.sg` at the root that may not exist. The
+                    // root stays in the list because every flat tome relies on
+                    // it, and because a nested module may still name one of the
+                    // tome's top-level modules.
+                    let search_dirs: Vec<String> = self
+                        .current_module_dir
+                        .iter()
+                        .chain(self.current_source_dir.iter())
+                        .cloned()
+                        .collect();
+                    if !search_dirs.is_empty() {
+                        let module_path = search_dirs
+                            .iter()
+                            .find_map(|dir| {
+                                Self::resolve_tome_module(
+                                    dir,
+                                    std::slice::from_ref(&module_name),
+                                )
+                            })
+                            .map(|(_, file)| std::path::PathBuf::from(file))
+                            .unwrap_or_else(|| {
+                                std::path::Path::new(&search_dirs[0])
+                                    .join(format!("{}.sg", module_name))
+                            });
 
                         if module_path.exists() {
                             crate::sigil_debug!(
@@ -3857,9 +3885,16 @@ impl Interpreter {
                                         Ok(parsed_file) => {
                                             // Save current module context
                                             let prev_module = self.current_module.clone();
+                                            let prev_module_dir =
+                                                self.current_module_dir.clone();
 
                                             // Set module context for registering definitions
                                             self.current_module = Some(module_name.clone());
+                                            // A `scroll` inside this file is
+                                            // relative to *this* file.
+                                            self.current_module_dir = module_path
+                                                .parent()
+                                                .map(|p| p.to_string_lossy().into_owned());
 
                                             // Execute module definitions
                                             for item in &parsed_file.items {
@@ -3874,6 +3909,7 @@ impl Interpreter {
 
                                             // Restore previous module context
                                             self.current_module = prev_module;
+                                            self.current_module_dir = prev_module_dir;
                                         }
                                         Err(e) => {
                                             crate::sigil_warn!(
@@ -3894,9 +3930,9 @@ impl Interpreter {
                             }
                         } else {
                             crate::sigil_debug!(
-                                "DEBUG Module file not found: {} (source_dir={})",
+                                "DEBUG Module file not found: {} (searched {})",
                                 module_path.display(),
-                                source_dir
+                                search_dirs.join(", ")
                             );
                         }
                     } else {
@@ -4167,10 +4203,16 @@ impl Interpreter {
                                     if let Ok(source) = std::fs::read_to_string(&module_file) {
                                         // Save current module context
                                         let prev_module = self.current_module.clone();
+                                        let prev_module_dir = self.current_module_dir.clone();
 
                                         // Set module context for the tome module
                                         // This ensures impl methods are registered correctly
                                         self.current_module = Some(module_name.clone());
+                                        // A `scroll` inside this file is
+                                        // relative to *this* file.
+                                        self.current_module_dir = std::path::Path::new(&module_file)
+                                            .parent()
+                                            .map(|p| p.to_string_lossy().into_owned());
 
                                         let mut parser = crate::Parser::new(&source);
                                         if let Ok(parsed_file) = parser.parse_file() {
@@ -4181,6 +4223,7 @@ impl Interpreter {
 
                                         // Restore previous module context
                                         self.current_module = prev_module;
+                                        self.current_module_dir = prev_module_dir;
                                     }
                                 }
                             }
@@ -27076,6 +27119,51 @@ mod tests {
                 ⤺ a[0];
             }";
         assert!(matches!(run(source), Ok(Value::Int(42))));
+    }
+
+    #[test]
+    fn a_scroll_inside_a_nested_module_names_its_sibling() {
+        // `scroll` is relative, the way `mod grid;` in `tui/vterm.rs` names
+        // `tui/grid.rs`. It was resolved against the tome root wherever it was
+        // written, so a module in a subdirectory could not name the module
+        // beside it -- and `undefined variable` says nothing about why.
+        let tome = TempTome::new("relscroll");
+        tome.write("tui/vterm.sg", "☉ rite vterm_id() -> i32 { 7 }")
+            .write("tui/mod.sg", "☉ scroll vterm;\n☉ rite layer() -> i32 { 1 }");
+        let source = "\
+            invoke tome·tui·{layer};
+            rite main() { ⤺ layer() + vterm_id(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(8))));
+    }
+
+    #[test]
+    fn a_nested_scroll_still_falls_back_to_the_tome_root() {
+        // The declaring file's directory is searched first, not instead: a
+        // module in a subdirectory may still name one of the tome's top-level
+        // modules, and every flat tome depends on the root being reached.
+        let tome = TempTome::new("relfallback");
+        tome.write("constants.sg", "☉ rite esc() -> i32 { 27 }")
+            .write("tui/grid.sg", "☉ scroll constants;\n☉ rite g() -> i32 { esc() }");
+        let source = "\
+            invoke tome·tui·grid·{g};
+            rite main() { ⤺ g(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(27))));
+    }
+
+    #[test]
+    fn the_sibling_wins_over_a_root_module_of_the_same_name() {
+        // Both exist, and the one beside the declaring file is the one it
+        // means. Searching the root first would have made a subdirectory
+        // unable to have a module of its own whenever the tome already had one
+        // by that name -- which is exactly when grouping is wanted.
+        let tome = TempTome::new("relshadow");
+        tome.write("grid.sg", "☉ rite which() -> i32 { 1 }")
+            .write("tui/grid.sg", "☉ rite which() -> i32 { 2 }")
+            .write("tui/mod.sg", "☉ scroll grid;\n☉ rite pick() -> i32 { which() }");
+        let source = "\
+            invoke tome·tui·{pick};
+            rite main() { ⤺ pick(); }";
+        assert!(matches!(tome.run(source), Ok(Value::Int(2))));
     }
 
     #[test]
