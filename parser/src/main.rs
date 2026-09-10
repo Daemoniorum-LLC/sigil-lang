@@ -647,6 +647,16 @@ fn run_file(path: &str, program_args: &[String], skip_typecheck: bool) -> ExitCo
     }
 }
 
+/// Where a file sits in a directory's load order: the tome's interface, then
+/// its other modules, then the entry point.
+fn load_rank(name: &str) -> u8 {
+    match name {
+        "lib.sigil" | "lib.sg" => 0,
+        "main.sigil" | "main.sg" => 2,
+        _ => 1,
+    }
+}
+
 /// Run all .sg/.sigil files in a directory as a multi-module program
 fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     use std::path::Path;
@@ -670,16 +680,17 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
     // 1. lib.sigil first (defines the module's public interface)
     // 2. Other modules in alphabetical order
     // 3. main.sigil last (uses definitions from other modules)
+    //
+    // Ranked rather than matched pairwise. The pairwise form answered `Less`
+    // to both `cmp("lib.sg", "lib.sigil")` and `cmp("lib.sigil", "lib.sg")`,
+    // and `Greater` to both directions of the `main.*` pair, which is not a
+    // total order -- `sort_by` is allowed to panic on one.
     files.sort_by(|a, b| {
         let a_name = Path::new(a).file_name().and_then(|n| n.to_str()).unwrap_or("");
         let b_name = Path::new(b).file_name().and_then(|n| n.to_str()).unwrap_or("");
-        match (a_name, b_name) {
-            ("lib.sigil", _) | ("lib.sg", _) => std::cmp::Ordering::Less,
-            (_, "lib.sigil") | (_, "lib.sg") => std::cmp::Ordering::Greater,
-            ("main.sigil", _) | ("main.sg", _) => std::cmp::Ordering::Greater,
-            (_, "main.sigil") | (_, "main.sg") => std::cmp::Ordering::Less,
-            _ => a_name.cmp(b_name),
-        }
+        load_rank(a_name)
+            .cmp(&load_rank(b_name))
+            .then_with(|| a_name.cmp(b_name))
     });
 
     if files.is_empty() {
@@ -762,8 +773,13 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
             }
         };
 
-        // Execute to register all definitions
-        if let Err(e) = interpreter.execute(&ast) {
+        // Register this file's definitions *without* running the entry point.
+        // `execute` looks `main` up in the globals rather than in the file it
+        // was handed, so once any file had defined it, every later file's load
+        // ran it again -- and `call_main` below then ran it once more. A
+        // directory of N modules invoked `main` N+1 times, repeating every side
+        // effect it performed.
+        if let Err(e) = interpreter.execute_definitions(&ast) {
             eprintln!("Error loading '{}': {}", file_path, e);
             return ExitCode::from(1);
         }
@@ -8687,3 +8703,80 @@ mod collision_corpus_tests {
     }
 }
 
+#[cfg(test)]
+mod run_directory_tests {
+    use super::load_rank;
+    use sigil_parser::interpreter::{Interpreter, Value};
+    use sigil_parser::parser::Parser;
+
+    fn parse(source: &str) -> sigil_parser::ast::SourceFile {
+        Parser::new(source).parse_file().expect("parse")
+    }
+
+    #[test]
+    fn load_order_ranks_the_interface_first_and_the_entry_point_last() {
+        assert_eq!(load_rank("lib.sg"), 0);
+        assert_eq!(load_rank("lib.sigil"), 0);
+        assert_eq!(load_rank("vector.sg"), 1);
+        assert_eq!(load_rank("main.sg"), 2);
+        assert_eq!(load_rank("main.sigil"), 2);
+    }
+
+    #[test]
+    fn the_load_order_comparator_is_a_total_order() {
+        // The pairwise `match (a_name, b_name)` it replaced answered `Less` to
+        // both directions of ("lib.sg", "lib.sigil") and `Greater` to both
+        // directions of the `main.*` pair, because each hit the same arm
+        // whichever way round it was asked. `sort_by` is allowed to panic on a
+        // comparator like that.
+        let names = [
+            "lib.sg",
+            "lib.sigil",
+            "main.sg",
+            "main.sigil",
+            "vector.sg",
+            "bounds.sigil",
+        ];
+        let cmp = |a: &str, b: &str| load_rank(a).cmp(&load_rank(b)).then_with(|| a.cmp(b));
+        for a in names {
+            assert_eq!(cmp(a, a), std::cmp::Ordering::Equal, "{a} vs itself");
+            for b in names {
+                assert_eq!(
+                    cmp(a, b),
+                    cmp(b, a).reverse(),
+                    "asymmetric for ({a}, {b})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn loading_a_module_does_not_run_the_entry_point() {
+        // `run_directory` loads every file and then calls `main` itself.
+        // `execute` looks `main` up in the globals rather than in the file it
+        // was handed, so once any file had defined it every later load ran it
+        // again: N modules produced N+1 invocations, repeating every side
+        // effect. Loading has to register and nothing more.
+        let entry = "☉ rite main() -> !i32 { ⤺ 7; }";
+
+        // `execute` runs it, and hands back what it returned.
+        let mut ran = Interpreter::new();
+        assert!(
+            matches!(ran.execute(&parse(entry)), Ok(Value::Int(7))),
+            "execute is expected to invoke main -- if this changed, \
+             run_directory's reason for not using it changed too"
+        );
+
+        // `execute_definitions` must not, on the entry file or on a sibling
+        // loaded after it.
+        let mut loaded = Interpreter::new();
+        assert!(matches!(
+            loaded.execute_definitions(&parse(entry)),
+            Ok(Value::Null)
+        ));
+        assert!(matches!(
+            loaded.execute_definitions(&parse("☉ rite other() -> i32 { 1 }")),
+            Ok(Value::Null)
+        ));
+    }
+}
