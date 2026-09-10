@@ -33,6 +33,56 @@ use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Config, Editor, Helper};
 
+/// This binary's own provenance, baked in at build time by build.rs.
+///
+/// `sigil` had no --version at all, so a binary could not be asked what it
+/// was. The obvious path on a shared workstation can hold a build from an
+/// unrelated branch with uncommitted changes, and measurements taken with it
+/// read as measurements of develop. That is not hypothetical: it produced two
+/// confident public corrections against work that was correct (#153).
+///
+/// A dirty build is legitimate during development. The defect is that its
+/// output is indistinguishable from a release build's, so the marker is part
+/// of the version string itself rather than a build-time warning that scrolls
+/// past.
+fn print_version() {
+    let dirty = env!("SIGIL_BUILD_DIRTY");
+    let full = env!("SIGIL_BUILD_COMMIT");
+
+    let marker = if dirty != "0" && dirty != "unknown" { " (DIRTY)" } else { "" };
+
+    println!("sigil {}{}", env!("CARGO_PKG_VERSION"), marker);
+    println!("commit:   {}", env!("SIGIL_BUILD_COMMIT_SHORT"));
+    println!("branch:   {}", env!("SIGIL_BUILD_BRANCH"));
+    println!("profile:  {}", env!("SIGIL_BUILD_PROFILE"));
+    println!("features: {}", env!("SIGIL_BUILD_FEATURES"));
+
+    match dirty {
+        "0" => {
+            println!("tree:     clean");
+            println!();
+            println!("This binary corresponds to commit {}.", full);
+        }
+        "unknown" => {
+            println!("tree:     unknown (not built from a git repository)");
+            println!();
+            println!("No provenance available: built outside a git repository, from a");
+            println!("tarball or a vendored copy, so there is no commit it can be said");
+            println!("to correspond to. Measurements made with it are not attributable");
+            println!("to any revision.");
+        }
+        n => {
+            println!("tree:     DIRTY -- {} modified tracked file(s)", n);
+            println!();
+            println!("WARNING: this binary does NOT correspond to commit {}.", full);
+            println!("It was built from a working tree with uncommitted changes, so no");
+            println!("commit describes what is in it and nobody else can reproduce it.");
+            println!("Do not report measurements from this binary as belonging to a");
+            println!("branch or a release.");
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
 
@@ -45,6 +95,11 @@ fn main() -> ExitCode {
     let args: Vec<String> = args.into_iter()
         .filter(|a| a != "--verbose" && a != "-v")
         .collect();
+
+    if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V" || args[1] == "version") {
+        print_version();
+        return ExitCode::SUCCESS;
+    }
 
     if args.len() < 2 {
         eprintln!("Sigil v0.1.0 - A polysynthetic programming language");
