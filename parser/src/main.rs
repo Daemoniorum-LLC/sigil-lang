@@ -1193,6 +1193,40 @@ fn jit_file(path: &str) -> ExitCode {
     }
 }
 
+/// Type-check a source file before handing it to LLVM codegen.
+///
+/// `sigil check` already refuses these programs, but `sigil llvm` and
+/// `sigil compile` used to walk straight past that verdict into codegen, where
+/// an ill-typed program becomes malformed IR: at best the LLVM module verifier
+/// rejects it after the whole module has been dumped to stdout, at worst the
+/// JIT runs it and segfaults. Gating here makes the codegen paths agree with
+/// `sigil check`, and turns those failures back into source-level diagnostics.
+///
+/// Returns `Err(ExitCode)` if the caller should stop.
+#[cfg(feature = "llvm")]
+fn typecheck_before_codegen(path: &str, source: &str) -> Result<(), ExitCode> {
+    let mut parser = Parser::new(source);
+    match parser.parse_file() {
+        Ok(ast) => {
+            let mut type_checker = TypeChecker::new();
+            if let Err(type_errors) = type_checker.check_file(&ast) {
+                for err in &type_errors {
+                    eprintln!("Type error in '{}': {}", path, err.message);
+                    for note in &err.notes {
+                        eprintln!("  note: {}", note);
+                    }
+                }
+                return Err(ExitCode::from(1));
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Parse error in '{}': {}", path, e);
+            Err(ExitCode::from(1))
+        }
+    }
+}
+
 #[cfg(feature = "llvm")]
 fn llvm_file(path: &str) -> ExitCode {
     use inkwell::context::Context;
@@ -1204,6 +1238,10 @@ fn llvm_file(path: &str) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+
+    if let Err(code) = typecheck_before_codegen(path, &source) {
+        return code;
+    }
 
     // Create LLVM context and compiler
     let context = Context::create();
@@ -1262,6 +1300,10 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
             return ExitCode::from(1);
         }
     };
+
+    if let Err(code) = typecheck_before_codegen(path, &source) {
+        return code;
+    }
 
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();
