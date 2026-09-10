@@ -1,0 +1,97 @@
+// Test: `Self` inside a trait impl for a primitive or reference type
+// Issue: sigil-lang#108 (Lares capability probe, gap S125)
+// Priority: P1 - blocks the Sigil-primitive → JS-value boundary in Qliphoth
+//
+// Purpose:
+// `⊢ Trait ∀ f64` must bind `Self` to the primitive `f64`. It used to bind it
+// to `Named("f64")`, which has no unify arm against `Type::Float(F64)`, so
+// every use of `self` in the body failed against its own type:
+//
+//     type mismatch in argument 1: expected F64!, found f64!
+//
+// For `bool` the two render identically, which is why the original report read
+// as nonsense — "expected bool!, found bool!". A reference target was worse:
+// `∀ &str` is not a `TypeExpr::Path`, so the impl type resolved to the literal
+// string "Unknown".
+//
+// The regression this pins is a *type* check, so the assertions below are
+// incidental — the test fails at check time if the gap reopens.
+//
+// Expected behavior:
+// All assertions pass; the file type-checks.
+
+Θ Describe {
+    rite describe(self: Self!) -> i64!;
+}
+
+rite take_bool(b: bool!) -> i64! { ⎇ b { 1 } ⎉ { 0 } }
+rite take_f64(n: f64!) -> i64! { ⎇ n > 0.0 { 1 } ⎉ { 0 } }
+rite take_i32(n: i32!) -> i64! { ⎇ n > 0 { 1 } ⎉ { 0 } }
+rite take_u32(n: u32!) -> i64! { ⎇ n > 0 { 1 } ⎉ { 0 } }
+rite take_str(s: &str!) -> i64! { ⎇ s == "" { 0 } ⎉ { 1 } }
+
+⊢ Describe ∀ bool {
+    rite describe(self: Self!) -> i64! { take_bool(self) }
+}
+
+⊢ Describe ∀ f64 {
+    rite describe(self: Self!) -> i64! { take_f64(self) }
+}
+
+⊢ Describe ∀ i32 {
+    rite describe(self: Self!) -> i64! { take_i32(self) }
+}
+
+⊢ Describe ∀ u32 {
+    rite describe(self: Self!) -> i64! { take_u32(self) }
+}
+
+⊢ Describe ∀ &str {
+    rite describe(self: Self!) -> i64! { take_str(self) }
+}
+
+// A named type must keep resolving exactly as before — this is the control,
+// and it is the path the fix deliberately leaves untouched.
+Σ Wrap { x: i64! }
+rite take_wrap(w: Wrap!) -> i64! { 1 }
+
+⊢ Describe ∀ Wrap {
+    rite describe(self: Self!) -> i64! { take_wrap(self) }
+}
+
+rite test_primitive_impls() {
+    ≔ b: bool = true;
+    assert_eq(take_bool(b), 1);
+
+    ≔ f: f64 = 2.5;
+    assert_eq(take_f64(f), 1);
+
+    ≔ i: i32 = 7;
+    assert_eq(take_i32(i), 1);
+
+    ≔ u: u32 = 7;
+    assert_eq(take_u32(u), 1);
+
+    println("  PASS: test_primitive_impls");
+}
+
+rite test_reference_impl() {
+    assert_eq(take_str("hello"), 1);
+    assert_eq(take_str(""), 0);
+    println("  PASS: test_reference_impl");
+}
+
+rite test_named_impl_unchanged() {
+    ≔ w = Wrap { x: 1 };
+    assert_eq(take_wrap(w), 1);
+    println("  PASS: test_named_impl_unchanged");
+}
+
+☉ rite main() -> !i32 {
+    println("=== S125: Self inside a primitive trait impl ===");
+    test_primitive_impls();
+    test_reference_impl();
+    test_named_impl_unchanged();
+    println("All Self-in-primitive-impl tests passed!");
+    ⤺ 0;
+}

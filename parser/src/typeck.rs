@@ -1494,10 +1494,23 @@ impl TypeChecker {
                     }
                 }
 
-                // Set current_self_type with generics so Self resolves correctly
-                self.current_self_type = Some(Type::Named {
-                    name: type_name.clone(),
-                    generics: generic_types,
+                // `⊢ Trait ∀ f64` must bind `Self` to the primitive `f64`, not to
+                // `Named("f64")`. The two have no unify arm, so every use of `self`
+                // in the body failed against its own type — and for `bool` both
+                // render as "bool", giving "expected bool!, found bool!"
+                // (sigil-lang#108). A reference target was worse: `∀ &str` is not a
+                // `TypeExpr::Path` at all, so `type_path_to_name` returned the
+                // literal string "Unknown".
+                //
+                // `convert_type` already maps primitives, references and the rest.
+                // Only user-defined types come back as `Named`, and for those the
+                // name-plus-generics form below is kept exactly as it was.
+                self.current_self_type = Some(match self.convert_type(&impl_block.self_ty) {
+                    Type::Named { .. } => Type::Named {
+                        name: type_name.clone(),
+                        generics: generic_types,
+                    },
+                    primitive_or_ref => primitive_or_ref,
                 });
 
                 // Collect associated functions/methods
@@ -1655,10 +1668,23 @@ impl TypeChecker {
                     }
                 }
 
-                // Set current_self_type with generics so Self resolves correctly
-                self.current_self_type = Some(Type::Named {
-                    name: type_name,
-                    generics: generic_types,
+                // `⊢ Trait ∀ f64` must bind `Self` to the primitive `f64`, not to
+                // `Named("f64")`. The two have no unify arm, so every use of `self`
+                // in the body failed against its own type — and for `bool` both
+                // render as "bool", giving "expected bool!, found bool!"
+                // (sigil-lang#108). A reference target was worse: `∀ &str` is not a
+                // `TypeExpr::Path` at all, so `type_path_to_name` returned the
+                // literal string "Unknown".
+                //
+                // `convert_type` already maps primitives, references and the rest.
+                // Only user-defined types come back as `Named`, and for those the
+                // name-plus-generics form below is kept exactly as it was.
+                self.current_self_type = Some(match self.convert_type(&impl_block.self_ty) {
+                    Type::Named { .. } => Type::Named {
+                        name: type_name,
+                        generics: generic_types,
+                    },
+                    primitive_or_ref => primitive_or_ref,
                 });
 
                 // Check each function in the impl block
