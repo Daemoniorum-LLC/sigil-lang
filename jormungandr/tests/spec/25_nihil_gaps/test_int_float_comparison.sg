@@ -1,0 +1,72 @@
+// Test: an integer literal compared against a float
+// Issue: sigil-lang#112 (Lares capability probe, gap S127)
+// Priority: P1
+//
+// Purpose:
+// `x ≥ 70` where `x: f64` used to be a type error while `take_f64(0)` and
+// `x + 70` — the same coercion, in argument and arithmetic position — were both
+// already accepted. Comparison was the only position that refused it.
+//
+// The three forms below must agree. They are written together deliberately:
+// the defect was not that any one of them was wrong, but that they disagreed,
+// and a rule applied in two places out of three is the kind of thing that reads
+// as correct in every individual review.
+//
+// This surfaced through the React→Sigil migration, where it looks like a
+// migrator defect: JS has one numeric type, so a `number` prop becomes `f64`
+// while its literals become `I64`. Emitting those literals as floats instead
+// was measured over the 102-component Lares corpus and took compilation from
+// 101 to 90 — `.len() > 0` is a `USize` against a float. The literals were
+// never the problem.
+//
+// Expected behavior:
+// All assertions pass; the file type-checks.
+
+rite take_f64(n: f64!) -> i64! { ⎇ n > 0.0 { 1 } ⎉ { 0 } }
+
+rite test_argument_position() {
+    // Already legal before the fix.
+    assert_eq(take_f64(0), 0);
+    assert_eq(take_f64(3), 1);
+    println("  PASS: test_argument_position");
+}
+
+rite test_arithmetic_position() {
+    // Already legal before the fix.
+    ≔ x: f64 = 0.5;
+    ≔ y = x + 70;
+    assert(y > 70.0, "0.5 + 70 should exceed 70");
+    println("  PASS: test_arithmetic_position");
+}
+
+rite test_comparison_position() {
+    // The one that used to be rejected, in both operand orders.
+    ≔ x: f64 = 80.5;
+    assert(x ≥ 70, "80.5 >= 70");
+    assert((x > 70), "80.5 > 70");
+    assert(70 ≤ x, "70 <= 80.5 — int on the left");
+    assert((70 < x), "70 < 80.5 — int on the left");
+
+    ≔ low: f64 = 0.5;
+    assert((low < 40), "0.5 < 40");
+    println("  PASS: test_comparison_position");
+}
+
+rite test_integers_still_compare_as_integers() {
+    // The coercion must not disturb int-to-int comparison, which is what
+    // `.len() > 0` relies on everywhere.
+    ≔ n = 5;
+    assert((n > 0), "5 > 0");
+    assert(n ≤ 5, "5 <= 5");
+    println("  PASS: test_integers_still_compare_as_integers");
+}
+
+☉ rite main() -> !i32 {
+    println("=== S127: int literal against a float ===");
+    test_argument_position();
+    test_arithmetic_position();
+    test_comparison_position();
+    test_integers_still_compare_as_integers();
+    println("All int/float comparison tests passed!");
+    ⤺ 0;
+}
