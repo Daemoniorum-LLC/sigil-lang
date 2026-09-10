@@ -1,6 +1,9 @@
 socket: OK
-setsockopt: OK
 bind: OK
 listen: OK
+port really taken: OK
+connect: OK
 accept: OK
+accept gave a new fd: OK
+accepted socket carries the data: OK
 close: OK
