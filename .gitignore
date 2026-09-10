@@ -123,3 +123,7 @@ jormungandr/build/c/
 # jormungandr build outputs
 jormungandr/build/jormungandr
 jormungandr/build/.jormungandr_full.c
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc

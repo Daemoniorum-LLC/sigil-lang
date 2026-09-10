@@ -13,8 +13,12 @@ walks the source character by character and only substitutes in code regions.
 Usage:  migrate_legacy_syntax.py [--write] FILE...
         Without --write it reports what would change and touches nothing.
 """
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 # Word-for-word replacements, applied only in code regions. Order matters: the
 # `pub`-prefixed forms must be tried before the bare ones.
@@ -253,47 +257,199 @@ INLINE_OBJ_PARAM = re.compile(r"(:\s*)\{[^{}]*:[^{}]*\}(?=\s*[,)])")
 #
 # `aspect` is Sigil's `trait`; `alter` and `reality` belong to the plurality
 # extension; `of`, `on`, `to`, `from`, `layer`, `scope`, `location`, `body`,
-# `header`, `close`, `connect`, `send`, `recv`, `split`, `stream`, `state` are all
-# spoken words that predate their keyword status. Sources written before then use
-# them as parameters, fields and locals.
+# `header`, `close`, `connect`, `send`, `recv`, `split`, `stream` are all spoken
+# words that predate their keyword status. Sources written before then use them as
+# parameters, fields and locals.
 #
-# Renaming is file-local and two-pass: find the names that appear in an
-# unambiguous BINDING position, then rename every occurrence of exactly those
-# names in that file's code. A keyword can never legitimately be an identifier, so
-# within one file the rename is total — but it cannot follow a name across a file
-# boundary, which is why only bindings drive it.
+# The first version of this pass renamed EVERY keyword it found in a binding
+# position, on the premise that "a keyword can never legitimately be an
+# identifier". That premise is false and the rename it licensed did real damage
+# (#82): `anima`, `body`, `layer` and `scope` are keyword tokens that the parser
+# accepts as field names in both the declaration and the literal, and renaming
+# them rewrote nine existing entries of an append-only file for no parseability at
+# all.
+#
+# What is actually true is narrower and depends on WHERE the name sits. Measured
+# against the real parser, three things hold:
+#
+#   * Some keywords are refused everywhere — `aspect`, `alter`, `of`, `each`,
+#     `mut`, `vary`, `where`, `loop`, `macro`, `yield`, `switch`, `forever`,
+#     `asm`, `legion_field`, `macro_rules`. These are the cases the pass exists
+#     for.
+#   * Some are refused only where a NAME is introduced or selected — `self`,
+#     `Self`, `this`, `This`, `true`, `false`, `yay`, `yea`, `nay`, `_` are fine
+#     as a parameter or a local but not as a field, a variant or a function name.
+#   * Some are refused only in the OTHER direction — `ref`, `super` and `tome`
+#     are accepted as field names and refused as parameters, locals and loop
+#     binders. So position matters in both directions; there is no single
+#     "reserved" set to consult.
+#
+# A fourth case has no fix here and is recorded rather than papered over: `const`,
+# `async`, `move`, `unsafe`, `volatile`, `atomic` and `simd` BIND fine — `≔ const
+# = 1;` parses — but cannot then be read back as an operand, because each opens a
+# modifier or an expression form. The local-binding probe below therefore binds
+# and reads, so those are caught; a keyword reachable only through a position this
+# pass cannot see is left alone by design. Renaming on suspicion is what #82 was.
+#
+# Nothing below is hand-maintained. The keyword set is read out of the lexer's own
+# token table, and acceptance is decided by running the real compiler on a minimal
+# program for the position the name was found in.
+
+# Each context is (regex template, positions to test). A hit means "this name is
+# used in at least these positions", and the name is renamed when the parser
+# refuses ANY of them — the rename is file-wide, so one bad position is enough.
 # Python look-behind must be fixed width, so each context matches the delimiter
 # itself and the name is group 1.
+#
+# `, name :` cannot be told apart from a struct literal key or a field
+# declaration by regex alone, so it tests both `param` and `field`; the union is
+# the honest reading of an ambiguous match. `( name :` opens a parameter list and
+# `^ name :` starts a struct field, so those two are read narrowly.
+#
+# The residual: a parameter list wrapped across lines puts a parameter in the
+# `^ name :` shape, where this reads it as a field. For the handful of keywords
+# whose answer differs between the two — `ref`, `super`, `tome` — such a
+# parameter is left un-renamed and the file fails to parse afterwards. That is a
+# loud failure the migrator can see, and it is the right side to err on: the
+# defect being fixed here is a rename that bought no parseability and silently
+# rewrote a file that said not to.
 _BIND_CONTEXTS = [
-    r"[(,]\s*(%s)\s*:",       # parameter or field:  (alter: T   , of: T
-    r"^\s*(%s)\s*:",          # struct field on its own line
-    r"[(,]\s*(%s)\s*[,)]",    # tuple binder:        ∀ (id, alter) ∈ …
-    r"≔\s+(%s)\s*=",         # local binding
-    r"\brite\s+(%s)\s*[(\[]", # a function NAMED for a keyword
+    (r"\(\s*(%s)\s*:",         ("param",)),           # (alter: T
+    (r",\s*(%s)\s*:",          ("param", "field")),   # , of: T
+    (r"^\s*(%s)\s*:",          ("field",)),           # struct field on its own line
+    (r"[(,]\s*(%s)\s*[,)]",    ("binder",)),          # ∀ (id, alter) ∈ …
+    (r"≔\s+(%s)\s*=",         ("local",)),           # local binding
+    (r"\brite\s+(%s)\s*[(\[]", ("fn_name",)),         # a function NAMED for a keyword
 ]
+
+# Minimal whole programs, one per position, with the name under test substituted.
+# Each is valid Sigil for an ordinary identifier — `_probe_toolchain` proves that
+# before trusting any answer, so a template that rots is caught rather than
+# silently classifying every keyword as reserved.
+_PROBE_TEMPLATES = {
+    "field":   "Σ Probe {{\n    {name}: Int,\n}}\n\n"
+               "rite probe_main() {{\n    ≔ p = Probe {{ {name}: 1 }};\n    ≔ q = p.{name};\n}}\n",
+    "param":   "rite probe_main({name}: Int) -> Int {{\n    ret 1;\n}}\n",
+    # Binds AND reads: a name that binds but cannot be used is still broken.
+    "local":   "rite probe_main() {{\n    ≔ {name} = 1;\n    ≔ other = {name} + 1;\n}}\n",
+    "binder":  "rite probe_main() {{\n    ≔ xs = [1, 2, 3];\n    ∀ {name} ∈ xs {{\n        ≔ y = 1;\n    }}\n}}\n",
+    "fn_name": "rite {name}() -> Int {{\n    ret 1;\n}}\n",
+}
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_LEXER_RS = os.path.join(_ROOT, "parser", "src", "lexer.rs")
+
+# (keyword, position) -> True when the parser refuses it there.
+_REJECT_CACHE = {}
+_TOOLCHAIN = None  # None = not probed yet, False = unusable, str = path to sigil
+_WARNED_NO_TOOLCHAIN = False
+
+
+def _find_sigil():
+    """The compiler this pass asks. Its answer is the only authority here."""
+    env = os.environ.get("SIGIL_BIN")
+    if env and os.path.exists(env):
+        return env
+    for rel in ("parser/target/release/sigil", "parser/target/debug/sigil"):
+        cand = os.path.join(_ROOT, rel)
+        if os.path.exists(cand):
+            return cand
+    return shutil.which("sigil")
+
+
+def _parses(sigil, source):
+    """True when `sigil check` accepts this program."""
+    tmp = tempfile.mkdtemp(prefix="sigil-kw-probe")
+    path = os.path.join(tmp, "probe.sigil")
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(source)
+        done = subprocess.run(
+            [sigil, "check", path], capture_output=True, text=True, timeout=120
+        )
+        return done.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _probe_toolchain():
+    """Locate the compiler and prove the probe templates still describe Sigil.
+
+    A template that stopped parsing would make every keyword look reserved and
+    re-create #82 wholesale, so an ordinary identifier must pass all of them
+    before any answer from this module is trusted.
+    """
+    global _TOOLCHAIN
+    if _TOOLCHAIN is not None:
+        return _TOOLCHAIN
+    sigil = _find_sigil()
+    if not sigil or not os.path.exists(_LEXER_RS):
+        _TOOLCHAIN = False
+        return _TOOLCHAIN
+    for tpl in _PROBE_TEMPLATES.values():
+        if _parses(sigil, tpl.format(name="ordinary_name")) is not True:
+            _TOOLCHAIN = False
+            return _TOOLCHAIN
+    _TOOLCHAIN = sigil
+    return _TOOLCHAIN
+
+
+def sigil_keywords():
+    """Every word-shaped token in the lexer's own table.
+
+    Read out of `parser/src/lexer.rs` rather than copied, so the set cannot drift
+    behind the language the way a transcribed list does.
+    """
+    try:
+        with open(_LEXER_RS, encoding="utf-8") as fh:
+            src = fh.read()
+    except OSError:
+        return set()
+    return set(re.findall(r'#\[token\("([A-Za-z_][A-Za-z0-9_]*)"', src))
+
+
+def _rejects(kw, position):
+    """Does the parser refuse `kw` in `position`? None when it cannot be asked."""
+    key = (kw, position)
+    if key in _REJECT_CACHE:
+        return _REJECT_CACHE[key]
+    sigil = _probe_toolchain()
+    if not sigil:
+        return None
+    ok = _parses(sigil, _PROBE_TEMPLATES[position].format(name=kw))
+    result = None if ok is None else not ok
+    _REJECT_CACHE[key] = result
+    return result
 
 
 def _keyword_identifiers(code):
-    """Names bound in this file that collide with a Sigil keyword."""
+    """Keywords bound in this file that the parser refuses where they are used.
+
+    A keyword the parser is happy with in the position it was found is left
+    alone — that is the whole of #82. Returns an empty set when the compiler
+    cannot be consulted, because renaming without evidence is the defect.
+    """
+    global _WARNED_NO_TOOLCHAIN
+    if not _probe_toolchain():
+        if not _WARNED_NO_TOOLCHAIN:
+            _WARNED_NO_TOOLCHAIN = True
+            print(
+                "warning: no usable `sigil` binary (build parser/, or set SIGIL_BIN) — "
+                "keyword-identifier renaming skipped",
+                file=sys.stderr,
+            )
+        return set()
     found = set()
-    for kw in SIGIL_KEYWORDS:
-        for ctx in _BIND_CONTEXTS:
+    for kw in sigil_keywords():
+        positions = set()
+        for ctx, at in _BIND_CONTEXTS:
             if re.search(ctx % re.escape(kw), code, re.M):
-                found.add(kw)
-                break
+                positions.update(at)
+        if any(_rejects(kw, p) for p in positions):
+            found.add(kw)
     return found
-
-
-SIGIL_KEYWORDS = [
-    "actor", "affine", "alter", "amqp", "anima", "asm", "aspect", "atomic",
-    "body", "broadcast", "close", "cocon", "connect", "consensus", "distribute",
-    "each", "forever", "from", "gather", "gpu", "graphql", "grpc", "header",
-    "headspace", "http", "https", "interfere", "kafka", "layer", "legion_field",
-    "linear", "location", "naked", "nay", "no_grad", "of", "on", "packed",
-    "parallel", "reality", "recv", "ref", "relevant", "retry", "rune", "saga",
-    "scope", "send", "sigil", "simd", "split", "states", "stream", "switch",
-    "timeout", "to", "trigger", "vary", "yay", "yea",
-]
 # `vary` is a modifier on the ≔ binder, so a bare `vary x: T;` or `vary x = v;`
 # needs the binder in front. The first version only matched the annotated form.
 BARE_VARY = re.compile(r"^([ \t]*)vary\s+(\w+\s*[:=])", re.M)
