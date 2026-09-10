@@ -1,6 +1,8 @@
 socket: OK
 connect: OK
 send: OK
-recv: OK
+payload arrived intact: OK
+reply arrived intact: OK
 shutdown: OK
+peer saw EOF: OK
 close: OK
