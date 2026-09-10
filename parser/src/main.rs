@@ -5656,8 +5656,8 @@ fn parser_accepts(name: &str, position: NamePosition) -> bool {
 /// enclosing it.
 ///
 /// `None` means the context is not one of the three that can be judged — a
-/// closure parameter, a match arm, a type ascription somewhere unusual. Those
-/// are passed over rather than guessed at.
+/// match arm, a type ascription somewhere unusual. Those are passed over
+/// rather than guessed at.
 fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePosition> {
     // A `where` bound is not a name being declared. `where Self: Sized` puts
     // `Self` in front of a colon inside a trait body, which otherwise reads as
@@ -5682,10 +5682,49 @@ fn name_position(prev_words: [&str; 2], enclosing: Option<u8>) -> Option<NamePos
         // A parameter list. `fn f(mut x: T)` lands here too, since `mut`
         // alone did not make it a local above.
         Some(b'(') => Some(NamePosition::Parameter),
+        // A closure parameter list, `|x: T|`. The scanner pushes a frame for
+        // it so that the enclosing bracket is the list rather than whatever
+        // block the closure was written inside — a function body's `{` read
+        // as a struct declaration, which judged a *binding* by the rules for
+        // a *field*. The two disagree for `tome`, `ref`, `super`, `const`,
+        // `async`, `move`, `unsafe`, `volatile`, `atomic` and `simd`: all ten
+        // are fine as a field and refused as a binding, so the name went
+        // unwarned. A closure parameter binds, so it is judged as one.
+        Some(b'|') => Some(NamePosition::Parameter),
         // A struct declaration or literal body.
         Some(b'{') => Some(NamePosition::Field),
         _ => None,
     }
+}
+
+/// Whether the `|` about to be read opens a closure parameter list, rather
+/// than being a bitwise or, or a pattern's alternation.
+///
+/// The three are told apart by what comes *before* the bar, because only one
+/// of them opens in expression position:
+///
+/// - `|x: T|` follows `=`, `(`, `[`, `{`, `,`, `;`, `=>`, `:`, another `|`,
+///   the word `move` or `return`, or the start of the file.
+/// - `a | b` follows a value — an identifier, a literal, `)` or `]`.
+/// - `Some(x) | None =>` follows a value-shaped token too.
+///
+/// The set is a deliberate allowlist rather than "anything that is not a
+/// value". Reading a bitwise or as a parameter list is the failure that costs
+/// something — it would leave a frame on the bracket stack — so an unlisted
+/// predecessor is treated as an or, and the worst case is a closure that goes
+/// unjudged. `}` is left out for the same reason: a statement can follow a
+/// block, but a closure written straight after one cannot.
+fn opens_closure_params(prev_byte: u8, prev_words: &[String; 2]) -> bool {
+    // `move` and `return` end in a letter, so the byte before the bar says
+    // nothing about them.
+    if prev_words[1] == "move" || prev_words[1] == "return" {
+        return true;
+    }
+    matches!(
+        prev_byte,
+        // `>` covers both `=>` and `->`; neither can precede a bitwise or.
+        0 | b'=' | b'(' | b'[' | b'{' | b',' | b';' | b'>' | b':' | b'|'
+    )
 }
 
 /// The scanner's state, which must survive from one code span to the next.
@@ -5711,6 +5750,14 @@ struct CollisionScan {
     /// what is really a macro argument. A struct literal nested inside the
     /// invocation pushes its own `{`, so it is still judged — only the
     /// innermost bracket decides.
+    ///
+    /// A closure's `|params|` pushes a `b'|'` frame, so that a closure
+    /// parameter is judged by the list it sits in rather than by the block
+    /// the closure was written inside. That frame is the only one whose
+    /// opening byte is ambiguous — `|` is also a bitwise or and a pattern's
+    /// alternation — so it is pushed only from expression position and
+    /// abandoned the moment something appears that a parameter list cannot
+    /// contain.
     brackets: Vec<(u8, bool, bool)>,
     /// The two words before the current one, for `let` and `let mut`.
     prev_words: [String; 2],
@@ -5742,6 +5789,45 @@ fn collect_in_code(
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
+        let in_closure_params = brackets.last().is_some_and(|&(k, _, _)| k == b'|');
+        // A closure parameter list holds patterns and types and nothing else:
+        // no statement, no block, no bracket it did not open itself, no `=>`.
+        // Meeting one of those means the bar was not a parameter list after
+        // all — a leading `|` in a match arm is the usual way — so the frame
+        // is abandoned before the byte is handled. Leaving it on the stack
+        // would make every later `name:` in the file read as a parameter,
+        // which is exactly the class of bracket fault that produced most of
+        // the wrong answers this scanner has had.
+        if in_closure_params
+            && (matches!(b, b';' | b'{' | b'}' | b')' | b']')
+                || (b == b'=' && bytes.get(i + 1) == Some(&b'>')))
+        {
+            brackets.pop();
+        }
+        if b == b'|' {
+            if in_closure_params {
+                // The bar that closes the list it opened.
+                *in_where = brackets.pop().is_some_and(|(_, _, resume)| resume);
+            } else if bytes.get(i + 1) == Some(&b'|') {
+                // `||` is either a logical or or a closure taking no
+                // parameters. Neither declares a name, and neither may leave
+                // a frame behind, so both are simply stepped over.
+                *prev_words = Default::default();
+                *prev_byte = b'|';
+                i += 2;
+                continue;
+            } else if opens_closure_params(*prev_byte, prev_words) {
+                // A closure inside a macro invocation's arguments stays
+                // inside them: the macro flag is inherited rather than
+                // recomputed, so `foo!(|tome: u32| …)` is as quiet as it was.
+                let in_macro = brackets.last().is_some_and(|&(_, m, _)| m);
+                brackets.push((b'|', in_macro, *in_where));
+            }
+            *prev_words = Default::default();
+            *prev_byte = b'|';
+            i += 1;
+            continue;
+        }
         if matches!(b, b'(' | b'{' | b'[') {
             // A brace ends a `where` clause — it is the body the clause
             // qualifies — and the clause must not resume when the body closes.
@@ -5786,8 +5872,21 @@ fn collect_in_code(
             // `|_: &_|`, `const _: () = assert!(…)`. There is nothing to
             // rename, so reporting it gives the reader no action to take.
             let discard = word == "_";
-            if rest.starts_with(':')
-                && !rest.starts_with("::")
+            // A closure parameter may carry no type at all — `move |tome|` —
+            // and then there is no colon to notice it by. Inside a parameter
+            // list, and only there, a bare word is read as a parameter when
+            // it *starts* one (the byte before it is the opening bar or a
+            // comma) and *ends* one (a comma or the closing bar follows).
+            //
+            // Both halves are needed. Without the first, the `u32` in
+            // `|x: u32|` is a word ending at a bar and would be reported as a
+            // parameter named after its own type; the byte before it is the
+            // `:`, so it is not. `|x: &'a Tome|` fails the same test on the
+            // `a` of the lifetime.
+            let untyped_closure_param = in_closure_params
+                && matches!(before, b'|' | b',')
+                && matches!(rest.as_bytes().first(), Some(b',') | Some(b'|'));
+            if (untyped_closure_param || (rest.starts_with(':') && !rest.starts_with("::")))
                 && !*in_where
                 && !macro_fragment
                 && !in_macro_args
@@ -7614,6 +7713,123 @@ mod migrate_span_tests {
         // A field after the clause has ended is still judged.
         assert_eq!(
             f("fn g<T>() where T: A { }\nstruct C { aspect: f32 }"),
+            vec![("aspect".into(), 1)]
+        );
+    }
+
+    /// The `tome` cases here are **synthetic**. #68's 6,091-file corpus held
+    /// no reserved name used as a closure parameter in the direction that
+    /// costs a false negative, and a re-sweep of 21,897 registry files still
+    /// finds none, so that half is unmeasured rather than known-harmless.
+    ///
+    /// The `this` cases at the end are not synthetic — they are the same
+    /// defect running the other way, and real code does contain them.
+    #[test]
+    fn a_closure_parameter_is_a_binding_not_a_field() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // The issue's case. The enclosing bracket is the function body's `{`,
+        // so before the `|` frame this read as a struct field — and `tome` is
+        // a fine field name and a refused binding, so nothing was reported.
+        assert_eq!(
+            f("fn g() { let f = |tome: u32| tome + 1; }"),
+            vec![("tome".into(), 1)]
+        );
+        // A closure parameter carries no type more often than not, so the
+        // colon that every other candidate is found by is missing.
+        assert_eq!(
+            f("fn g() { let f = move |tome| tome; }"),
+            vec![("tome".into(), 1)]
+        );
+        // The name need not follow the bar directly.
+        assert_eq!(
+            f("fn g() { let f = |a, tome: u32| a; }"),
+            vec![("tome".into(), 1)]
+        );
+        assert_eq!(f("fn g() { let f = |a, tome| a; }"), vec![("tome".into(), 1)]);
+        // A closure nested in another closure's body, and both bars balanced
+        // either side of it.
+        assert_eq!(
+            f("fn g() { let f = |a: u32| |tome: u32| a + tome; }"),
+            vec![("tome".into(), 1)]
+        );
+        assert_eq!(
+            f("fn g() { let f = |a: u32| { let h = |tome: u32| tome; h(a) }; }"),
+            vec![("tome".into(), 1)]
+        );
+        // The type is not the name. `u32` ends at a bar just as a bare
+        // parameter does, and is told apart by the colon in front of it.
+        assert!(f("fn g() { let f = |x: u32| x; }").is_empty());
+        // A parameter list opens in expression position wherever that is: a
+        // call argument, a struct literal field, a match arm's body.
+        assert_eq!(
+            f("fn g() { xs.map(|tome: u32| tome); }"),
+            vec![("tome".into(), 1)]
+        );
+        assert_eq!(
+            f("fn g() { let c = C { cb: |tome: u32| tome }; }"),
+            vec![("tome".into(), 1)]
+        );
+        assert_eq!(
+            f("fn g() { match x { A => |tome: u32| tome, } }"),
+            vec![("tome".into(), 1)]
+        );
+        // Not synthetic. `|this: &Self, binding|` is `cranelift-isle`'s, and
+        // `|this: &mut Self|` is `rustc-demangle`'s; both were **reported**
+        // before this change and neither should have been. `this` is the
+        // mirror of `tome` — refused as a field, accepted as a binding — so
+        // judging a closure parameter as a field cost a false positive here
+        // for exactly the reason it cost a false negative above.
+        assert!(f("fn g() { let mut defer = |this: &Self, binding| { 0 }; }").is_empty());
+        assert!(f("fn g() { let mut open = |this: &mut Self| { 0 }; }").is_empty());
+
+        // A word the parser takes as a parameter is still not reported, and a
+        // discard is still nothing anyone can rename.
+        assert!(f("fn g() { let f = |body: u32| body; }").is_empty());
+        assert!(f("fn g() { let f = |_: u32| 0; }").is_empty());
+        assert!(f("fn g() { let f = |_| 0; }").is_empty());
+    }
+
+    #[test]
+    fn a_bar_that_is_not_a_parameter_list_is_left_alone() {
+        let f = |src: &str| super::collect_keyword_collisions(src);
+
+        // Bitwise or. A bar following a value never opens a parameter list,
+        // so `tome` here is an operand and the field after it is still a
+        // field — which is what a leaked `|` frame would have destroyed.
+        assert!(f("fn g() { let x = a | tome; }").is_empty());
+        assert!(f("fn g() { let x = a | b | tome; }").is_empty());
+        assert_eq!(
+            f("fn g() { let x = a | b; }\nstruct C { tome: u32, aspect: f32 }"),
+            vec![("aspect".into(), 1)]
+        );
+
+        // A match arm's alternation follows a value too, and the `tome` bound
+        // inside its pattern is not a parameter list's.
+        assert!(f("fn g() { match x { Some(tome) | None => 0, } }").is_empty());
+        // A leading bar is the one alternation that does open where a closure
+        // could, so the frame is abandoned at the `=>` that follows.
+        assert_eq!(
+            f("fn g() { match x { | A => 0, | B => 1, } }\nstruct C { tome: u32 }"),
+            Vec::new()
+        );
+
+        // `||` is a logical or or a closure with no parameters. Neither
+        // declares anything, and neither may leave the stack unbalanced —
+        // a field judged afterwards proves the stack came back.
+        assert_eq!(
+            f("fn g() { let f = || 1; }\nstruct C { true: u32 }"),
+            vec![("true".into(), 1)]
+        );
+        assert!(f("fn g() { let x = a || b; }").is_empty());
+
+        // A bar inside a string or a comment is not code at all.
+        assert_eq!(
+            f("fn g() { let s = \"|tome: u32|\"; }\nstruct C { tome: u32, aspect: f32 }"),
+            vec![("aspect".into(), 1)]
+        );
+        assert_eq!(
+            f("// |tome: u32|\nstruct C { tome: u32, aspect: f32 }"),
             vec![("aspect".into(), 1)]
         );
     }
