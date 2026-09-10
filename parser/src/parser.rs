@@ -4220,14 +4220,33 @@ impl<'a> Parser<'a> {
                 .map(|s| s.ident.name.chars().next().map_or(false, |c| c.is_uppercase()))
                 .unwrap_or(false);
 
+        // Once a `·` has been accepted as a path separator, every following `·` in
+        // the same chain is one too: `geom·P·new` is one path, not a path `geom·P`
+        // with a method call hung off it.
+        let mut middledot_is_path_sep = in_type_context || first_segment_is_type;
+
         while !self.pending_gt.is_some() {
             // Only allow · as a path separator for type paths (uppercase first letter).
             // For lowercase identifiers (variables), · is a method-call operator and
             // must be left for postfix expression parsing (parse_postfix_expr MiddleDot arm).
             // In a type position `·` is always a separator; elsewhere fall back to the
             // uppercase heuristic that keeps method calls out of path parsing.
-            let is_path_sep =
-                (in_type_context || first_segment_is_type) && self.consume_if(&Token::MiddleDot);
+            //
+            // The heuristic alone cannot see a MODULE root: `geom` in `geom·P·new(…)`
+            // is lowercase for the same reason `tag` is in `tag·to_string()`, and
+            // stopping at the first `·` turns the path into a field access on a
+            // variable that was never bound — "undefined variable: `geom`" (#86).
+            // What separates them is what the chain leads TO: a module chain reaches
+            // a segment naming a type, because Sigil types are uppercase and methods
+            // are not. `geom·P·new` reaches `P`; `tag·to_string` reaches nothing.
+            if !middledot_is_path_sep
+                && self.check(&Token::MiddleDot)
+                && self.middledot_chain_reaches_a_type()
+            {
+                middledot_is_path_sep = true;
+            }
+
+            let is_path_sep = middledot_is_path_sep && self.consume_if(&Token::MiddleDot);
             if !is_path_sep {
                 break;
             }
@@ -4253,6 +4272,37 @@ impl<'a> Parser<'a> {
         }
 
         Ok(TypePath { segments })
+    }
+
+    /// With the current token on a `·`, does the chain of `·ident` that follows
+    /// reach a segment that names a TYPE?
+    ///
+    /// This is the only thing that tells a module root apart from a receiver in
+    /// expression position, where both are lowercase. `geom·P·new(…)` reaches `P`
+    /// and is a path; `tag·to_string()` reaches nothing uppercase and is a method
+    /// call on `tag`. The scan stops at the first token that is not part of a
+    /// `·ident` chain, so a call, an index or an operator ends it — `xs·map(f)`
+    /// never looks past the `(`.
+    fn middledot_chain_reaches_a_type(&mut self) -> bool {
+        // peek_n(0) is the token after the current `·`.
+        let mut n = 0usize;
+        // A path this long is not a path; bail rather than scan an entire file.
+        while n < 32 {
+            let names_a_type = match self.peek_n(n) {
+                Some(Token::Ident(name)) => {
+                    name.chars().next().is_some_and(|c| c.is_uppercase())
+                }
+                _ => return false,
+            };
+            if names_a_type {
+                return true;
+            }
+            if !matches!(self.peek_n(n + 1), Some(Token::MiddleDot)) {
+                return false;
+            }
+            n += 2;
+        }
+        false
     }
 
     fn parse_path_segment(&mut self) -> ParseResult<PathSegment> {
