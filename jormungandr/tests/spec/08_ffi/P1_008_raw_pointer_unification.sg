@@ -1,0 +1,21 @@
+// Test: identical raw pointer types unify across a call boundary
+// Spec: 08-FFI.md § 2.1 Pointer Types
+// Priority: P1 - Standard Feature
+// Regression: #120 -- `*Δ c_void` passed to a parameter of the same declared
+// type was rejected with "expected *mut c_void, found *mut c_void".
+
+rite takes_mut(p: *Δ u8) -> i32 { 0 }
+rite takes_const(p: *const u8) -> i32 { 0 }
+
+rite forward_mut(p: *Δ u8) -> i32 {
+    takes_mut(p)
+}
+
+// *mut → *const weakens mutability and is allowed.
+rite mut_to_const(p: *Δ u8) -> i32 {
+    takes_const(p)
+}
+
+rite main() {
+    println("raw pointer unification ok");
+}
