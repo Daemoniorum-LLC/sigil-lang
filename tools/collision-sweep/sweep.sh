@@ -67,14 +67,42 @@ digest=$(sed "s|^$root_abs/||" "$out/files.txt" | LC_ALL=C sha256sum | cut -d' '
 # is the whole question a before/after comparison is asking.
 sigil_digest=$(sha256sum "$sigil" | cut -d' ' -f1)
 
+# ...and by provenance, which is the half a digest cannot supply. A shared
+# build output is an input nobody declares: a sibling session measured Sigil
+# with a binary built from a dirty feature branch 49 commits ahead and 173
+# behind `develop`, and the number it reported read as a `develop` number.
+# A hash says two runs used different code; a commit and a dirty flag say
+# *which* code, and whether it was anything a reader can check out.
+build_dir=$(dirname "$sigil")
+sigil_commit="unknown"
+sigil_branch="unknown"
+sigil_tree="unknown"
+if repo_root=$(git -C "$build_dir" rev-parse --show-toplevel 2>/dev/null); then
+    sigil_commit=$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null || echo unknown)
+    sigil_branch=$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)
+    if [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]; then
+        sigil_tree="DIRTY"
+    else
+        sigil_tree="clean"
+    fi
+fi
+
 {
-    echo "root:         $root_abs"
-    echo "files:        $file_count"
-    echo "path-digest:  $digest"
-    echo "binary:       $sigil"
+    echo "root:          $root_abs"
+    echo "files:         $file_count"
+    echo "path-digest:   $digest"
+    echo "binary:        $sigil"
     echo "binary-sha256: $sigil_digest"
-    echo "swept:        $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "build-commit:  $sigil_commit"
+    echo "build-branch:  $sigil_branch"
+    echo "build-tree:    $sigil_tree"
+    echo "swept:         $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 } > "$out/manifest.txt"
+
+if [ "$sigil_tree" = "DIRTY" ]; then
+    echo "sweep: WARNING -- the binary was built from a DIRTY tree ($sigil_branch @ $sigil_commit)." >&2
+    echo "  The commit above does not describe what ran. Commit or stash before measuring." >&2
+fi
 
 echo "sweep: $file_count files under $root_abs" >&2
 
