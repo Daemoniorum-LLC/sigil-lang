@@ -2698,6 +2698,9 @@ fn check_single_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes:
             // Run type checker with evidence enforcement
             let mut type_checker = TypeChecker::new();
             type_checker.set_strict(strict);
+            if let Some(dir) = std::path::Path::new(path).parent() {
+                type_checker.set_source_dir(dir.to_path_buf());
+            }
             if let Err(type_errors) = type_checker.check_file(&ast) {
                 for err in type_errors {
                     let mut diag =
