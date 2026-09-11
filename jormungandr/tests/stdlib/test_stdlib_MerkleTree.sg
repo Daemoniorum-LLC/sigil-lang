@@ -1,16 +1,38 @@
 // Stdlib Tests: MerkleTree
-// Merkle tree data structure with REAL assertions
+//
+// Constructed through `MerkleTree·from`, which is the constructor that exists.
+// This file previously called `MerkleTree·new`, which does not, and asserted
+// `type_of(mt) == "struct:MerkleTree"` -- an assertion that could not fail,
+// because the fallback removed in #146 named the struct it fabricated after
+// the type in the call.
+//
+// The properties below are the ones that make a Merkle tree a Merkle tree:
+// the root is determined by the contents, and it distinguishes them.
 
 rite main() {
     println("=== Testing MerkleTree ===");
 
-    // MerkleTree·new - creates empty merkle tree
-    ≔ mt = MerkleTree·new();
-    assert_eq(type_of(mt), "struct:MerkleTree");
+    ≔ a = MerkleTree·from(["a", "b"]);
+    ≔ b = MerkleTree·from(["a", "b"]);
+    ≔ c = MerkleTree·from(["a", "c"]);
 
-    // MerkleTree·from - creates tree from data
-    ≔ mtf = MerkleTree·from(["a", "b", "c", "d"]);
-    assert_eq(type_of(mtf), "struct:MerkleTree");
+    // Deterministic: the same leaves give the same root. A root derived from
+    // anything but the contents -- a counter, an address, a random value --
+    // fails here.
+    assert_eq(a.root, b.root);
+
+    // Binding: different leaves give a different root. A constant root, or one
+    // that ignores its input, passes the line above and fails this one. The
+    // two together are what a stub cannot satisfy.
+    assert(a.root != c.root);
+
+    // A root is a SHA-256 hex digest, so 64 characters, and not empty.
+    assert_eq(len(a.root), 64);
+
+    // One leaf hash per element, and a changed element changes its own leaf.
+    assert_eq(len(a.__leaf_hashes__), 2);
+    assert_eq(a.__leaf_hashes__[0], c.__leaf_hashes__[0]);
+    assert(a.__leaf_hashes__[1] != c.__leaf_hashes__[1]);
 
     println("ALL MERKLETREE TESTS PASSED!");
 }

@@ -1,3 +1,14 @@
+// SKIP #157 -- `protocol·http·Client` has no constructor; `Client·new` is
+// not registered under any spelling.
+//
+// The implementation is ABSENT, not flaky.
+//
+// It passed until #146 only because the fallback fabricated a `Client { }`.
+// The expected output is the literal `1`, printed after the pipeline, so the
+// test never observed the evidentiality it is named for -- a P0 test that has
+// not exercised its subject.
+//
+// Kept rather than deleted so the gap keeps a number a reader can find.
 // Test: Protocol data is always reported (~)
 // Spec: 15-PROTOCOLS.md § 1 Philosophy
 // Priority: P0 - Bootstrap Critical

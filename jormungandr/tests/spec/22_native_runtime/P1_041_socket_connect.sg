@@ -1,54 +1,57 @@
-// Test socket connect operations
-// This tests the native runtime networking syscalls
+// Test: socket connect, send, recv, shutdown
+// Spec: 22-NATIVE-RUNTIME.md
 // Priority: P1
+//
+// A real connection over loopback, with the payload compared rather than
+// counted. This file used to say "in interpreter mode, this always succeeds"
+// and "Send some data (simulated)" in its own comments: `Sys·send` returned
+// the length it was handed without reading the buffer, and `Sys·recv` returned
+// 0, so `sent == 5` and `received >= 0` passed while nothing crossed a socket
+// (#124, #167).
+//
+// Asserting a plausible number is exactly the defect being fixed, so every
+// assertion here is about bytes that arrived.
 
 rite main() {
-    // Test: Create and connect a TCP socket (simulated)
-    ≔ sock = Sys·socket(AF_INET(), SOCK_STREAM(), 0);
+    ≔ srv = Sys·socket(2, 1, 0);
+    Sys·setsockopt(srv, 1, 2, 1, 4);
+    Sys·bind(srv, "127.0.0.1:7432", 0);
+    Sys·listen(srv, 8);
 
-    ⎇ sock >= 0 {
-        println("socket: OK");
+    ≔ cli = Sys·socket(2, 1, 0);
+    ⎇ cli < 0 { println("socket: FAILED"); ⤺; }
+    println("socket: OK");
 
-        // Connect (in interpreter mode, this always succeeds)
-        ≔ result = Sys·connect(sock, 0, 16);
-        ⎇ result == 0 {
-            println("connect: OK");
+    ⎇ Sys·connect(cli, "127.0.0.1:7432", 0) == 0 {
+        println("connect: OK");
+    } ⎉ { println("connect: FAILED"); ⤺; }
 
-            // Send some data (simulated)
-            ≔ sent = Sys·send(sock, 0, 5, 0);
-            ⎇ sent == 5 {
-                println("send: OK");
-            } ⎉ {
-                println("send: FAILED");
-            }
+    ≔ peer = Sys·accept(srv, 0, 0);
 
-            // Receive (returns 0 ∈ interpreter - EOF)
-            ≔ received = Sys·recv(sock, 0, 1024, 0);
-            ⎇ received >= 0 {
-                println("recv: OK");
-            } ⎉ {
-                println("recv: FAILED");
-            }
+    // Client to server. The count must be the real count *and* the bytes must
+    // be the bytes: a send that reports its argument without transmitting
+    // passes the first check and fails the second.
+    ≔ sent = Sys·send(cli, "PING-7432", 9, 0);
+    ⎇ sent == 9 { println("send: OK"); } ⎉ { println("send: FAILED"); }
+    ⎇ Sys·recv_string(peer, 64) == "PING-7432" {
+        println("payload arrived intact: OK");
+    } ⎉ { println("payload arrived intact: FAILED"); }
 
-            // Shutdown
-            ≔ shut = Sys·shutdown(sock, SHUT_RDWR());
-            ⎇ shut == 0 {
-                println("shutdown: OK");
-            } ⎉ {
-                println("shutdown: FAILED");
-            }
-        } ⎉ {
-            println("connect: FAILED");
-        }
+    // Server to client, so the direction is not the thing that happens to work.
+    Sys·send(peer, "PONG", 4, 0);
+    ⎇ Sys·recv_string(cli, 64) == "PONG" {
+        println("reply arrived intact: OK");
+    } ⎉ { println("reply arrived intact: FAILED"); }
 
-        // Close
-        ≔ closed = Sys·close(sock);
-        ⎇ closed == 0 {
-            println("close: OK");
-        } ⎉ {
-            println("close: FAILED");
-        }
-    } ⎉ {
-        println("socket: FAILED");
-    }
+    // A shutdown the peer can observe. After the client stops writing, the
+    // server reads EOF -- empty, not blocked, not the previous payload again.
+    // A no-op shutdown leaves the peer waiting instead.
+    ⎇ Sys·shutdown(cli, 1) == 0 { println("shutdown: OK"); } ⎉ { println("shutdown: FAILED"); }
+    ⎇ Sys·recv_string(peer, 64) == "" {
+        println("peer saw EOF: OK");
+    } ⎉ { println("peer saw EOF: FAILED"); }
+
+    Sys·close(peer);
+    Sys·close(srv);
+    ⎇ Sys·close(cli) == 0 { println("close: OK"); } ⎉ { println("close: FAILED"); }
 }

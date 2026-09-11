@@ -38682,8 +38682,41 @@ fn register_sys(interp: &mut Interpreter) {
             _ => 0,
         };
 
-        // In interpreter mode, use Rust's std::net
-        // We only support AF_INET (2) with SOCK_STREAM (1) for TCP
+        // A real socket where the platform has one.
+        //
+        // `Sys·bind`, `Sys·listen`, `Sys·accept` and the `Sys·epoll_*` family
+        // all carry native branches already, gated on `fd < FAKE_FD_THRESHOLD`
+        // -- but this function could only ever return a counter starting at
+        // 21000, so through the ordinary `socket -> bind -> listen` sequence
+        // **every one of those branches was unreachable**. `bind` and `listen`
+        // answered 0 from the simulation and nothing listened, which is a
+        // success report for work not done (#124).
+        //
+        // AF_UNIX already took the native path below. This extends the same
+        // treatment to AF_INET, which is the domain every server uses.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if domain == 2 && (sock_type == 1 || sock_type == 2) {
+                let protocol = match &args[2] {
+                    Value::Int(n) => *n as i32,
+                    _ => 0,
+                };
+                let fd = unsafe { libc::socket(domain, sock_type, protocol) };
+                if fd >= 0 {
+                    // Below FAKE_FD_THRESHOLD by construction -- a real
+                    // descriptor -- so the native branches downstream take it.
+                    return Ok(Value::Int(fd as i64));
+                }
+                // Out of descriptors, or the domain is unavailable in this
+                // sandbox. Report the errno rather than silently simulating:
+                // a caller that cannot open a socket needs to know now, not
+                // when nothing arrives on it.
+                return Ok(Value::Int(-(nix_errno())));
+            }
+        }
+
+        // Non-native builds keep the simulation: there is no libc to call, and
+        // a program that only exercises the sequence still runs.
         if domain == 2 && sock_type == 1 {
             // Create a fake socket fd - actual connection happens on connect
             let fd = FAKE_SOCKET_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as i64;
@@ -38721,6 +38754,45 @@ fn register_sys(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Sys·connect requires int fd")),
         };
+
+        // Native path for real OS sockets. The address arrives as "host:port"
+        // for the same reason `Sys·bind` takes one: the POSIX sockaddr pointer
+        // has no Sigil spelling.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                if let Value::String(addr_str) = &args[1] {
+                    let addr: std::net::SocketAddr = match addr_str.parse() {
+                        Ok(a) => a,
+                        Err(_) => return Ok(Value::Int(-22)), // -EINVAL
+                    };
+                    let ret = match addr {
+                        std::net::SocketAddr::V4(v4) => {
+                            // Zeroed and assigned rather than a struct
+                            // literal: `sockaddr_in`'s fields differ across
+                            // unixes (Darwin and the BSDs carry `sin_len`).
+                            let mut sa: libc::sockaddr_in =
+                                unsafe { std::mem::zeroed() };
+                            sa.sin_family = libc::AF_INET as libc::sa_family_t;
+                            sa.sin_port = v4.port().to_be();
+                            sa.sin_addr = libc::in_addr {
+                                s_addr: u32::from_ne_bytes(v4.ip().octets()),
+                            };
+                            unsafe {
+                                libc::connect(
+                                    fd as i32,
+                                    &sa as *const libc::sockaddr_in as *const libc::sockaddr,
+                                    std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+                                )
+                            }
+                        }
+                        std::net::SocketAddr::V6(_) => return Ok(Value::Int(-97)), // -EAFNOSUPPORT
+                    };
+                    return Ok(Value::Int(if ret == 0 { 0 } else { -(nix_errno()) }));
+                }
+                return Ok(Value::Int(-22)); // -EINVAL: no address we can read
+            }
+        }
 
         // In interpreter mode, we don't actually connect
         // Just mark the socket as connected for testing purposes
@@ -38970,6 +39042,44 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·send requires int len")),
         };
 
+        // Native path for real OS sockets, as for bind/listen/accept/connect.
+        //
+        // The payload arrives as a String: there is no Sigil spelling for a
+        // raw buffer pointer, which is the same reason `Sys·bind` takes
+        // "host:port" rather than a sockaddr. `len` is honoured as a cap so a
+        // caller can send a prefix, but the bytes come from the argument --
+        // the simulated path below returned `len` without ever reading it,
+        // which is a confirmed transmission that never happened (#167).
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                if let Value::String(payload) = &args[1] {
+                    let bytes = payload.as_bytes();
+                    let n = if len >= 0 && (len as usize) < bytes.len() {
+                        len as usize
+                    } else {
+                        bytes.len()
+                    };
+                    let sent = unsafe {
+                        libc::send(
+                            fd as i32,
+                            bytes.as_ptr() as *const libc::c_void,
+                            n,
+                            0,
+                        )
+                    };
+                    return Ok(Value::Int(if sent < 0 {
+                        -(nix_errno())
+                    } else {
+                        sent as i64
+                    }));
+                }
+                // A real descriptor with no payload we can read. Refusing is
+                // the point: reporting `len` here is the defect.
+                return Ok(Value::Int(-22)); // -EINVAL
+            }
+        }
+
         let is_connected = FAKE_SOCKET_STATE.with(|map| {
             matches!(map.borrow().get(&fd), Some(FakeSocket::Connected))
         });
@@ -38990,6 +39100,32 @@ fn register_sys(interp: &mut Interpreter) {
             _ => return Err(RuntimeError::new("Sys·recv requires int fd")),
         };
 
+        // Native path for real OS sockets, as for its neighbours.
+        //
+        // Returns the byte count, which is the POSIX shape. The bytes
+        // themselves are not retrievable through this spelling, because the
+        // buffer pointer has no Sigil equivalent -- use `Sys·recv_string`
+        // below, which performs the same read and hands back the payload.
+        // Call one or the other: both consume from the socket.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                let want = match &args[2] {
+                    Value::Int(n) if *n > 0 => *n as usize,
+                    _ => 4096,
+                };
+                let mut buf = vec![0u8; want];
+                let got = unsafe {
+                    libc::recv(fd as i32, buf.as_mut_ptr() as *mut libc::c_void, want, 0)
+                };
+                return Ok(Value::Int(if got < 0 {
+                    -(nix_errno())
+                } else {
+                    got as i64
+                }));
+            }
+        }
+
         let is_connected = FAKE_SOCKET_STATE.with(|map| {
             matches!(map.borrow().get(&fd), Some(FakeSocket::Connected))
         });
@@ -39002,6 +39138,48 @@ fn register_sys(interp: &mut Interpreter) {
         }
     });
 
+    // Sys·recv_string(fd: i64, max_len: i64) -> String
+    //
+    // The payload, rather than a count of it. POSIX `recv` writes into a
+    // caller-supplied buffer and Sigil has no spelling for one, so the byte
+    // count was the only thing `Sys·recv` could return -- which meant nothing
+    // could ever assert what actually crossed the socket, and a `send` that
+    // reported a plausible number for bytes it never read went unnoticed for
+    // exactly that reason (#167).
+    //
+    // Returns "" on EOF or error; use `Sys·recv` when the count is what you
+    // need. Both consume, so use one.
+    define(interp, "Sys·recv_string", Some(2), |_, args| {
+        let fd = match &args[0] {
+            Value::Int(n) => *n,
+            _ => return Err(RuntimeError::new("Sys·recv_string requires int fd")),
+        };
+        let want = match &args[1] {
+            Value::Int(n) if *n > 0 => *n as usize,
+            _ => 4096,
+        };
+
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                let mut buf = vec![0u8; want];
+                let got = unsafe {
+                    libc::recv(fd as i32, buf.as_mut_ptr() as *mut libc::c_void, want, 0)
+                };
+                if got <= 0 {
+                    return Ok(Value::String(Rc::new(String::new())));
+                }
+                buf.truncate(got as usize);
+                return Ok(Value::String(Rc::new(
+                    String::from_utf8_lossy(&buf).into_owned(),
+                )));
+            }
+        }
+        let _ = want;
+        let _ = fd;
+        Ok(Value::String(Rc::new(String::new())))
+    });
+
     // Sys·shutdown(fd: i64, how: i64) -> i64
     // Shut down part of a full-duplex connection. how: 0=SHUT_RD, 1=SHUT_WR, 2=SHUT_RDWR
     define(interp, "Sys·shutdown", Some(2), |_, args| {
@@ -39009,6 +39187,22 @@ fn register_sys(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Sys·shutdown requires int fd")),
         };
+
+        // Native path for real OS sockets. Reporting 0 without shutting the
+        // socket down leaves the peer waiting for an EOF that never arrives,
+        // which is the failure the simulation could not distinguish itself
+        // from.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                let how = match &args[1] {
+                    Value::Int(n) => *n as i32,
+                    _ => libc::SHUT_RDWR,
+                };
+                let ret = unsafe { libc::shutdown(fd as i32, how) };
+                return Ok(Value::Int(if ret == 0 { 0 } else { -(nix_errno()) }));
+            }
+        }
 
         let exists = FAKE_SOCKET_STATE.with(|map| {
             map.borrow().contains_key(&fd)
@@ -39027,6 +39221,42 @@ fn register_sys(interp: &mut Interpreter) {
             Value::Int(n) => *n,
             _ => return Err(RuntimeError::new("Sys·setsockopt requires int fd")),
         };
+
+        // Native path for real OS sockets. Only the int-valued options are
+        // reachable from Sigil -- SO_REUSEADDR and friends -- because the
+        // option value arrives as an integer and there is no spelling for an
+        // arbitrary buffer. That covers what a server actually sets before
+        // binding, which is the case the simulated `Ok(0)` was silently not
+        // doing: a rebind after restart failed with EADDRINUSE despite
+        // setsockopt having reported success.
+        #[cfg(all(unix, feature = "native"))]
+        {
+            if fd >= 0 && fd < FAKE_FD_THRESHOLD {
+                let level = match &args[1] {
+                    Value::Int(n) => *n as i32,
+                    _ => libc::SOL_SOCKET,
+                };
+                let optname = match &args[2] {
+                    Value::Int(n) => *n as i32,
+                    _ => return Ok(Value::Int(-22)), // -EINVAL
+                };
+                let optval: libc::c_int = match &args[3] {
+                    Value::Int(n) => *n as libc::c_int,
+                    Value::Bool(b) => *b as libc::c_int,
+                    _ => 1,
+                };
+                let ret = unsafe {
+                    libc::setsockopt(
+                        fd as i32,
+                        level,
+                        optname,
+                        &optval as *const libc::c_int as *const libc::c_void,
+                        std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                    )
+                };
+                return Ok(Value::Int(if ret == 0 { 0 } else { -(nix_errno()) }));
+            }
+        }
 
         let exists = FAKE_SOCKET_STATE.with(|map| {
             map.borrow().contains_key(&fd)

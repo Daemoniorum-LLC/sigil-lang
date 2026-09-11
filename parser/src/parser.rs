@@ -9684,6 +9684,22 @@ impl<'a> Parser<'a> {
     fn keyword_as_ident(token: &Token) -> Option<&'static str> {
         match token {
             // Common keywords that may be used as field/variable names
+            //
+            // `of` and `each` are the ASCII prose aliases the lexer gives to
+            // `` (ElementOf) and `` (ForAll). They were the only two of the 92
+            // keyword tokens missing from this table, which made them the only
+            // two that could not be a field name: `p.in`, `p.for`, `p.type` and
+            // `p.ref` all parse, and `p.of` does not. #82 closed on the finding
+            // that "a keyword can never legitimately be an identifier" is a
+            // false premise and stopped `migrate` renaming keywords in field
+            // position — true for 90 tokens and false for these two, which is
+            // what let it survive. React's `FacetRail` has a prop named `of`,
+            // and one such field access failed the whole 106-component link.
+            //
+            // The symbol spellings never reach field position, so mapping each
+            // token back to its ASCII spelling is unambiguous in practice.
+            Token::ElementOf => Some("of"),
+            Token::ForAll => Some("each"),
             Token::Packed => Some("packed"),
             Token::As => Some("as"),
             Token::Type => Some("type"),
@@ -11189,6 +11205,45 @@ mod tests {
         let mut parser = Parser::new(source);
         let file = parser.parse_file().unwrap();
         assert_eq!(file.items.len(), 1);
+    }
+
+    /// `of` and `each` are usable as ordinary names, like the other 90 keywords.
+    ///
+    /// They are the ASCII prose aliases the lexer gives to `∈` (ElementOf) and
+    /// `∀` (ForAll), and they were the only two of the 92 keyword tokens missing
+    /// from `keyword_as_ident` — so `p.in`, `p.for`, `p.type` and `p.ref` all
+    /// parsed and `p.of` did not. One such field access failed a 106-component
+    /// project link in the Lares/Qliphoth probe, because React's `FacetRail` has
+    /// a prop named `of`.
+    ///
+    /// The keyword spellings must keep working, which is the other half.
+    #[test]
+    fn of_and_each_are_usable_as_names() {
+        for src in [
+            "rite f(p: Any) -> Any! { ⤺ p.of; }",
+            "rite f(p: Any) -> Any! { ⤺ p.each; }",
+            "sigil S { of: Any }",
+            "sigil S { each: Any }",
+            "rite f(of: Any) -> Any! { ⤺ of; }",
+        ] {
+            let mut parser = Parser::new(src);
+            assert!(
+                parser.parse_file().is_ok(),
+                "should parse as an ordinary name: {src}"
+            );
+        }
+
+        // …and both keep their keyword meaning.
+        for src in [
+            "rite f(xs: Any) -> Any! { ∀ x of xs { x; } ⤺ ∅; }",
+            "rite f(xs: Any) -> Any! { ∀ x ∈ xs { x; } ⤺ ∅; }",
+        ] {
+            let mut parser = Parser::new(src);
+            assert!(
+                parser.parse_file().is_ok(),
+                "keyword use must still parse: {src}"
+            );
+        }
     }
 
     #[test]

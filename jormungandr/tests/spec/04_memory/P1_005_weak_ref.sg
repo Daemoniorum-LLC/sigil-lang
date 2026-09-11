@@ -1,3 +1,14 @@
+// SKIP #155 -- Rc·downgrade / Weak<T> is UNIMPLEMENTED (04-MEMORY.md § 4.4).
+//
+// The implementation is ABSENT, not flaky. This test does not intermittently
+// fail; it cannot pass until #155 lands.
+//
+// It passed until #146 only because the fallback fabricated a value for the
+// unimplemented `Rc·downgrade`, whose result this test never reads -- the
+// expected `100\n100` comes from `rc` and `rc2` on unrelated lines. It
+// asserted nothing about weak references.
+//
+// Kept rather than deleted so the gap keeps a number a reader can find.
 // Test: Weak references with Rc
 // Spec: 04-MEMORY.md § 4.4 Weak
 // Priority: P1 - Production Ready
