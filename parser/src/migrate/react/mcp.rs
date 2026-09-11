@@ -1015,15 +1015,65 @@ pub fn topo_sort_constants(items: Vec<ModuleConstantExtraction>) -> Vec<ModuleCo
 #[cfg(test)]
 mod constant_to_helper_tests {
     use super::*;
-    use crate::migrate::react::extraction::{
-        HelperFunctionExtraction, ModuleConstantExtraction, SourceLocation,
-    };
 
-    fn helper(name: &str, source: &str, exported: bool) -> HelperFunctionExtraction {
+    /// A component built through `serde`, so the fixture cannot drift from the
+    /// real struct: adding a field to `ComponentMigrationSpec` breaks this
+    /// loudly rather than leaving the test constructing a stale shape.
+    ///
+    /// Only the three fields `resolve_cross_module_imports` reads are
+    /// interesting — `module_scope`, `module_constants` and `helpers`.
+    fn component(
+        module_scope: &[&str],
+        module_constants: Vec<ModuleConstantExtraction>,
+        helpers: Vec<HelperFunctionExtraction>,
+    ) -> ComponentMigrationSpec {
+        let mut v = serde_json::json!({
+            "id": "c1",
+            "name": "Themed",
+            "source": {
+                "path": "src/themed.tsx",
+                "code": "",
+                "extraction": {
+                    "name": "Themed",
+                    "component_type": "functional",
+                    "exported": true,
+                    "export_type": null,
+                    "location": { "start_line": 0, "start_col": 0, "end_line": 0, "end_col": 0 },
+                    "props": [],
+                    "props_type": null,
+                    "hooks": [],
+                    "custom_hooks": [],
+                    "class_info": null,
+                    "jsx": { "root": null },
+                    "handlers": [],
+                    "child_components": []
+                },
+                "module_scope": module_scope,
+            },
+            "target": { "suggested_path": "themed.sigil", "pattern": "function" },
+            "recommendations": {
+                "state_fields": [], "messages": [], "effects": [],
+                "props_handling": { "strategy": "none", "fields": [] }
+            },
+            "patterns": [],
+            "ambiguities": [],
+            "dependencies": { "components": [], "types": [] },
+            "complexity": "simple",
+            "complexity_factors": [],
+            "status": "pending"
+        });
+        let mut c: ComponentMigrationSpec =
+            serde_json::from_value(v.take()).expect("fixture must match the real struct");
+        c.source.module_constants = module_constants;
+        c.source.helpers = helpers;
+        c
+    }
+
+    fn helper(name: &str, source: &str) -> HelperFunctionExtraction {
         HelperFunctionExtraction {
             name: name.to_string(),
             location: SourceLocation { start_line: 0, start_col: 0, end_line: 0, end_col: 0 },
-            exported,
+            exported: false,
             is_async: false,
             is_generator: false,
             parameters: Vec::new(),
@@ -1047,54 +1097,122 @@ mod constant_to_helper_tests {
         }
     }
 
-    /// A helper reached only from a module constant's initialiser.
+    /// Drive the REAL entry point, not the walk underneath it.
     ///
-    /// `BUILTIN_THEMES` is exported and emitted; `daemoniorumTheme` is called
-    /// only from inside its object literal, is in nobody's `module_scope`, and
-    /// no helper body names it. Before the constant->helper edge it was never
-    /// carried, and the call compiled to a constant 0.
+    /// The previous version of this test reimplemented the seeding loop inline
+    /// and then called `reachable_helpers_from` directly, so the production
+    /// seeding block was never executed and mutating it left the test green.
+    /// Everything here goes through `resolve_cross_module_imports`.
+    fn resolve(
+        comp: ComponentMigrationSpec,
+        all_helpers: Vec<HelperFunctionExtraction>,
+        all_constants: Vec<ModuleConstantExtraction>,
+    ) -> ComponentMigrationSpec {
+        let dir = std::env::temp_dir();
+        let mut s = MigrationSession::new(&dir, &dir).expect("session");
+        s.spec.components = vec![comp];
+        s.all_helpers = all_helpers.into_iter().map(|h| (h.name.clone(), h)).collect();
+        s.all_constants = all_constants.into_iter().map(|c| (c.name.clone(), c)).collect();
+        // Nothing is exported: every name here has to travel by reachability
+        // rather than by being an import specifier.
+        s.exported_helpers = HashMap::new();
+        s.exported_constants = HashMap::new();
+        s.resolve_cross_module_imports();
+        s.spec.components.remove(0)
+    }
+
+    fn helper_names(c: &ComponentMigrationSpec) -> std::collections::HashSet<String> {
+        c.source.helpers.iter().map(|h| h.name.clone()).collect()
+    }
+    fn constant_names(c: &ComponentMigrationSpec) -> std::collections::HashSet<String> {
+        c.source.module_constants.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// The fourth edge: a helper named only by a module constant's initialiser.
+    ///
+    /// `BUILTIN_THEMES` is the component's own constant. `daemoniorumTheme` is
+    /// called only from inside its object literal, is in nobody's
+    /// `module_scope`, and no helper body names it. Before the constant→helper
+    /// edge nothing queued it and the call compiled to a constant 0.
     #[test]
-    fn helper_named_only_by_a_constant_initialiser_is_reached() {
-        let mut all = HashMap::new();
-        all.insert(
-            "daemoniorumTheme".to_string(),
-            helper("daemoniorumTheme", "function daemoniorumTheme(mode) { return pickAccent(mode) }", false),
+    fn a_helper_named_only_by_a_constant_initialiser_is_carried() {
+        let comp = component(
+            &[],
+            vec![constant(
+                "BUILTIN_THEMES",
+                r#"{ "daemoniorum": { modes: { dark: daemoniorumTheme("dark") } } }"#,
+            )],
+            vec![],
         );
-        // …and transitively, what that helper itself calls.
-        all.insert(
-            "pickAccent".to_string(),
-            helper("pickAccent", "function pickAccent(m) { return m }", false),
-        );
-        let exported: HashMap<String, HelperFunctionExtraction> = HashMap::new();
-
-        let c = constant(
-            "BUILTIN_THEMES",
-            r#"{ "daemoniorum": { modes: { dark: daemoniorumTheme("dark") } } }"#,
+        let out = resolve(
+            comp,
+            vec![
+                helper("daemoniorumTheme", "function daemoniorumTheme(mode) { return pickAccent(mode) }"),
+                helper("pickAccent", "function pickAccent(m) { return m }"),
+            ],
+            vec![],
         );
 
-        // The seeding this fix added: scan the constant's initialiser for names
-        // that are helpers, then expand transitively.
-        let mut seeds = Vec::new();
-        for word in c
-            .init
-            .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
-        {
-            if !word.is_empty() && all.contains_key(word) {
-                seeds.push(word.to_string());
-            }
-        }
-        assert_eq!(seeds, vec!["daemoniorumTheme".to_string()], "constant initialiser must seed the helper");
+        let got = helper_names(&out);
+        assert!(got.contains("daemoniorumTheme"), "helper named by the constant initialiser, got {got:?}");
+        assert!(got.contains("pickAccent"), "and what that helper calls, transitively, got {got:?}");
+        // The carried helpers must also be declared, or the generator rewrites
+        // the call to `self.daemoniorum_theme` and nothing declares that.
+        assert!(out.source.module_scope.contains(&"daemoniorumTheme".to_string()));
+        assert!(out.source.module_functions.contains(&"daemoniorumTheme".to_string()));
+    }
 
-        let reached = MigrationSession::reachable_helpers_from(
-            seeds,
-            std::collections::HashSet::new(),
-            &exported,
-            &all,
+    /// A helper reached ONLY through the constant→helper edge must contribute
+    /// its own constants, and those constants their own helpers.
+    ///
+    /// The chain is constant → helper → constant → helper:
+    ///
+    ///   SEED_TABLE      (the component's own constant) names `buildRow`
+    ///   buildRow        (helper)                       names `ROW_DEFAULTS`
+    ///   ROW_DEFAULTS    (constant)                     names `defaultCell`
+    ///   defaultCell     (helper)
+    ///
+    /// The constant walk is seeded from the helper set computed before the
+    /// constant→helper edge runs, and closes before it. So a helper discovered
+    /// through a constant contributes no constants of its own, and anything
+    /// behind those constants is unreachable.
+    /// MEASURED FAILING, and kept rather than deleted. The implementation is
+    /// ABSENT, not flaky: this cannot pass until the walks reach a fixpoint.
+    ///
+    /// Run it today and hop 2 fails with `got constants {"SEED_TABLE"}` —
+    /// `ROW_DEFAULTS` never arrives, so `defaultCell` behind it cannot either.
+    /// That is a real gap in the same family as the one this PR closes, one
+    /// edge further out, and it is out of scope here: fixing it means running
+    /// the constant walk and the constant->helper walk to a fixpoint rather
+    /// than once each, which is a change to the shape of the function rather
+    /// than an added edge.
+    #[test]
+    #[ignore = "measured gap: a helper found via a constant contributes no constants of its own"]
+    fn a_helper_found_through_a_constant_contributes_its_own_constants() {
+        let comp = component(
+            &[],
+            vec![constant("SEED_TABLE", "{ row: buildRow() }")],
+            vec![],
         );
-        let names: std::collections::HashSet<&str> =
-            reached.iter().map(|h| h.name.as_str()).collect();
+        let out = resolve(
+            comp,
+            vec![
+                helper("buildRow", "function buildRow() { return ROW_DEFAULTS }"),
+                helper("defaultCell", "function defaultCell() { return 0 }"),
+            ],
+            vec![constant("ROW_DEFAULTS", "{ cell: defaultCell() }")],
+        );
 
-        assert!(names.contains("daemoniorumTheme"), "helper named by the constant");
-        assert!(names.contains("pickAccent"), "and what it calls, transitively");
+        let h = helper_names(&out);
+        let c = constant_names(&out);
+        assert!(h.contains("buildRow"), "hop 1: helper named by the seed constant, got {h:?}");
+        assert!(
+            c.contains("ROW_DEFAULTS"),
+            "hop 2: the constant that helper's body names must be carried, got constants {c:?}"
+        );
+        assert!(
+            h.contains("defaultCell"),
+            "hop 3: the helper that constant's initialiser names must be carried, got helpers {h:?}"
+        );
     }
 }
