@@ -524,6 +524,16 @@ pub struct TypeChecker {
     /// analysis — so a cross-file reference is indistinguishable from a typo, and
     /// erroring by default would reject working code. See `--strict`.
     strict: bool,
+    /// Directory the file being checked lives in, for resolving `invoke
+    /// tome·`/`crate·`/`above·` imports to sibling `.sigil`/`.sg` files —
+    /// see `set_source_dir`. `None` when checking source with no file behind
+    /// it (e.g. in-memory strings in tests): import targets are then left
+    /// unverified rather than risk a false positive.
+    source_dir: Option<std::path::PathBuf>,
+    /// Names of top-level `mod name { ... }` blocks declared inline in the
+    /// file being checked. An `invoke tome·name·…` can resolve to one of
+    /// these instead of an external file — see `check_use_tree`.
+    known_modules: std::collections::HashSet<String>,
 }
 
 impl TypeChecker {
@@ -531,6 +541,13 @@ impl TypeChecker {
     /// nothing. Opt-in, because resolution here is single-file.
     pub fn set_strict(&mut self, strict: bool) {
         self.strict = strict;
+    }
+
+    /// Set the directory the file being checked lives in, so `invoke
+    /// tome·`/`crate·`/`above·` imports can be resolved against sibling
+    /// files on disk (LARES-360 / sigil-lang#172, #164).
+    pub fn set_source_dir(&mut self, dir: std::path::PathBuf) {
+        self.source_dir = Some(dir);
     }
 
     pub fn new() -> Self {
@@ -548,6 +565,8 @@ impl TypeChecker {
             substitutions: HashMap::new(),
             errors: Vec::new(),
             current_item_span: Span::default(),
+            source_dir: None,
+            known_modules: std::collections::HashSet::new(),
         };
 
         // Register built-in types and functions
@@ -1045,6 +1064,24 @@ impl TypeChecker {
 
         // Mark all registered functions as stdlib (can be shadowed by user code)
         self.stdlib_functions = self.functions.keys().cloned().collect();
+
+        // sigil-lang#164, cause 2: the list above is a hand-maintained
+        // duplicate of the real stdlib registry in `stdlib.rs`'s
+        // `register_stdlib`, and it has already drifted at least once (see
+        // the JSON functions above, added after `--strict` flagged them
+        // "cannot find `json_stringify`" despite the interpreter and the
+        // WASM backend both knowing them). `fs_read`/`fs_write`/`fs_rename`/
+        // `fs_exists` were the same drift, just never backfilled. Rather
+        // than keep hand-syncing this list, ask the one place free
+        // functions are actually registered at runtime what it knows, and
+        // trust `--strict` with the answer — a name only needs to be known
+        // here, not correctly typed, since strict mode only checks whether
+        // a bare identifier resolves to *something*.
+        let mut interp = crate::interpreter::Interpreter::new();
+        crate::register_stdlib(&mut interp);
+        for (name, _) in interp.globals.borrow().iter_values() {
+            self.stdlib_functions.insert(name.clone());
+        }
     }
 
     /// Fresh type variable
@@ -1302,6 +1339,33 @@ impl TypeChecker {
             self.collect_fn_sig(&item.node);
         }
 
+        // Inline `mod name { ... }` blocks, so an `invoke tome·name·…` that
+        // targets one is not mistaken for an unresolvable external module
+        // (LARES-360 / sigil-lang#172).
+        for item in &file.items {
+            if let Item::Module(m) = &item.node {
+                if m.items.is_some() {
+                    self.known_modules.insert(m.name.name.clone());
+                }
+            }
+        }
+
+        // `invoke tome·`/`crate·`/`above·` imports: verify the target module
+        // resolves (#172), and — for named imports, which the interpreter
+        // actually loads regardless of where in the file they appear — bring
+        // the imported module's public names into scope so `--strict` does
+        // not flag them as undefined (#164, cause 1). A bare glob import
+        // (`invoke tome·x·*`) is left unchecked: the interpreter's own glob
+        // handling only filters names already registered and never loads a
+        // module by itself (see the coverage statement), so nothing here
+        // could be verified without risking a false positive against a
+        // companion named import elsewhere in the file.
+        for item in &file.items {
+            if let Item::Use(use_decl) = &item.node {
+                self.check_use_tree(&use_decl.tree, &[], item.span);
+            }
+        }
+
         // Module-scope bindings, before any body is checked.
         //
         // `≔ prefix = "…";` at the top of a file compiles — the WASM backend
@@ -1328,6 +1392,154 @@ impl TypeChecker {
     }
 
     /// Collect type definitions (first pass)
+    /// Walk one `invoke ...;` use-tree, checking every `tome·`/`crate·`/
+    /// `above·`-rooted leaf against the filesystem (LARES-360 / sigil-lang
+    /// #172, #164). `prefix` accumulates the path segments seen so far;
+    /// `span` is the best span found yet, for diagnostics on a leaf (like
+    /// `Glob`) that carries none of its own.
+    fn check_use_tree(&mut self, tree: &crate::ast::UseTree, prefix: &[String], span: Span) {
+        use crate::ast::UseTree;
+        match tree {
+            UseTree::Path { prefix: seg, suffix } => {
+                let mut new_prefix = prefix.to_vec();
+                new_prefix.push(seg.name.clone());
+                self.check_use_tree(suffix, &new_prefix, seg.span);
+            }
+            UseTree::Group(trees) => {
+                for t in trees {
+                    self.check_use_tree(t, prefix, span);
+                }
+            }
+            UseTree::Name(name) => {
+                self.check_local_module_target(prefix, &name.name, &name.name, name.span);
+            }
+            UseTree::Rename { name, alias } => {
+                self.check_local_module_target(prefix, &name.name, &alias.name, alias.span);
+            }
+            // The interpreter's glob handling (`process_use_tree`'s
+            // `UseTree::Glob` arm) only filters names already registered —
+            // it never loads a module by itself, unlike the `Name`/`Rename`
+            // arms. A bare `invoke tome·x·*` with no companion named import
+            // of `x` therefore imports nothing at runtime either, so there
+            // is nothing sound to check or register here without risking a
+            // false positive against a companion import elsewhere in the
+            // file. See the coverage statement (LARES-360) for the gap this
+            // leaves in `--strict`.
+            UseTree::Glob => {}
+        }
+    }
+
+    /// Check one `invoke tome·`/`crate·`/`above·` leaf: does `module_name`
+    /// (derived from `prefix` the same way `Interpreter::process_use_tree`
+    /// derives it) resolve to an inline `mod` in this file or a sibling
+    /// `.sigil`/`.sg` file, and — for the sibling-file case — does it
+    /// actually define `simple_name`? A workspace-crate import (any prefix
+    /// other than these three self-reference spellings) is left unverified:
+    /// resolving it needs the project's `sigil.toml`/workspace layout, which
+    /// `sigil check` does not load for a single file.
+    fn check_local_module_target(
+        &mut self,
+        prefix: &[String],
+        simple_name: &str,
+        imported_as: &str,
+        span: Span,
+    ) {
+        if prefix.is_empty() {
+            return;
+        }
+        let crate_name = &prefix[0];
+        if crate_name != "crate" && crate_name != "tome" && crate_name != "above" {
+            return;
+        }
+        let module_name = if prefix.len() >= 2 {
+            prefix[1].clone()
+        } else {
+            simple_name.to_string()
+        };
+
+        if self.known_modules.contains(&module_name) {
+            // Resolves to an inline `mod name { ... }` in this same file.
+            // Neither `collect_type_def` nor `collect_fn_sig` walks into
+            // inline modules today (a separate, pre-existing gap — see the
+            // coverage statement), so there is nothing reliable to check
+            // the imported name against; trust it rather than manufacture a
+            // false positive from that gap.
+            self.register_known_bare_name(imported_as);
+            return;
+        }
+
+        let Some(dir) = self.source_dir.clone() else {
+            // No file behind this source (e.g. an in-memory string in a
+            // test) — can't safely resolve a relative import either way.
+            return;
+        };
+        let sigil_path = dir.join(format!("{}.sigil", module_name));
+        let sg_path = dir.join(format!("{}.sg", module_name));
+        let module_path = if sigil_path.exists() {
+            sigil_path.clone()
+        } else if sg_path.exists() {
+            sg_path.clone()
+        } else {
+            self.error(
+                TypeError::new(format!(
+                    "cannot find module `{}` for `invoke {}·{}`",
+                    module_name,
+                    prefix.join("·"),
+                    simple_name,
+                ))
+                .with_span(span)
+                .with_note(format!(
+                    "looked for {} and {}",
+                    sigil_path.display(),
+                    sg_path.display(),
+                )),
+            );
+            return;
+        };
+
+        // `invoke tome·module;` (prefix.len() == 1): the imported item IS
+        // the module itself — nothing further to look up inside it.
+        if prefix.len() < 2 {
+            return;
+        }
+
+        // Lightweight name scan of the sibling file: just enough to know
+        // whether it defines `simple_name`, not a second full type-check.
+        let Ok(source) = std::fs::read_to_string(&module_path) else {
+            return;
+        };
+        let mut parser = crate::Parser::new(&source);
+        let Ok(module_file) = parser.parse_file() else {
+            return;
+        };
+        let found = module_file.items.iter().any(|it| match &it.node {
+            crate::ast::Item::Function(f) => f.name.name == simple_name,
+            crate::ast::Item::Struct(s) => s.name.name == simple_name,
+            crate::ast::Item::Enum(e) => e.name.name == simple_name,
+            crate::ast::Item::TypeAlias(t) => t.name.name == simple_name,
+            crate::ast::Item::Const(c) => c.name.name == simple_name,
+            _ => false,
+        });
+
+        if found {
+            self.register_known_bare_name(imported_as);
+        }
+        // If not found: leave it unresolved rather than report "no such item
+        // in module" here — that would widen #172 past its own repro (a
+        // module that does not exist at all) — but do not register it as
+        // known either, so a genuinely undefined name still reads as
+        // undefined under `--strict` (#164's own AC: both directions).
+    }
+
+    /// Record that `name` is now in scope as an imported bare identifier, for
+    /// `--strict`'s unknown-name check (`infer_expr`'s `Expr::Path` arm).
+    fn register_known_bare_name(&mut self, name: &str) {
+        if !self.functions.contains_key(name) && !self.types.contains_key(name) {
+            let ty = self.fresh_var();
+            self.functions.insert(name.to_string(), ty);
+        }
+    }
+
     fn collect_type_def(&mut self, item: &Item) {
         match item {
             Item::Struct(s) => {
@@ -2985,19 +3197,41 @@ impl TypeChecker {
             Expr::Field { expr, field } => {
                 let recv_ty = self.infer_expr(expr);
                 let (recv_inner, recv_ev) = self.strip_evidence(&recv_ty);
+                // Resolve a type variable through inference before matching,
+                // the same way `Expr::Try` does below — a receiver bound
+                // from `≔ p = mk();` often arrives as an unresolved `Var`
+                // even once `mk`'s return type has been unified to a
+                // concrete struct.
+                let recv_resolved = if let Type::Var(v) = &recv_inner {
+                    self.substitutions.get(v).cloned().unwrap_or_else(|| recv_inner.clone())
+                } else {
+                    recv_inner.clone()
+                };
 
                 // Try to resolve field type from struct definition
-                let field_ty = if let Type::Named { name, .. } = &recv_inner {
+                let field_ty = if let Type::Named { name, .. } = &recv_resolved {
                     // Look up struct definition in type definitions
-                    if let Some(struct_def) = self.types.get(name) {
-                        if let TypeDef::Struct { fields, .. } = struct_def {
-                            fields
-                                .iter()
-                                .find(|(n, _)| n == &field.name)
-                                .map(|(_, ty)| ty.clone())
-                                .unwrap_or_else(|| self.fresh_var())
-                        } else {
-                            self.fresh_var()
+                    if let Some(TypeDef::Struct { fields, .. }) = self.types.get(name).cloned() {
+                        match fields.iter().find(|(n, _)| n == &field.name) {
+                            Some((_, ty)) => ty.clone(),
+                            None => {
+                                // sigil-lang#172: the struct's own shape is
+                                // fully known within this file — unlike a
+                                // bare identifier's possible cross-file
+                                // origin (see the `--strict` note above),
+                                // there is no "might be defined elsewhere"
+                                // excuse for a field a KNOWN struct's
+                                // definition does not have. Always on, not
+                                // gated behind `--strict`.
+                                self.error(
+                                    TypeError::new(format!(
+                                        "no field `{}` on struct `{}`",
+                                        field.name, name
+                                    ))
+                                    .with_span(field.span),
+                                );
+                                self.fresh_var()
+                            }
                         }
                     } else {
                         self.fresh_var()
@@ -3071,6 +3305,32 @@ impl TypeChecker {
                         // (type inference will resolve it later)
                         self.fresh_var()
                     }
+                }
+            }
+
+            Expr::Struct { path, .. } => {
+                // sigil-lang#172(B): a struct literal previously fell through
+                // to the catch-all below, so `≔ p = Point { x: 1, y: 2 };`
+                // bound `p` to an unconstrained type variable and the
+                // Expr::Field check above never saw a `Type::Named` to
+                // validate `p.<field>` against. Resolving a NAMED literal
+                // (`path` is a real struct in this file) to that struct's
+                // own type closes the common case — immediate or
+                // near-immediate field access on a struct built with its own
+                // name. An anonymous literal (`path` = `__anonymous__`, or
+                // any name that is not a struct declared in this file) still
+                // falls through to `fresh_var()`: it has no per-literal
+                // shape to check against without tracking a synthetic type
+                // per literal, which this pass does not do — see the
+                // coverage statement. Field values are intentionally not
+                // walked here: nothing type-checked them before this arm
+                // existed either, and adding that is a separate change.
+                let struct_name = path.segments.last().map(|s| s.ident.name.clone());
+                match struct_name {
+                    Some(name) if matches!(self.types.get(&name), Some(TypeDef::Struct { .. })) => {
+                        Type::Named { name, generics: vec![] }
+                    }
+                    _ => self.fresh_var(),
                 }
             }
 
@@ -4941,6 +5201,14 @@ mod tests {
         checker.check_file(&file)
     }
 
+    fn check_strict(source: &str) -> Result<(), Vec<TypeError>> {
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().expect("parse failed");
+        let mut checker = TypeChecker::new();
+        checker.set_strict(true);
+        checker.check_file(&file)
+    }
+
     #[test]
     fn test_basic_types() {
         assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
@@ -5081,5 +5349,285 @@ mod tests {
         "#
         )
         .is_ok());
+    }
+
+    // =========================================================================
+    // LARES-360 tests: `sigil check` is an upper bound, not a floor.
+    // =========================================================================
+
+    /// A scratch directory under the OS temp dir, unique per test, removed on
+    /// drop. `check_with_dir` writes `main.sigil` (and any `extra_files`)
+    /// into it and checks `main.sigil` with `set_source_dir` pointed here —
+    /// the file-on-disk context `invoke tome·`/`crate·` resolution needs.
+    struct ScratchDir(std::path::PathBuf);
+
+    impl ScratchDir {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "sigil-lares360-{}-{}-{}",
+                tag,
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&dir).expect("create scratch dir");
+            ScratchDir(dir)
+        }
+    }
+
+    impl Drop for ScratchDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn check_with_dir(
+        dir: &ScratchDir,
+        main_source: &str,
+        extra_files: &[(&str, &str)],
+    ) -> Result<(), Vec<TypeError>> {
+        for (name, contents) in extra_files {
+            std::fs::write(dir.0.join(name), contents).expect("write sibling module");
+        }
+        let main_path = dir.0.join("main.sigil");
+        std::fs::write(&main_path, main_source).expect("write main.sigil");
+
+        let mut parser = Parser::new(main_source);
+        let file = parser.parse_file().expect("parse failed");
+        let mut checker = TypeChecker::new();
+        checker.set_source_dir(dir.0.clone());
+        checker.check_file(&file)
+    }
+
+    // --- #172 (invoke to a module that does not exist) ---
+
+    #[test]
+    fn test_invoke_to_nonexistent_tome_module_is_rejected() {
+        // sigil-lang#172(A): `invoke tome·nosuchmodule·{nothing};` used to
+        // pass `check` unconditionally — the module loader silently no-ops
+        // when it can't find a file, so nothing ever flagged it, and the
+        // program only failed at runtime on first use of `nothing`.
+        let dir = ScratchDir::new("nonexistent-module");
+        let result = check_with_dir(
+            &dir,
+            r#"
+                invoke tome·nosuchmodule·{nothing};
+                rite main() {
+                    println("check says this file is fine");
+                }
+            "#,
+            &[],
+        );
+        assert!(
+            result.is_err(),
+            "expected check to reject an invoke to a module with no file behind it"
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.message.contains("nosuchmodule")),
+            "expected an error naming the missing module, got {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_invoke_to_existing_tome_module_is_accepted() {
+        // Companion positive case: a real sibling module must not be
+        // flagged — a fix that rejects every invoke is not a fix.
+        let dir = ScratchDir::new("existing-module");
+        let result = check_with_dir(
+            &dir,
+            r#"
+                invoke tome·helper·{helper_fn};
+                rite main() {
+                    ≔ x = helper_fn();
+                }
+            "#,
+            &[("helper.sigil", "☉ rite helper_fn() -> i64 { ↩ 42; }")],
+        );
+        assert!(result.is_ok(), "expected no errors, got {:?}", result);
+    }
+
+    #[test]
+    fn test_invoke_to_inline_module_is_accepted() {
+        // `invoke tome·name·…` can also resolve to an inline `mod name { }`
+        // in the same file, not just an external file — must not be
+        // misread as "module doesn't exist".
+        let dir = ScratchDir::new("inline-module");
+        let result = check_with_dir(
+            &dir,
+            r#"
+                scroll store {
+                    ☉ rite save() -> i64 { ↩ 1; }
+                }
+                invoke tome·store·{save};
+                rite main() {
+                    ≔ x = save();
+                }
+            "#,
+            &[],
+        );
+        assert!(result.is_ok(), "expected no errors, got {:?}", result);
+    }
+
+    // --- #164 (`--strict` false positive on a glob/named cross-file import) ---
+
+    #[test]
+    fn test_strict_does_not_flag_a_named_tome_import() {
+        // sigil-lang#164, cause 1: a name brought into scope by `invoke
+        // tome·helper·{helper_fn};` is defined and used at runtime — it must
+        // not be reported "cannot find `helper_fn` in this scope" under
+        // `--strict` just because it lives in another file.
+        let dir = ScratchDir::new("strict-named-import");
+        let mut parser = Parser::new(
+            r#"
+                invoke tome·helper·{helper_fn};
+                rite main() {
+                    ≔ x = helper_fn();
+                }
+            "#,
+        );
+        let file = parser.parse_file().expect("parse failed");
+        std::fs::write(
+            dir.0.join("helper.sigil"),
+            "☉ rite helper_fn() -> i64 { ↩ 42; }",
+        )
+        .expect("write sibling module");
+        let mut checker = TypeChecker::new();
+        checker.set_strict(true);
+        checker.set_source_dir(dir.0.clone());
+        let result = checker.check_file(&file);
+        assert!(result.is_ok(), "expected no errors under --strict, got {:?}", result);
+    }
+
+    #[test]
+    fn test_strict_still_flags_a_genuinely_undefined_name() {
+        // The other half of #164's AC: fixing the false positive on real
+        // imports must not also stop reporting an actually-undefined name.
+        // (Non-strict `check` never flags a bare undefined identifier at
+        // all — see `infer_expr`'s `Expr::Path` note — so this needs
+        // `--strict` to exercise the check being fixed here.)
+        let mut parser = Parser::new(
+            r#"
+                rite main() {
+                    ≔ x = totally_undefined_thing_xyz();
+                }
+            "#,
+        );
+        let file = parser.parse_file().expect("parse failed");
+        let mut checker = TypeChecker::new();
+        checker.set_strict(true);
+        assert!(checker.check_file(&file).is_err());
+    }
+
+    #[test]
+    fn test_strict_still_flags_an_import_of_a_name_that_does_not_exist() {
+        // A named import of something the target module does not define is
+        // still undefined — importing it does not manufacture the name.
+        let dir = ScratchDir::new("strict-bad-named-import");
+        let mut parser = Parser::new(
+            r#"
+                invoke tome·helper·{nonexistent_fn};
+                rite main() {
+                    ≔ x = nonexistent_fn();
+                }
+            "#,
+        );
+        let file = parser.parse_file().expect("parse failed");
+        std::fs::write(
+            dir.0.join("helper.sigil"),
+            "☉ rite helper_fn() -> i64 { ↩ 42; }",
+        )
+        .expect("write sibling module");
+        let mut checker = TypeChecker::new();
+        checker.set_strict(true);
+        checker.set_source_dir(dir.0.clone());
+        let result = checker.check_file(&file);
+        assert!(
+            result.is_err(),
+            "expected `nonexistent_fn` to still read as undefined"
+        );
+    }
+
+    #[test]
+    fn test_strict_does_not_flag_a_registered_stdlib_builtin() {
+        // sigil-lang#164, cause 2: `register_builtins`'s hand-maintained
+        // list of names `--strict` knows about is a duplicate of the real
+        // registry in stdlib.rs's `register_stdlib` and had already drifted
+        // once (the JSON functions, per the comment where they were
+        // backfilled) — `fs_exists` (and its fs_read/fs_write/fs_rename
+        // siblings) was the same drift, just never backfilled. Picked
+        // because it is a *free* function with no receiver, so this is
+        // testing the builtin-registry gap specifically, not the
+        // qualified-path gap #164 separately notes `--strict` doesn't cover
+        // at all.
+        assert!(check_strict(
+            r#"
+                rite main() {
+                    ≔ ok = fs_exists("foo.txt");
+                }
+            "#
+        )
+        .is_ok());
+    }
+
+    // --- #172(B): field access on a struct whose shape is fully known ---
+
+    #[test]
+    fn test_unknown_field_on_known_struct_is_rejected() {
+        // sigil-lang#172(B) measured this on an anonymous struct literal;
+        // the same silent `unwrap_or_else(|| self.fresh_var())` fallback
+        // left a NAMED struct's field access just as unchecked — a field
+        // typo on a struct whose full shape is declared in this same file,
+        // previously accepted by `check` and only caught by the interpreter
+        // at run time ("no field 'x' on struct 'Y'").
+        assert!(check(
+            r#"
+                Σ Point { x: i64, y: i64 }
+                rite main() {
+                    ≔ p = Point { x: 1, y: 2 };
+                    ≔ oops = p.z;
+                }
+            "#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn test_known_field_on_known_struct_is_accepted() {
+        // Companion positive case: a real field access on the same struct
+        // must not be flagged.
+        assert!(check(
+            r#"
+                Σ Point { x: i64, y: i64 }
+                rite main() {
+                    ≔ p = Point { x: 1, y: 2 };
+                    ≔ ok = p.x;
+                }
+            "#
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_unknown_field_through_a_function_return_is_rejected() {
+        // The exact shape of #172(B)'s own repro: the bad access is on a
+        // binding whose type comes from a function's inferred return type,
+        // not the struct literal directly.
+        assert!(check(
+            r#"
+                Σ Point { x: i64, y: i64 }
+                rite mk() -> Point {
+                    ↩ Point { x: 1, y: 2 };
+                }
+                rite main() {
+                    ≔ p = mk();
+                    ≔ oops = p.z;
+                }
+            "#
+        )
+        .is_err());
     }
 }
