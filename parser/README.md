@@ -61,6 +61,23 @@ cargo build --release
 ./program
 ```
 
+## `.sg` is the canonical source extension
+
+`.sg` is the canonical Sigil source extension; `.sigil` is deprecated but still
+compiles. Reading a `.sigil` file prints a warning naming the path, at every
+command that reads source (`run`, `run-dir`, `run-ws`, `jit`, `llvm`, `compile`,
+`wasm`, `rust`, `check`, `lint`, `dump-ir`, `doc-extract`, `parse`, `lex`,
+`test`, `build`). A `.sg` file never triggers it. Suppress it globally with
+`--no-deprecation-warnings`.
+
+```bash
+./target/release/sigil run legacy.sigil
+# warning: `legacy.sigil` uses the deprecated `.sigil` extension; rename to `.sg` (suppress with --no-deprecation-warnings)
+
+./target/release/sigil run legacy.sigil --no-deprecation-warnings
+# (no warning)
+```
+
 ## Building with LLVM Backend
 
 For production performance, build with LLVM support:
