@@ -385,6 +385,7 @@ impl Formatter {
 /// Format a file in place
 pub fn format_file(path: &Path, config: &FormatConfig) -> Result<bool, String> {
     let source = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+    crate::warn_if_deprecated_extension(path);
 
     let formatter = Formatter::new(config.clone());
     let formatted = formatter.format_source(&source)?;
@@ -401,6 +402,7 @@ pub fn format_file(path: &Path, config: &FormatConfig) -> Result<bool, String> {
 /// Check if a file is formatted
 pub fn check_file(path: &Path, config: &FormatConfig) -> Result<bool, String> {
     let source = fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
+    crate::warn_if_deprecated_extension(path);
 
     let formatter = Formatter::new(config.clone());
     let formatted = formatter.format_source(&source)?;

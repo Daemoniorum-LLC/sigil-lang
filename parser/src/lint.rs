@@ -3692,6 +3692,7 @@ pub fn lint_directory(dir: &Path, config: LintConfig) -> DirectoryLintResult {
 
     for path in files {
         if let Ok(source) = fs::read_to_string(&path) {
+            crate::warn_if_deprecated_extension(&path);
             let path_str = path.display().to_string();
             let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
 
@@ -3736,6 +3737,7 @@ pub fn lint_directory_parallel(dir: &Path, config: LintConfig) -> DirectoryLintR
         .par_iter()
         .filter_map(|path| {
             let source = fs::read_to_string(path).ok()?;
+            crate::warn_if_deprecated_extension(path);
             let path_str = path.display().to_string();
             let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
 
@@ -5186,6 +5188,7 @@ pub fn lint_directory_filtered(
         .par_iter()
         .filter_map(|path| {
             let source = std::fs::read_to_string(path).ok()?;
+            crate::warn_if_deprecated_extension(path);
             let path_str = path.display().to_string();
             let diagnostics = lint_source_with_config(&source, &path_str, config.clone());
 

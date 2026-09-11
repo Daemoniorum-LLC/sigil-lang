@@ -7,7 +7,10 @@ use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
 #[cfg(feature = "jit")]
 use sigil_parser::JitCompiler;
-use sigil_parser::{register_stdlib, set_verbose, Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token};
+use sigil_parser::{
+    register_stdlib, set_deprecation_warnings, set_verbose, warn_if_deprecated_extension,
+    Diagnostic, Diagnostics, Interpreter, Lexer, Parser, Token,
+};
 #[cfg(feature = "llvm")]
 use sigil_parser::{CompileMode, LlvmCompiler, OptLevel};
 #[cfg(feature = "wasm")]
@@ -91,9 +94,15 @@ fn main() -> ExitCode {
         set_verbose(true);
     }
 
+    // Handle --no-deprecation-warnings globally (LARES-363: suppresses the
+    // `.sigil`-extension deprecation warning across every subcommand).
+    if args.iter().any(|a| a == "--no-deprecation-warnings") {
+        set_deprecation_warnings(false);
+    }
+
     // Filter out global flags for command processing
     let args: Vec<String> = args.into_iter()
-        .filter(|a| a != "--verbose" && a != "-v")
+        .filter(|a| a != "--verbose" && a != "-v" && a != "--no-deprecation-warnings")
         .collect();
 
     if args.len() >= 2 && (args[1] == "--version" || args[1] == "-V" || args[1] == "version") {
@@ -148,6 +157,10 @@ fn main() -> ExitCode {
         eprintln!("  --pretty            Pretty-print JSON output (default)");
         eprintln!("  --compact           Single-line JSON output");
         eprintln!("  -o <file>           Write IR to file instead of stdout");
+        eprintln!();
+        eprintln!("Global Options:");
+        eprintln!("  --verbose, -v            Enable verbose debug output");
+        eprintln!("  --no-deprecation-warnings  Suppress the `.sigil`-extension deprecation warning");
         return ExitCode::from(1);
     }
 
@@ -635,6 +648,7 @@ fn run_file(path: &str, program_args: &[String], skip_typecheck: bool) -> ExitCo
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     // Parse
     let mut parser = Parser::new(&source);
@@ -803,6 +817,7 @@ fn run_directory(dir_path: &str, program_args: &[String]) -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+        warn_if_deprecated_extension(file_path);
 
         // Get module name from filename (without extension)
         let module_name = Path::new(file_path)
@@ -1042,6 +1057,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
                     continue;
                 }
             };
+            warn_if_deprecated_extension(file_path);
 
             let mut parser = Parser::new(&source);
             match parser.parse_file() {
@@ -1205,6 +1221,7 @@ fn run_workspace(bin_name: Option<&str>, program_args: &[String]) -> ExitCode {
                     return ExitCode::from(1);
                 }
             };
+            warn_if_deprecated_extension(file_path);
 
             let mut parser = Parser::new(&source);
             let ast = match parser.parse_file() {
@@ -1255,6 +1272,7 @@ fn jit_file(path: &str) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     // Create JIT compiler
     let mut jit = match JitCompiler::new() {
@@ -1383,6 +1401,7 @@ fn llvm_file(path: &str) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     if let Err(code) = typecheck_before_codegen(path, &source) {
         return code;
@@ -1445,6 +1464,7 @@ fn compile_file(path: &str, output: &str, use_lto: bool, use_tls: bool, use_cuda
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     if let Err(code) = typecheck_before_codegen(path, &source) {
         return code;
@@ -1905,6 +1925,7 @@ fn rust_compile_file(
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     if let Err(code) = typecheck_before_codegen(path, &source) {
         return code;
@@ -2069,6 +2090,7 @@ fn rust_compile_workspace(
                         continue;
                     }
                 };
+                warn_if_deprecated_extension(&path);
 
                 let mut parser = Parser::new(&source);
                 let source_file = match parser.parse_file() {
@@ -2452,6 +2474,7 @@ fn wasm_compile_file(path: &str, output: &str) -> ExitCode {
         // Single file compilation
         match fs::read_to_string(path) {
             Ok(source) => {
+                warn_if_deprecated_extension(path);
                 if let Err(code) = typecheck_before_codegen(&path.display().to_string(), &source) {
                     return code;
                 }
@@ -2660,7 +2683,10 @@ fn collect_check_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 
 fn check_single_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
-        Ok(s) => s,
+        Ok(s) => {
+            warn_if_deprecated_extension(path);
+            s
+        }
         Err(e) => {
             if format == OutputFormat::Human && !quiet {
                 eprintln!("Error reading file '{}': {}", path, e);
@@ -3042,6 +3068,7 @@ fn lint_path(path: &str, format: OutputFormat, config_path: Option<&str>, apply_
                 return ExitCode::from(1);
             }
         };
+        warn_if_deprecated_extension(path);
 
         // Run the linter with config
         let diagnostics = lint_source_with_config(&source, path, config);
@@ -3221,6 +3248,7 @@ fn dump_ir_file(path: &str, pretty: bool, output: Option<&str>) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     // Parse the source
     let mut parser = Parser::new(&source);
@@ -3273,6 +3301,7 @@ fn doc_extract_file(path: &str, format: &str, output: Option<&str>) -> ExitCode 
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     // Parse the source
     let mut parser = Parser::new(&source);
@@ -3490,6 +3519,7 @@ fn parse_file(path: &str) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     let mut parser = Parser::new(&source);
     match parser.parse_file() {
@@ -3603,6 +3633,7 @@ fn lex_file(path: &str) -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     println!("Tokens in '{}':", path);
     let mut lexer = Lexer::new(&source);
@@ -4500,6 +4531,7 @@ fn run_test_files(
                 continue;
             }
         };
+        warn_if_deprecated_extension(test_file);
 
         let mut parser = Parser::new(&source);
         let ast = match parser.parse_file() {
@@ -5236,6 +5268,7 @@ fn build_library(name: &str, lib_file: &std::path::Path, target_dir: &std::path:
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(lib_file);
 
     let mut parser = Parser::new(&source);
     let ast = match parser.parse_file() {
@@ -5282,6 +5315,7 @@ fn build_binary(name: &str, main_file: &std::path::Path, target_dir: &std::path:
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(main_file);
 
     let mut parser = Parser::new(&source);
     let ast = match parser.parse_file() {
@@ -5331,6 +5365,7 @@ fn build_binary_with_deps(name: &str, main_file: &std::path::Path, target_dir: &
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(main_file);
 
     let mut parser = Parser::new(&source);
     let ast = match parser.parse_file() {
@@ -5387,6 +5422,7 @@ fn compile_file_with_deps(path: &str, output: &str, dep_libs: &[std::path::PathB
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();
@@ -5491,6 +5527,7 @@ fn compile_library(path: &str, name: &str, target_dir: &std::path::Path) -> Exit
             return ExitCode::from(1);
         }
     };
+    warn_if_deprecated_extension(path);
 
     // Create LLVM context and compiler in AOT mode
     let context = Context::create();
@@ -8975,7 +9012,7 @@ mod run_directory_tests {
 /// amdusias invisible to `has_lib`/`has_bin` in the first place.
 #[cfg(test)]
 mod build_subsystem_tests {
-    use super::{build_workspace, collect_check_files, find_manifest_path, resolve_source_file, Manifest};
+    use super::{build_workspace, check_single_file, collect_check_files, find_manifest_path, resolve_source_file, Manifest, OutputFormat};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::ExitCode;
@@ -9186,5 +9223,27 @@ mod build_subsystem_tests {
             ExitCode::SUCCESS,
             "the only declared member had no manifest, so nothing was built"
         );
+    }
+
+    // ---- LARES-363: the deprecation warning must not become a rejection ---
+
+    #[test]
+    fn check_single_file_still_succeeds_for_dot_sigil_extension() {
+        let dir = TempDir::new("check-sigil-still-compiles");
+        let file = dir.write("minimal.sigil", "rite main() {}\n");
+        let code = check_single_file(&file.to_string_lossy(), OutputFormat::Human, true, false, false);
+        assert_eq!(
+            code,
+            ExitCode::SUCCESS,
+            ".sigil must keep compiling alongside the deprecation warning (LARES-363)"
+        );
+    }
+
+    #[test]
+    fn check_single_file_succeeds_identically_for_dot_sg_extension() {
+        let dir = TempDir::new("check-sg-baseline");
+        let file = dir.write("minimal.sg", "rite main() {}\n");
+        let code = check_single_file(&file.to_string_lossy(), OutputFormat::Human, true, false, false);
+        assert_eq!(code, ExitCode::SUCCESS);
     }
 }

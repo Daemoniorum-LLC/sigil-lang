@@ -46,6 +46,98 @@ macro_rules! sigil_warn {
     };
 }
 
+/// Global switch for the `.sigil`-extension deprecation warning (LARES-363).
+/// Set via `set_deprecation_warnings(false)` or the `--no-deprecation-warnings` CLI flag.
+static DEPRECATION_WARNINGS: AtomicBool = AtomicBool::new(true);
+
+/// Enable or disable the `.sigil` deprecation warning process-wide.
+pub fn set_deprecation_warnings(enabled: bool) {
+    DEPRECATION_WARNINGS.store(enabled, Ordering::SeqCst);
+}
+
+/// Check whether the `.sigil` deprecation warning is enabled.
+pub fn deprecation_warnings_enabled() -> bool {
+    DEPRECATION_WARNINGS.load(Ordering::SeqCst)
+}
+
+/// Whether `path` carries the deprecated `.sigil` extension. Pure and
+/// independent of the enabled/dedup state, so the extension rule itself is
+/// unit-testable without touching global state or stderr.
+pub fn is_deprecated_sigil_extension<P: AsRef<std::path::Path>>(path: P) -> bool {
+    path.as_ref().extension().map_or(false, |ext| ext == "sigil")
+}
+
+/// Warn once per process, per path, when a `.sigil` source file is read.
+///
+/// `.sg` is the canonical extension; `.sigil` is deprecated but keeps
+/// compiling (LARES-363) — this only names the path and points at the
+/// replacement. A `.sg` file (or anything else) triggers nothing.
+/// Suppressible via `--no-deprecation-warnings` or `set_deprecation_warnings(false)`.
+pub fn warn_if_deprecated_extension<P: AsRef<std::path::Path>>(path: P) {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+
+    if !deprecation_warnings_enabled() {
+        return;
+    }
+
+    let path = path.as_ref();
+    if !is_deprecated_sigil_extension(path) {
+        return;
+    }
+
+    static WARNED: Mutex<Option<HashSet<std::path::PathBuf>>> = Mutex::new(None);
+    let mut guard = WARNED.lock().unwrap();
+    let seen = guard.get_or_insert_with(HashSet::new);
+    if seen.insert(path.to_path_buf()) {
+        eprintln!(
+            "warning: `{}` uses the deprecated `.sigil` extension; rename to `.sg` (suppress with --no-deprecation-warnings)",
+            path.display()
+        );
+    }
+}
+
+#[cfg(test)]
+mod deprecation_warning_tests {
+    use super::*;
+
+    // AC: "A `.sigil` file emits the warning... A `.sg` file emits NOTHING.
+    // A warning that fires on both is noise." This is the rule itself, kept
+    // separate from the printing/dedup side effects so it can be asserted
+    // directly rather than by scraping stderr.
+    #[test]
+    fn sigil_extension_is_flagged() {
+        assert!(is_deprecated_sigil_extension("foo.sigil"));
+        assert!(is_deprecated_sigil_extension("dir/nested/lib.sigil"));
+    }
+
+    #[test]
+    fn sg_extension_is_not_flagged() {
+        assert!(!is_deprecated_sigil_extension("foo.sg"));
+        assert!(!is_deprecated_sigil_extension("dir/nested/lib.sg"));
+    }
+
+    #[test]
+    fn unrelated_extensions_are_not_flagged() {
+        assert!(!is_deprecated_sigil_extension("foo.rs"));
+        assert!(!is_deprecated_sigil_extension("Sigil.toml"));
+        assert!(!is_deprecated_sigil_extension("noext"));
+    }
+
+    // The only test that touches the global suppression switch; every other
+    // test in this module must leave it alone, since `cargo test` runs tests
+    // in parallel within one process and the flag is process-wide.
+    #[test]
+    fn suppression_flag_round_trips() {
+        let original = deprecation_warnings_enabled();
+        set_deprecation_warnings(false);
+        assert!(!deprecation_warnings_enabled());
+        set_deprecation_warnings(true);
+        assert!(deprecation_warnings_enabled());
+        set_deprecation_warnings(original);
+    }
+}
+
 pub mod ast;
 pub mod cfg;
 pub mod diagnostic;
