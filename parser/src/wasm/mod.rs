@@ -1324,21 +1324,49 @@ impl WasmCompiler {
     /// them one two-minute rebuild at a time. They are recorded as they are met
     /// and reported together here — unless `SIGIL_WASM_STUB_UNRESOLVED` says
     /// this is a survey build, which wants the module anyway.
+    ///
+    /// LARES-360 / sigil-lang#162: `unresolved` and `stubbed_calls` are the
+    /// same defect — a name that resolved to nothing and compiled to a
+    /// constant `0` — recorded in two different sets depending on whether
+    /// the miss was a bare name (`stub_unresolved`, called from name
+    /// resolution) or a call (`stubbed_calls.insert`, called from call
+    /// compilation for a cross-module method or an un-hoisted lowercase
+    /// helper). Only `unresolved` used to gate the build here, so a stubbed
+    /// *call* shipped silently in a module `compile()` still called a
+    /// success — Qliphoth's whole theme subsystem did exactly this. Both now
+    /// gate the same way and both are lifted by the same survey flag: a
+    /// stubbed call is not more recoverable than a stubbed name, and
+    /// nothing at either call site claimed it was.
     #[cfg(test)]
     pub(crate) fn finish_unresolved_for_test(&self) -> WasmResult<()> {
         self.finish_unresolved()
     }
 
     fn finish_unresolved(&self) -> WasmResult<()> {
-        if self.unresolved.is_empty() || Self::stubbing_unresolved() {
+        if (self.unresolved.is_empty() && self.stubbed_calls.is_empty())
+            || Self::stubbing_unresolved()
+        {
             return Ok(());
         }
-        let mut lines = vec![format!(
-            "{} name(s) resolved to nothing (each compiles to a constant 0):",
-            self.unresolved.len()
-        )];
-        for name in &self.unresolved {
-            lines.push(format!("  {}", name));
+        let mut lines = Vec::new();
+        if !self.unresolved.is_empty() {
+            lines.push(format!(
+                "{} name(s) resolved to nothing (each compiles to a constant 0):",
+                self.unresolved.len()
+            ));
+            for name in &self.unresolved {
+                lines.push(format!("  {}", name));
+            }
+        }
+        if !self.stubbed_calls.is_empty() {
+            lines.push(format!(
+                "{} call{} resolved to nothing (each compiles to a constant 0):",
+                self.stubbed_calls.len(),
+                if self.stubbed_calls.len() == 1 { "" } else { "s" }
+            ));
+            for name in &self.stubbed_calls {
+                lines.push(format!("  {}()", name));
+            }
         }
         lines.push(
             "  Set SIGIL_WASM_STUB_UNRESOLVED=1 to build anyway and survey.".to_string(),
@@ -1773,6 +1801,41 @@ mod tests {
         let idx2 = compiler.get_or_create_type(vec![ValType::I64], vec![ValType::I64]);
 
         assert_eq!(idx1, idx2); // Same type should return same index
+    }
+
+    // =========================================================================
+    // LARES-360 / sigil-lang#162: `unresolved` (a bare name) and
+    // `stubbed_calls` (a call) are the same defect — recorded in two
+    // different sets, and only `unresolved` used to gate `compile()`. A
+    // call to a name that resolves to nothing used to compile successfully
+    // to a module that silently does nothing at that call site.
+    // =========================================================================
+
+    #[test]
+    fn test_unresolved_call_fails_the_build_by_default() {
+        // Does NOT set SIGIL_WASM_STUB_UNRESOLVED — this is the default-build
+        // path, which must refuse rather than ship a call that does nothing.
+        // (Not toggling the env var here deliberately: it's process-global,
+        // and `cargo test` runs tests in parallel within one process, so a
+        // test that flips it would race every other test in this module.)
+        let mut compiler = WasmCompiler::new();
+        let result = compiler.compile(
+            r#"
+                rite main() {
+                    ≔ x = totally_undefined_helper_xyz();
+                }
+            "#,
+        );
+        assert!(
+            result.is_err(),
+            "expected compile() to refuse a module with an unresolved call, got Ok"
+        );
+        let message = result.unwrap_err().to_string();
+        assert!(
+            message.contains("totally_undefined_helper_xyz"),
+            "expected the error to name the unresolved call, got: {}",
+            message
+        );
     }
 }
 
