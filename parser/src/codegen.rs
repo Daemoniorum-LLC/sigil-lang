@@ -18,12 +18,13 @@ pub mod jit {
     use cranelift_jit::{JITBuilder, JITModule};
     use cranelift_module::{FuncId, Linkage, Module};
 
+    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::mem;
 
     use crate::ast::{
         self, BinOp, Expr, ExternBlock, ExternFunction, ExternItem, Item, Literal, PipeOp,
-        TypeExpr, UnaryOp,
+        TypeExpr, TypePath, UnaryOp,
     };
     use crate::ffi::ctypes::CType;
     use crate::optimize::{OptLevel, Optimizer};
@@ -87,6 +88,95 @@ pub mod jit {
     type CompiledFn = unsafe extern "C" fn() -> i64;
     #[allow(dead_code)]
     type CompiledFnWithArgs = unsafe extern "C" fn(i64) -> i64;
+
+    // ============================================
+    // Struct layout & operator-trait dispatch tables
+    // ============================================
+    //
+    // `compile_expr` and friends are free functions threaded through with
+    // `functions`/`extern_fns` maps rather than `&mut self`, so struct field
+    // layouts and registered `impl Trait for T` operator methods are kept
+    // here instead of on `JitCompiler` to avoid rewiring ~100 call sites.
+    // `JitCompiler::compile_with_opt` clears both at the start of every
+    // compile, so this is safe despite being thread-local state: a single
+    // `JitCompiler::compile()` call runs to completion (declare pass, then
+    // compile pass) before `run()` ever executes JIT-compiled code, and nothing
+    // else on this thread compiles concurrently.
+    thread_local! {
+        /// struct name -> ordered field names
+        static STRUCT_FIELDS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+        /// (struct name, trait name e.g. "Div") -> [(rhs type name, mangled method name)]
+        /// Multiple entries occur when a type implements the same operator trait
+        /// for more than one right-hand-side type (`Div<f32>` and `Div<Vec2>`).
+        static OPERATOR_IMPLS: RefCell<HashMap<(String, String), Vec<(Option<String>, String)>>> =
+            RefCell::new(HashMap::new());
+    }
+
+    fn reset_struct_tables() {
+        STRUCT_FIELDS.with(|f| f.borrow_mut().clear());
+        OPERATOR_IMPLS.with(|f| f.borrow_mut().clear());
+    }
+
+    /// Map a binary operator to the trait Sigil dispatches it through, mirroring
+    /// the interpreter's `lookup_operator_impl` (see `interpreter.rs`). Only the
+    /// arithmetic operators are struct-dispatchable today.
+    fn arith_trait_name(op: &BinOp) -> Option<&'static str> {
+        match op {
+            BinOp::Add => Some("Add"),
+            BinOp::Sub => Some("Sub"),
+            BinOp::Mul => Some("Mul"),
+            BinOp::Div => Some("Div"),
+            _ => None,
+        }
+    }
+
+    /// Expected inherent method name for a given operator trait.
+    fn arith_trait_method(trait_name: &str) -> Option<&'static str> {
+        match trait_name {
+            "Add" => Some("add"),
+            "Sub" => Some("sub"),
+            "Mul" => Some("mul"),
+            "Div" => Some("div"),
+            _ => None,
+        }
+    }
+
+    /// Extract a plain type name from a `TypeExpr::Path`, if it is one.
+    fn type_expr_path_name(ty: &TypeExpr) -> Option<String> {
+        match ty {
+            TypeExpr::Path(path) => path.segments.last().map(|s| s.ident.name.clone()),
+            _ => None,
+        }
+    }
+
+    /// Build a collision-free name for a method compiled from an impl block.
+    /// Plain identifiers never contain `::` or `<`/`>`, so mangled names can't
+    /// collide with top-level function names or with each other across
+    /// distinct trait impls of the same struct (`Div<f32>::div` vs `Div<Vec2>::div`).
+    fn mangle_method_name(self_ty: &str, trait_: Option<&TypePath>, method: &str) -> String {
+        match trait_ {
+            Some(tp) => {
+                let trait_name = tp
+                    .segments
+                    .last()
+                    .map(|s| s.ident.name.as_str())
+                    .unwrap_or("");
+                let generics = tp
+                    .segments
+                    .last()
+                    .and_then(|s| s.generics.as_ref())
+                    .map(|gs| {
+                        gs.iter()
+                            .map(|g| type_expr_path_name(g).unwrap_or_else(|| "_".to_string()))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .unwrap_or_default();
+                format!("{}::{}<{}>::{}", self_ty, trait_name, generics, method)
+            }
+            None => format!("{}::{}", self_ty, method),
+        }
+    }
 
     /// Extern function signature info for FFI
     #[derive(Clone, Debug)]
@@ -207,6 +297,17 @@ pub mod jit {
             builder.symbol("sigil_simd_extract", sigil_simd_extract as *const u8);
             builder.symbol("sigil_simd_free", sigil_simd_free as *const u8);
 
+            // Struct support (heap-allocated field storage for operator-trait dispatch)
+            builder.symbol("sigil_struct_alloc", sigil_struct_alloc as *const u8);
+            builder.symbol(
+                "sigil_struct_field_get",
+                sigil_struct_field_get as *const u8,
+            );
+            builder.symbol(
+                "sigil_struct_field_set",
+                sigil_struct_field_set as *const u8,
+            );
+
             // Array functions
             builder.symbol("sigil_array_new", sigil_array_new as *const u8);
             builder.symbol("sigil_array_push", sigil_array_push as *const u8);
@@ -310,6 +411,11 @@ pub mod jit {
             source: &str,
             opt_level: OptLevel,
         ) -> Result<(), String> {
+            // Struct layouts and operator-impl tables are thread-local (see their
+            // definition above); reset them so a stale layout from a previous
+            // `compile()` call on this thread can never leak into this one.
+            reset_struct_tables();
+
             let mut parser = Parser::new(source);
             let source_file = parser.parse_file().map_err(|e| format!("{:?}", e))?;
 
@@ -317,23 +423,38 @@ pub mod jit {
             let mut optimizer = Optimizer::new(opt_level);
             let optimized = optimizer.optimize_file(&source_file);
 
-            // First pass: declare all extern blocks and functions
+            // First pass: declare all structs, extern blocks, functions and impls.
+            // Structs/impls must be declared before ANY function body is compiled
+            // (second pass below), since method bodies and field accesses look up
+            // struct layouts and operator dispatch tables populated here.
             for spanned_item in &optimized.items {
                 match &spanned_item.node {
+                    Item::Struct(struct_def) => {
+                        self.declare_struct(struct_def);
+                    }
                     Item::ExternBlock(extern_block) => {
                         self.declare_extern_block(extern_block)?;
                     }
                     Item::Function(func) => {
                         self.declare_function(func)?;
                     }
+                    Item::Impl(impl_block) => {
+                        self.declare_impl(impl_block)?;
+                    }
                     _ => {}
                 }
             }
 
-            // Second pass: compile all functions
+            // Second pass: compile all function and method bodies
             for spanned_item in &optimized.items {
-                if let Item::Function(func) = &spanned_item.node {
-                    self.compile_function(func)?;
+                match &spanned_item.node {
+                    Item::Function(func) => {
+                        self.compile_function(func)?;
+                    }
+                    Item::Impl(impl_block) => {
+                        self.compile_impl(impl_block)?;
+                    }
+                    _ => {}
                 }
             }
 
@@ -345,10 +466,92 @@ pub mod jit {
             Ok(())
         }
 
-        /// Declare a function (first pass)
-        fn declare_function(&mut self, func: &ast::Function) -> Result<FuncId, String> {
-            let name = &func.name.name;
+        /// Record a struct's field layout (first pass). Field order determines
+        /// storage offset: field `i` lives at byte `i * 8` in the heap block
+        /// `sigil_struct_alloc` returns for a literal of this type.
+        fn declare_struct(&mut self, struct_def: &ast::StructDef) {
+            let field_names: Vec<String> = match &struct_def.fields {
+                ast::StructFields::Named(fields) => {
+                    fields.iter().map(|f| f.name.name.clone()).collect()
+                }
+                ast::StructFields::Tuple(tys) => (0..tys.len()).map(|i| i.to_string()).collect(),
+                ast::StructFields::Unit => Vec::new(),
+            };
+            STRUCT_FIELDS.with(|sf| {
+                sf.borrow_mut()
+                    .insert(struct_def.name.name.clone(), field_names);
+            });
+        }
 
+        /// Declare every method in an impl block (first pass) and, for impls of
+        /// a known arithmetic operator trait, register it for operator dispatch.
+        fn declare_impl(&mut self, impl_block: &ast::ImplBlock) -> Result<(), String> {
+            let self_ty = type_expr_path_name(&impl_block.self_ty).ok_or_else(|| {
+                "JIT: impl blocks are only supported for a named self type".to_string()
+            })?;
+
+            for item in &impl_block.items {
+                let ast::ImplItem::Function(f) = item else {
+                    continue;
+                };
+                let mangled = mangle_method_name(&self_ty, impl_block.trait_.as_ref(), &f.name.name);
+                self.declare_function_named(&mangled, f)?;
+
+                if let Some(trait_path) = &impl_block.trait_ {
+                    let trait_name = trait_path
+                        .segments
+                        .last()
+                        .map(|s| s.ident.name.clone())
+                        .unwrap_or_default();
+                    if arith_trait_method(&trait_name) == Some(f.name.name.as_str()) {
+                        // `Rhs` defaults to `Self` when the trait has no generic
+                        // argument (`Add ∀ P` means `Add<P> ∀ P`), matching Rust's
+                        // `trait Add<Rhs = Self>` convention.
+                        let rhs_ty = trait_path
+                            .segments
+                            .last()
+                            .and_then(|s| s.generics.as_ref())
+                            .and_then(|g| g.first())
+                            .and_then(type_expr_path_name)
+                            .or_else(|| Some(self_ty.clone()));
+                        OPERATOR_IMPLS.with(|m| {
+                            m.borrow_mut()
+                                .entry((self_ty.clone(), trait_name.clone()))
+                                .or_default()
+                                .push((rhs_ty, mangled.clone()));
+                        });
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        /// Compile every method body in an impl block (second pass).
+        fn compile_impl(&mut self, impl_block: &ast::ImplBlock) -> Result<(), String> {
+            let self_ty = type_expr_path_name(&impl_block.self_ty).ok_or_else(|| {
+                "JIT: impl blocks are only supported for a named self type".to_string()
+            })?;
+            for item in &impl_block.items {
+                let ast::ImplItem::Function(f) = item else {
+                    continue;
+                };
+                let mangled = mangle_method_name(&self_ty, impl_block.trait_.as_ref(), &f.name.name);
+                self.compile_function_body(&mangled, f, Some(&self_ty))?;
+            }
+            Ok(())
+        }
+
+        /// Declare a top-level function (first pass)
+        fn declare_function(&mut self, func: &ast::Function) -> Result<FuncId, String> {
+            self.declare_function_named(&func.name.name, func)
+        }
+
+        /// Declare a function or method under an explicit (possibly mangled) name
+        fn declare_function_named(
+            &mut self,
+            name: &str,
+            func: &ast::Function,
+        ) -> Result<FuncId, String> {
             // Build signature
             let mut sig = self.module.make_signature();
 
@@ -365,7 +568,7 @@ pub mod jit {
                 .declare_function(name, Linkage::Local, &sig)
                 .map_err(|e| e.to_string())?;
 
-            self.functions.insert(name.clone(), func_id);
+            self.functions.insert(name.to_string(), func_id);
             Ok(func_id)
         }
 
@@ -513,7 +716,19 @@ pub mod jit {
 
         /// Compile a single function
         fn compile_function(&mut self, func: &ast::Function) -> Result<(), String> {
-            let name = &func.name.name;
+            self.compile_function_body(&func.name.name, func, None)
+        }
+
+        /// Compile a function or method body under an explicit (possibly
+        /// mangled) name. `self_type`, when set, names the struct `self`
+        /// refers to inside a method compiled from an impl block, so field
+        /// accesses like `self.x` and `Self { .. }` struct literals resolve.
+        fn compile_function_body(
+            &mut self,
+            name: &str,
+            func: &ast::Function,
+            self_type: Option<&str>,
+        ) -> Result<(), String> {
             let func_id = *self.functions.get(name).ok_or("Function not declared")?;
 
             // Build signature to match declaration
@@ -545,6 +760,9 @@ pub mod jit {
 
                 // Set up variable scope
                 let mut scope = CompileScope::new();
+                if let Some(st) = self_type {
+                    scope.self_type = Some(st.to_string());
+                }
 
                 // Declare parameters as variables with type inference
                 for (i, param) in func.params.iter().enumerate() {
@@ -555,6 +773,8 @@ pub mod jit {
 
                     // Get parameter name from the pattern
                     if let ast::Pattern::Ident { name, .. } = &param.pattern {
+                        let is_self = name.name == "self";
+
                         // Infer parameter type from type annotation if present
                         let param_type = match &param.ty {
                             TypeExpr::Path(path) => {
@@ -570,10 +790,31 @@ pub mod jit {
                                     _ => ValueType::Int, // Default to int for unknown types
                                 }
                             }
+                            TypeExpr::Infer if is_self => ValueType::Unknown,
                             TypeExpr::Infer => ValueType::Int, // Inferred type defaults to int
                             _ => ValueType::Int,               // Default to int for other cases
                         };
                         scope.define_typed(&name.name, var, param_type);
+
+                        // Record struct-typed parameters (including `self`) so
+                        // field access and operator dispatch can resolve them.
+                        if is_self {
+                            if let Some(st) = self_type {
+                                scope.define_struct_type("self", st.to_string());
+                            }
+                        } else {
+                            let declared = type_expr_path_name(&param.ty);
+                            let resolved = match declared.as_deref() {
+                                Some("Self") => self_type.map(|s| s.to_string()),
+                                Some(other) => STRUCT_FIELDS.with(|sf| {
+                                    sf.borrow().contains_key(other).then(|| other.to_string())
+                                }),
+                                None => None,
+                            };
+                            if let Some(rt) = resolved {
+                                scope.define_struct_type(&name.name, rt);
+                            }
+                        }
                     }
                 }
 
@@ -648,6 +889,12 @@ pub mod jit {
         variables: HashMap<String, Variable>,
         /// Track the type of each variable for type specialization
         var_types: HashMap<String, ValueType>,
+        /// Struct type name of variables known to hold a struct value
+        /// (including `self` inside a method), keyed by variable name.
+        struct_types: HashMap<String, String>,
+        /// The enclosing impl block's self type, if compiling a method body.
+        /// Lets `Self { .. }` struct literals resolve to a concrete struct.
+        self_type: Option<String>,
         /// Shared counter across all scopes to ensure unique Variable indices
         var_counter: std::rc::Rc<std::cell::Cell<usize>>,
     }
@@ -657,6 +904,8 @@ pub mod jit {
             Self {
                 variables: HashMap::new(),
                 var_types: HashMap::new(),
+                struct_types: HashMap::new(),
+                self_type: None,
                 var_counter: std::rc::Rc::new(std::cell::Cell::new(0)),
             }
         }
@@ -667,6 +916,8 @@ pub mod jit {
             Self {
                 variables: self.variables.clone(),
                 var_types: self.var_types.clone(),
+                struct_types: self.struct_types.clone(),
+                self_type: self.self_type.clone(),
                 var_counter: std::rc::Rc::clone(&self.var_counter),
             }
         }
@@ -701,6 +952,14 @@ pub mod jit {
         #[allow(dead_code)]
         fn set_type(&mut self, name: &str, ty: ValueType) {
             self.var_types.insert(name.to_string(), ty);
+        }
+
+        fn define_struct_type(&mut self, name: &str, struct_name: String) {
+            self.struct_types.insert(name.to_string(), struct_name);
+        }
+
+        fn get_struct_type(&self, name: &str) -> Option<String> {
+            self.struct_types.get(name).cloned()
         }
     }
 
@@ -829,6 +1088,42 @@ pub mod jit {
             }
 
             _ => ValueType::Unknown,
+        }
+    }
+
+    /// Infer the struct type of an expression, when known statically. This is
+    /// deliberately conservative: `None` means "not known to be a struct",
+    /// which routes binary operators through the ordinary numeric path rather
+    /// than ever guessing at operator dispatch.
+    fn infer_struct_type(expr: &Expr, scope: &CompileScope) -> Option<String> {
+        match expr {
+            Expr::Struct { path, .. } => {
+                let name = path.segments.last()?.ident.name.clone();
+                if name == "Self" {
+                    scope.self_type.clone()
+                } else {
+                    Some(name)
+                }
+            }
+            Expr::Path(path) => {
+                let name = path.segments.last()?.ident.name.clone();
+                scope.get_struct_type(&name)
+            }
+            Expr::Binary { op, left, .. } => {
+                // Heuristic: an operator-dispatched struct expression's result
+                // is assumed to be `Self` (`type Output = Self`), which is the
+                // overwhelmingly common case and the one this backend supports.
+                // A wrong guess here fails loud later (unknown field / no
+                // matching impl) rather than silently misbehaving.
+                let left_struct = infer_struct_type(left, scope)?;
+                let trait_name = arith_trait_name(op)?;
+                let has_impl = OPERATOR_IMPLS.with(|m| {
+                    m.borrow()
+                        .contains_key(&(left_struct.clone(), trait_name.to_string()))
+                });
+                has_impl.then_some(left_struct)
+            }
+            _ => None,
         }
     }
 
@@ -1047,6 +1342,9 @@ pub mod jit {
                     builder.def_var(var, val);
                     // Track the type for later type specialization
                     scope.define_typed(&name.name, var, ty);
+                    if let Some(struct_name) = init.as_ref().and_then(|e| infer_struct_type(e, scope)) {
+                        scope.define_struct_type(&name.name, struct_name);
+                    }
                 }
 
                 Ok((val, false))
@@ -1187,13 +1485,136 @@ pub mod jit {
                 }
             }
 
+            Expr::Struct { path, fields, rest } => {
+                if rest.is_some() {
+                    return Err(
+                        "JIT: struct update syntax (`..rest`) is not supported".to_string()
+                    );
+                }
+                let raw_name = path
+                    .segments
+                    .last()
+                    .map(|s| s.ident.name.clone())
+                    .unwrap_or_default();
+                let struct_name = if raw_name == "Self" {
+                    scope.self_type.clone().ok_or_else(|| {
+                        "JIT: `Self { .. }` used outside a method body".to_string()
+                    })?
+                } else {
+                    raw_name
+                };
+                let field_order = STRUCT_FIELDS
+                    .with(|sf| sf.borrow().get(&struct_name).cloned())
+                    .ok_or_else(|| format!("JIT: unknown struct type '{}'", struct_name))?;
+
+                let count = builder
+                    .ins()
+                    .iconst(types::I64, field_order.len().max(1) as i64);
+                let ptr = compile_call(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    "sigil_struct_alloc",
+                    &[count],
+                )?;
+
+                for field_init in fields {
+                    let idx = field_order
+                        .iter()
+                        .position(|f| f == &field_init.name.name)
+                        .ok_or_else(|| {
+                            format!(
+                                "JIT: unknown field '{}' on struct '{}'",
+                                field_init.name.name, struct_name
+                            )
+                        })?;
+                    let value_expr = match &field_init.value {
+                        Some(v) => v.clone(),
+                        // Shorthand `{ x }` means `{ x: x }`
+                        None => Expr::Path(TypePath {
+                            segments: vec![ast::PathSegment {
+                                ident: field_init.name.clone(),
+                                generics: None,
+                            }],
+                        }),
+                    };
+                    let field_val =
+                        compile_expr(module, functions, extern_fns, builder, scope, &value_expr)?;
+                    let idx_val = builder.ins().iconst(types::I64, idx as i64);
+                    compile_call(
+                        module,
+                        functions,
+                        extern_fns,
+                        builder,
+                        "sigil_struct_field_set",
+                        &[ptr, idx_val, field_val],
+                    )?;
+                }
+
+                Ok(ptr)
+            }
+
+            Expr::Field { expr: base, field } => {
+                let struct_name = infer_struct_type(base, scope).ok_or_else(|| {
+                    format!(
+                        "JIT: cannot determine the struct type of the receiver for field '.{}'",
+                        field.name
+                    )
+                })?;
+                let idx = STRUCT_FIELDS
+                    .with(|sf| {
+                        sf.borrow()
+                            .get(&struct_name)
+                            .and_then(|fs| fs.iter().position(|f| f == &field.name))
+                    })
+                    .ok_or_else(|| {
+                        format!(
+                            "JIT: unknown field '{}' on struct '{}'",
+                            field.name, struct_name
+                        )
+                    })?;
+                let base_val = compile_expr(module, functions, extern_fns, builder, scope, base)?;
+                let idx_val = builder.ins().iconst(types::I64, idx as i64);
+                compile_call(
+                    module,
+                    functions,
+                    extern_fns,
+                    builder,
+                    "sigil_struct_field_get",
+                    &[base_val, idx_val],
+                )
+            }
+
             Expr::Binary { op, left, right } => {
                 // TYPE SPECIALIZATION: Infer types to avoid runtime dispatch
                 let left_ty = infer_type(left, scope);
                 let right_ty = infer_type(right, scope);
+                let left_struct = infer_struct_type(left, scope);
 
                 let lhs = compile_expr(module, functions, extern_fns, builder, scope, left)?;
                 let rhs = compile_expr(module, functions, extern_fns, builder, scope, right)?;
+
+                // A struct-typed LHS with a matching `impl Add/Sub/Mul/Div for T`
+                // dispatches to that method instead of the numeric fallback below.
+                // Previously this fell through to the `_` catch-all further down
+                // and silently produced 0 — see LARES-361 / sigil-lang#182.
+                if let Some(struct_name) = &left_struct {
+                    if let Some(trait_name) = arith_trait_name(op) {
+                        let right_struct = infer_struct_type(right, scope);
+                        return compile_operator_call(
+                            module,
+                            functions,
+                            extern_fns,
+                            builder,
+                            struct_name,
+                            trait_name,
+                            right_struct,
+                            lhs,
+                            rhs,
+                        );
+                    }
+                }
 
                 // OPTIMIZATION: Use direct CPU instructions when both types are known integers
                 // This eliminates the ~100 cycle function call overhead per operation
@@ -2065,7 +2486,26 @@ pub mod jit {
                 Ok(val)
             }
 
-            _ => Ok(builder.ins().iconst(types::I64, 0)),
+            // No expression kind reaches here silently. This used to be
+            // `Ok(builder.ins().iconst(types::I64, 0))`: any AST node this
+            // backend didn't otherwise handle — struct literals and field
+            // access among them — compiled to the constant 0 with no error,
+            // no warning, and exit code 0. That is LARES-361 / sigil-lang#182:
+            // `sigil jit` computed and printed a plausible, wrong answer for a
+            // valid program. A dispatch/compilation gap must fail loud, so a
+            // future one doesn't silently repeat this bug in a new shape.
+            other => {
+                let debug = format!("{:?}", other);
+                let kind = debug
+                    .split(|c: char| c == ' ' || c == '(' || c == '{')
+                    .next()
+                    .unwrap_or("expression");
+                Err(format!(
+                    "JIT: unsupported expression `{}` — this backend cannot compile it and \
+                     refuses to silently substitute a default value (see LARES-361)",
+                    kind
+                ))
+            }
         }
     }
 
@@ -2421,6 +2861,68 @@ pub mod jit {
         } else {
             Err(format!("Unknown function: {}", name))
         }
+    }
+
+    /// Dispatch a binary operator to a user `impl Trait for T` method. This is
+    /// the fix for LARES-361 / sigil-lang#182: previously a struct-typed
+    /// operand fell all the way through `compile_expr`'s unhandled-expression
+    /// catch-all and silently compiled to the constant 0, so `sigil jit` printed
+    /// a plausible wrong answer for a valid program instead of erroring.
+    ///
+    /// No match is ever guessed at: an unregistered trait or an operand whose
+    /// type can't be resolved against the candidates is a compile error, not a
+    /// runtime value, so a future dispatch gap fails loud instead of quiet.
+    #[allow(clippy::too_many_arguments)]
+    fn compile_operator_call(
+        module: &mut JITModule,
+        functions: &HashMap<String, FuncId>,
+        extern_fns: &HashMap<String, ExternFnSig>,
+        builder: &mut FunctionBuilder,
+        struct_name: &str,
+        trait_name: &str,
+        rhs_struct: Option<String>,
+        lhs: cranelift_codegen::ir::Value,
+        rhs: cranelift_codegen::ir::Value,
+    ) -> Result<cranelift_codegen::ir::Value, String> {
+        let candidates = OPERATOR_IMPLS.with(|m| {
+            m.borrow()
+                .get(&(struct_name.to_string(), trait_name.to_string()))
+                .cloned()
+        });
+        let candidates = candidates.ok_or_else(|| {
+            format!(
+                "JIT: no `{}` impl found for `{}` — refusing to silently return a value",
+                trait_name, struct_name
+            )
+        })?;
+
+        let chosen = if candidates.len() == 1 {
+            &candidates[0].1
+        } else {
+            // Disambiguate by right-hand-side type: a struct rhs must match a
+            // candidate registered for that same struct; a non-struct
+            // (numeric) rhs must match a candidate whose declared rhs type
+            // isn't itself a known struct.
+            candidates
+                .iter()
+                .find(|(want, _)| match (&rhs_struct, want) {
+                    (Some(actual), Some(w)) => actual == w,
+                    (None, Some(w)) => {
+                        !STRUCT_FIELDS.with(|sf| sf.borrow().contains_key(w))
+                    }
+                    (None, None) => true,
+                    (Some(_), None) => false,
+                })
+                .map(|(_, name)| name)
+                .ok_or_else(|| {
+                    format!(
+                        "JIT: ambiguous `{}` impl for `{}` — multiple candidates and none match the right-hand operand; refusing to guess",
+                        trait_name, struct_name
+                    )
+                })?
+        };
+
+        compile_call(module, functions, extern_fns, builder, chosen, &[lhs, rhs])
     }
 
     /// Compile if expression, returns (value, has_return)
@@ -3100,6 +3602,35 @@ pub mod jit {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0)
+    }
+
+    // ============================================
+    // Struct value support (for operator-trait dispatch)
+    // ============================================
+    // A struct literal is a flat, heap-allocated block of `field_count` i64
+    // slots, one per field in declaration order (see `JitCompiler::declare_struct`).
+    // No header, no type tag: the JIT already tracks struct type statically
+    // through `CompileScope`/`STRUCT_FIELDS`, so there's nothing to check at
+    // runtime here — these are simple, uninstrumented pointer read/writes.
+
+    #[no_mangle]
+    pub extern "C" fn sigil_struct_alloc(field_count: i64) -> i64 {
+        let n = field_count.max(1) as usize;
+        let layout = std::alloc::Layout::array::<i64>(n).unwrap();
+        unsafe { std::alloc::alloc_zeroed(layout) as i64 }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_struct_field_get(ptr: i64, index: i64) -> i64 {
+        unsafe { *(ptr as *const i64).add(index as usize) }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn sigil_struct_field_set(ptr: i64, index: i64, value: i64) -> i64 {
+        unsafe {
+            *(ptr as *mut i64).add(index as usize) = value;
+        }
+        value
     }
 
     // Simple array implementation using heap allocation
@@ -4098,6 +4629,70 @@ pub mod jit {
                     type_name
                 );
             }
+        }
+
+        #[test]
+        fn jit_dispatches_a_user_div_impl_instead_of_silently_returning_zero() {
+            // LARES-361 / sigil-lang#182: `sigil jit` failed to dispatch a
+            // user `Div<f32>` impl and silently computed 0 instead of
+            // calling it — a plausible WRONG answer (0 is never the correct
+            // result here: 6/2=3, 8/2=4), not a crash or an error. This test
+            // must FAIL on the pre-fix backend and PASS after it.
+            let source = "\
+                ☉ Σ Vec2 { ☉ x: f32, ☉ y: f32 }
+                ⊢ Div<f32> ∀ Vec2 {
+                    ☉ type Output = Vec2;
+                    ☉ rite div(self, rhs: f32) -> Vec2 {
+                        Vec2 { x: self.x / rhs, y: self.y / rhs }
+                    }
+                }
+                rite main() -> f32 {
+                    ≔ v = Vec2 { x: 6.0, y: 8.0 };
+                    ≔ n = v / 2.0;
+                    ⤺ n.x * 10.0 + n.y;
+                }";
+
+            let mut jit = JitCompiler::new().unwrap();
+            jit.compile(source)
+                .expect("dispatching a registered Div<f32> impl must compile");
+            let result = jit
+                .run()
+                .expect("dispatching a registered Div<f32> impl must run");
+            let value = f64::from_bits(result as u64);
+
+            // 6/2=3, 8/2=4, encoded as 3*10+4=34 so a false pass by
+            // coincidence (e.g. only one field computed correctly) can't
+            // slip through. A regression back to the silent-zero fallback
+            // would report 0, not 34.
+            assert_eq!(
+                value, 34.0,
+                "expected 6/2=3 and 8/2=4 (encoded as 3*10+4=34); got {value} \
+                 — 0 here means the JIT silently fell back to a default value \
+                 instead of dispatching the Div<f32> impl"
+            );
+        }
+
+        #[test]
+        fn jit_refuses_to_silently_default_a_struct_operator_with_no_matching_impl() {
+            // The AC that outlives the dispatch bug itself (LARES-361): even
+            // with dispatch fixed, a *future* struct operator the JIT can't
+            // resolve must be a loud compile error, never a silently
+            // substituted value.
+            let source = "\
+                ☉ Σ Vec2 { ☉ x: f32, ☉ y: f32 }
+                rite main() -> f32 {
+                    ≔ v = Vec2 { x: 6.0, y: 8.0 };
+                    ≔ n = v / 2.0;
+                    ⤺ n.x;
+                }";
+
+            let mut jit = JitCompiler::new().unwrap();
+            let result = jit.compile(source);
+            assert!(
+                result.is_err(),
+                "expected a compile error for a struct `/` with no registered \
+                 Div impl, got Ok — this must fail loud, not default to 0"
+            );
         }
     }
 }
