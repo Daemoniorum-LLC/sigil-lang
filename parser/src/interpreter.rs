@@ -27598,4 +27598,62 @@ mod tests {
             Err(e) => panic!("Error: {:?}", e),
         }
     }
+
+    // =========================================================================
+    // LARES-360 / sigil-lang #173: `break`/`continue` passed `sigil check` and
+    // then failed at runtime with `undefined variable: break` (or `continue`).
+    // Root cause: only the symbolic ⊗/↻ spellings were wired as lexer keywords;
+    // the ASCII prose spelling lexed as a bare identifier expression, which the
+    // (non-strict) checker never resolves — see typeck.rs's `infer_expr` note
+    // on bare `Expr::Path` — so it silently passed check and only failed when
+    // the interpreter tried to look up a variable named `break`.
+    // =========================================================================
+
+    #[test]
+    fn test_ascii_break_exits_for_loop() {
+        let result = run(r#"
+            rite main() {
+                ≔ vary last = -1;
+                ∀ i ∈ 0..5 {
+                    ⎇ i == 2 { break; }
+                    last = i;
+                }
+                ⤺ last;
+            }
+        "#);
+        assert!(matches!(result, Ok(Value::Int(1))), "expected Int(1), got {:?}", result);
+    }
+
+    #[test]
+    fn test_ascii_continue_skips_iteration() {
+        let result = run(r#"
+            rite main() {
+                ≔ vary sum = 0;
+                ∀ i ∈ 0..5 {
+                    ⎇ i == 2 { continue; }
+                    sum = sum + i;
+                }
+                ⤺ sum;
+            }
+        "#);
+        // 0 + 1 + 3 + 4 = 8 (2 is skipped)
+        assert!(matches!(result, Ok(Value::Int(8))), "expected Int(8), got {:?}", result);
+    }
+
+    #[test]
+    fn test_ascii_break_exits_while_loop() {
+        let result = run(r#"
+            rite main() {
+                ≔ vary i = 0;
+                ≔ vary last = -1;
+                ⟳ i < 5 {
+                    ⎇ i == 2 { break; }
+                    last = i;
+                    i = i + 1;
+                }
+                ⤺ last;
+            }
+        "#);
+        assert!(matches!(result, Ok(Value::Int(1))), "expected Int(1), got {:?}", result);
+    }
 }

@@ -704,6 +704,7 @@ pub enum Token {
 
     #[token("↻")]
     #[token("⊳")]  // Right triangle - prose alternative for continue
+    #[token("continue")]  // ASCII prose alternative for continue (#173: was unrecognized, parsed as a bare identifier)
     CycleArrow, // Cycle/repeat (U+21BB)
 
     #[token("⌺")]
@@ -721,6 +722,7 @@ pub enum Token {
 
     #[token("⊗")]
     #[token("⊲")]  // Left triangle - prose alternative for break
+    #[token("break")]  // ASCII prose alternative for break (#173: was unrecognized, parsed as a bare identifier)
     Tensor, // Tensor product (parser also handles as break keyword)
 
     #[token("⊕")]
