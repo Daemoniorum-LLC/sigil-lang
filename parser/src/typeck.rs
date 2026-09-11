@@ -1064,6 +1064,24 @@ impl TypeChecker {
 
         // Mark all registered functions as stdlib (can be shadowed by user code)
         self.stdlib_functions = self.functions.keys().cloned().collect();
+
+        // sigil-lang#164, cause 2: the list above is a hand-maintained
+        // duplicate of the real stdlib registry in `stdlib.rs`'s
+        // `register_stdlib`, and it has already drifted at least once (see
+        // the JSON functions above, added after `--strict` flagged them
+        // "cannot find `json_stringify`" despite the interpreter and the
+        // WASM backend both knowing them). `fs_read`/`fs_write`/`fs_rename`/
+        // `fs_exists` were the same drift, just never backfilled. Rather
+        // than keep hand-syncing this list, ask the one place free
+        // functions are actually registered at runtime what it knows, and
+        // trust `--strict` with the answer — a name only needs to be known
+        // here, not correctly typed, since strict mode only checks whether
+        // a bare identifier resolves to *something*.
+        let mut interp = crate::interpreter::Interpreter::new();
+        crate::register_stdlib(&mut interp);
+        for (name, _) in interp.globals.borrow().iter_values() {
+            self.stdlib_functions.insert(name.clone());
+        }
     }
 
     /// Fresh type variable
@@ -5183,6 +5201,14 @@ mod tests {
         checker.check_file(&file)
     }
 
+    fn check_strict(source: &str) -> Result<(), Vec<TypeError>> {
+        let mut parser = Parser::new(source);
+        let file = parser.parse_file().expect("parse failed");
+        let mut checker = TypeChecker::new();
+        checker.set_strict(true);
+        checker.check_file(&file)
+    }
+
     #[test]
     fn test_basic_types() {
         assert!(check("rite main() { ≔ x: i64 = 42; }").is_ok());
@@ -5523,6 +5549,28 @@ mod tests {
             result.is_err(),
             "expected `nonexistent_fn` to still read as undefined"
         );
+    }
+
+    #[test]
+    fn test_strict_does_not_flag_a_registered_stdlib_builtin() {
+        // sigil-lang#164, cause 2: `register_builtins`'s hand-maintained
+        // list of names `--strict` knows about is a duplicate of the real
+        // registry in stdlib.rs's `register_stdlib` and had already drifted
+        // once (the JSON functions, per the comment where they were
+        // backfilled) — `fs_exists` (and its fs_read/fs_write/fs_rename
+        // siblings) was the same drift, just never backfilled. Picked
+        // because it is a *free* function with no receiver, so this is
+        // testing the builtin-registry gap specifically, not the
+        // qualified-path gap #164 separately notes `--strict` doesn't cover
+        // at all.
+        assert!(check_strict(
+            r#"
+                rite main() {
+                    ≔ ok = fs_exists("foo.txt");
+                }
+            "#
+        )
+        .is_ok());
     }
 
     // --- #172(B): field access on a struct whose shape is fully known ---
