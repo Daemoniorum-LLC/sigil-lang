@@ -345,8 +345,8 @@ fn main() -> ExitCode {
         }
         "check" => {
             if args.len() < 3 {
-                eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--strict] [--apply-suggestions]");
+                eprintln!("Error: missing file or directory argument");
+                eprintln!("Usage: sigil check <file.sigil|directory> [--format=json|compact] [--quiet] [--strict] [--apply-suggestions]");
                 return ExitCode::from(1);
             }
             // Parse format option
@@ -2598,7 +2598,67 @@ fn format_size(size: usize) -> String {
 ///
 /// With `--apply-suggestions`, automatically applies fix suggestions
 /// and rewrites the file.
+/// Check a single file, or every `.sigil`/`.sg` source file under a directory.
 fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
+    let target = std::path::Path::new(path);
+    if !target.is_dir() {
+        return check_single_file(path, format, quiet, apply_fixes, strict);
+    }
+
+    let files = collect_check_files(target);
+    if files.is_empty() {
+        eprintln!("Error: no .sigil or .sg source files found in '{}'", path);
+        return ExitCode::from(1);
+    }
+
+    let mut had_errors = false;
+    for file in &files {
+        let file_path = file.display().to_string();
+        let result = check_single_file(&file_path, format, quiet, apply_fixes, strict);
+        if result != ExitCode::SUCCESS {
+            had_errors = true;
+        }
+    }
+
+    if format == OutputFormat::Human && !quiet {
+        println!(
+            "\nChecked {} file(s) in '{}': {}",
+            files.len(),
+            path,
+            if had_errors { "errors found" } else { "no errors" }
+        );
+    }
+
+    if had_errors {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Recursively collect `.sigil`/`.sg` source files under a directory.
+fn collect_check_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+
+    fn visit(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    visit(&path, files);
+                } else if path.extension().map_or(false, |ext| ext == "sigil" || ext == "sg") {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    visit(dir, &mut files);
+    files.sort();
+    files
+}
+
+fn check_single_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -2718,7 +2778,7 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, 
                 }
 
                 // Re-check with fixed source
-                return check_file(path, format, quiet, false, strict);
+                return check_single_file(path, format, quiet, false, strict);
             }
             source // No fixes applied, use original
         } else {
@@ -4734,10 +4794,10 @@ fn parse_manifest(manifest_path: &std::path::Path) -> Result<Manifest, String> {
         .map(|s| s.trim().trim_matches('"').to_string())
         .unwrap_or_else(|| "0.1.0".to_string());
 
-    // Check for lib.sigil and main.sigil
+    // Check for lib/main sources, in either the native `.sigil` or migrated `.sg` extension
     let manifest_dir = manifest_path.parent().unwrap_or(std::path::Path::new("."));
-    let has_lib = manifest_dir.join("src/lib.sigil").exists();
-    let has_bin = manifest_dir.join("src/main.sigil").exists();
+    let has_lib = manifest_dir.join("src/lib.sigil").exists() || manifest_dir.join("src/lib.sg").exists();
+    let has_bin = manifest_dir.join("src/main.sigil").exists() || manifest_dir.join("src/main.sg").exists();
 
     // Parse dependencies
     let dependencies = parse_dependencies(&content, manifest_dir);
@@ -4950,16 +5010,18 @@ fn build_project() -> ExitCode {
     use std::path::Path;
     use std::collections::HashSet;
 
-    // Check for sigil.toml
-    let manifest_path = Path::new("sigil.toml");
-    if !manifest_path.exists() {
-        eprintln!("Error: no sigil.toml found in current directory");
-        eprintln!("Run 'sigil init' to create a project, or 'sigil new <name>' for a new one.");
-        return ExitCode::from(1);
-    }
+    // Check for sigil.toml (or Sigil.toml)
+    let manifest_path = match find_manifest_path(Path::new(".")) {
+        Some(p) => p,
+        None => {
+            eprintln!("Error: no sigil.toml found in current directory");
+            eprintln!("Run 'sigil init' to create a project, or 'sigil new <name>' for a new one.");
+            return ExitCode::from(1);
+        }
+    };
 
     // Parse manifest using the new parser
-    let manifest = match parse_manifest(manifest_path) {
+    let manifest = match parse_manifest(&manifest_path) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("Error parsing sigil.toml: {}", e);
@@ -4982,7 +5044,7 @@ fn build_project() -> ExitCode {
     }
 
     if !manifest.has_lib && !manifest.has_bin {
-        eprintln!("Error: no src/lib.sigil or src/main.sigil found");
+        eprintln!("Error: no src/lib.sigil, src/lib.sg, src/main.sigil, or src/main.sg found");
         eprintln!("A tome must have at least one of these files.");
         return ExitCode::from(1);
     }
@@ -5012,20 +5074,22 @@ fn build_project() -> ExitCode {
     };
 
     // Build library if present
-    let lib_file = Path::new("src/lib.sigil");
     if manifest.has_lib {
+        let lib_file = resolve_source_file(Path::new("src"), "lib")
+            .expect("manifest.has_lib implies src/lib.sigil or src/lib.sg exists");
         println!("Building {} (library)...", manifest.name);
-        let result = build_library(&manifest.name, lib_file, target_dir);
+        let result = build_library(&manifest.name, &lib_file, target_dir);
         if result != ExitCode::SUCCESS {
             return result;
         }
     }
 
     // Build binary if present
-    let main_file = Path::new("src/main.sigil");
     if manifest.has_bin {
+        let main_file = resolve_source_file(Path::new("src"), "main")
+            .expect("manifest.has_bin implies src/main.sigil or src/main.sg exists");
         println!("Building {} (binary)...", manifest.name);
-        let result = build_binary_with_deps(&manifest.name, main_file, target_dir, &dep_libs);
+        let result = build_binary_with_deps(&manifest.name, &main_file, target_dir, &dep_libs);
         if result != ExitCode::SUCCESS {
             return result;
         }
@@ -5038,10 +5102,12 @@ fn build_project() -> ExitCode {
 fn build_workspace(manifest: &Manifest) -> ExitCode {
     use std::path::Path;
 
-    println!("Building workspace '{}' with {} members...", manifest.name, manifest.workspace_members.len());
+    let total = manifest.workspace_members.len();
+    println!("Building workspace '{}' with {} members...", manifest.name, total);
 
     let mut success_count = 0;
     let mut fail_count = 0;
+    let mut skipped: Vec<(String, &'static str)> = Vec::new();
 
     for member_path in &manifest.workspace_members {
         let member_dir = Path::new(member_path);
@@ -5049,15 +5115,19 @@ fn build_workspace(manifest: &Manifest) -> ExitCode {
         // Check if member directory exists
         if !member_dir.exists() {
             eprintln!("  Warning: member '{}' not found, skipping", member_path);
+            skipped.push((member_path.clone(), "directory not found"));
             continue;
         }
 
-        // Check for sigil.toml in member
-        let member_manifest = member_dir.join("sigil.toml");
-        if !member_manifest.exists() {
-            eprintln!("  Warning: no sigil.toml in '{}', skipping", member_path);
-            continue;
-        }
+        // Check for sigil.toml (or Sigil.toml) in member
+        let member_manifest = match find_manifest_path(member_dir) {
+            Some(m) => m,
+            None => {
+                eprintln!("  Warning: no sigil.toml in '{}', skipping", member_path);
+                skipped.push((member_path.clone(), "no sigil.toml"));
+                continue;
+            }
+        };
 
         // Get member name from manifest
         let member_name = match parse_manifest(&member_manifest) {
@@ -5104,14 +5174,53 @@ fn build_workspace(manifest: &Manifest) -> ExitCode {
         }
     }
 
-    println!("\nWorkspace build complete: {}/{} tomes succeeded",
-        success_count, success_count + fail_count);
+    println!("\nWorkspace build complete: {}/{} tomes succeeded", success_count, total);
+    if !skipped.is_empty() {
+        println!("  {} member(s) skipped:", skipped.len());
+        for (path, reason) in &skipped {
+            println!("    {} ({})", path, reason);
+        }
+    }
 
     if fail_count > 0 {
+        eprintln!("Error: {} of {} workspace member(s) failed to build", fail_count, total);
+        ExitCode::from(1)
+    } else if success_count == 0 {
+        eprintln!("Error: no workspace members were built (0/{} — all skipped)", total);
+        ExitCode::from(1)
+    } else if !skipped.is_empty() {
+        eprintln!("Error: {} of {} workspace member(s) were skipped", skipped.len(), total);
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Find a member/project's manifest file, accepting both `sigil.toml` and `Sigil.toml`.
+fn find_manifest_path(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let lower = dir.join("sigil.toml");
+    if lower.exists() {
+        return Some(lower);
+    }
+    let upper = dir.join("Sigil.toml");
+    if upper.exists() {
+        return Some(upper);
+    }
+    None
+}
+
+/// Resolve `<dir>/<stem>.sigil` or `<dir>/<stem>.sg`, whichever exists (native
+/// extension checked first).
+fn resolve_source_file(dir: &std::path::Path, stem: &str) -> Option<std::path::PathBuf> {
+    let sigil = dir.join(format!("{}.sigil", stem));
+    if sigil.exists() {
+        return Some(sigil);
+    }
+    let sg = dir.join(format!("{}.sg", stem));
+    if sg.exists() {
+        return Some(sg);
+    }
+    None
 }
 
 /// Build a library tome (produces .a static library)
@@ -8846,5 +8955,222 @@ mod run_directory_tests {
             loaded.execute_definitions(&parse("☉ rite other() -> i32 { 1 }")),
             Ok(Value::Null)
         ));
+    }
+}
+
+/// Tests for the build-subsystem fixes tracked as LARES-353 (#176-#179).
+///
+/// #177 is the one that mattered most: `build_workspace` returned
+/// `ExitCode::SUCCESS` when every member was skipped -- 0/0 crates, zero
+/// artifacts, exit 0. A CI step or an agent checking only the exit status was
+/// told the build succeeded. These lock in that a workspace where nothing got
+/// built, or where nothing was even declared, fails loudly instead of quietly;
+/// that a partially-skipped workspace still reports what it skipped rather
+/// than only celebrating what it built; and the two manifest/source-detection
+/// bugs (#176 case-sensitive `sigil.toml`, #179 `.sigil`-only detection) that
+/// made every member of a `.sg`-authored, `Sigil.toml`-cased project like
+/// amdusias invisible to `has_lib`/`has_bin` in the first place.
+#[cfg(test)]
+mod build_subsystem_tests {
+    use super::{build_workspace, collect_check_files, find_manifest_path, resolve_source_file, Manifest};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::ExitCode;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    /// `build_workspace` walks paths relative to the process's current directory,
+    /// so the tests that exercise it via `set_current_dir` must not interleave
+    /// with each other (cargo test runs tests on multiple threads by default).
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
+
+    /// A fresh directory under the system temp dir, removed when the guard drops.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> TempDir {
+            let n = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "sigil-build-subsystem-{}-{}-{}",
+                tag,
+                std::process::id(),
+                n
+            ));
+            let _ = fs::remove_dir_all(&path);
+            fs::create_dir_all(&path).expect("create temp dir");
+            TempDir(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        /// Write a file, creating parents.
+        fn write(&self, rel: &str, contents: &str) -> PathBuf {
+            let path = self.0.join(rel);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent");
+            }
+            fs::write(&path, contents).expect("write fixture");
+            path
+        }
+
+        fn mkdir(&self, rel: &str) -> PathBuf {
+            let path = self.0.join(rel);
+            fs::create_dir_all(&path).expect("create dir");
+            path
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn empty_manifest(name: &str, workspace_members: Vec<String>) -> Manifest {
+        Manifest {
+            name: name.to_string(),
+            version: "0.1.0".to_string(),
+            has_lib: false,
+            has_bin: false,
+            dependencies: Vec::new(),
+            workspace_members,
+        }
+    }
+
+    // ---- #176: sigil.toml vs Sigil.toml -----------------------------------
+
+    #[test]
+    fn find_manifest_path_prefers_lowercase_when_both_exist() {
+        let dir = TempDir::new("manifest-both");
+        dir.write("sigil.toml", "[package]\nname = \"lower\"\n");
+        dir.write("Sigil.toml", "[package]\nname = \"upper\"\n");
+        let found = find_manifest_path(dir.path()).expect("a manifest should be found");
+        assert_eq!(found.file_name().unwrap(), "sigil.toml");
+    }
+
+    #[test]
+    fn find_manifest_path_falls_back_to_uppercase() {
+        let dir = TempDir::new("manifest-upper-only");
+        dir.write("Sigil.toml", "[package]\nname = \"upper\"\n");
+        let found = find_manifest_path(dir.path()).expect("Sigil.toml should be found");
+        assert_eq!(found.file_name().unwrap(), "Sigil.toml");
+    }
+
+    #[test]
+    fn find_manifest_path_none_when_neither_spelling_exists() {
+        let dir = TempDir::new("manifest-neither");
+        assert!(find_manifest_path(dir.path()).is_none());
+    }
+
+    // ---- #179: .sigil vs .sg source detection ------------------------------
+
+    #[test]
+    fn resolve_source_file_prefers_native_sigil_extension() {
+        let dir = TempDir::new("source-both");
+        dir.write("src/main.sigil", "rite main() {}");
+        dir.write("src/main.sg", "rite main() {}");
+        let found = resolve_source_file(&dir.path().join("src"), "main").expect("a source should be found");
+        assert_eq!(found.extension().unwrap(), "sigil");
+    }
+
+    #[test]
+    fn resolve_source_file_falls_back_to_sg() {
+        let dir = TempDir::new("source-sg-only");
+        dir.write("src/main.sg", "rite main() {}");
+        let found = resolve_source_file(&dir.path().join("src"), "main").expect(".sg source should be found");
+        assert_eq!(found.extension().unwrap(), "sg");
+    }
+
+    #[test]
+    fn resolve_source_file_none_when_neither_extension_exists() {
+        let dir = TempDir::new("source-neither");
+        dir.mkdir("src");
+        assert!(resolve_source_file(&dir.path().join("src"), "main").is_none());
+    }
+
+    // ---- #178: `sigil check` on a directory --------------------------------
+
+    #[test]
+    fn collect_check_files_finds_both_extensions_recursively() {
+        let dir = TempDir::new("check-collect");
+        dir.write("a.sigil", "");
+        dir.write("sub/b.sg", "");
+        dir.write("sub/deeper/c.sigil", "");
+        dir.write("README.md", "not a source file");
+        let mut found: Vec<String> = collect_check_files(dir.path())
+            .into_iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        found.sort();
+        assert_eq!(found, vec!["a.sigil", "b.sg", "c.sigil"]);
+    }
+
+    #[test]
+    fn collect_check_files_empty_directory_returns_no_files() {
+        let dir = TempDir::new("check-collect-empty");
+        assert!(collect_check_files(dir.path()).is_empty());
+    }
+
+    // ---- #177: build_workspace must be able to fail ------------------------
+
+    #[test]
+    fn workspace_where_every_member_is_skipped_exits_nonzero() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = TempDir::new("ws-all-skipped");
+        // Neither member directory exists at all.
+        let manifest = empty_manifest(
+            "wstest",
+            vec!["memberA".to_string(), "memberB".to_string()],
+        );
+        let original_dir = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir into fixture");
+        let result = build_workspace(&manifest);
+        std::env::set_current_dir(original_dir).expect("restore cwd");
+
+        assert_ne!(
+            result,
+            ExitCode::SUCCESS,
+            "0/2 members built must not report success -- this is the #177 regression"
+        );
+    }
+
+    #[test]
+    fn workspace_with_zero_declared_members_exits_nonzero() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = TempDir::new("ws-zero-members");
+        let manifest = empty_manifest("wstest", Vec::new());
+        let original_dir = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir into fixture");
+        let result = build_workspace(&manifest);
+        std::env::set_current_dir(original_dir).expect("restore cwd");
+
+        assert_ne!(
+            result,
+            ExitCode::SUCCESS,
+            "a workspace that builds nothing must not exit 0, even with 0 declared members"
+        );
+    }
+
+    #[test]
+    fn workspace_member_missing_manifest_is_skipped_not_silently_ignored() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = TempDir::new("ws-missing-manifest");
+        // memberA's directory exists but has no sigil.toml/Sigil.toml in it.
+        dir.mkdir("memberA");
+        let manifest = empty_manifest("wstest", vec!["memberA".to_string()]);
+        let original_dir = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(dir.path()).expect("chdir into fixture");
+        let result = build_workspace(&manifest);
+        std::env::set_current_dir(original_dir).expect("restore cwd");
+
+        assert_ne!(
+            result,
+            ExitCode::SUCCESS,
+            "the only declared member had no manifest, so nothing was built"
+        );
     }
 }
