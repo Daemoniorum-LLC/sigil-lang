@@ -9174,3 +9174,12 @@ mod build_subsystem_tests {
         );
     }
 }
+
+/// TEMPORARY, do not merge: deliberately-failing probe for sigil-lang#175's
+/// AC ("a deliberately-failing test must turn the job RED"). Removed in the
+/// follow-up commit once CI is observed to fail because of it.
+#[cfg(test)]
+#[test]
+fn ci_gate_probe_deliberately_fails() {
+    assert!(false, "sigil-lang#175: this failure must turn the CI job red");
+}
