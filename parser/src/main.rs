@@ -9057,7 +9057,18 @@ mod build_subsystem_tests {
         let dir = TempDir::new("manifest-upper-only");
         dir.write("Sigil.toml", "[package]\nname = \"upper\"\n");
         let found = find_manifest_path(dir.path()).expect("Sigil.toml should be found");
-        assert_eq!(found.file_name().unwrap(), "Sigil.toml");
+        // Assert on content, not on the returned filename's casing: on a
+        // case-insensitive filesystem (macOS's default APFS), `sigil.toml`
+        // and `Sigil.toml` name the same inode, so `find_manifest_path`
+        // legitimately reports back whichever spelling it checked first
+        // (`sigil.toml`) even though only `Sigil.toml` was ever written. The
+        // behavior that actually matters -- a manifest gets found and reads
+        // back correctly -- holds either way.
+        let content = fs::read_to_string(&found).expect("found manifest should be readable");
+        assert!(
+            content.contains("upper"),
+            "expected the Sigil.toml fallback's content, got: {content}"
+        );
     }
 
     #[test]

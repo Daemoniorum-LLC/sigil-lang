@@ -59,28 +59,51 @@ jobs:
         working-directory: parser
         run: cargo build --release --no-default-features --features jit,llvm,wasm,lsp,protocols
 
+      # Gating: a red here must fail the job. No continue-on-error, and
+      # --no-fail-fast so a failure in one test binary (e.g. the `--lib`
+      # suite) doesn't prevent later binaries (e.g. `--bin sigil`, which
+      # carries its own unit tests) from running at all. See #175: before
+      # this, continue-on-error swallowed the real exit code and the absence
+      # of --no-fail-fast meant the bin crate's tests never even ran.
       - name: Run tests
         working-directory: parser
-        run: cargo test --release --no-default-features --features jit,llvm,wasm,lsp,protocols
-        continue-on-error: true
+        run: cargo test --release --no-default-features --features jit,llvm,wasm,lsp,protocols --no-fail-fast
 
-      - name: Check formatting
+      # The steps below are deliberately advisory (continue-on-error): a
+      # formatting or lint nit, or a stale example, should not block a merge
+      # the way a real test failure does. That is a choice, not an oversight
+      # -- see #175 -- so each step and the job summary say so explicitly
+      # rather than leaving every step looking equally gating.
+      - name: Check formatting (advisory, does not gate the job)
         working-directory: parser
         run: cargo fmt -- --check
         continue-on-error: true
 
-      - name: Run clippy
+      - name: Run clippy (advisory, does not gate the job)
         working-directory: parser
         run: cargo clippy --no-default-features --features jit,llvm,wasm,lsp,protocols -- -D warnings
         continue-on-error: true
 
-      - name: Test example files
+      - name: Test example files (advisory, does not gate the job)
         working-directory: parser
         run: |
           ./target/release/sigil check ../examples/simple.sigil
           ./target/release/sigil check ../examples/hello.sigil
           ./target/release/sigil check ../examples/pipes.sigil
         continue-on-error: true
+
+      - name: Advisory-steps summary
+        if: always()
+        run: |
+          echo "### Advisory steps (do not gate this job)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Only **Run tests** gates this job. The steps below run for" >> "$GITHUB_STEP_SUMMARY"
+          echo "visibility only -- a failure in any of them is reported here" >> "$GITHUB_STEP_SUMMARY"
+          echo "but does not turn the job red:" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Check formatting (advisory, does not gate the job)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Run clippy (advisory, does not gate the job)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Test example files (advisory, does not gate the job)" >> "$GITHUB_STEP_SUMMARY"
 
   build-mcp-server:
     name: Build MCP Server
