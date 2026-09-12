@@ -3035,7 +3035,7 @@ pub mod llvm {
             match &struct_def.fields {
                 ast::StructFields::Named(fields) => {
                     for (idx, field) in fields.iter().enumerate() {
-                        let llvm_type = self.type_expr_to_llvm(&field.ty, type_substitutions);
+                        let llvm_type = self.field_slot_type(&field.ty, type_substitutions);
                         field_types.push(llvm_type);
                         field_indices.insert(field.name.name.clone(), idx as u32);
 
@@ -3050,7 +3050,7 @@ pub mod llvm {
                 }
                 ast::StructFields::Tuple(types) => {
                     for (idx, ty) in types.iter().enumerate() {
-                        let llvm_type = self.type_expr_to_llvm(ty, type_substitutions);
+                        let llvm_type = self.field_slot_type(ty, type_substitutions);
                         field_types.push(llvm_type);
                         field_indices.insert(format!("{}", idx), idx as u32);
                     }
@@ -3074,6 +3074,35 @@ pub mod llvm {
             );
 
             Ok(())
+        }
+
+        /// Give a struct field the 8-byte slot the Sigil LLVM ABI allots it.
+        ///
+        /// Every store into a struct field and every load back out of one in
+        /// this backend is 8 bytes wide, and the offset-based field paths
+        /// address field `i` at byte `i * 8` (see the `Expr::Field` arm, and
+        /// the `field_indices.len() * 8` allocation in the struct-literal
+        /// arm). A field whose source type is narrower than that -- `i32`,
+        /// `bool`, `f32` -- would make `build_struct_gep` compute a *packed*
+        /// offset instead: in `Container<T> { value: T, count: i32 }` with
+        /// `T = i32`, the writer puts `count` at byte 4 while the reader looks
+        /// for it at byte 8. Widening the slot keeps the two in step. Only the
+        /// layout changes; the value living in the slot is an i64 either way.
+        fn field_slot_type(
+            &mut self,
+            ty: &ast::TypeExpr,
+            substitutions: &HashMap<String, String>,
+        ) -> BasicTypeEnum<'ctx> {
+            let llvm_type = self.type_expr_to_llvm(ty, substitutions);
+            match llvm_type {
+                BasicTypeEnum::IntType(t) if t.get_bit_width() < 64 => {
+                    self.context.i64_type().into()
+                }
+                BasicTypeEnum::FloatType(t) if t == self.context.f32_type() => {
+                    self.context.i64_type().into()
+                }
+                other => other,
+            }
         }
 
         /// Convert a TypeExpr to an LLVM BasicTypeEnum
@@ -19897,6 +19926,30 @@ pub mod llvm {
             "#,
             );
             assert_eq!(result.unwrap(), 30);
+        }
+
+        #[test]
+        fn test_struct_narrow_fields_keep_their_eight_byte_slots() {
+            // The generic-struct failures were not about generics: any field
+            // narrower than 8 bytes had the writer using a packed GEP offset
+            // while every reader addressed field `i` at byte `i * 8`. A plain
+            // struct of i32s pins the ABI down directly, so a regression here
+            // names the cause rather than the symptom.
+            let result = run_sigil(
+                r#"
+                Σ Counter {
+                    lo: i32,
+                    mid: i32,
+                    hi: i32,
+                }
+
+                rite main() -> i64 {
+                    ≔ c = Counter { lo: 1, mid: 2, hi: 3 };
+                    c.lo + c.mid + c.hi
+                }
+            "#,
+            );
+            assert_eq!(result.unwrap(), 6);
         }
 
         // ============================================
