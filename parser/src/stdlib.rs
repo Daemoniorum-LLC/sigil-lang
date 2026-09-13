@@ -231,6 +231,30 @@ use tree_sitter::{Language as TsLanguage, Parser as TsParser, Node as TsNode, Tr
 use rand::Rng;
 
 /// Register all standard library functions
+/// Every name `register_stdlib` puts into global scope.
+///
+/// The type checker used to carry its own hand-written list of stdlib
+/// functions, which had drifted to a fraction of what the interpreter actually
+/// registers — so resolving call targets statically reported `fs_read`,
+/// `to_string` and a hundred others as undefined while `sigil run` called them
+/// happily. Deriving the set from the registration itself keeps the two from
+/// disagreeing again: a builtin added below is known to the checker the same day.
+pub fn builtin_names() -> &'static std::collections::HashSet<String> {
+    static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut interp = Interpreter::new();
+        register_stdlib(&mut interp);
+        let names = interp
+            .globals
+            .borrow()
+            .iter_values()
+            .map(|(k, _)| k.clone())
+            .collect();
+        names
+    })
+}
+
 pub fn register_stdlib(interp: &mut Interpreter) {
     register_core(interp);
     register_math(interp);

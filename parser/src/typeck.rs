@@ -520,10 +520,28 @@ pub struct TypeChecker {
     current_item_span: Span,
     /// Report unresolved bare identifiers as errors.
     ///
-    /// Off by default. Name resolution here is single-file — there is no import
-    /// analysis — so a cross-file reference is indistinguishable from a typo, and
-    /// erroring by default would reject working code. See `--strict`.
+    /// Off by default, and a blunt instrument: it fires on every bare name, so
+    /// gaps in this checker's own scope tracking (`self` inside a method, a
+    /// binding introduced by a match arm) surface as errors against working
+    /// code. See `--strict`, and prefer `resolve_calls` below.
     strict: bool,
+    /// Report a call whose target resolves to nothing.
+    ///
+    /// Narrower than `strict` and on by default for `sigil check`. A call target
+    /// must name something callable, and `sigil run` will say so — `[R0003]
+    /// undefined variable` — the moment the line executes, so reporting it
+    /// statically converts a runtime failure into a compile-time one rather than
+    /// inventing a new rule (LARES-453).
+    resolve_calls: bool,
+    /// Names declared elsewhere in this crate, from the module graph.
+    ///
+    /// Without these, a call to a function defined in a sibling module is
+    /// indistinguishable from a typo — which is the reason name resolution was
+    /// opt-in in the first place.
+    crate_names: std::collections::HashSet<String>,
+    /// This file glob-imports from a dependency whose names we cannot see, so
+    /// call-target resolution stays quiet here.
+    suppress_call_resolution: bool,
 }
 
 impl TypeChecker {
@@ -533,6 +551,59 @@ impl TypeChecker {
         self.strict = strict;
     }
 
+    /// Report calls whose target resolves to nothing.
+    ///
+    /// Turning this on also pulls in the interpreter's real builtin table. The
+    /// hand-written list in `register_builtins` covers what the checker needs
+    /// for *typing*; it is nowhere near what is actually callable, and the
+    /// difference only matters once an unknown name becomes an error.
+    pub fn set_resolve_calls(&mut self, resolve_calls: bool) {
+        self.resolve_calls = resolve_calls;
+        if resolve_calls {
+            self.stdlib_functions
+                .extend(crate::stdlib::builtin_names().iter().cloned());
+        }
+    }
+
+    /// Seed the names declared elsewhere in the crate, so a call into a sibling
+    /// module is not mistaken for a typo.
+    pub fn add_crate_names<I: IntoIterator<Item = String>>(&mut self, names: I) {
+        self.crate_names.extend(names);
+    }
+
+    /// Silence call-target resolution for this file — used when it glob-imports
+    /// from a dependency whose names are not available to the check.
+    pub fn suppress_call_resolution(&mut self) {
+        self.suppress_call_resolution = true;
+    }
+
+    /// Could `name`, used on its own, refer to something?
+    ///
+    /// Shared by `--strict` and by call-target resolution so the two can never
+    /// disagree about what counts as resolvable.
+    fn name_is_known(&self, name: &str) -> bool {
+        // A bare variant constructor — `Ok`, `Some`, `None`, `Err`, or any
+        // variant of a user enum — is a name too. Only the qualified
+        // `Enum·Variant` form goes through two-segment path resolution.
+        // `Self(..)` constructs the impl's own type; `self` is the receiver.
+        if matches!(name, "Self" | "self") {
+            return true;
+        }
+        let is_variant = matches!(name, "Ok" | "Err" | "Some" | "None")
+            || self.types.values().any(|def| {
+                matches!(def, TypeDef::Enum { variants, .. }
+                    if variants.iter().any(|(v, _)| v == name))
+            });
+        is_variant
+            || self.functions.contains_key(name)
+            || self.stdlib_functions.contains(name)
+            || self.types.contains_key(name)
+            || self.impl_methods.contains_key(name)
+            || self.current_generics.contains_key(name)
+            || self.crate_names.contains(name)
+            || self.env.borrow().lookup(name).is_some()
+    }
+
     pub fn new() -> Self {
         let mut checker = Self {
             env: Rc::new(RefCell::new(TypeEnv::new())),
@@ -540,6 +611,9 @@ impl TypeChecker {
             functions: HashMap::new(),
             stdlib_functions: std::collections::HashSet::new(),
             strict: false,
+            resolve_calls: false,
+            crate_names: std::collections::HashSet::new(),
+            suppress_call_resolution: false,
             impl_methods: HashMap::new(),
             current_self_type: None,
             current_generics: HashMap::new(),
@@ -2099,23 +2173,7 @@ impl TypeChecker {
                 // cross-file references, which is why it is opt-in.
                 if self.strict && path.segments.len() == 1 {
                     let name = path.segments[0].ident.name.clone();
-                    // A bare variant constructor — `Ok`, `Some`, `None`, `Err`,
-                    // or any variant of a user enum — is a name too. Only the
-                    // qualified `Enum·Variant` form goes through the two-segment
-                    // path above.
-                    let is_variant = matches!(name.as_str(), "Ok" | "Err" | "Some" | "None")
-                        || self.types.values().any(|def| {
-                            matches!(def, TypeDef::Enum { variants, .. }
-                                if variants.iter().any(|(v, _)| *v == name))
-                        });
-                    let known = is_variant
-                        || self.functions.contains_key(&name)
-                        || self.stdlib_functions.contains(&name)
-                        || self.types.contains_key(&name)
-                        || self.impl_methods.contains_key(&name)
-                        || self.current_generics.contains_key(&name)
-                        || self.env.borrow().lookup(&name).is_some();
-                    if !known {
+                    if !self.name_is_known(&name) {
                         let span = path.segments[0].ident.span;
                         self.error(
                             TypeError::new(format!("cannot find `{}` in this scope", name))
@@ -2138,6 +2196,31 @@ impl TypeChecker {
             }
 
             Expr::Call { func, args } => {
+                // Does the call target exist at all? `strict` asks this of every
+                // bare name and is too noisy to default on; asked only of call
+                // targets it is a question the runtime already answers, just
+                // later and in production (LARES-453).
+                if self.resolve_calls && !self.suppress_call_resolution && !self.strict {
+                    if let Expr::Path(path) = func.as_ref() {
+                        if path.segments.len() == 1 {
+                            let name = path.segments[0].ident.name.clone();
+                            if !self.name_is_known(&name) {
+                                self.error(
+                                    TypeError::new(format!(
+                                        "cannot find function `{}` in this scope",
+                                        name
+                                    ))
+                                    .with_span(path.segments[0].ident.span)
+                                    .with_note(
+                                        "no function, closure, or constructor of this name is \
+                                         declared in this crate or the standard library",
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+
                 let fn_type = self.infer_expr(func);
                 let arg_types: Vec<Type> = args.iter().map(|a| self.infer_expr(a)).collect();
 

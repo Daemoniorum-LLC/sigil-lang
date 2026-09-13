@@ -3,6 +3,7 @@
 use sigil_parser::lower::lower_source_file;
 #[cfg(feature = "lsp")]
 use sigil_parser::lsp::start_lsp;
+use sigil_parser::crate_graph::{self, CrateGraph};
 use sigil_parser::span::Span;
 use sigil_parser::typeck::TypeChecker;
 #[cfg(feature = "jit")]
@@ -66,7 +67,7 @@ fn main() -> ExitCode {
         #[cfg(not(feature = "wasm"))]
         eprintln!("  wasm <file>     Compile to WebAssembly (requires --features wasm)");
         eprintln!("  rust <file>     Transpile to Rust source code");
-        eprintln!("  check <file>    Type-check and validate (for AI agents: --format=json)");
+        eprintln!("  check <file>    Check the file and every module it declares (--format=json for AI)");
         eprintln!("  lint <path>     Run linter on file or directory (--format=json for AI)");
         eprintln!("  dump-ir <file>  Dump AI-facing IR as JSON (for agents/tooling)");
         eprintln!("  doc-extract <file>  Extract SGDOC documentation from source file");
@@ -291,7 +292,7 @@ fn main() -> ExitCode {
         "check" => {
             if args.len() < 3 {
                 eprintln!("Error: missing file argument");
-                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--strict] [--apply-suggestions]");
+                eprintln!("Usage: sigil check <file.sigil> [--format=json|compact] [--quiet] [--strict] [--no-resolve-calls] [--no-traverse] [--apply-suggestions]");
                 return ExitCode::from(1);
             }
             // Parse format option
@@ -307,7 +308,14 @@ fn main() -> ExitCode {
             let apply_fixes = args
                 .iter()
                 .any(|a| a == "--apply-suggestions" || a == "--fix");
-            check_file(&args[2], format, quiet, apply_fixes, strict)
+            let opts = CheckOptions {
+                // Both default on. They are escape hatches for code the check
+                // gets wrong, not switches anyone should reach for routinely --
+                // a check that resolves nothing is the state LARES-453 filed.
+                resolve_calls: !args.iter().any(|a| a == "--no-resolve-calls"),
+                traverse: !args.iter().any(|a| a == "--no-traverse"),
+            };
+            check_file(&args[2], format, quiet, apply_fixes, strict, opts)
         }
         "lint" => {
             // Handle --init flag to generate default config
@@ -2386,7 +2394,32 @@ fn format_size(size: usize) -> String {
 ///
 /// With `--apply-suggestions`, automatically applies fix suggestions
 /// and rewrites the file.
-fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, strict: bool) -> ExitCode {
+/// What a check is allowed to look at.
+#[derive(Clone, Copy)]
+struct CheckOptions {
+    /// Report calls whose target resolves to nothing.
+    resolve_calls: bool,
+    /// Follow `scroll` / `invoke tome·` into the rest of the crate.
+    traverse: bool,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        Self {
+            resolve_calls: true,
+            traverse: true,
+        }
+    }
+}
+
+fn check_file(
+    path: &str,
+    format: OutputFormat,
+    quiet: bool,
+    apply_fixes: bool,
+    strict: bool,
+    opts: CheckOptions,
+) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -2417,13 +2450,206 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, 
         }
     };
 
-    // Collect diagnostics during parsing
-    let mut diagnostics = Diagnostics::new();
-    let mut parser = Parser::new(&source);
+    // `--apply-suggestions` rewrites files, so it stays where it was: on the one
+    // file named on the command line. Rewriting a module the user did not name,
+    // as a side effect of checking its parent, is not a thing a fix flag should do.
+    if apply_fixes {
+        if let Some(code) = apply_suggestions_to(path, &source, format, quiet, strict) {
+            return code;
+        }
+    }
 
-    match parser.parse_file() {
+    // Every file the entry reaches through `scroll` / `invoke tome·`, not just
+    // the entry (LARES-453).
+    let graph = if opts.traverse {
+        CrateGraph::load(std::path::Path::new(path), source)
+    } else {
+        CrateGraph::single(std::path::Path::new(path), source)
+    };
+
+    // Names declared anywhere in the crate, so a call into a sibling module
+    // resolves instead of reading as a typo.
+    let mut crate_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut globs_anywhere = false;
+    for (_, ast) in graph.parsed_files() {
+        let declared = crate_graph::declared_names(ast);
+        crate_names.extend(declared.names);
+        globs_anywhere |= declared.has_unresolved_glob;
+    }
+
+    // A `scroll foo;` with no `foo.sigil` beside it: the interpreter shrugs and
+    // carries on, so this is a warning, not an error — and cfg-gated modules
+    // (`@[cfg(unix)] ☉ scroll native;`) legitimately have no file on this target.
+    let mut per_file: Vec<(String, String, Diagnostics)> = Vec::new();
+    let mut missing_by_file: std::collections::HashMap<String, Vec<&crate_graph::MissingModule>> =
+        std::collections::HashMap::new();
+    for m in &graph.missing {
+        missing_by_file
+            .entry(m.module.from.display().to_string())
+            .or_default()
+            .push(m);
+    }
+
+    for file in &graph.files {
+        let name = file.path.display().to_string();
+        let mut diagnostics = Diagnostics::new();
+
+        match &file.parsed {
+            Ok(ast) => {
+                let mut type_checker = TypeChecker::new();
+                type_checker.set_strict(strict);
+                type_checker.set_resolve_calls(opts.resolve_calls);
+                type_checker.add_crate_names(crate_names.iter().cloned());
+                // A glob import from a dependency brings in names this check
+                // cannot enumerate. Rather than blame calls that are fine, stop
+                // resolving call targets for the whole crate.
+                if globs_anywhere {
+                    type_checker.suppress_call_resolution();
+                }
+                if let Err(type_errors) = type_checker.check_file(ast) {
+                    for err in type_errors {
+                        let mut diag =
+                            Diagnostic::error(&err.message, err.span.unwrap_or(Span::default()))
+                                .with_code("E0003");
+                        for note in &err.notes {
+                            diag = diag.with_note(note);
+                        }
+                        diagnostics.add(diag);
+                    }
+                }
+            }
+            Err(e) => {
+                let mut diag = Diagnostic::error(e.clone(), Span::default()).with_code("E0002");
+                if let Some(via) = &file.declared_by {
+                    diag = diag.with_note(format!(
+                        "reached from {} via `scroll {};`",
+                        via.from.display(),
+                        via.name
+                    ));
+                }
+                diagnostics.add(diag);
+            }
+        }
+
+        for m in missing_by_file.remove(&name).unwrap_or_default() {
+            diagnostics.add(
+                Diagnostic::warning(
+                    format!("no file found for module `{}`", m.module.name),
+                    m.module.span,
+                )
+                .with_code("W0101")
+                .with_note(format!(
+                    "looked for {}",
+                    m.candidates
+                        .iter()
+                        .map(|c| c.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+            );
+        }
+
+        per_file.push((name, file.source.clone(), diagnostics));
+    }
+
+    let has_errors = per_file.iter().any(|(_, _, d)| d.has_errors());
+
+    if quiet {
+        // Exit code only - no output
+        return if has_errors {
+            ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
+        };
+    }
+
+    match format {
+        OutputFormat::Human => {
+            let mut printed_any = false;
+            for (name, src, diagnostics) in &per_file {
+                if diagnostics.is_empty() {
+                    continue;
+                }
+                diagnostics.eprint_all(name, src);
+                printed_any = true;
+            }
+            if printed_any {
+                let errors: usize = per_file.iter().map(|(_, _, d)| d.error_count()).sum();
+                let warnings: usize = per_file.iter().map(|(_, _, d)| d.warning_count()).sum();
+                if errors > 0 {
+                    eprintln!(
+                        "error: aborting due to {} previous error{}",
+                        errors,
+                        if errors == 1 { "" } else { "s" }
+                    );
+                }
+                if warnings > 0 {
+                    eprintln!(
+                        "warning: {} warning{} emitted",
+                        warnings,
+                        if warnings == 1 { "" } else { "s" }
+                    );
+                }
+            } else if per_file.len() == 1 {
+                println!("✓ {} - no errors", path);
+            } else {
+                println!("✓ {} ({} files) - no errors", path, per_file.len());
+            }
+        }
+        OutputFormat::Json | OutputFormat::Compact | OutputFormat::Sarif => {
+            if format == OutputFormat::Sarif {
+                eprintln!("Note: SARIF format is only available for 'sigil lint', using JSON");
+            }
+            // One object, shaped as before, with `file` naming the entry and
+            // every diagnostic carrying the file it came from — so a consumer
+            // that only read `diagnostics` keeps working.
+            let mut all = Vec::new();
+            let mut error_count = 0usize;
+            let mut warning_count = 0usize;
+            for (name, src, diagnostics) in &per_file {
+                let out = diagnostics.to_json_output(name, src);
+                error_count += out.error_count;
+                warning_count += out.warning_count;
+                all.extend(out.diagnostics);
+            }
+            let merged = serde_json::json!({
+                "file": path,
+                "files_checked": per_file.iter().map(|(n, _, _)| n).collect::<Vec<_>>(),
+                "diagnostics": all,
+                "error_count": error_count,
+                "warning_count": warning_count,
+                "success": error_count == 0,
+            });
+            if format == OutputFormat::Compact {
+                println!("{}", serde_json::to_string(&merged).unwrap());
+            } else {
+                println!("{}", serde_json::to_string_pretty(&merged).unwrap());
+            }
+        }
+    }
+
+    if has_errors {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Apply fix suggestions to one file and re-check it.
+///
+/// Returns `Some(exit code)` when the file was rewritten (the rewrite changes
+/// the source out from under the caller, so the re-check is authoritative), and
+/// `None` when there was nothing to apply and the normal check should proceed.
+fn apply_suggestions_to(
+    path: &str,
+    source: &str,
+    format: OutputFormat,
+    quiet: bool,
+    strict: bool,
+) -> Option<ExitCode> {
+    let mut diagnostics = Diagnostics::new();
+    match Parser::new(source).parse_file() {
         Ok(ast) => {
-            // Run type checker with evidence enforcement
             let mut type_checker = TypeChecker::new();
             type_checker.set_strict(strict);
             if let Err(type_errors) = type_checker.check_file(&ast) {
@@ -2439,120 +2665,73 @@ fn check_file(path: &str, format: OutputFormat, quiet: bool, apply_fixes: bool, 
             }
         }
         Err(e) => {
-            // Convert parse error to diagnostic
-            let diag = Diagnostic::error(format!("{}", e), Span::default()).with_code("E0002");
-            diagnostics.add(diag);
+            diagnostics.add(Diagnostic::error(format!("{}", e), Span::default()).with_code("E0002"));
         }
     }
 
-    // Apply fixes if requested
-    let source = if apply_fixes && !diagnostics.is_empty() {
-        let suggestions: Vec<_> = diagnostics
-            .iter()
-            .flat_map(|d| d.suggestions.iter())
-            .collect();
-
-        if !suggestions.is_empty() {
-            // Apply fixes in reverse order to preserve byte positions
-            let mut fixed = source.clone();
-            let mut applied_fixes = Vec::new();
-
-            // Sort by span start descending so we apply from end to start
-            let mut sorted_suggestions: Vec<_> = suggestions.iter().collect();
-            sorted_suggestions.sort_by(|a, b| b.span.start.cmp(&a.span.start));
-
-            for suggestion in sorted_suggestions {
-                // Apply the fix
-                if suggestion.span.end <= fixed.len() {
-                    fixed.replace_range(
-                        suggestion.span.start..suggestion.span.end,
-                        &suggestion.replacement,
-                    );
-                    applied_fixes.push(suggestion.message.clone());
-                }
-            }
-
-            // Write the fixed file
-            if !applied_fixes.is_empty() {
-                if let Err(e) = fs::write(path, &fixed) {
-                    if format == OutputFormat::Human {
-                        eprintln!("Error writing fixed file: {}", e);
-                    }
-                    return ExitCode::from(1);
-                }
-
-                if format == OutputFormat::Human && !quiet {
-                    println!(
-                        "Applied {} fix{}:",
-                        applied_fixes.len(),
-                        if applied_fixes.len() == 1 { "" } else { "es" }
-                    );
-                    for fix in &applied_fixes {
-                        println!("  • {}", fix);
-                    }
-                } else if format != OutputFormat::Human && !quiet {
-                    // Include applied fixes in JSON output
-                    let fix_json = serde_json::json!({
-                        "file": path,
-                        "applied_fixes": applied_fixes,
-                        "fix_count": applied_fixes.len(),
-                        "recheck_needed": true
-                    });
-                    if format == OutputFormat::Json {
-                        println!("{}", serde_json::to_string_pretty(&fix_json).unwrap());
-                    } else {
-                        println!("{}", serde_json::to_string(&fix_json).unwrap());
-                    }
-                }
-
-                // Re-check with fixed source
-                return check_file(path, format, quiet, false, strict);
-            }
-            source // No fixes applied, use original
-        } else {
-            source // No suggestions available
-        }
-    } else {
-        source
-    };
-
-    // Output in requested format
-    if quiet {
-        // Exit code only - no output
-        return if diagnostics.has_errors() {
-            ExitCode::from(1)
-        } else {
-            ExitCode::SUCCESS
-        };
+    if diagnostics.is_empty() {
+        return None;
     }
 
-    match format {
-        OutputFormat::Human => {
-            if diagnostics.is_empty() {
-                println!("✓ {} - no errors", path);
+    let mut sorted_suggestions: Vec<_> = diagnostics
+        .iter()
+        .flat_map(|d| d.suggestions.iter())
+        .collect();
+    if sorted_suggestions.is_empty() {
+        return None;
+    }
+    // Apply from the end so earlier byte offsets stay valid.
+    sorted_suggestions.sort_by(|a, b| b.span.start.cmp(&a.span.start));
+
+    let mut fixed = source.to_string();
+    let mut applied_fixes = Vec::new();
+    for suggestion in sorted_suggestions {
+        if suggestion.span.end <= fixed.len() {
+            fixed.replace_range(
+                suggestion.span.start..suggestion.span.end,
+                &suggestion.replacement,
+            );
+            applied_fixes.push(suggestion.message.clone());
+        }
+    }
+
+    if applied_fixes.is_empty() {
+        return None;
+    }
+
+    if let Err(e) = fs::write(path, &fixed) {
+        if format == OutputFormat::Human {
+            eprintln!("Error writing fixed file: {}", e);
+        }
+        return Some(ExitCode::from(1));
+    }
+
+    if !quiet {
+        if format == OutputFormat::Human {
+            println!(
+                "Applied {} fix{}:",
+                applied_fixes.len(),
+                if applied_fixes.len() == 1 { "" } else { "es" }
+            );
+            for fix in &applied_fixes {
+                println!("  • {}", fix);
+            }
+        } else {
+            let fix_json = serde_json::json!({
+                "file": path,
+                "applied_fixes": applied_fixes,
+                "fix_count": applied_fixes.len(),
+                "recheck_needed": true
+            });
+            if format == OutputFormat::Json {
+                println!("{}", serde_json::to_string_pretty(&fix_json).unwrap());
             } else {
-                diagnostics.eprint_all(path, &source);
-                diagnostics.print_summary();
+                println!("{}", serde_json::to_string(&fix_json).unwrap());
             }
-        }
-        OutputFormat::Json => {
-            println!("{}", diagnostics.to_json_string(path, &source));
-        }
-        OutputFormat::Compact => {
-            println!("{}", diagnostics.to_json_compact(path, &source));
-        }
-        OutputFormat::Sarif => {
-            // SARIF format not applicable for check command - use lint instead
-            eprintln!("Note: SARIF format is only available for 'sigil lint', using JSON");
-            println!("{}", diagnostics.to_json_string(path, &source));
         }
     }
 
-    if diagnostics.has_errors() {
-        ExitCode::from(1)
-    } else {
-        ExitCode::SUCCESS
-    }
+    Some(check_file(path, format, quiet, false, strict, CheckOptions::default()))
 }
 
 /// List all available lint rules.
