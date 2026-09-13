@@ -140,6 +140,7 @@ mod deprecation_warning_tests {
 
 pub mod ast;
 pub mod cfg;
+pub mod crate_graph;
 pub mod diagnostic;
 pub mod ffi;
 pub mod impl_registry;
