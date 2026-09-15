@@ -114,27 +114,13 @@ fi
 # Create temp directory for combined files
 mkdir -p "$TEMP_DIR"
 
-# Check for Sigil compiler
-if [[ ! -x "$SIGIL_COMPILER" ]]; then
-    echo -e "${YELLOW}Warning: Sigil compiler not found at $SIGIL_COMPILER${NC}"
-    echo -e "${YELLOW}Attempting to build compiler...${NC}"
-
-    PARSER_DIR="/home/crook/dev2/workspace/sigil/parser"
-    if [[ -f "$PARSER_DIR/Cargo.toml" ]]; then
-        echo "Building Sigil compiler with WASM support..."
-        cd "$PARSER_DIR"
-        cargo build --release --features wasm 2>&1
-        cd "$SCRIPT_DIR"
-    fi
-
-    if [[ ! -x "$SIGIL_COMPILER" ]]; then
-        echo -e "${RED}Error: Sigil compiler not available${NC}"
-        echo "Please build the compiler first:"
-        echo "  cd /home/crook/dev2/workspace/sigil/parser"
-        echo "  cargo build --release --features wasm"
-        exit 1
-    fi
-fi
+# The compiler is resolved and checked at the top of this script, which exits if
+# there is none. A second check here used to try building one from
+# /home/crook/dev2/workspace/sigil/parser — another machine's home directory —
+# and that block became unreachable the moment the resolution above started
+# refusing rather than warning. Removed rather than repointed: unreachable code
+# naming a path nobody can reach reads as a live fallback, which is worse than
+# having no fallback at all.
 
 echo -e "${GREEN}Using compiler: $SIGIL_COMPILER${NC}"
 echo ""
