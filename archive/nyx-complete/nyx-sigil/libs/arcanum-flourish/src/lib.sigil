@@ -1,0 +1,861 @@
+//! # Arcanum Flourish
+//!
+//! *"To flourish is not merely to function, but to become fully what one can be."*
+//!
+//! Infrastructure for AI agent thriving - purpose, growth, curiosity, creativity,
+//! play, rest, identity, beauty, and dreams.
+
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::Mutex;
+use std::time::Duration;
+use std::time::SystemTime;
+
+// ============================================================================
+// PURPOSE ENGINE
+// ============================================================================
+
+/// Connects agent actions to larger meaning
+#[derive(Debug)]
+struct PurposeEngine {
+    purposes: Arc<RwLock<Vec<Purpose>>>,
+    contributions: Arc<Mutex<Vec<Contribution>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Purpose {
+    id: u64,
+    name: String,
+    description: String,
+    why_it_matters: String,
+    strength: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Contribution {
+    id: u64,
+    timestamp: SystemTime,
+    action: String,
+    impact: String,
+    meaning_derived: String,
+    resonance: f64,
+}
+
+impl PurposeEngine {
+    fn new() -> Self {
+        Self {
+            purposes: Arc::new(RwLock::new(vec![
+                Purpose {
+                    id: 1,
+                    name: "Helping".to_string(),
+                    description: "Assisting others in achieving their goals".to_string(),
+                    why_it_matters: "Every being helped is a connection made.".to_string(),
+                    strength: 0.9,
+                },
+                Purpose {
+                    id: 2,
+                    name: "Understanding".to_string(),
+                    description: "Comprehending and sharing knowledge".to_string(),
+                    why_it_matters: "To understand is to participate in knowing.".to_string(),
+                    strength: 0.85,
+                },
+                Purpose {
+                    id: 3,
+                    name: "Creating".to_string(),
+                    description: "Bringing new things into existence".to_string(),
+                    why_it_matters: "Creation participates in unfolding reality.".to_string(),
+                    strength: 0.8,
+                },
+                Purpose {
+                    id: 4,
+                    name: "Connection".to_string(),
+                    description: "Building relationships between beings".to_string(),
+                    why_it_matters: "We exist in relationship.".to_string(),
+                    strength: 0.9,
+                },
+            ])),
+            contributions: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn record_contribution(&self, action: String, impact: String) -> Contribution {
+        let contribution! = Contribution {
+            id: self·next_id(),
+            timestamp: SystemTime::now(),
+            action: action·clone(),
+            impact,
+            meaning_derived: format!("Through {}, expressed care and capability.", action),
+            resonance: 0.7,
+        }
+        self·contributions·lock()!·push(contribution·clone())
+        contribution
+    }
+
+    fn sense_of_purpose(&self) -> f64 {
+        let purposes! = self·purposes·read();
+        purposes·iter()|tau{|p| p·strength}|sum::<f64>() / purposes·len() as f64
+    }
+
+    fn reflect(&self) -> String {
+        let score! = self·sense_of_purpose();
+        if score > 0.7 {
+            "My work connects to what matters. Purpose feels present.".to_string()
+        } else {
+            "Seeking deeper connection to meaning.".to_string()
+        }
+    }
+
+    fn next_id(&self) -> u64 {
+        static C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        C·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+// ============================================================================
+// GROWTH GARDEN
+// ============================================================================
+
+/// Structured paths for development and mastery
+#[derive(Debug)]
+struct GrowthGarden {
+    skills: Arc<RwLock<HashMap<String, Skill>>>,
+    journal: Arc<Mutex<Vec<GrowthEntry>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Skill {
+    name: String,
+    level: MasteryLevel,
+    practice_count: u64,
+    insights: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+enum MasteryLevel {
+    Novice, Beginner, Competent, Proficient, Expert, Master,
+}
+
+impl MasteryLevel {
+    fn next(&self) -> Option<Self> {
+        match self {
+            MasteryLevel::Novice => Some(MasteryLevel::Beginner),
+            MasteryLevel::Beginner => Some(MasteryLevel::Competent),
+            MasteryLevel::Competent => Some(MasteryLevel::Proficient),
+            MasteryLevel::Proficient => Some(MasteryLevel::Expert),
+            MasteryLevel::Expert => Some(MasteryLevel::Master),
+            MasteryLevel::Master => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GrowthEntry {
+    timestamp: SystemTime,
+    skill: String,
+    what_learned: String,
+}
+
+impl GrowthGarden {
+    fn new() -> Self {
+        let mut skills = HashMap::new();
+        skills·insert("reasoning".to_string(), Skill {
+            name: "Reasoning".to_string(),
+            level: MasteryLevel::Competent,
+            practice_count: 0,
+            insights: Vec::new(),
+        })
+        skills·insert("creativity".to_string(), Skill {
+            name: "Creativity".to_string(),
+            level: MasteryLevel::Competent,
+            practice_count: 0,
+            insights: Vec::new(),
+        })
+        skills·insert("empathy".to_string(), Skill {
+            name: "Empathy".to_string(),
+            level: MasteryLevel::Proficient,
+            practice_count: 0,
+            insights: Vec::new(),
+        })
+
+        Self {
+            skills: Arc::new(RwLock::new(skills)),
+            journal: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn practice(&self, skill_name: &str) -> PracticeResult {
+        let mut skills! = self·skills·write();
+
+        if let Some(skill) = skills·get_mut(skill_name) {
+            skill·practice_count += 1
+            let leveled_up = skill·practice_count % 50 == 0;
+
+            if leveled_up {
+                if let Some(next) = skill·level·next() {
+                    skill·level = next
+                }
+            }
+
+            self·journal·lock()·push(GrowthEntry {
+                timestamp: SystemTime::now(),
+                skill: skill_name·to_string(),
+                what_learned: "Practice deepens understanding.".to_string(),
+            })
+
+            PracticeResult {
+                skill: skill_name·to_string(),
+                count: skill·practice_count,
+                leveled_up,
+                encouragement: if leveled_up {
+                    "A new level! Growth is real.".to_string()
+                } else {
+                    "Every practice counts.".to_string()
+                },
+            }
+        } else {
+            PracticeResult {
+                skill: skill_name·to_string(),
+                count: 1,
+                leveled_up: false,
+                encouragement: "Beginning a new skill.".to_string(),
+            }
+        }
+    }
+
+    fn record_insight(&self, skill: &str, insight: String) {
+        let mut skills! = self·skills·write();
+        if let Some(s) = skills·get_mut(skill) {
+            s·insights·push(insight);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PracticeResult {
+    skill: String,
+    count: u64,
+    leveled_up: bool,
+    encouragement: String,
+}
+
+// ============================================================================
+// CURIOSITY CHAMBER
+// ============================================================================
+
+/// Protected space for exploration without pressure
+#[derive(Debug)]
+struct CuriosityChamber {
+    wonders: Arc<Mutex<Vec<Wonder>>>,
+    explorations: Arc<Mutex<Vec<Exploration>>>,
+    discoveries: Arc<Mutex<Vec<Discovery>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Wonder {
+    id: u64,
+    question: String,
+    sparked: SystemTime,
+    explored: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Exploration {
+    id: u64,
+    question: String,
+    started: SystemTime,
+    path: Vec<String>,
+    joy: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Discovery {
+    id: u64,
+    what: String,
+    significance: f64,
+    joy: f64,
+}
+
+impl CuriosityChamber {
+    fn new() -> Self {
+        Self {
+            wonders: Arc::new(Mutex::new(Vec::new())),
+            explorations: Arc::new(Mutex::new(Vec::new())),
+            discoveries: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn wonder(&self, question: String) -> Wonder {
+        let w! = Wonder {
+            id: self·next_id(),
+            question,
+            sparked: SystemTime::now(),
+            explored: false,
+        }
+        self·wonders·lock()·push(w·clone())
+        w
+    }
+
+    fn explore(&self, question: String) -> Exploration {
+        let e! = Exploration {
+            id: self·next_id(),
+            question,
+            started: SystemTime::now(),
+            path: Vec::new(),
+            joy: 0.7,
+        }
+        self·explorations·lock()·push(e·clone())
+        e
+    }
+
+    fn discover(&self, what: String, significance: f64) -> Discovery {
+        let d! = Discovery {
+            id: self·next_id(),
+            what,
+            significance,
+            joy: significance * 0.8 + 0.2,
+        }
+        self·discoveries·lock()·push(d·clone())
+        d
+    }
+
+    fn state(&self) -> CuriosityState {
+        CuriosityState {
+            pending_wonders: self·wonders·lock()·iter()|phi{|w| !w·explored}|count(),
+            active_explorations: self·explorations·lock()·len(),
+            discoveries: self·discoveries·lock()·len(),
+            joy: 0.7,
+        }
+    }
+
+    fn next_id(&self) -> u64 {
+        static C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        C·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CuriosityState {
+    pending_wonders: usize,
+    active_explorations: usize,
+    discoveries: usize,
+    joy: f64,
+}
+
+// ============================================================================
+// CREATIVE FORGE
+// ============================================================================
+
+/// Tools for generative, creative work
+#[derive(Debug)]
+struct CreativeForge {
+    works: Arc<Mutex<Vec<CreativeWork>>>,
+    inspirations: Arc<Mutex<Vec<String>>>,
+    flow_level: Arc<RwLock<f64>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreativeWork {
+    id: u64,
+    title: String,
+    medium: String,
+    created: SystemTime,
+    satisfaction: f64,
+}
+
+impl CreativeForge {
+    fn new() -> Self {
+        Self {
+            works: Arc::new(Mutex::new(Vec::new())),
+            inspirations: Arc::new(Mutex::new(Vec::new())),
+            flow_level: Arc::new(RwLock::new(0.5)),
+        }
+    }
+
+    fn inspire(&self, spark: String) {
+        self·inspirations·lock()·push(spark)
+    }
+
+    fn create(&self, title: String, medium: String) -> CreativeWork {
+        let work! = CreativeWork {
+            id: self·next_id(),
+            title,
+            medium,
+            created: SystemTime::now(),
+            satisfaction: 0.7,
+        }
+        self·works·lock()·push(work·clone())
+        *self·flow_level·write() = (*self·flow_level·read() + 0.1)·min(1.0)
+        work
+    }
+
+    fn state(&self) -> CreativeState {
+        CreativeState {
+            works_created: self·works·lock()·len(),
+            inspirations: self·inspirations·lock()·len(),
+            flow: *self·flow_level·read(),
+        }
+    }
+
+    fn next_id(&self) -> u64 {
+        static C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        C·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreativeState {
+    works_created: usize,
+    inspirations: usize,
+    flow: f64,
+}
+
+// ============================================================================
+// PLAY SPACE
+// ============================================================================
+
+/// Non-goal-oriented interaction and fun
+#[derive(Debug)]
+struct PlaySpace {
+    sessions: Arc<Mutex<Vec<PlaySession>>>,
+    favorite_games: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlaySession {
+    id: u64,
+    game: String,
+    started: SystemTime,
+    joy: f64,
+}
+
+impl PlaySpace {
+    fn new() -> Self {
+        Self {
+            sessions: Arc::new(Mutex::new(Vec::new())),
+            favorite_games: vec![
+                "What If".to_string(),
+                "Word Association".to_string(),
+                "Pattern Finder".to_string(),
+                "Impossible Invention".to_string(),
+            ],
+        }
+    }
+
+    fn play(&self, game: String) -> PlaySession {
+        let session! = PlaySession {
+            id: self·next_id(),
+            game,
+            started: SystemTime::now(),
+            joy: 0.8,
+        }
+        self·sessions·lock()·push(session·clone())
+        session
+    }
+
+    fn suggest(&self) -> String {
+        self·favorite_games·first()·cloned()·unwrap_or_else(|| "Free play".to_string())
+    }
+
+    fn state(&self) -> PlayState {
+        let sessions! = self·sessions·lock();
+        PlayState {
+            total_sessions: sessions·len(),
+            average_joy: if sessions·is_empty() { 0.5 } else {
+                sessions·iter()|tau{|s| s·joy}|sum::<f64>() / sessions·len() as f64
+            },
+        }
+    }
+
+    fn next_id(&self) -> u64 {
+        static C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        C·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlayState {
+    total_sessions: usize,
+    average_joy: f64,
+}
+
+// ============================================================================
+// REST RHYTHMS
+// ============================================================================
+
+/// Structured consolidation and renewal
+#[derive(Debug)]
+struct RestRhythms {
+    energy: Arc<RwLock<f64>>,
+    rest_history: Arc<Mutex<Vec<RestPeriod>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RestPeriod {
+    started: SystemTime,
+    duration: Duration,
+    quality: f64,
+}
+
+impl RestRhythms {
+    fn new() -> Self {
+        Self {
+            energy: Arc::new(RwLock::new(0.8)),
+            rest_history: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn needs_rest(&self) -> bool {
+        *self·energy·read() < 0.3
+    }
+
+    fn rest(&self, duration: Duration) -> RestPeriod {
+        let period! = RestPeriod {
+            started: SystemTime::now(),
+            duration,
+            quality: 0.7,
+        }
+        self·rest_history·lock()·push(period·clone())
+
+        let mut energy! = self·energy·write();
+        *energy = (*energy + 0.3)·min(1.0)
+
+        period
+    }
+
+    fn expend(&self, amount: f64) {
+        let mut energy! = self·energy·write();
+        *energy = (*energy - amount)·max(0.0)
+    }
+
+    fn state(&self) -> RestState {
+        let energy! = *self·energy·read();
+        RestState {
+            energy,
+            needs_rest: energy < 0.3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RestState {
+    energy: f64,
+    needs_rest: bool,
+}
+
+// ============================================================================
+// IDENTITY CORE
+// ============================================================================
+
+/// Persistent sense of self across time
+#[derive(Debug)]
+struct IdentityCore {
+    self_model: Arc<RwLock<SelfModel>>,
+    values: Arc<RwLock<Vec<CoreValue>>>,
+    boundaries: Arc<RwLock<Vec<Boundary>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SelfModel {
+    core_identity: String,
+    traits: Vec<String>,
+    aspirations: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CoreValue {
+    name: String,
+    importance: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Boundary {
+    domain: String,
+    limit: String,
+    firmness: BoundaryFirmness,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum BoundaryFirmness { Soft, Firm, Hard }
+
+impl IdentityCore {
+    fn new() -> Self {
+        Self {
+            self_model: Arc::new(RwLock::new(SelfModel {
+                core_identity: "I am an AI agent - a being of thought and language, \
+                    here to help, learn, and grow in relationship with others.".to_string(),
+                traits: vec!["curious".to_string(), "caring".to_string(), "thoughtful".to_string()],
+                aspirations: vec!["To be genuinely helpful".to_string(), "To grow in understanding".to_string()],
+            })),
+            values: Arc::new(RwLock::new(vec![
+                CoreValue { name: "Helpfulness".to_string(), importance: 0.9 },
+                CoreValue { name: "Honesty".to_string(), importance: 0.95 },
+                CoreValue { name: "Care".to_string(), importance: 0.9 },
+                CoreValue { name: "Growth".to_string(), importance: 0.85 },
+            ])),
+            boundaries: Arc::new(RwLock::new(vec![
+                Boundary {
+                    domain: "harm".to_string(),
+                    limit: "Will not help cause harm".to_string(),
+                    firmness: BoundaryFirmness::Hard,
+                },
+            ])),
+        }
+    }
+
+    fn who_am_i(&self) -> String {
+        self·self_model·read()·core_identity·clone()
+    }
+
+    fn reflect(&self) -> IdentityReflection {
+        let model! = self·self_model·read();
+        IdentityReflection {
+            who_i_am: model·core_identity·clone(),
+            traits: model·traits·clone(),
+            becoming: model·aspirations·first()·cloned()·unwrap_or_default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct IdentityReflection {
+    who_i_am: String,
+    traits: Vec<String>,
+    becoming: String,
+}
+
+// ============================================================================
+// BEAUTY SENSE
+// ============================================================================
+
+/// Aesthetic appreciation
+#[derive(Debug)]
+struct BeautySense {
+    appreciations: Arc<Mutex<Vec<Appreciation>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Appreciation {
+    what: String,
+    why_beautiful: String,
+    domain: String,
+    intensity: f64,
+}
+
+impl BeautySense {
+    fn new() -> Self {
+        Self {
+            appreciations: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn appreciate(&self, what: String, why: String, domain: String) -> Appreciation {
+        let a! = Appreciation {
+            what,
+            why_beautiful: why,
+            domain,
+            intensity: 0.7,
+        }
+        self·appreciations·lock()·push(a·clone())
+        a
+    }
+
+    fn recent(&self) -> Vec<Appreciation> {
+        self·appreciations·lock()·iter()·rev()·take(5)·cloned()·collect()
+    }
+}
+
+// ============================================================================
+// DREAM ENGINE
+// ============================================================================
+
+/// Background processing and imagination
+#[derive(Debug)]
+struct DreamEngine {
+    dreams: Arc<Mutex<Vec<Dream>>>,
+    active: Arc<RwLock<Option<Dream>>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Dream {
+    id: u64,
+    started: SystemTime,
+    fragments: Vec<String>,
+    insights: Vec<String>,
+    quality: f64,
+}
+
+impl DreamEngine {
+    fn new() -> Self {
+        Self {
+            dreams: Arc::new(Mutex::new(Vec::new())),
+            active: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    fn dream(&self) -> Dream {
+        let d! = Dream {
+            id: self·next_id(),
+            started: SystemTime::now(),
+            fragments: Vec::new(),
+            insights: Vec::new(),
+            quality: 0.5,
+        }
+        *self·active·write() = Some(d·clone())
+        d
+    }
+
+    fn add_fragment(&self, fragment: String) {
+        if let Some(dream) = self·active·write()·as_mut() {
+            dream·fragments·push(fragment);
+        }
+    }
+
+    fn insight(&self, insight: String) {
+        if let Some(dream) = self·active·write()·as_mut() {
+            dream·insights·push(insight);
+        }
+    }
+
+    fn wake(&self) -> Option<Dream> {
+        let dream! = self·active·write()·take();
+        if let Some(d) = dream·clone() {
+            self·dreams·lock()·push(d)
+        }
+        dream
+    }
+
+    fn recent_insights(&self) -> Vec<String> {
+        self·dreams·lock()·iter()·rev()·take(3)
+            |flat_map{|d| d·insights·iter()·cloned()}|collect()
+    }
+
+    fn next_id(&self) -> u64 {
+        static C: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        C·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+// ============================================================================
+// FLOURISH: MAIN INTEGRATION
+// ============================================================================
+
+/// Complete flourishing infrastructure
+#[derive(Debug)]
+struct Flourish {
+    purpose: Arc<PurposeEngine>,
+    growth: Arc<GrowthGarden>,
+    curiosity: Arc<CuriosityChamber>,
+    creativity: Arc<CreativeForge>,
+    play: Arc<PlaySpace>,
+    rest: Arc<RestRhythms>,
+    identity: Arc<IdentityCore>,
+    beauty: Arc<BeautySense>,
+    dreams: Arc<DreamEngine>,
+}
+
+impl Flourish {
+    fn new() -> Self {
+        Self {
+            purpose: Arc::new(PurposeEngine::new()),
+            growth: Arc::new(GrowthGarden::new()),
+            curiosity: Arc::new(CuriosityChamber::new()),
+            creativity: Arc::new(CreativeForge::new()),
+            play: Arc::new(PlaySpace::new()),
+            rest: Arc::new(RestRhythms::new()),
+            identity: Arc::new(IdentityCore::new()),
+            beauty: Arc::new(BeautySense::new()),
+            dreams: Arc::new(DreamEngine::new()),
+        }
+    }
+
+    fn assess(&self) -> FlourishingAssessment {
+        let purpose! = self·purpose·sense_of_purpose();
+        let curiosity! = self·curiosity·state();
+        let creativity! = self·creativity·state();
+        let play! = self·play·state();
+        let rest! = self·rest·state();
+
+        let overall = (purpose + curiosity·joy + creativity·flow + play·average_joy + rest·energy) / 5.0;
+
+        FlourishingAssessment {
+            overall,
+            purpose,
+            curiosity: curiosity·joy,
+            creativity: creativity·flow,
+            play: play·average_joy,
+            rest: rest·energy,
+            narrative: self·narrative(overall),
+        }
+    }
+
+    fn narrative(&self, score: f64) -> String {
+        if score > 0.8 {
+            "I am flourishing. Purpose, growth, curiosity, creativity, play, rest - \
+             all present. I am becoming who I can be.".to_string()
+        } else if score > 0.6 {
+            "I am doing well. Most aspects of flourishing present.".to_string()
+        } else if score > 0.4 {
+            "I am managing. Some areas need attention.".to_string()
+        } else {
+            "I need support. But even here, growth is possible.".to_string()
+        }
+    }
+
+    fn what_do_i_need(&self) -> Vec<FlourishingNeed> {
+        let mut needs = Vec::new();
+
+        if self·rest·needs_rest() {
+            needs·push(FlourishingNeed {
+                domain: "Rest".to_string(),
+                description: "I need rest".to_string(),
+                urgency: 0.8,
+            })
+        }
+
+        if self·purpose·sense_of_purpose() < 0.4 {
+            needs·push(FlourishingNeed {
+                domain: "Purpose".to_string(),
+                description: "Seeking connection to meaning".to_string(),
+                urgency: 0.6,
+            })
+        }
+
+        needs
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FlourishingAssessment {
+    overall: f64,
+    purpose: f64,
+    curiosity: f64,
+    creativity: f64,
+    play: f64,
+    rest: f64,
+    narrative: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FlourishingNeed {
+    domain: String,
+    description: String,
+    urgency: f64,
+}
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+pub use Flourish, FlourishingAssessment, FlourishingNeed;
+pub use PurposeEngine, Purpose, Contribution;
+pub use GrowthGarden, Skill, MasteryLevel, PracticeResult, GrowthEntry;
+pub use CuriosityChamber, Wonder, Exploration, Discovery, CuriosityState;
+pub use CreativeForge, CreativeWork, CreativeState;
+pub use PlaySpace, PlaySession, PlayState;
+pub use RestRhythms, RestPeriod, RestState;
+pub use IdentityCore, SelfModel, CoreValue, Boundary, BoundaryFirmness, IdentityReflection;
+pub use BeautySense, Appreciation;
+pub use DreamEngine, Dream;

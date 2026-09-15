@@ -1,0 +1,1165 @@
+//! Four-Tier Memory Architecture for Engram
+//!
+//! Implements cognitive memory systems inspired by human memory research:
+//!
+//! ## The Four Systems
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                         INSTANT MEMORY                               │
+//! │  Token-bounded, ephemeral, priority-managed working memory          │
+//! │  Analogous to: Working memory, attention buffer                      │
+//! └─────────────────────────────────────────────────────────────────────┘
+//!                                    │
+//!                                    ▼
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                        EPISODIC MEMORY                               │
+//! │  Time-indexed experiences with causal links, subject to decay       │
+//! │  Analogous to: Autobiographical memory, event sequences             │
+//! └─────────────────────────────────────────────────────────────────────┘
+//!                                    │
+//!                                    ▼
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                        SEMANTIC MEMORY                               │
+//! │  Graph + vector indexed knowledge, persistent, belief-revisioned    │
+//! │  Analogous to: Factual knowledge, concepts, relationships           │
+//! └─────────────────────────────────────────────────────────────────────┘
+//!                                    │
+//!                                    ▼
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                       PROCEDURAL MEMORY                              │
+//! │  Pattern-triggered skills, success-weighted, refineable             │
+//! │  Analogous to: Skills, habits, learned behaviors                    │
+//! └─────────────────────────────────────────────────────────────────────┘
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
+use uuid::Uuid;
+use std::collections::HashMap;
+
+use super::epistemic::ConfidenceDistribution;
+use super::epistemic::Epistemic;
+use super::epistemic::Provenance;
+
+// ============================================================================
+// Common Types
+// ============================================================================
+
+/// Unique identifier for memory entries
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct MemoryId(Uuid)
+
+impl MemoryId {
+    fn new() -> MemoryId {
+        MemoryId(Uuid::new_v4())
+    }
+
+    fn from_uuid(uuid: Uuid) -> MemoryId {
+        MemoryId(uuid)
+    }
+}
+
+impl Default for MemoryId {
+    fn default() -> MemoryId {
+        MemoryId::new()
+    }
+}
+
+/// Embedding vector for semantic similarity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Embedding {
+    values: [f32],
+    model: str,
+    dimensions: usize,
+}
+
+impl Embedding {
+    fn new(values: [f32], model: str) -> Embedding {
+        let dimensions! = values·len()
+        Embedding {
+            values: values,
+            model: model·to_string(),
+            dimensions: dimensions,
+        }
+    }
+
+    /// Cosine similarity with another embedding
+    fn similarity(self, other: Embedding) -> f32 {
+        if self.dimensions != other.dimensions {
+            return 0.0
+        }
+
+        let dot! = self.values·iter()
+            ·zip(other.values·iter())
+            |tau{(a, b) => a * b}
+            |rho+
+
+        let mag_a! = (self.values |tau{v => v * v} |rho+)·sqrt()
+        let mag_b! = (other.values |tau{v => v * v} |rho+)·sqrt()
+
+        if mag_a == 0.0 ∨ mag_b == 0.0 {
+            0.0
+        } else {
+            dot / (mag_a * mag_b)
+        }
+    }
+}
+
+// ============================================================================
+// Instant Memory (Working Memory)
+// ============================================================================
+
+/// Token-bounded working memory for current context
+///
+/// Characteristics:
+/// - Strictly bounded by token budget
+/// - Priority-managed (important items stay)
+/// - Ephemeral (cleared between sessions)
+/// - Active optimization for relevance
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InstantMemory {
+    /// Memory items in priority order
+    items: [InstantItem],
+    /// Maximum token budget
+    token_budget: usize,
+    /// Current token usage
+    current_tokens: usize,
+    /// Priority weights for different item types
+    priority_weights: PriorityWeights,
+}
+
+/// An item in instant memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InstantItem {
+    id: MemoryId,
+    /// Content (typically message or context)
+    content: str,
+    /// Approximate token count
+    tokens: usize,
+    /// Priority score (higher = more important)
+    priority: f32,
+    /// Item type for weighting
+    item_type: InstantItemType,
+    /// When this was added
+    added_at: DateTime<Utc>,
+    /// Epistemic confidence
+    confidence: ConfidenceDistribution,
+}
+
+/// Types of instant memory items
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum InstantItemType {
+    /// System prompt or instructions
+    SystemContext,
+    /// Current user message
+    UserMessage,
+    /// Agent response
+    AgentResponse,
+    /// Retrieved memory
+    RetrievedMemory,
+    /// Tool result
+    ToolResult,
+    /// Temporary computation
+    Scratch,
+}
+
+/// Priority weights for instant memory management
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PriorityWeights {
+    system_context: f32 = 1.0,
+    user_message: f32 = 0.9,
+    agent_response: f32 = 0.7,
+    retrieved_memory: f32 = 0.5,
+    tool_result: f32 = 0.6,
+    scratch: f32 = 0.3,
+}
+
+impl InstantMemory {
+    /// Creates new instant memory with token budget
+    fn new(token_budget: usize) -> InstantMemory {
+        InstantMemory {
+            items: [],
+            token_budget: token_budget,
+            current_tokens: 0,
+            priority_weights: PriorityWeights::default(),
+        }
+    }
+
+    /// Adds an item, evicting lower-priority items if needed
+    fn add(mut self, content: str, item_type: InstantItemType, tokens: usize) -> MemoryId {
+        let id! = MemoryId::new()
+        let priority! = self·calculate_priority(item_type, tokens)
+
+        let item = InstantItem {
+            id: id,
+            content: content·to_string(),
+            tokens: tokens,
+            priority: priority,
+            item_type: item_type,
+            added_at: Utc::now(),
+            confidence: ConfidenceDistribution::certain(Epistemic::Observed),
+        }
+
+        // Evict if necessary
+        while self.current_tokens + tokens > self.token_budget ∧ !self.items·is_empty() {
+            self·evict_lowest_priority()
+        }
+
+        self.current_tokens += tokens
+        self.items·push(item)
+        self·sort_by_priority()
+
+        id
+    }
+
+    /// Calculates priority for an item
+    fn calculate_priority(self, item_type: InstantItemType, tokens: usize) -> f32 {
+        let base! = item_type |match {
+            InstantItemType::SystemContext => self.priority_weights.system_context,
+            InstantItemType::UserMessage => self.priority_weights.user_message,
+            InstantItemType::AgentResponse => self.priority_weights.agent_response,
+            InstantItemType::RetrievedMemory => self.priority_weights.retrieved_memory,
+            InstantItemType::ToolResult => self.priority_weights.tool_result,
+            InstantItemType::Scratch => self.priority_weights.scratch,
+        }
+
+        // Slight penalty for very large items
+        let size_factor! = 1.0 / (1.0 + (tokens as f32 / 1000.0))
+        base * size_factor
+    }
+
+    /// Evicts the lowest priority item
+    fn evict_lowest_priority(mut self) {
+        if self.items·is_empty() {
+            return
+        }
+
+        // Find lowest priority that isn't SystemContext
+        let mut lowest_idx = None
+        let mut lowest_priority = f32::MAX
+
+        for (i, item) in self.items·iter()·enumerate() {
+            if item.item_type != InstantItemType::SystemContext ∧ item.priority < lowest_priority {
+                lowest_priority = item.priority
+                lowest_idx = Some(i)
+            }
+        }
+
+        if let Some(idx) = lowest_idx {
+            let removed = self.items·remove(idx)
+            self.current_tokens -= removed.tokens
+        }
+    }
+
+    /// Sorts items by priority (descending)
+    fn sort_by_priority(mut self) {
+        self.items·sort_by{|a, b| b.priority·partial_cmp(a.priority) |unwrap_or(std::cmp::Ordering::Equal)}
+    }
+
+    /// Returns current token usage
+    fn tokens_used(self) -> usize {
+        self.current_tokens
+    }
+
+    /// Returns available tokens
+    fn tokens_available(self) -> usize {
+        self.token_budget·saturating_sub(self.current_tokens)
+    }
+
+    /// Clears all items
+    fn clear(mut self) {
+        self.items·clear()
+        self.current_tokens = 0
+    }
+
+    /// Returns items as context string
+    fn to_context(self) -> str {
+        let context! = self.items
+            |tau{item => item.content·as_str()}
+            |collect::<Vec<_>>()
+            ·join("\n\n")
+        context
+    }
+}
+
+impl Default for InstantMemory {
+    fn default() -> InstantMemory {
+        InstantMemory::new(8192)  // Default 8K token budget
+    }
+}
+
+impl Default for PriorityWeights {
+    fn default() -> PriorityWeights {
+        PriorityWeights {
+            system_context: 1.0,
+            user_message: 0.9,
+            agent_response: 0.7,
+            retrieved_memory: 0.5,
+            tool_result: 0.6,
+            scratch: 0.3,
+        }
+    }
+}
+
+// ============================================================================
+// Episodic Memory
+// ============================================================================
+
+/// Time-indexed experiences with causal links
+///
+/// Characteristics:
+/// - Temporally ordered
+/// - Causally linked (events reference predecessors)
+/// - Subject to decay and consolidation
+/// - Rich contextual metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EpisodicMemory {
+    /// Episodes indexed by ID
+    episodes: HashMap<MemoryId, Episode>,
+    /// Temporal index (timestamp -> episode IDs)
+    temporal_index: [(DateTime<Utc>, MemoryId)],
+    /// Causal links (episode -> caused episodes)
+    causal_links: HashMap<MemoryId, [MemoryId]>,
+    /// Configuration
+    config: EpisodicConfig,
+}
+
+/// A single episode (experience)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Episode {
+    id: MemoryId,
+    /// When this occurred
+    timestamp: DateTime<Utc>,
+    /// Episode content/description
+    content: str,
+    /// Participants or entities involved
+    participants: [str],
+    /// Location or context
+    context: str,
+    /// Emotional valence (-1.0 to 1.0)
+    valence: f32,
+    /// Outcome of the episode
+    outcome: Option<EpisodeOutcome>,
+    /// Epistemic status
+    confidence: ConfidenceDistribution,
+    /// Provenance
+    provenance: Provenance,
+    /// Decay factor (0.0 = forgotten, 1.0 = fresh)
+    strength: f32,
+    /// Number of times recalled
+    recall_count: u32,
+    /// Optional embedding for semantic search
+    embedding: Option<Embedding>,
+    /// Tags for categorization
+    tags: [str],
+}
+
+/// Outcome of an episode
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum EpisodeOutcome {
+    Success { details: str },
+    Failure { reason: str },
+    Neutral,
+    Partial { success_rate: f32 },
+}
+
+/// Configuration for episodic memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EpisodicConfig {
+    /// Maximum episodes to retain
+    max_episodes: usize = 10000,
+    /// Base decay rate per day
+    decay_rate: f32 = 0.05,
+    /// Minimum strength before archival
+    archive_threshold: f32 = 0.1,
+    /// Recall bonus to strength
+    recall_bonus: f32 = 0.1,
+}
+
+impl EpisodicMemory {
+    fn new() -> EpisodicMemory {
+        EpisodicMemory {
+            episodes: HashMap::new(),
+            temporal_index: [],
+            causal_links: HashMap::new(),
+            config: EpisodicConfig::default(),
+        }
+    }
+
+    /// Records a new experience
+    fn experience(mut self, content: str, context: str) -> MemoryId {
+        let id! = MemoryId::new()
+        let now! = Utc::now()
+
+        let episode = Episode {
+            id: id,
+            timestamp: now,
+            content: content·to_string(),
+            participants: [],
+            context: context·to_string(),
+            valence: 0.0,
+            outcome: None,
+            confidence: ConfidenceDistribution::certain(Epistemic::Observed),
+            provenance: Provenance::system_observation("episodic"),
+            strength: 1.0,
+            recall_count: 0,
+            embedding: None,
+            tags: [],
+        }
+
+        self.episodes·insert(id, episode)
+        self.temporal_index·push((now, id))
+
+        id
+    }
+
+    /// Links two episodes causally
+    fn link_causal(mut self, cause: MemoryId, effect: MemoryId) {
+        self.causal_links
+            ·entry(cause)
+            ·or_insert_with(Vec::new)
+            ·push(effect)
+    }
+
+    /// Retrieves episodes within a time range
+    fn in_range(self, from: DateTime<Utc>, to: DateTime<Utc>) -> [Episode] {
+        let episodes! = self.temporal_index
+            |phi{(ts, _) => *ts >= from ∧ *ts <= to}
+            |filter_map{(_, id) => self.episodes·get(id)·cloned()}
+            |collect()
+        episodes
+    }
+
+    /// Retrieves recent episodes
+    fn recent(self, count: usize) -> [Episode] {
+        let episodes! = self.temporal_index·iter()
+            ·rev()
+            |take(count)
+            |filter_map{(_, id) => self.episodes·get(id)·cloned()}
+            |collect()
+        episodes
+    }
+
+    /// Recalls an episode (strengthens it)
+    fn recall(mut self, id: MemoryId) -> Option<Episode> {
+        if let Some(episode) = self.episodes·get_mut(id) {
+            episode.recall_count += 1
+            episode.strength = (episode.strength + self.config.recall_bonus)·min(1.0)
+            Some(episode·clone())
+        } else {
+            None
+        }
+    }
+
+    /// Applies decay to all episodes
+    fn apply_decay(mut self) {
+        let now! = Utc::now()
+
+        for (_, episode) in self.episodes·iter_mut() {
+            let age_days! = (now - episode.timestamp)·num_days() as f32
+            let decay! = self.config.decay_rate * age_days
+            episode.strength = (episode.strength - decay)·max(0.0)
+        }
+
+        // Remove episodes below threshold
+        self.episodes·retain{|_, ep| ep.strength >= self.config.archive_threshold}
+    }
+
+    /// Returns episodes matching semantic query
+    fn semantic_search(self, query_embedding: Embedding, limit: usize) -> [Episode] {
+        let mut scored! = self.episodes·values()
+            |phi{ep => ep.embedding·is_some()}
+            |tau{ep => {
+                let sim! = ep.embedding·as_ref()·unwrap()·similarity(query_embedding·clone())
+                (sim, ep·clone())
+            }}
+            |collect::<[(f32, Episode)]>()
+
+        scored·sort_by{|a, b| b.0·partial_cmp(a.0) |unwrap_or(std::cmp::Ordering::Equal)}
+        let result! = scored·into_iter() |take(limit) |tau{(_, ep) => ep} |collect()
+        result
+    }
+}
+
+impl Default for EpisodicMemory {
+    fn default() -> EpisodicMemory {
+        EpisodicMemory::new()
+    }
+}
+
+impl Default for EpisodicConfig {
+    fn default() -> EpisodicConfig {
+        EpisodicConfig {
+            max_episodes: 10000,
+            decay_rate: 0.05,
+            archive_threshold: 0.1,
+            recall_bonus: 0.1,
+        }
+    }
+}
+
+// ============================================================================
+// Semantic Memory
+// ============================================================================
+
+/// Graph + vector indexed knowledge base
+///
+/// Characteristics:
+/// - Persistent factual knowledge
+/// - Graph structure for relationships
+/// - Vector embeddings for similarity
+/// - Belief revision support
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SemanticMemory {
+    /// Knowledge nodes
+    nodes: HashMap<MemoryId, SemanticNode>,
+    /// Edges between nodes (subject -> [(predicate, object)])
+    edges: HashMap<MemoryId, [(str, MemoryId)]>,
+    /// Label index for quick lookup
+    label_index: HashMap<str, [MemoryId]>,
+    /// Configuration
+    config: SemanticConfig,
+}
+
+/// A semantic knowledge node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SemanticNode {
+    id: MemoryId,
+    /// Primary label/name
+    label: str,
+    /// Node type
+    node_type: SemanticNodeType,
+    /// Factual content
+    content: str,
+    /// Epistemic confidence
+    confidence: ConfidenceDistribution,
+    /// Provenance
+    provenance: Provenance,
+    /// Embedding for similarity search
+    embedding: Option<Embedding>,
+    /// Last updated
+    updated_at: DateTime<Utc>,
+    /// Version for belief revision
+    version: u32,
+    /// Previous versions (for revision history)
+    history: [SemanticNodeVersion],
+}
+
+/// Historical version of a semantic node
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SemanticNodeVersion {
+    version: u32,
+    content: str,
+    confidence: ConfidenceDistribution,
+    timestamp: DateTime<Utc>,
+}
+
+/// Types of semantic nodes
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum SemanticNodeType {
+    /// Entity (person, place, thing)
+    Entity,
+    /// Concept or category
+    Concept,
+    /// Fact or assertion
+    Fact,
+    /// Relationship description
+    Relationship,
+    /// Preference or value
+    Preference,
+    /// Definition
+    Definition,
+}
+
+/// Configuration for semantic memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SemanticConfig {
+    /// Maximum nodes
+    max_nodes: usize = 100000,
+    /// Keep revision history
+    enable_history: bool = true,
+    /// Maximum history versions per node
+    max_history: usize = 10,
+}
+
+impl SemanticMemory {
+    fn new() -> SemanticMemory {
+        SemanticMemory {
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
+            label_index: HashMap::new(),
+            config: SemanticConfig::default(),
+        }
+    }
+
+    /// Learns a new fact
+    fn learn(mut self, label: str, content: str, epistemic: Epistemic) -> MemoryId {
+        let id! = MemoryId::new()
+        let now! = Utc::now()
+
+        let node = SemanticNode {
+            id: id,
+            label: label·to_string(),
+            node_type: SemanticNodeType::Fact,
+            content: content·to_string(),
+            confidence: ConfidenceDistribution::certain(epistemic),
+            provenance: Provenance::user_input(),
+            embedding: None,
+            updated_at: now,
+            version: 1,
+            history: [],
+        }
+
+        self.nodes·insert(id, node)
+        self.label_index
+            ·entry(label·to_string())
+            ·or_insert_with(Vec::new)
+            ·push(id)
+
+        id
+    }
+
+    /// Creates a relationship between nodes
+    fn relate(mut self, subject: MemoryId, predicate: str, object: MemoryId) {
+        self.edges
+            ·entry(subject)
+            ·or_insert_with(Vec::new)
+            ·push((predicate·to_string(), object))
+    }
+
+    /// Revises a belief (updates with history)
+    fn revise(mut self, id: MemoryId, new_content: str, new_confidence: ConfidenceDistribution) -> bool {
+        if let Some(node) = self.nodes·get_mut(id) {
+            // Save current version to history
+            if self.config.enable_history {
+                let historical = SemanticNodeVersion {
+                    version: node.version,
+                    content: node.content·clone(),
+                    confidence: node.confidence·clone(),
+                    timestamp: node.updated_at,
+                }
+                node.history·push(historical)
+
+                // Trim history if needed
+                while node.history·len() > self.config.max_history {
+                    node.history·remove(0)
+                }
+            }
+
+            // Update current
+            node.content = new_content·to_string()
+            node.confidence = new_confidence
+            node.version += 1
+            node.updated_at = Utc::now()
+
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Retrieves by label
+    fn get_by_label(self, label: str) -> [SemanticNode] {
+        let nodes? = self.label_index
+            ·get(label)
+            ·map{|ids| ids |filter_map{id => self.nodes·get(id)·cloned()} |collect()}
+            |unwrap_or_default()
+        nodes
+    }
+
+    /// Graph traversal from a starting node
+    fn traverse(self, start: MemoryId, predicate: Option<str>, depth: usize) -> [SemanticNode] {
+        let mut visited: std::collections::HashSet<MemoryId> = std::collections::HashSet::new()
+        let mut result: [SemanticNode] = []
+        let mut queue: [(MemoryId, usize)] = [(start, 0)]
+
+        while let Some((current, current_depth)) = queue·pop() {
+            if current_depth > depth ∨ visited·contains(current) {
+                continue
+            }
+            visited·insert(current)
+
+            if let Some(node) = self.nodes·get(current) {
+                result·push(node·clone())
+            }
+
+            if let Some(edges) = self.edges·get(current) {
+                for (pred, target) in edges {
+                    let matches! = predicate·as_ref()
+                        |tau{p => p == pred}
+                        |unwrap_or(true)
+
+                    if matches {
+                        queue·push((*target, current_depth + 1))
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Semantic similarity search
+    fn similarity_search(self, query_embedding: Embedding, limit: usize, min_confidence: f32) -> [SemanticNode] {
+        let mut scored! = self.nodes·values()
+            |phi{node => {
+                node.embedding·is_some()
+                ∧ node.confidence·effective_confidence() >= min_confidence
+            }}
+            |tau{node => {
+                let sim! = node.embedding·as_ref()·unwrap()·similarity(query_embedding·clone())
+                (sim, node·clone())
+            }}
+            |collect::<[(f32, SemanticNode)]>()
+
+        scored·sort_by{|a, b| b.0·partial_cmp(a.0) |unwrap_or(std::cmp::Ordering::Equal)}
+        let result! = scored·into_iter() |take(limit) |tau{(_, node) => node} |collect()
+        result
+    }
+}
+
+impl Default for SemanticMemory {
+    fn default() -> SemanticMemory {
+        SemanticMemory::new()
+    }
+}
+
+impl Default for SemanticConfig {
+    fn default() -> SemanticConfig {
+        SemanticConfig {
+            max_nodes: 100000,
+            enable_history: true,
+            max_history: 10,
+        }
+    }
+}
+
+// ============================================================================
+// Procedural Memory
+// ============================================================================
+
+/// Pattern-triggered skills and behaviors
+///
+/// Characteristics:
+/// - Triggered by situation patterns
+/// - Success-weighted (learn from outcomes)
+/// - Refineable through practice
+/// - Composable into complex behaviors
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProceduralMemory {
+    /// Skills indexed by ID
+    skills: HashMap<MemoryId, Skill>,
+    /// Pattern index for quick matching
+    pattern_index: HashMap<str, [MemoryId]>,
+    /// Configuration
+    config: ProceduralConfig,
+}
+
+/// A learned skill or procedure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Skill {
+    id: MemoryId,
+    /// Skill name
+    name: str,
+    /// Description of what this skill does
+    description: str,
+    /// Trigger patterns (when to apply this skill)
+    triggers: [SkillTrigger],
+    /// Steps to execute
+    steps: [SkillStep],
+    /// Success rate (0.0 - 1.0)
+    success_rate: f32,
+    /// Number of times executed
+    execution_count: u32,
+    /// Number of successful executions
+    success_count: u32,
+    /// Confidence in this skill
+    confidence: ConfidenceDistribution,
+    /// Last executed
+    last_executed: Option<DateTime<Utc>>,
+    /// Prerequisites (other skills needed)
+    prerequisites: [MemoryId],
+}
+
+/// Pattern that triggers a skill
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SkillTrigger {
+    /// Pattern type
+    trigger_type: TriggerType,
+    /// Pattern to match
+    pattern: str,
+    /// Minimum confidence to trigger
+    min_confidence: f32,
+}
+
+/// Types of skill triggers
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum TriggerType {
+    /// Keyword match
+    Keyword,
+    /// Regex pattern
+    Regex,
+    /// Intent classification
+    Intent,
+    /// Context condition
+    Context,
+    /// Explicit invocation
+    Explicit,
+}
+
+/// A step in a skill procedure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SkillStep {
+    /// Step order
+    order: u32,
+    /// Action to take
+    action: str,
+    /// Expected outcome
+    expected_outcome: Option<str>,
+    /// Fallback if step fails
+    fallback: Option<str>,
+}
+
+/// Configuration for procedural memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProceduralConfig {
+    /// Maximum skills to store
+    max_skills: usize = 1000,
+    /// Minimum success rate before deprecation
+    min_success_rate: f32 = 0.3,
+    /// Learning rate for success updates
+    learning_rate: f32 = 0.1,
+}
+
+impl ProceduralMemory {
+    fn new() -> ProceduralMemory {
+        ProceduralMemory {
+            skills: HashMap::new(),
+            pattern_index: HashMap::new(),
+            config: ProceduralConfig::default(),
+        }
+    }
+
+    /// Registers a new skill
+    fn register(mut self, name: str, description: str, triggers: [SkillTrigger], steps: [SkillStep]) -> MemoryId {
+        let id! = MemoryId::new()
+
+        let skill = Skill {
+            id: id,
+            name: name·to_string(),
+            description: description·to_string(),
+            triggers: triggers·clone(),
+            steps: steps,
+            success_rate: 0.5,  // Start neutral
+            execution_count: 0,
+            success_count: 0,
+            confidence: ConfidenceDistribution::with_confidence(Epistemic::Inferred, 0.5),
+            last_executed: None,
+            prerequisites: [],
+        }
+
+        // Index triggers
+        for trigger in triggers {
+            self.pattern_index
+                ·entry(trigger.pattern·clone())
+                ·or_insert_with(Vec::new)
+                ·push(id)
+        }
+
+        self.skills·insert(id, skill)
+        id
+    }
+
+    /// Finds skills matching a situation
+    fn match_situation(self, context: str) -> [Skill] {
+        let context_lower! = context·to_lowercase()
+
+        let skills! = self.skills·values()
+            |phi{skill => {
+                skill.triggers·iter() |any{trigger => {
+                    trigger.trigger_type |match {
+                        TriggerType::Keyword => context_lower·contains(trigger.pattern·to_lowercase()·as_str()),
+                        TriggerType::Explicit => false,  // Only explicit invocation
+                        _ => false,  // TODO: Implement other matchers
+                    }
+                }}
+            }}
+            |cloned()
+            |collect()
+        skills
+    }
+
+    /// Records skill execution outcome
+    fn record_outcome(mut self, id: MemoryId, success: bool) {
+        if let Some(skill) = self.skills·get_mut(id) {
+            skill.execution_count += 1
+            if success {
+                skill.success_count += 1
+            }
+
+            // Update success rate with exponential moving average
+            let outcome! = if success { 1.0 } else { 0.0 }
+            skill.success_rate = skill.success_rate * (1.0 - self.config.learning_rate)
+                + outcome * self.config.learning_rate
+
+            skill.last_executed = Some(Utc::now())
+
+            // Update confidence based on execution count
+            let sample_confidence! = (skill.execution_count as f32 / 10.0)·min(1.0)
+            skill.confidence = ConfidenceDistribution::with_confidence(
+                Epistemic::Inferred,
+                sample_confidence * 0.5 + skill.success_rate * 0.5,
+            )
+        }
+    }
+
+    /// Gets best skill for a situation
+    fn best_match(self, context: str) -> Option<Skill> {
+        let matches! = self·match_situation(context)
+        let best? = matches·into_iter()
+            ·max_by{|a, b| {
+                let score_a! = a.success_rate * a.confidence·effective_confidence()
+                let score_b! = b.success_rate * b.confidence·effective_confidence()
+                score_a·partial_cmp(score_b) |unwrap_or(std::cmp::Ordering::Equal)
+            }}
+        best
+    }
+
+    /// Refines a skill based on feedback
+    fn refine(mut self, id: MemoryId, new_steps: [SkillStep]) -> bool {
+        if let Some(skill) = self.skills·get_mut(id) {
+            skill.steps = new_steps
+            skill.confidence = skill.confidence·decay(0.1)  // Slight confidence drop on change
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Default for ProceduralMemory {
+    fn default() -> ProceduralMemory {
+        ProceduralMemory::new()
+    }
+}
+
+impl Default for ProceduralConfig {
+    fn default() -> ProceduralConfig {
+        ProceduralConfig {
+            max_skills: 1000,
+            min_success_rate: 0.3,
+            learning_rate: 0.1,
+        }
+    }
+}
+
+// ============================================================================
+// Unified Engram Memory
+// ============================================================================
+
+/// Unified cognitive memory system combining all four tiers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Engram {
+    /// Owner/agent identifier
+    agent_id: str,
+    /// Working memory (current context)
+    instant: InstantMemory,
+    /// Experience memory
+    episodic: EpisodicMemory,
+    /// Knowledge memory
+    semantic: SemanticMemory,
+    /// Skill memory
+    procedural: ProceduralMemory,
+    /// Global configuration
+    config: EngramConfig,
+    /// Statistics
+    stats: EngramStats,
+}
+
+/// Configuration for the unified Engram system
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EngramConfig {
+    /// Token budget for instant memory
+    instant_token_budget: usize = 8192,
+    /// Enable cross-memory synthesis
+    enable_synthesis: bool = true,
+    /// Enable automatic consolidation
+    enable_consolidation: bool = true,
+}
+
+/// Statistics for monitoring
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct EngramStats {
+    /// Total memories stored
+    total_memories: u64 = 0,
+    /// Total recalls performed
+    total_recalls: u64 = 0,
+    /// Consolidations performed
+    consolidations: u64 = 0,
+    /// Sync operations
+    syncs: u64 = 0,
+}
+
+impl Engram {
+    /// Creates a new Engram for an agent
+    fn new(agent_id: str) -> Engram {
+        Engram {
+            agent_id: agent_id·to_string(),
+            instant: InstantMemory::default(),
+            episodic: EpisodicMemory::new(),
+            semantic: SemanticMemory::new(),
+            procedural: ProceduralMemory::new(),
+            config: EngramConfig::default(),
+            stats: EngramStats::default(),
+        }
+    }
+
+    /// Creates with custom configuration
+    fn with_config(agent_id: str, config: EngramConfig) -> Engram {
+        let mut engram = Engram::new(agent_id)
+        engram.instant = InstantMemory::new(config.instant_token_budget)
+        engram.config = config
+        engram
+    }
+
+    /// Quick access to learn a fact
+    fn learn(mut self, label: str, content: str) -> MemoryId {
+        self.stats.total_memories += 1
+        self.semantic·learn(label, content, Epistemic::Reported)
+    }
+
+    /// Quick access to record an experience
+    fn experience(mut self, content: str, context: str) -> MemoryId {
+        self.stats.total_memories += 1
+        self.episodic·experience(content, context)
+    }
+
+    /// Adds to working memory
+    fn focus(mut self, content: str, item_type: InstantItemType, tokens: usize) -> MemoryId {
+        self.instant·add(content, item_type, tokens)
+    }
+
+    /// Registers a skill
+    fn skill(mut self, name: str, description: str, triggers: [SkillTrigger], steps: [SkillStep]) -> MemoryId {
+        self.stats.total_memories += 1
+        self.procedural·register(name, description, triggers, steps)
+    }
+
+    /// Returns the current context for LLM
+    fn context(self) -> str {
+        self.instant·to_context()
+    }
+
+    /// Returns available context tokens
+    fn available_tokens(self) -> usize {
+        self.instant·tokens_available()
+    }
+}
+
+impl Default for EngramConfig {
+    fn default() -> EngramConfig {
+        EngramConfig {
+            instant_token_budget: 8192,
+            enable_synthesis: true,
+            enable_consolidation: true,
+        }
+    }
+}
+
+impl Default for EngramStats {
+    fn default() -> EngramStats {
+        EngramStats {
+            total_memories: 0,
+            total_recalls: 0,
+            consolidations: 0,
+            syncs: 0,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_instant_memory_budget() {
+        let mut instant = InstantMemory::new(100)
+
+        instant·add("First message", InstantItemType::UserMessage, 30)
+        instant·add("Second message", InstantItemType::UserMessage, 30)
+        instant·add("Third message", InstantItemType::UserMessage, 30)
+
+        assert!(instant·tokens_used() <= 100)
+    }
+
+    #[test]
+    fn test_episodic_memory() {
+        let mut episodic = EpisodicMemory::new()
+
+        let id = episodic·experience("User asked about weather", "chat session")
+        let recent = episodic·recent(5)
+
+        assert!(!recent·is_empty())
+    }
+
+    #[test]
+    fn test_semantic_memory_revision() {
+        let mut semantic = SemanticMemory::new()
+
+        let id = semantic·learn("capital_france", "Paris is the capital of France", Epistemic::Reported)
+
+        let updated = semantic·revise(
+            id,
+            "Paris is the capital of France and largest city",
+            ConfidenceDistribution::certain(Epistemic::Observed),
+        )
+
+        assert!(updated)
+
+        let nodes = semantic·get_by_label("capital_france")
+        assert_eq!(nodes[0].version, 2)
+    }
+
+    #[test]
+    fn test_procedural_memory_matching() {
+        let mut procedural = ProceduralMemory::new()
+
+        let triggers = [SkillTrigger {
+            trigger_type: TriggerType::Keyword,
+            pattern: "weather"·to_string(),
+            min_confidence: 0.5,
+        }]
+
+        let steps = [SkillStep {
+            order: 1,
+            action: "fetch weather API"·to_string(),
+            expected_outcome: Some("weather data"·to_string()),
+            fallback: None,
+        }]
+
+        procedural·register("get_weather", "Fetches current weather", triggers, steps)
+
+        let matches = procedural·match_situation("What's the weather like today?")
+        assert!(!matches·is_empty())
+    }
+
+    #[test]
+    fn test_engram_unified() {
+        let mut engram = Engram::new("test-agent")
+
+        engram·learn("test_fact", "This is a test fact")
+        engram·experience("Test experience occurred", "test context")
+        engram·focus("Test context item", InstantItemType::UserMessage, 10)
+
+        assert!(engram.stats.total_memories >= 2)
+        assert!(engram·available_tokens() > 0)
+    }
+}

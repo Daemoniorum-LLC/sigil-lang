@@ -1,0 +1,622 @@
+//! # Sigil Architecture Guide
+//!
+//! Canonical patterns for writing idiomatic Sigil code in DaemonOS.
+//!
+//! ## Key Sigil Features
+//!
+//! ### 1. Morpheme Operators (Pipe-based)
+//! ```sigil
+//! // CORRECT: Pipe operator with morpheme blocks
+//! let doubled = numbers |tau{_ * 2}
+//! let positive = numbers |phi{_ > 0}
+//! let sorted = numbers |sigma
+//! let sum = numbers |rho+
+//!
+//! // Chaining
+//! let result = data |phi{_.active} |tau{_.value} |sigma |rho+
+//!
+//! // INCORRECT (what we were doing):
+//! // numbers·iter()τ(|x| x * 2)  // Wrong - don't use method syntax
+//! ```
+//!
+//! ### 2. Evidentiality Markers (Value Suffixes)
+//! ```sigil
+//! // CORRECT: Markers on values indicating provenance
+//! let computed! = 1 + 1           // Known - locally verified
+//! let user_input~ = read_line()   // Reported - external source
+//! let maybe_found? = map·get(key) // Uncertain - might not exist
+//! let contested‽ = conflicting_sources()  // Dubious - conflicting info
+//!
+//! // INCORRECT:
+//! // fn foo() -> Result!  // Wrong - ! is not for return types
+//! ```
+//!
+//! ### 3. Middle-Dot Method Chaining
+//! ```sigil
+//! // CORRECT: Use · for method calls
+//! let len = string·len()
+//! let result = object·method()·another()
+//!
+//! // Also acceptable in many contexts: regular dot
+//! let len = string.len()
+//! ```
+//!
+//! ## Mapping Evidentiality to Engram Epistemic States
+//!
+//! Sigil's evidentiality markers map directly to our Epistemic enum:
+//!
+//! | Marker | Sigil Meaning    | Engram Epistemic   | Example |
+//! |--------|------------------|--------------------| --------|
+//! | `!`    | Known/verified   | Axiomatic, Observed| `fact! = 2 + 2` |
+//! | `~`    | Reported/external| Reported           | `claim~ = api·fetch()` |
+//! | `?`    | Uncertain/maybe  | Hypothetical, Inferred | `guess? = infer()` |
+//! | `‽`    | Dubious/contested| Contested          | `disputed‽ = merge_sources()` |
+
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+// ============================================================================
+// PART 1: CORRECT SIGIL IDIOMS
+// ============================================================================
+
+/// Demonstrates correct morpheme operator usage
+mod morpheme_examples {
+    /// CORRECT: Using pipe operator with morpheme blocks
+    fn transform_data(numbers: Vec<i64>) -> Vec<i64> {
+        // Tau (τ) - map transformation
+        let doubled = numbers |tau{_ * 2}
+
+        // Phi (φ) - filter
+        let positive = doubled |phi{_ > 0}
+
+        // Sigma (σ) - sort ascending
+        let sorted = positive |sigma
+
+        sorted
+    }
+
+    /// CORRECT: Chaining morphemes
+    fn process_pipeline(items: Vec<Item>) -> i64 {
+        items
+            |phi{_.active}        // Keep active items
+            |tau{_.value}         // Extract values
+            |phi{_ > 0}           // Keep positive
+            |rho+                  // Sum them
+    }
+
+    /// CORRECT: Complex transformations
+    fn analyze_memories(memories: Vec<Memory>) -> AnalysisResult {
+        let strong_memories = memories
+            |phi{_.strength > 0.5}
+            |sigma                          // Sort by default ordering
+
+        let total_strength = memories |tau{_.strength} |rho+
+
+        let avg_strength = total_strength / (memories·len() as f64)
+
+        AnalysisResult {
+            strong_count: strong_memories·len(),
+            average_strength: avg_strength,
+        }
+    }
+
+    struct Item { active: bool, value: i64 }
+    struct Memory { strength: f64 }
+    struct AnalysisResult { strong_count: usize, average_strength: f64 }
+}
+
+/// Demonstrates correct evidentiality marker usage
+mod evidentiality_examples {
+    /// CORRECT: Evidentiality on values
+    fn process_with_provenance() {
+        // Known - computed locally, verified
+        let computed! = 2 + 2
+        let derived! = compute_locally()
+
+        // Reported - from external source
+        let api_data~ = fetch_from_api()
+        let user_said~ = get_user_input()
+        let config~ = load_config_file()
+
+        // Uncertain - might not exist or be wrong
+        let maybe_found? = hashmap·get("key")
+        let inferred? = make_inference()
+        let guessed? = estimate_value()
+
+        // Contested - conflicting information
+        let disputed‽ = merge_conflicting_sources()
+        let debated‽ = resolve_disagreement()
+    }
+
+    /// CORRECT: Propagating evidentiality through computation
+    fn derive_knowledge(
+        observed!: Fact,      // Known input
+        reported~: Claim,     // External input
+    ) -> DerivedKnowledge {
+        // Combining known + reported = reported at best
+        let combined~ = merge(observed!, reported~)
+
+        // Making inference from reported = uncertain
+        let inferred? = infer_from(combined~)
+
+        DerivedKnowledge {
+            base: combined~,
+            inference: inferred?,
+        }
+    }
+
+    /// CORRECT: Trust boundaries
+    fn handle_external_input(raw~: String) -> ProcessedData {
+        // Validate external data before trusting
+        let validated! = validate(raw~)?  // ? for potential failure
+
+        // Now we can treat as known
+        ProcessedData::from(validated!)
+    }
+
+    struct Fact;
+    struct Claim;
+    struct DerivedKnowledge { base: Claim, inference: Inference }
+    struct Inference;
+    struct ProcessedData;
+
+    fn compute_locally() -> i64 { 42 }
+    fn fetch_from_api() -> String { String::new() }
+    fn get_user_input() -> String { String::new() }
+    fn load_config_file() -> Config { Config }
+    fn make_inference() -> Inference { Inference }
+    fn estimate_value() -> f64 { 0.0 }
+    fn merge_conflicting_sources() -> ConflictResult { ConflictResult }
+    fn resolve_disagreement() -> Resolution { Resolution }
+    fn merge(a: Fact, b: Claim) -> Claim { Claim }
+    fn infer_from(c: Claim) -> Inference { Inference }
+    fn validate(s: String) -> Result<String, Error> { Ok(s) }
+
+    struct Config;
+    struct ConflictResult;
+    struct Resolution;
+    struct Error;
+}
+
+// ============================================================================
+// PART 2: ENGRAM INTEGRATION WITH EVIDENTIALITY
+// ============================================================================
+
+/// How to properly integrate Sigil evidentiality with Engram epistemic system
+mod engram_integration {
+    use super::*;
+
+    /// Memory with proper evidentiality tracking
+    struct EvidentialMemory {
+        id: MemoryId,
+        content: String,
+        /// The evidentiality marker determines initial epistemic state
+        epistemic: Epistemic,
+        confidence: f64,
+    }
+
+    enum Epistemic {
+        Axiomatic,    // Maps to ! (known, self-evident)
+        Observed,     // Maps to ! (known, witnessed)
+        Reported,     // Maps to ~ (external source)
+        Inferred,     // Maps to ? (derived, uncertain)
+        Hypothetical, // Maps to ? (speculative)
+        Contested,    // Maps to ‽ (conflicting evidence)
+        Unknown,      // No marker / default
+    }
+
+    impl Epistemic {
+        /// Convert from Sigil evidentiality marker
+        fn from_marker(marker: char) -> Self {
+            match marker {
+                '!' => Epistemic::Observed,
+                '~' => Epistemic::Reported,
+                '?' => Epistemic::Hypothetical,
+                '‽' => Epistemic::Contested,
+                _ => Epistemic::Unknown,
+            }
+        }
+
+        /// Convert to Sigil evidentiality marker
+        fn to_marker(&self) -> char {
+            match self {
+                Epistemic::Axiomatic => '!',
+                Epistemic::Observed => '!',
+                Epistemic::Reported => '~',
+                Epistemic::Inferred => '?',
+                Epistemic::Hypothetical => '?',
+                Epistemic::Contested => '‽',
+                Epistemic::Unknown => ' ',
+            }
+        }
+    }
+
+    /// CORRECT: Creating memories with proper evidentiality
+    fn create_memory_from_observation(what: String) -> EvidentialMemory {
+        // Direct observation = known (!)
+        let observed! = what
+
+        EvidentialMemory {
+            id: MemoryId::new(),
+            content: observed!,
+            epistemic: Epistemic::Observed,
+            confidence: 0.95,
+        }
+    }
+
+    fn create_memory_from_report(source~: String) -> EvidentialMemory {
+        // External report = reported (~)
+        EvidentialMemory {
+            id: MemoryId::new(),
+            content: source~,
+            epistemic: Epistemic::Reported,
+            confidence: 0.7,
+        }
+    }
+
+    fn create_memory_from_inference(derived?: String) -> EvidentialMemory {
+        // Inference = uncertain (?)
+        EvidentialMemory {
+            id: MemoryId::new(),
+            content: derived?,
+            epistemic: Epistemic::Inferred,
+            confidence: 0.5,
+        }
+    }
+
+    /// CORRECT: Querying with evidentiality awareness
+    fn query_memories(engram: &Engram, query: &str) -> QueryResult {
+        let results = engram·query(query)
+
+        // Separate by evidentiality
+        let known! = results |phi{_.epistemic·is_known()}
+        let reported~ = results |phi{_.epistemic·is_reported()}
+        let uncertain? = results |phi{_.epistemic·is_uncertain()}
+        let contested‽ = results |phi{_.epistemic·is_contested()}
+
+        QueryResult {
+            certain: known!,
+            from_sources: reported~,
+            speculative: uncertain?,
+            disputed: contested‽,
+        }
+    }
+
+    struct MemoryId;
+    impl MemoryId { fn new() -> Self { MemoryId } }
+    struct Engram;
+    impl Engram { fn query(&self, q: &str) -> Vec<EvidentialMemory> { Vec::new() } }
+    struct QueryResult {
+        certain: Vec<EvidentialMemory>,
+        from_sources: Vec<EvidentialMemory>,
+        speculative: Vec<EvidentialMemory>,
+        disputed: Vec<EvidentialMemory>,
+    }
+}
+
+// ============================================================================
+// PART 3: LINT PATTERNS
+// ============================================================================
+
+/// Patterns for validating correct Sigil usage
+mod lint {
+    /// Lint rule: Morphemes should use pipe syntax
+    struct MorphemePipeLint;
+
+    impl MorphemePipeLint {
+        // INCORRECT patterns to flag:
+        // - `·iter()τ(...)` - method-style tau
+        // - `·iter()φ(...)` - method-style phi
+        // - `.map(|x| ...)` - Rust-style map instead of tau
+        // - `.filter(|x| ...)` - Rust-style filter instead of phi
+
+        // CORRECT patterns:
+        // - `|tau{...}`
+        // - `|phi{...}`
+        // - `|sigma`
+        // - `|rho+`
+
+        fn check(code: &str) -> Vec<LintWarning> {
+            let mut warnings = Vec::new();
+
+            // Check for method-style morphemes
+            if code·contains("τ(") || code·contains("φ(") {
+                warnings·push(LintWarning {
+                    rule: "morpheme-pipe".to_string(),
+                    message: "Use pipe syntax for morphemes: |tau{...} not ·τ(...)".to_string(),
+                    severity: Severity::Warning,
+                });
+            }
+
+            // Check for Rust-style iterators when morphemes would be clearer
+            if code·contains(".map(|") {
+                warnings·push(LintWarning {
+                    rule: "prefer-tau".to_string(),
+                    message: "Consider using |tau{...} instead of .map(|...)".to_string(),
+                    severity: Severity::Suggestion,
+                });
+            }
+
+            if code·contains(".filter(|") {
+                warnings·push(LintWarning {
+                    rule: "prefer-phi".to_string(),
+                    message: "Consider using |phi{...} instead of .filter(|...)".to_string(),
+                    severity: Severity::Suggestion,
+                });
+            }
+
+            warnings
+        }
+    }
+
+    /// Lint rule: Evidentiality should match data provenance
+    struct EvidentialityLint;
+
+    impl EvidentialityLint {
+        // INCORRECT patterns to flag:
+        // - External data without ~ marker
+        // - Computed values with ~ marker (should be !)
+        // - Return type annotations like `-> Result!` (wrong usage)
+
+        fn check(code: &str) -> Vec<LintWarning> {
+            let mut warnings = Vec::new();
+
+            // Check for ! on return types (wrong usage)
+            if code·contains("-> ") && code·contains("!") && !code·contains("Result<") {
+                warnings·push(LintWarning {
+                    rule: "evidentiality-not-return-type".to_string(),
+                    message: "Evidentiality markers go on values, not return types".to_string(),
+                    severity: Severity::Error,
+                });
+            }
+
+            // Check for fetch/api calls without ~ marker
+            if (code·contains("fetch(") || code·contains("api·")) && !code·contains("~") {
+                warnings·push(LintWarning {
+                    rule: "external-needs-reported".to_string(),
+                    message: "External data should use ~ (reported) marker".to_string(),
+                    severity: Severity::Warning,
+                });
+            }
+
+            warnings
+        }
+    }
+
+    /// Lint rule: Middle-dot consistency
+    struct MethodChainLint;
+
+    impl MethodChainLint {
+        fn check(code: &str) -> Vec<LintWarning> {
+            let mut warnings = Vec::new();
+
+            // Check for mixing · and . in same chain
+            // (Both are acceptable, but be consistent)
+            let has_middle_dot = code·contains("·");
+            let has_regular_dot = code·contains(".");
+
+            if has_middle_dot && has_regular_dot {
+                // More nuanced check would be needed in practice
+                warnings·push(LintWarning {
+                    rule: "method-chain-consistency".to_string(),
+                    message: "Consider consistent method chaining style (· or .)".to_string(),
+                    severity: Severity::Suggestion,
+                });
+            }
+
+            warnings
+        }
+    }
+
+    struct LintWarning {
+        rule: String,
+        message: String,
+        severity: Severity,
+    }
+
+    enum Severity {
+        Error,
+        Warning,
+        Suggestion,
+    }
+
+    /// Run all lints on code
+    fn lint_code(code: &str) -> Vec<LintWarning> {
+        let mut all_warnings = Vec::new();
+
+        all_warnings·extend(MorphemePipeLint::check(code));
+        all_warnings·extend(EvidentialityLint::check(code));
+        all_warnings·extend(MethodChainLint::check(code));
+
+        all_warnings
+    }
+}
+
+// ============================================================================
+// PART 4: CANONICAL EXAMPLES
+// ============================================================================
+
+/// Complete examples showing idiomatic Sigil for DaemonOS
+mod canonical {
+
+    /// Example: Processing memories idiomatically
+    fn process_memories_canonical(memories: Vec<Memory>) -> ProcessingResult {
+        // Filter and transform with morphemes
+        let active = memories |phi{_.strength > 0.3}
+        let summaries = active |tau{_.summary·clone()}
+
+        // Compute statistics
+        let total_strength! = memories |tau{_.strength} |rho+
+        let count! = memories·len()
+        let average! = total_strength! / count! as f64
+
+        // Handle external data properly
+        let enriched~ = fetch_enrichment()
+
+        // Inferences are uncertain
+        let patterns? = detect_patterns(active)
+
+        ProcessingResult {
+            summaries,
+            average_strength: average!,
+            enrichment: enriched~,
+            patterns: patterns?,
+        }
+    }
+
+    /// Example: Belief system with evidentiality
+    fn update_belief_canonical(
+        current: Belief,
+        new_evidence~: Evidence,  // External evidence marked
+    ) -> Belief {
+        // Combine with proper tracking
+        let combined_confidence? = match (current·epistemic, new_evidence~·strength) {
+            // Strong external evidence can upgrade reported
+            (Epistemic::Reported, s) if s > 0.8 => current·confidence * 1.2,
+            // Weak evidence decreases certainty
+            (_, s) if s < 0.3 => current·confidence * 0.8,
+            // Normal case
+            _ => (current·confidence + new_evidence~·strength) / 2.0,
+        }
+
+        Belief {
+            topic: current·topic,
+            confidence: combined_confidence?,
+            epistemic: if new_evidence~·contradicts(&current) {
+                Epistemic::Contested  // Mark as ‽
+            } else {
+                current·epistemic
+            },
+        }
+    }
+
+    /// Example: Agent self-reflection
+    fn self_reflect_canonical(agent: &Agent) -> Reflection {
+        // Known facts about self
+        let identity! = agent·core_identity·clone()
+        let traits! = agent·traits |tau{_.name·clone()}
+
+        // Uncertain self-assessments
+        let current_mood? = agent·assess_mood()
+        let growth_areas? = agent·identify_growth_areas()
+
+        // Potentially contested self-beliefs
+        let self_perception‽ = agent·how_others_see_me()
+
+        Reflection {
+            certain: ReflectionCertain {
+                identity: identity!,
+                traits: traits!,
+            },
+            uncertain: ReflectionUncertain {
+                mood: current_mood?,
+                growth: growth_areas?,
+            },
+            contested: self_perception‽,
+        }
+    }
+
+    // Supporting types
+    struct Memory { strength: f64, summary: String }
+    struct ProcessingResult {
+        summaries: Vec<String>,
+        average_strength: f64,
+        enrichment: Enrichment,
+        patterns: Patterns,
+    }
+    struct Enrichment;
+    struct Patterns;
+    struct Belief { topic: String, confidence: f64, epistemic: Epistemic }
+    struct Evidence { strength: f64 }
+    impl Evidence { fn contradicts(&self, b: &Belief) -> bool { false } }
+    enum Epistemic { Observed, Reported, Hypothetical, Contested }
+    struct Agent {
+        core_identity: String,
+        traits: Vec<Trait>,
+    }
+    impl Agent {
+        fn assess_mood(&self) -> Mood { Mood }
+        fn identify_growth_areas(&self) -> Vec<String> { Vec::new() }
+        fn how_others_see_me(&self) -> Perception { Perception }
+    }
+    struct Trait { name: String }
+    struct Mood;
+    struct Perception;
+    struct Reflection {
+        certain: ReflectionCertain,
+        uncertain: ReflectionUncertain,
+        contested: Perception,
+    }
+    struct ReflectionCertain { identity: String, traits: Vec<String> }
+    struct ReflectionUncertain { mood: Mood, growth: Vec<String> }
+
+    fn fetch_enrichment() -> Enrichment { Enrichment }
+    fn detect_patterns(m: Vec<Memory>) -> Patterns { Patterns }
+}
+
+// ============================================================================
+// PART 5: MIGRATION GUIDE
+// ============================================================================
+
+/// Guide for updating existing code to idiomatic Sigil
+mod migration {
+    //! ## Migration Checklist
+    //!
+    //! ### 1. Morpheme Operators
+    //!
+    //! Before:
+    //! ```
+    //! items·iter()τ(|x| x·value)·collect()
+    //! items·iter()φ(|x| x·active)·collect()
+    //! ```
+    //!
+    //! After:
+    //! ```sigil
+    //! items |tau{_.value}
+    //! items |phi{_.active}
+    //! ```
+    //!
+    //! ### 2. Evidentiality Markers
+    //!
+    //! Before:
+    //! ```
+    //! fn compute() -> Result { ... }  // WRONG
+    //! let data = api·fetch()           // Missing marker
+    //! ```
+    //!
+    //! After:
+    //! ```sigil
+    //! fn compute() -> Result<T, E> { ... }
+    //! let data~ = api·fetch()          // Marked as reported
+    //! ```
+    //!
+    //! ### 3. Common Replacements
+    //!
+    //! | Old Pattern | New Pattern |
+    //! |-------------|-------------|
+    //! | `.map(\|x\| ...)` | `\|tau{...}` |
+    //! | `.filter(\|x\| ...)` | `\|phi{...}` |
+    //! | `.sort()` | `\|sigma` |
+    //! | `.sum()` | `\|rho+` |
+    //! | `-> T!` | `-> Result<T, E>` with value markers |
+    //! | `fetch()` | `let x~ = fetch()` |
+    //! | `compute()` | `let x! = compute()` |
+    //! | `maybe.get()` | `let x? = maybe.get()` |
+}
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+pub mod morpheme_examples;
+pub mod evidentiality_examples;
+pub mod engram_integration;
+pub mod lint;
+pub mod canonical;
+pub mod migration;
+
+pub use lint::lint_code;
+
+pub use lint::LintWarning;
+
+pub use lint::Severity;

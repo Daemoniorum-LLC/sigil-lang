@@ -1,0 +1,1008 @@
+//! Distributed Sync for Engram
+//!
+//! Implements CRDT-based (Conflict-free Replicated Data Types) synchronization
+//! for multi-agent memory sharing. Supports:
+//!
+//! ## Memory Scopes
+//!
+//! - **Personal**: Single agent instance, no sync needed
+//! - **Shared**: Across instances of same persona
+//! - **Collective**: Cross-agent federation
+//!
+//! ## Conflict Resolution Strategies
+//!
+//! - **LWW (Last-Writer-Wins)**: Timestamp-based resolution
+//! - **CRDT Merge**: Automatic conflict-free merging
+//! - **Manual**: Flag conflicts for human resolution
+//! - **Epistemic**: Prefer higher-confidence values
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+//! │   Agent A       │     │   Agent B       │     │   Agent C       │
+//! │   Engram        │◄───►│   Engram        │◄───►│   Engram        │
+//! └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+//!          │                       │                       │
+//!          └───────────────────────┼───────────────────────┘
+//!                                  │
+//!                       ┌──────────┴──────────┐
+//!                       │   Sync Coordinator  │
+//!                       │   (CRDT Engine)     │
+//!                       └─────────────────────┘
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Utc;
+use uuid::Uuid;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+use super::epistemic::ConfidenceDistribution;
+use super::epistemic::Epistemic;
+use super::tiers::Embedding;
+use super::tiers::Engram;
+use super::tiers::Episode;
+use super::tiers::EpisodicMemory;
+use super::tiers::MemoryId;
+use super::tiers::SemanticMemory;
+use super::tiers::SemanticNode;
+use super::tiers::ProceduralMemory;
+use super::tiers::Skill;
+
+// ============================================================================
+// Identity & Scope
+// ============================================================================
+
+/// Unique identifier for an agent instance
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct AgentInstanceId(Uuid)
+
+impl AgentInstanceId {
+    fn new() -> AgentInstanceId {
+        AgentInstanceId(Uuid::new_v4())
+    }
+
+    fn from_uuid(uuid: Uuid) -> AgentInstanceId {
+        AgentInstanceId(uuid)
+    }
+}
+
+impl Default for AgentInstanceId {
+    fn default() -> AgentInstanceId {
+        AgentInstanceId::new()
+    }
+}
+
+/// Memory sharing scope
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum MemoryScope {
+    /// Private to single agent instance
+    Personal,
+    /// Shared across instances of same persona
+    Shared { persona_id: str },
+    /// Shared across different agents
+    Collective { federation_id: str },
+}
+
+impl MemoryScope {
+    fn personal() -> MemoryScope {
+        MemoryScope::Personal
+    }
+
+    fn shared(persona_id: str) -> MemoryScope {
+        MemoryScope::Shared { persona_id: persona_id·to_string() }
+    }
+
+    fn collective(federation_id: str) -> MemoryScope {
+        MemoryScope::Collective { federation_id: federation_id·to_string() }
+    }
+
+    fn is_syncable(self) -> bool {
+        let syncable! = self |match {
+            MemoryScope::Personal => false,
+            _ => true,
+        }
+        syncable
+    }
+}
+
+impl Default for MemoryScope {
+    fn default() -> MemoryScope {
+        MemoryScope::Personal
+    }
+}
+
+// ============================================================================
+// Vector Clocks
+// ============================================================================
+
+/// Vector clock for causality tracking
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct VectorClock {
+    /// Clock values per agent
+    clocks: HashMap<AgentInstanceId, u64>,
+}
+
+impl VectorClock {
+    fn new() -> VectorClock {
+        VectorClock {
+            clocks: HashMap::new(),
+        }
+    }
+
+    /// Increments clock for an agent
+    fn tick(mut self, agent: AgentInstanceId) {
+        *self.clocks·entry(agent)·or_insert(0) += 1
+    }
+
+    /// Gets clock value for an agent
+    fn get(self, agent: AgentInstanceId) -> u64 {
+        let value! = *self.clocks·get(agent) |unwrap_or(0)
+        value
+    }
+
+    /// Merges with another clock (takes max of each)
+    fn merge(mut self, other: VectorClock) {
+        for (agent, time) in other.clocks {
+            let current = self.clocks·entry(agent)·or_insert(0)
+            *current = (*current)·max(time)
+        }
+    }
+
+    /// Checks if this clock happened-before other
+    fn happened_before(self, other: VectorClock) -> bool {
+        let mut dominated = false
+
+        // Check all our entries
+        for (agent, time) in self.clocks·iter() {
+            let other_time! = other.clocks·get(agent) |unwrap_or(0)
+            if *time > *other_time {
+                return false  // We have newer info
+            }
+            if *time < *other_time {
+                dominated = true
+            }
+        }
+
+        // Check other's entries we don't have
+        for (agent, time) in other.clocks·iter() {
+            if !self.clocks·contains_key(agent) ∧ *time > 0 {
+                dominated = true
+            }
+        }
+
+        dominated
+    }
+
+    /// Checks if clocks are concurrent (neither happened-before)
+    fn concurrent(self, other: VectorClock) -> bool {
+        let concurrent! = !self·happened_before(other·clone()) ∧ !other·happened_before(self·clone())
+        concurrent
+    }
+}
+
+// ============================================================================
+// CRDT Operations
+// ============================================================================
+
+/// An operation on the distributed memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Operation {
+    /// Unique operation ID
+    id: Uuid,
+    /// Agent that created this operation
+    origin: AgentInstanceId,
+    /// Vector clock at time of operation
+    clock: VectorClock,
+    /// Timestamp
+    timestamp: DateTime<Utc>,
+    /// The actual operation
+    op_type: OperationType,
+}
+
+/// Types of operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum OperationType {
+    /// Add a memory
+    Add { memory_id: MemoryId, content: MemoryContent },
+    /// Update a memory
+    Update { memory_id: MemoryId, content: MemoryContent },
+    /// Delete a memory
+    Delete { memory_id: MemoryId },
+    /// Merge memories
+    Merge { source_ids: [MemoryId], target_id: MemoryId },
+}
+
+/// Content of a memory for sync purposes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MemoryContent {
+    /// Content type
+    content_type: ContentType,
+    /// Serialized content
+    data: str,
+    /// Confidence at time of operation
+    confidence: ConfidenceDistribution,
+    /// Embedding if available
+    embedding: Option<Embedding>,
+}
+
+/// Type of memory content
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum ContentType {
+    Episode,
+    SemanticNode,
+    Skill,
+}
+
+impl Operation {
+    fn add(origin: AgentInstanceId, clock: VectorClock, memory_id: MemoryId, content: MemoryContent) -> Operation {
+        Operation {
+            id: Uuid::new_v4(),
+            origin: origin,
+            clock: clock,
+            timestamp: Utc::now(),
+            op_type: OperationType::Add { memory_id, content },
+        }
+    }
+
+    fn update(origin: AgentInstanceId, clock: VectorClock, memory_id: MemoryId, content: MemoryContent) -> Operation {
+        Operation {
+            id: Uuid::new_v4(),
+            origin: origin,
+            clock: clock,
+            timestamp: Utc::now(),
+            op_type: OperationType::Update { memory_id, content },
+        }
+    }
+
+    fn delete(origin: AgentInstanceId, clock: VectorClock, memory_id: MemoryId) -> Operation {
+        Operation {
+            id: Uuid::new_v4(),
+            origin: origin,
+            clock: clock,
+            timestamp: Utc::now(),
+            op_type: OperationType::Delete { memory_id },
+        }
+    }
+}
+
+// ============================================================================
+// Conflict Resolution
+// ============================================================================
+
+/// Strategy for resolving conflicts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum ConflictStrategy {
+    /// Last writer wins (by timestamp)
+    LastWriterWins,
+    /// First writer wins (by timestamp)
+    FirstWriterWins,
+    /// Prefer higher confidence
+    HigherConfidence,
+    /// Prefer higher version number
+    HigherVersion,
+    /// Keep both (create copies)
+    KeepBoth,
+    /// Manual resolution required
+    Manual,
+    /// Custom merge function
+    Custom { merge_fn: str },
+}
+
+impl ConflictStrategy {
+    /// Resolves conflict between two operations
+    fn resolve(self, a: Operation, b: Operation) -> ConflictResolution {
+        let resolution! = self |match {
+            ConflictStrategy::LastWriterWins => {
+                if a.timestamp >= b.timestamp {
+                    ConflictResolution::UseA
+                } else {
+                    ConflictResolution::UseB
+                }
+            },
+            ConflictStrategy::FirstWriterWins => {
+                if a.timestamp <= b.timestamp {
+                    ConflictResolution::UseA
+                } else {
+                    ConflictResolution::UseB
+                }
+            },
+            ConflictStrategy::HigherConfidence => {
+                let conf_a! = ConflictStrategy::get_confidence(a·clone())
+                let conf_b! = ConflictStrategy::get_confidence(b·clone())
+                if conf_a >= conf_b {
+                    ConflictResolution::UseA
+                } else {
+                    ConflictResolution::UseB
+                }
+            },
+            ConflictStrategy::HigherVersion => {
+                // Use clock sum as version proxy
+                let ver_a! = a.clock.clocks·values() |tau{v => *v} |rho+
+                let ver_b! = b.clock.clocks·values() |tau{v => *v} |rho+
+                if ver_a >= ver_b {
+                    ConflictResolution::UseA
+                } else {
+                    ConflictResolution::UseB
+                }
+            },
+            ConflictStrategy::KeepBoth => {
+                ConflictResolution::KeepBoth
+            },
+            ConflictStrategy::Manual => {
+                ConflictResolution::Manual { ops: [a, b] }
+            },
+            ConflictStrategy::Custom { merge_fn: _ } => {
+                // Would invoke custom function
+                ConflictResolution::UseA
+            },
+        }
+        resolution
+    }
+
+    fn get_confidence(op: Operation) -> f32 {
+        let conf! = op.op_type |match {
+            OperationType::Add { content, .. } => content.confidence·effective_confidence(),
+            OperationType::Update { content, .. } => content.confidence·effective_confidence(),
+            _ => 0.0,
+        }
+        conf
+    }
+}
+
+impl Default for ConflictStrategy {
+    fn default() -> ConflictStrategy {
+        ConflictStrategy::LastWriterWins
+    }
+}
+
+/// Result of conflict resolution
+#[derive(Debug, Clone)]
+enum ConflictResolution {
+    /// Use operation A
+    UseA,
+    /// Use operation B
+    UseB,
+    /// Keep both operations
+    KeepBoth,
+    /// Requires manual resolution
+    Manual { ops: [Operation] },
+    /// Merge result
+    Merged { content: MemoryContent },
+}
+
+// ============================================================================
+// Sync State
+// ============================================================================
+
+/// Synchronization state for an Engram
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SyncState {
+    /// This instance's ID
+    instance_id: AgentInstanceId,
+    /// Memory scope
+    scope: MemoryScope,
+    /// Vector clock
+    clock: VectorClock,
+    /// Pending operations (not yet synced)
+    pending_ops: [Operation],
+    /// Applied operation IDs (for deduplication)
+    applied_ops: HashSet<Uuid>,
+    /// Unresolved conflicts
+    conflicts: [Conflict],
+    /// Sync configuration
+    config: SyncConfig,
+    /// Last sync time
+    last_sync: Option<DateTime<Utc>>,
+}
+
+/// A detected conflict
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Conflict {
+    memory_id: MemoryId,
+    operations: [Operation],
+    detected_at: DateTime<Utc>,
+    resolved: bool,
+}
+
+/// Configuration for sync behavior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SyncConfig {
+    /// Conflict resolution strategy
+    strategy: ConflictStrategy,
+    /// Auto-sync interval (seconds)
+    sync_interval_secs: u64 = 60,
+    /// Maximum pending operations before force sync
+    max_pending_ops: usize = 100,
+    /// Enable automatic conflict resolution
+    auto_resolve: bool = true,
+    /// Sync timeout (seconds)
+    sync_timeout_secs: u64 = 30,
+}
+
+impl SyncState {
+    fn new(scope: MemoryScope) -> SyncState {
+        let instance_id! = AgentInstanceId::new()
+        let mut clock = VectorClock::new()
+        clock·tick(instance_id)
+
+        SyncState {
+            instance_id: instance_id,
+            scope: scope,
+            clock: clock,
+            pending_ops: [],
+            applied_ops: HashSet::new(),
+            conflicts: [],
+            config: SyncConfig::default(),
+            last_sync: None,
+        }
+    }
+
+    fn with_config(scope: MemoryScope, config: SyncConfig) -> SyncState {
+        let mut state = SyncState::new(scope)
+        state.config = config
+        state
+    }
+
+    /// Records an add operation
+    fn record_add(mut self, memory_id: MemoryId, content: MemoryContent) {
+        self.clock·tick(self.instance_id)
+        let op = Operation::add(
+            self.instance_id,
+            self.clock·clone(),
+            memory_id,
+            content,
+        )
+        self.pending_ops·push(op)
+    }
+
+    /// Records an update operation
+    fn record_update(mut self, memory_id: MemoryId, content: MemoryContent) {
+        self.clock·tick(self.instance_id)
+        let op = Operation::update(
+            self.instance_id,
+            self.clock·clone(),
+            memory_id,
+            content,
+        )
+        self.pending_ops·push(op)
+    }
+
+    /// Records a delete operation
+    fn record_delete(mut self, memory_id: MemoryId) {
+        self.clock·tick(self.instance_id)
+        let op = Operation::delete(
+            self.instance_id,
+            self.clock·clone(),
+            memory_id,
+        )
+        self.pending_ops·push(op)
+    }
+
+    /// Applies an operation from another instance
+    fn apply_remote(mut self, op: Operation) -> Result<(), SyncError> {
+        // Check for duplicate
+        if self.applied_ops·contains(op.id) {
+            return Ok(())
+        }
+
+        // Check for conflicts
+        let conflicts = self·find_conflicts(op·clone())
+        if !conflicts·is_empty() {
+            if self.config.auto_resolve {
+                for conflict_op in conflicts {
+                    let resolution = self.config.strategy·resolve(op·clone(), conflict_op·clone())
+                    resolution|match {
+                        ConflictResolution::UseA => {
+                            // Apply op
+                        },
+                        ConflictResolution::UseB => {
+                            // Keep existing
+                            return Ok(())
+                        },
+                        ConflictResolution::KeepBoth => {
+                            // Apply both
+                        },
+                        ConflictResolution::Manual { ops } => {
+                            self.conflicts·push(Conflict {
+                                memory_id: self·get_memory_id(op·clone()),
+                                operations: ops,
+                                detected_at: Utc::now(),
+                                resolved: false,
+                            })
+                            return Err(SyncError::ConflictNeedsManualResolution)
+                        },
+                        ConflictResolution::Merged { content: _ } => {
+                            // Apply merged content
+                        },
+                    }
+                }
+            } else {
+                return Err(SyncError::ConflictDetected)
+            }
+        }
+
+        // Update clock
+        self.clock·merge(op.clock·clone())
+
+        // Mark as applied
+        self.applied_ops·insert(op.id)
+
+        Ok(())
+    }
+
+    fn find_conflicts(self, op: Operation) -> [Operation] {
+        let memory_id! = self·get_memory_id(op·clone())
+
+        let conflicts! = self.pending_ops
+            |phi{pending => {
+                let pending_id! = self·get_memory_id(pending·clone())
+                pending_id == memory_id ∧ op.clock·concurrent(pending.clock·clone())
+            }}
+            |cloned()
+            |collect()
+        conflicts
+    }
+
+    fn get_memory_id(self, op: Operation) -> MemoryId {
+        let id! = op.op_type |match {
+            OperationType::Add { memory_id, .. } => memory_id,
+            OperationType::Update { memory_id, .. } => memory_id,
+            OperationType::Delete { memory_id } => memory_id,
+            OperationType::Merge { target_id, .. } => target_id,
+        }
+        id
+    }
+
+    /// Returns pending operations and clears them
+    fn drain_pending(mut self) -> [Operation] {
+        let ops! = self.pending_ops·clone()
+        self.pending_ops·clear()
+        ops
+    }
+
+    /// Returns unresolved conflicts
+    fn unresolved_conflicts(self) -> [Conflict] {
+        let conflicts! = self.conflicts
+            |phi{c => !c.resolved}
+            |cloned()
+            |collect()
+        conflicts
+    }
+
+    /// Marks a conflict as resolved
+    fn resolve_conflict(mut self, memory_id: MemoryId) {
+        for conflict in self.conflicts·iter_mut() {
+            if conflict.memory_id == memory_id {
+                conflict.resolved = true
+            }
+        }
+    }
+}
+
+impl Default for SyncConfig {
+    fn default() -> SyncConfig {
+        SyncConfig {
+            strategy: ConflictStrategy::LastWriterWins,
+            sync_interval_secs: 60,
+            max_pending_ops: 100,
+            auto_resolve: true,
+            sync_timeout_secs: 30,
+        }
+    }
+}
+
+/// Sync errors
+#[derive(Debug, Clone)]
+enum SyncError {
+    /// Network error
+    NetworkError { message: str },
+    /// Conflict detected
+    ConflictDetected,
+    /// Conflict needs manual resolution
+    ConflictNeedsManualResolution,
+    /// Timeout
+    Timeout,
+    /// Invalid operation
+    InvalidOperation { reason: str },
+}
+
+// ============================================================================
+// Sync Coordinator
+// ============================================================================
+
+/// Coordinates synchronization between Engram instances
+struct SyncCoordinator {
+    /// Sync state
+    state: SyncState,
+}
+
+impl SyncCoordinator {
+    fn new(scope: MemoryScope) -> SyncCoordinator {
+        SyncCoordinator {
+            state: SyncState::new(scope),
+        }
+    }
+
+    fn with_config(scope: MemoryScope, config: SyncConfig) -> SyncCoordinator {
+        SyncCoordinator {
+            state: SyncState::with_config(scope, config),
+        }
+    }
+
+    /// Performs sync with a remote instance
+    fn sync(mut self, remote_ops: [Operation]) -> SyncResult {
+        let start = Utc::now()
+        let mut result = SyncResult {
+            started_at: start,
+            completed_at: None,
+            ops_sent: 0,
+            ops_received: 0,
+            conflicts_detected: 0,
+            conflicts_resolved: 0,
+            errors: [],
+        }
+
+        // Apply remote operations
+        for op in remote_ops {
+            result.ops_received += 1
+            self.state·apply_remote(op)|match {
+                Ok(()) => {},
+                Err(SyncError::ConflictNeedsManualResolution) => {
+                    result.conflicts_detected += 1
+                },
+                Err(SyncError::ConflictDetected) => {
+                    result.conflicts_detected += 1
+                },
+                Err(e) => {
+                    result.errors·push("{:?}"·format(e))
+                },
+            }
+        }
+
+        // Get our pending ops to send
+        let pending = self.state·drain_pending()
+        result.ops_sent = pending·len()
+
+        result.completed_at = Some(Utc::now())
+        self.state.last_sync = Some(Utc::now())
+
+        result
+    }
+
+    /// Returns operations to send to remote
+    fn outgoing_ops(self) -> [Operation] {
+        self.state.pending_ops·clone()
+    }
+
+    /// Returns this instance's ID
+    fn instance_id(self) -> AgentInstanceId {
+        self.state.instance_id
+    }
+
+    /// Returns current scope
+    fn scope(self) -> MemoryScope {
+        self.state.scope·clone()
+    }
+}
+
+/// Result of a sync operation
+#[derive(Debug, Clone)]
+struct SyncResult {
+    started_at: DateTime<Utc>,
+    completed_at: Option<DateTime<Utc>>,
+    ops_sent: usize,
+    ops_received: usize,
+    conflicts_detected: usize,
+    conflicts_resolved: usize,
+    errors: [str],
+}
+
+impl SyncResult {
+    fn is_success(self) -> bool {
+        let success! = self.errors·is_empty() ∧ self.conflicts_detected == self.conflicts_resolved
+        success
+    }
+
+    fn duration(self) -> Option<chrono::Duration> {
+        let duration? = self.completed_at |tau{c => c - self.started_at}
+        duration
+    }
+}
+
+// ============================================================================
+// Engram Extensions
+// ============================================================================
+
+impl Engram {
+    /// Initializes sync for this Engram
+    fn init_sync(mut self, scope: MemoryScope) -> SyncCoordinator {
+        SyncCoordinator::new(scope)
+    }
+
+    /// Initializes sync with custom config
+    fn init_sync_with(mut self, scope: MemoryScope, config: SyncConfig) -> SyncCoordinator {
+        SyncCoordinator::with_config(scope, config)
+    }
+
+    /// Performs sync with another Engram (local)
+    fn sync_with(mut self, mut coordinator: SyncCoordinator, mut other: Engram, mut other_coordinator: SyncCoordinator) -> SyncResult {
+        // Exchange operations
+        let our_ops = coordinator·outgoing_ops()
+        let their_ops = other_coordinator·outgoing_ops()
+
+        // Apply their ops to us
+        let our_result = coordinator·sync(their_ops)
+
+        // Apply our ops to them
+        let their_result = other_coordinator·sync(our_ops)
+
+        // Update stats
+        self.stats.syncs += 1
+
+        our_result
+    }
+}
+
+// ============================================================================
+// Federation
+// ============================================================================
+
+/// A federation of agents sharing collective memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Federation {
+    /// Federation ID
+    id: str,
+    /// Member agents
+    members: HashMap<AgentInstanceId, FederationMember>,
+    /// Shared memory scope
+    scope: MemoryScope,
+    /// Federation rules
+    rules: FederationRules,
+}
+
+/// A member of a federation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FederationMember {
+    instance_id: AgentInstanceId,
+    agent_name: str,
+    joined_at: DateTime<Utc>,
+    last_seen: DateTime<Utc>,
+    contribution_count: u64,
+}
+
+/// Rules governing federation behavior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FederationRules {
+    /// Minimum confidence for shared memories
+    min_share_confidence: f32 = 0.7,
+    /// Maximum members
+    max_members: usize = 100,
+    /// Require approval for new members
+    require_approval: bool = true,
+    /// Allowed epistemic statuses for sharing
+    allowed_epistemic: [Epistemic] = [Epistemic::Observed, Epistemic::Reported],
+    /// Conflict strategy for federation
+    conflict_strategy: ConflictStrategy = ConflictStrategy::HigherConfidence,
+}
+
+impl Federation {
+    fn new(id: str) -> Federation {
+        Federation {
+            id: id·to_string(),
+            members: HashMap::new(),
+            scope: MemoryScope::collective(id),
+            rules: FederationRules::default(),
+        }
+    }
+
+    fn with_rules(id: str, rules: FederationRules) -> Federation {
+        let mut fed = Federation::new(id)
+        fed.rules = rules
+        fed
+    }
+
+    /// Adds a member to the federation
+    fn add_member(mut self, instance_id: AgentInstanceId, name: str) -> bool {
+        if self.members·len() >= self.rules.max_members {
+            return false
+        }
+
+        let member = FederationMember {
+            instance_id: instance_id,
+            agent_name: name·to_string(),
+            joined_at: Utc::now(),
+            last_seen: Utc::now(),
+            contribution_count: 0,
+        }
+
+        self.members·insert(instance_id, member)
+        true
+    }
+
+    /// Removes a member from the federation
+    fn remove_member(mut self, instance_id: AgentInstanceId) -> bool {
+        let removed! = self.members·remove(instance_id)·is_some()
+        removed
+    }
+
+    /// Checks if content can be shared based on rules
+    fn can_share(self, content: MemoryContent) -> bool {
+        // Check confidence threshold
+        if content.confidence·effective_confidence() < self.rules.min_share_confidence {
+            return false
+        }
+
+        // Check epistemic status
+        if !self.rules.allowed_epistemic·contains(content.confidence.primary) {
+            return false
+        }
+
+        true
+    }
+}
+
+impl Default for FederationRules {
+    fn default() -> FederationRules {
+        FederationRules {
+            min_share_confidence: 0.7,
+            max_members: 100,
+            require_approval: true,
+            allowed_epistemic: [Epistemic::Observed, Epistemic::Reported],
+            conflict_strategy: ConflictStrategy::HigherConfidence,
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vector_clock_tick() {
+        let agent = AgentInstanceId::new()
+        let mut clock = VectorClock::new()
+
+        assert_eq!(clock·get(agent), 0)
+
+        clock·tick(agent)
+        assert_eq!(clock·get(agent), 1)
+
+        clock·tick(agent)
+        assert_eq!(clock·get(agent), 2)
+    }
+
+    #[test]
+    fn test_vector_clock_merge() {
+        let agent_a = AgentInstanceId::new()
+        let agent_b = AgentInstanceId::new()
+
+        let mut clock_a = VectorClock::new()
+        clock_a·tick(agent_a)
+        clock_a·tick(agent_a)
+
+        let mut clock_b = VectorClock::new()
+        clock_b·tick(agent_b)
+        clock_b·tick(agent_b)
+        clock_b·tick(agent_b)
+
+        clock_a·merge(clock_b·clone())
+
+        assert_eq!(clock_a·get(agent_a), 2)
+        assert_eq!(clock_a·get(agent_b), 3)
+    }
+
+    #[test]
+    fn test_vector_clock_happened_before() {
+        let agent = AgentInstanceId::new()
+
+        let mut clock_a = VectorClock::new()
+        clock_a·tick(agent)
+
+        let mut clock_b = VectorClock::new()
+        clock_b·tick(agent)
+        clock_b·tick(agent)
+
+        assert!(clock_a·happened_before(clock_b·clone()))
+        assert!(!clock_b·happened_before(clock_a·clone()))
+    }
+
+    #[test]
+    fn test_conflict_strategy_lww() {
+        let agent_a = AgentInstanceId::new()
+        let agent_b = AgentInstanceId::new()
+
+        let op_a = Operation {
+            id: Uuid::new_v4(),
+            origin: agent_a,
+            clock: VectorClock::new(),
+            timestamp: Utc::now() - chrono::Duration::seconds(10),
+            op_type: OperationType::Delete { memory_id: MemoryId::new() },
+        }
+
+        let op_b = Operation {
+            id: Uuid::new_v4(),
+            origin: agent_b,
+            clock: VectorClock::new(),
+            timestamp: Utc::now(),
+            op_type: OperationType::Delete { memory_id: MemoryId::new() },
+        }
+
+        let resolution = ConflictStrategy::LastWriterWins·resolve(op_a, op_b)
+
+        resolution|match {
+            ConflictResolution::UseB => {},  // Expected
+            _ => panic!("Expected UseB"),
+        }
+    }
+
+    #[test]
+    fn test_sync_state_record_ops() {
+        let mut state = SyncState::new(MemoryScope::personal())
+
+        let content = MemoryContent {
+            content_type: ContentType::Episode,
+            data: "test"·to_string(),
+            confidence: ConfidenceDistribution::certain(Epistemic::Observed),
+            embedding: None,
+        }
+
+        state·record_add(MemoryId::new(), content·clone())
+        state·record_update(MemoryId::new(), content)
+
+        assert_eq!(state.pending_ops·len(), 2)
+    }
+
+    #[test]
+    fn test_federation_add_member() {
+        let mut fed = Federation::new("test-federation")
+
+        let agent_a = AgentInstanceId::new()
+        let agent_b = AgentInstanceId::new()
+
+        assert!(fed·add_member(agent_a, "Agent A"))
+        assert!(fed·add_member(agent_b, "Agent B"))
+
+        assert_eq!(fed.members·len(), 2)
+    }
+
+    #[test]
+    fn test_federation_can_share() {
+        let fed = Federation::new("test")
+
+        let high_conf = MemoryContent {
+            content_type: ContentType::SemanticNode,
+            data: "test"·to_string(),
+            confidence: ConfidenceDistribution::certain(Epistemic::Observed),
+            embedding: None,
+        }
+
+        let low_conf = MemoryContent {
+            content_type: ContentType::SemanticNode,
+            data: "test"·to_string(),
+            confidence: ConfidenceDistribution::with_confidence(Epistemic::Unknown, 0.3),
+            embedding: None,
+        }
+
+        assert!(fed·can_share(high_conf))
+        assert!(!fed·can_share(low_conf))
+    }
+
+    #[test]
+    fn test_memory_scope() {
+        let personal = MemoryScope::personal()
+        let shared = MemoryScope::shared("persona-1")
+        let collective = MemoryScope::collective("fed-1")
+
+        assert!(!personal·is_syncable())
+        assert!(shared·is_syncable())
+        assert!(collective·is_syncable())
+    }
+}

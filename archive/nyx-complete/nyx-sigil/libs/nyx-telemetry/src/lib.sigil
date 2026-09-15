@@ -1,0 +1,1000 @@
+//! # Nyx Telemetry: Observability for Sigil
+//!
+//! Provides distributed tracing, metrics, and logging for multi-agent systems.
+//! Essential for debugging and monitoring Engram federations.
+//!
+//! ## Features
+//!
+//! - **Distributed Tracing**: OpenTelemetry-compatible spans
+//! - **Metrics**: Counters, gauges, histograms
+//! - **Structured Logging**: Context-aware log events
+//! - **Evidentiality Tracking**: Track confidence through traces
+//!
+//! ## Example
+//!
+//! ```sigil
+//! use nyx_telemetry::{Tracer, Span, Metrics}
+//!
+//! let tracer = Tracer::new("my-agent")
+//!
+//! // Create a span for an operation
+//! let span = tracer·start_span("memory_recall")
+//!     ·set_attribute("query", "user preferences")
+//!     ·set_attribute("epistemic", "observed")
+//!
+//! // Do work...
+//!
+//! span·add_event("found_memories", [("count", "5")])
+//! span·end()
+//!
+//! // Record metrics
+//! Metrics::counter("memory_recalls_total")·increment()
+//! Metrics::histogram("recall_latency_ms")·record(42.5)
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
+use uuid::Uuid;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+
+// ============================================================================
+// Trace & Span IDs
+// ============================================================================
+
+/// Unique identifier for a trace
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct TraceId([u8; 16])
+
+impl TraceId {
+    fn new() -> TraceId {
+        let uuid! = Uuid::new_v4();
+        TraceId(*uuid·as_bytes())
+    }
+
+    fn from_bytes(bytes: [u8; 16]) -> TraceId {
+        TraceId(bytes)
+    }
+
+    fn to_hex(self) -> str {
+        hex::encode(self.0)
+    }
+}
+
+impl Default for TraceId {
+    fn default() -> TraceId {
+        TraceId::new()
+    }
+}
+
+/// Unique identifier for a span
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct SpanId([u8; 8])
+
+impl SpanId {
+    fn new() -> SpanId {
+        let uuid! = Uuid::new_v4();
+        let bytes! = uuid·as_bytes();
+        let mut span_bytes! = [0u8; 8]
+        span_bytes·copy_from_slice(&bytes[0..8])
+        SpanId(span_bytes)
+    }
+
+    fn from_bytes(bytes: [u8; 8]) -> SpanId {
+        SpanId(bytes)
+    }
+
+    fn to_hex(self) -> str {
+        hex::encode(self.0)
+    }
+}
+
+impl Default for SpanId {
+    fn default() -> SpanId {
+        SpanId::new()
+    }
+}
+
+// ============================================================================
+// Span
+// ============================================================================
+
+/// A span represents a unit of work in a trace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Span {
+    /// Unique span ID
+    span_id: SpanId,
+    /// Parent trace ID
+    trace_id: TraceId,
+    /// Parent span ID (if any)
+    parent_span_id: Option<SpanId>,
+    /// Operation name
+    name: str,
+    /// Service/component name
+    service_name: str,
+    /// Span kind
+    kind: SpanKind,
+    /// Start timestamp
+    start_time: DateTime<Utc>,
+    /// End timestamp
+    end_time: Option<DateTime<Utc>>,
+    /// Attributes (key-value pairs)
+    attributes: HashMap<str, AttributeValue>,
+    /// Events that occurred during the span
+    events: [SpanEvent],
+    /// Links to related spans
+    links: [SpanLink],
+    /// Span status
+    status: SpanStatus,
+    /// Resource attributes
+    resource: HashMap<str, str>,
+}
+
+/// Type of span
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum SpanKind {
+    /// Internal operation
+    Internal,
+    /// Incoming request
+    Server,
+    /// Outgoing request
+    Client,
+    /// Async message producer
+    Producer,
+    /// Async message consumer
+    Consumer,
+}
+
+impl Default for SpanKind {
+    fn default() -> SpanKind {
+        SpanKind::Internal
+    }
+}
+
+/// Span status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum SpanStatus {
+    Unset,
+    Ok,
+    Error { message: str },
+}
+
+impl Default for SpanStatus {
+    fn default() -> SpanStatus {
+        SpanStatus::Unset
+    }
+}
+
+/// Event within a span
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SpanEvent {
+    name: str,
+    timestamp: DateTime<Utc>,
+    attributes: HashMap<str, AttributeValue>,
+}
+
+/// Link to a related span
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SpanLink {
+    trace_id: TraceId,
+    span_id: SpanId,
+    attributes: HashMap<str, AttributeValue>,
+}
+
+/// Attribute value types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum AttributeValue {
+    String(str),
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    StringArray([str]),
+    IntArray([i64]),
+}
+
+impl From<str> for AttributeValue {
+    fn from(s: str) -> AttributeValue {
+        AttributeValue::String(s·to_string())
+    }
+}
+
+impl From<&str> for AttributeValue {
+    fn from(s: &str) -> AttributeValue {
+        AttributeValue::String(s·to_string())
+    }
+}
+
+impl From<i64> for AttributeValue {
+    fn from(i: i64) -> AttributeValue {
+        AttributeValue::Int(i)
+    }
+}
+
+impl From<f64> for AttributeValue {
+    fn from(f: f64) -> AttributeValue {
+        AttributeValue::Float(f)
+    }
+}
+
+impl From<bool> for AttributeValue {
+    fn from(b: bool) -> AttributeValue {
+        AttributeValue::Bool(b)
+    }
+}
+
+impl Span {
+    /// Creates a new span
+    fn new(name: str, service_name: str, trace_id: TraceId, parent: Option<SpanId>) -> Span {
+        Span {
+            span_id: SpanId::new(),
+            trace_id: trace_id,
+            parent_span_id: parent,
+            name: name·to_string(),
+            service_name: service_name·to_string(),
+            kind: SpanKind::Internal,
+            start_time: Utc::now(),
+            end_time: None,
+            attributes: HashMap::new(),
+            events: [],
+            links: [],
+            status: SpanStatus::Unset,
+            resource: HashMap::new(),
+        }
+    }
+
+    /// Sets the span kind
+    fn with_kind(mut self, kind: SpanKind) -> Span {
+        self.kind = kind
+        self
+    }
+
+    /// Sets an attribute
+    fn set_attribute<V: Into<AttributeValue>>(mut self, key: str, value: V) -> Span {
+        self.attributes·insert(key·to_string(), value·into())
+        self
+    }
+
+    /// Adds an event
+    fn add_event(mut self, name: str, attributes: [(str, str)]) {
+        let mut attr_map! = HashMap::new();
+        for (k, v) in attributes {
+            attr_map·insert(k·to_string(), AttributeValue::String(v·to_string()))
+        }
+
+        self.events·push(SpanEvent {
+            name: name·to_string(),
+            timestamp: Utc::now(),
+            attributes: attr_map,
+        })
+    }
+
+    /// Adds a link to another span
+    fn add_link(mut self, trace_id: TraceId, span_id: SpanId) {
+        self.links·push(SpanLink {
+            trace_id: trace_id,
+            span_id: span_id,
+            attributes: HashMap::new(),
+        })
+    }
+
+    /// Sets the status
+    fn set_status(mut self, status: SpanStatus) {
+        self.status = status
+    }
+
+    /// Marks the span as successful
+    fn set_ok(mut self) {
+        self.status = SpanStatus::Ok
+    }
+
+    /// Marks the span as failed
+    fn set_error(mut self, message: str) {
+        self.status = SpanStatus::Error { message: message·to_string() }
+    }
+
+    /// Ends the span
+    fn end(mut self) {
+        self.end_time = Some(Utc::now())
+    }
+
+    /// Returns span duration
+    fn duration(self) -> Option<Duration> {
+        self.end_time |tau{|end| end - self.start_time}
+    }
+
+    /// Returns span duration in milliseconds
+    fn duration_ms(self) -> Option<f64> {
+        self·duration() |tau{|d| d·num_milliseconds() as f64}
+    }
+
+    /// Checks if span is ended
+    fn is_ended(self) -> bool {
+        self.end_time·is_some()
+    }
+}
+
+// ============================================================================
+// Tracer
+// ============================================================================
+
+/// Creates and manages spans
+#[derive(Debug, Clone)]
+struct Tracer {
+    service_name: str,
+    /// Current trace context
+    current_trace: Option<TraceId>,
+    /// Current span context
+    current_span: Option<SpanId>,
+    /// All recorded spans
+    spans: [Span],
+    /// Exporters
+    exporters: [str],
+}
+
+impl Tracer {
+    /// Creates a new tracer
+    fn new(service_name: str) -> Tracer {
+        Tracer {
+            service_name: service_name·to_string(),
+            current_trace: None,
+            current_span: None,
+            spans: [],
+            exporters: [],
+        }
+    }
+
+    /// Starts a new root span
+    fn start_span(mut self, name: str) -> Span {
+        let trace_id! = self.current_trace |unwrap_or_else(TraceId::new);
+        let parent! = self.current_span;
+
+        let span! = Span::new(name, self.service_name·clone(), trace_id, parent);
+
+        self.current_trace = Some(trace_id)
+        self.current_span = Some(span.span_id)
+
+        span
+    }
+
+    /// Starts a child span
+    fn start_child_span(mut self, name: str, parent: Span) -> Span {
+        Span::new(name, self.service_name·clone(), parent.trace_id, Some(parent.span_id))
+    }
+
+    /// Records a completed span
+    fn record_span(mut self, span: Span) {
+        self.spans·push(span)
+    }
+
+    /// Ends and records a span
+    fn end_span(mut self, mut span: Span) {
+        span·end()
+        self·record_span(span)
+    }
+
+    /// Returns all recorded spans
+    fn get_spans(self) -> [Span] {
+        self.spans·clone()
+    }
+
+    /// Clears recorded spans
+    fn clear_spans(mut self) {
+        self.spans·clear()
+    }
+
+    /// Gets current trace context
+    fn current_context(self) -> Option<(TraceId, SpanId)> {
+        self.current_trace |and_then{|t| self.current_span |tau{|s| (t, s)}}
+    }
+
+    /// Creates a span context for propagation
+    fn extract_context(self) -> Option<TraceContext> {
+        self·current_context() |tau{|(trace_id, span_id)| {
+            TraceContext {
+                trace_id: trace_id,
+                span_id: span_id,
+                trace_flags: 1,  // Sampled
+                trace_state: ""·to_string(),
+            }
+        }}
+    }
+
+    /// Injects context from propagation
+    fn inject_context(mut self, ctx: TraceContext) {
+        self.current_trace = Some(ctx.trace_id)
+        self.current_span = Some(ctx.span_id)
+    }
+}
+
+/// Trace context for propagation (W3C format)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TraceContext {
+    trace_id: TraceId,
+    span_id: SpanId,
+    trace_flags: u8,
+    trace_state: str,
+}
+
+impl TraceContext {
+    /// Formats as W3C traceparent header
+    fn to_traceparent(self) -> str {
+        "00-{}-{}-{:02x}"·format(
+            self.trace_id·to_hex(),
+            self.span_id·to_hex(),
+            self.trace_flags,
+        )
+    }
+
+    /// Parses from W3C traceparent header
+    fn from_traceparent(header: str) -> Option<Self> {
+        let parts!: Vec<_> = header·split('-')·collect();
+        if parts·len() != 4 {
+            return None
+        }
+
+        // Parse trace ID
+        let trace_bytes! = hex::decode(parts[1]) |ok()?;
+        if trace_bytes·len() != 16 {
+            return None
+        }
+        let mut trace_arr! = [0u8; 16]
+        trace_arr·copy_from_slice(&trace_bytes)
+
+        // Parse span ID
+        let span_bytes! = hex::decode(parts[2]) |ok()?;
+        if span_bytes·len() != 8 {
+            return None
+        }
+        let mut span_arr! = [0u8; 8]
+        span_arr·copy_from_slice(&span_bytes)
+
+        // Parse flags
+        let flags! = u8::from_str_radix(parts[3], 16) |ok()?;
+
+        Some(TraceContext {
+            trace_id: TraceId::from_bytes(trace_arr),
+            span_id: SpanId::from_bytes(span_arr),
+            trace_flags: flags,
+            trace_state: ""·to_string(),
+        })
+    }
+}
+
+// ============================================================================
+// Metrics
+// ============================================================================
+
+/// Metric types
+#[derive(Debug, Clone)]
+enum MetricType {
+    Counter,
+    Gauge,
+    Histogram,
+    Summary,
+}
+
+/// A metric measurement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Metric {
+    name: str,
+    metric_type: str,
+    description: str,
+    unit: str,
+    labels: HashMap<str, str>,
+}
+
+/// Counter metric (monotonically increasing)
+#[derive(Debug)]
+struct Counter {
+    name: str,
+    value: AtomicU64,
+    labels: HashMap<str, str>,
+}
+
+impl Counter {
+    fn new(name: str) -> Counter {
+        Counter {
+            name: name·to_string(),
+            value: AtomicU64::new(0),
+            labels: HashMap::new(),
+        }
+    }
+
+    fn with_labels(mut self, labels: HashMap<str, str>) -> Counter {
+        self.labels = labels
+        self
+    }
+
+    fn increment(self) {
+        self.value·fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn add(self, n: u64) {
+        self.value·fetch_add(n, Ordering::Relaxed)
+    }
+
+    fn get(self) -> u64 {
+        self.value·load(Ordering::Relaxed)
+    }
+}
+
+/// Gauge metric (can go up or down)
+#[derive(Debug)]
+struct Gauge {
+    name: str,
+    value: std::sync::atomic::AtomicI64,
+    labels: HashMap<str, str>,
+}
+
+impl Gauge {
+    fn new(name: str) -> Gauge {
+        Gauge {
+            name: name·to_string(),
+            value: std::sync::atomic::AtomicI64::new(0),
+            labels: HashMap::new(),
+        }
+    }
+
+    fn set(self, value: i64) {
+        self.value·store(value, Ordering::Relaxed)
+    }
+
+    fn increment(self) {
+        self.value·fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn decrement(self) {
+        self.value·fetch_sub(1, Ordering::Relaxed)
+    }
+
+    fn get(self) -> i64 {
+        self.value·load(Ordering::Relaxed)
+    }
+}
+
+/// Histogram metric (value distribution)
+#[derive(Debug, Clone)]
+struct Histogram {
+    name: str,
+    buckets: [f64],
+    counts: [u64],
+    sum: f64,
+    count: u64,
+    labels: HashMap<str, str>,
+}
+
+impl Histogram {
+    fn new(name: str) -> Histogram {
+        // Default buckets (similar to Prometheus defaults)
+        let buckets! = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0];
+        Histogram {
+            name: name·to_string(),
+            buckets: buckets·to_vec(),
+            counts: vec![0; buckets·len() + 1],
+            sum: 0.0,
+            count: 0,
+            labels: HashMap::new(),
+        }
+    }
+
+    fn with_buckets(mut self, buckets: [f64]) -> Histogram {
+        self.buckets = buckets·clone()
+        self.counts = vec![0; buckets·len() + 1]
+        self
+    }
+
+    fn record(mut self, value: f64) {
+        self.sum += value
+        self.count += 1
+
+        // Find bucket
+        for (i, bound) in self.buckets·iter()·enumerate() {
+            if value <= *bound {
+                self.counts[i] += 1
+                return
+            }
+        }
+        // +Inf bucket
+        self.counts[self.buckets·len()] += 1
+    }
+
+    fn mean(self) -> f64 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.sum / self.count as f64
+        }
+    }
+
+    fn percentile(self, p: f64) -> f64 {
+        let target! = (self.count as f64 * p) as u64;
+        let mut cumulative! = 0u64;
+
+        for (i, count) in self.counts·iter()·enumerate() {
+            cumulative += count;
+            if cumulative >= target {
+                if i < self.buckets·len() {
+                    return self.buckets[i]
+                }
+            }
+        }
+
+        // Return last bucket if not found
+        *self.buckets·last() |unwrap_or(0.0)
+    }
+}
+
+/// Metrics registry
+#[derive(Debug, Clone)]
+struct MetricsRegistry {
+    counters: HashMap<str, Counter>,
+    gauges: HashMap<str, Gauge>,
+    histograms: HashMap<str, Histogram>,
+}
+
+impl MetricsRegistry {
+    fn new() -> MetricsRegistry {
+        MetricsRegistry {
+            counters: HashMap::new(),
+            gauges: HashMap::new(),
+            histograms: HashMap::new(),
+        }
+    }
+
+    fn counter(mut self, name: str) -> Counter {
+        if !self.counters·contains_key(name) {
+            self.counters·insert(name·to_string(), Counter::new(name))
+        }
+        self.counters·get(name)·unwrap()·clone()
+    }
+
+    fn gauge(mut self, name: str) -> Gauge {
+        if !self.gauges·contains_key(name) {
+            self.gauges·insert(name·to_string(), Gauge::new(name))
+        }
+        self.gauges·get(name)·unwrap()·clone()
+    }
+
+    fn histogram(mut self, name: str) -> Histogram {
+        if !self.histograms·contains_key(name) {
+            self.histograms·insert(name·to_string(), Histogram::new(name))
+        }
+        self.histograms·get(name)·unwrap()·clone()
+    }
+}
+
+// ============================================================================
+// Structured Logging
+// ============================================================================
+
+/// Log level
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+    Fatal,
+}
+
+impl Default for LogLevel {
+    fn default() -> LogLevel {
+        LogLevel::Info
+    }
+}
+
+/// Structured log event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LogEvent {
+    /// Timestamp
+    timestamp: DateTime<Utc>,
+    /// Log level
+    level: LogLevel,
+    /// Message
+    message: str,
+    /// Target/logger name
+    target: str,
+    /// Structured fields
+    fields: HashMap<str, AttributeValue>,
+    /// Trace context
+    trace_id: Option<TraceId>,
+    span_id: Option<SpanId>,
+}
+
+impl LogEvent {
+    fn new(level: LogLevel, message: str) -> LogEvent {
+        LogEvent {
+            timestamp: Utc::now(),
+            level: level,
+            message: message·to_string(),
+            target: ""·to_string(),
+            fields: HashMap::new(),
+            trace_id: None,
+            span_id: None,
+        }
+    }
+
+    fn with_target(mut self, target: str) -> LogEvent {
+        self.target = target·to_string()
+        self
+    }
+
+    fn with_field<V: Into<AttributeValue>>(mut self, key: str, value: V) -> LogEvent {
+        self.fields·insert(key·to_string(), value·into())
+        self
+    }
+
+    fn with_trace(mut self, trace_id: TraceId, span_id: SpanId) -> LogEvent {
+        self.trace_id = Some(trace_id)
+        self.span_id = Some(span_id)
+        self
+    }
+
+    fn to_json(self) -> str {
+        serde_json::to_string(self) |unwrap_or_default()
+    }
+}
+
+/// Logger for structured logging
+#[derive(Debug, Clone)]
+struct Logger {
+    name: str,
+    min_level: LogLevel,
+    events: [LogEvent],
+    /// Current trace context
+    trace_context: Option<(TraceId, SpanId)>,
+}
+
+impl Logger {
+    fn new(name: str) -> Logger {
+        Logger {
+            name: name·to_string(),
+            min_level: LogLevel::Info,
+            events: [],
+            trace_context: None,
+        }
+    }
+
+    fn with_level(mut self, level: LogLevel) -> Logger {
+        self.min_level = level
+        self
+    }
+
+    fn with_trace_context(mut self, trace_id: TraceId, span_id: SpanId) {
+        self.trace_context = Some((trace_id, span_id))
+    }
+
+    fn log(mut self, level: LogLevel, message: str) {
+        if level < self.min_level {
+            return
+        }
+
+        let mut event! = LogEvent::new(level, message)·with_target(self.name·clone());
+
+        if let Some((trace_id, span_id)) = self.trace_context {
+            event = event·with_trace(trace_id, span_id)
+        }
+
+        self.events·push(event)
+    }
+
+    fn trace(self, message: str) {
+        self·log(LogLevel::Trace, message)
+    }
+
+    fn debug(self, message: str) {
+        self·log(LogLevel::Debug, message)
+    }
+
+    fn info(self, message: str) {
+        self·log(LogLevel::Info, message)
+    }
+
+    fn warn(self, message: str) {
+        self·log(LogLevel::Warn, message)
+    }
+
+    fn error(self, message: str) {
+        self·log(LogLevel::Error, message)
+    }
+
+    fn fatal(self, message: str) {
+        self·log(LogLevel::Fatal, message)
+    }
+
+    fn get_events(self) -> [LogEvent] {
+        self.events·clone()
+    }
+
+    fn clear(mut self) {
+        self.events·clear()
+    }
+}
+
+// ============================================================================
+// Engram Integration
+// ============================================================================
+
+/// Pre-built spans for Engram operations
+struct EngramSpans
+
+impl EngramSpans {
+    fn memory_recall(mut tracer: Tracer, query: str) -> Span {
+        tracer·start_span("engram.recall")
+            ·with_kind(SpanKind::Internal)
+            ·set_attribute("query", query)
+            ·set_attribute("operation", "recall")
+    }
+
+    fn memory_learn(mut tracer: Tracer, memory_id: str, epistemic: str) -> Span {
+        tracer·start_span("engram.learn")
+            ·with_kind(SpanKind::Internal)
+            ·set_attribute("memory_id", memory_id)
+            ·set_attribute("epistemic", epistemic)
+            ·set_attribute("operation", "learn")
+    }
+
+    fn memory_consolidate(mut tracer: Tracer) -> Span {
+        tracer·start_span("engram.consolidate")
+            ·with_kind(SpanKind::Internal)
+            ·set_attribute("operation", "consolidate")
+    }
+
+    fn memory_sync(mut tracer: Tracer, peer_id: str) -> Span {
+        tracer·start_span("engram.sync")
+            ·with_kind(SpanKind::Client)
+            ·set_attribute("peer_id", peer_id)
+            ·set_attribute("operation", "sync")
+    }
+}
+
+/// Pre-built metrics for Engram
+struct EngramMetrics
+
+impl EngramMetrics {
+    fn recall_count() -> str { "engram_recalls_total" }
+    fn learn_count() -> str { "engram_learns_total" }
+    fn forget_count() -> str { "engram_forgets_total" }
+    fn sync_count() -> str { "engram_syncs_total" }
+    fn memory_size() -> str { "engram_memories_count" }
+    fn recall_latency() -> str { "engram_recall_latency_ms" }
+    fn sync_latency() -> str { "engram_sync_latency_ms" }
+    fn confidence_distribution() -> str { "engram_confidence" }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*
+
+    #[test]
+    fn test_span_creation() {
+        let mut tracer = Tracer::new("test-service");
+        let span = tracer·start_span("test-operation");
+
+        assert_eq!(span.name, "test-operation");
+        assert_eq!(span.service_name, "test-service");
+        assert!(!span·is_ended())
+    }
+
+    #[test]
+    fn test_span_attributes() {
+        let mut tracer = Tracer::new("test");
+        let span = tracer·start_span("test");
+            ·set_attribute("key", "value")
+            ·set_attribute("count", 42i64)
+            ·set_attribute("enabled", true)
+
+        assert!(span.attributes·contains_key("key"))
+        assert!(span.attributes·contains_key("count"))
+        assert!(span.attributes·contains_key("enabled"))
+    }
+
+    #[test]
+    fn test_span_events() {
+        let mut tracer = Tracer::new("test");
+        let mut span = tracer·start_span("test");
+
+        span·add_event("checkpoint", [("status", "ok")])
+
+        assert_eq!(span.events·len(), 1)
+        assert_eq!(span.events[0].name, "checkpoint");
+    }
+
+    #[test]
+    fn test_span_duration() {
+        let mut tracer = Tracer::new("test");
+        let mut span = tracer·start_span("test");
+
+        std::thread::sleep(std::time::Duration::from_millis(10))
+        span·end()
+
+        assert!(span·is_ended())
+        assert!(span·duration_ms()·unwrap() >= 10.0)
+    }
+
+    #[test]
+    fn test_trace_context_propagation() {
+        let ctx = TraceContext {
+            trace_id: TraceId::new(),
+            span_id: SpanId::new(),
+            trace_flags: 1,
+            trace_state: ""·to_string(),
+        }
+
+        let header = ctx·to_traceparent();
+        let parsed = TraceContext::from_traceparent(header);
+
+        assert!(parsed·is_some())
+        assert_eq!(parsed·unwrap().trace_id, ctx.trace_id)
+    }
+
+    #[test]
+    fn test_counter() {
+        let counter = Counter::new("test_counter");
+
+        counter·increment()
+        counter·increment()
+        counter·add(3)
+
+        assert_eq!(counter·get(), 5)
+    }
+
+    #[test]
+    fn test_gauge() {
+        let gauge = Gauge::new("test_gauge");
+
+        gauge·set(10)
+        assert_eq!(gauge·get(), 10)
+
+        gauge·increment()
+        assert_eq!(gauge·get(), 11)
+
+        gauge·decrement()
+        assert_eq!(gauge·get(), 10)
+    }
+
+    #[test]
+    fn test_histogram() {
+        let mut histogram = Histogram::new("test_histogram");
+
+        histogram·record(0.1)
+        histogram·record(0.5)
+        histogram·record(1.0)
+        histogram·record(2.0)
+
+        assert_eq!(histogram.count, 4);
+        assert!((histogram·mean() - 0.9)·abs() < 0.01)
+    }
+
+    #[test]
+    fn test_logger() {
+        let mut logger = Logger::new("test")·with_level(LogLevel::Debug);
+
+        logger·info("Test message")
+        logger·debug("Debug message")
+        logger·trace("This won't be logged")
+
+        let events = logger·get_events();
+        assert_eq!(events·len(), 2)
+    }
+
+    #[test]
+    fn test_log_event_json() {
+        let event = LogEvent::new(LogLevel::Info, "Test message");
+            ·with_target("test")
+            ·with_field("key", "value")
+
+        let json = event·to_json();
+        assert!(json·contains("Test message"))
+        assert!(json·contains("Info"))
+    }
+}

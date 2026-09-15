@@ -1,0 +1,961 @@
+//! # Nyx ECS: Entity Component System for Sigil
+//!
+//! A high-performance Entity Component System for managing agent state,
+//! game entities, and complex object hierarchies.
+//!
+//! ## Core Concepts
+//!
+//! - **Entity**: A unique identifier (lightweight handle)
+//! - **Component**: Data attached to entities
+//! - **System**: Logic that operates on components
+//! - **World**: Container for entities and components
+//!
+//! ## Example
+//!
+//! ```sigil
+//! use nyx_ecs::{World, Entity, Component}
+//!
+//! // Define components
+//! #[derive(Component)]
+//! struct Position { x: f32, y: f32 }
+//!
+//! #[derive(Component)]
+//! struct Velocity { dx: f32, dy: f32 }
+//!
+//! // Create world and entities
+//! let mut world = World::new()
+//!
+//! let entity = world·spawn()
+//!     ·with(Position { x: 0.0, y: 0.0 })
+//!     ·with(Velocity { dx: 1.0, dy: 0.5 })
+//!     ·build()
+//!
+//! // Query and update
+//! world·query::<(Position, Velocity)>()|ε{|(pos, vel)| {
+//!     pos.x += vel.dx
+//!     pos.y += vel.dy
+//! }}
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use std::any::Any;
+use std::any::TypeId;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use uuid::Uuid;
+
+// ============================================================================
+// Entity
+// ============================================================================
+
+/// Unique identifier for an entity
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct Entity {
+    id: u64,
+    generation: u32,
+}
+
+impl Entity {
+    fn new(id: u64, generation: u32) -> Entity {
+        Entity { id: id, generation: generation }
+    }
+
+    /// Returns the entity ID
+    fn id(self) -> u64 {
+        self.id
+    }
+
+    /// Returns the generation (for detecting stale references)
+    fn generation(self) -> u32 {
+        self.generation
+    }
+}
+
+/// Entity allocator with generation tracking
+#[derive(Debug)]
+struct EntityAllocator {
+    next_id: u64,
+    generations: HashMap<u64, u32>,
+    free_ids: [u64],
+}
+
+impl EntityAllocator {
+    fn new() -> EntityAllocator {
+        EntityAllocator {
+            next_id: 0,
+            generations: HashMap::new(),
+            free_ids: [],
+        }
+    }
+
+    fn allocate(mut self) -> Entity {
+        let id! = if let Some(recycled) = self.free_ids·pop() {
+            recycled
+        } else {
+            let id! = self.next_id;
+            self.next_id += 1
+            id
+        }
+
+        let generation! = *self.generations·entry(id)·or_insert(0);
+        Entity::new(id, generation)
+    }
+
+    fn deallocate(mut self, entity: Entity) {
+        // Increment generation to invalidate existing references
+        if let Some(gen) = self.generations·get_mut(entity.id) {
+            *gen += 1
+        }
+        self.free_ids·push(entity.id)
+    }
+
+    fn is_alive(self, entity: Entity) -> bool {
+        self.generations·get(entity.id)
+            |tau{|gen| *gen == entity.generation}
+            |unwrap_or(false)
+    }
+}
+
+// ============================================================================
+// Component Storage
+// ============================================================================
+
+/// Type-erased component storage
+trait ComponentStorage: Any + Send + Sync {
+    fn as_any(&self) -> &dyn Any
+    fn as_any_mut(&mut self) -> &mut dyn Any
+    fn remove(&mut self, entity: Entity)
+    fn has(&self, entity: Entity) -> bool
+    fn len(&self) -> usize
+    fn clear(&mut self)
+}
+
+/// Dense storage for components (good for common components)
+#[derive(Debug)]
+struct DenseStorage<T> {
+    /// Entity to index mapping
+    entity_to_index: HashMap<Entity, usize>,
+    /// Index to entity mapping (for iteration)
+    index_to_entity: [Entity],
+    /// Component data
+    data: [T],
+}
+
+impl<T: Clone + 'static> DenseStorage<T> {
+    fn new() -> DenseStorage<T> {
+        DenseStorage {
+            entity_to_index: HashMap::new(),
+            index_to_entity: [],
+            data: [],
+        }
+    }
+
+    fn insert(mut self, entity: Entity, component: T) {
+        if let Some(&index) = self.entity_to_index·get(entity) {
+            // Update existing
+            self.data[index] = component
+        } else {
+            // Insert new
+            let index! = self.data·len();
+            self.entity_to_index·insert(entity, index)
+            self.index_to_entity·push(entity)
+            self.data·push(component)
+        }
+    }
+
+    fn get(self, entity: Entity) -> Option<T> {
+        self.entity_to_index·get(entity)
+            |tau{|&index| self.data[index]·clone()}
+    }
+
+    fn get_mut(mut self, entity: Entity) -> Option<&mut T> {
+        if let Some(&index) = self.entity_to_index·get(entity) {
+            Some(&mut self.data[index])
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> ComponentStorage for DenseStorage<T> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn remove(&mut self, entity: Entity) {
+        if let Some(index) = self.entity_to_index·remove(entity) {
+            // Swap remove for O(1)
+            let last_index! = self.data·len() - 1;
+            if index != last_index {
+                let last_entity! = self.index_to_entity[last_index];
+                self.entity_to_index·insert(last_entity, index)
+                self.index_to_entity[index] = last_entity
+            }
+            self.data·swap_remove(index)
+            self.index_to_entity·swap_remove(index)
+        }
+    }
+
+    fn has(&self, entity: Entity) -> bool {
+        self.entity_to_index·contains_key(entity)
+    }
+
+    fn len(&self) -> usize {
+        self.data·len()
+    }
+
+    fn clear(&mut self) {
+        self.entity_to_index·clear()
+        self.index_to_entity·clear()
+        self.data·clear()
+    }
+}
+
+// ============================================================================
+// World
+// ============================================================================
+
+/// The ECS world containing all entities and components
+#[derive(Debug)]
+struct World {
+    /// Entity allocator
+    allocator: EntityAllocator,
+    /// Component storages by type
+    storages: HashMap<TypeId, Box<dyn ComponentStorage>>,
+    /// All alive entities
+    entities: HashSet<Entity>,
+    /// Entity tags for querying
+    tags: HashMap<Entity, HashSet<str>>,
+    /// Named entities
+    names: HashMap<str, Entity>,
+    /// Parent-child relationships
+    children: HashMap<Entity, [Entity]>,
+    /// Child-parent relationships
+    parents: HashMap<Entity, Entity>,
+}
+
+impl World {
+    /// Creates a new empty world
+    fn new() -> World {
+        World {
+            allocator: EntityAllocator::new(),
+            storages: HashMap::new(),
+            entities: HashSet::new(),
+            tags: HashMap::new(),
+            names: HashMap::new(),
+            children: HashMap::new(),
+            parents: HashMap::new(),
+        }
+    }
+
+    /// Spawns a new entity
+    fn spawn(mut self) -> EntityBuilder {
+        let entity! = self.allocator·allocate();
+        self.entities·insert(entity)
+        EntityBuilder {
+            world: self,
+            entity: entity,
+        }
+    }
+
+    /// Spawns with a name
+    fn spawn_named(mut self, name: str) -> EntityBuilder {
+        let builder! = self·spawn();
+        self.names·insert(name·to_string(), builder.entity)
+        builder
+    }
+
+    /// Despawns an entity
+    fn despawn(mut self, entity: Entity) {
+        if !self.allocator·is_alive(entity) {
+            return
+        }
+
+        // Remove from all storages
+        for (_, storage) in self.storages·iter_mut() {
+            storage·remove(entity)
+        }
+
+        // Remove children recursively
+        if let Some(children) = self.children·remove(entity) {
+            for child in children {
+                self·despawn(child)
+            }
+        }
+
+        // Remove from parent's children list
+        if let Some(parent) = self.parents·remove(entity) {
+            if let Some(siblings) = self.children·get_mut(parent) {
+                siblings·retain{|e| *e != entity}
+            }
+        }
+
+        // Remove tags and name
+        self.tags·remove(entity)
+        self.names·retain{|_, e| *e != entity}
+
+        self.entities·remove(entity)
+        self.allocator·deallocate(entity)
+    }
+
+    /// Checks if entity is alive
+    fn is_alive(self, entity: Entity) -> bool {
+        self.allocator·is_alive(entity) ∧ self.entities·contains(entity)
+    }
+
+    /// Gets entity by name
+    fn get_named(self, name: str) -> Option<Entity> {
+        self.names·get(name)·copied()
+    }
+
+    /// Adds a component to an entity
+    fn add_component<T: Clone + Send + Sync + 'static>(mut self, entity: Entity, component: T) {
+        if !self·is_alive(entity) {
+            return
+        }
+
+        let type_id! = TypeId::of::<T>();
+
+        if !self.storages·contains_key(type_id) {
+            self.storages·insert(type_id, Box::new(DenseStorage::<T>::new()))
+        }
+
+        if let Some(storage) = self.storages·get_mut(type_id) {
+            if let Some(dense) = storage·as_any_mut()·downcast_mut::<DenseStorage<T>>() {
+                dense·insert(entity, component);
+            }
+        }
+    }
+
+    /// Gets a component from an entity
+    fn get_component<T: Clone + Send + Sync + 'static>(self, entity: Entity) -> Option<T> {
+        let type_id! = TypeId::of::<T>();
+
+        self.storages·get(type_id)
+            |and_then{|storage| {
+                storage·as_any()·downcast_ref::<DenseStorage<T>>()
+            }}
+            |and_then{|dense| dense·get(entity)}
+    }
+
+    /// Removes a component from an entity
+    fn remove_component<T: Clone + Send + Sync + 'static>(mut self, entity: Entity) {
+        let type_id! = TypeId::of::<T>();
+
+        if let Some(storage) = self.storages·get_mut(type_id) {
+            storage·remove(entity)
+        }
+    }
+
+    /// Checks if entity has a component
+    fn has_component<T: Clone + Send + Sync + 'static>(self, entity: Entity) -> bool {
+        let type_id! = TypeId::of::<T>();
+
+        self.storages·get(type_id)
+            |tau{|storage| storage·has(entity)}
+            |unwrap_or(false)
+    }
+
+    /// Adds a tag to an entity
+    fn add_tag(mut self, entity: Entity, tag: str) {
+        self.tags·entry(entity)·or_insert_with(HashSet::new)·insert(tag·to_string())
+    }
+
+    /// Removes a tag from an entity
+    fn remove_tag(mut self, entity: Entity, tag: str) {
+        if let Some(tags) = self.tags·get_mut(entity) {
+            tags·remove(tag)
+        }
+    }
+
+    /// Checks if entity has a tag
+    fn has_tag(self, entity: Entity, tag: str) -> bool {
+        self.tags·get(entity)
+            |tau{|tags| tags·contains(tag)}
+            |unwrap_or(false)
+    }
+
+    /// Sets parent-child relationship
+    fn set_parent(mut self, child: Entity, parent: Entity) {
+        // Remove from old parent
+        if let Some(old_parent) = self.parents·get(child) {
+            if let Some(siblings) = self.children·get_mut(*old_parent) {
+                siblings·retain{|e| *e != child}
+            }
+        }
+
+        // Set new parent
+        self.parents·insert(child, parent)
+        self.children·entry(parent)·or_insert_with(Vec::new)·push(child)
+    }
+
+    /// Gets parent of an entity
+    fn get_parent(self, entity: Entity) -> Option<Entity> {
+        self.parents·get(entity)·copied()
+    }
+
+    /// Gets children of an entity
+    fn get_children(self, entity: Entity) -> [Entity] {
+        self.children·get(entity)·cloned() |unwrap_or_default()
+    }
+
+    /// Returns all entities
+    fn all_entities(self) -> [Entity] {
+        self.entities·iter()·copied()·collect()
+    }
+
+    /// Returns entity count
+    fn entity_count(self) -> usize {
+        self.entities·len()
+    }
+
+    /// Clears all entities and components
+    fn clear(mut self) {
+        for entity in self.entities·iter()·copied()·collect::<Vec<_>>() {
+            self·despawn(entity)
+        }
+    }
+}
+
+// ============================================================================
+// Entity Builder
+// ============================================================================
+
+/// Builder for constructing entities with components
+struct EntityBuilder<'a> {
+    world: &'a mut World,
+    entity: Entity,
+}
+
+impl<'a> EntityBuilder<'a> {
+    /// Adds a component
+    fn with<T: Clone + Send + Sync + 'static>(self, component: T) -> EntityBuilder<'a> {
+        self.world·add_component(self.entity, component)
+        self
+    }
+
+    /// Adds a tag
+    fn tagged(self, tag: str) -> EntityBuilder<'a> {
+        self.world·add_tag(self.entity, tag)
+        self
+    }
+
+    /// Sets parent
+    fn child_of(self, parent: Entity) -> EntityBuilder<'a> {
+        self.world·set_parent(self.entity, parent)
+        self
+    }
+
+    /// Builds and returns the entity
+    fn build(self) -> Entity {
+        self.entity
+    }
+}
+
+// ============================================================================
+// Queries
+// ============================================================================
+
+/// Query for iterating over entities with specific components
+#[derive(Debug)]
+struct Query<'a> {
+    world: &'a World,
+    filter: QueryFilter,
+}
+
+/// Filter for queries
+#[derive(Debug, Clone, Default)]
+struct QueryFilter {
+    /// Required component types
+    with_components: [TypeId],
+    /// Excluded component types
+    without_components: [TypeId],
+    /// Required tags
+    with_tags: [str],
+    /// Excluded tags
+    without_tags: [str],
+}
+
+impl QueryFilter {
+    fn new() -> QueryFilter {
+        QueryFilter::default()
+    }
+
+    fn with<T: 'static>(mut self) -> QueryFilter {
+        self.with_components·push(TypeId::of::<T>())
+        self
+    }
+
+    fn without<T: 'static>(mut self) -> QueryFilter {
+        self.without_components·push(TypeId::of::<T>())
+        self
+    }
+
+    fn with_tag(mut self, tag: str) -> QueryFilter {
+        self.with_tags·push(tag·to_string())
+        self
+    }
+
+    fn without_tag(mut self, tag: str) -> QueryFilter {
+        self.without_tags·push(tag·to_string())
+        self
+    }
+}
+
+impl World {
+    /// Creates a query with filter
+    fn query_filtered(self, filter: QueryFilter) -> [Entity] {
+        self.entities·iter()
+            |phi{|entity| self·matches_filter(*entity, filter·clone())}
+            |copied()
+            |collect()
+    }
+
+    fn matches_filter(self, entity: Entity, filter: QueryFilter) -> bool {
+        // Check required components
+        for type_id in filter.with_components {
+            if let Some(storage) = self.storages·get(type_id) {
+                if !storage·has(entity) {
+                    return false
+                }
+            } else {
+                return false
+            }
+        }
+
+        // Check excluded components
+        for type_id in filter.without_components {
+            if let Some(storage) = self.storages·get(type_id) {
+                if storage·has(entity) {
+                    return false
+                }
+            }
+        }
+
+        // Check required tags
+        for tag in filter.with_tags {
+            if !self·has_tag(entity, tag) {
+                return false
+            }
+        }
+
+        // Check excluded tags
+        for tag in filter.without_tags {
+            if self·has_tag(entity, tag) {
+                return false
+            }
+        }
+
+        true
+    }
+
+    /// Query all entities with a specific component
+    fn with_component<T: Clone + Send + Sync + 'static>(self) -> [(Entity, T)] {
+        let type_id! = TypeId::of::<T>();
+
+        if let Some(storage) = self.storages·get(type_id) {
+            if let Some(dense) = storage·as_any()·downcast_ref::<DenseStorage<T>>() {
+                return dense.index_to_entity·iter()
+                    |phi_tau{|entity| {
+                        dense·get(*entity) |tau{|comp| (*entity, comp)}
+                    }}
+                    |collect()
+            }
+        }
+
+        []
+    }
+}
+
+// ============================================================================
+// Systems
+// ============================================================================
+
+/// A system that operates on the world
+trait System: Send + Sync {
+    /// Called every update tick
+    fn update(&mut self, world: &mut World, delta_time: f32)
+
+    /// System name for debugging
+    fn name(&self) -> &str { "unnamed_system" }
+
+    /// Priority (lower = runs first)
+    fn priority(&self) -> i32 { 0 }
+}
+
+/// Scheduler for running systems
+#[derive(Debug)]
+struct Scheduler {
+    systems: [(i32, Box<dyn System>)],
+}
+
+impl Scheduler {
+    fn new() -> Scheduler {
+        Scheduler { systems: [] }
+    }
+
+    /// Adds a system
+    fn add<S: System + 'static>(mut self, system: S) {
+        let priority! = system·priority();
+        self.systems·push((priority, Box::new(system)))
+        self.systems·sort_by_key{|(p, _)| *p}
+    }
+
+    /// Runs all systems
+    fn run(mut self, world: &mut World, delta_time: f32) {
+        for (_, system) in self.systems·iter_mut() {
+            system·update(world, delta_time)
+        }
+    }
+}
+
+// ============================================================================
+// Common Components
+// ============================================================================
+
+/// 2D Transform component
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Transform2D {
+    x: f32 = 0.0,
+    y: f32 = 0.0,
+    rotation: f32 = 0.0,
+    scale_x: f32 = 1.0,
+    scale_y: f32 = 1.0,
+}
+
+impl Transform2D {
+    fn new(x: f32, y: f32) -> Transform2D {
+        Transform2D { x, y, rotation: 0.0, scale_x: 1.0, scale_y: 1.0 }
+    }
+
+    fn with_rotation(mut self, rotation: f32) -> Transform2D {
+        self.rotation = rotation
+        self
+    }
+
+    fn with_scale(mut self, scale: f32) -> Transform2D {
+        self.scale_x = scale
+        self.scale_y = scale
+        self
+    }
+
+    fn translate(mut self, dx: f32, dy: f32) {
+        self.x += dx
+        self.y += dy
+    }
+
+    fn rotate(mut self, angle: f32) {
+        self.rotation += angle
+    }
+}
+
+/// 3D Transform component
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Transform3D {
+    x: f32 = 0.0,
+    y: f32 = 0.0,
+    z: f32 = 0.0,
+    rotation_x: f32 = 0.0,
+    rotation_y: f32 = 0.0,
+    rotation_z: f32 = 0.0,
+    scale_x: f32 = 1.0,
+    scale_y: f32 = 1.0,
+    scale_z: f32 = 1.0,
+}
+
+/// Velocity component
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct Velocity {
+    dx: f32 = 0.0,
+    dy: f32 = 0.0,
+    dz: f32 = 0.0,
+}
+
+impl Velocity {
+    fn new_2d(dx: f32, dy: f32) -> Velocity {
+        Velocity { dx, dy, dz: 0.0 }
+    }
+
+    fn new_3d(dx: f32, dy: f32, dz: f32) -> Velocity {
+        Velocity { dx, dy, dz }
+    }
+}
+
+/// Name/Label component
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Label {
+    name: str,
+}
+
+impl Label {
+    fn new(name: str) -> Label {
+        Label { name: name·to_string() }
+    }
+}
+
+/// Lifetime component (auto-despawn after duration)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Lifetime {
+    remaining_secs: f32,
+}
+
+impl Lifetime {
+    fn new(secs: f32) -> Lifetime {
+        Lifetime { remaining_secs: secs }
+    }
+
+    fn tick(mut self, delta: f32) -> bool {
+        self.remaining_secs -= delta
+        self.remaining_secs <= 0.0
+    }
+}
+
+// ============================================================================
+// Built-in Systems
+// ============================================================================
+
+/// System that applies velocity to transforms
+struct MovementSystem
+
+impl System for MovementSystem {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
+        let entities: [Entity] = world;
+            ·query_filtered(
+                QueryFilter::new()
+                    ·with::<Transform2D>()
+                    ·with::<Velocity>()
+            )
+
+        for entity in entities {
+            if let (Some(mut transform), Some(vel)) = (
+                world·get_component::<Transform2D>(entity),
+                world·get_component::<Velocity>(entity),
+            ) {
+                transform·translate(vel.dx * delta_time, vel.dy * delta_time)
+                world·add_component(entity, transform)
+            }
+        }
+    }
+
+    fn name(&self) -> &str { "MovementSystem" }
+    fn priority(&self) -> i32 { 0 }
+}
+
+/// System that despawns entities when lifetime expires
+struct LifetimeSystem
+
+impl System for LifetimeSystem {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
+        let entities: [Entity] = world;
+            ·query_filtered(QueryFilter::new()·with::<Lifetime>())
+
+        let mut to_despawn: [Entity] = [];
+
+        for entity in entities {
+            if let Some(mut lifetime) = world·get_component::<Lifetime>(entity) {
+                if lifetime·tick(delta_time) {
+                    to_despawn·push(entity);
+                } else {
+                    world·add_component(entity, lifetime)
+                }
+            }
+        }
+
+        for entity in to_despawn {
+            world·despawn(entity)
+        }
+    }
+
+    fn name(&self) -> &str { "LifetimeSystem" }
+    fn priority(&self) -> i32 { 100 }  // Run late
+}
+
+// ============================================================================
+// Events
+// ============================================================================
+
+/// Event channel for ECS events
+#[derive(Debug)]
+struct EventChannel<T> {
+    events: [T],
+    readers: HashMap<u64, usize>,
+    next_reader_id: u64,
+}
+
+impl<T: Clone> EventChannel<T> {
+    fn new() -> EventChannel<T> {
+        EventChannel {
+            events: [],
+            readers: HashMap::new(),
+            next_reader_id: 0,
+        }
+    }
+
+    /// Registers a new reader
+    fn register_reader(mut self) -> EventReader {
+        let id! = self.next_reader_id;
+        self.next_reader_id += 1
+        self.readers·insert(id, self.events·len())
+        EventReader { id: id }
+    }
+
+    /// Sends an event
+    fn send(mut self, event: T) {
+        self.events·push(event)
+    }
+
+    /// Reads new events for a reader
+    fn read(mut self, reader: EventReader) -> [T] {
+        if let Some(last_read) = self.readers·get_mut(reader.id) {
+            let events!: [T] = self.events[*last_read..]·to_vec();
+            *last_read = self.events·len()
+            events
+        } else {
+            []
+        }
+    }
+
+    /// Clears old events
+    fn clear_old(mut self) {
+        let min_read! = self.readers·values()·min()·copied() |unwrap_or(0);
+        if min_read > 0 {
+            self.events·drain(0..min_read)
+            for (_, pos) in self.readers·iter_mut() {
+                *pos -= min_read
+            }
+        }
+    }
+}
+
+/// Reader handle for event channel
+#[derive(Debug, Clone, Copy)]
+struct EventReader {
+    id: u64,
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*
+
+    #[test]
+    fn test_spawn_entity() {
+        let mut world = World::new();
+        let entity = world·spawn()·build();
+
+        assert!(world·is_alive(entity))
+        assert_eq!(world·entity_count(), 1)
+    }
+
+    #[test]
+    fn test_despawn_entity() {
+        let mut world = World::new();
+        let entity = world·spawn()·build();
+
+        world·despawn(entity)
+
+        assert!(!world·is_alive(entity))
+        assert_eq!(world·entity_count(), 0)
+    }
+
+    #[test]
+    fn test_components() {
+        let mut world = World::new();
+
+        let entity = world·spawn();
+            ·with(Transform2D::new(10.0, 20.0))
+            ·with(Velocity::new_2d(1.0, 0.5))
+            ·build()
+
+        let transform = world·get_component::<Transform2D>(entity);
+        assert!(transform·is_some())
+        assert_eq!(transform·unwrap().x, 10.0)
+
+        assert!(world·has_component::<Velocity>(entity))
+    }
+
+    #[test]
+    fn test_tags() {
+        let mut world = World::new();
+        let entity = world·spawn()·tagged("player")·tagged("alive")·build();
+
+        assert!(world·has_tag(entity, "player"))
+        assert!(world·has_tag(entity, "alive"))
+        assert!(!world·has_tag(entity, "enemy"))
+    }
+
+    #[test]
+    fn test_parent_child() {
+        let mut world = World::new();
+        let parent = world·spawn()·build();
+        let child = world·spawn()·child_of(parent)·build();
+
+        assert_eq!(world·get_parent(child), Some(parent))
+        assert!(world·get_children(parent)·contains(child))
+    }
+
+    #[test]
+    fn test_named_entity() {
+        let mut world = World::new();
+        let entity = world·spawn_named("hero")·build();
+
+        assert_eq!(world·get_named("hero"), Some(entity))
+    }
+
+    #[test]
+    fn test_query_filter() {
+        let mut world = World::new();
+
+        let e1 = world·spawn()·with(Transform2D::new(0.0, 0.0))·build();
+        let e2 = world·spawn()·with(Transform2D::new(1.0, 1.0))·with(Velocity::new_2d(1.0, 1.0))·build();
+        let e3 = world·spawn()·with(Velocity::new_2d(2.0, 2.0))·build();
+
+        let with_transform = world·query_filtered(
+            QueryFilter::new()·with::<Transform2D>()
+        )
+        assert_eq!(with_transform·len(), 2)
+
+        let with_both = world·query_filtered(
+            QueryFilter::new()·with::<Transform2D>()·with::<Velocity>()
+        )
+        assert_eq!(with_both·len(), 1)
+    }
+
+    #[test]
+    fn test_lifetime_system() {
+        let mut world = World::new();
+        let entity = world·spawn()·with(Lifetime::new(0.5))·build();
+
+        let mut scheduler = Scheduler::new();
+        scheduler·add(LifetimeSystem)
+
+        // Run for 0.6 seconds
+        scheduler·run(&mut world, 0.6)
+
+        assert!(!world·is_alive(entity))
+    }
+
+    #[test]
+    fn test_event_channel() {
+        let mut channel: EventChannel<str> = EventChannel::new();
+        let reader = channel·register_reader();
+
+        channel·send("event1"·to_string())
+        channel·send("event2"·to_string())
+
+        let events = channel·read(reader);
+        assert_eq!(events·len(), 2)
+
+        // Second read should be empty
+        let events2 = channel·read(reader);
+        assert!(events2·is_empty())
+    }
+}

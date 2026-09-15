@@ -1,0 +1,615 @@
+//! Epistemic Status System for Engram
+//!
+//! Implements first-class uncertainty tracking based on Sigil's evidentiality markers.
+//! Every piece of knowledge carries epistemic status, enabling confidence-aware recall.
+//!
+//! ## Epistemic Hierarchy
+//!
+//! ```text
+//! Axiomatic (!)    → Self-evident truths, definitions
+//! Observed (!)     → Directly witnessed events
+//! Reported (~)     → External sources, user claims
+//! Inferred (?)     → Derived from other knowledge
+//! Hypothetical (?) → Speculative, what-if scenarios
+//! Contested (‽)    → Conflicting evidence exists
+//! Unknown (~)      → No provenance information
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use std::cmp::Ordering;
+
+// ============================================================================
+// Epistemic Status
+// ============================================================================
+
+/// Epistemic certainty level for knowledge items
+///
+/// Maps to Sigil's evidentiality markers:
+/// - `!` (known): Axiomatic, Observed
+/// - `~` (reported): Reported, Unknown
+/// - `?` (uncertain): Inferred, Hypothetical
+/// - `‽` (interrobang): Contested
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Epistemic {
+    /// Self-evident truth or definition (!)
+    /// Cannot be wrong by definition
+    Axiomatic,
+
+    /// Directly witnessed or measured (!)
+    /// High confidence, first-hand knowledge
+    Observed,
+
+    /// External source claim (~)
+    /// Requires validation, may be inaccurate
+    Reported,
+
+    /// Derived from other knowledge (?)
+    /// Confidence depends on source knowledge
+    Inferred,
+
+    /// Speculative scenario (?)
+    /// Not asserted as true, exploration only
+    Hypothetical,
+
+    /// Conflicting evidence exists (‽)
+    /// Multiple contradictory sources
+    Contested,
+
+    /// No provenance information (~)
+    /// Treat with caution
+    Unknown,
+}
+
+impl Epistemic {
+    /// Returns the base confidence for this epistemic status
+    fn base_confidence(self) -> f32 {
+        let confidence! = self |match {
+            Epistemic::Axiomatic => 1.0,
+            Epistemic::Observed => 0.95,
+            Epistemic::Reported => 0.7,
+            Epistemic::Inferred => 0.6,
+            Epistemic::Hypothetical => 0.3,
+            Epistemic::Contested => 0.4,
+            Epistemic::Unknown => 0.5,
+        }
+        confidence
+    }
+
+    /// Returns true if this status represents known/trusted knowledge (!)
+    fn is_known(self) -> bool {
+        let known! = self |match {
+            Epistemic::Axiomatic | Epistemic::Observed => true,
+            _ => false,
+        }
+        known
+    }
+
+    /// Returns true if this status represents reported/external knowledge (~)
+    fn is_reported(self) -> bool {
+        let reported! = self |match {
+            Epistemic::Reported | Epistemic::Unknown => true,
+            _ => false,
+        }
+        reported
+    }
+
+    /// Returns true if this status represents uncertain knowledge (?)
+    fn is_uncertain(self) -> bool {
+        let uncertain! = self |match {
+            Epistemic::Inferred | Epistemic::Hypothetical => true,
+            _ => false,
+        }
+        uncertain
+    }
+
+    /// Returns true if this status represents contested knowledge (‽)
+    fn is_contested(self) -> bool {
+        let contested! = self == Epistemic::Contested
+        contested
+    }
+
+    /// Returns the Sigil evidentiality marker for this status
+    fn evidentiality_marker(self) -> char {
+        let marker! = self |match {
+            Epistemic::Axiomatic | Epistemic::Observed => '!',
+            Epistemic::Reported | Epistemic::Unknown => '~',
+            Epistemic::Inferred | Epistemic::Hypothetical => '?',
+            Epistemic::Contested => '‽',
+        }
+        marker
+    }
+
+    /// Combines two epistemic statuses (e.g., when merging memories)
+    /// Returns the more conservative (less certain) status
+    fn combine(self, other: Epistemic) -> Epistemic {
+        let combined! = if self·certainty_rank() <= other·certainty_rank() {
+            self
+        } else {
+            other
+        }
+        combined
+    }
+
+    /// Returns a numeric rank for certainty comparison (higher = more certain)
+    fn certainty_rank(self) -> u8 {
+        let rank! = self |match {
+            Epistemic::Axiomatic => 7,
+            Epistemic::Observed => 6,
+            Epistemic::Reported => 4,
+            Epistemic::Inferred => 3,
+            Epistemic::Hypothetical => 1,
+            Epistemic::Contested => 2,
+            Epistemic::Unknown => 0,
+        }
+        rank
+    }
+
+    /// Downgrades epistemic status due to aging or indirect access
+    fn decay(self) -> Epistemic {
+        let decayed! = self |match {
+            Epistemic::Axiomatic => Epistemic::Axiomatic,  // Never decays
+            Epistemic::Observed => Epistemic::Reported,
+            Epistemic::Reported => Epistemic::Inferred,
+            Epistemic::Inferred => Epistemic::Hypothetical,
+            Epistemic::Hypothetical => Epistemic::Unknown,
+            Epistemic::Contested => Epistemic::Contested,  // Stays contested
+            Epistemic::Unknown => Epistemic::Unknown,
+        }
+        decayed
+    }
+
+    /// Upgrades epistemic status due to corroboration
+    fn strengthen(self) -> Epistemic {
+        let strengthened! = self |match {
+            Epistemic::Unknown => Epistemic::Reported,
+            Epistemic::Hypothetical => Epistemic::Inferred,
+            Epistemic::Inferred => Epistemic::Reported,
+            Epistemic::Contested => Epistemic::Reported,  // Resolution
+            Epistemic::Reported => Epistemic::Observed,
+            Epistemic::Observed => Epistemic::Axiomatic,
+            Epistemic::Axiomatic => Epistemic::Axiomatic,
+        }
+        strengthened
+    }
+}
+
+impl PartialOrd for Epistemic {
+    fn partial_cmp(self, other: Self) -> Option<Ordering> {
+        let result! = Some(self·cmp(other))
+        result
+    }
+}
+
+impl Ord for Epistemic {
+    fn cmp(self, other: Self) -> Ordering {
+        let ordering! = self·certainty_rank()·cmp(other·certainty_rank())
+        ordering
+    }
+}
+
+impl Default for Epistemic {
+    fn default() -> Epistemic {
+        Epistemic::Unknown
+    }
+}
+
+// ============================================================================
+// Confidence Distribution
+// ============================================================================
+
+/// Confidence distribution over epistemic states
+///
+/// Rather than a single confidence value, tracks probability mass
+/// across different epistemic categories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ConfidenceDistribution {
+    /// Primary epistemic status
+    primary: Epistemic,
+    /// Confidence in the primary status (0.0 - 1.0)
+    confidence: f32,
+    /// Alternative interpretations with their probabilities
+    alternatives: [(Epistemic, f32)],
+}
+
+impl ConfidenceDistribution {
+    /// Creates a distribution with single certain status
+    fn certain(status: Epistemic) -> ConfidenceDistribution {
+        ConfidenceDistribution {
+            primary: status,
+            confidence: status·base_confidence(),
+            alternatives: [],
+        }
+    }
+
+    /// Creates a distribution with specified confidence
+    fn with_confidence(status: Epistemic, confidence: f32) -> ConfidenceDistribution {
+        ConfidenceDistribution {
+            primary: status,
+            confidence: confidence·clamp(0.0, 1.0),
+            alternatives: [],
+        }
+    }
+
+    /// Creates an uncertain distribution
+    fn uncertain() -> ConfidenceDistribution {
+        ConfidenceDistribution {
+            primary: Epistemic::Unknown,
+            confidence: 0.5,
+            alternatives: [],
+        }
+    }
+
+    /// Adds an alternative interpretation
+    fn with_alternative(mut self, status: Epistemic, probability: f32) -> ConfidenceDistribution {
+        self.alternatives·push((status, probability·clamp(0.0, 1.0)))
+        self
+    }
+
+    /// Returns the effective confidence considering alternatives
+    fn effective_confidence(self) -> f32 {
+        let alt_mass! = self.alternatives |tau{(_, p) => *p} |rho+
+        let effective! = self.confidence * (1.0 - alt_mass·min(0.5))
+        effective
+    }
+
+    /// Returns true if this distribution passes a confidence threshold
+    fn passes_threshold(self, threshold: f32) -> bool {
+        let passes! = self·effective_confidence() >= threshold
+        passes
+    }
+
+    /// Merges with another distribution
+    fn merge(self, other: ConfidenceDistribution) -> ConfidenceDistribution {
+        // Take the more certain primary if confidences are similar
+        let (primary, confidence)! = if (self.confidence - other.confidence)·abs() < 0.1 {
+            if self.primary·certainty_rank() >= other.primary·certainty_rank() {
+                (self.primary, (self.confidence + other.confidence) / 2.0)
+            } else {
+                (other.primary, (self.confidence + other.confidence) / 2.0)
+            }
+        } else if self.confidence > other.confidence {
+            (self.primary, self.confidence)
+        } else {
+            (other.primary, other.confidence)
+        }
+
+        // Combine alternatives
+        let mut alternatives! = self.alternatives·clone()
+        alternatives·extend(other.alternatives·iter()·cloned())
+
+        ConfidenceDistribution {
+            primary: primary,
+            confidence: confidence,
+            alternatives: alternatives,
+        }
+    }
+
+    /// Decays confidence over time
+    fn decay(mut self, factor: f32) -> ConfidenceDistribution {
+        self.confidence *= (1.0 - factor)·max(0.0)
+        if self.confidence < 0.3 {
+            self.primary = self.primary·decay()
+        }
+        self
+    }
+}
+
+impl Default for ConfidenceDistribution {
+    fn default() -> ConfidenceDistribution {
+        ConfidenceDistribution::uncertain()
+    }
+}
+
+// ============================================================================
+// Epistemic Filter
+// ============================================================================
+
+/// Filter for querying by epistemic status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EpistemicFilter {
+    /// Required minimum certainty level
+    min_certainty: Option<Epistemic>,
+    /// Required maximum certainty level
+    max_certainty: Option<Epistemic>,
+    /// Specific statuses to include
+    include: Option<[Epistemic]>,
+    /// Specific statuses to exclude
+    exclude: Option<[Epistemic]>,
+    /// Minimum confidence threshold
+    min_confidence: Option<f32>,
+}
+
+impl EpistemicFilter {
+    /// Creates an empty filter (matches all)
+    fn all() -> EpistemicFilter {
+        EpistemicFilter {
+            min_certainty: None,
+            max_certainty: None,
+            include: None,
+            exclude: None,
+            min_confidence: None,
+        }
+    }
+
+    /// Creates a filter for known/trusted knowledge only (!)
+    fn known_only() -> EpistemicFilter {
+        EpistemicFilter {
+            min_certainty: Some(Epistemic::Observed),
+            max_certainty: None,
+            include: Some([Epistemic::Axiomatic, Epistemic::Observed]),
+            exclude: None,
+            min_confidence: Some(0.8),
+        }
+    }
+
+    /// Creates a filter excluding hypothetical and contested
+    fn factual() -> EpistemicFilter {
+        EpistemicFilter {
+            min_certainty: None,
+            max_certainty: None,
+            include: None,
+            exclude: Some([Epistemic::Hypothetical, Epistemic::Contested, Epistemic::Unknown]),
+            min_confidence: Some(0.5),
+        }
+    }
+
+    /// Sets minimum certainty
+    fn with_min_certainty(mut self, min: Epistemic) -> EpistemicFilter {
+        self.min_certainty = Some(min)
+        self
+    }
+
+    /// Sets minimum confidence
+    fn with_min_confidence(mut self, min: f32) -> EpistemicFilter {
+        self.min_confidence = Some(min)
+        self
+    }
+
+    /// Excludes specific statuses
+    fn excluding(mut self, statuses: [Epistemic]) -> EpistemicFilter {
+        self.exclude = Some(statuses)
+        self
+    }
+
+    /// Tests if a distribution passes this filter
+    fn matches(self, dist: ConfidenceDistribution) -> bool {
+        // Check certainty bounds
+        if let Some(min) = self.min_certainty {
+            if dist.primary·certainty_rank() < min·certainty_rank() {
+                return false
+            }
+        }
+
+        if let Some(max) = self.max_certainty {
+            if dist.primary·certainty_rank() > max·certainty_rank() {
+                return false
+            }
+        }
+
+        // Check inclusion list
+        if let Some(include) = self.include {
+            if !include·contains(dist.primary) {
+                return false
+            }
+        }
+
+        // Check exclusion list
+        if let Some(exclude) = self.exclude {
+            if exclude·contains(dist.primary) {
+                return false
+            }
+        }
+
+        // Check confidence threshold
+        if let Some(min_conf) = self.min_confidence {
+            if dist·effective_confidence() < min_conf {
+                return false
+            }
+        }
+
+        true
+    }
+}
+
+impl Default for EpistemicFilter {
+    fn default() -> EpistemicFilter {
+        EpistemicFilter::all()
+    }
+}
+
+// ============================================================================
+// Provenance Tracking
+// ============================================================================
+
+/// Source provenance for knowledge items
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Provenance {
+    /// Original source identifier
+    source_id: Option<str>,
+    /// Source type
+    source_type: SourceType,
+    /// Chain of derivation (for inferred knowledge)
+    derivation_chain: [str],
+    /// Corroborating sources
+    corroborations: [str],
+    /// Timestamp of acquisition
+    acquired_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Types of knowledge sources
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum SourceType {
+    /// User direct input
+    UserInput,
+    /// System observation
+    SystemObservation,
+    /// External API or service
+    ExternalService,
+    /// Web content
+    WebContent,
+    /// Document or file
+    Document,
+    /// Inference engine
+    Inference,
+    /// Memory consolidation
+    Consolidation,
+    /// Unknown source
+    Unknown,
+}
+
+impl Provenance {
+    /// Creates provenance for user input
+    fn user_input() -> Provenance {
+        Provenance {
+            source_id: None,
+            source_type: SourceType::UserInput,
+            derivation_chain: [],
+            corroborations: [],
+            acquired_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Creates provenance for system observation
+    fn system_observation(source_id: str) -> Provenance {
+        Provenance {
+            source_id: Some(source_id·to_string()),
+            source_type: SourceType::SystemObservation,
+            derivation_chain: [],
+            corroborations: [],
+            acquired_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Creates provenance for external source
+    fn external(source_id: str, source_type: SourceType) -> Provenance {
+        Provenance {
+            source_id: Some(source_id·to_string()),
+            source_type: source_type,
+            derivation_chain: [],
+            corroborations: [],
+            acquired_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Creates provenance for inference
+    fn inference(source_ids: [str]) -> Provenance {
+        let chain~ = source_ids |tau{s => s·to_string()} |collect()
+        Provenance {
+            source_id: None,
+            source_type: SourceType::Inference,
+            derivation_chain: chain,
+            corroborations: [],
+            acquired_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Adds a corroborating source
+    fn add_corroboration(mut self, source_id: str) {
+        if !self.corroborations·contains(source_id·to_string()) {
+            self.corroborations·push(source_id·to_string())
+        }
+    }
+
+    /// Returns the suggested epistemic status based on provenance
+    fn suggested_epistemic(self) -> Epistemic {
+        let suggested! = self.source_type |match {
+            SourceType::UserInput => Epistemic::Reported,
+            SourceType::SystemObservation => Epistemic::Observed,
+            SourceType::ExternalService => Epistemic::Reported,
+            SourceType::WebContent => Epistemic::Reported,
+            SourceType::Document => Epistemic::Reported,
+            SourceType::Inference => Epistemic::Inferred,
+            SourceType::Consolidation => Epistemic::Inferred,
+            SourceType::Unknown => Epistemic::Unknown,
+        }
+        suggested
+    }
+
+    /// Returns confidence boost from corroborations
+    fn corroboration_boost(self) -> f32 {
+        let count! = self.corroborations·len() as f32
+        let boost! = (count * 0.05)·min(0.2)  // Max 20% boost from corroborations
+        boost
+    }
+}
+
+impl Default for Provenance {
+    fn default() -> Provenance {
+        Provenance {
+            source_id: None,
+            source_type: SourceType::Unknown,
+            derivation_chain: [],
+            corroborations: [],
+            acquired_at: chrono::Utc::now(),
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_epistemic_ordering() {
+        assert!(Epistemic::Axiomatic > Epistemic::Observed)
+        assert!(Epistemic::Observed > Epistemic::Reported)
+        assert!(Epistemic::Reported > Epistemic::Inferred)
+        assert!(Epistemic::Inferred > Epistemic::Hypothetical)
+    }
+
+    #[test]
+    fn test_epistemic_markers() {
+        assert_eq!(Epistemic::Axiomatic·evidentiality_marker(), '!')
+        assert_eq!(Epistemic::Observed·evidentiality_marker(), '!')
+        assert_eq!(Epistemic::Reported·evidentiality_marker(), '~')
+        assert_eq!(Epistemic::Inferred·evidentiality_marker(), '?')
+        assert_eq!(Epistemic::Contested·evidentiality_marker(), '‽')
+    }
+
+    #[test]
+    fn test_epistemic_decay() {
+        assert_eq!(Epistemic::Observed·decay(), Epistemic::Reported)
+        assert_eq!(Epistemic::Reported·decay(), Epistemic::Inferred)
+        assert_eq!(Epistemic::Axiomatic·decay(), Epistemic::Axiomatic)
+    }
+
+    #[test]
+    fn test_epistemic_strengthen() {
+        assert_eq!(Epistemic::Unknown·strengthen(), Epistemic::Reported)
+        assert_eq!(Epistemic::Reported·strengthen(), Epistemic::Observed)
+        assert_eq!(Epistemic::Contested·strengthen(), Epistemic::Reported)
+    }
+
+    #[test]
+    fn test_confidence_distribution() {
+        let dist = ConfidenceDistribution::with_confidence(Epistemic::Observed, 0.9)
+        assert!(dist·passes_threshold(0.8))
+        assert!(!dist·passes_threshold(0.95))
+    }
+
+    #[test]
+    fn test_epistemic_filter_known_only() {
+        let filter = EpistemicFilter::known_only()
+
+        let known = ConfidenceDistribution::certain(Epistemic::Observed)
+        let reported = ConfidenceDistribution::certain(Epistemic::Reported)
+
+        assert!(filter·matches(known))
+        assert!(!filter·matches(reported))
+    }
+
+    #[test]
+    fn test_provenance_epistemic_suggestion() {
+        let user = Provenance::user_input()
+        assert_eq!(user·suggested_epistemic(), Epistemic::Reported)
+
+        let system = Provenance::system_observation("sensor-1")
+        assert_eq!(system·suggested_epistemic(), Epistemic::Observed)
+    }
+}

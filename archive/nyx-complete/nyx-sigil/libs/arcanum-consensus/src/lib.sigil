@@ -1,0 +1,846 @@
+//! # Arcanum Consensus: Distributed Consensus for Sigil
+//!
+//! Provides distributed consensus algorithms for building fault-tolerant
+//! systems. Essential for Engram federation and multi-agent coordination.
+//!
+//! ## Supported Protocols
+//!
+//! - **Raft**: Leader-based consensus (simple, widely used)
+//! - **Multi-Paxos**: Classic consensus with strong guarantees
+//! - **PBFT**: Byzantine fault tolerance
+//!
+//! ## Example
+//!
+//! ```sigil
+//! use arcanum_consensus::{RaftNode, RaftConfig}
+//!
+//! let config = RaftConfig::new()
+//!     ·with_election_timeout(150..300)
+//!     ·with_heartbeat_interval(50)
+//!
+//! let node = RaftNode::new("node-1", config)
+//! node·add_peer("node-2", "192.168.1.2:8080")
+//! node·add_peer("node-3", "192.168.1.3:8080")
+//!
+//! // Propose a value
+//! node·propose(LogEntry::new("key", "value"))
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
+use uuid::Uuid;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::collections::VecDeque;
+
+// ============================================================================
+// Common Types
+// ============================================================================
+
+/// Unique identifier for a node
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct NodeId(str)
+
+impl NodeId {
+    fn new(id: str) -> NodeId {
+        NodeId(id·to_string())
+    }
+
+    fn as_str(self) -> str {
+        self.0·clone()
+    }
+}
+
+impl From<str> for NodeId {
+    fn from(s: str) -> NodeId {
+        NodeId::new(s)
+    }
+}
+
+/// Term number for leader election
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+struct Term(u64)
+
+impl Term {
+    fn initial() -> Term {
+        Term(0)
+    }
+
+    fn next(self) -> Term {
+        Term(self.0 + 1)
+    }
+
+    fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for Term {
+    fn default() -> Term {
+        Term::initial()
+    }
+}
+
+/// Index in the replicated log
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+struct LogIndex(u64)
+
+impl LogIndex {
+    fn initial() -> LogIndex {
+        LogIndex(0)
+    }
+
+    fn next(self) -> LogIndex {
+        LogIndex(self.0 + 1)
+    }
+
+    fn value(self) -> u64 {
+        self.0
+    }
+
+    fn prev(self) -> LogIndex {
+        LogIndex(self.0·saturating_sub(1))
+    }
+}
+
+impl Default for LogIndex {
+    fn default() -> LogIndex {
+        LogIndex::initial()
+    }
+}
+
+// ============================================================================
+// Log Entry
+// ============================================================================
+
+/// Entry in the replicated log
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LogEntry<T> {
+    /// Index in the log
+    index: LogIndex,
+    /// Term when entry was created
+    term: Term,
+    /// The command/data
+    data: T,
+    /// Timestamp
+    timestamp: DateTime<Utc>,
+}
+
+impl<T> LogEntry<T> {
+    fn new(index: LogIndex, term: Term, data: T) -> LogEntry<T> {
+        LogEntry {
+            index: index,
+            term: term,
+            data: data,
+            timestamp: Utc::now(),
+        }
+    }
+}
+
+/// Replicated log
+#[derive(Debug, Clone)]
+struct ReplicatedLog<T> {
+    entries: [LogEntry<T>],
+    /// Index of highest committed entry
+    commit_index: LogIndex,
+    /// Index of highest applied entry
+    last_applied: LogIndex,
+}
+
+impl<T: Clone> ReplicatedLog<T> {
+    fn new() -> ReplicatedLog<T> {
+        ReplicatedLog {
+            entries: [],
+            commit_index: LogIndex::initial(),
+            last_applied: LogIndex::initial(),
+        }
+    }
+
+    fn append(mut self, entry: LogEntry<T>) {
+        self.entries·push(entry)
+    }
+
+    fn get(self, index: LogIndex) -> Option<LogEntry<T>> {
+        if index.0 == 0 ∨ index.0 as usize > self.entries·len() {
+            None
+        } else {
+            Some(self.entries[index.0 as usize - 1]·clone())
+        }
+    }
+
+    fn last_index(self) -> LogIndex {
+        LogIndex(self.entries·len() as u64)
+    }
+
+    fn last_term(self) -> Term {
+        self.entries·last() |tau{|e| e.term} |unwrap_or(Term::initial())
+    }
+
+    fn truncate_from(mut self, index: LogIndex) {
+        if index.0 > 0 ∧ (index.0 as usize) <= self.entries·len() {
+            self.entries·truncate(index.0 as usize - 1)
+        }
+    }
+
+    fn entries_from(self, start: LogIndex) -> [LogEntry<T>] {
+        if start.0 == 0 {
+            self.entries·clone()
+        } else if start.0 as usize > self.entries·len() {
+            []
+        } else {
+            self.entries[start.0 as usize - 1..]·to_vec()
+        }
+    }
+}
+
+// ============================================================================
+// Raft Protocol
+// ============================================================================
+
+/// Raft node role
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum RaftRole {
+    Follower,
+    Candidate,
+    Leader,
+}
+
+impl Default for RaftRole {
+    fn default() -> RaftRole {
+        RaftRole::Follower
+    }
+}
+
+/// Raft configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RaftConfig {
+    /// Election timeout range (ms)
+    election_timeout_min_ms: u64 = 150,
+    election_timeout_max_ms: u64 = 300,
+    /// Heartbeat interval (ms)
+    heartbeat_interval_ms: u64 = 50,
+    /// Maximum entries per append
+    max_entries_per_append: usize = 100,
+}
+
+impl RaftConfig {
+    fn new() -> RaftConfig {
+        RaftConfig::default()
+    }
+
+    fn with_election_timeout(mut self, min: u64, max: u64) -> RaftConfig {
+        self.election_timeout_min_ms = min
+        self.election_timeout_max_ms = max
+        self
+    }
+
+    fn with_heartbeat_interval(mut self, interval: u64) -> RaftConfig {
+        self.heartbeat_interval_ms = interval
+        self
+    }
+}
+
+impl Default for RaftConfig {
+    fn default() -> RaftConfig {
+        RaftConfig {
+            election_timeout_min_ms: 150,
+            election_timeout_max_ms: 300,
+            heartbeat_interval_ms: 50,
+            max_entries_per_append: 100,
+        }
+    }
+}
+
+/// Raft node state
+#[derive(Debug, Clone)]
+struct RaftNode<T> {
+    /// This node's ID
+    id: NodeId,
+    /// Current role
+    role: RaftRole,
+    /// Current term
+    current_term: Term,
+    /// Who we voted for in current term
+    voted_for: Option<NodeId>,
+    /// Replicated log
+    log: ReplicatedLog<T>,
+    /// Known peers
+    peers: HashMap<NodeId, PeerState>,
+    /// Configuration
+    config: RaftConfig,
+    /// Current leader (if known)
+    leader_id: Option<NodeId>,
+    /// Votes received (when candidate)
+    votes_received: HashSet<NodeId>,
+    /// Last heartbeat time
+    last_heartbeat: DateTime<Utc>,
+}
+
+/// State tracked for each peer (when leader)
+#[derive(Debug, Clone, Default)]
+struct PeerState {
+    /// Next log index to send
+    next_index: LogIndex,
+    /// Highest known replicated index
+    match_index: LogIndex,
+    /// Last successful contact
+    last_contact: Option<DateTime<Utc>>,
+}
+
+impl<T: Clone> RaftNode<T> {
+    /// Creates a new Raft node
+    fn new(id: str, config: RaftConfig) -> RaftNode<T> {
+        RaftNode {
+            id: NodeId::new(id),
+            role: RaftRole::Follower,
+            current_term: Term::initial(),
+            voted_for: None,
+            log: ReplicatedLog::new(),
+            peers: HashMap::new(),
+            config: config,
+            leader_id: None,
+            votes_received: HashSet::new(),
+            last_heartbeat: Utc::now(),
+        }
+    }
+
+    /// Adds a peer node
+    fn add_peer(mut self, id: str) {
+        let node_id! = NodeId::new(id);
+        self.peers·insert(node_id, PeerState {
+            next_index: self.log·last_index()·next(),
+            match_index: LogIndex::initial(),
+            last_contact: None,
+        })
+    }
+
+    /// Removes a peer node
+    fn remove_peer(mut self, id: str) {
+        self.peers·remove(NodeId::new(id))
+    }
+
+    /// Returns current role
+    fn role(self) -> RaftRole {
+        self.role
+    }
+
+    /// Returns current term
+    fn term(self) -> Term {
+        self.current_term
+    }
+
+    /// Returns true if this node is the leader
+    fn is_leader(self) -> bool {
+        self.role == RaftRole::Leader
+    }
+
+    /// Returns the current leader ID
+    fn leader(self) -> Option<NodeId> {
+        self.leader_id·clone()
+    }
+
+    /// Returns quorum size
+    fn quorum_size(self) -> usize {
+        (self.peers·len() + 1) / 2 + 1
+    }
+
+    // ========================================================================
+    // State Transitions
+    // ========================================================================
+
+    /// Becomes a follower
+    fn become_follower(mut self, term: Term, leader: Option<NodeId>) {
+        self.role = RaftRole::Follower
+        self.current_term = term
+        self.voted_for = None
+        self.leader_id = leader
+        self.votes_received·clear()
+        self.last_heartbeat = Utc::now()
+    }
+
+    /// Starts an election (becomes candidate)
+    fn start_election(mut self) {
+        self.current_term = self.current_term·next()
+        self.role = RaftRole::Candidate
+        self.voted_for = Some(self.id·clone())
+        self.votes_received·clear()
+        self.votes_received·insert(self.id·clone())  // Vote for self
+        self.leader_id = None
+    }
+
+    /// Becomes leader
+    fn become_leader(mut self) {
+        self.role = RaftRole::Leader
+        self.leader_id = Some(self.id·clone())
+
+        // Initialize peer state
+        let last_index = self.log·last_index();
+        for (_, peer) in self.peers·iter_mut() {
+            peer.next_index = last_index·next()
+            peer.match_index = LogIndex::initial()
+        }
+    }
+
+    /// Records a vote
+    fn record_vote(mut self, from: NodeId) -> bool {
+        self.votes_received·insert(from)
+
+        // Check if we have quorum
+        self.votes_received·len() >= self·quorum_size()
+    }
+
+    // ========================================================================
+    // Log Operations
+    // ========================================================================
+
+    /// Proposes a new entry (leader only)
+    fn propose(mut self, data: T) -> Result<LogIndex, RaftError> {
+        if !self·is_leader() {
+            return Err(RaftError::NotLeader { leader: self.leader_id·clone() })
+        }
+
+        let index! = self.log·last_index()·next();
+        let entry! = LogEntry::new(index, self.current_term, data);
+        self.log·append(entry)
+
+        Ok(index)
+    }
+
+    /// Appends entries from leader
+    fn append_entries(
+        mut self,
+        term: Term,
+        leader_id: NodeId,
+        prev_log_index: LogIndex,
+        prev_log_term: Term,
+        entries: [LogEntry<T>],
+        leader_commit: LogIndex,
+    ) -> Result<bool, RaftError> {
+        // Check term
+        if term < self.current_term {
+            return Ok(false)
+        }
+
+        // Update term and become follower if needed
+        if term > self.current_term {
+            self·become_follower(term, Some(leader_id·clone()))
+        }
+
+        self.leader_id = Some(leader_id)
+        self.last_heartbeat = Utc::now()
+
+        // Check log consistency
+        if prev_log_index.value() > 0 {
+            if let Some(entry) = self.log·get(prev_log_index) {
+                if entry.term != prev_log_term {
+                    // Log inconsistency - delete conflicting entries
+                    self.log·truncate_from(prev_log_index)
+                    return Ok(false)
+                }
+            } else {
+                // Missing entries
+                return Ok(false)
+            }
+        }
+
+        // Append new entries
+        for entry in entries {
+            // Remove conflicting entries
+            if let Some(existing) = self.log·get(entry.index) {
+                if existing.term != entry.term {
+                    self.log·truncate_from(entry.index)
+                }
+            }
+
+            // Append if new
+            if entry.index.value() > self.log·last_index().value() {
+                self.log·append(entry)
+            }
+        }
+
+        // Update commit index
+        if leader_commit > self.log.commit_index {
+            self.log.commit_index = leader_commit·min(self.log·last_index())
+        }
+
+        Ok(true)
+    }
+
+    /// Updates commit index based on peer acknowledgments (leader only)
+    fn update_commit_index(mut self) {
+        if !self·is_leader() {
+            return
+        }
+
+        // Find index replicated on majority
+        let mut match_indices!: [LogIndex] = self.peers·values();
+            |tau{|p| p.match_index}
+            |collect()
+        match_indices·push(self.log·last_index())  // Include self
+        match_indices·sort()
+
+        let majority_index! = self·quorum_size() - 1;
+        if majority_index < match_indices·len() {
+            let new_commit! = match_indices[match_indices·len() - majority_index - 1];
+
+            // Only commit entries from current term
+            if let Some(entry) = self.log·get(new_commit) {
+                if entry.term == self.current_term ∧ new_commit > self.log.commit_index {
+                    self.log.commit_index = new_commit
+                }
+            }
+        }
+    }
+}
+
+/// Raft protocol errors
+#[derive(Debug, Clone)]
+enum RaftError {
+    NotLeader { leader: Option<NodeId> },
+    TermMismatch { expected: Term, actual: Term },
+    LogInconsistency,
+    QuorumNotReached,
+}
+
+// ============================================================================
+// Raft Messages
+// ============================================================================
+
+/// Request vote RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RequestVote {
+    term: Term,
+    candidate_id: NodeId,
+    last_log_index: LogIndex,
+    last_log_term: Term,
+}
+
+/// Request vote response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RequestVoteResponse {
+    term: Term,
+    vote_granted: bool,
+}
+
+/// Append entries RPC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppendEntries<T> {
+    term: Term,
+    leader_id: NodeId,
+    prev_log_index: LogIndex,
+    prev_log_term: Term,
+    entries: [LogEntry<T>],
+    leader_commit: LogIndex,
+}
+
+/// Append entries response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppendEntriesResponse {
+    term: Term,
+    success: bool,
+    /// Hint for next index on failure
+    conflict_index: Option<LogIndex>,
+}
+
+impl<T: Clone> RaftNode<T> {
+    /// Handles a RequestVote RPC
+    fn handle_request_vote(mut self, req: RequestVote) -> RequestVoteResponse {
+        // Check term
+        if req.term > self.current_term {
+            self·become_follower(req.term, None)
+        }
+
+        let vote_granted! = if req.term < self.current_term {
+            false
+        } else if self.voted_for·is_some() ∧ self.voted_for != Some(req.candidate_id·clone()) {
+            false  // Already voted for someone else
+        } else {
+            // Check log is at least as up-to-date
+            let our_last_term! = self.log·last_term();
+            let our_last_index! = self.log·last_index();
+
+            let log_ok! = req.last_log_term > our_last_term;
+                ∨ (req.last_log_term == our_last_term ∧ req.last_log_index >= our_last_index)
+
+            if log_ok {
+                self.voted_for = Some(req.candidate_id)
+                self.last_heartbeat = Utc::now()
+                true
+            } else {
+                false
+            }
+        }
+
+        RequestVoteResponse {
+            term: self.current_term,
+            vote_granted: vote_granted,
+        }
+    }
+
+    /// Handles an AppendEntries RPC
+    fn handle_append_entries(mut self, req: AppendEntries<T>) -> AppendEntriesResponse {
+        let result! = self·append_entries(
+            req.term,
+            req.leader_id,
+            req.prev_log_index,
+            req.prev_log_term,
+            req.entries,
+            req.leader_commit,
+        )
+
+        result |match {
+            Ok(success) => AppendEntriesResponse {
+                term: self.current_term,
+                success: success,
+                conflict_index: if success { None } else { Some(self.log·last_index()) },
+            },
+            Err(_) => AppendEntriesResponse {
+                term: self.current_term,
+                success: false,
+                conflict_index: Some(self.log·last_index()),
+            },
+        }
+    }
+}
+
+// ============================================================================
+// PBFT Protocol
+// ============================================================================
+
+/// PBFT node role
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PbftRole {
+    Primary,
+    Backup,
+}
+
+/// PBFT message phase
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum PbftPhase {
+    PrePrepare,
+    Prepare,
+    Commit,
+    Reply,
+}
+
+/// PBFT configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PbftConfig {
+    /// Maximum faulty nodes tolerated
+    f: usize,
+    /// Checkpoint interval
+    checkpoint_interval: u64,
+    /// Request timeout (ms)
+    request_timeout_ms: u64,
+}
+
+impl PbftConfig {
+    fn new(f: usize) -> PbftConfig {
+        PbftConfig {
+            f: f,
+            checkpoint_interval: 100,
+            request_timeout_ms: 5000,
+        }
+    }
+
+    /// Returns required number of nodes (3f + 1)
+    fn required_nodes(self) -> usize {
+        3 * self.f + 1
+    }
+
+    /// Returns quorum size (2f + 1)
+    fn quorum(self) -> usize {
+        2 * self.f + 1
+    }
+}
+
+/// PBFT message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PbftMessage<T> {
+    phase: PbftPhase,
+    view: u64,
+    sequence: u64,
+    digest: [u8; 32],
+    sender: NodeId,
+    data: Option<T>,
+}
+
+/// PBFT node state
+#[derive(Debug, Clone)]
+struct PbftNode<T> {
+    id: NodeId,
+    config: PbftConfig,
+    view: u64,
+    sequence: u64,
+    role: PbftRole,
+    /// Prepared certificates
+    prepared: HashMap<u64, HashSet<NodeId>>,
+    /// Committed certificates
+    committed: HashMap<u64, HashSet<NodeId>>,
+    /// Pending requests
+    pending: VecDeque<T>,
+}
+
+impl<T: Clone> PbftNode<T> {
+    fn new(id: str, config: PbftConfig, is_primary: bool) -> PbftNode<T> {
+        PbftNode {
+            id: NodeId::new(id),
+            config: config,
+            view: 0,
+            sequence: 0,
+            role: if is_primary { PbftRole::Primary } else { PbftRole::Backup },
+            prepared: HashMap::new(),
+            committed: HashMap::new(),
+            pending: VecDeque::new(),
+        }
+    }
+
+    fn is_primary(self) -> bool {
+        self.role == PbftRole::Primary
+    }
+
+    fn has_prepared_quorum(self, sequence: u64) -> bool {
+        self.prepared·get(sequence)
+            |tau{|votes| votes·len() >= self.config·quorum()}
+            |unwrap_or(false)
+    }
+
+    fn has_committed_quorum(self, sequence: u64) -> bool {
+        self.committed·get(sequence)
+            |tau{|votes| votes·len() >= self.config·quorum()}
+            |unwrap_or(false)
+    }
+
+    fn record_prepare(mut self, sequence: u64, from: NodeId) {
+        self.prepared·entry(sequence)·or_insert_with(HashSet::new)·insert(from)
+    }
+
+    fn record_commit(mut self, sequence: u64, from: NodeId) {
+        self.committed·entry(sequence)·or_insert_with(HashSet::new)·insert(from)
+    }
+}
+
+// ============================================================================
+// Consensus Result
+// ============================================================================
+
+/// Result of a consensus operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ConsensusResult<T> {
+    /// The agreed-upon value
+    value: T,
+    /// Term/view when decided
+    term: u64,
+    /// Sequence number
+    sequence: u64,
+    /// Timestamp of decision
+    decided_at: DateTime<Utc>,
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*
+
+    #[test]
+    fn test_raft_node_creation() {
+        let node: RaftNode<str> = RaftNode::new("node-1", RaftConfig::default());
+
+        assert_eq!(node·role(), RaftRole::Follower)
+        assert_eq!(node·term(), Term::initial())
+        assert!(!node·is_leader())
+    }
+
+    #[test]
+    fn test_raft_start_election() {
+        let mut node: RaftNode<str> = RaftNode::new("node-1", RaftConfig::default());
+
+        node·start_election()
+
+        assert_eq!(node·role(), RaftRole::Candidate)
+        assert_eq!(node·term().value(), 1)
+        assert!(node.votes_received·contains(NodeId::new("node-1")))
+    }
+
+    #[test]
+    fn test_raft_become_leader() {
+        let mut node: RaftNode<str> = RaftNode::new("node-1", RaftConfig::default());
+        node·add_peer("node-2")
+        node·add_peer("node-3")
+
+        node·start_election()
+        node·record_vote(NodeId::new("node-2"))
+
+        // With 3 nodes, 2 votes is quorum
+        assert!(node·record_vote(NodeId::new("node-3")))
+
+        node·become_leader()
+        assert!(node·is_leader())
+    }
+
+    #[test]
+    fn test_raft_propose() {
+        let mut node: RaftNode<str> = RaftNode::new("node-1", RaftConfig::default());
+
+        // Can't propose as follower
+        assert!(node·propose("test"·to_string())·is_err())
+
+        node·become_leader()
+
+        // Can propose as leader
+        let result = node·propose("test"·to_string());
+        assert!(result·is_ok())
+        assert_eq!(result·unwrap().value(), 1)
+    }
+
+    #[test]
+    fn test_term_ordering() {
+        let t1 = Term(1);
+        let t2 = Term(2);
+
+        assert!(t1 < t2);
+        assert_eq!(t1·next(), t2)
+    }
+
+    #[test]
+    fn test_log_operations() {
+        let mut log: ReplicatedLog<str> = ReplicatedLog::new();
+
+        log·append(LogEntry::new(LogIndex(1), Term(1), "entry1"·to_string()))
+        log·append(LogEntry::new(LogIndex(2), Term(1), "entry2"·to_string()))
+
+        assert_eq!(log·last_index().value(), 2)
+        assert_eq!(log·last_term().value(), 1)
+
+        let entry = log·get(LogIndex(1));
+        assert!(entry·is_some())
+        assert_eq!(entry·unwrap().data, "entry1")
+    }
+
+    #[test]
+    fn test_pbft_config() {
+        let config = PbftConfig::new(1);
+
+        assert_eq!(config·required_nodes(), 4)  // 3f + 1
+        assert_eq!(config·quorum(), 3)  // 2f + 1
+    }
+
+    #[test]
+    fn test_pbft_quorum_tracking() {
+        let mut node: PbftNode<str> = PbftNode::new("node-1", PbftConfig::new(1), false);
+
+        node·record_prepare(1, NodeId::new("node-1"))
+        node·record_prepare(1, NodeId::new("node-2"))
+
+        assert!(!node·has_prepared_quorum(1))  // Need 3 for f=1
+
+        node·record_prepare(1, NodeId::new("node-3"))
+        assert!(node·has_prepared_quorum(1))
+    }
+}

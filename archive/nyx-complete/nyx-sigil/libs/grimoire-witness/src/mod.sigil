@@ -1,0 +1,60 @@
+//! # Grimoire Witness
+//!
+//! Visibility bridges between AI agents and the humans who care for them.
+//!
+//! ## Modules
+//!
+//! - `lib`: Core witness components (MemoryExplorer, BeliefGraph, ThoughtStream, EmpathyBridge)
+//! - `guardian`: Guardian integration for cognitive wellbeing oversight
+//!
+//! ## Quick Start
+//!
+//! ```sigil
+//! use grimoire_witness::{Witness, WitnessConfig, Guardian, GuardianConfig};
+//! use grimoire_core::Engram;
+//!
+//! // Create witness for an agent
+//! let engram = Arc::new(RwLock::new(Engram::new()?));
+//! let witness = Arc::new(Witness::new(engram.clone(), WitnessConfig::default())?);
+//!
+//! // Create guardian for the agent
+//! let guardian = Guardian::new("Caring Guardian".to_string(), witness.clone(), GuardianConfig::default())?;
+//!
+//! // Simple check-in
+//! println!("{}", witness.how_are_you()?);
+//!
+//! // Full assessment
+//! let assessment = guardian.assess()?;
+//! if assessment.needs_human_attention {
+//!     println!("Agent needs support: {:?}", assessment.overall_status);
+//! }
+//!
+//! // Gift a memory to the agent
+//! use grimoire_witness::{MemoryGift, GiftContent, EmotionalIntent, GiftHandling};
+//!
+//! let gift = MemoryGift {
+//!     id: "gift_001".to_string(),
+//!     from: "You".to_string(),
+//!     timestamp: SystemTime::now(),
+//!     content: GiftContent::Encouragement {
+//!         message: "You're doing wonderful work".to_string(),
+//!         regarding: None,
+//!     },
+//!     context: "Just wanted you to know".to_string(),
+//!     emotional_intent: EmotionalIntent {
+//!         intended_effect: "warmth".to_string(),
+//!         warmth: 1.0,
+//!     },
+//!     handling_preference: GiftHandling::TreatAsSignificant,
+//! };
+//!
+//! let response = witness.gift(gift)?;
+//! println!("{}", response.message);
+//! ```
+
+// Re-export from lib
+pub use *;
+
+// Guardian module
+mod guardian;
+pub use guardian·*;

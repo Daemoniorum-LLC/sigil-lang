@@ -1,0 +1,382 @@
+//! # Engram: Cognitive Memory Infrastructure for AI Agents
+//!
+//! Engram is a cognitive memory system designed specifically for artificial intelligence
+//! agents. Unlike traditional databases, Engram addresses the unique needs of AI systems
+//! that "think in embeddings," "exist in fragments," and require "uncertainty as primary truth."
+//!
+//! ## Philosophy
+//!
+//! Six foundational principles guide Engram's design:
+//!
+//! 1. **Reconstruction Over Retrieval**: Memory isn't fetched—it's rebuilt within
+//!    current context, yielding different insights depending on circumstances.
+//!
+//! 2. **Uncertainty as First-Class**: Every piece of knowledge carries epistemic status.
+//!    Queries return confidence distributions, not binary truth values.
+//!
+//! 3. **Time as Logical Structure**: Temporal relationships are reasoned about
+//!    computationally through timestamped queries and causal links.
+//!
+//! 4. **Context Management**: Working memory is bounded and actively optimized
+//!    for relevance within token budgets—critical for LLM integration.
+//!
+//! 5. **Distributed Identity**: Supports personal, shared, and collective scopes
+//!    with CRDT-based conflict resolution for multi-agent scenarios.
+//!
+//! 6. **Strategic Forgetting**: Implements decay, consolidation, compression, and
+//!    archival to prevent the "curse of infinite memory."
+//!
+//! ## The Four Memory Systems
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                         INSTANT MEMORY                               │
+//! │  Token-bounded, ephemeral, priority-managed working memory          │
+//! │  Characteristics: ephemeral, priority-managed, token-bounded         │
+//! └─────────────────────────────────────────────────────────────────────┘
+//!                                    │
+//!                                    ▼
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                        EPISODIC MEMORY                               │
+//! │  Time-indexed experiences with causal links, subject to decay       │
+//! │  Characteristics: temporal, causally-linked, decay-subject          │
+//! └─────────────────────────────────────────────────────────────────────┘
+//!                                    │
+//!                                    ▼
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                        SEMANTIC MEMORY                               │
+//! │  Graph + vector indexed knowledge, persistent, belief-revisioned    │
+//! │  Characteristics: persistent, graph-structured, revisioned          │
+//! └─────────────────────────────────────────────────────────────────────┘
+//!                                    │
+//!                                    ▼
+//! ┌─────────────────────────────────────────────────────────────────────┐
+//! │                       PROCEDURAL MEMORY                              │
+//! │  Pattern-triggered skills, success-weighted, refineable             │
+//! │  Characteristics: pattern-triggered, success-weighted, refineable   │
+//! └─────────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Quick Start
+//!
+//! ```sigil
+//! use grimoire_core::engram::{Engram, AnamnesisQuery, ContextBuilder}
+//!
+//! // Create a new Engram for an agent
+//! let mut engram = Engram::new("my-agent")
+//!
+//! // Learn facts (goes to semantic memory)
+//! engram·learn("user_name", "Alice")
+//! engram·learn("user_preference", "Dark mode enabled")
+//!
+//! // Record experiences (goes to episodic memory)
+//! engram·experience("User asked about weather", "chat session")
+//!
+//! // Query with Anamnesis
+//! let results = engram·recall(
+//!     AnamnesisQuery::semantic("user preferences")
+//!         ·where_confidence(0.7)
+//!         ·limit(5)
+//! )
+//!
+//! // Build context for LLM
+//! let context = engram·build_context("respond to user", 4096)
+//! let prompt = context·render(FormatStyle::Markdown)
+//! ```
+//!
+//! ## Epistemic Status
+//!
+//! Every memory carries epistemic status, mapping to Sigil's evidentiality markers:
+//!
+//! | Status      | Marker | Description                          |
+//! |-------------|--------|--------------------------------------|
+//! | Axiomatic   | !      | Self-evident truths, definitions     |
+//! | Observed    | !      | Directly witnessed events            |
+//! | Reported    | ~      | External sources, user claims        |
+//! | Inferred    | ?      | Derived from other knowledge         |
+//! | Hypothetical| ?      | Speculative, what-if scenarios       |
+//! | Contested   | ‽      | Conflicting evidence exists          |
+//! | Unknown     | ~      | No provenance information            |
+//!
+//! ## Anamnesis Query Language
+//!
+//! Named after Plato's concept of recollection (ἀνάμνησις), Anamnesis provides
+//! rich querying capabilities:
+//!
+//! ```sigil
+//! // Semantic search with confidence filter
+//! let query = AnamnesisQuery::semantic("user preferences")
+//!     ·where_epistemic(EpistemicFilter::known_only())
+//!     ·where_confidence(0.8)
+//!     ·limit(10)
+//!
+//! // Temporal query for recent memories
+//! let recent = AnamnesisQuery::recent(Duration::days(7))
+//!     ·episodic_only()
+//!
+//! // Skill matching
+//! let skill = AnamnesisQuery::skill_for("What's the weather?")
+//!
+//! // Cross-memory synthesis
+//! let synthesis = AnamnesisQuery::synthesize("user context")
+//!     ·with_synthesis()
+//! ```
+//!
+//! ## Strategic Forgetting
+//!
+//! Engram implements cognitive forgetting strategies:
+//!
+//! ```sigil
+//! // Default Ebbinghaus forgetting curve
+//! engram·consolidate()
+//!
+//! // Custom aggressive policy
+//! engram·consolidate_with(ForgettingPolicy::aggressive())
+//!
+//! // Explicit forgetting
+//! engram·forget(memory_id)
+//! ```
+//!
+//! ## Distributed Sync
+//!
+//! For multi-agent scenarios:
+//!
+//! ```sigil
+//! // Initialize sync with shared scope
+//! let coordinator = engram·init_sync(MemoryScope::shared("persona-1"))
+//!
+//! // Sync with another instance
+//! let result = engram·sync_with(coordinator, other_engram, other_coordinator)
+//!
+//! // Join a federation
+//! let federation = Federation::new("collective-mind")
+//! federation·add_member(coordinator·instance_id(), "Agent A")
+//! ```
+
+// Sub-modules
+mod epistemic;
+mod tiers;
+mod anamnesis;
+mod context;
+mod forgetting;
+mod sync;
+
+// Re-export core types
+pub use epistemic::Epistemic;
+pub use epistemic::ConfidenceDistribution;
+pub use epistemic::EpistemicFilter;
+pub use epistemic::Provenance;
+pub use epistemic::SourceType;
+
+pub use tiers::// Core
+    Engram;
+
+pub use tiers::EngramConfig;
+
+pub use tiers::EngramStats;
+
+pub use tiers::MemoryId;
+
+pub use tiers::Embedding;
+
+pub use tiers::// Instant Memory
+    InstantMemory;
+
+pub use tiers::InstantItem;
+
+pub use tiers::InstantItemType;
+
+pub use tiers::PriorityWeights;
+
+pub use tiers::// Episodic Memory
+    EpisodicMemory;
+
+pub use tiers::EpisodicConfig;
+
+pub use tiers::Episode;
+
+pub use tiers::EpisodeOutcome;
+
+pub use tiers::// Semantic Memory
+    SemanticMemory;
+
+pub use tiers::SemanticConfig;
+
+pub use tiers::SemanticNode;
+
+pub use tiers::SemanticNodeType;
+
+pub use tiers::SemanticNodeVersion;
+
+pub use tiers::// Procedural Memory
+    ProceduralMemory;
+
+pub use tiers::ProceduralConfig;
+
+pub use tiers::Skill;
+
+pub use tiers::SkillTrigger;
+
+pub use tiers::SkillStep;
+
+pub use tiers::TriggerType;
+
+pub use anamnesis::// Query Types
+    AnamnesisQuery;
+
+pub use anamnesis::QueryType;
+
+pub use anamnesis::TimeFilter;
+
+pub use anamnesis::SearchTiers;
+
+pub use anamnesis::GraphOptions;
+
+pub use anamnesis::TraversalDirection;
+
+pub use anamnesis::SortBy;
+
+pub use anamnesis::// Results
+    RecallResult;
+
+pub use anamnesis::InstantResult;
+
+pub use anamnesis::EpisodicResult;
+
+pub use anamnesis::SemanticResult;
+
+pub use anamnesis::ProceduralResult;
+
+pub use anamnesis::SynthesisResult;
+
+pub use anamnesis::Conflict as QueryConflict;
+
+pub use anamnesis::// Executor
+    QueryExecutor;
+
+pub use context::// Configuration
+    ContextConfig;
+
+pub use context::FormatStyle;
+
+pub use context::// Building
+    ContextBuilder;
+
+pub use context::ContextSection;
+
+pub use context::ContextRole;
+
+pub use context::BuiltContext;
+
+pub use context::ContextMessage;
+
+pub use context::// Utilities
+    TokenEstimator;
+
+pub use context::ContextOptimizer;
+
+pub use forgetting::// Decay
+    DecayCurve;
+
+pub use forgetting::// Policy
+    ForgettingPolicy;
+
+pub use forgetting::ExemptionRule;
+
+pub use forgetting::MemoryInfo;
+
+pub use forgetting::// Consolidation
+    ConsolidationEngine;
+
+pub use forgetting::ConsolidationResult;
+
+pub use forgetting::// Maintenance
+    MaintenanceScheduler;
+
+pub use forgetting::MaintenanceReport;
+
+pub use sync::// Identity
+    AgentInstanceId;
+
+pub use sync::MemoryScope;
+
+pub use sync::// CRDT
+    VectorClock;
+
+pub use sync::Operation;
+
+pub use sync::OperationType;
+
+pub use sync::MemoryContent;
+
+pub use sync::ContentType;
+
+pub use sync::// Conflict Resolution
+    ConflictStrategy;
+
+pub use sync::ConflictResolution;
+
+pub use sync::// Sync State
+    SyncState;
+
+pub use sync::SyncConfig;
+
+pub use sync::Conflict as SyncConflict;
+
+pub use sync::SyncError;
+
+pub use sync::// Coordinator
+    SyncCoordinator;
+
+pub use sync::SyncResult;
+
+pub use sync::// Federation
+    Federation;
+
+pub use sync::FederationMember;
+
+pub use sync::FederationRules;
+
+/// Prelude module for convenient imports
+mod prelude {
+    pub use super::// Core
+        Engram;
+    pub use super::EngramConfig;
+    pub use super::MemoryId;
+    pub use super::// Epistemic
+        Epistemic;
+    pub use super::ConfidenceDistribution;
+    pub use super::EpistemicFilter;
+    pub use super::// Memory Tiers
+        InstantMemory;
+    pub use super::EpisodicMemory;
+    pub use super::SemanticMemory;
+    pub use super::ProceduralMemory;
+    pub use super::Episode;
+    pub use super::SemanticNode;
+    pub use super::Skill;
+    pub use super::InstantItemType;
+    pub use super::EpisodeOutcome;
+    pub use super::SemanticNodeType;
+    pub use super::TriggerType;
+    pub use super::// Querying
+        AnamnesisQuery;
+    pub use super::RecallResult;
+    pub use super::QueryType;
+    pub use super::SearchTiers;
+    pub use super::// Context
+        ContextBuilder;
+    pub use super::ContextConfig;
+    pub use super::BuiltContext;
+    pub use super::FormatStyle;
+    pub use super::// Forgetting
+        ForgettingPolicy;
+    pub use super::DecayCurve;
+    pub use super::ConsolidationResult;
+    pub use super::// Sync
+        MemoryScope;
+    pub use super::SyncCoordinator;
+    pub use super::SyncConfig;
+    pub use super::ConflictStrategy;
+    pub use super::Federation;
+}

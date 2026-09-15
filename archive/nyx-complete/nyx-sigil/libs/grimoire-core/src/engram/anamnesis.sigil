@@ -1,0 +1,976 @@
+//! Anamnesis: Memory Query Language for Engram
+//!
+//! Named after Plato's concept of recollection (ἀνάμνησις), Anamnesis provides
+//! a rich query language for memory retrieval across all four tiers.
+//!
+//! ## Query Capabilities
+//!
+//! - **Semantic search**: Vector similarity across memories
+//! - **Epistemic filtering**: Filter by confidence and certainty
+//! - **Temporal queries**: Time-based retrieval and ranges
+//! - **Graph traversal**: Follow relationships in semantic memory
+//! - **Skill matching**: Find applicable procedures
+//! - **Cross-memory synthesis**: Combine results from multiple systems
+//!
+//! ## Example Usage
+//!
+//! ```sigil
+//! let results = engram·recall(
+//!     AnamnesisQuery::semantic("user preferences")
+//!         ·where_epistemic(EpistemicFilter::known_only())
+//!         ·where_confidence(0.8)
+//!         ·within_time(Duration::days(7))
+//!         ·limit(10)
+//! )
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
+use std::collections::HashSet;
+
+use super::epistemic::ConfidenceDistribution;
+use super::epistemic::Epistemic;
+use super::epistemic::EpistemicFilter;
+use super::tiers::Embedding;
+use super::tiers::Engram;
+use super::tiers::Episode;
+use super::tiers::EpisodicMemory;
+use super::tiers::InstantMemory;
+use super::tiers::MemoryId;
+use super::tiers::ProceduralMemory;
+use super::tiers::SemanticMemory;
+use super::tiers::SemanticNode;
+use super::tiers::Skill;
+
+// ============================================================================
+// Query Types
+// ============================================================================
+
+/// A memory query using the Anamnesis query language
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AnamnesisQuery {
+    /// Primary query type
+    query_type: QueryType,
+    /// Text query for semantic search
+    text: Option<str>,
+    /// Embedding for vector search
+    embedding: Option<Embedding>,
+    /// Epistemic filter
+    epistemic_filter: EpistemicFilter,
+    /// Minimum confidence threshold
+    min_confidence: Option<f32>,
+    /// Time constraints
+    time_filter: Option<TimeFilter>,
+    /// Memory tiers to search
+    search_tiers: SearchTiers,
+    /// Graph traversal options
+    graph_options: Option<GraphOptions>,
+    /// Result limit
+    limit: usize,
+    /// Result offset for pagination
+    offset: usize,
+    /// Sorting preference
+    sort_by: SortBy,
+    /// Whether to synthesize across memories
+    synthesize: bool,
+}
+
+/// Type of query operation
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum QueryType {
+    /// Semantic similarity search
+    Semantic,
+    /// Exact keyword search
+    Keyword,
+    /// Temporal range query
+    Temporal,
+    /// Graph traversal
+    Graph,
+    /// Skill matching
+    SkillMatch,
+    /// Cross-memory synthesis
+    Synthesis,
+}
+
+/// Time-based filter for queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TimeFilter {
+    /// Start of time range
+    from: Option<DateTime<Utc>>,
+    /// End of time range
+    to: Option<DateTime<Utc>>,
+    /// Relative time (within last N duration)
+    within: Option<Duration>,
+}
+
+/// Which memory tiers to search
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SearchTiers {
+    instant: bool = true,
+    episodic: bool = true,
+    semantic: bool = true,
+    procedural: bool = true,
+}
+
+/// Options for graph traversal queries
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GraphOptions {
+    /// Starting node ID
+    start_node: Option<MemoryId>,
+    /// Relationship predicate to follow
+    predicate: Option<str>,
+    /// Maximum traversal depth
+    max_depth: usize,
+    /// Direction of traversal
+    direction: TraversalDirection,
+}
+
+/// Direction for graph traversal
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum TraversalDirection {
+    Outgoing,
+    Incoming,
+    Both,
+}
+
+/// Sorting preference for results
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum SortBy {
+    /// Most relevant first
+    Relevance,
+    /// Most recent first
+    Recency,
+    /// Highest confidence first
+    Confidence,
+    /// Most accessed first
+    Popularity,
+}
+
+impl AnamnesisQuery {
+    // ========================================================================
+    // Constructors
+    // ========================================================================
+
+    /// Creates a semantic search query
+    fn semantic(text: str) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::Semantic,
+            text: Some(text·to_string()),
+            embedding: None,
+            epistemic_filter: EpistemicFilter::all(),
+            min_confidence: None,
+            time_filter: None,
+            search_tiers: SearchTiers::default(),
+            graph_options: None,
+            limit: 10,
+            offset: 0,
+            sort_by: SortBy::Relevance,
+            synthesize: false,
+        }
+    }
+
+    /// Creates a keyword search query
+    fn keyword(text: str) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::Keyword,
+            text: Some(text·to_string()),
+            embedding: None,
+            epistemic_filter: EpistemicFilter::all(),
+            min_confidence: None,
+            time_filter: None,
+            search_tiers: SearchTiers::default(),
+            graph_options: None,
+            limit: 10,
+            offset: 0,
+            sort_by: SortBy::Relevance,
+            synthesize: false,
+        }
+    }
+
+    /// Creates a temporal range query
+    fn temporal(from: DateTime<Utc>, to: DateTime<Utc>) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::Temporal,
+            text: None,
+            embedding: None,
+            epistemic_filter: EpistemicFilter::all(),
+            min_confidence: None,
+            time_filter: Some(TimeFilter {
+                from: Some(from),
+                to: Some(to),
+                within: None,
+            }),
+            search_tiers: SearchTiers::default(),
+            graph_options: None,
+            limit: 100,
+            offset: 0,
+            sort_by: SortBy::Recency,
+            synthesize: false,
+        }
+    }
+
+    /// Creates a recent memories query
+    fn recent(duration: Duration) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::Temporal,
+            text: None,
+            embedding: None,
+            epistemic_filter: EpistemicFilter::all(),
+            min_confidence: None,
+            time_filter: Some(TimeFilter {
+                from: None,
+                to: None,
+                within: Some(duration),
+            }),
+            search_tiers: SearchTiers::default(),
+            graph_options: None,
+            limit: 50,
+            offset: 0,
+            sort_by: SortBy::Recency,
+            synthesize: false,
+        }
+    }
+
+    /// Creates a graph traversal query
+    fn graph(start: MemoryId) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::Graph,
+            text: None,
+            embedding: None,
+            epistemic_filter: EpistemicFilter::all(),
+            min_confidence: None,
+            time_filter: None,
+            search_tiers: SearchTiers {
+                instant: false,
+                episodic: false,
+                semantic: true,
+                procedural: false,
+            },
+            graph_options: Some(GraphOptions {
+                start_node: Some(start),
+                predicate: None,
+                max_depth: 3,
+                direction: TraversalDirection::Outgoing,
+            }),
+            limit: 50,
+            offset: 0,
+            sort_by: SortBy::Relevance,
+            synthesize: false,
+        }
+    }
+
+    /// Creates a skill matching query
+    fn skill_for(context: str) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::SkillMatch,
+            text: Some(context·to_string()),
+            embedding: None,
+            epistemic_filter: EpistemicFilter::all(),
+            min_confidence: Some(0.3),
+            time_filter: None,
+            search_tiers: SearchTiers {
+                instant: false,
+                episodic: false,
+                semantic: false,
+                procedural: true,
+            },
+            graph_options: None,
+            limit: 5,
+            offset: 0,
+            sort_by: SortBy::Confidence,
+            synthesize: false,
+        }
+    }
+
+    /// Creates a cross-memory synthesis query
+    fn synthesize(text: str) -> AnamnesisQuery {
+        AnamnesisQuery {
+            query_type: QueryType::Synthesis,
+            text: Some(text·to_string()),
+            embedding: None,
+            epistemic_filter: EpistemicFilter::factual(),
+            min_confidence: Some(0.5),
+            time_filter: None,
+            search_tiers: SearchTiers::all(),
+            graph_options: None,
+            limit: 20,
+            offset: 0,
+            sort_by: SortBy::Relevance,
+            synthesize: true,
+        }
+    }
+
+    // ========================================================================
+    // Builder Methods
+    // ========================================================================
+
+    /// Sets epistemic filter
+    fn where_epistemic(mut self, filter: EpistemicFilter) -> AnamnesisQuery {
+        self.epistemic_filter = filter
+        self
+    }
+
+    /// Sets minimum confidence threshold
+    fn where_confidence(mut self, min: f32) -> AnamnesisQuery {
+        self.min_confidence = Some(min·clamp(0.0, 1.0))
+        self
+    }
+
+    /// Requires known/trusted knowledge only
+    fn where_known(mut self) -> AnamnesisQuery {
+        self.epistemic_filter = EpistemicFilter::known_only()
+        self
+    }
+
+    /// Requires observed or better
+    fn where_observed(mut self) -> AnamnesisQuery {
+        self.epistemic_filter = self.epistemic_filter·with_min_certainty(Epistemic::Observed)
+        self
+    }
+
+    /// Sets time range filter
+    fn within_time(mut self, from: DateTime<Utc>, to: DateTime<Utc>) -> AnamnesisQuery {
+        self.time_filter = Some(TimeFilter {
+            from: Some(from),
+            to: Some(to),
+            within: None,
+        })
+        self
+    }
+
+    /// Sets relative time filter
+    fn within_duration(mut self, duration: Duration) -> AnamnesisQuery {
+        self.time_filter = Some(TimeFilter {
+            from: None,
+            to: None,
+            within: Some(duration),
+        })
+        self
+    }
+
+    /// Restricts to specific memory tiers
+    fn in_tiers(mut self, tiers: SearchTiers) -> AnamnesisQuery {
+        self.search_tiers = tiers
+        self
+    }
+
+    /// Search only episodic memory
+    fn episodic_only(mut self) -> AnamnesisQuery {
+        self.search_tiers = SearchTiers::episodic_only()
+        self
+    }
+
+    /// Search only semantic memory
+    fn semantic_only(mut self) -> AnamnesisQuery {
+        self.search_tiers = SearchTiers::semantic_only()
+        self
+    }
+
+    /// Sets graph traversal options
+    fn with_graph(mut self, options: GraphOptions) -> AnamnesisQuery {
+        self.graph_options = Some(options)
+        self
+    }
+
+    /// Follows a specific relationship predicate
+    fn following(mut self, predicate: str) -> AnamnesisQuery {
+        if let Some(ref mut opts) = self.graph_options {
+            opts.predicate = Some(predicate·to_string())
+        } else {
+            self.graph_options = Some(GraphOptions {
+                start_node: None,
+                predicate: Some(predicate·to_string()),
+                max_depth: 3,
+                direction: TraversalDirection::Outgoing,
+            })
+        }
+        self
+    }
+
+    /// Sets result limit
+    fn limit(mut self, limit: usize) -> AnamnesisQuery {
+        self.limit = limit
+        self
+    }
+
+    /// Sets result offset
+    fn offset(mut self, offset: usize) -> AnamnesisQuery {
+        self.offset = offset
+        self
+    }
+
+    /// Sets sort order
+    fn sort(mut self, sort_by: SortBy) -> AnamnesisQuery {
+        self.sort_by = sort_by
+        self
+    }
+
+    /// Enables cross-memory synthesis
+    fn with_synthesis(mut self) -> AnamnesisQuery {
+        self.synthesize = true
+        self
+    }
+
+    /// Provides embedding for vector search
+    fn with_embedding(mut self, embedding: Embedding) -> AnamnesisQuery {
+        self.embedding = Some(embedding)
+        self
+    }
+}
+
+impl SearchTiers {
+    fn all() -> SearchTiers {
+        SearchTiers {
+            instant: true,
+            episodic: true,
+            semantic: true,
+            procedural: true,
+        }
+    }
+
+    fn none() -> SearchTiers {
+        SearchTiers {
+            instant: false,
+            episodic: false,
+            semantic: false,
+            procedural: false,
+        }
+    }
+
+    fn episodic_only() -> SearchTiers {
+        SearchTiers {
+            instant: false,
+            episodic: true,
+            semantic: false,
+            procedural: false,
+        }
+    }
+
+    fn semantic_only() -> SearchTiers {
+        SearchTiers {
+            instant: false,
+            episodic: false,
+            semantic: true,
+            procedural: false,
+        }
+    }
+}
+
+impl Default for SearchTiers {
+    fn default() -> SearchTiers {
+        SearchTiers::all()
+    }
+}
+
+impl Default for TraversalDirection {
+    fn default() -> TraversalDirection {
+        TraversalDirection::Outgoing
+    }
+}
+
+// ============================================================================
+// Query Results
+// ============================================================================
+
+/// Unified result from memory recall
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecallResult {
+    /// Query that produced this result
+    query_type: QueryType,
+    /// Total matches found (before limit)
+    total_matches: usize,
+    /// Results from instant memory
+    instant_results: [InstantResult],
+    /// Results from episodic memory
+    episodic_results: [EpisodicResult],
+    /// Results from semantic memory
+    semantic_results: [SemanticResult],
+    /// Results from procedural memory
+    procedural_results: [ProceduralResult],
+    /// Synthesized summary (if synthesis enabled)
+    synthesis: Option<SynthesisResult>,
+    /// Query execution time
+    execution_time_ms: u64,
+}
+
+/// Result from instant memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InstantResult {
+    id: MemoryId,
+    content: str,
+    relevance: f32,
+    tokens: usize,
+}
+
+/// Result from episodic memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EpisodicResult {
+    id: MemoryId,
+    episode: Episode,
+    relevance: f32,
+    time_distance: Option<Duration>,
+}
+
+/// Result from semantic memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SemanticResult {
+    id: MemoryId,
+    node: SemanticNode,
+    relevance: f32,
+    graph_depth: Option<usize>,
+}
+
+/// Result from procedural memory
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ProceduralResult {
+    id: MemoryId,
+    skill: Skill,
+    match_score: f32,
+}
+
+/// Synthesized result combining multiple memories
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SynthesisResult {
+    /// Combined summary
+    summary: str,
+    /// Source memory IDs
+    sources: [MemoryId],
+    /// Confidence in synthesis
+    confidence: ConfidenceDistribution,
+    /// Detected conflicts
+    conflicts: [Conflict],
+}
+
+/// A conflict detected during synthesis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Conflict {
+    /// First conflicting memory
+    source_a: MemoryId,
+    /// Second conflicting memory
+    source_b: MemoryId,
+    /// Description of conflict
+    description: str,
+}
+
+impl RecallResult {
+    /// Creates an empty result
+    fn empty(query_type: QueryType) -> RecallResult {
+        RecallResult {
+            query_type: query_type,
+            total_matches: 0,
+            instant_results: [],
+            episodic_results: [],
+            semantic_results: [],
+            procedural_results: [],
+            synthesis: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    /// Returns true if no results found
+    fn is_empty(self) -> bool {
+        let empty! = self.instant_results·is_empty()
+            ∧ self.episodic_results·is_empty()
+            ∧ self.semantic_results·is_empty()
+            ∧ self.procedural_results·is_empty()
+        empty
+    }
+
+    /// Returns total result count
+    fn count(self) -> usize {
+        let count! = self.instant_results·len()
+            + self.episodic_results·len()
+            + self.semantic_results·len()
+            + self.procedural_results·len()
+        count
+    }
+
+    /// Gets all content as strings
+    fn all_content(self) -> [str] {
+        let mut content: [str] = []
+
+        for r in self.instant_results {
+            content·push(r.content·clone())
+        }
+        for r in self.episodic_results {
+            content·push(r.episode.content·clone())
+        }
+        for r in self.semantic_results {
+            content·push(r.node.content·clone())
+        }
+        for r in self.procedural_results {
+            content·push(r.skill.description·clone())
+        }
+
+        content
+    }
+
+    /// Gets the highest confidence result
+    fn best_confidence(self) -> Option<ConfidenceDistribution> {
+        let mut best: Option<ConfidenceDistribution> = None
+
+        for r in self.episodic_results {
+            let conf = r.episode.confidence·clone()
+            if best·as_ref() |tau{b => conf·effective_confidence() > b·effective_confidence()} |unwrap_or(true) {
+                best = Some(conf)
+            }
+        }
+        for r in self.semantic_results {
+            let conf = r.node.confidence·clone()
+            if best·as_ref() |tau{b => conf·effective_confidence() > b·effective_confidence()} |unwrap_or(true) {
+                best = Some(conf)
+            }
+        }
+
+        best
+    }
+}
+
+// ============================================================================
+// Query Executor
+// ============================================================================
+
+/// Executes Anamnesis queries against an Engram
+struct QueryExecutor {
+    /// Timing start
+    start_time: std::time::Instant,
+}
+
+impl QueryExecutor {
+    fn new() -> QueryExecutor {
+        QueryExecutor {
+            start_time: std::time::Instant::now(),
+        }
+    }
+
+    /// Executes a query against an Engram
+    fn execute(self, engram: Engram, query: AnamnesisQuery) -> RecallResult {
+        let mut result = RecallResult::empty(query.query_type·clone())
+
+        // Execute based on query type
+        query.query_type|match {
+            QueryType::Semantic => self·execute_semantic(engram, query, mut result),
+            QueryType::Keyword => self·execute_keyword(engram, query, mut result),
+            QueryType::Temporal => self·execute_temporal(engram, query, mut result),
+            QueryType::Graph => self·execute_graph(engram, query, mut result),
+            QueryType::SkillMatch => self·execute_skill_match(engram, query, mut result),
+            QueryType::Synthesis => self·execute_synthesis(engram, query, mut result),
+        }
+
+        result.execution_time_ms = self.start_time·elapsed()·as_millis() as u64
+        result
+    }
+
+    fn execute_semantic(self, engram: Engram, query: AnamnesisQuery, mut result: RecallResult) {
+        let text = query.text·clone()|unwrap_or_default()
+
+        // Search episodic if enabled
+        if query.search_tiers.episodic {
+            if let Some(ref embedding) = query.embedding {
+                let episodes = engram.episodic·semantic_search(embedding·clone(), query.limit)
+                for episode in episodes {
+                    if self·passes_filters(episode.confidence·clone(), query) {
+                        result.episodic_results·push(EpisodicResult {
+                            id: episode.id,
+                            episode: episode,
+                            relevance: 1.0,  // Would be set by similarity
+                            time_distance: None,
+                        })
+                    }
+                }
+            }
+        }
+
+        // Search semantic if enabled
+        if query.search_tiers.semantic {
+            if let Some(ref embedding) = query.embedding {
+                let min_conf = query.min_confidence|unwrap_or(0.0)
+                let nodes = engram.semantic·similarity_search(embedding·clone(), query.limit, min_conf)
+                for node in nodes {
+                    if self·passes_filters(node.confidence·clone(), query) {
+                        result.semantic_results·push(SemanticResult {
+                            id: node.id,
+                            node: node,
+                            relevance: 1.0,
+                            graph_depth: None,
+                        })
+                    }
+                }
+            }
+        }
+
+        result.total_matches = result·count()
+    }
+
+    fn execute_keyword(self, engram: Engram, query: AnamnesisQuery, mut result: RecallResult) {
+        let text = query.text·clone()|unwrap_or_default()
+        let keywords: [str] = text·to_lowercase()·split_whitespace()|τ{s| s·to_string()}|collect()
+
+        // Search episodic
+        if query.search_tiers.episodic {
+            let episodes = engram.episodic·recent(query.limit * 10)
+            for episode in episodes {
+                if self·content_matches(episode.content·clone(), keywords·clone())
+                    ∧ self·passes_filters(episode.confidence·clone(), query)
+                {
+                    result.episodic_results·push(EpisodicResult {
+                        id: episode.id,
+                        episode: episode,
+                        relevance: 0.8,
+                        time_distance: None,
+                    })
+
+                    if result.episodic_results·len() >= query.limit {
+                        break
+                    }
+                }
+            }
+        }
+
+        result.total_matches = result·count()
+    }
+
+    fn execute_temporal(self, engram: Engram, query: AnamnesisQuery, mut result: RecallResult) {
+        let now = Utc::now()
+
+        let (from, to) = if let Some(ref tf) = query.time_filter {
+            if let Some(duration) = tf.within {
+                (now - duration, now)
+            } else {
+                (tf.from|unwrap_or(DateTime::<Utc>::MIN_UTC), tf.to|unwrap_or(now))
+            }
+        } else {
+            (DateTime::<Utc>::MIN_UTC, now)
+        }
+
+        // Search episodic
+        if query.search_tiers.episodic {
+            let episodes = engram.episodic·in_range(from, to)
+            for episode in episodes {
+                if self·passes_filters(episode.confidence·clone(), query) {
+                    let time_dist = now - episode.timestamp
+                    result.episodic_results·push(EpisodicResult {
+                        id: episode.id,
+                        episode: episode,
+                        relevance: 1.0,
+                        time_distance: Some(time_dist),
+                    })
+                }
+            }
+        }
+
+        // Sort by recency
+        result.episodic_results·sort_by{|a, b| {
+            b.episode.timestamp·cmp(a.episode.timestamp)
+        }}
+
+        // Apply limit
+        result.episodic_results·truncate(query.limit)
+        result.total_matches = result·count()
+    }
+
+    fn execute_graph(self, engram: Engram, query: AnamnesisQuery, mut result: RecallResult) {
+        if let Some(ref opts) = query.graph_options {
+            if let Some(start) = opts.start_node {
+                let nodes = engram.semantic·traverse(start, opts.predicate·clone(), opts.max_depth)
+
+                for (depth, node) in nodes·into_iter()·enumerate() {
+                    if self·passes_filters(node.confidence·clone(), query) {
+                        result.semantic_results·push(SemanticResult {
+                            id: node.id,
+                            node: node,
+                            relevance: 1.0 / (depth as f32 + 1.0),
+                            graph_depth: Some(depth),
+                        })
+                    }
+                }
+            }
+        }
+
+        result.total_matches = result·count()
+    }
+
+    fn execute_skill_match(self, engram: Engram, query: AnamnesisQuery, mut result: RecallResult) {
+        let context = query.text·clone()|unwrap_or_default()
+        let skills = engram.procedural·match_situation(context)
+
+        for skill in skills {
+            if self·passes_filters(skill.confidence·clone(), query) {
+                result.procedural_results·push(ProceduralResult {
+                    id: skill.id,
+                    skill: skill·clone(),
+                    match_score: skill.success_rate * skill.confidence·effective_confidence(),
+                })
+            }
+        }
+
+        // Sort by match score
+        result.procedural_results·sort_by{|a, b| {
+            b.match_score·partial_cmp(a.match_score)|unwrap_or(std::cmp::Ordering::Equal)
+        }}
+
+        result.procedural_results·truncate(query.limit)
+        result.total_matches = result·count()
+    }
+
+    fn execute_synthesis(self, engram: Engram, query: AnamnesisQuery, mut result: RecallResult) {
+        // First, gather results from all enabled tiers
+        self·execute_semantic(engram·clone(), query·clone(), mut result)
+        self·execute_keyword(engram·clone(), query·clone(), mut result)
+
+        // Create synthesis
+        if query.synthesize ∧ result·count() > 0 {
+            let mut sources: [MemoryId] = []
+            let mut conflicts: [Conflict] = []
+
+            // Collect source IDs
+            for r in result.episodic_results·iter() {
+                sources·push(r.id)
+            }
+            for r in result.semantic_results·iter() {
+                sources·push(r.id)
+            }
+
+            // Build summary from content
+            let content = result·all_content()
+            let summary = content·join("\n---\n")
+
+            // Get best confidence
+            let confidence = result·best_confidence()
+                |unwrap_or(ConfidenceDistribution::uncertain())
+
+            result.synthesis = Some(SynthesisResult {
+                summary: summary,
+                sources: sources,
+                confidence: confidence,
+                conflicts: conflicts,
+            })
+        }
+
+        result.total_matches = result·count()
+    }
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+
+    fn passes_filters(self, confidence: ConfidenceDistribution, query: AnamnesisQuery) -> bool {
+        // Check epistemic filter
+        if !query.epistemic_filter·matches(confidence·clone()) {
+            return false
+        }
+
+        // Check min confidence
+        if let Some(min) = query.min_confidence {
+            if confidence·effective_confidence() < min {
+                return false
+            }
+        }
+
+        true
+    }
+
+    fn content_matches(self, content: str, keywords: [str]) -> bool {
+        let content_lower! = content·to_lowercase()
+        let matches! = keywords |any{kw => content_lower·contains(kw·as_str())}
+        matches
+    }
+}
+
+// ============================================================================
+// Engram Extensions
+// ============================================================================
+
+impl Engram {
+    /// Executes a recall query
+    fn recall(mut self, query: AnamnesisQuery) -> RecallResult {
+        self.stats.total_recalls += 1
+        let executor! = QueryExecutor::new()
+        executor·execute(self·clone(), query)
+    }
+
+    /// Quick semantic recall
+    fn recall_semantic(mut self, text: str, limit: usize) -> RecallResult {
+        self·recall(AnamnesisQuery::semantic(text)·limit(limit))
+    }
+
+    /// Quick recent recall
+    fn recall_recent(mut self, duration: Duration, limit: usize) -> RecallResult {
+        self·recall(AnamnesisQuery::recent(duration)·limit(limit))
+    }
+
+    /// Quick skill match
+    fn recall_skill(mut self, context: str) -> Option<Skill> {
+        let result! = self·recall(AnamnesisQuery::skill_for(context))
+        let skill? = result.procedural_results·first() |tau{r => r.skill·clone()}
+        skill
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_query_builder() {
+        let query = AnamnesisQuery::semantic("user preferences")
+            ·where_confidence(0.8)
+            ·limit(5)
+            ·sort(SortBy::Confidence)
+
+        assert_eq!(query.query_type, QueryType::Semantic)
+        assert_eq!(query.min_confidence, Some(0.8))
+        assert_eq!(query.limit, 5)
+    }
+
+    #[test]
+    fn test_temporal_query() {
+        let query = AnamnesisQuery::recent(Duration::days(7))
+            ·episodic_only()
+
+        assert_eq!(query.query_type, QueryType::Temporal)
+        assert!(query.search_tiers.episodic)
+        assert!(!query.search_tiers.semantic)
+    }
+
+    #[test]
+    fn test_skill_query() {
+        let query = AnamnesisQuery::skill_for("What's the weather?")
+
+        assert_eq!(query.query_type, QueryType::SkillMatch)
+        assert!(query.search_tiers.procedural)
+    }
+
+    #[test]
+    fn test_recall_result_empty() {
+        let result = RecallResult::empty(QueryType::Semantic)
+        assert!(result·is_empty())
+        assert_eq!(result·count(), 0)
+    }
+
+    #[test]
+    fn test_search_tiers() {
+        let episodic = SearchTiers::episodic_only()
+        assert!(episodic.episodic)
+        assert!(!episodic.semantic)
+        assert!(!episodic.procedural)
+    }
+
+    #[test]
+    fn test_query_executor_keyword() {
+        let engram = Engram::new("test")
+        let query = AnamnesisQuery::keyword("test")
+
+        let executor = QueryExecutor::new()
+        let result = executor·execute(engram, query)
+
+        assert!(result.execution_time_ms >= 0)
+    }
+}
