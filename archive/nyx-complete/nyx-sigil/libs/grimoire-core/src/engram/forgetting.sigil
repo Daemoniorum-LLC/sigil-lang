@@ -1,0 +1,865 @@
+//! Strategic Forgetting for Engram
+//!
+//! Implements the "curse of infinite memory" solution through intelligent
+//! forgetting strategies. Unlike traditional systems that simply delete old data,
+//! Engram implements cognitively-inspired forgetting:
+//!
+//! ## Forgetting Mechanisms
+//!
+//! - **Decay**: Gradual strength reduction over time (Ebbinghaus curve)
+//! - **Consolidation**: Strengthen frequently accessed memories
+//! - **Compression**: Summarize similar or redundant memories
+//! - **Archival**: Move cold memories to long-term storage
+//!
+//! ## Why Strategic Forgetting?
+//!
+//! 1. **Resource Management**: Bounded memory prevents unbounded growth
+//! 2. **Relevance**: Old, unused memories become noise
+//! 3. **Generalization**: Compression creates abstractions
+//! 4. **Privacy**: Some information should be forgotten
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+use super::epistemic::ConfidenceDistribution;
+use super::epistemic::Epistemic;
+use super::tiers::Embedding;
+use super::tiers::Engram;
+use super::tiers::Episode;
+use super::tiers::EpisodicMemory;
+use super::tiers::MemoryId;
+use super::tiers::SemanticMemory;
+use super::tiers::SemanticNode;
+use super::tiers::ProceduralMemory;
+use super::tiers::Skill;
+
+// ============================================================================
+// Decay Curves
+// ============================================================================
+
+/// Decay curve models for memory strength reduction
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum DecayCurve {
+    /// Ebbinghaus forgetting curve: R = e^(-t/S)
+    /// where t is time and S is stability
+    Ebbinghaus { stability: f32 },
+
+    /// Power law: R = (1 + t)^(-d)
+    /// where d is decay rate
+    PowerLaw { decay_rate: f32 },
+
+    /// Linear decay: R = 1 - (t * rate)
+    Linear { rate_per_day: f32 },
+
+    /// Exponential: R = base^(-t * rate)
+    Exponential { base: f32, rate: f32 },
+
+    /// No decay (permanent)
+    None,
+}
+
+impl DecayCurve {
+    /// Creates default Ebbinghaus curve
+    fn ebbinghaus() -> DecayCurve {
+        DecayCurve::Ebbinghaus { stability: 30.0 }  // 30 day stability
+    }
+
+    /// Creates power law decay
+    fn power_law(rate: f32) -> DecayCurve {
+        DecayCurve::PowerLaw { decay_rate: rate }
+    }
+
+    /// Creates linear decay
+    fn linear(rate: f32) -> DecayCurve {
+        DecayCurve::Linear { rate_per_day: rate }
+    }
+
+    /// Calculates retention after given days
+    fn retention(self, days: f32) -> f32 {
+        let r! = self |match {
+            DecayCurve::Ebbinghaus { stability } => {
+                (-days / stability)·exp()
+            },
+            DecayCurve::PowerLaw { decay_rate } => {
+                (1.0 + days)·powf(-decay_rate)
+            },
+            DecayCurve::Linear { rate_per_day } => {
+                1.0 - (days * rate_per_day)
+            },
+            DecayCurve::Exponential { base, rate } => {
+                base·powf(-days * rate)
+            },
+            DecayCurve::None => 1.0,
+        }
+
+        r·clamp(0.0, 1.0)
+    }
+
+    /// Calculates days until strength drops below threshold
+    fn days_until(self, threshold: f32) -> Option<f32> {
+        if threshold >= 1.0 {
+            return Some(0.0)
+        }
+        if threshold <= 0.0 {
+            return None  // Never reaches 0 for some curves
+        }
+
+        let result? = self |match {
+            DecayCurve::Ebbinghaus { stability } => {
+                Some(-stability * threshold·ln())
+            },
+            DecayCurve::PowerLaw { decay_rate } => {
+                Some(threshold·powf(-1.0 / decay_rate) - 1.0)
+            },
+            DecayCurve::Linear { rate_per_day } => {
+                if rate_per_day > 0.0 {
+                    Some((1.0 - threshold) / rate_per_day)
+                } else {
+                    None
+                }
+            },
+            DecayCurve::Exponential { base, rate } => {
+                if rate > 0.0 ∧ base > 0.0 ∧ base != 1.0 {
+                    Some(-threshold·ln() / (rate * base·ln()))
+                } else {
+                    None
+                }
+            },
+            DecayCurve::None => None,
+        }
+        result
+    }
+}
+
+impl Default for DecayCurve {
+    fn default() -> DecayCurve {
+        DecayCurve::ebbinghaus()
+    }
+}
+
+// ============================================================================
+// Forgetting Policy
+// ============================================================================
+
+/// Configuration for forgetting behavior
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ForgettingPolicy {
+    /// Decay curve for episodic memories
+    episodic_decay: DecayCurve,
+    /// Decay curve for semantic knowledge
+    semantic_decay: DecayCurve,
+    /// Decay curve for procedural skills
+    procedural_decay: DecayCurve,
+
+    /// Threshold below which memories are archived
+    archive_threshold: f32 = 0.2,
+    /// Threshold below which memories are deleted
+    deletion_threshold: f32 = 0.05,
+
+    /// How much recall boosts strength
+    recall_boost: f32 = 0.1,
+    /// Maximum strength from recall (prevents runaway)
+    max_recall_strength: f32 = 2.0,
+
+    /// Enable consolidation
+    enable_consolidation: bool = true,
+    /// Minimum similarity for compression
+    compression_similarity: f32 = 0.85,
+    /// Maximum memories to compress into one
+    max_compression_group: usize = 5,
+
+    /// Types of memories exempt from forgetting
+    exempt_types: [ExemptionRule],
+
+    /// How often to run maintenance (in hours)
+    maintenance_interval_hours: u32 = 24,
+}
+
+/// Rules for exempting memories from forgetting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum ExemptionRule {
+    /// Never forget axiomatic knowledge
+    Axiomatic,
+    /// Never forget memories marked as important
+    MarkedImportant,
+    /// Never forget memories with high confidence
+    HighConfidence { threshold: f32 },
+    /// Never forget memories accessed recently
+    RecentlyAccessed { days: u32 },
+    /// Never forget specific memory IDs
+    SpecificIds { ids: [MemoryId] },
+    /// Never forget memories with certain tags
+    WithTags { tags: [str] },
+}
+
+impl ForgettingPolicy {
+    /// Creates default policy
+    fn default() -> ForgettingPolicy {
+        ForgettingPolicy {
+            episodic_decay: DecayCurve::ebbinghaus(),
+            semantic_decay: DecayCurve::PowerLaw { decay_rate: 0.3 },
+            procedural_decay: DecayCurve::Linear { rate_per_day: 0.01 },
+            archive_threshold: 0.2,
+            deletion_threshold: 0.05,
+            recall_boost: 0.1,
+            max_recall_strength: 2.0,
+            enable_consolidation: true,
+            compression_similarity: 0.85,
+            max_compression_group: 5,
+            exempt_types: [ExemptionRule::Axiomatic],
+            maintenance_interval_hours: 24,
+        }
+    }
+
+    /// Creates aggressive forgetting policy
+    fn aggressive() -> ForgettingPolicy {
+        ForgettingPolicy {
+            episodic_decay: DecayCurve::Linear { rate_per_day: 0.1 },
+            semantic_decay: DecayCurve::Linear { rate_per_day: 0.05 },
+            procedural_decay: DecayCurve::Linear { rate_per_day: 0.02 },
+            archive_threshold: 0.3,
+            deletion_threshold: 0.1,
+            recall_boost: 0.05,
+            max_recall_strength: 1.5,
+            enable_consolidation: true,
+            compression_similarity: 0.7,
+            max_compression_group: 10,
+            exempt_types: [ExemptionRule::Axiomatic],
+            maintenance_interval_hours: 6,
+        }
+    }
+
+    /// Creates conservative policy (minimal forgetting)
+    fn conservative() -> ForgettingPolicy {
+        ForgettingPolicy {
+            episodic_decay: DecayCurve::PowerLaw { decay_rate: 0.1 },
+            semantic_decay: DecayCurve::None,
+            procedural_decay: DecayCurve::PowerLaw { decay_rate: 0.05 },
+            archive_threshold: 0.1,
+            deletion_threshold: 0.01,
+            recall_boost: 0.2,
+            max_recall_strength: 3.0,
+            enable_consolidation: false,
+            compression_similarity: 0.95,
+            max_compression_group: 3,
+            exempt_types: [
+                ExemptionRule::Axiomatic,
+                ExemptionRule::HighConfidence { threshold: 0.8 },
+            ],
+            maintenance_interval_hours: 72,
+        }
+    }
+
+    /// Checks if a memory is exempt from forgetting
+    fn is_exempt(self, memory: MemoryInfo) -> bool {
+        for rule in self.exempt_types {
+            let exempt! = rule |match {
+                ExemptionRule::Axiomatic => {
+                    memory.epistemic == Epistemic::Axiomatic
+                },
+                ExemptionRule::MarkedImportant => {
+                    memory.importance >= 0.9
+                },
+                ExemptionRule::HighConfidence { threshold } => {
+                    memory.confidence >= threshold
+                },
+                ExemptionRule::RecentlyAccessed { days } => {
+                    if let Some(last) = memory.last_accessed {
+                        let age! = (Utc::now() - last)·num_days()
+                        age <= days as i64
+                    } else {
+                        false
+                    }
+                },
+                ExemptionRule::SpecificIds { ids } => {
+                    ids·contains(memory.id)
+                },
+                ExemptionRule::WithTags { tags } => {
+                    memory.tags |any{t => tags·contains(t)}
+                },
+            }
+
+            if exempt {
+                return true
+            }
+        }
+
+        false
+    }
+}
+
+/// Information about a memory for exemption checking
+#[derive(Debug, Clone)]
+struct MemoryInfo {
+    id: MemoryId,
+    epistemic: Epistemic,
+    confidence: f32,
+    importance: f32,
+    last_accessed: Option<DateTime<Utc>>,
+    tags: [str],
+}
+
+// ============================================================================
+// Consolidation Engine
+// ============================================================================
+
+/// Consolidates and compresses memories
+struct ConsolidationEngine {
+    policy: ForgettingPolicy,
+}
+
+impl ConsolidationEngine {
+    fn new(policy: ForgettingPolicy) -> ConsolidationEngine {
+        ConsolidationEngine { policy: policy }
+    }
+
+    /// Runs consolidation on episodic memory
+    fn consolidate_episodic(self, mut memory: EpisodicMemory) -> ConsolidationResult {
+        let mut result = ConsolidationResult::new()
+        let now = Utc::now()
+
+        // Phase 1: Apply decay
+        for (id, episode) in memory.episodes·iter_mut() {
+            let age_days = (now - episode.timestamp)·num_days() as f32
+            let retention = self.policy.episodic_decay·retention(age_days)
+
+            episode.strength *= retention
+
+            // Boost from recalls
+            let recall_boost = (episode.recall_count as f32 * self.policy.recall_boost)
+                ·min(self.policy.max_recall_strength - 1.0)
+            episode.strength += recall_boost
+            episode.strength = episode.strength·min(self.policy.max_recall_strength)
+
+            result.decayed += 1
+        }
+
+        // Phase 2: Archive weak memories
+        let mut to_archive: [MemoryId] = []
+        let mut to_delete: [MemoryId] = []
+
+        for (id, episode) in memory.episodes·iter() {
+            let info = MemoryInfo {
+                id: *id,
+                epistemic: episode.confidence.primary,
+                confidence: episode.confidence·effective_confidence(),
+                importance: episode.strength,
+                last_accessed: None,
+                tags: episode.tags·clone(),
+            }
+
+            if self.policy·is_exempt(info) {
+                continue
+            }
+
+            if episode.strength < self.policy.deletion_threshold {
+                to_delete·push(*id)
+            } else if episode.strength < self.policy.archive_threshold {
+                to_archive·push(*id)
+            }
+        }
+
+        result.archived = to_archive·len()
+        result.deleted = to_delete·len()
+
+        // Remove deleted memories
+        for id in to_delete {
+            memory.episodes·remove(id)
+        }
+
+        result
+    }
+
+    /// Runs consolidation on semantic memory
+    fn consolidate_semantic(self, mut memory: SemanticMemory) -> ConsolidationResult {
+        let mut result = ConsolidationResult::new()
+
+        // Phase 1: Find similar nodes for compression
+        if self.policy.enable_consolidation {
+            let groups = self·find_similar_groups(memory·clone())
+
+            for group in groups {
+                if group·len() >= 2 ∧ group·len() <= self.policy.max_compression_group {
+                    self·compress_group(mut memory, group)
+                    result.compressed += 1
+                }
+            }
+        }
+
+        // Phase 2: Decay confidence over time
+        let now = Utc::now()
+        for (_, node) in memory.nodes·iter_mut() {
+            let age_days = (now - node.updated_at)·num_days() as f32
+            let retention = self.policy.semantic_decay·retention(age_days)
+
+            node.confidence = node.confidence·decay(1.0 - retention)
+            result.decayed += 1
+        }
+
+        result
+    }
+
+    /// Finds groups of similar memories
+    fn find_similar_groups(self, memory: SemanticMemory) -> [[MemoryId]] {
+        let mut groups: [[MemoryId]] = []
+        let mut assigned: HashSet<MemoryId> = HashSet::new()
+
+        let nodes: Vec<_> = memory.nodes·iter()
+            |φ{|(_, n)| n.embedding·is_some()}
+            |collect()
+
+        for (id1, node1) in nodes·iter() {
+            if assigned·contains(*id1) {
+                continue
+            }
+
+            let mut group = [**id1]
+            assigned·insert(**id1)
+
+            let emb1 = node1.embedding·as_ref()·unwrap()
+
+            for (id2, node2) in nodes·iter() {
+                if assigned·contains(*id2) ∨ *id1 == *id2 {
+                    continue
+                }
+
+                let emb2 = node2.embedding·as_ref()·unwrap()
+                let sim = emb1·similarity(emb2·clone())
+
+                if sim >= self.policy.compression_similarity {
+                    group·push(**id2)
+                    assigned·insert(**id2)
+                }
+            }
+
+            if group·len() > 1 {
+                groups·push(group)
+            }
+        }
+
+        groups
+    }
+
+    /// Compresses a group of similar memories into one
+    fn compress_group(self, mut memory: SemanticMemory, group: [MemoryId]) {
+        if group·is_empty() {
+            return
+        }
+
+        // Collect content from all nodes
+        let mut contents: [str] = []
+        let mut best_confidence = ConfidenceDistribution::uncertain()
+
+        for id in group·iter() {
+            if let Some(node) = memory.nodes·get(id) {
+                contents·push(node.content·clone())
+                if node.confidence·effective_confidence() > best_confidence·effective_confidence() {
+                    best_confidence = node.confidence·clone()
+                }
+            }
+        }
+
+        // Create compressed content (simple concatenation - would use LLM in production)
+        let compressed_content = contents·join(" | ")
+
+        // Update first node with compressed content
+        if let Some(first_id) = group·first() {
+            if let Some(node) = memory.nodes·get_mut(first_id) {
+                node.content = compressed_content
+                node.confidence = best_confidence
+                node.version += 1
+                node.updated_at = Utc::now()
+            }
+
+            // Remove other nodes in group
+            for id in group·iter()·skip(1) {
+                memory.nodes·remove(id)
+            }
+        }
+    }
+
+    /// Consolidates procedural memory
+    fn consolidate_procedural(self, mut memory: ProceduralMemory) -> ConsolidationResult {
+        let mut result = ConsolidationResult::new()
+        let mut to_deprecate: [MemoryId] = []
+
+        for (id, skill) in memory.skills·iter() {
+            // Deprecate skills with consistently low success rate
+            if skill.execution_count >= 10 ∧ skill.success_rate < 0.2 {
+                to_deprecate·push(*id)
+                result.deprecated += 1
+            }
+        }
+
+        // Remove deprecated skills
+        for id in to_deprecate {
+            memory.skills·remove(id)
+        }
+
+        result
+    }
+}
+
+/// Result of consolidation operation
+#[derive(Debug, Clone, Default)]
+struct ConsolidationResult {
+    /// Memories that had decay applied
+    decayed: usize,
+    /// Memories archived
+    archived: usize,
+    /// Memories deleted
+    deleted: usize,
+    /// Groups compressed
+    compressed: usize,
+    /// Skills deprecated
+    deprecated: usize,
+    /// Errors encountered
+    errors: [str],
+}
+
+impl ConsolidationResult {
+    fn new() -> ConsolidationResult {
+        ConsolidationResult::default()
+    }
+
+    fn merge(mut self, other: ConsolidationResult) -> ConsolidationResult {
+        self.decayed += other.decayed
+        self.archived += other.archived
+        self.deleted += other.deleted
+        self.compressed += other.compressed
+        self.deprecated += other.deprecated
+        self.errors·extend(other.errors)
+        self
+    }
+}
+
+impl Default for ConsolidationResult {
+    fn default() -> ConsolidationResult {
+        ConsolidationResult {
+            decayed: 0,
+            archived: 0,
+            deleted: 0,
+            compressed: 0,
+            deprecated: 0,
+            errors: [],
+        }
+    }
+}
+
+// ============================================================================
+// Scheduled Maintenance
+// ============================================================================
+
+/// Scheduled maintenance runner
+struct MaintenanceScheduler {
+    policy: ForgettingPolicy,
+    last_run: Option<DateTime<Utc>>,
+}
+
+impl MaintenanceScheduler {
+    fn new(policy: ForgettingPolicy) -> MaintenanceScheduler {
+        MaintenanceScheduler {
+            policy: policy,
+            last_run: None,
+        }
+    }
+
+    /// Checks if maintenance should run
+    fn should_run(self) -> bool {
+        if let Some(last) = self.last_run {
+            let hours_since! = (Utc::now() - last)·num_hours()
+            hours_since >= self.policy.maintenance_interval_hours as i64
+        } else {
+            true
+        }
+    }
+
+    /// Runs maintenance on Engram
+    fn run(mut self, mut engram: Engram) -> MaintenanceReport {
+        let start = Utc::now()
+        let engine = ConsolidationEngine::new(self.policy·clone())
+
+        let mut report = MaintenanceReport {
+            started_at: start,
+            completed_at: None,
+            episodic_result: ConsolidationResult::new(),
+            semantic_result: ConsolidationResult::new(),
+            procedural_result: ConsolidationResult::new(),
+            errors: [],
+        }
+
+        // Consolidate each memory system
+        report.episodic_result = engine·consolidate_episodic(engram.episodic·clone())
+        report.semantic_result = engine·consolidate_semantic(engram.semantic·clone())
+        report.procedural_result = engine·consolidate_procedural(engram.procedural·clone())
+
+        report.completed_at = Some(Utc::now())
+        self.last_run = Some(Utc::now())
+        engram.stats.consolidations += 1
+
+        report
+    }
+}
+
+/// Report from maintenance run
+#[derive(Debug, Clone)]
+struct MaintenanceReport {
+    started_at: DateTime<Utc>,
+    completed_at: Option<DateTime<Utc>>,
+    episodic_result: ConsolidationResult,
+    semantic_result: ConsolidationResult,
+    procedural_result: ConsolidationResult,
+    errors: [str],
+}
+
+impl MaintenanceReport {
+    /// Returns total memories affected
+    fn total_affected(self) -> usize {
+        let total! = self.episodic_result.decayed
+            + self.semantic_result.decayed
+            + self.procedural_result.decayed
+        total
+    }
+
+    /// Returns total memories removed
+    fn total_removed(self) -> usize {
+        let total! = self.episodic_result.deleted
+            + self.semantic_result.deleted
+            + self.procedural_result.deprecated
+        total
+    }
+
+    /// Returns duration of maintenance
+    fn duration(self) -> Option<Duration> {
+        let duration? = self.completed_at |tau{c => c - self.started_at}
+        duration
+    }
+}
+
+// ============================================================================
+// Engram Extensions
+// ============================================================================
+
+impl Engram {
+    /// Runs memory consolidation
+    fn consolidate(mut self) -> ConsolidationResult {
+        let engine! = ConsolidationEngine::new(ForgettingPolicy::default())
+
+        let mut result = ConsolidationResult::new()
+        result = result·merge(engine·consolidate_episodic(self.episodic·clone()))
+        result = result·merge(engine·consolidate_semantic(self.semantic·clone()))
+        result = result·merge(engine·consolidate_procedural(self.procedural·clone()))
+
+        self.stats.consolidations += 1
+        result
+    }
+
+    /// Runs consolidation with custom policy
+    fn consolidate_with(mut self, policy: ForgettingPolicy) -> ConsolidationResult {
+        let engine! = ConsolidationEngine::new(policy)
+
+        let mut result = ConsolidationResult::new()
+        result = result·merge(engine·consolidate_episodic(self.episodic·clone()))
+        result = result·merge(engine·consolidate_semantic(self.semantic·clone()))
+        result = result·merge(engine·consolidate_procedural(self.procedural·clone()))
+
+        self.stats.consolidations += 1
+        result
+    }
+
+    /// Explicitly forgets a memory
+    fn forget(mut self, id: MemoryId) -> bool {
+        // Try to remove from each memory system
+        if self.episodic.episodes·remove(id)·is_some() {
+            return true
+        }
+        if self.semantic.nodes·remove(id)·is_some() {
+            return true
+        }
+        if self.procedural.skills·remove(id)·is_some() {
+            return true
+        }
+        false
+    }
+
+    /// Forgets all memories matching a predicate
+    fn forget_where<F>(mut self, predicate: F) -> usize
+    where
+        F: Fn(MemoryInfo) -> bool,
+    {
+        let mut forgotten = 0
+
+        // Collect IDs to forget from episodic
+        let episodic_ids: Vec<MemoryId> = self.episodic.episodes·iter()
+            |φ{|(id, ep)| {
+                let info = MemoryInfo {
+                    id: *id,
+                    epistemic: ep.confidence.primary,
+                    confidence: ep.confidence·effective_confidence(),
+                    importance: ep.strength,
+                    last_accessed: None,
+                    tags: ep.tags·clone(),
+                }
+                predicate(info)
+            }}
+            |τ{|(id, _)| *id}
+            |collect()
+
+        for id in episodic_ids {
+            self.episodic.episodes·remove(id)
+            forgotten += 1
+        }
+
+        // Collect IDs to forget from semantic
+        let semantic_ids: Vec<MemoryId> = self.semantic.nodes·iter()
+            |φ{|(id, node)| {
+                let info = MemoryInfo {
+                    id: *id,
+                    epistemic: node.confidence.primary,
+                    confidence: node.confidence·effective_confidence(),
+                    importance: 0.5,  // Semantic doesn't have importance
+                    last_accessed: Some(node.updated_at),
+                    tags: [],
+                }
+                predicate(info)
+            }}
+            |τ{|(id, _)| *id}
+            |collect()
+
+        for id in semantic_ids {
+            self.semantic.nodes·remove(id)
+            forgotten += 1
+        }
+
+        forgotten
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_decay_curve_ebbinghaus() {
+        let curve = DecayCurve::ebbinghaus()
+
+        let day_0 = curve·retention(0.0)
+        let day_1 = curve·retention(1.0)
+        let day_30 = curve·retention(30.0)
+
+        assert!((day_0 - 1.0)·abs() < 0.01)
+        assert!(day_1 < day_0)
+        assert!(day_30 < day_1)
+    }
+
+    #[test]
+    fn test_decay_curve_linear() {
+        let curve = DecayCurve::Linear { rate_per_day: 0.1 }
+
+        assert!((curve·retention(0.0) - 1.0)·abs() < 0.01)
+        assert!((curve·retention(5.0) - 0.5)·abs() < 0.01)
+        assert!((curve·retention(10.0) - 0.0)·abs() < 0.01)
+    }
+
+    #[test]
+    fn test_decay_curve_none() {
+        let curve = DecayCurve::None
+
+        assert_eq!(curve·retention(0.0), 1.0)
+        assert_eq!(curve·retention(100.0), 1.0)
+        assert_eq!(curve·retention(1000.0), 1.0)
+    }
+
+    #[test]
+    fn test_forgetting_policy_default() {
+        let policy = ForgettingPolicy::default()
+
+        assert!(policy.archive_threshold > policy.deletion_threshold)
+        assert!(policy.enable_consolidation)
+    }
+
+    #[test]
+    fn test_exemption_axiomatic() {
+        let policy = ForgettingPolicy::default()
+
+        let axiomatic = MemoryInfo {
+            id: MemoryId::new(),
+            epistemic: Epistemic::Axiomatic,
+            confidence: 1.0,
+            importance: 0.5,
+            last_accessed: None,
+            tags: [],
+        }
+
+        let reported = MemoryInfo {
+            id: MemoryId::new(),
+            epistemic: Epistemic::Reported,
+            confidence: 0.5,
+            importance: 0.5,
+            last_accessed: None,
+            tags: [],
+        }
+
+        assert!(policy·is_exempt(axiomatic))
+        assert!(!policy·is_exempt(reported))
+    }
+
+    #[test]
+    fn test_consolidation_result_merge() {
+        let a = ConsolidationResult {
+            decayed: 10,
+            archived: 5,
+            deleted: 2,
+            compressed: 1,
+            deprecated: 0,
+            errors: [],
+        }
+
+        let b = ConsolidationResult {
+            decayed: 5,
+            archived: 3,
+            deleted: 1,
+            compressed: 0,
+            deprecated: 1,
+            errors: [],
+        }
+
+        let merged = a·merge(b)
+
+        assert_eq!(merged.decayed, 15)
+        assert_eq!(merged.archived, 8)
+        assert_eq!(merged.deleted, 3)
+    }
+
+    #[test]
+    fn test_days_until_threshold() {
+        let curve = DecayCurve::Linear { rate_per_day: 0.1 }
+        let days = curve·days_until(0.5)
+
+        assert!(days·is_some())
+        assert!((days·unwrap() - 5.0)·abs() < 0.1)
+    }
+
+    #[test]
+    fn test_engram_consolidate() {
+        let mut engram = Engram::new("test")
+
+        // Add some memories
+        engram·learn("fact1", "Test fact 1")
+        engram·learn("fact2", "Test fact 2")
+        engram·experience("Test experience", "test context")
+
+        let result = engram·consolidate()
+
+        assert!(result.errors·is_empty())
+    }
+}

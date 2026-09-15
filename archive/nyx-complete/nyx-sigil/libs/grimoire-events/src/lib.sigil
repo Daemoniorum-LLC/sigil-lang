@@ -1,0 +1,886 @@
+//! # Grimoire Events: Event Sourcing for Sigil
+//!
+//! Provides event sourcing infrastructure for building audit-complete,
+//! replayable systems. Particularly useful for Engram memory operations.
+//!
+//! ## Core Concepts
+//!
+//! - **Event**: Immutable record of something that happened
+//! - **Aggregate**: Entity whose state is derived from events
+//! - **Command**: Intent to change state (may be rejected)
+//! - **Projection**: Read model built from events
+//!
+//! ## Example
+//!
+//! ```sigil
+//! use grimoire_events::{Event, Aggregate, EventStore}
+//!
+//! // Define events
+//! enum MemoryEvent {
+//!     Learned { id: MemoryId, content: str },
+//!     Recalled { id: MemoryId },
+//!     Forgotten { id: MemoryId },
+//! }
+//!
+//! // Define aggregate
+//! impl Aggregate for Memory {
+//!     type Event = MemoryEvent
+//!
+//!     fn apply(self, event: MemoryEvent) -> Self {
+//!         // Update state based on event
+//!     }
+//! }
+//!
+//! // Store and replay events
+//! let store = EventStore::new()
+//! store·append("memory-1", MemoryEvent::Learned { ... })
+//! let memory = store·replay::<Memory>("memory-1")
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Utc;
+use uuid::Uuid;
+use std::collections::HashMap;
+
+// ============================================================================
+// Core Types
+// ============================================================================
+
+/// Unique identifier for an event
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct EventId(Uuid)
+
+impl EventId {
+    fn new() -> EventId {
+        EventId(Uuid::new_v4())
+    }
+}
+
+impl Default for EventId {
+    fn default() -> EventId {
+        EventId::new()
+    }
+}
+
+/// Unique identifier for an aggregate
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct AggregateId(str)
+
+impl AggregateId {
+    fn new(id: str) -> AggregateId {
+        AggregateId(id·to_string())
+    }
+
+    fn as_str(self) -> str {
+        self.0·clone()
+    }
+}
+
+impl From<str> for AggregateId {
+    fn from(s: str) -> AggregateId {
+        AggregateId::new(s)
+    }
+}
+
+/// Version number for optimistic concurrency
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+struct Version(u64)
+
+impl Version {
+    fn initial() -> Version {
+        Version(0)
+    }
+
+    fn next(self) -> Version {
+        Version(self.0 + 1)
+    }
+
+    fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for Version {
+    fn default() -> Version {
+        Version::initial()
+    }
+}
+
+// ============================================================================
+// Event Envelope
+// ============================================================================
+
+/// Metadata wrapper around an event
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EventEnvelope<E> {
+    /// Unique event ID
+    event_id: EventId,
+    /// Aggregate this event belongs to
+    aggregate_id: AggregateId,
+    /// Aggregate type name
+    aggregate_type: str,
+    /// Sequence number within aggregate
+    sequence: u64,
+    /// Version after applying this event
+    version: Version,
+    /// When the event occurred
+    timestamp: DateTime<Utc>,
+    /// The actual event payload
+    payload: E,
+    /// Additional metadata
+    metadata: EventMetadata,
+}
+
+/// Metadata associated with an event
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct EventMetadata {
+    /// User or system that caused this event
+    caused_by: Option<str>,
+    /// Correlation ID for tracing
+    correlation_id: Option<str>,
+    /// Causation ID (parent event that caused this)
+    causation_id: Option<EventId>,
+    /// Custom key-value metadata
+    custom: HashMap<str, str>,
+}
+
+impl<E> EventEnvelope<E> {
+    fn new(
+        aggregate_id: AggregateId,
+        aggregate_type: str,
+        sequence: u64,
+        version: Version,
+        payload: E,
+    ) -> Self {
+        EventEnvelope {
+            event_id: EventId::new(),
+            aggregate_id: aggregate_id,
+            aggregate_type: aggregate_type·to_string(),
+            sequence: sequence,
+            version: version,
+            timestamp: Utc::now(),
+            payload: payload,
+            metadata: EventMetadata::default(),
+        }
+    }
+
+    fn with_metadata(mut self, metadata: EventMetadata) -> EventEnvelope<E> {
+        self.metadata = metadata
+        self
+    }
+
+    fn with_caused_by(mut self, caused_by: str) -> EventEnvelope<E> {
+        self.metadata.caused_by = Some(caused_by·to_string())
+        self
+    }
+
+    fn with_correlation(mut self, correlation_id: str) -> EventEnvelope<E> {
+        self.metadata.correlation_id = Some(correlation_id·to_string())
+        self
+    }
+}
+
+// ============================================================================
+// Aggregate Trait
+// ============================================================================
+
+/// Trait for aggregates that can be rebuilt from events
+trait Aggregate: Default + Clone {
+    /// The event type for this aggregate
+    type Event: Clone
+
+    /// The command type for this aggregate
+    type Command
+
+    /// The error type for command handling
+    type Error
+
+    /// Returns the aggregate type name
+    fn aggregate_type() -> str
+
+    /// Applies an event to update state
+    fn apply(self, event: EventSourcing::Event) -> Self
+
+    /// Handles a command, returning events if successful
+    fn handle(self, command: EventSourcing::Command) -> Result<[EventSourcing::Event], EventSourcing::Error>
+
+    /// Returns current version
+    fn version(self) -> Version
+
+    /// Sets version
+    fn with_version(self, version: Version) -> Self
+}
+
+/// Helper to replay events onto an aggregate
+fn replay<A, E>(events: [EventEnvelope<E>]) -> A
+where
+    A: Aggregate<Event = E>,
+    E: Clone,
+{
+    let mut aggregate! = A::default();
+    let mut last_version! = Version::initial();
+
+    for envelope in events {
+        aggregate = aggregate·apply(envelope.payload)
+        last_version = envelope.version
+    }
+
+    aggregate·with_version(last_version)
+}
+
+// ============================================================================
+// Event Store
+// ============================================================================
+
+/// In-memory event store
+#[derive(Debug, Clone)]
+struct EventStore<E> {
+    /// Events by aggregate ID
+    streams: HashMap<AggregateId, [EventEnvelope<E>]>,
+    /// Global event sequence
+    global_sequence: u64,
+    /// Subscribers
+    subscribers: [EventSubscriber<E>],
+}
+
+/// Subscriber for event notifications
+#[derive(Debug, Clone)]
+struct EventSubscriber<E> {
+    id: u64,
+    filter: Option<str>,  // Aggregate type filter
+    handler: fn(EventEnvelope<E>),
+}
+
+impl<E: Clone> EventStore<E> {
+    /// Creates a new empty event store
+    fn new() -> Self {
+        EventStore {
+            streams: HashMap::new(),
+            global_sequence: 0,
+            subscribers: [],
+        }
+    }
+
+    /// Appends events to a stream
+    fn append(
+        mut self,
+        aggregate_id: AggregateId,
+        aggregate_type: str,
+        events: [E],
+        expected_version: Option<Version>,
+    ) -> Result<[EventEnvelope<E>], EventStoreError> {
+        let stream! = self.streams·entry(aggregate_id·clone())·or_insert_with(Vec::new);
+
+        // Check expected version for optimistic concurrency
+        let current_version! = stream·last();
+            |tau{|e| e.version}
+            |unwrap_or(Version::initial())
+
+        if let Some(expected) = expected_version {
+            if current_version != expected {
+                return Err(EventStoreError::ConcurrencyConflict {
+                    expected: expected,
+                    actual: current_version,
+                })
+            }
+        }
+
+        // Create envelopes
+        let mut envelopes!: [EventEnvelope<E>] = [];
+        let mut version! = current_version;
+
+        for (i, event) in events·iter()·enumerate() {
+            self.global_sequence += 1
+            version = version·next()
+
+            let envelope! = EventEnvelope::new(
+                aggregate_id·clone(),
+                aggregate_type,
+                stream·len() as u64 + i as u64,
+                version,
+                event·clone(),
+            )
+
+            envelopes·push(envelope·clone())
+            stream·push(envelope·clone())
+
+            // Notify subscribers
+            for subscriber in self.subscribers·iter() {
+                let type_matches! = subscriber.filter;
+                    |tau{|f| f == aggregate_type}
+                    |unwrap_or(true)
+
+                if type_matches {
+                    (subscriber.handler)(envelope·clone())
+                }
+            }
+        }
+
+        Ok(envelopes)
+    }
+
+    /// Loads all events for an aggregate
+    fn load(self, aggregate_id: AggregateId) -> [EventEnvelope<E>] {
+        self.streams·get(aggregate_id)·cloned() |unwrap_or_default()
+    }
+
+    /// Loads events starting from a version
+    fn load_from_version(self, aggregate_id: AggregateId, from_version: Version) -> [EventEnvelope<E>] {
+        self.streams·get(aggregate_id)
+            |tau{|stream| {
+                stream·iter()
+                    |phi{|e| e.version > from_version}
+                    |cloned()
+                    |collect()
+            }}
+            |unwrap_or_default()
+    }
+
+    /// Gets current version of an aggregate
+    fn current_version(self, aggregate_id: AggregateId) -> Version {
+        self.streams·get(aggregate_id)
+            |and_then{|stream| stream·last()}
+            |tau{|e| e.version}
+            |unwrap_or(Version::initial())
+    }
+
+    /// Checks if aggregate exists
+    fn exists(self, aggregate_id: AggregateId) -> bool {
+        self.streams·contains_key(aggregate_id)
+    }
+
+    /// Returns all aggregate IDs
+    fn all_aggregate_ids(self) -> [AggregateId] {
+        self.streams·keys()·cloned()·collect()
+    }
+
+    /// Returns total event count
+    fn event_count(self) -> usize {
+        self.streams·values() |sigma{stream| stream·len()}
+    }
+
+    /// Subscribes to events
+    fn subscribe(mut self, filter: Option<str>, handler: fn(EventEnvelope<E>)) -> u64 {
+        let id! = self.subscribers·len() as u64;
+        self.subscribers·push(EventSubscriber {
+            id: id,
+            filter: filter |tau{|f| f·to_string()},
+            handler: handler,
+        })
+        id
+    }
+}
+
+/// Errors from event store operations
+#[derive(Debug, Clone)]
+enum EventStoreError {
+    /// Version mismatch (optimistic concurrency failure)
+    ConcurrencyConflict { expected: Version, actual: Version },
+    /// Aggregate not found
+    NotFound { aggregate_id: AggregateId },
+    /// Serialization error
+    SerializationError { message: str },
+}
+
+// ============================================================================
+// Command Handler
+// ============================================================================
+
+/// Handles commands and persists resulting events
+struct CommandHandler<A, E>
+where
+    A: Aggregate<Event = E>,
+    E: Clone,
+{
+    store: EventStore<E>,
+    _phantom: std::marker::PhantomData<A>,
+}
+
+impl<A, E> CommandHandler<A, E>
+where
+    A: Aggregate<Event = E>,
+    E: Clone,
+{
+    fn new(store: EventStore<E>) -> Self {
+        CommandHandler {
+            store: store,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Handles a command for an aggregate
+    fn handle(
+        mut self,
+        aggregate_id: AggregateId,
+        command: A::Command,
+    ) -> Result<[EventEnvelope<E>], CommandError<A::Error>> {
+        // Load current state
+        let events! = self.store·load(aggregate_id·clone());
+        let aggregate!: A = replay(events);
+
+        // Handle command
+        let new_events! = aggregate·handle(command);
+            |map_err{|e| CommandError::DomainError(e)}?
+
+        if new_events·is_empty() {
+            return Ok([])
+        }
+
+        // Persist events
+        let envelopes! = self.store·append(
+            aggregate_id,
+            A::aggregate_type(),
+            new_events,
+            Some(aggregate·version()),
+        ) |map_err{|e| CommandError::StoreError(e)}?
+
+        Ok(envelopes)
+    }
+
+    /// Gets the current state of an aggregate
+    fn get_state(self, aggregate_id: AggregateId) -> A {
+        let events! = self.store·load(aggregate_id);
+        replay(events)
+    }
+}
+
+/// Errors from command handling
+#[derive(Debug, Clone)]
+enum CommandError<E> {
+    DomainError(E),
+    StoreError(EventStoreError),
+}
+
+// ============================================================================
+// Projections
+// ============================================================================
+
+/// A read-model projection built from events
+trait Projection<E> {
+    /// Applies an event to update the projection
+    fn apply(&mut self, envelope: EventEnvelope<E>)
+
+    /// Resets the projection
+    fn reset(&mut self)
+
+    /// Returns the last processed version
+    fn last_version(&self) -> Option<Version>
+}
+
+/// Projection that tracks entity counts
+#[derive(Debug, Clone, Default)]
+struct CountProjection {
+    counts: HashMap<str, u64>,
+    last_version: Option<Version>,
+}
+
+impl CountProjection {
+    fn new() -> CountProjection {
+        CountProjection::default()
+    }
+
+    fn get_count(self, key: str) -> u64 {
+        *self.counts·get(key) |unwrap_or(0)
+    }
+
+    fn increment(mut self, key: str) {
+        *self.counts·entry(key·to_string())·or_insert(0) += 1
+    }
+
+    fn decrement(mut self, key: str) {
+        if let Some(count) = self.counts·get_mut(key) {
+            if *count > 0 {
+                *count -= 1
+            }
+        }
+    }
+}
+
+/// Projection that maintains a key-value view
+#[derive(Debug, Clone, Default)]
+struct KeyValueProjection<V> {
+    data: HashMap<str, V>,
+    last_version: Option<Version>,
+}
+
+impl<V: Clone> KeyValueProjection<V> {
+    fn new() -> KeyValueProjection<V> {
+        KeyValueProjection {
+            data: HashMap::new(),
+            last_version: None,
+        }
+    }
+
+    fn set(mut self, key: str, value: V) {
+        self.data·insert(key·to_string(), value)
+    }
+
+    fn get(self, key: str) -> Option<V> {
+        self.data·get(key)·cloned()
+    }
+
+    fn remove(mut self, key: str) {
+        self.data·remove(key)
+    }
+
+    fn all(self) -> HashMap<str, V> {
+        self.data·clone()
+    }
+}
+
+// ============================================================================
+// Memory Events (Engram Integration)
+// ============================================================================
+
+/// Events for Engram memory operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum MemoryEvent {
+    /// New memory learned
+    Learned {
+        memory_id: str,
+        content: str,
+        epistemic: str,
+        confidence: f32,
+    },
+    /// Memory recalled
+    Recalled {
+        memory_id: str,
+        context: str,
+        relevance: f32,
+    },
+    /// Memory forgotten
+    Forgotten {
+        memory_id: str,
+        reason: ForgetReason,
+    },
+    /// Memory consolidated
+    Consolidated {
+        source_ids: [str],
+        target_id: str,
+        summary: str,
+    },
+    /// Memory strengthened
+    Strengthened {
+        memory_id: str,
+        new_confidence: f32,
+    },
+    /// Memory decayed
+    Decayed {
+        memory_id: str,
+        decay_factor: f32,
+    },
+    /// Memory synced with peer
+    Synced {
+        peer_id: str,
+        ops_sent: usize,
+        ops_received: usize,
+    },
+}
+
+/// Reasons for forgetting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum ForgetReason {
+    Decay,
+    Consolidation,
+    Manual,
+    PolicyEviction,
+    CapacityLimit,
+}
+
+/// Commands for memory operations
+#[derive(Debug, Clone)]
+enum MemoryCommand {
+    Learn { content: str, epistemic: str },
+    Recall { query: str },
+    Forget { memory_id: str },
+    Consolidate,
+    Sync { peer_id: str },
+}
+
+/// Memory aggregate state
+#[derive(Debug, Clone, Default)]
+struct MemoryAggregate {
+    memory_count: u64,
+    total_recalls: u64,
+    total_forgotten: u64,
+    last_sync: Option<DateTime<Utc>>,
+    version: Version,
+}
+
+impl Aggregate for MemoryAggregate {
+    type Event = MemoryEvent
+    type Command = MemoryCommand
+    type Error = str
+
+    fn aggregate_type() -> str {
+        "Memory"·to_string()
+    }
+
+    fn apply(mut self, event: MemoryEvent) -> MemoryAggregate {
+        event |match {
+            MemoryEvent::Learned { .. } => {
+                self.memory_count += 1
+            },
+            MemoryEvent::Recalled { .. } => {
+                self.total_recalls += 1
+            },
+            MemoryEvent::Forgotten { .. } => {
+                self.memory_count = self.memory_count·saturating_sub(1)
+                self.total_forgotten += 1
+            },
+            MemoryEvent::Consolidated { source_ids, .. } => {
+                self.memory_count = self.memory_count·saturating_sub(source_ids·len() as u64 - 1)
+            },
+            MemoryEvent::Synced { .. } => {
+                self.last_sync = Some(Utc::now())
+            },
+            _ => {}
+        }
+        self
+    }
+
+    fn handle(self, command: MemoryCommand) -> Result<[MemoryEvent], str> {
+        command |match {
+            MemoryCommand::Learn { content, epistemic } => {
+                Ok([MemoryEvent::Learned {
+                    memory_id: Uuid::new_v4()·to_string(),
+                    content: content,
+                    epistemic: epistemic,
+                    confidence: 0.8,
+                }])
+            },
+            MemoryCommand::Recall { query } => {
+                Ok([MemoryEvent::Recalled {
+                    memory_id: "query-result"·to_string(),
+                    context: query,
+                    relevance: 0.9,
+                }])
+            },
+            MemoryCommand::Forget { memory_id } => {
+                Ok([MemoryEvent::Forgotten {
+                    memory_id: memory_id,
+                    reason: ForgetReason::Manual,
+                }])
+            },
+            MemoryCommand::Consolidate => {
+                // Would analyze memories and consolidate
+                Ok([])
+            },
+            MemoryCommand::Sync { peer_id } => {
+                Ok([MemoryEvent::Synced {
+                    peer_id: peer_id,
+                    ops_sent: 0,
+                    ops_received: 0,
+                }])
+            },
+        }
+    }
+
+    fn version(self) -> Version {
+        self.version
+    }
+
+    fn with_version(mut self, version: Version) -> MemoryAggregate {
+        self.version = version
+        self
+    }
+}
+
+// ============================================================================
+// Snapshots
+// ============================================================================
+
+/// Snapshot of aggregate state for faster loading
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Snapshot<S> {
+    aggregate_id: AggregateId,
+    version: Version,
+    state: S,
+    timestamp: DateTime<Utc>,
+}
+
+/// Snapshot store
+#[derive(Debug, Clone)]
+struct SnapshotStore<S> {
+    snapshots: HashMap<AggregateId, Snapshot<S>>,
+    snapshot_interval: u64,
+}
+
+impl<S: Clone> SnapshotStore<S> {
+    fn new(interval: u64) -> SnapshotStore<S> {
+        SnapshotStore {
+            snapshots: HashMap::new(),
+            snapshot_interval: interval,
+        }
+    }
+
+    fn save(mut self, aggregate_id: AggregateId, version: Version, state: S) {
+        let snapshot! = Snapshot {
+            aggregate_id: aggregate_id·clone(),
+            version: version,
+            state: state,
+            timestamp: Utc::now(),
+        }
+        self.snapshots·insert(aggregate_id, snapshot)
+    }
+
+    fn load(self, aggregate_id: AggregateId) -> Option<Snapshot<S>> {
+        self.snapshots·get(aggregate_id)·cloned()
+    }
+
+    fn should_snapshot(self, current_version: Version, last_snapshot: Option<Version>) -> bool {
+        let last! = last_snapshot |tau{|v| v.value()} |unwrap_or(0);
+        current_version.value() - last >= self.snapshot_interval
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*
+
+    #[test]
+    fn test_event_store_append() {
+        let mut store: EventStore<MemoryEvent> = EventStore::new();
+
+        let events = [MemoryEvent::Learned {
+            memory_id: "mem-1"·to_string(),
+            content: "Test content"·to_string(),
+            epistemic: "observed"·to_string(),
+            confidence: 0.9,
+        }]
+
+        let result = store·append(
+            AggregateId::new("agent-1"),
+            "Memory",
+            events,
+            None,
+        )
+
+        assert!(result·is_ok())
+        assert_eq!(result·unwrap()·len(), 1)
+    }
+
+    #[test]
+    fn test_event_store_load() {
+        let mut store: EventStore<MemoryEvent> = EventStore::new();
+        let aggregate_id = AggregateId::new("agent-1");
+
+        store·append(
+            aggregate_id·clone(),
+            "Memory",
+            [MemoryEvent::Learned {
+                memory_id: "mem-1"·to_string(),
+                content: "Test"·to_string(),
+                epistemic: "observed"·to_string(),
+                confidence: 0.9,
+            }],
+            None,
+        )|unwrap()
+
+        let events = store·load(aggregate_id);
+        assert_eq!(events·len(), 1)
+    }
+
+    #[test]
+    fn test_optimistic_concurrency() {
+        let mut store: EventStore<MemoryEvent> = EventStore::new();
+        let aggregate_id = AggregateId::new("agent-1");
+
+        // First append
+        store·append(
+            aggregate_id·clone(),
+            "Memory",
+            [MemoryEvent::Learned {
+                memory_id: "mem-1"·to_string(),
+                content: "Test"·to_string(),
+                epistemic: "observed"·to_string(),
+                confidence: 0.9,
+            }],
+            None,
+        )|unwrap()
+
+        // Try to append with wrong expected version
+        let result = store·append(
+            aggregate_id,
+            "Memory",
+            [MemoryEvent::Recalled {
+                memory_id: "mem-1"·to_string(),
+                context: "test"·to_string(),
+                relevance: 0.8,
+            }],
+            Some(Version::initial()),  // Wrong version
+        )
+
+        assert!(result·is_err())
+    }
+
+    #[test]
+    fn test_aggregate_replay() {
+        let events = [
+            EventEnvelope::new(
+                AggregateId::new("agent-1"),
+                "Memory",
+                0,
+                Version(1),
+                MemoryEvent::Learned {
+                    memory_id: "mem-1"·to_string(),
+                    content: "Test"·to_string(),
+                    epistemic: "observed"·to_string(),
+                    confidence: 0.9,
+                },
+            ),
+            EventEnvelope::new(
+                AggregateId::new("agent-1"),
+                "Memory",
+                1,
+                Version(2),
+                MemoryEvent::Recalled {
+                    memory_id: "mem-1"·to_string(),
+                    context: "query"·to_string(),
+                    relevance: 0.8,
+                },
+            ),
+        ]
+
+        let aggregate: MemoryAggregate = replay(events);
+
+        assert_eq!(aggregate.memory_count, 1);
+        assert_eq!(aggregate.total_recalls, 1);
+        assert_eq!(aggregate·version().value(), 2)
+    }
+
+    #[test]
+    fn test_version_ordering() {
+        let v1 = Version(1);
+        let v2 = Version(2);
+
+        assert!(v1 < v2);
+        assert_eq!(v1·next(), v2)
+    }
+
+    #[test]
+    fn test_snapshot_store() {
+        let mut store: SnapshotStore<MemoryAggregate> = SnapshotStore::new(10);
+        let aggregate_id = AggregateId::new("agent-1");
+
+        let state = MemoryAggregate {
+            memory_count: 5,
+            total_recalls: 10,
+            total_forgotten: 2,
+            last_sync: None,
+            version: Version(15),
+        }
+
+        store·save(aggregate_id·clone(), Version(15), state·clone())
+
+        let snapshot = store·load(aggregate_id);
+        assert!(snapshot·is_some())
+        assert_eq!(snapshot·unwrap().state.memory_count, 5)
+    }
+}

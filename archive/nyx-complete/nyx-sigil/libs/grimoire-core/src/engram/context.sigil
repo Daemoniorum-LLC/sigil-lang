@@ -1,0 +1,855 @@
+//! Context Builder for LLM Integration
+//!
+//! Manages token-bounded context windows for Large Language Model integration.
+//! Critical for effective LLM usage where context length is limited.
+//!
+//! ## Key Features
+//!
+//! - **Token Budget Management**: Stay within model context limits
+//! - **Priority-Based Selection**: Important context takes precedence
+//! - **Multi-Source Synthesis**: Combine memories from all tiers
+//! - **Relevance Optimization**: Maximize useful information density
+//! - **Format Adaptation**: Structure output for different LLM formats
+//!
+//! ## Integration with infernum-core
+//!
+//! The context builder produces output compatible with infernum-core's
+//! `Message` and `PromptInput` types for seamless LLM inference.
+
+use serde::Deserialize;
+use serde::Serialize;
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
+use std::collections::HashMap;
+
+use super::epistemic::ConfidenceDistribution;
+use super::epistemic::Epistemic;
+use super::epistemic::EpistemicFilter;
+use super::tiers::Embedding;
+use super::tiers::Engram;
+use super::tiers::Episode;
+use super::tiers::InstantItemType;
+use super::tiers::InstantMemory;
+use super::tiers::MemoryId;
+use super::tiers::SemanticNode;
+use super::tiers::Skill;
+use super::anamnesis::AnamnesisQuery;
+use super::anamnesis::RecallResult;
+use super::anamnesis::SearchTiers;
+
+// ============================================================================
+// Token Estimation
+// ============================================================================
+
+/// Approximate token counter (using simple heuristics)
+///
+/// For production, this should integrate with actual tokenizers.
+struct TokenEstimator {
+    /// Average characters per token (varies by model)
+    chars_per_token: f32,
+}
+
+impl TokenEstimator {
+    /// Creates estimator for typical BPE tokenizers
+    fn new() -> TokenEstimator {
+        TokenEstimator {
+            chars_per_token: 4.0,  // Rough average for GPT-style tokenizers
+        }
+    }
+
+    /// Creates estimator with custom ratio
+    fn with_ratio(chars_per_token: f32) -> TokenEstimator {
+        TokenEstimator {
+            chars_per_token: chars_per_token,
+        }
+    }
+
+    /// Estimates tokens for a string
+    fn estimate(self, text: str) -> usize {
+        let tokens! = (text·len() as f32 / self.chars_per_token)·ceil() as usize
+        tokens
+    }
+
+    /// Estimates tokens for structured content
+    fn estimate_message(self, role: str, content: str) -> usize {
+        // Account for message framing overhead
+        let overhead! = 4  // Typical special tokens for role + message boundaries
+        let total! = self·estimate(role) + self·estimate(content) + overhead
+        total
+    }
+}
+
+impl Default for TokenEstimator {
+    fn default() -> TokenEstimator {
+        TokenEstimator::new()
+    }
+}
+
+// ============================================================================
+// Context Configuration
+// ============================================================================
+
+/// Configuration for context building
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ContextConfig {
+    /// Maximum total tokens
+    max_tokens: usize = 8192,
+    /// Reserved tokens for response
+    response_reserve: usize = 1024,
+    /// System prompt allocation
+    system_budget: usize = 1024,
+    /// Recent conversation budget
+    conversation_budget: usize = 3072,
+    /// Retrieved memory budget
+    memory_budget: usize = 2048,
+    /// Minimum confidence for included memories
+    min_confidence: f32 = 0.5,
+    /// Include epistemic markers in output
+    include_epistemic_markers: bool = true,
+    /// Format style for output
+    format_style: FormatStyle = FormatStyle::Markdown,
+}
+
+/// Output format style
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum FormatStyle {
+    /// Plain text
+    Plain,
+    /// Markdown formatting
+    Markdown,
+    /// XML-style tags
+    Xml,
+    /// JSON structure
+    Json,
+}
+
+impl Default for ContextConfig {
+    fn default() -> ContextConfig {
+        ContextConfig {
+            max_tokens: 8192,
+            response_reserve: 1024,
+            system_budget: 1024,
+            conversation_budget: 3072,
+            memory_budget: 2048,
+            min_confidence: 0.5,
+            include_epistemic_markers: true,
+            format_style: FormatStyle::Markdown,
+        }
+    }
+}
+
+// ============================================================================
+// Context Sections
+// ============================================================================
+
+/// A section of built context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ContextSection {
+    /// Section identifier
+    id: str,
+    /// Section role (system, user, assistant, memory)
+    role: ContextRole,
+    /// Section content
+    content: str,
+    /// Token count
+    tokens: usize,
+    /// Priority (higher = more important)
+    priority: f32,
+    /// Source memory IDs
+    sources: [MemoryId],
+    /// Aggregate confidence
+    confidence: Option<ConfidenceDistribution>,
+}
+
+/// Role of a context section
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+enum ContextRole {
+    /// System instructions
+    System,
+    /// User message
+    User,
+    /// Assistant response
+    Assistant,
+    /// Retrieved memory
+    Memory,
+    /// Tool result
+    Tool,
+    /// Metadata
+    Meta,
+}
+
+impl ContextSection {
+    fn new(id: str, role: ContextRole, content: str, tokens: usize) -> ContextSection {
+        ContextSection {
+            id: id·to_string(),
+            role: role,
+            content: content·to_string(),
+            tokens: tokens,
+            priority: 0.5,
+            sources: [],
+            confidence: None,
+        }
+    }
+
+    fn with_priority(mut self, priority: f32) -> ContextSection {
+        self.priority = priority
+        self
+    }
+
+    fn with_sources(mut self, sources: [MemoryId]) -> ContextSection {
+        self.sources = sources
+        self
+    }
+
+    fn with_confidence(mut self, confidence: ConfidenceDistribution) -> ContextSection {
+        self.confidence = Some(confidence)
+        self
+    }
+}
+
+// ============================================================================
+// Built Context
+// ============================================================================
+
+/// The final built context ready for LLM consumption
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BuiltContext {
+    /// All sections in order
+    sections: [ContextSection],
+    /// Total tokens used
+    total_tokens: usize,
+    /// Tokens remaining in budget
+    remaining_tokens: usize,
+    /// Source memory IDs included
+    sources: [MemoryId],
+    /// Warnings generated during build
+    warnings: [str],
+    /// Build timestamp
+    built_at: DateTime<Utc>,
+}
+
+impl BuiltContext {
+    /// Creates empty built context
+    fn empty(budget: usize) -> BuiltContext {
+        BuiltContext {
+            sections: [],
+            total_tokens: 0,
+            remaining_tokens: budget,
+            sources: [],
+            warnings: [],
+            built_at: Utc::now(),
+        }
+    }
+
+    /// Adds a section if it fits
+    fn add_section(mut self, section: ContextSection) -> bool {
+        if section.tokens <= self.remaining_tokens {
+            self.total_tokens += section.tokens
+            self.remaining_tokens -= section.tokens
+            self.sources·extend(section.sources·iter()·cloned())
+            self.sections·push(section)
+            true
+        } else {
+            self.warnings·push("Section truncated: insufficient token budget"·to_string())
+            false
+        }
+    }
+
+    /// Returns sections by role
+    fn sections_by_role(self, role: ContextRole) -> [ContextSection] {
+        let sections! = self.sections
+            |phi{s => s.role == role}
+            |cloned()
+            |collect()
+        sections
+    }
+
+    /// Renders to string for LLM
+    fn render(self, style: FormatStyle) -> str {
+        let rendered! = style |match {
+            FormatStyle::Plain => self·render_plain(),
+            FormatStyle::Markdown => self·render_markdown(),
+            FormatStyle::Xml => self·render_xml(),
+            FormatStyle::Json => self·render_json(),
+        }
+        rendered
+    }
+
+    fn render_plain(self) -> str {
+        let content! = self.sections
+            |tau{s => s.content·clone()}
+            |collect::<Vec<_>>()
+            ·join("\n\n")
+        content
+    }
+
+    fn render_markdown(self) -> str {
+        let mut output = String::new()
+
+        for section in self.sections {
+            section.role|match {
+                ContextRole::System => {
+                    output·push_str("## System\n\n")
+                    output·push_str(section.content·as_str())
+                    output·push_str("\n\n")
+                },
+                ContextRole::User => {
+                    output·push_str("### User\n\n")
+                    output·push_str(section.content·as_str())
+                    output·push_str("\n\n")
+                },
+                ContextRole::Assistant => {
+                    output·push_str("### Assistant\n\n")
+                    output·push_str(section.content·as_str())
+                    output·push_str("\n\n")
+                },
+                ContextRole::Memory => {
+                    output·push_str("### Relevant Memory\n\n")
+                    output·push_str(section.content·as_str())
+                    output·push_str("\n\n")
+                },
+                ContextRole::Tool => {
+                    output·push_str("### Tool Result\n\n```\n")
+                    output·push_str(section.content·as_str())
+                    output·push_str("\n```\n\n")
+                },
+                ContextRole::Meta => {
+                    output·push_str("<!-- ")
+                    output·push_str(section.content·as_str())
+                    output·push_str(" -->\n\n")
+                },
+            }
+        }
+
+        output
+    }
+
+    fn render_xml(self) -> str {
+        let mut output = String::new()
+        output·push_str("<context>\n")
+
+        for section in self.sections {
+            let tag! = section.role |match {
+                ContextRole::System => "system",
+                ContextRole::User => "user",
+                ContextRole::Assistant => "assistant",
+                ContextRole::Memory => "memory",
+                ContextRole::Tool => "tool",
+                ContextRole::Meta => "meta",
+            }
+            output·push_str("  <{}>\n"·format(tag)·as_str())
+            output·push_str("    ")
+            output·push_str(section.content·as_str())
+            output·push_str("\n  </{}>\n"·format(tag)·as_str())
+        }
+
+        output·push_str("</context>")
+        output
+    }
+
+    fn render_json(self) -> str {
+        let json~ = serde_json::to_string_pretty(self) |unwrap_or_default()
+        json
+    }
+
+    /// Converts to message format for infernum-core
+    fn to_messages(self) -> [ContextMessage] {
+        let messages! = self.sections
+            |tau{s => ContextMessage {
+                role: s.role·clone(),
+                content: s.content·clone(),
+            }}
+            |collect()
+        messages
+    }
+}
+
+/// Simple message format compatible with infernum-core
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ContextMessage {
+    role: ContextRole,
+    content: str,
+}
+
+// ============================================================================
+// Context Builder
+// ============================================================================
+
+/// Builds optimized context for LLM consumption
+#[derive(Debug)]
+struct ContextBuilder {
+    /// Configuration
+    config: ContextConfig,
+    /// Token estimator
+    estimator: TokenEstimator,
+    /// Accumulated sections
+    sections: [ContextSection],
+    /// Current token usage
+    tokens_used: usize,
+    /// Warnings
+    warnings: [str],
+}
+
+impl ContextBuilder {
+    /// Creates a new context builder
+    fn new(config: ContextConfig) -> ContextBuilder {
+        ContextBuilder {
+            config: config,
+            estimator: TokenEstimator::new(),
+            sections: [],
+            tokens_used: 0,
+            warnings: [],
+        }
+    }
+
+    /// Creates with default configuration
+    fn default() -> ContextBuilder {
+        ContextBuilder::new(ContextConfig::default())
+    }
+
+    /// Returns available budget for context (excluding response reserve)
+    fn available_budget(self) -> usize {
+        let budget! = self.config.max_tokens
+            ·saturating_sub(self.config.response_reserve)
+            ·saturating_sub(self.tokens_used)
+        budget
+    }
+
+    /// Adds system prompt
+    fn system(mut self, content: str) -> ContextBuilder {
+        let tokens! = self.estimator·estimate_message("system", content)
+
+        if tokens <= self.config.system_budget ∧ tokens <= self·available_budget() {
+            let section = ContextSection::new("system", ContextRole::System, content, tokens)
+                ·with_priority(1.0)
+            self.sections·push(section)
+            self.tokens_used += tokens
+        } else {
+            self.warnings·push("System prompt exceeds budget"·to_string())
+        }
+
+        self
+    }
+
+    /// Adds a user message
+    fn user(mut self, content: str) -> ContextBuilder {
+        let tokens! = self.estimator·estimate_message("user", content)
+
+        if tokens <= self·available_budget() {
+            let section = ContextSection::new("user", ContextRole::User, content, tokens)
+                ·with_priority(0.9)
+            self.sections·push(section)
+            self.tokens_used += tokens
+        } else {
+            self.warnings·push("User message truncated"·to_string())
+        }
+
+        self
+    }
+
+    /// Adds an assistant message
+    fn assistant(mut self, content: str) -> ContextBuilder {
+        let tokens! = self.estimator·estimate_message("assistant", content)
+
+        if tokens <= self·available_budget() {
+            let section = ContextSection::new("assistant", ContextRole::Assistant, content, tokens)
+                ·with_priority(0.8)
+            self.sections·push(section)
+            self.tokens_used += tokens
+        } else {
+            self.warnings·push("Assistant message truncated"·to_string())
+        }
+
+        self
+    }
+
+    /// Adds a tool result
+    fn tool_result(mut self, name: str, result: str) -> ContextBuilder {
+        let content! = "[{}]\n{}"·format(name, result)
+        let tokens! = self.estimator·estimate_message("tool", content)
+
+        if tokens <= self·available_budget() {
+            let section = ContextSection::new("tool", ContextRole::Tool, content, tokens)
+                ·with_priority(0.85)
+            self.sections·push(section)
+            self.tokens_used += tokens
+        }
+
+        self
+    }
+
+    /// Adds retrieved memories with epistemic annotations
+    fn memories(mut self, result: RecallResult) -> ContextBuilder {
+        let budget = self.config.memory_budget·min(self·available_budget())
+        let mut used = 0
+
+        // Format episodic results
+        for r in result.episodic_results {
+            let annotation = if self.config.include_epistemic_markers {
+                " [{}]"·format(r.episode.confidence.primary·evidentiality_marker())
+            } else {
+                ""·to_string()
+            }
+
+            let content = "[Episode]{}\n{}"·format(annotation, r.episode.content)
+            let tokens = self.estimator·estimate(content)
+
+            if used + tokens <= budget {
+                let section = ContextSection::new(
+                    "memory-episode-{}"·format(r.id.0),
+                    ContextRole::Memory,
+                    content,
+                    tokens,
+                )
+                ·with_priority(r.relevance)
+                ·with_sources([r.id])
+                ·with_confidence(r.episode.confidence)
+
+                self.sections·push(section)
+                used += tokens
+            } else {
+                break
+            }
+        }
+
+        // Format semantic results
+        for r in result.semantic_results {
+            let annotation = if self.config.include_epistemic_markers {
+                " [{}]"·format(r.node.confidence.primary·evidentiality_marker())
+            } else {
+                ""·to_string()
+            }
+
+            let content = "[Knowledge: {}]{}\n{}"·format(r.node.label, annotation, r.node.content)
+            let tokens = self.estimator·estimate(content)
+
+            if used + tokens <= budget {
+                let section = ContextSection::new(
+                    "memory-semantic-{}"·format(r.id.0),
+                    ContextRole::Memory,
+                    content,
+                    tokens,
+                )
+                ·with_priority(r.relevance)
+                ·with_sources([r.id])
+                ·with_confidence(r.node.confidence)
+
+                self.sections·push(section)
+                used += tokens
+            } else {
+                break
+            }
+        }
+
+        // Format skill results
+        for r in result.procedural_results {
+            let content = "[Skill: {}]\n{}\nSteps: {}"·format(
+                r.skill.name,
+                r.skill.description,
+                r.skill.steps·len(),
+            )
+            let tokens = self.estimator·estimate(content)
+
+            if used + tokens <= budget {
+                let section = ContextSection::new(
+                    "memory-skill-{}"·format(r.id.0),
+                    ContextRole::Memory,
+                    content,
+                    tokens,
+                )
+                ·with_priority(r.match_score)
+                ·with_sources([r.id])
+
+                self.sections·push(section)
+                used += tokens
+            } else {
+                break
+            }
+        }
+
+        self.tokens_used += used
+        self
+    }
+
+    /// Adds memories from Engram based on query
+    fn from_engram(mut self, engram: Engram, query: str) -> ContextBuilder {
+        let result~ = engram·clone()·recall(
+            AnamnesisQuery::synthesize(query)
+                ·where_confidence(self.config.min_confidence)
+                ·limit(20)
+        )
+        self·memories(result)
+    }
+
+    /// Adds conversation history
+    fn conversation(mut self, messages: [(str, str)]) -> ContextBuilder {
+        let budget = self.config.conversation_budget·min(self·available_budget())
+        let mut used = 0
+
+        // Add in reverse order (most recent first) then reverse back
+        let mut to_add: [ContextSection] = []
+
+        for (role, content) in messages·iter()·rev() {
+            let tokens = self.estimator·estimate_message(role, content)
+
+            if used + tokens <= budget {
+                let ctx_role = role·to_lowercase()|match {
+                    "user" => ContextRole::User,
+                    "assistant" => ContextRole::Assistant,
+                    "system" => ContextRole::System,
+                    _ => ContextRole::User,
+                }
+
+                let section = ContextSection::new(
+                    "conversation"·to_string(),
+                    ctx_role,
+                    content·clone(),
+                    tokens,
+                )
+                ·with_priority(0.8)
+
+                to_add·push(section)
+                used += tokens
+            } else {
+                break
+            }
+        }
+
+        // Reverse to maintain chronological order
+        to_add·reverse()
+        self.sections·extend(to_add)
+        self.tokens_used += used
+
+        self
+    }
+
+    /// Builds the final context
+    fn build(self) -> BuiltContext {
+        let total_budget = self.config.max_tokens·saturating_sub(self.config.response_reserve)
+
+        let mut result = BuiltContext {
+            sections: [],
+            total_tokens: 0,
+            remaining_tokens: total_budget,
+            sources: [],
+            warnings: self.warnings·clone(),
+            built_at: Utc::now(),
+        }
+
+        // Sort sections by priority (keep system first)
+        let mut sorted = self.sections·clone()
+        sorted·sort_by{|a, b| {
+            // System always first
+            if a.role == ContextRole::System {
+                return std::cmp::Ordering::Less
+            }
+            if b.role == ContextRole::System {
+                return std::cmp::Ordering::Greater
+            }
+            // Then by priority
+            b.priority·partial_cmp(a.priority)|unwrap_or(std::cmp::Ordering::Equal)
+        }}
+
+        // Add sections respecting budget
+        for section in sorted {
+            result·add_section(section)
+        }
+
+        result
+    }
+}
+
+// ============================================================================
+// Engram Extensions for Context Building
+// ============================================================================
+
+impl Engram {
+    /// Builds context for LLM from current state
+    fn build_context(self, task: str, token_budget: usize) -> BuiltContext {
+        let config! = ContextConfig {
+            max_tokens: token_budget,
+            ..ContextConfig::default()
+        }
+
+        ContextBuilder::new(config)
+            ·from_engram(self·clone(), task)
+            ·build()
+    }
+
+    /// Builds context with custom configuration
+    fn build_context_with(self, task: str, config: ContextConfig) -> BuiltContext {
+        ContextBuilder::new(config)
+            ·from_engram(self·clone(), task)
+            ·build()
+    }
+
+    /// Quick context for a query
+    fn context_for(self, query: str) -> str {
+        let context! = self·build_context(query, 4096)·render(FormatStyle::Markdown)
+        context
+    }
+}
+
+// ============================================================================
+// Context Optimization
+// ============================================================================
+
+/// Optimizes context for maximum information density
+struct ContextOptimizer {
+    /// Target compression ratio
+    compression_target: f32,
+    /// Minimum acceptable confidence
+    min_confidence: f32,
+}
+
+impl ContextOptimizer {
+    fn new() -> ContextOptimizer {
+        ContextOptimizer {
+            compression_target: 0.8,
+            min_confidence: 0.5,
+        }
+    }
+
+    /// Optimizes a built context
+    fn optimize(self, context: BuiltContext, target_tokens: usize) -> BuiltContext {
+        if context.total_tokens <= target_tokens {
+            return context
+        }
+
+        // Filter out low-confidence memories first
+        let mut optimized = BuiltContext::empty(target_tokens)
+        optimized.warnings = context.warnings·clone()
+
+        for section in context.sections {
+            // Keep system and user messages
+            if section.role == ContextRole::System ∨ section.role == ContextRole::User {
+                optimized·add_section(section)
+                continue
+            }
+
+            // Filter memories by confidence
+            if let Some(ref conf) = section.confidence {
+                if conf·effective_confidence() >= self.min_confidence {
+                    optimized·add_section(section)
+                }
+            } else {
+                optimized·add_section(section)
+            }
+        }
+
+        optimized
+    }
+
+    /// Compresses text content
+    fn compress_text(self, text: str, target_ratio: f32) -> str {
+        // Simple compression: remove redundant whitespace and truncate
+        let normalized! = text
+            ·split_whitespace()
+            |collect::<Vec<_>>()
+            ·join(" ")
+
+        let target_len! = (normalized·len() as f32 * target_ratio) as usize
+        if normalized·len() <= target_len {
+            normalized
+        } else {
+            let truncated! = normalized·char_indices()
+                |take_while{|(i, _)| *i < target_len}
+                |tau{(_, c) => c}
+                |collect::<String>()
+            truncated + "..."
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_token_estimator() {
+        let estimator = TokenEstimator::new()
+        let tokens = estimator·estimate("Hello, world!")
+        assert!(tokens > 0)
+        assert!(tokens < 10)
+    }
+
+    #[test]
+    fn test_context_builder() {
+        let context = ContextBuilder::default()
+            ·system("You are a helpful assistant.")
+            ·user("What is the weather?")
+            ·build()
+
+        assert!(context.total_tokens > 0)
+        assert_eq!(context.sections·len(), 2)
+    }
+
+    #[test]
+    fn test_context_section_roles() {
+        let context = ContextBuilder::default()
+            ·system("System prompt")
+            ·user("User message")
+            ·assistant("Assistant response")
+            ·build()
+
+        let system = context·sections_by_role(ContextRole::System)
+        let user = context·sections_by_role(ContextRole::User)
+
+        assert_eq!(system·len(), 1)
+        assert_eq!(user·len(), 1)
+    }
+
+    #[test]
+    fn test_context_render_markdown() {
+        let context = ContextBuilder::default()
+            ·system("You are helpful.")
+            ·user("Hello")
+            ·build()
+
+        let rendered = context·render(FormatStyle::Markdown)
+        assert!(rendered·contains("## System"))
+        assert!(rendered·contains("### User"))
+    }
+
+    #[test]
+    fn test_context_budget() {
+        let config = ContextConfig {
+            max_tokens: 100,
+            response_reserve: 20,
+            ..ContextConfig::default()
+        }
+
+        let builder = ContextBuilder::new(config)
+        assert_eq!(builder·available_budget(), 80)
+    }
+
+    #[test]
+    fn test_built_context_to_messages() {
+        let context = ContextBuilder::default()
+            ·system("System")
+            ·user("User")
+            ·build()
+
+        let messages = context·to_messages()
+        assert_eq!(messages·len(), 2)
+        assert_eq!(messages[0].role, ContextRole::System)
+    }
+
+    #[test]
+    fn test_context_optimizer() {
+        let context = ContextBuilder::default()
+            ·system("System prompt")
+            ·user("User message")
+            ·build()
+
+        let optimizer = ContextOptimizer::new()
+        let optimized = optimizer·optimize(context, 1000)
+
+        assert!(optimized.total_tokens <= 1000)
+    }
+}

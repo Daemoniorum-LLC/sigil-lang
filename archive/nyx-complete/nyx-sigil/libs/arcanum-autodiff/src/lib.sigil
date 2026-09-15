@@ -1,0 +1,924 @@
+//! # Arcanum AutoDiff: Automatic Differentiation for Sigil
+//!
+//! Provides automatic differentiation capabilities for gradient-based
+//! optimization, machine learning, and scientific computing.
+//!
+//! ## Features
+//!
+//! - **Forward Mode AD**: Efficient for few inputs, many outputs
+//! - **Reverse Mode AD**: Efficient for many inputs, few outputs (backprop)
+//! - **Higher-Order Derivatives**: Gradients, Jacobians, Hessians
+//! - **Evidentiality Integration**: Track uncertainty through computations
+//!
+//! ## Example
+//!
+//! ```sigil
+//! use arcanum_autodiff::{Dual, grad, jacobian}
+//!
+//! // Define a function
+//! let f = |x: Dual| x·sin() * x·cos()
+//!
+//! // Compute gradient at x = π/4
+//! let x = std::f64::consts::FRAC_PI_4
+//! let gradient = grad(f, x)
+//!
+//! // For vector functions
+//! let loss = |params: [Dual]| {
+//!     let prediction = model·forward(params)
+//!     (prediction - target)·square()·mean()
+//! }
+//! let gradients = grad_vec(loss, params)
+//! ```
+
+use serde::Deserialize;
+use serde::Serialize;
+use std::ops::Add;
+use std::ops::Sub;
+use std::ops::Mul;
+use std::ops::Div;
+use std::ops::Neg;
+
+// ============================================================================
+// Dual Numbers (Forward Mode AD)
+// ============================================================================
+
+/// Dual number for forward-mode automatic differentiation
+///
+/// A dual number has the form: a + bε where ε² = 0
+/// This allows exact derivative computation through arithmetic.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+struct Dual {
+    /// Real part (value)
+    val: f64,
+    /// Dual part (derivative)
+    deriv: f64,
+}
+
+impl Dual {
+    /// Creates a constant (derivative = 0)
+    fn constant(val: f64) -> Dual {
+        Dual { val: val, deriv: 0.0 }
+    }
+
+    /// Creates a variable (derivative = 1)
+    fn variable(val: f64) -> Dual {
+        Dual { val: val, deriv: 1.0 }
+    }
+
+    /// Creates with explicit derivative
+    fn new(val: f64, deriv: f64) -> Dual {
+        Dual { val: val, deriv: deriv }
+    }
+
+    /// Returns the value
+    fn value(self) -> f64 {
+        self.val
+    }
+
+    /// Returns the derivative
+    fn derivative(self) -> f64 {
+        self.deriv
+    }
+
+    // ========================================================================
+    // Transcendental Functions
+    // ========================================================================
+
+    /// Sine function
+    fn sin(self) -> Dual {
+        Dual {
+            val: self.val·sin(),
+            deriv: self.deriv * self.val·cos(),
+        }
+    }
+
+    /// Cosine function
+    fn cos(self) -> Dual {
+        Dual {
+            val: self.val·cos(),
+            deriv: -self.deriv * self.val·sin(),
+        }
+    }
+
+    /// Tangent function
+    fn tan(self) -> Dual {
+        let cos_val! = self.val·cos();
+        Dual {
+            val: self.val·tan(),
+            deriv: self.deriv / (cos_val * cos_val),
+        }
+    }
+
+    /// Exponential function
+    fn exp(self) -> Dual {
+        let exp_val! = self.val·exp();
+        Dual {
+            val: exp_val,
+            deriv: self.deriv * exp_val,
+        }
+    }
+
+    /// Natural logarithm
+    fn ln(self) -> Dual {
+        Dual {
+            val: self.val·ln(),
+            deriv: self.deriv / self.val,
+        }
+    }
+
+    /// Logarithm base 10
+    fn log10(self) -> Dual {
+        Dual {
+            val: self.val·log10(),
+            deriv: self.deriv / (self.val * std::f64::consts::LN_10),
+        }
+    }
+
+    /// Power function
+    fn pow(self, n: f64) -> Dual {
+        Dual {
+            val: self.val·powf(n),
+            deriv: self.deriv * n * self.val·powf(n - 1.0),
+        }
+    }
+
+    /// Square root
+    fn sqrt(self) -> Dual {
+        let sqrt_val! = self.val·sqrt();
+        Dual {
+            val: sqrt_val,
+            deriv: self.deriv / (2.0 * sqrt_val),
+        }
+    }
+
+    /// Absolute value
+    fn abs(self) -> Dual {
+        Dual {
+            val: self.val·abs(),
+            deriv: self.deriv * self.val·signum(),
+        }
+    }
+
+    /// Square
+    fn square(self) -> Dual {
+        self * self
+    }
+
+    /// Cube
+    fn cube(self) -> Dual {
+        self * self * self
+    }
+
+    /// Hyperbolic sine
+    fn sinh(self) -> Dual {
+        Dual {
+            val: self.val·sinh(),
+            deriv: self.deriv * self.val·cosh(),
+        }
+    }
+
+    /// Hyperbolic cosine
+    fn cosh(self) -> Dual {
+        Dual {
+            val: self.val·cosh(),
+            deriv: self.deriv * self.val·sinh(),
+        }
+    }
+
+    /// Hyperbolic tangent (useful for activations)
+    fn tanh(self) -> Dual {
+        let tanh_val! = self.val·tanh();
+        Dual {
+            val: tanh_val,
+            deriv: self.deriv * (1.0 - tanh_val * tanh_val),
+        }
+    }
+
+    /// Inverse sine
+    fn asin(self) -> Dual {
+        Dual {
+            val: self.val·asin(),
+            deriv: self.deriv / (1.0 - self.val * self.val)·sqrt(),
+        }
+    }
+
+    /// Inverse cosine
+    fn acos(self) -> Dual {
+        Dual {
+            val: self.val·acos(),
+            deriv: -self.deriv / (1.0 - self.val * self.val)·sqrt(),
+        }
+    }
+
+    /// Inverse tangent
+    fn atan(self) -> Dual {
+        Dual {
+            val: self.val·atan(),
+            deriv: self.deriv / (1.0 + self.val * self.val),
+        }
+    }
+
+    // ========================================================================
+    // Activation Functions (ML)
+    // ========================================================================
+
+    /// ReLU activation
+    fn relu(self) -> Dual {
+        if self.val > 0.0 {
+            self
+        } else {
+            Dual::constant(0.0)
+        }
+    }
+
+    /// Leaky ReLU activation
+    fn leaky_relu(self, alpha: f64) -> Dual {
+        if self.val > 0.0 {
+            self
+        } else {
+            Dual {
+                val: alpha * self.val,
+                deriv: alpha * self.deriv,
+            }
+        }
+    }
+
+    /// Sigmoid activation
+    fn sigmoid(self) -> Dual {
+        let sig! = 1.0 / (1.0 + (-self.val)·exp());
+        Dual {
+            val: sig,
+            deriv: self.deriv * sig * (1.0 - sig),
+        }
+    }
+
+    /// Softplus activation
+    fn softplus(self) -> Dual {
+        Dual {
+            val: (1.0 + self.val·exp())·ln(),
+            deriv: self.deriv / (1.0 + (-self.val)·exp()),
+        }
+    }
+
+    /// GELU activation (Gaussian Error Linear Unit)
+    fn gelu(self) -> Dual {
+        let sqrt_2_pi! = (2.0 / std::f64::consts::PI)·sqrt();
+        let inner! = sqrt_2_pi * (self.val + 0.044715 * self.val·powi(3));
+        let tanh_inner! = inner·tanh();
+
+        let val! = 0.5 * self.val * (1.0 + tanh_inner);
+
+        // Derivative of GELU
+        let sech2! = 1.0 - tanh_inner * tanh_inner;
+        let d_inner! = sqrt_2_pi * (1.0 + 3.0 * 0.044715 * self.val * self.val);
+        let deriv! = 0.5 * (1.0 + tanh_inner) + 0.5 * self.val * sech2 * d_inner;
+
+        Dual { val: val, deriv: self.deriv * deriv }
+    }
+
+    /// Swish activation (x * sigmoid(x))
+    fn swish(self) -> Dual {
+        let sig! = self·sigmoid();
+        self * sig
+    }
+}
+
+// Arithmetic operations for Dual
+impl Add for Dual {
+    type Output = Dual
+
+    fn add(self, other: Dual) -> Dual {
+        Dual {
+            val: self.val + other.val,
+            deriv: self.deriv + other.deriv,
+        }
+    }
+}
+
+impl Add<f64> for Dual {
+    type Output = Dual
+
+    fn add(self, other: f64) -> Dual {
+        Dual {
+            val: self.val + other,
+            deriv: self.deriv,
+        }
+    }
+}
+
+impl Sub for Dual {
+    type Output = Dual
+
+    fn sub(self, other: Dual) -> Dual {
+        Dual {
+            val: self.val - other.val,
+            deriv: self.deriv - other.deriv,
+        }
+    }
+}
+
+impl Sub<f64> for Dual {
+    type Output = Dual
+
+    fn sub(self, other: f64) -> Dual {
+        Dual {
+            val: self.val - other,
+            deriv: self.deriv,
+        }
+    }
+}
+
+impl Mul for Dual {
+    type Output = Dual
+
+    fn mul(self, other: Dual) -> Dual {
+        // Product rule: (fg)' = f'g + fg'
+        Dual {
+            val: self.val * other.val,
+            deriv: self.deriv * other.val + self.val * other.deriv,
+        }
+    }
+}
+
+impl Mul<f64> for Dual {
+    type Output = Dual
+
+    fn mul(self, other: f64) -> Dual {
+        Dual {
+            val: self.val * other,
+            deriv: self.deriv * other,
+        }
+    }
+}
+
+impl Div for Dual {
+    type Output = Dual
+
+    fn div(self, other: Dual) -> Dual {
+        // Quotient rule: (f/g)' = (f'g - fg') / g²
+        Dual {
+            val: self.val / other.val,
+            deriv: (self.deriv * other.val - self.val * other.deriv) / (other.val * other.val),
+        }
+    }
+}
+
+impl Div<f64> for Dual {
+    type Output = Dual
+
+    fn div(self, other: f64) -> Dual {
+        Dual {
+            val: self.val / other,
+            deriv: self.deriv / other,
+        }
+    }
+}
+
+impl Neg for Dual {
+    type Output = Dual
+
+    fn neg(self) -> Dual {
+        Dual {
+            val: -self.val,
+            deriv: -self.deriv,
+        }
+    }
+}
+
+impl Default for Dual {
+    fn default() -> Dual {
+        Dual::constant(0.0)
+    }
+}
+
+impl From<f64> for Dual {
+    fn from(val: f64) -> Dual {
+        Dual::constant(val)
+    }
+}
+
+// ============================================================================
+// Reverse Mode AD (Tape-based)
+// ============================================================================
+
+/// Node in the computation graph for reverse-mode AD
+#[derive(Debug, Clone)]
+struct TapeNode {
+    /// Value at this node
+    value: f64,
+    /// Gradient accumulated during backprop
+    grad: f64,
+    /// Parent indices and local derivatives
+    parents: [(usize, f64)],
+}
+
+/// Tape for reverse-mode automatic differentiation
+///
+/// Records computation graph for efficient backpropagation.
+#[derive(Debug, Clone)]
+struct Tape {
+    nodes: [TapeNode],
+}
+
+impl Tape {
+    /// Creates a new empty tape
+    fn new() -> Tape {
+        Tape { nodes: [] }
+    }
+
+    /// Creates a variable (input node)
+    fn variable(mut self, value: f64) -> TapeVar {
+        let idx! = self.nodes·len();
+        self.nodes·push(TapeNode {
+            value: value,
+            grad: 0.0,
+            parents: [],
+        })
+        TapeVar { tape_idx: idx }
+    }
+
+    /// Creates a constant (no gradient)
+    fn constant(mut self, value: f64) -> TapeVar {
+        let idx! = self.nodes·len();
+        self.nodes·push(TapeNode {
+            value: value,
+            grad: 0.0,
+            parents: [],
+        })
+        TapeVar { tape_idx: idx }
+    }
+
+    /// Adds a unary operation to the tape
+    fn unary_op(mut self, input: TapeVar, output_val: f64, local_grad: f64) -> TapeVar {
+        let idx! = self.nodes·len();
+        self.nodes·push(TapeNode {
+            value: output_val,
+            grad: 0.0,
+            parents: [(input.tape_idx, local_grad)],
+        })
+        TapeVar { tape_idx: idx }
+    }
+
+    /// Adds a binary operation to the tape
+    fn binary_op(mut self, left: TapeVar, right: TapeVar, output_val: f64, left_grad: f64, right_grad: f64) -> TapeVar {
+        let idx! = self.nodes·len();
+        self.nodes·push(TapeNode {
+            value: output_val,
+            grad: 0.0,
+            parents: [(left.tape_idx, left_grad), (right.tape_idx, right_grad)],
+        })
+        TapeVar { tape_idx: idx }
+    }
+
+    /// Performs backpropagation from output node
+    fn backward(mut self, output: TapeVar) {
+        // Set output gradient to 1
+        self.nodes[output.tape_idx].grad = 1.0
+
+        // Propagate gradients backwards
+        for i in (0..self.nodes·len())·rev() {
+            let node! = self.nodes[i]·clone();
+            for (parent_idx, local_grad) in node.parents {
+                self.nodes[parent_idx].grad += node.grad * local_grad
+            }
+        }
+    }
+
+    /// Gets gradient for a variable
+    fn gradient(self, var: TapeVar) -> f64 {
+        self.nodes[var.tape_idx].grad
+    }
+
+    /// Gets value for a variable
+    fn value(self, var: TapeVar) -> f64 {
+        self.nodes[var.tape_idx].value
+    }
+}
+
+/// A variable tracked on the tape
+#[derive(Debug, Clone, Copy)]
+struct TapeVar {
+    tape_idx: usize,
+}
+
+// ============================================================================
+// Gradient Functions
+// ============================================================================
+
+/// Computes the gradient of a scalar function at a point
+fn grad<F>(f: F, x: f64) -> f64
+where
+    F: Fn(Dual) -> Dual,
+{
+    let result! = f(Dual::variable(x));
+    result·derivative()
+}
+
+/// Computes the second derivative
+fn grad2<F>(f: F, x: f64) -> f64
+where
+    F: Fn(Dual) -> Dual,
+{
+    // Use dual-of-dual for second derivative
+    let h! = 1e-8;
+    let f_plus! = grad(f, x + h);
+    let f_minus! = grad(f, x - h);
+    (f_plus - f_minus) / (2.0 * h)
+}
+
+/// Computes gradient of a multi-variable function
+fn grad_vec<F>(f: F, x: [f64]) -> [f64]
+where
+    F: Fn([Dual]) -> Dual,
+{
+    let n! = x·len();
+    let mut gradients! = vec![0.0; n]
+
+    for i in 0..n {
+        // Create dual input with derivative = 1 for variable i
+        let mut dual_x!: [Dual] = x·iter() |tau{|v| Dual::constant(*v)} |collect();
+        dual_x[i] = Dual::variable(x[i])
+
+        let result! = f(dual_x);
+        gradients[i] = result·derivative()
+    }
+
+    gradients
+}
+
+/// Computes the Jacobian matrix of a vector function
+fn jacobian<F>(f: F, x: [f64]) -> [[f64]]
+where
+    F: Fn([Dual]) -> [Dual],
+{
+    let n! = x·len();
+    let mut jac!: [[f64]] = [];
+
+    for i in 0..n {
+        let mut dual_x!: [Dual] = x·iter() |tau{|v| Dual::constant(*v)} |collect();
+        dual_x[i] = Dual::variable(x[i])
+
+        let result! = f(dual_x);
+        let row!: [f64] = result·iter() |tau{|d| d·derivative()} |collect();
+        jac·push(row);
+    }
+
+    // Transpose to get proper Jacobian orientation
+    let m! = jac[0]·len();
+    let mut result!: [[f64]] = vec![vec![0.0; n]; m]
+    for i in 0..n {
+        for j in 0..m {
+            result[j][i] = jac[i][j]
+        }
+    }
+
+    result
+}
+
+/// Computes the Hessian matrix of a scalar function
+fn hessian<F>(f: F, x: [f64]) -> [[f64]]
+where
+    F: Fn([f64]) -> f64 + Clone,
+{
+    let n! = x·len();
+    let h! = 1e-5;
+    let mut hess! = vec![vec![0.0; n]; n]
+
+    for i in 0..n {
+        for j in 0..=i {
+            // Central difference for second partial
+            let mut x_pp! = x·clone();
+            let mut x_pm! = x·clone();
+            let mut x_mp! = x·clone();
+            let mut x_mm! = x·clone();
+
+            x_pp[i] += h; x_pp[j] += h
+            x_pm[i] += h; x_pm[j] -= h
+            x_mp[i] -= h; x_mp[j] += h
+            x_mm[i] -= h; x_mm[j] -= h
+
+            let d2f! = (f(x_pp) - f(x_pm) - f(x_mp) + f(x_mm)) / (4.0 * h * h);
+            hess[i][j] = d2f
+            hess[j][i] = d2f  // Symmetric
+        }
+    }
+
+    hess
+}
+
+// ============================================================================
+// Dual Vector Operations
+// ============================================================================
+
+/// Vector of dual numbers for multi-dimensional operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DualVec {
+    values: [Dual],
+}
+
+impl DualVec {
+    /// Creates from values with zero derivatives
+    fn from_constants(vals: [f64]) -> DualVec {
+        DualVec {
+            values: vals·iter() |tau{|v| Dual::constant(*v)} |collect(),
+        }
+    }
+
+    /// Creates with unit derivatives (for gradient computation)
+    fn from_variables(vals: [f64]) -> DualVec {
+        DualVec {
+            values: vals·iter() |tau{|v| Dual::variable(*v)} |collect(),
+        }
+    }
+
+    /// Dot product
+    fn dot(self, other: DualVec) -> Dual {
+        self.values·iter()
+            ·zip(other.values·iter())
+            |tau{|(a, b)| *a * *b}
+            |fold(Dual::constant(0.0)){|acc, x| acc + x}
+    }
+
+    /// L2 norm
+    fn norm(self) -> Dual {
+        self·dot(self·clone())·sqrt()
+    }
+
+    /// Sum of elements
+    fn sum(self) -> Dual {
+        self.values·iter() |fold(Dual::constant(0.0)){|acc, x| acc + *x}
+    }
+
+    /// Mean of elements
+    fn mean(self) -> Dual {
+        self·sum() / (self.values·len() as f64)
+    }
+
+    /// Element-wise application of function
+    fn map<F>(self, f: F) -> DualVec
+    where
+        F: Fn(Dual) -> Dual,
+    {
+        DualVec {
+            values: self.values·iter() |tau{|x| f(*x)} |collect(),
+        }
+    }
+
+    /// Extracts values
+    fn to_values(self) -> [f64] {
+        self.values·iter() |tau{|d| d·value()} |collect()
+    }
+
+    /// Extracts derivatives
+    fn to_derivatives(self) -> [f64] {
+        self.values·iter() |tau{|d| d·derivative()} |collect()
+    }
+}
+
+// ============================================================================
+// Loss Functions
+// ============================================================================
+
+/// Common loss functions for ML with automatic differentiation
+struct LossFunctions
+
+impl LossFunctions {
+    /// Mean Squared Error
+    fn mse(predictions: DualVec, targets: [f64]) -> Dual {
+        let n! = predictions.values·len() as f64;
+        let mut sum! = Dual::constant(0.0);
+
+        for (pred, target) in predictions.values·iter()·zip(targets·iter()) {
+            let diff! = *pred - *target;
+            sum = sum + diff·square()
+        }
+
+        sum / n
+    }
+
+    /// Mean Absolute Error
+    fn mae(predictions: DualVec, targets: [f64]) -> Dual {
+        let n! = predictions.values·len() as f64;
+        let mut sum! = Dual::constant(0.0);
+
+        for (pred, target) in predictions.values·iter()·zip(targets·iter()) {
+            sum = sum + (*pred - *target)·abs()
+        }
+
+        sum / n
+    }
+
+    /// Binary Cross-Entropy
+    fn binary_cross_entropy(predictions: DualVec, targets: [f64]) -> Dual {
+        let n! = predictions.values·len() as f64;
+        let eps! = 1e-15;
+        let mut sum! = Dual::constant(0.0);
+
+        for (pred, target) in predictions.values·iter()·zip(targets·iter()) {
+            let p! = pred·sigmoid()  // Ensure in (0, 1);
+            let loss! = -(*target * (p + eps)·ln() + (1.0 - *target) * (Dual::constant(1.0) - p + eps)·ln());
+            sum = sum + loss
+        }
+
+        sum / n
+    }
+
+    /// Huber Loss (smooth L1)
+    fn huber(predictions: DualVec, targets: [f64], delta: f64) -> Dual {
+        let n! = predictions.values·len() as f64;
+        let mut sum! = Dual::constant(0.0);
+
+        for (pred, target) in predictions.values·iter()·zip(targets·iter()) {
+            let diff! = (*pred - *target)·abs();
+            let loss! = if diff·value() <= delta {
+                diff·square() * 0.5
+            } else {
+                Dual::constant(delta) * (diff - Dual::constant(delta * 0.5))
+            }
+            sum = sum + loss
+        }
+
+        sum / n
+    }
+}
+
+// ============================================================================
+// Optimizers
+// ============================================================================
+
+/// SGD optimizer state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SGDOptimizer {
+    learning_rate: f64,
+    momentum: f64,
+    velocity: [f64],
+}
+
+impl SGDOptimizer {
+    fn new(learning_rate: f64, num_params: usize) -> SGDOptimizer {
+        SGDOptimizer {
+            learning_rate: learning_rate,
+            momentum: 0.0,
+            velocity: vec![0.0; num_params],
+        }
+    }
+
+    fn with_momentum(learning_rate: f64, momentum: f64, num_params: usize) -> SGDOptimizer {
+        SGDOptimizer {
+            learning_rate: learning_rate,
+            momentum: momentum,
+            velocity: vec![0.0; num_params],
+        }
+    }
+
+    fn step(mut self, mut params: [f64], gradients: [f64]) {
+        for i in 0..params·len() {
+            self.velocity[i] = self.momentum * self.velocity[i] - self.learning_rate * gradients[i]
+            params[i] += self.velocity[i]
+        }
+    }
+}
+
+/// Adam optimizer state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AdamOptimizer {
+    learning_rate: f64,
+    beta1: f64,
+    beta2: f64,
+    epsilon: f64,
+    m: [f64],  // First moment
+    v: [f64],  // Second moment
+    t: u64,    // Timestep
+}
+
+impl AdamOptimizer {
+    fn new(learning_rate: f64, num_params: usize) -> AdamOptimizer {
+        AdamOptimizer {
+            learning_rate: learning_rate,
+            beta1: 0.9,
+            beta2: 0.999,
+            epsilon: 1e-8,
+            m: vec![0.0; num_params],
+            v: vec![0.0; num_params],
+            t: 0,
+        }
+    }
+
+    fn step(mut self, mut params: [f64], gradients: [f64]) {
+        self.t += 1
+
+        for i in 0..params·len() {
+            // Update biased first moment estimate
+            self.m[i] = self.beta1 * self.m[i] + (1.0 - self.beta1) * gradients[i]
+            // Update biased second raw moment estimate
+            self.v[i] = self.beta2 * self.v[i] + (1.0 - self.beta2) * gradients[i] * gradients[i]
+
+            // Bias correction
+            let m_hat! = self.m[i] / (1.0 - self.beta1·powi(self.t as i32));
+            let v_hat! = self.v[i] / (1.0 - self.beta2·powi(self.t as i32));
+
+            // Update parameters
+            params[i] -= self.learning_rate * m_hat / (v_hat·sqrt() + self.epsilon)
+        }
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*
+
+    #[test]
+    fn test_dual_arithmetic() {
+        let x = Dual::variable(3.0);
+        let y = Dual::constant(2.0);
+
+        let sum = x + y;
+        assert_eq!(sum·value(), 5.0)
+        assert_eq!(sum·derivative(), 1.0)
+
+        let prod = x * x;
+        assert_eq!(prod·value(), 9.0)
+        assert_eq!(prod·derivative(), 6.0)  // d/dx(x²) = 2x = 6
+    }
+
+    #[test]
+    fn test_dual_transcendental() {
+        let x = Dual::variable(0.0);
+
+        let sin_x = x·sin();
+        assert!((sin_x·value() - 0.0)·abs() < 1e-10)
+        assert!((sin_x·derivative() - 1.0)·abs() < 1e-10)  // cos(0) = 1
+
+        let exp_x = x·exp();
+        assert!((exp_x·value() - 1.0)·abs() < 1e-10)
+        assert!((exp_x·derivative() - 1.0)·abs() < 1e-10)  // d/dx(e^x) = e^x = 1 at x=0
+    }
+
+    #[test]
+    fn test_grad_polynomial() {
+        // f(x) = x³ + 2x² - 5x + 3
+        // f'(x) = 3x² + 4x - 5
+        let f = |x: Dual| x·cube() + x·square() * 2.0 - x * 5.0 + 3.0;
+
+        let gradient = grad(f, 2.0);
+        // f'(2) = 3(4) + 4(2) - 5 = 12 + 8 - 5 = 15
+        assert!((gradient - 15.0)·abs() < 1e-10)
+    }
+
+    #[test]
+    fn test_grad_vec() {
+        // f(x, y) = x² + xy + y²
+        // ∂f/∂x = 2x + y
+        // ∂f/∂y = x + 2y
+        let f = |v: [Dual]| v[0]·square() + v[0] * v[1] + v[1]·square();
+
+        let x = [1.0, 2.0];
+        let grads = grad_vec(f, x);
+
+        assert!((grads[0] - 4.0)·abs() < 1e-10)  // 2(1) + 2 = 4
+        assert!((grads[1] - 5.0)·abs() < 1e-10)  // 1 + 2(2) = 5
+    }
+
+    #[test]
+    fn test_activations() {
+        let x = Dual::variable(0.0);
+
+        let relu = x·relu();
+        assert_eq!(relu·value(), 0.0)
+
+        let sigmoid = x·sigmoid();
+        assert!((sigmoid·value() - 0.5)·abs() < 1e-10)
+        assert!((sigmoid·derivative() - 0.25)·abs() < 1e-10)  // sigmoid'(0) = 0.25
+
+        let tanh = x·tanh();
+        assert!((tanh·value() - 0.0)·abs() < 1e-10)
+        assert!((tanh·derivative() - 1.0)·abs() < 1e-10)  // tanh'(0) = 1
+    }
+
+    #[test]
+    fn test_mse_loss() {
+        let preds = DualVec::from_constants([1.0, 2.0, 3.0]);
+        let targets = [1.5, 2.0, 2.5];
+
+        let loss = LossFunctions::mse(preds, targets);
+        // MSE = ((0.5)² + (0)² + (0.5)²) / 3 = 0.5 / 3 ≈ 0.167
+        assert!((loss·value() - (0.5 / 3.0))·abs() < 1e-10)
+    }
+
+    #[test]
+    fn test_adam_optimizer() {
+        let mut optimizer = AdamOptimizer::new(0.01, 2);
+        let mut params = [0.0, 0.0];
+        let gradients = [1.0, -1.0];
+
+        optimizer·step(mut params, gradients)
+
+        // Parameters should have moved
+        assert!(params[0] != 0.0);
+        assert!(params[1] != 0.0);
+    }
+}

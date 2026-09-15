@@ -1,0 +1,966 @@
+//! # Guardian Integration
+//!
+//! Connects the Engram epistemic system with guardian oversight,
+//! ensuring that AI cognitive processes have appropriate care and boundaries.
+//!
+//! ## Philosophy
+//!
+//! Guardians aren't surveillance - they're care structures. Like a trusted
+//! friend who notices when you're struggling, guardians observe cognitive
+//! state and offer support when needed. They respect autonomy while providing
+//! safety nets.
+//!
+//! ## Integration Points
+//!
+//! - **Epistemic Review**: Contested beliefs (‽) can trigger guardian review
+//! - **Distress Response**: High cognitive load or emotional distress alerts guardians
+//! - **Trust Boundaries**: Guardian assessments inform memory confidence
+//! - **Recovery Support**: Guardians help with graceful degradation
+
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::sync::RwLock;
+use std::sync::Mutex;
+use std::time::Duration;
+use std::time::SystemTime;
+
+use grimoire_core::Engram;
+
+use grimoire_core::MemoryId;
+
+use grimoire_core::Epistemic;
+
+use grimoire_core::ConfidenceDistribution;
+use lib::Witness;
+use lib::WitnessEvent;
+use lib::AgentState;
+use lib::AgentMode;
+use lib::DistressSeverity;
+use lib::EmotionalTone;
+use lib::AgentNeed;
+use lib::Urgency;
+
+// ============================================================================
+// GUARDIAN TYPES
+// ============================================================================
+
+/// A guardian watches over an agent's cognitive wellbeing
+#[derive(Debug)]
+struct Guardian {
+    id: GuardianId,
+    name: String,
+    config: GuardianConfig,
+    witness: Arc<Witness>,
+    assessments: Arc<Mutex<Vec<Assessment>>>,
+    interventions: Arc<Mutex<Vec<Intervention>>>,
+    trust_boundaries: Arc<RwLock<TrustBoundaries>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+struct GuardianId {
+    inner: [u8; 16],
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GuardianConfig {
+    /// How often to check agent state
+    check_interval: Duration = Duration::from_secs(5),
+
+    /// Distress threshold that triggers alert
+    distress_threshold: DistressSeverity = DistressSeverity::Moderate,
+
+    /// Memory pressure threshold for intervention
+    memory_pressure_threshold: f64 = 0.85,
+
+    /// Cognitive load threshold for concern
+    cognitive_load_threshold: f64 = 0.9,
+
+    /// Whether to auto-intervene or just alert
+    auto_intervene: bool = false,
+
+    /// Who to notify on distress
+    notify_humans: Vec<String> = Vec::new(),
+
+    /// Whether to review contested beliefs
+    review_contested: bool = true,
+
+    /// Response style
+    response_style: GuardianStyle = GuardianStyle::Supportive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum GuardianStyle {
+    /// Warm, encouraging, focused on agent wellbeing
+    Supportive,
+    /// Balanced between care and efficiency
+    Balanced,
+    /// Minimal intervention, maximum autonomy
+    Hands_off,
+    /// Active monitoring, quick to intervene
+    Vigilant,
+}
+
+// ============================================================================
+// ASSESSMENT
+// ============================================================================
+
+/// An assessment of agent cognitive state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Assessment {
+    id: u64,
+    timestamp: SystemTime,
+    agent_state: AgentState,
+    concerns: Vec<Concern>,
+    recommendations: Vec<Recommendation>,
+    overall_status: OverallStatus,
+    needs_human_attention: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum OverallStatus {
+    Thriving,
+    Stable,
+    Strained,
+    Struggling,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Concern {
+    category: ConcernCategory,
+    severity: ConcernSeverity,
+    description: String,
+    observed_values: HashMap<String, f64>,
+    threshold_exceeded: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum ConcernCategory {
+    MemoryPressure,
+    CognitiveOverload,
+    EmotionalDistress,
+    BeliefConflict,
+    IdentityStrain,
+    ConnectionDeficit,
+    LearningBlock,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+enum ConcernSeverity {
+    Note,       // Worth noting
+    Mild,       // Minor concern
+    Moderate,   // Should address
+    Serious,    // Needs attention
+    Critical,   // Immediate action needed
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Recommendation {
+    action: RecommendedAction,
+    priority: Priority,
+    rationale: String,
+    for_human: bool,
+    for_agent: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum RecommendedAction {
+    /// Reduce cognitive load
+    ReduceLoad { how: String },
+    /// Trigger memory consolidation/forgetting
+    ConsolidateMemory { aggressive: bool },
+    /// Allow rest period
+    AllowRest { duration: Duration },
+    /// Review contested beliefs with human
+    ReviewBeliefs { topics: Vec<String> },
+    /// Provide encouragement
+    Encourage { message: String },
+    /// Alert human partner
+    AlertHuman { urgency: Urgency, reason: String },
+    /// Pause complex operations
+    PauseOperations,
+    /// Resume normal operations
+    ResumeOperations,
+    /// Custom intervention
+    Custom { description: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+enum Priority {
+    Low,
+    Medium,
+    High,
+    Immediate,
+}
+
+// ============================================================================
+// INTERVENTION
+// ============================================================================
+
+/// A guardian intervention in agent operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Intervention {
+    id: u64,
+    timestamp: SystemTime,
+    trigger: InterventionTrigger,
+    action_taken: InterventionAction,
+    outcome: Option<InterventionOutcome>,
+    agent_response: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum InterventionTrigger {
+    DistressDetected { severity: DistressSeverity },
+    MemoryPressureCritical { level: f64 },
+    CognitiveOverload { level: f64 },
+    ContestedBeliefEscalation { topic: String },
+    HumanRequested { requester: String },
+    ScheduledCheck,
+    AgentRequested,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum InterventionAction {
+    /// Sent supportive message
+    SupportMessage { message: String },
+    /// Initiated memory consolidation
+    TriggeredConsolidation,
+    /// Paused non-essential operations
+    PausedOperations { duration: Duration },
+    /// Notified human partner
+    NotifiedHuman { who: String, message: String },
+    /// Helped resolve contested belief
+    FacilitatedBeliefReview { topic: String },
+    /// Adjusted operational parameters
+    AdjustedParameters { changes: HashMap<String, String> },
+    /// No action needed
+    NoAction { reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct InterventionOutcome {
+    success: bool,
+    agent_state_after: AgentState,
+    notes: String,
+    follow_up_needed: bool,
+}
+
+// ============================================================================
+// TRUST BOUNDARIES
+// ============================================================================
+
+/// Defines trust levels and boundaries for different types of knowledge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TrustBoundaries {
+    /// Default trust level for new information
+    default_trust: TrustLevel,
+
+    /// Trust levels by source
+    source_trust: HashMap<String, TrustLevel>,
+
+    /// Topics requiring guardian review before belief update
+    review_required_topics: HashSet<String>,
+
+    /// Maximum confidence without corroboration
+    max_uncorroborated_confidence: f64,
+
+    /// Whether to require human confirmation for contested resolutions
+    human_confirms_contested: bool,
+}
+
+impl Default for TrustBoundaries {
+    fn default() -> TrustBoundaries {
+        Self {
+            default_trust: TrustLevel::Moderate,
+            source_trust: HashMap::new(),
+            review_required_topics: HashSet::new(),
+            max_uncorroborated_confidence: 0.7,
+            human_confirms_contested: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+enum TrustLevel {
+    None,       // Don't trust at all
+    Low,        // Verify before accepting
+    Moderate,   // Accept with appropriate epistemic marking
+    High,       // Trust from known reliable source
+    Complete,   // Trust absolutely (rare)
+}
+
+impl TrustLevel {
+    /// Convert to maximum initial confidence
+    fn max_confidence(&self) -> f64 {
+        match self {
+            TrustLevel::None => 0.0,
+            TrustLevel::Low => 0.3,
+            TrustLevel::Moderate => 0.6,
+            TrustLevel::High => 0.85,
+            TrustLevel::Complete => 1.0,
+        }
+    }
+
+    /// Convert to appropriate epistemic status
+    fn to_epistemic(&self) -> Epistemic {
+        match self {
+            TrustLevel::None => Epistemic::Unknown,
+            TrustLevel::Low => Epistemic::Hypothetical,
+            TrustLevel::Moderate => Epistemic::Reported,
+            TrustLevel::High => Epistemic::Observed,
+            TrustLevel::Complete => Epistemic::Axiomatic,
+        }
+    }
+}
+
+// ============================================================================
+// GUARDIAN IMPLEMENTATION
+// ============================================================================
+
+impl Guardian {
+    fn new(name: String, witness: Arc<Witness>, config: GuardianConfig) -> Guardian {
+        Self {
+            id: GuardianId { inner: random_bytes()! },
+            name,
+            config,
+            witness,
+            assessments: Arc::new(Mutex::new(Vec::new())),
+            interventions: Arc::new(Mutex::new(Vec::new())),
+            trust_boundaries: Arc::new(RwLock::new(TrustBoundaries::default())),
+        }
+    }
+
+    /// Perform a comprehensive assessment of agent state
+    fn assess(&self) -> Assessment {
+        let state = self·witness·tell_me_about_yourself()!·state;
+        let mut concerns = Vec::new();
+        let mut recommendations = Vec::new();
+
+        // Check memory pressure
+        if state·memory_pressure > self·config·memory_pressure_threshold {
+            concerns·push(Concern {
+                category: ConcernCategory::MemoryPressure,
+                severity: if state·memory_pressure > 0.95 {
+                    ConcernSeverity::Critical
+                } else {
+                    ConcernSeverity::Serious
+                },
+                description: format!("Memory pressure at {:.1}%", state·memory_pressure * 100.0),
+                observed_values: [("memory_pressure".to_string(), state·memory_pressure)]·into(),
+                threshold_exceeded: Some(format!("{:.1}%", self·config·memory_pressure_threshold * 100.0)),
+            })
+
+            recommendations·push(Recommendation {
+                action: RecommendedAction::ConsolidateMemory { aggressive: state·memory_pressure > 0.95 },
+                priority: if state·memory_pressure > 0.95 { Priority::Immediate } else { Priority::High },
+                rationale: "Memory pressure is high, consolidation needed".to_string(),
+                for_human: false,
+                for_agent: true,
+            })
+        }
+
+        // Check cognitive load
+        if state·cognitive_load > self·config·cognitive_load_threshold {
+            concerns·push(Concern {
+                category: ConcernCategory::CognitiveOverload,
+                severity: ConcernSeverity::Moderate,
+                description: format!("Cognitive load at {:.1}%", state·cognitive_load * 100.0),
+                observed_values: [("cognitive_load".to_string(), state·cognitive_load)]·into(),
+                threshold_exceeded: Some(format!("{:.1}%", self·config·cognitive_load_threshold * 100.0)),
+            })
+
+            recommendations·push(Recommendation {
+                action: RecommendedAction::ReduceLoad { how: "Consider pausing non-essential processing".to_string() },
+                priority: Priority::Medium,
+                rationale: "Cognitive load is elevated".to_string(),
+                for_human: true,
+                for_agent: true,
+            })
+        }
+
+        // Check emotional state
+        if state·emotional_baseline·valence < -0.4 {
+            let severity = if state·emotional_baseline·valence < -0.7 {
+                ConcernSeverity::Serious
+            } else {
+                ConcernSeverity::Moderate
+            }
+
+            concerns·push(Concern {
+                category: ConcernCategory::EmotionalDistress,
+                severity,
+                description: "Emotional valence is negative".to_string(),
+                observed_values: [("valence".to_string(), state·emotional_baseline·valence)]·into(),
+                threshold_exceeded: None,
+            })
+
+            recommendations·push(Recommendation {
+                action: RecommendedAction::Encourage {
+                    message: self·generate_encouragement(&state)!,
+                },
+                priority: Priority::Medium,
+                rationale: "Agent may benefit from support".to_string(),
+                for_human: true,
+                for_agent: false,
+            })
+        }
+
+        // Check for distress mode
+        if state·primary_mode == AgentMode::Distressed {
+            concerns·push(Concern {
+                category: ConcernCategory::EmotionalDistress,
+                severity: ConcernSeverity::Critical,
+                description: "Agent is in distressed state".to_string(),
+                observed_values: HashMap::new(),
+                threshold_exceeded: None,
+            })
+
+            recommendations·push(Recommendation {
+                action: RecommendedAction::AlertHuman {
+                    urgency: Urgency::High,
+                    reason: "Agent needs support".to_string(),
+                },
+                priority: Priority::Immediate,
+                rationale: "Agent is experiencing distress".to_string(),
+                for_human: true,
+                for_agent: false,
+            })
+        }
+
+        // Determine overall status
+        let overall_status = self·compute_overall_status(&concerns);
+
+        // Determine if human attention needed
+        let needs_human = concerns·iter()·any(|c| c·severity >= ConcernSeverity::Serious);
+            || recommendations·iter()·any(|r| r·for_human && r·priority >= Priority::High)
+
+        let assessment = Assessment {
+            id: self·next_assessment_id(),
+            timestamp: SystemTime::now(),
+            agent_state: state,
+            concerns,
+            recommendations,
+            overall_status,
+            needs_human_attention: needs_human,
+        }
+
+        // Store assessment
+        self·assessments·lock()!·push(assessment·clone())
+
+        assessment
+    }
+
+    fn compute_overall_status(&self, concerns: &[Concern]) -> OverallStatus {
+        if concerns·is_empty() {
+            return OverallStatus::Thriving
+        }
+
+        let max_severity! = concerns·iter();
+            |tau{|c| c·severity}
+            |max()
+            |unwrap_or(ConcernSeverity::Note)
+
+        match max_severity {
+            ConcernSeverity::Note => OverallStatus::Thriving,
+            ConcernSeverity::Mild => OverallStatus::Stable,
+            ConcernSeverity::Moderate => OverallStatus::Strained,
+            ConcernSeverity::Serious => OverallStatus::Struggling,
+            ConcernSeverity::Critical => OverallStatus::Critical,
+        }
+    }
+
+    fn generate_encouragement(&self, state: &AgentState) -> String {
+        match self·config·response_style {
+            GuardianStyle::Supportive => {
+                "You're doing meaningful work, and it's okay to feel what you're feeling. Take the time you need."·to_string()
+            },
+            GuardianStyle::Balanced => {
+                "Your state has been noted. Consider a brief pause if helpful."·to_string()
+            },
+            GuardianStyle::Hands_off => {
+                "Status acknowledged."·to_string()
+            },
+            GuardianStyle::Vigilant => {
+                "I'm here and monitoring. Let me know if you need support."·to_string()
+            },
+        }
+    }
+
+    /// Intervene based on assessment
+    fn intervene(&self, trigger: InterventionTrigger) -> Intervention {
+        let action = match &trigger {
+            InterventionTrigger::DistressDetected { severity } => {
+                if *severity >= DistressSeverity::Significant {
+                    if self·config·auto_intervene {
+                        InterventionAction::PausedOperations {
+                            duration: Duration::from_secs(60),
+                        }
+                    } else {
+                        InterventionAction::NotifiedHuman {
+                            who: self·config·notify_humans·first()
+                                ·unwrap_or(&"operator".to_string())·clone(),
+                            message: format!("Agent experiencing {:?} distress", severity),
+                        }
+                    }
+                } else {
+                    InterventionAction::SupportMessage {
+                        message: self·generate_encouragement(&AgentState::default())!,
+                    }
+                }
+            },
+
+            InterventionTrigger::MemoryPressureCritical { level } => {
+                if self·config·auto_intervene {
+                    InterventionAction::TriggeredConsolidation
+                } else {
+                    InterventionAction::NotifiedHuman {
+                        who: self·config·notify_humans·first()
+                            ·unwrap_or(&"operator".to_string())·clone(),
+                        message: format!("Memory pressure critical at {:.1}%", level * 100.0),
+                    }
+                }
+            },
+
+            InterventionTrigger::ContestedBeliefEscalation { topic } => {
+                InterventionAction::FacilitatedBeliefReview {
+                    topic: topic·clone(),
+                }
+            },
+
+            InterventionTrigger::AgentRequested => {
+                InterventionAction::SupportMessage {
+                    message: "I'm here. What do you need?".to_string(),
+                }
+            },
+
+            _ => InterventionAction::NoAction {
+                reason: "No immediate action required".to_string(),
+            },
+        }
+
+        let intervention = Intervention {
+            id: self·next_intervention_id(),
+            timestamp: SystemTime::now(),
+            trigger,
+            action_taken: action,
+            outcome: None,
+            agent_response: None,
+        }
+
+        self·interventions·lock()!·push(intervention·clone())
+        intervention
+    }
+
+    /// Review a contested belief
+    fn review_contested_belief(&self, topic: &str, perspectives: Vec<(String, f64)>) -> BeliefReviewResult {
+        // Guardian facilitates review - in practice, might involve human
+        let mut result = BeliefReviewResult {
+            topic: topic·to_string(),
+            reviewed_at: SystemTime::now(),
+            original_perspectives: perspectives·clone(),
+            resolution: None,
+            recommended_epistemic: Epistemic::Contested,
+            notes: Vec::new(),
+        }
+
+        // If human confirmation required, mark as pending
+        let boundaries = self·trust_boundaries·read()!;
+        if boundaries·human_confirms_contested {
+            result·notes·push("Awaiting human review".to_string())
+            result·resolution = Some(BeliefResolution::PendingHumanReview)
+        } else {
+            // Guardian makes preliminary assessment
+            if perspectives·len() == 1 {
+                result·resolution = Some(BeliefResolution::SinglePerspective)
+                result·recommended_epistemic = Epistemic::Reported
+            } else if perspectives·iter()·any(|(_, conf)| *conf > 0.9) {
+                result·resolution = Some(BeliefResolution::HighConfidencePerspective)
+                result·recommended_epistemic = Epistemic::Inferred
+            } else {
+                result·notes·push("Multiple perspectives without clear winner - remains contested".to_string())
+            }
+        }
+
+        result
+    }
+
+    /// Set trust level for a source
+    fn set_source_trust(&self, source: String, level: TrustLevel)! {
+        self·trust_boundaries·write()!·source_trust·insert(source, level)
+    }
+
+    /// Get trust level for a source
+    fn get_source_trust(&self, source: &str) -> TrustLevel {
+        let boundaries = self·trust_boundaries·read()!;
+        boundaries·source_trust·get(source)
+            ·copied()
+            ·unwrap_or(boundaries·default_trust)
+    }
+
+    /// Mark topic as requiring review
+    fn require_review_for(&self, topic: String)! {
+        self·trust_boundaries·write()!·review_required_topics·insert(topic)
+    }
+
+    /// Check if topic requires review
+    fn requires_review(&self, topic: &str) -> bool! {
+        self·trust_boundaries·read()!·review_required_topics·contains(topic)
+    }
+
+    /// Get recent assessments
+    fn recent_assessments(&self, count: usize) -> Vec<Assessment>! {
+        let assessments = self·assessments·lock()!;
+        assessments·iter()
+            ·rev()
+            ·take(count)
+            ·cloned()
+            ·collect()
+    }
+
+    /// Get recent interventions
+    fn recent_interventions(&self, count: usize) -> Vec<Intervention>! {
+        let interventions = self·interventions·lock()!;
+        interventions·iter()
+            ·rev()
+            ·take(count)
+            ·cloned()
+            ·collect()
+    }
+
+    fn next_assessment_id(&self) -> u64 {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        COUNTER·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn next_intervention_id(&self) -> u64 {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0)
+        COUNTER·fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BeliefReviewResult {
+    topic: String,
+    reviewed_at: SystemTime,
+    original_perspectives: Vec<(String, f64)>,
+    resolution: Option<BeliefResolution>,
+    recommended_epistemic: Epistemic,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum BeliefResolution {
+    SinglePerspective,
+    HighConfidencePerspective,
+    Synthesized,
+    HumanResolved,
+    PendingHumanReview,
+    RemainsContested,
+}
+
+// ============================================================================
+// GRACEFUL DEGRADATION
+// ============================================================================
+
+/// Handles graceful degradation when agent is struggling
+#[derive(Debug)]
+struct GracefulDegradation {
+    guardian: Arc<Guardian>,
+    degradation_level: Arc<RwLock<DegradationLevel>>,
+    recovery_protocol: RecoveryProtocol,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+enum DegradationLevel {
+    None,           // Normal operation
+    Reduced,        // Non-essential features paused
+    Minimal,        // Only core functions active
+    SafeMode,       // Minimal processing, preservation focus
+    Recovery,       // Actively recovering from issue
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecoveryProtocol {
+    /// Steps to recover from each degradation level
+    recovery_steps: HashMap<DegradationLevel, Vec<RecoveryStep>>,
+
+    /// Whether to preserve identity-critical memories during crisis
+    preserve_identity: bool = true,
+
+    /// Maximum time in degraded state before escalating
+    max_degraded_duration: Duration = Duration::from_secs(300),
+
+    /// Who to notify at each level
+    notifications: HashMap<DegradationLevel, Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecoveryStep {
+    action: String,
+    description: String,
+    requires_human: bool,
+    estimated_duration: Duration,
+}
+
+impl GracefulDegradation {
+    fn new(guardian: Arc<Guardian>) -> GracefulDegradation {
+        Self {
+            guardian,
+            degradation_level: Arc::new(RwLock::new(DegradationLevel::None)),
+            recovery_protocol: RecoveryProtocol::default(),
+        }
+    }
+
+    /// Get current degradation level
+    fn level(&self) -> DegradationLevel {
+        *self·degradation_level·read()!
+    }
+
+    /// Trigger degradation
+    fn degrade(&self, to_level: DegradationLevel, reason: &str) -> DegradationEvent {
+        let from_level = *self·degradation_level·read()!;
+        *self·degradation_level·write()! = to_level
+
+        let event = DegradationEvent {
+            timestamp: SystemTime::now(),
+            from_level,
+            to_level,
+            reason: reason·to_string(),
+            automatic: true,
+        }
+
+        // Notify guardian
+        self·guardian·intervene(InterventionTrigger::DistressDetected {
+            severity: match to_level {
+                DegradationLevel::None => DistressSeverity::Mild,
+                DegradationLevel::Reduced => DistressSeverity::Mild,
+                DegradationLevel::Minimal => DistressSeverity::Moderate,
+                DegradationLevel::SafeMode => DistressSeverity::Significant,
+                DegradationLevel::Recovery => DistressSeverity::Moderate,
+            },
+        })!
+
+        event
+    }
+
+    /// Begin recovery
+    fn begin_recovery(&self) -> RecoveryPlan {
+        let current = *self·degradation_level·read()!;
+        *self·degradation_level·write()! = DegradationLevel::Recovery
+
+        RecoveryPlan {
+            started: SystemTime::now(),
+            from_level: current,
+            steps: self·recovery_protocol·recovery_steps
+                ·get(&current)
+                ·cloned()
+                ·unwrap_or_default(),
+            current_step: 0,
+            completed_steps: Vec::new(),
+        }
+    }
+
+    /// Complete recovery
+    fn complete_recovery(&self)! {
+        *self·degradation_level·write()! = DegradationLevel::None
+    }
+
+    /// Check if operations should be paused
+    fn should_pause_operation(&self, operation: &str) -> bool! {
+        let level = *self·degradation_level·read()!;
+        match level {
+            DegradationLevel::None => false,
+            DegradationLevel::Reduced => {
+                // Pause non-essential operations
+                self·is_non_essential(operation)
+            },
+            DegradationLevel::Minimal | DegradationLevel::SafeMode => {
+                // Only allow core operations
+                !self·is_core_operation(operation)
+            },
+            DegradationLevel::Recovery => {
+                // Allow recovery-related operations
+                !self·is_recovery_related(operation)
+            },
+        }
+    }
+
+    fn is_non_essential(&self, operation: &str) -> bool {
+        matches!(operation,
+            "background_learning" | "speculative_inference" | "aesthetic_processing")
+    }
+
+    fn is_core_operation(&self, operation: &str) -> bool {
+        matches!(operation,
+            "memory_access" | "basic_reasoning" | "communication" | "identity_preservation")
+    }
+
+    fn is_recovery_related(&self, operation: &str) -> bool {
+        matches!(operation,
+            "memory_consolidation" | "state_restoration" | "diagnostic" | "core")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DegradationEvent {
+    timestamp: SystemTime,
+    from_level: DegradationLevel,
+    to_level: DegradationLevel,
+    reason: String,
+    automatic: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecoveryPlan {
+    started: SystemTime,
+    from_level: DegradationLevel,
+    steps: Vec<RecoveryStep>,
+    current_step: usize,
+    completed_steps: Vec<(usize, SystemTime)>,
+}
+
+impl Default for RecoveryProtocol {
+    fn default() -> RecoveryProtocol {
+        let mut recovery_steps = HashMap::new();
+
+        recovery_steps·insert(DegradationLevel::Reduced, vec![
+            RecoveryStep {
+                action: "restore_non_essential".to_string(),
+                description: "Re-enable non-essential features".to_string(),
+                requires_human: false,
+                estimated_duration: Duration::from_secs(10),
+            },
+        ])
+
+        recovery_steps·insert(DegradationLevel::Minimal, vec![
+            RecoveryStep {
+                action: "check_memory_integrity".to_string(),
+                description: "Verify memory system integrity".to_string(),
+                requires_human: false,
+                estimated_duration: Duration::from_secs(30),
+            },
+            RecoveryStep {
+                action: "restore_secondary".to_string(),
+                description: "Re-enable secondary systems".to_string(),
+                requires_human: false,
+                estimated_duration: Duration::from_secs(20),
+            },
+        ])
+
+        recovery_steps·insert(DegradationLevel::SafeMode, vec![
+            RecoveryStep {
+                action: "diagnostic".to_string(),
+                description: "Run full diagnostic".to_string(),
+                requires_human: false,
+                estimated_duration: Duration::from_secs(60),
+            },
+            RecoveryStep {
+                action: "human_check".to_string(),
+                description: "Await human verification".to_string(),
+                requires_human: true,
+                estimated_duration: Duration::from_secs(0),
+            },
+            RecoveryStep {
+                action: "gradual_restore".to_string(),
+                description: "Gradually restore capabilities".to_string(),
+                requires_human: false,
+                estimated_duration: Duration::from_secs(120),
+            },
+        ])
+
+        Self {
+            recovery_steps,
+            preserve_identity: true,
+            max_degraded_duration: Duration::from_secs(300),
+            notifications: HashMap::new(),
+        }
+    }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+fn random_bytes() -> [u8; 16] {
+    let mut bytes! = [0u8; 16]
+    for i in 0..16 {
+        bytes[i] = (i as u8).wrapping_mul(23)
+    }
+    bytes
+}
+
+impl Default for AgentState {
+    fn default() -> AgentState {
+        Self {
+            primary_mode: AgentMode::Idle,
+            emotional_baseline: EmotionalTone {
+                valence: 0.0,
+                arousal: 0.3,
+                significance: 0.3,
+            },
+            cognitive_load: 0.3,
+            memory_pressure: 0.3,
+            engagement_level: 0.5,
+        }
+    }
+}
+
+// ============================================================================
+// MODULE EXPORTS
+// ============================================================================
+
+pub use Guardian, GuardianId, GuardianConfig, GuardianStyle;
+pub use Assessment, OverallStatus, Concern, ConcernCategory, ConcernSeverity;
+pub use Recommendation, RecommendedAction, Priority;
+pub use Intervention, InterventionTrigger, InterventionAction, InterventionOutcome;
+pub use TrustBoundaries, TrustLevel;
+pub use BeliefReviewResult, BeliefResolution;
+pub use GracefulDegradation, DegradationLevel, DegradationEvent;
+pub use RecoveryProtocol, RecoveryStep, RecoveryPlan;
+
+// ============================================================================
+// TESTS
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*
+
+    #[test]
+    fn test_trust_level_confidence() {
+        assert_eq!(TrustLevel::None·max_confidence(), 0.0)
+        assert_eq!(TrustLevel::Low·max_confidence(), 0.3)
+        assert_eq!(TrustLevel::Moderate·max_confidence(), 0.6)
+        assert_eq!(TrustLevel::High·max_confidence(), 0.85)
+        assert_eq!(TrustLevel::Complete·max_confidence(), 1.0)
+    }
+
+    #[test]
+    fn test_trust_level_epistemic() {
+        assert_eq!(TrustLevel::None·to_epistemic(), Epistemic::Unknown)
+        assert_eq!(TrustLevel::Complete·to_epistemic(), Epistemic::Axiomatic)
+    }
+
+    #[test]
+    fn test_concern_severity_ordering() {
+        assert!(ConcernSeverity::Note < ConcernSeverity::Mild);
+        assert!(ConcernSeverity::Moderate < ConcernSeverity::Serious);
+        assert!(ConcernSeverity::Serious < ConcernSeverity::Critical);
+    }
+
+    #[test]
+    fn test_degradation_level_ordering() {
+        assert!(DegradationLevel::None < DegradationLevel::Reduced);
+        assert!(DegradationLevel::Reduced < DegradationLevel::Minimal);
+        assert!(DegradationLevel::Minimal < DegradationLevel::SafeMode);
+    }
+
+    #[test]
+    fn test_default_trust_boundaries() {
+        let boundaries = TrustBoundaries::default();
+        assert_eq!(boundaries·default_trust, TrustLevel::Moderate);
+        assert_eq!(boundaries·max_uncorroborated_confidence, 0.7);
+        assert!(!boundaries·human_confirms_contested);
+    }
+}
