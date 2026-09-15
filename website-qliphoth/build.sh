@@ -19,7 +19,28 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$SCRIPT_DIR/src"
 OUT_DIR="$SCRIPT_DIR/public/wasm"
-SIGIL_COMPILER="${SIGIL_COMPILER:-/home/crook/dev2/workspace/sigil/parser/target/release/sigil}"
+# LARES-523: this defaulted to /home/crook/dev2/... — another machine's home
+# directory — so on any other box the default silently pointed at nothing.
+# Prefer an installed sigil, then this repo's own build (legitimate here: this
+# IS the compiler's repo). SIGIL_COMPILER still overrides both.
+if [ -z "${SIGIL_COMPILER:-}" ]; then
+    for candidate in \
+        "$(command -v sigil 2>/dev/null)" \
+        "$SCRIPT_DIR/../parser/target/release/sigil"
+    do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+            SIGIL_COMPILER="$candidate"
+            break
+        fi
+    done
+fi
+if [ -z "${SIGIL_COMPILER:-}" ] || [ ! -x "$SIGIL_COMPILER" ]; then
+    echo "Error: no sigil compiler found." >&2
+    echo "  Looked for: sigil on \$PATH, then ../parser/target/release/sigil" >&2
+    echo "  Install one: parser/scripts/install-sigil.sh" >&2
+    echo "  Or point at one: SIGIL_COMPILER=/path/to/sigil $0" >&2
+    exit 1
+fi
 
 # Colors for output
 RED='\033[0;31m'
