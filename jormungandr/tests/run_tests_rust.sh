@@ -4,7 +4,18 @@
 
 set +e  # Don't exit on errors - we want to run all tests
 
-SIGIL_COMPILER="../../parser/target/release/sigil"
+# LARES-523: kept pointing at this repo's own build ON PURPOSE — these tests
+# exist to exercise the compiler in THIS tree, so an installed sigil from
+# somewhere else would be testing the wrong binary. What was missing is the
+# override and an existence check, so a stale or absent build fails loudly
+# instead of silently.
+SIGIL_COMPILER="${SIGIL_COMPILER:-../../parser/target/release/sigil}"
+if [ ! -x "$SIGIL_COMPILER" ]; then
+    echo "Error: no compiler at $SIGIL_COMPILER" >&2
+    echo "  Build it:  cd parser && cargo build --release" >&2
+    echo "  Or point at one: SIGIL_COMPILER=/path/to/sigil $0" >&2
+    exit 1
+fi
 TEST_DIR="."
 PASS=0
 FAIL=0
